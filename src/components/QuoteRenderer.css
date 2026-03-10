@@ -1,0 +1,933 @@
+/* QuoteRenderer - Professional Quote/Offerte Styling */
+/* A4 paper format: 210mm x 297mm */
+
+.quote-wrapper {
+    background: var(--bg-tertiary, #e5e7eb);
+    border-radius: 8px;
+    margin: 16px 0;
+    overflow: hidden;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.quote-container {
+    display: flex;
+    flex-direction: column;
+}
+
+/* Header Bar */
+.quote-header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 12px;
+    background: var(--bg-tertiary, #f1f5f9);
+    border-bottom: 1px solid var(--border-subtle, #e5e7eb);
+}
+
+.quote-label {
+    font-weight: 600;
+    color: var(--text-primary, #1f2937);
+    font-size: 12px;
+}
+
+.quote-actions {
+    display: flex;
+    gap: 3px;
+    background: var(--bg-secondary, #e5e7eb);
+    border-radius: 4px;
+    padding: 2px;
+}
+
+.btn-toggle {
+    padding: 4px 10px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    background: transparent;
+    color: var(--text-muted, #6b7280);
+    transition: all 0.2s;
+}
+
+.btn-toggle.active {
+    background: white;
+    color: var(--text-primary, #1f2937);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+/* Code View */
+.quote-code {
+    background: #1e293b;
+    color: #e2e8f0;
+    padding: 12px;
+    overflow: auto;
+    max-height: 400px;
+    font-family: 'Fira Code', monospace;
+    font-size: 10px;
+}
+
+.quote-code pre {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+
+/* Document Wrapper - Full height, scrollable */
+.quote-document-wrapper {
+    background: var(--bg-tertiary, #e5e7eb);
+    padding: 16px;
+    overflow-y: auto;
+    display: flex;
+    justify-content: center;
+}
+
+/* Document - A4 Aspect Ratio, Scaled Down */
+.quote-document {
+    background: white;
+    width: 100%;
+    max-width: 600px;
+    padding: 32px;
+    font-family: 'Segoe UI', -apple-system, sans-serif;
+    color: #374151;
+    line-height: 1.6;
+    font-size: 11px;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+    border-radius: 4px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    box-sizing: border-box;
+    /* CRITICAL: Includes padding in width calculation */
+    flex-shrink: 1;
+    /* Allow shrinking in flex container */
+    min-width: 0;
+    /* Allow shrinking below content size */
+}
+
+/* Ensure images don't cause overflow */
+.quote-document img {
+    max-width: 100%;
+    height: auto;
+}
+
+/* Reset markdown styles inside quote */
+.quote-document p,
+.quote-document span,
+.quote-document li,
+.quote-document strong {
+    margin: 0.15em 0;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    hyphens: auto;
+    white-space: normal;
+    max-width: 100%;
+}
+
+.quote-document h1,
+.quote-document h2,
+.quote-document h3,
+.quote-document h4 {
+    margin: 0.3em 0;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    hyphens: auto;
+    white-space: normal;
+    max-width: 100%;
+}
+
+/* Remove margin from nested p tags created by ReactMarkdown */
+.quote-document h3 p,
+.quote-document strong p,
+.quote-document span p,
+.quote-document .pricing-item p,
+.quote-document .phase-content-box h3 p,
+.quote-document .feature-card h3 p {
+    margin: 0;
+    display: inline;
+}
+
+/* Tighter list spacing */
+.quote-document ul,
+.quote-document ol {
+    margin: 0;
+    padding-left: 1.2em;
+    max-width: 100%;
+}
+
+.quote-document li {
+    margin: 0;
+    padding: 1px 0;
+    line-height: 1.4;
+}
+
+/* Nested lists even tighter */
+.quote-document li ul,
+.quote-document li ol {
+    margin: 0;
+    padding-left: 1em;
+}
+
+/* Remove p margin inside list items */
+.quote-document li p {
+    margin: 0;
+    display: inline;
+}
+
+/* Universal text wrap for all elements */
+.quote-document * {
+    max-width: 100%;
+    box-sizing: border-box;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+}
+
+/* Ensure text wraps in list items and their children */
+.quote-document li,
+.quote-document li span,
+.quote-document li strong,
+.quote-document .bullet-text,
+.quote-document .bullet-note,
+.quote-document .bullet-warning,
+.quote-document .bullet-tip {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    white-space: normal;
+}
+
+/* Phase content boxes need specific wrapping */
+.quote-document .phase-content-box,
+.quote-document .phase-description,
+.quote-document .phase-description p {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    word-break: break-word;
+    white-space: normal;
+}
+
+/* Feature cards need proper overflow */
+.quote-document .feature-card {
+    overflow: hidden;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+/* Header */
+.quote-header {
+    margin-bottom: 20px;
+    border-bottom: 2px solid #3b82f6;
+    padding-bottom: 12px;
+}
+
+.quote-header h1 {
+    font-size: 18px;
+    font-weight: 600;
+    color: #3b82f6;
+    margin: 0 0 6px;
+    line-height: 1.3;
+}
+
+.quote-subtitle {
+    font-size: 10px;
+    color: #6b7280;
+    margin: 0;
+}
+
+/* Sections */
+.quote-section {
+    margin-bottom: 20px;
+    min-width: 0;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.quote-section h2 {
+    font-size: 13px;
+    font-weight: 600;
+    color: #1f2937;
+    margin: 0 0 10px;
+    padding-bottom: 4px;
+    border-bottom: 1px solid #e5e7eb;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.quote-section h3 {
+    font-size: 11px;
+    font-weight: 600;
+    color: #374151;
+    margin: 8px 0 4px;
+}
+
+/* Specs with Logo */
+.specs-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+}
+
+.specs-header h2 {
+    margin: 0;
+    border: none;
+    padding: 0;
+}
+
+.specs-logo {
+    flex-shrink: 0;
+    margin-left: 16px;
+}
+
+.specs-logo img {
+    max-width: 80px;
+    max-height: 50px;
+    object-fit: contain;
+}
+
+.specs-content {
+    background: #f8fafc;
+    border-radius: 4px;
+    padding: 10px 14px;
+    border: 1px solid #e5e7eb;
+}
+
+.specs-list {
+    display: grid;
+    gap: 4px;
+}
+
+.specs-item {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    font-size: 10px;
+    line-height: 1.4;
+}
+
+.specs-label {
+    color: #6b7280;
+    flex-shrink: 0;
+}
+
+.specs-value {
+    color: #1f2937;
+    font-weight: 500;
+    min-width: 0;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.specs-item.highlight .specs-value {
+    color: #3b82f6;
+    font-weight: 600;
+}
+
+/* Description with Features Grid */
+.description-intro {
+    margin-bottom: 12px;
+    font-size: 10px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.features-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    margin-top: 10px;
+}
+
+.feature-card {
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    padding: 12px;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.feature-icon {
+    font-size: 16px;
+    margin-bottom: 4px;
+}
+
+.feature-card h3 {
+    font-size: 11px;
+    font-weight: 600;
+    color: #3b82f6;
+    margin: 0 0 4px;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    hyphens: auto;
+}
+
+.feature-card p {
+    font-size: 9px;
+    color: #6b7280;
+    margin: 0;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    hyphens: auto;
+}
+
+.description-items {
+    margin-top: 10px;
+}
+
+.description-item {
+    margin: 10px 0;
+    padding: 8px 12px;
+    background: #f8fafc;
+    border-left: 3px solid #3b82f6;
+    border-radius: 0 4px 4px 0;
+}
+
+.description-item strong {
+    color: #1f2937;
+    display: block;
+    margin-bottom: 2px;
+    font-size: 10px;
+}
+
+/* Phases Timeline - Vertical Layout */
+.phases-timeline {
+    position: relative;
+    padding: 8px 0;
+    margin-top: 12px;
+}
+
+/* Central Spine Line */
+.phases-timeline::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 50%;
+    width: 2px;
+    background: #e2e8f0;
+    transform: translateX(-50%);
+}
+
+.phase-item {
+    position: relative;
+    width: 50%;
+    padding-bottom: 8px;
+    box-sizing: border-box;
+    display: flex;
+}
+
+/* Overlap items to reduce vertical space */
+.phase-item+.phase-item {
+    margin-top: -35%;
+    /* Pulls item up to sit beside the previous one */
+}
+
+/* PDF Export Mode - Linear Layout for Stability */
+.pdf-mode .phase-item+.phase-item {
+    margin-top: 0 !important;
+}
+
+.pdf-mode .phases-timeline::before {
+    bottom: 0 !important;
+    height: 100% !important;
+}
+
+/* ODD ITEMS (Left Side) */
+.phase-item:nth-child(odd) {
+    left: 0;
+    padding-right: 48px;
+    /* Gap for line and connector */
+    justify-content: flex-end;
+    text-align: right;
+    /* Aligns header to spine */
+}
+
+/* EVEN ITEMS (Right Side) */
+.phase-item:nth-child(even) {
+    left: 50%;
+    padding-left: 48px;
+    /* Gap for line and connector */
+    justify-content: flex-start;
+    text-align: left;
+}
+
+/* Phase Icon on Spine */
+.phase-line-icon {
+    position: absolute;
+    top: 0;
+    width: 32px;
+    height: 32px;
+    background: white;
+    border: 2px solid #3b82f6;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    font-size: 14px;
+    box-shadow: 0 0 0 4px white;
+    /* Gap effect around line */
+}
+
+.phase-item:nth-child(odd) .phase-line-icon {
+    right: -16px;
+    /* Centered on right edge */
+}
+
+.phase-item:nth-child(even) .phase-line-icon {
+    left: -16px;
+    /* Centered on left edge */
+}
+
+/* Content Box */
+.phase-content-box {
+    background: #f8fafc;
+    border: 1px solid #e5e7eb;
+    border-radius: 8px;
+    padding: 16px;
+    position: relative;
+    width: 100%;
+    min-width: 0;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+    page-break-inside: avoid;
+    break-inside: avoid;
+}
+
+/* Quote Section - Avoid breaking headers from content if possible */
+.quote-section {
+    page-break-inside: avoid;
+    break-inside: avoid;
+}
+
+/* Feature Card - Keep intact */
+.feature-card {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    background: #f8fafc;
+    /* ... existing props ... */
+}
+
+/* Description Item - Keep intact */
+.description-item {
+    page-break-inside: avoid;
+    break-inside: avoid;
+}
+
+/* Reset text align inside box for readability */
+.phase-content-box {
+    text-align: left;
+}
+
+/* Connector Line */
+.phase-content-box::after {
+    content: '';
+    position: absolute;
+    top: 16px;
+    /* Align with icon center */
+    height: 1px;
+    width: 32px;
+    /* Span the padding gap */
+    background: #cbd5e1;
+    z-index: 1;
+}
+
+.phase-item:nth-child(odd) .phase-content-box::after {
+    right: -33px;
+    /* Connect to icon */
+}
+
+.phase-item:nth-child(even) .phase-content-box::after {
+    left: -33px;
+    /* Connect to icon */
+}
+
+.phase-item:hover .phase-line-icon {
+    transform: scale(1.1);
+    background: #eff6ff;
+    transition: all 0.2s;
+}
+
+.phase-content-box h3 {
+    margin: 0 0 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #1f2937;
+}
+
+.phase-description {
+    font-size: 10px;
+    color: #4b5563;
+    line-height: 1.5;
+}
+
+/* Callouts */
+.callout {
+    padding: 6px 10px;
+    border-radius: 4px;
+    margin: 8px 0 0;
+    font-size: 9px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+}
+
+.callout strong {
+    flex-shrink: 0;
+}
+
+.callout p {
+    margin: 0;
+    display: inline;
+}
+
+.callout-info {
+    background: #dbeafe;
+    border-left: 2px solid #3b82f6;
+    color: #1e40af;
+}
+
+.callout-warning {
+    background: #fef3c7;
+    border-left: 2px solid #f59e0b;
+    color: #92400e;
+}
+
+.callout-danger {
+    background: #fee2e2;
+    border-left: 2px solid #ef4444;
+    color: #991b1b;
+}
+
+/* Pricing */
+.pricing-content {
+    font-size: 10px;
+}
+
+.pricing-intro {
+    margin-bottom: 10px;
+}
+
+.pricing-subsection {
+    margin: 10px 0;
+    padding: 10px;
+    background: #f8fafc;
+    border-radius: 4px;
+    border: 1px solid #e5e7eb;
+    min-width: 0;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.pricing-subsection h3 {
+    margin-top: 0;
+}
+
+.pricing-item {
+    margin: 4px 0;
+    font-size: 10px;
+}
+
+/* Legal */
+.legal-content {
+    font-size: 10px;
+    color: #6b7280;
+    min-width: 0;
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+}
+
+.legal-subsection {
+    margin: 10px 0;
+}
+
+.legal-content ul {
+    list-style: disc;
+    padding-left: 16px;
+    margin: 6px 0;
+}
+
+.legal-content li {
+    margin: 3px 0;
+}
+
+/* Signature Section with Boxes */
+.quote-signature-section {
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid #e2e8f0;
+}
+
+@media print {
+    body * {
+        visibility: hidden;
+    }
+
+    .quote-document-wrapper,
+    .quote-document-wrapper * {
+        visibility: visible;
+    }
+
+    .quote-document-wrapper {
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 100%;
+        margin: 0;
+        padding: 0;
+        background: white;
+
+        /* Critical print fixes */
+        height: auto !important;
+        overflow: visible !important;
+        display: block !important;
+        color: black !important;
+    }
+
+    .quote-document {
+        box-shadow: none;
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        max-width: 100% !important;
+        background: white !important;
+        color: black !important;
+    }
+
+    /* Ensure content flows */
+    .quote-document * {
+        color: black !important;
+        box-shadow: none !important;
+    }
+
+    /* Hide the toolbar/header in print */
+    .quote-header-bar {
+        display: none;
+    }
+}
+
+.signature-intro {
+    font-size: 10px;
+    color: #6b7280;
+    margin-bottom: 16px;
+}
+
+.signature-greeting-block {
+    margin-bottom: 24px;
+}
+
+.signature-greeting {
+    color: #6b7280;
+    margin-bottom: 8px;
+    font-size: 10px;
+}
+
+.signature-name {
+    font-weight: 600;
+    color: #1f2937;
+    margin: 0;
+    font-size: 11px;
+}
+
+.signature-company {
+    color: #3b82f6;
+    margin: 2px 0 0;
+    font-size: 10px;
+}
+
+.signature-boxes {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+    margin-top: 16px;
+}
+
+.signature-box {
+    padding: 16px;
+    border: 1px solid #e5e7eb;
+    border-radius: 6px;
+    background: #fafafa;
+}
+
+.signature-box-label {
+    font-size: 10px;
+    font-weight: 600;
+    color: #374151;
+    margin: 0 0 24px;
+}
+
+.signature-line {
+    border-bottom: 1px solid #374151;
+    height: 40px;
+    margin-bottom: 8px;
+}
+
+.signature-box-sublabel {
+    font-size: 9px;
+    color: #6b7280;
+    margin: 4px 0;
+}
+
+/* Footer with Company Details */
+.quote-footer {
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 2px solid #e5e7eb;
+    text-align: center;
+}
+
+.footer-company-info {
+    margin-bottom: 8px;
+}
+
+.footer-company-name {
+    font-weight: 600;
+    color: #1f2937;
+    font-size: 11px;
+    margin: 0 0 2px;
+}
+
+.footer-details {
+    color: #6b7280;
+    font-size: 9px;
+    margin: 0 0 4px;
+}
+
+.footer-address {
+    color: #6b7280;
+    font-size: 9px;
+    margin: 0 0 4px;
+    white-space: pre-line;
+}
+
+.footer-contact {
+    font-size: 9px;
+    color: #6b7280;
+    margin: 4px 0;
+}
+
+.footer-contact .sep,
+.footer-legal .sep {
+    margin: 0 6px;
+    color: #d1d5db;
+}
+
+.footer-legal {
+    font-size: 9px;
+    color: #9ca3af;
+    margin: 4px 0;
+}
+
+.footer-copyright {
+    font-size: 8px;
+    color: #9ca3af;
+    margin-top: 8px;
+}
+
+/* ============ Print Styles - A4 Format ============ */
+@media print {
+    @page {
+        size: A4;
+        margin: 15mm 20mm;
+    }
+
+    body {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+    }
+
+    .quote-wrapper {
+        border: none;
+        box-shadow: none;
+        margin: 0;
+        background: none;
+        border-radius: 0;
+    }
+
+    .quote-container {
+        max-height: none;
+    }
+
+    .quote-header-bar {
+        display: none !important;
+    }
+
+    .quote-document-wrapper {
+        background: none;
+        padding: 0;
+        max-height: none;
+        overflow: visible;
+    }
+
+    .quote-document {
+        max-width: none;
+        width: 100%;
+        padding: 0;
+        box-shadow: none;
+        border-radius: 0;
+        font-size: 11pt;
+    }
+
+    .quote-header h1 {
+        font-size: 18pt;
+    }
+
+    .quote-section h2 {
+        font-size: 12pt;
+    }
+
+    .quote-section h3 {
+        font-size: 10pt;
+    }
+
+    .specs-logo img {
+        max-width: 100px;
+        max-height: 60px;
+    }
+
+    .phases-timeline {
+        grid-template-columns: repeat(3, 1fr);
+    }
+
+    .features-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .quote-acceptance {
+        break-inside: avoid;
+    }
+
+    .acceptance-buttons {
+        display: none !important;
+    }
+
+    .checkboxes {
+        background: #f0f7ff !important;
+    }
+
+    .quote-section {
+        break-inside: avoid;
+    }
+}
+
+/* Responsive - Smaller screens */
+@media (max-width: 768px) {
+    .quote-document {
+        padding: 20px;
+        font-size: 10px;
+    }
+
+    .features-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .phases-timeline {
+        grid-template-columns: 1fr;
+    }
+
+    .acceptance-buttons {
+        flex-direction: column;
+    }
+}

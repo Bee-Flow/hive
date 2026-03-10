@@ -1,0 +1,1685 @@
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import MarkdownRenderer from '../MarkdownRenderer';
+import {
+    Activity, Cpu, Zap, Clock, Wrench, BarChart3, RefreshCw,
+    TrendingUp, Users, DollarSign, ChevronRight, Globe, Bot,
+    ArrowUp, ArrowDown, Minus, Layers, MessageSquare, ThumbsUp, ThumbsDown
+} from 'lucide-react';
+
+const API = (import.meta.env.VITE_API_URL || '') + '/api/usage';
+const AI_API = (import.meta.env.VITE_API_URL || '') + '/ai';
+const FEEDBACK_API = (import.meta.env.VITE_API_URL || '') + '/api/feedback';
+
+// ─── Date Range Helpers ──────────────────────────────────────────────────────
+const RANGES = [
+    { id: 'today', label: 'Today', icon: '☀️' },
+    { id: '7d', label: '7 Days', icon: '📅' },
+    { id: '30d', label: '30 Days', icon: '📆' },
+    { id: 'all', label: 'All Time', icon: '♾️' },
+];
+
+function rangeToFilter(rangeId) {
+    if (rangeId === 'all') return {};
+    const now = new Date();
+    let start;
+    if (rangeId === 'today') {
+        start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    } else if (rangeId === '7d') {
+        start = new Date(now.getTime() - 7 * 86400000);
+    } else {
+        start = new Date(now.getTime() - 30 * 86400000);
+    }
+    return { startDate: start.toISOString(), endDate: now.toISOString() };
+}
+
+// ─── Formatters ──────────────────────────────────────────────────────────────
+function fmt(n) {
+    if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+    if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+    return String(n);
+}
+
+function fmtCost(n) {
+    if (!n || n === 0) return '$0.00';
+    if (n >= 1) return '$' + n.toFixed(2);
+    if (n >= 0.01) return '$' + n.toFixed(3);
+    if (n >= 0.001) return '$' + n.toFixed(4);
+    // Show full precision for very small numbers
+    return '$' + n.toFixed(6);
+}
+
+function fmtDuration(ms) {
+    if (!ms) return '—';
+    if (ms < 1000) return `${Math.round(ms)}ms`;
+    return `${(ms / 1000).toFixed(1)}s`;
+}
+
+function fmtTime(ts) {
+    if (!ts) return '—';
+    const d = new Date(ts);
+    const now = new Date();
+    const diff = now - d;
+    if (diff < 60_000) return 'just now';
+    if (diff < 3600_000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400_000) return `${Math.floor(diff / 3600000)}h ago`;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+// ─── Colors & Styles ─────────────────────────────────────────────────────────
+const COLORS = {
+    primary: '#6366f1',
+    purple: '#8b5cf6',
+    blue: '#3b82f6',
+    green: '#10b981',
+    emerald: '#059669',
+    amber: '#f59e0b',
+    orange: '#f97316',
+    rose: '#f43f5e',
+    pink: '#ec4899',
+    cyan: '#06b6d4',
+    teal: '#14b8a6',
+};
+
+const AGENT_COLORS = {
+    chat: { bg: '#6366f115', text: '#818cf8', label: '💬 Chat' },
+    swarm: { bg: '#f59e0b15', text: '#fbbf24', label: '🐝 Swarm' },
+    browser: { bg: '#ec489915', text: '#f472b6', label: '🌐 Browser' },
+    system: { bg: '#8b5cf615', text: '#a78bfa', label: '⚙️ System' },
+};
+
+function getAgentStyle(type) {
+    return AGENT_COLORS[type] || AGENT_COLORS.chat;
+}
+
+const MODEL_COLORS = ['#6366f1', '#8b5cf6', '#3b82f6', '#06b6d4', '#10b981', '#f59e0b', '#f97316', '#ec4899', '#f43f5e', '#14b8a6'];
+
+// ─── NAV PAGES ───────────────────────────────────────────────────────────────
+const PAGES = [
+    { id: 'overview', label: 'Overview', icon: BarChart3, description: 'Dashboard summary' },
+    { id: 'models', label: 'Models', icon: Cpu, description: 'Token usage per model' },
+    { id: 'agents', label: 'Agents', icon: Bot, description: 'Agent performance' },
+    { id: 'users', label: 'Users', icon: Users, description: 'Per-user breakdown' },
+    { id: 'conversations', label: 'Conversations', icon: MessageSquare, description: 'Per-conversation costs' },
+    { id: 'costs', label: 'Costs', icon: DollarSign, description: 'Cost estimation' },
+    { id: 'feedback', label: 'Feedback', icon: ThumbsUp, description: 'User feedback on AI responses' },
+    { id: 'activity', label: 'Activity Log', icon: Clock, description: 'Recent calls' },
+];
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MAIN COMPONENT
+// ═══════════════════════════════════════════════════════════════════════════════
+
+const MonitoringPanel = ({ activeSection = '', onNavigate }) => {
+    const VALID_IDS = PAGES.map(p => p.id);
+    const page = VALID_IDS.includes(activeSection) ? activeSection : 'overview';
+    const [range, setRange] = useState('7d');
+    const [summary, setSummary] = useState(null);
+    const [byModel, setByModel] = useState([]);
+    const [byAgent, setByAgent] = useState([]);
+    const [byUser, setByUser] = useState([]);
+    const [timeline, setTimeline] = useState([]);
+    const [costTimeline, setCostTimeline] = useState([]);
+    const [tools, setTools] = useState([]);
+    const [recent, setRecent] = useState([]);
+    const [modelCosts, setModelCosts] = useState({});
+    const [loading, setLoading] = useState(true);
+    const [filterSources, setFilterSources] = useState([]);
+    const [filterModels, setFilterModels] = useState([]);
+    const [activityFilters, setActivityFilters] = useState({ source: '', model: '', search: '' });
+    const [organizations, setOrganizations] = useState([]);
+    const [selectedOrgId, setSelectedOrgId] = useState('');
+    const [detailDrawer, setDetailDrawer] = useState(null);
+    const [byConversation, setByConversation] = useState([]);
+    const [feedback, setFeedback] = useState([]);
+    const [feedbackSummary, setFeedbackSummary] = useState({ total: 0, thumbs_up: 0, thumbs_down: 0, with_comments: 0 });
+    const [feedbackFilters, setFeedbackFilters] = useState({ rating: '', source: '' });
+
+    // Fetch orgs list once
+    useEffect(() => {
+        fetch(`${API}/organizations`, { credentials: 'include' })
+            .then(r => r.ok ? r.json() : [])
+            .then(d => setOrganizations(Array.isArray(d) ? d : []))
+            .catch(() => { });
+    }, []);
+
+    const fetchData = useCallback(async () => {
+        setLoading(true);
+        const filters = rangeToFilter(range);
+        if (selectedOrgId) filters.orgId = selectedOrgId;
+        const qs = new URLSearchParams(filters).toString();
+        const q = qs ? '?' + qs : '';
+        try {
+            const [s, m, a, u, t, tl, ct, r, mc, fs, fm, bc] = await Promise.all([
+                fetch(`${API}/summary${q}`).then(r => r.json()),
+                fetch(`${API}/by-model${q}`).then(r => r.json()),
+                fetch(`${API}/by-agent${q}`).then(r => r.json()),
+                fetch(`${API}/by-user${q}`).then(r => r.json()),
+                fetch(`${API}/tools${q}`).then(r => r.json()),
+                fetch(`${API}/timeline${q}&interval=${range === 'today' ? 'hour' : 'day'}`).then(r => r.json()),
+                fetch(`${API}/cost-timeline${q}&interval=${range === 'today' ? 'hour' : 'day'}`).then(r => r.json()).catch(() => []),
+                fetch(`${API}/recent?limit=100${selectedOrgId ? '&orgId=' + selectedOrgId : ''}`).then(r => r.json()),
+                fetch(`${AI_API}/model-costs`, { credentials: 'include' }).then(r => r.ok ? r.json() : {}).catch(() => ({})),
+                fetch(`${API}/filters/sources`).then(r => r.json()).catch(() => []),
+                fetch(`${API}/filters/models`).then(r => r.json()).catch(() => []),
+                fetch(`${API}/by-conversation${q}`).then(r => r.json()).catch(() => []),
+            ]);
+            setSummary(s); setByModel(Array.isArray(m) ? m : []); setByAgent(Array.isArray(a) ? a : []); setByUser(Array.isArray(u) ? u : []);
+            setTools(Array.isArray(t) ? t : []); setTimeline(Array.isArray(tl) ? tl : []); setCostTimeline(Array.isArray(ct) ? ct : []);
+            setRecent(Array.isArray(r) ? r : []); setModelCosts(mc && typeof mc === 'object' ? mc : {});
+            setFilterSources(Array.isArray(fs) ? fs : []); setFilterModels(Array.isArray(fm) ? fm : []);
+            setByConversation(Array.isArray(bc) ? bc : []);
+
+            // Fetch feedback data
+            try {
+                const fbQs = new URLSearchParams(filters).toString();
+                const fbQ = fbQs ? '?' + fbQs : '';
+                const [fbData, fbSummary] = await Promise.all([
+                    fetch(`${FEEDBACK_API}${fbQ}`, { credentials: 'include' }).then(r => r.ok ? r.json() : []).catch(() => []),
+                    fetch(`${FEEDBACK_API}/summary${fbQ}`, { credentials: 'include' }).then(r => r.ok ? r.json() : {}).catch(() => ({})),
+                ]);
+                setFeedback(fbData);
+                setFeedbackSummary(fbSummary);
+            } catch (e) { console.error('[Monitoring] feedback fetch error:', e); }
+        } catch (e) {
+            console.error('[Monitoring] fetch error:', e);
+        }
+        setLoading(false);
+    }, [range, selectedOrgId]);
+
+    useEffect(() => { fetchData(); }, [fetchData]);
+    useEffect(() => {
+        const iv = setInterval(fetchData, 30000);
+        return () => clearInterval(iv);
+    }, [fetchData]);
+
+    // Computed cost
+    const totalCost = useMemo(() => byModel.reduce((sum, m) => {
+        const c = modelCosts[m.model];
+        if (!c) return sum;
+        return sum + ((m.prompt_tokens || 0) / 1e6) * (c.input || 0)
+            + ((m.completion_tokens || 0) / 1e6) * (c.output || 0);
+    }, 0), [byModel, modelCosts]);
+
+    const costPerModel = useMemo(() => {
+        const map = {};
+        byModel.forEach(m => {
+            const c = modelCosts[m.model];
+            if (c) {
+                map[m.model] = ((m.prompt_tokens || 0) / 1e6) * (c.input || 0)
+                    + ((m.completion_tokens || 0) / 1e6) * (c.output || 0);
+            }
+        });
+        return map;
+    }, [byModel, modelCosts]);
+
+    const browserCalls = useMemo(() => byAgent.filter(a => a.agent_type === 'browser'), [byAgent]);
+    const browserTotalTokens = useMemo(() => browserCalls.reduce((s, a) => s + (a.total_tokens || 0), 0), [browserCalls]);
+    const browserTotalCalls = useMemo(() => browserCalls.reduce((s, a) => s + (a.calls || 0), 0), [browserCalls]);
+
+    return (
+        <div style={styles.container}>
+            {/* ── Sidebar ── */}
+            <div style={styles.sidebar}>
+                <div style={styles.sidebarHeader}>
+                    <Activity style={{ width: 20, height: 20, color: COLORS.primary }} />
+                    <span style={styles.sidebarTitle}>AI Monitor</span>
+                </div>
+
+                <nav style={styles.nav}>
+                    {PAGES.map(p => (
+                        <button
+                            key={p.id}
+                            onClick={() => { if (onNavigate) onNavigate(`admin/monitoring/${p.id}`); }}
+                            style={{
+                                ...styles.navItem,
+                                ...(page === p.id ? styles.navItemActive : {}),
+                            }}
+                        >
+                            <p.icon style={{
+                                width: 18, height: 18,
+                                color: page === p.id ? COLORS.primary : 'var(--text-muted, #666)',
+                                flexShrink: 0
+                            }} />
+                            <div style={{ flex: 1, textAlign: 'left' }}>
+                                <div style={{
+                                    fontSize: '13px', fontWeight: page === p.id ? 600 : 500,
+                                    color: page === p.id ? 'var(--text-primary, #fff)' : 'var(--text-secondary, #aaa)',
+                                }}>{p.label}</div>
+                            </div>
+                            {page === p.id && <ChevronRight style={{ width: 14, height: 14, color: COLORS.primary, flexShrink: 0 }} />}
+                        </button>
+                    ))}
+                </nav>
+
+                {/* Quick Stats in sidebar */}
+                <div style={styles.sidebarStats}>
+                    <div style={styles.sidebarStatItem}>
+                        <span style={{ color: 'var(--text-muted, #888)', fontSize: '11px' }}>Calls</span>
+                        <span style={{ color: 'var(--text-primary, #fff)', fontSize: '16px', fontWeight: 700 }}>{fmt(summary?.total_calls || 0)}</span>
+                    </div>
+                    <div style={styles.sidebarStatItem}>
+                        <span style={{ color: 'var(--text-muted, #888)', fontSize: '11px' }}>Tokens</span>
+                        <span style={{ color: COLORS.green, fontSize: '16px', fontWeight: 700 }}>{fmt(summary?.total_tokens || 0)}</span>
+                    </div>
+                    <div style={styles.sidebarStatItem}>
+                        <span style={{ color: 'var(--text-muted, #888)', fontSize: '11px' }}>Est. Cost</span>
+                        <span style={{ color: COLORS.amber, fontSize: '16px', fontWeight: 700 }}>{fmtCost(totalCost)}</span>
+                    </div>
+                </div>
+            </div>
+
+            {/* ── Main Content ── */}
+            <div style={styles.main}>
+                {/* Top bar */}
+                <div style={styles.topBar}>
+                    <div>
+                        <h2 style={styles.pageTitle}>
+                            {PAGES.find(p => p.id === page)?.label}
+                        </h2>
+                        <p style={styles.pageDesc}>
+                            {PAGES.find(p => p.id === page)?.description}
+                        </p>
+                    </div>
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        {/* Org filter (super admin) */}
+                        {organizations.length > 0 && (
+                            <select
+                                value={selectedOrgId}
+                                onChange={e => setSelectedOrgId(e.target.value)}
+                                style={{
+                                    padding: '6px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 500,
+                                    background: selectedOrgId ? COLORS.primary + '18' : 'var(--bg-tertiary, rgba(255,255,255,0.04))',
+                                    color: selectedOrgId ? COLORS.primary : 'var(--text-primary, #fff)',
+                                    border: `1px solid ${selectedOrgId ? COLORS.primary + '40' : 'var(--border-default, rgba(255,255,255,0.08))'}`,
+                                    outline: 'none', cursor: 'pointer', minWidth: '140px',
+                                }}
+                            >
+                                <option value="">All Organizations</option>
+                                {organizations.filter(o => o.id !== '__unassigned').map(o => (
+                                    <option key={o.id} value={o.id}>{o.name} ({fmt(o.total_calls)} calls)</option>
+                                ))}
+                            </select>
+                        )}
+                        <div style={styles.rangeGroup}>
+                            {RANGES.map(r => (
+                                <button
+                                    key={r.id}
+                                    onClick={() => setRange(r.id)}
+                                    style={{
+                                        ...styles.rangeBtn,
+                                        ...(range === r.id ? styles.rangeBtnActive : {}),
+                                    }}
+                                >
+                                    {r.label}
+                                </button>
+                            ))}
+                        </div>
+                        <button onClick={fetchData} style={styles.refreshBtn} title="Refresh">
+                            <RefreshCw style={{ width: 15, height: 15, animation: loading ? 'spin 1s linear infinite' : 'none' }} />
+                        </button>
+                    </div>
+                </div>
+
+                {/* Page Content */}
+                <div style={styles.content}>
+                    {page === 'overview' && (
+                        <OverviewPage
+                            summary={summary} byModel={byModel} byAgent={byAgent}
+                            timeline={timeline} costTimeline={costTimeline} tools={tools} totalCost={totalCost}
+                            costPerModel={costPerModel} modelCosts={modelCosts}
+                            range={range} browserTotalCalls={browserTotalCalls}
+                            browserTotalTokens={browserTotalTokens}
+                            onSelectModel={m => setDetailDrawer({ type: 'model', data: m })}
+                            onSelectAgent={a => setDetailDrawer({ type: 'agent', data: a })}
+                        />
+                    )}
+                    {page === 'models' && (
+                        <ModelsPage byModel={byModel} costPerModel={costPerModel} modelCosts={modelCosts}
+                            onSelect={m => setDetailDrawer({ type: 'model', data: m })} />
+                    )}
+                    {page === 'agents' && (
+                        <AgentsPage byAgent={byAgent} modelCosts={modelCosts} costPerModel={costPerModel}
+                            onSelect={a => setDetailDrawer({ type: 'agent', data: a })} />
+                    )}
+                    {page === 'users' && (
+                        <UsersPage byUser={byUser} />
+                    )}
+                    {page === 'conversations' && (
+                        <ConversationsPage conversations={byConversation} />
+                    )}
+                    {page === 'costs' && (
+                        <CostsPage byModel={byModel} costPerModel={costPerModel} modelCosts={modelCosts} totalCost={totalCost} costTimeline={costTimeline} range={range} onNavigate={onNavigate} />
+                    )}
+                    {page === 'feedback' && (
+                        <FeedbackPage feedback={feedback} summary={feedbackSummary}
+                            filters={feedbackFilters} setFilters={setFeedbackFilters} />
+                    )}
+                    {page === 'activity' && (
+                        <ActivityPage recent={recent} modelCosts={modelCosts}
+                            filterSources={filterSources} filterModels={filterModels}
+                            activityFilters={activityFilters} setActivityFilters={setActivityFilters}
+                        />
+                    )}
+                </div>
+            </div>
+
+            {/* Detail Drawer */}
+            {detailDrawer && (
+                <DetailDrawer detail={detailDrawer} modelCosts={modelCosts} costPerModel={costPerModel}
+                    recent={recent} onClose={() => setDetailDrawer(null)} />
+            )}
+
+            <style>{`
+                @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+                @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+                @keyframes slideIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+            `}</style>
+        </div>
+    );
+};
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// OVERVIEW PAGE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function CostTimelineChart({ data, color1 = COLORS.amber, color2 = COLORS.orange }) {
+    const maxCost = Math.max(...data.map(d => d.total_cost || 0), 0.001);
+    if (data.length === 0) return <Empty text="No cost data yet" />;
+    return (
+        <div style={{ padding: '8px 0' }}>
+            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', height: '120px' }}>
+                {data.slice(-30).map((d, i) => (
+                    <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
+                        <div
+                            style={{
+                                width: '100%', minWidth: '4px',
+                                height: `${Math.max((d.total_cost / maxCost) * 100, 3)}%`,
+                                background: `linear-gradient(to top, ${color1}, ${color2})`,
+                                borderRadius: '4px 4px 0 0',
+                                transition: 'height 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                                opacity: 0.85,
+                            }}
+                            title={`${d.period}: ${fmtCost(d.total_cost)}, ${d.calls} calls`}
+                        />
+                    </div>
+                ))}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted, #666)' }}>
+                    {data[0]?.period?.slice(5) || ''}
+                </span>
+                <span style={{ fontSize: '10px', color: 'var(--text-muted, #666)' }}>
+                    {data[data.length - 1]?.period?.slice(5) || ''}
+                </span>
+            </div>
+        </div>
+    );
+}
+
+function OverviewPage({ summary, byModel, byAgent, timeline, costTimeline, tools, totalCost, costPerModel, modelCosts, range, browserTotalCalls, browserTotalTokens, onSelectModel, onSelectAgent }) {
+    const maxTimelineTokens = Math.max(...timeline.map(t => t.total_tokens || 0), 1);
+
+    return (
+        <div style={{ animation: 'fadeIn 0.3s ease' }}>
+            {/* Stat Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '14px', marginBottom: '1.5rem' }}>
+                <MetricCard icon={Zap} label="Total Calls" value={fmt(summary?.total_calls || 0)} color={COLORS.primary} />
+                <MetricCard icon={BarChart3} label="Total Tokens" value={fmt(summary?.total_tokens || 0)} color={COLORS.green} />
+                <MetricCard icon={Clock} label="Avg Latency" value={fmtDuration(summary?.avg_duration_ms)} color={COLORS.pink} />
+                <MetricCard icon={DollarSign} label="Est. Cost" value={fmtCost(totalCost)} color={COLORS.amber} />
+                <MetricCard icon={Cpu} label="Models Used" value={summary?.unique_models || 0} color={COLORS.purple} />
+                <MetricCard icon={Globe} label="Browser Calls" value={fmt(browserTotalCalls)} color={COLORS.rose} />
+            </div>
+
+            {/* Timeline Charts */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '1.25rem' }}>
+                <Card title="Token Timeline" icon={TrendingUp}>
+                    {timeline.length === 0 ? (
+                        <Empty text="No data to display yet" />
+                    ) : (
+                        <div style={{ padding: '8px 0' }}>
+                            <div style={{ display: 'flex', alignItems: 'flex-end', gap: '3px', height: '120px' }}>
+                                {timeline.slice(-30).map((t, i) => (
+                                    <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', height: '100%' }}>
+                                        <div
+                                            style={{
+                                                width: '100%', minWidth: '4px',
+                                                height: `${Math.max((t.total_tokens / maxTimelineTokens) * 100, 3)}%`,
+                                                background: `linear-gradient(to top, ${COLORS.primary}, ${COLORS.purple})`,
+                                                borderRadius: '4px 4px 0 0',
+                                                transition: 'height 0.4s cubic-bezier(0.4, 0, 0.2, 1)',
+                                                opacity: 0.85,
+                                            }}
+                                            title={`${t.period}: ${fmt(t.total_tokens)} tokens, ${t.calls} calls`}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '8px' }}>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted, #666)' }}>{timeline[0]?.period?.slice(5) || ''}</span>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted, #666)' }}>{timeline[timeline.length - 1]?.period?.slice(5) || ''}</span>
+                            </div>
+                        </div>
+                    )}
+                </Card>
+                <Card title="Cost Timeline" icon={DollarSign}>
+                    <CostTimelineChart data={costTimeline} />
+                </Card>
+            </div>
+
+            {/* Two columns: Top Models + Top Agents */}
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '1.25rem' }}>
+                <Card title="Top Models" icon={Cpu}>
+                    {byModel.length === 0 ? <Empty text="No model data" /> : byModel.slice(0, 5).map((m, i) => (
+                        <ModelRow key={i} model={m} index={i} maxTokens={Math.max(...byModel.map(m => m.total_tokens || 0), 1)} cost={costPerModel[m.model]} />
+                    ))}
+                </Card>
+                <Card title="Top Agents" icon={Bot}>
+                    {byAgent.length === 0 ? <Empty text="No agent data" /> : byAgent.slice(0, 5).map((a, i) => (
+                        <AgentRow key={i} agent={a} index={i} />
+                    ))}
+                </Card>
+            </div>
+
+            {/* Tools mini-chart */}
+            <Card title="Tool Usage" icon={Wrench}>
+                {tools.length === 0 ? <Empty text="No tool calls recorded" /> : (
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {tools.slice(0, 12).map((t, i) => (
+                            <div key={i} style={{
+                                padding: '6px 12px', borderRadius: '20px', fontSize: '12px',
+                                background: 'var(--bg-tertiary, rgba(255,255,255,0.04))',
+                                border: '1px solid var(--border-default, rgba(255,255,255,0.06))',
+                                color: 'var(--text-secondary, #aaa)',
+                                display: 'flex', alignItems: 'center', gap: '6px',
+                            }}>
+                                <span style={{ fontWeight: 600, color: 'var(--text-primary, #fff)' }}>{t.tool_name}</span>
+                                <span style={{
+                                    background: COLORS.primary + '20', color: COLORS.primary,
+                                    padding: '1px 6px', borderRadius: '10px', fontSize: '10px', fontWeight: 700,
+                                }}>{t.calls}×</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </Card>
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// MODELS PAGE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function ModelsPage({ byModel, costPerModel, modelCosts, onSelect }) {
+    const maxTokens = Math.max(...byModel.map(m => m.total_tokens || 0), 1);
+
+    return (
+        <div style={{ animation: 'fadeIn 0.3s ease' }}>
+            <Card title="All Models" icon={Cpu}>
+                {byModel.length === 0 ? <Empty text="No model usage data yet — send a message to start tracking" /> : (
+                    <div>
+                        {/* Table header */}
+                        <div style={{
+                            display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 100px 90px',
+                            gap: '8px', padding: '8px 12px', marginBottom: '4px',
+                            fontSize: '11px', fontWeight: 600, textTransform: 'uppercase',
+                            letterSpacing: '0.05em', color: 'var(--text-muted, #666)',
+                        }}>
+                            <span>Model</span>
+                            <span style={{ textAlign: 'right' }}>Input Tokens</span>
+                            <span style={{ textAlign: 'right' }}>Output Tokens</span>
+                            <span style={{ textAlign: 'right' }}>Total Tokens</span>
+                            <span style={{ textAlign: 'right' }}>Calls</span>
+                            <span style={{ textAlign: 'right' }}>Est. Cost</span>
+                        </div>
+                        {byModel.map((m, i) => (
+                            <div key={i} onClick={() => onSelect?.(m)} style={{
+                                display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 100px 90px',
+                                gap: '8px', padding: '10px 12px', borderRadius: '10px',
+                                background: i % 2 === 0 ? 'transparent' : 'var(--bg-tertiary, rgba(255,255,255,0.02))',
+                                alignItems: 'center', animation: `slideIn ${0.1 + i * 0.03}s ease`,
+                                cursor: 'pointer', transition: 'background 0.15s',
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                    <div style={{
+                                        width: '8px', height: '8px', borderRadius: '50%',
+                                        background: MODEL_COLORS[i % MODEL_COLORS.length],
+                                        flexShrink: 0,
+                                    }} />
+                                    <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary, #fff)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                        {m.model || 'unknown'}
+                                    </span>
+                                </div>
+                                <span style={{ fontSize: '13px', fontWeight: 500, color: COLORS.blue, textAlign: 'right' }}>
+                                    {fmt(m.prompt_tokens || 0)}
+                                </span>
+                                <span style={{ fontSize: '13px', fontWeight: 500, color: COLORS.amber, textAlign: 'right' }}>
+                                    {fmt(m.completion_tokens || 0)}
+                                </span>
+                                <span style={{ fontSize: '13px', fontWeight: 600, color: COLORS.green, textAlign: 'right' }}>
+                                    {fmt(m.total_tokens || 0)}
+                                </span>
+                                <span style={{ fontSize: '13px', color: 'var(--text-muted, #888)', textAlign: 'right' }}>
+                                    {m.calls}
+                                </span>
+                                <span style={{ fontSize: '13px', fontWeight: 600, color: COLORS.amber, textAlign: 'right' }}>
+                                    {costPerModel[m.model] ? fmtCost(costPerModel[m.model]) : '—'}
+                                </span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </Card>
+
+            {/* Token Distribution Visual */}
+            {byModel.length > 0 && (
+                <Card title="Token Distribution" icon={Layers} style={{ marginTop: '14px' }}>
+                    <div style={{ display: 'flex', height: '32px', borderRadius: '8px', overflow: 'hidden', background: 'var(--bg-tertiary, #222)' }}>
+                        {byModel.map((m, i) => {
+                            const pct = ((m.total_tokens || 0) / (byModel.reduce((s, x) => s + (x.total_tokens || 0), 0) || 1)) * 100;
+                            if (pct < 1) return null;
+                            return (
+                                <div key={i} title={`${m.model}: ${fmt(m.total_tokens)} tokens (${pct.toFixed(1)}%)`} style={{
+                                    width: `${pct}%`, background: MODEL_COLORS[i % MODEL_COLORS.length],
+                                    transition: 'width 0.4s ease', position: 'relative',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    fontSize: '10px', fontWeight: 700, color: '#fff',
+                                    textShadow: '0 1px 2px rgba(0,0,0,0.4)',
+                                    minWidth: pct > 8 ? '0' : '0',
+                                }}>
+                                    {pct > 8 && <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', padding: '0 4px' }}>{m.model?.split('/').pop()}</span>}
+                                </div>
+                            );
+                        })}
+                    </div>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '12px' }}>
+                        {byModel.map((m, i) => (
+                            <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: 'var(--text-muted, #888)' }}>
+                                <div style={{ width: '8px', height: '8px', borderRadius: '2px', background: MODEL_COLORS[i % MODEL_COLORS.length] }} />
+                                <span style={{ color: 'var(--text-secondary, #aaa)', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {m.model?.split('/').pop() || 'unknown'}
+                                </span>
+                                <span style={{ fontWeight: 600 }}>{fmt(m.total_tokens)}</span>
+                            </div>
+                        ))}
+                    </div>
+                </Card>
+            )}
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// AGENTS PAGE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function AgentsPage({ byAgent, modelCosts, costPerModel, onSelect }) {
+    const grouped = useMemo(() => {
+        const map = {};
+        byAgent.forEach(a => {
+            const type = a.agent_type || 'chat';
+            if (!map[type]) map[type] = [];
+            map[type].push(a);
+        });
+        return map;
+    }, [byAgent]);
+
+    return (
+        <div style={{ animation: 'fadeIn 0.3s ease' }}>
+            {/* Summary cards per agent type */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '1.25rem' }}>
+                {Object.entries(grouped).map(([type, agents]) => {
+                    const style = getAgentStyle(type);
+                    const totalCalls = agents.reduce((s, a) => s + (a.calls || 0), 0);
+                    const totalTokens = agents.reduce((s, a) => s + (a.total_tokens || 0), 0);
+                    const totalCost = agents.reduce((s, a) => s + (a.estimated_cost || 0), 0);
+                    return (
+                        <div key={type} style={{
+                            background: 'var(--bg-secondary, #1a1a2e)', borderRadius: '14px',
+                            padding: '18px', border: '1px solid var(--border-default, rgba(255,255,255,0.08))',
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '12px' }}>
+                                <span style={{
+                                    padding: '4px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 700,
+                                    background: style.bg, color: style.text,
+                                }}>{style.label}</span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <div>
+                                    <div style={{ fontSize: '24px', fontWeight: 800, color: 'var(--text-primary, #fff)' }}>{fmt(totalCalls)}</div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted, #888)' }}>calls</div>
+                                </div>
+                                <div style={{ textAlign: 'center' }}>
+                                    <div style={{ fontSize: '24px', fontWeight: 800, color: COLORS.green }}>{fmt(totalTokens)}</div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted, #888)' }}>tokens</div>
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontSize: '24px', fontWeight: 800, color: COLORS.amber }}>{fmtCost(totalCost)}</div>
+                                    <div style={{ fontSize: '11px', color: 'var(--text-muted, #888)' }}>cost</div>
+                                </div>
+                            </div>
+                        </div>
+                    );
+                })}
+            </div>
+
+            {/* All agents list */}
+            <Card title="All Agents" icon={Bot}>
+                {byAgent.length === 0 ? <Empty text="No agent data yet" /> : (
+                    <div>
+                        {byAgent.map((a, i) => (
+                            <div key={i} onClick={() => onSelect?.(a)} style={{ cursor: 'pointer' }}>
+                                <AgentRow agent={a} index={i} detailed />
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </Card>
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// USERS PAGE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function UsersPage({ byUser }) {
+    return (
+        <div style={{ animation: 'fadeIn 0.3s ease' }}>
+            <Card title="Usage by User" icon={Users}>
+                {byUser.length === 0 ? <Empty text="No user tracking data yet" /> : (
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: '12px' }}>
+                        {byUser.map((u, i) => (
+                            <div key={i} style={{
+                                padding: '16px', borderRadius: '12px',
+                                background: 'var(--bg-tertiary, rgba(255,255,255,0.03))',
+                                border: '1px solid var(--border-default, rgba(255,255,255,0.06))',
+                                animation: `fadeIn ${0.15 + i * 0.05}s ease`,
+                            }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '12px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <div style={{
+                                            width: '32px', height: '32px', borderRadius: '50%',
+                                            background: `linear-gradient(135deg, ${MODEL_COLORS[i % MODEL_COLORS.length]}, ${MODEL_COLORS[(i + 3) % MODEL_COLORS.length]})`,
+                                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                            fontSize: '14px', fontWeight: 700, color: '#fff',
+                                        }}>
+                                            {(u.user_id || '?')[0].toUpperCase()}
+                                        </div>
+                                        <div>
+                                            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--text-primary, #fff)' }}>{u.user_id || 'Anonymous'}</div>
+                                            <div style={{ fontSize: '11px', color: 'var(--text-muted, #888)' }}>{u.calls} calls</div>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
+                                    <div style={{ padding: '8px', borderRadius: '8px', background: 'var(--bg-secondary, rgba(255,255,255,0.03))' }}>
+                                        <div style={{ fontSize: '16px', fontWeight: 700, color: COLORS.green }}>{fmt(u.total_tokens || 0)}</div>
+                                        <div style={{ fontSize: '10px', color: 'var(--text-muted, #888)' }}>tokens</div>
+                                    </div>
+                                    <div style={{ padding: '8px', borderRadius: '8px', background: 'var(--bg-secondary, rgba(255,255,255,0.03))' }}>
+                                        <div style={{ fontSize: '16px', fontWeight: 700, color: COLORS.pink }}>{fmtDuration(u.avg_duration_ms)}</div>
+                                        <div style={{ fontSize: '10px', color: 'var(--text-muted, #888)' }}>avg latency</div>
+                                    </div>
+                                    <div style={{ padding: '8px', borderRadius: '8px', background: 'var(--bg-secondary, rgba(255,255,255,0.03))' }}>
+                                        <div style={{ fontSize: '16px', fontWeight: 700, color: COLORS.amber }}>{fmtCost(u.estimated_cost || 0)}</div>
+                                        <div style={{ fontSize: '10px', color: 'var(--text-muted, #888)' }}>est. cost</div>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </Card>
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════════════════════════════════════
+// CONVERSATIONS PAGE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function ConversationsPage({ conversations }) {
+    const totalCost = useMemo(() => conversations.reduce((s, c) => s + (c.total_cost || 0), 0), [conversations]);
+    const totalCalls = useMemo(() => conversations.reduce((s, c) => s + (c.calls || 0), 0), [conversations]);
+
+    return (
+        <div style={{ animation: 'fadeIn 0.3s ease' }}>
+            {/* Summary */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '14px', marginBottom: '1.25rem' }}>
+                <div style={{
+                    padding: '18px', borderRadius: '14px',
+                    background: 'var(--bg-secondary, #1a1a2e)',
+                    border: '1px solid var(--border-default, rgba(255,255,255,0.08))',
+                    textAlign: 'center',
+                }}>
+                    <div style={{ fontSize: '28px', fontWeight: 800, color: 'var(--text-primary, #fff)' }}>{conversations.length}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted, #888)', marginTop: '2px' }}>Conversations</div>
+                </div>
+                <div style={{
+                    padding: '18px', borderRadius: '14px',
+                    background: 'var(--bg-secondary, #1a1a2e)',
+                    border: '1px solid var(--border-default, rgba(255,255,255,0.08))',
+                    textAlign: 'center',
+                }}>
+                    <div style={{ fontSize: '28px', fontWeight: 800, color: COLORS.green }}>{fmt(totalCalls)}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted, #888)', marginTop: '2px' }}>Total API Calls</div>
+                </div>
+                <div style={{
+                    padding: '18px', borderRadius: '14px',
+                    background: 'var(--bg-secondary, #1a1a2e)',
+                    border: '1px solid var(--border-default, rgba(255,255,255,0.08))',
+                    textAlign: 'center',
+                }}>
+                    <div style={{ fontSize: '28px', fontWeight: 800, color: COLORS.amber }}>{fmtCost(totalCost)}</div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted, #888)', marginTop: '2px' }}>Total Cost</div>
+                </div>
+            </div>
+
+            <Card title="Conversations" icon={MessageSquare}>
+                {conversations.length === 0 ? <Empty text="No conversation data yet — conversations will appear after you chat with agents" /> : (
+                    <div>
+                        {/* Table header */}
+                        <div style={{
+                            display: 'grid', gridTemplateColumns: '1.5fr 1fr 80px 100px 100px 1.2fr',
+                            gap: '8px', padding: '8px 12px', marginBottom: '4px',
+                            fontSize: '11px', fontWeight: 600, textTransform: 'uppercase',
+                            letterSpacing: '0.05em', color: 'var(--text-muted, #666)',
+                        }}>
+                            <span>Agent</span>
+                            <span>Conversation</span>
+                            <span style={{ textAlign: 'right' }}>Calls</span>
+                            <span style={{ textAlign: 'right' }}>Tokens</span>
+                            <span style={{ textAlign: 'right' }}>Cost</span>
+                            <span>Models</span>
+                        </div>
+                        {conversations.map((c, i) => (
+                            <div key={i} style={{
+                                display: 'grid', gridTemplateColumns: '1.5fr 1fr 80px 100px 100px 1.2fr',
+                                gap: '8px', padding: '10px 12px', borderRadius: '10px',
+                                background: i % 2 === 0 ? 'transparent' : 'var(--bg-tertiary, rgba(255,255,255,0.02))',
+                                alignItems: 'center', animation: `slideIn ${0.1 + i * 0.02}s ease`,
+                            }}>
+                                <div>
+                                    <div style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary, #fff)' }}>
+                                        {c.agent_name || 'Unknown Agent'}
+                                    </div>
+                                    <div style={{ fontSize: '10px', color: 'var(--text-muted, #666)', marginTop: '2px' }}>
+                                        {fmtTime(c.last_call)}
+                                    </div>
+                                </div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-muted, #888)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {c.conversation_id?.slice(0, 12) || '—'}
+                                </div>
+                                <span style={{ fontSize: '13px', fontWeight: 500, color: 'var(--text-secondary, #aaa)', textAlign: 'right' }}>
+                                    {c.calls}
+                                </span>
+                                <span style={{ fontSize: '13px', fontWeight: 500, color: COLORS.green, textAlign: 'right' }}>
+                                    {fmt(c.total_tokens || 0)}
+                                </span>
+                                <span style={{ fontSize: '13px', fontWeight: 600, color: COLORS.amber, textAlign: 'right' }}>
+                                    {fmtCost(c.total_cost || 0)}
+                                </span>
+                                <div style={{ fontSize: '10px', color: 'var(--text-muted, #888)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {(c.models_used || '').split(',').map((m, j) => (
+                                        <span key={j} style={{
+                                            display: 'inline-block', padding: '1px 6px', borderRadius: '4px',
+                                            background: 'var(--bg-tertiary, rgba(255,255,255,0.05))',
+                                            marginRight: '4px', fontSize: '10px',
+                                        }}>{m.trim().split('/').pop()}</span>
+                                    ))}
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </Card>
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// COSTS PAGE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function CostsPage({ byModel, costPerModel, modelCosts, totalCost, costTimeline, range, onNavigate }) {
+    const modelsWithCost = byModel.filter(m => costPerModel[m.model]);
+    const modelsWithoutCost = byModel.filter(m => !costPerModel[m.model]);
+    const maxCost = Math.max(...Object.values(costPerModel), 0.001);
+
+    return (
+        <div style={{ animation: 'fadeIn 0.3s ease' }}>
+            {/* Total Cost Hero */}
+            <div style={{
+                background: 'linear-gradient(135deg, rgba(245, 158, 11, 0.12), rgba(249, 115, 22, 0.08))',
+                borderRadius: '16px', padding: '28px', marginBottom: '1.25rem',
+                border: '1px solid rgba(245, 158, 11, 0.15)',
+            }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div>
+                        <div style={{ fontSize: '12px', fontWeight: 600, color: COLORS.amber, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '6px' }}>
+                            Estimated Total Cost
+                        </div>
+                        <div style={{ fontSize: '40px', fontWeight: 800, color: 'var(--text-primary, #fff)', letterSpacing: '-1px' }}>
+                            {fmtCost(totalCost)}
+                        </div>
+                        <div style={{ fontSize: '13px', color: 'var(--text-muted, #888)', marginTop: '4px' }}>
+                            {modelsWithCost.length} of {byModel.length} models have cost data
+                        </div>
+                    </div>
+                    {onNavigate && (
+                        <button
+                            onClick={() => onNavigate('admin/ai-config')}
+                            style={{
+                                padding: '8px 16px', borderRadius: '10px', fontSize: '12px', fontWeight: 600,
+                                background: 'rgba(245, 158, 11, 0.15)', color: COLORS.amber,
+                                border: '1px solid rgba(245, 158, 11, 0.25)', cursor: 'pointer',
+                                transition: 'all 0.15s',
+                            }}
+                        >
+                            ⚙️ Edit Model Costs
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {/* Cost Timeline */}
+            <Card title="Daily Cost Trend" icon={TrendingUp} style={{ marginBottom: '1.25rem' }}>
+                <CostTimelineChart data={costTimeline} />
+            </Card>
+
+            {/* Cost per model */}
+            <Card title="Cost Breakdown by Model" icon={DollarSign}>
+                {modelsWithCost.length === 0 ? (
+                    <Empty text="No model costs configured — go to AI Config → Model Costs to set pricing" />
+                ) : (
+                    <div>
+                        {modelsWithCost
+                            .sort((a, b) => (costPerModel[b.model] || 0) - (costPerModel[a.model] || 0))
+                            .map((m, i) => {
+                                const cost = costPerModel[m.model] || 0;
+                                const pct = (cost / totalCost) * 100;
+                                const c = modelCosts[m.model];
+                                return (
+                                    <div key={i} style={{ padding: '12px 0', borderBottom: i < modelsWithCost.length - 1 ? '1px solid var(--border-default, rgba(255,255,255,0.05))' : 'none' }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary, #fff)' }}>{m.model}</span>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                                <span style={{ fontSize: '11px', color: 'var(--text-muted, #888)' }}>
+                                                    {fmt(m.prompt_tokens || 0)} in · {fmt(m.completion_tokens || 0)} out
+                                                </span>
+                                                <span style={{ fontSize: '15px', fontWeight: 700, color: COLORS.amber }}>{fmtCost(cost)}</span>
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                            <div style={{ flex: 1, height: '6px', borderRadius: '3px', background: 'var(--bg-tertiary, #222)', overflow: 'hidden' }}>
+                                                <div style={{
+                                                    height: '100%', borderRadius: '3px',
+                                                    width: `${(cost / maxCost) * 100}%`,
+                                                    background: `linear-gradient(90deg, ${COLORS.amber}, ${COLORS.orange})`,
+                                                    transition: 'width 0.4s ease',
+                                                }} />
+                                            </div>
+                                            <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted, #888)', minWidth: '40px', textAlign: 'right' }}>
+                                                {pct.toFixed(1)}%
+                                            </span>
+                                        </div>
+                                        {c && (
+                                            <div style={{ fontSize: '10px', color: 'var(--text-muted, #666)', marginTop: '4px' }}>
+                                                Rate: ${c.input}/M input · ${c.output}/M output
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                    </div>
+                )}
+            </Card>
+
+            {modelsWithoutCost.length > 0 && (
+                <Card title="Models Without Cost Data" icon={Minus} style={{ marginTop: '14px' }}>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                        {modelsWithoutCost.map((m, i) => (
+                            <span key={i} style={{
+                                padding: '4px 10px', borderRadius: '6px', fontSize: '11px',
+                                background: 'var(--bg-tertiary, rgba(255,255,255,0.04))',
+                                color: 'var(--text-muted, #888)',
+                            }}>{m.model}</span>
+                        ))}
+                    </div>
+                    <div style={{ fontSize: '11px', color: 'var(--text-muted, #666)', marginTop: '8px' }}>
+                        Configure costs in AI Config → Model Costs to track spending for these models
+                    </div>
+                </Card>
+            )}
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// ACTIVITY LOG PAGE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function ActivityPage({ recent, modelCosts, filterSources, filterModels, activityFilters, setActivityFilters }) {
+    const filtered = useMemo(() => {
+        return recent.filter(r => {
+            if (activityFilters.source && r.source !== activityFilters.source) return false;
+            if (activityFilters.model && r.model !== activityFilters.model) return false;
+            if (activityFilters.search) {
+                const term = activityFilters.search.toLowerCase();
+                if (!(r.agent_name || '').toLowerCase().includes(term) &&
+                    !(r.user_id || '').toLowerCase().includes(term) &&
+                    !(r.model || '').toLowerCase().includes(term)) return false;
+            }
+            return true;
+        });
+    }, [recent, activityFilters]);
+
+    const pillStyle = (active) => ({
+        padding: '5px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: active ? 700 : 500,
+        border: 'none', cursor: 'pointer', transition: 'all 0.15s',
+        background: active ? COLORS.primary + '25' : 'var(--bg-tertiary, rgba(255,255,255,0.04))',
+        color: active ? COLORS.primary : 'var(--text-muted, #888)',
+    });
+
+    return (
+        <div style={{ animation: 'fadeIn 0.3s ease' }}>
+            {/* Filters */}
+            <div style={{
+                display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px',
+                padding: '14px 16px', borderRadius: '12px',
+                background: 'var(--bg-secondary, #1a1a2e)',
+                border: '1px solid var(--border-default, rgba(255,255,255,0.08))',
+                alignItems: 'center',
+            }}>
+                {/* Source pills */}
+                <button onClick={() => setActivityFilters(f => ({ ...f, source: '' }))} style={pillStyle(!activityFilters.source)}>All</button>
+                {filterSources.map(s => (
+                    <button key={s} onClick={() => setActivityFilters(f => ({ ...f, source: f.source === s ? '' : s }))} style={pillStyle(activityFilters.source === s)}>
+                        {s}
+                    </button>
+                ))}
+
+                <div style={{ width: '1px', height: '20px', background: 'var(--border-default, rgba(255,255,255,0.1))', margin: '0 4px' }} />
+
+                {/* Model dropdown */}
+                <select
+                    value={activityFilters.model}
+                    onChange={e => setActivityFilters(f => ({ ...f, model: e.target.value }))}
+                    style={{
+                        padding: '5px 10px', borderRadius: '8px', fontSize: '11px',
+                        background: 'var(--bg-tertiary, #222)', color: 'var(--text-primary, #fff)',
+                        border: '1px solid var(--border-default, rgba(255,255,255,0.1))',
+                        outline: 'none', cursor: 'pointer',
+                    }}
+                >
+                    <option value="">All Models</option>
+                    {filterModels.map(m => <option key={m} value={m}>{m}</option>)}
+                </select>
+
+                {/* Search */}
+                <input
+                    type="text"
+                    placeholder="Search agent, user, model..."
+                    value={activityFilters.search}
+                    onChange={e => setActivityFilters(f => ({ ...f, search: e.target.value }))}
+                    style={{
+                        padding: '5px 12px', borderRadius: '8px', fontSize: '11px',
+                        background: 'var(--bg-tertiary, #222)', color: 'var(--text-primary, #fff)',
+                        border: '1px solid var(--border-default, rgba(255,255,255,0.1))',
+                        outline: 'none', minWidth: '180px',
+                    }}
+                />
+
+                <span style={{ fontSize: '10px', color: 'var(--text-muted, #666)', marginLeft: 'auto' }}>
+                    {filtered.length} of {recent.length} calls
+                </span>
+            </div>
+
+            <Card title="Recent API Calls" icon={Clock}>
+                {filtered.length === 0 ? (
+                    <Empty text="No activity matches your filters" />
+                ) : (
+                    <div style={{ maxHeight: '600px', overflow: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
+                            <thead>
+                                <tr style={{ borderBottom: '2px solid var(--border-default, rgba(255,255,255,0.1))' }}>
+                                    {['Time', 'Source', 'Agent', 'Type', 'Model', 'Input', 'Output', 'Total', 'Latency', 'Cost'].map(h => (
+                                        <th key={h} style={{
+                                            padding: '10px 8px', textAlign: 'left',
+                                            color: 'var(--text-muted, #888)', fontWeight: 600,
+                                            fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em',
+                                            position: 'sticky', top: 0,
+                                            background: 'var(--bg-secondary, #1a1a2e)',
+                                        }}>{h}</th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {filtered.map((r, i) => {
+                                    const agStyle = getAgentStyle(r.agent_type);
+                                    const c = modelCosts[r.model];
+                                    const cost = c ? ((r.prompt_tokens || 0) / 1e6) * (c.input || 0) + ((r.completion_tokens || 0) / 1e6) * (c.output || 0) : null;
+                                    return (
+                                        <tr key={i} style={{ borderBottom: '1px solid var(--border-default, rgba(255,255,255,0.04))' }}>
+                                            <td style={{ padding: '8px', color: 'var(--text-muted, #888)', whiteSpace: 'nowrap', fontSize: '11px' }}>
+                                                {fmtTime(r.timestamp)}
+                                            </td>
+                                            <td style={{ padding: '8px' }}>
+                                                <span style={{
+                                                    padding: '2px 7px', borderRadius: '4px', fontSize: '10px', fontWeight: 600,
+                                                    background: 'var(--bg-tertiary, rgba(255,255,255,0.04))', color: 'var(--text-muted, #aaa)',
+                                                }}>{r.source || '—'}</span>
+                                            </td>
+                                            <td style={{ padding: '8px', color: 'var(--text-primary, #fff)', fontWeight: 500, maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '11px' }}>
+                                                {r.agent_name || '—'}
+                                            </td>
+                                            <td style={{ padding: '8px' }}>
+                                                <span style={{
+                                                    padding: '2px 7px', borderRadius: '4px',
+                                                    fontSize: '10px', fontWeight: 600,
+                                                    background: agStyle.bg, color: agStyle.text,
+                                                }}>{r.agent_type || 'chat'}</span>
+                                            </td>
+                                            <td style={{ padding: '8px', color: 'var(--text-secondary, #aaa)', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '11px' }}>
+                                                {r.model || '—'}
+                                            </td>
+                                            <td style={{ padding: '8px', color: COLORS.blue, fontWeight: 500, fontSize: '11px' }}>{fmt(r.prompt_tokens)}</td>
+                                            <td style={{ padding: '8px', color: COLORS.amber, fontWeight: 500, fontSize: '11px' }}>{fmt(r.completion_tokens)}</td>
+                                            <td style={{ padding: '8px', color: COLORS.green, fontWeight: 600, fontSize: '11px' }}>{fmt(r.total_tokens)}</td>
+                                            <td style={{ padding: '8px', color: 'var(--text-muted, #888)', fontSize: '11px' }}>{fmtDuration(r.duration_ms)}</td>
+                                            <td style={{ padding: '8px', color: COLORS.amber, fontWeight: 500, fontSize: '11px' }}>{cost != null ? fmtCost(cost) : '—'}</td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </Card>
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// FEEDBACK PAGE
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function FeedbackPage({ feedback, summary, filters, setFilters }) {
+    const positivePct = summary?.total > 0 ? Math.round((summary.thumbs_up / summary.total) * 100) : 0;
+    const [expandedId, setExpandedId] = useState(null);
+
+    const parseSnapshot = (raw) => {
+        if (!raw) return null;
+        try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { return null; }
+    };
+
+    const filtered = useMemo(() => {
+        let list = feedback || [];
+        if (filters?.rating) list = list.filter(f => f.rating === filters.rating);
+        if (filters?.source) list = list.filter(f => f.source === filters.source);
+        return list;
+    }, [feedback, filters]);
+
+    const pillStyle = (active) => ({
+        padding: '5px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: active ? 700 : 500,
+        border: '1px solid', cursor: 'pointer', transition: 'all 0.15s',
+        background: active ? COLORS.primary + '18' : 'transparent',
+        color: active ? COLORS.primary : 'var(--text-muted, #888)',
+        borderColor: active ? COLORS.primary + '40' : 'var(--border-default, rgba(255,255,255,0.08))',
+    });
+
+    return (
+        <div style={{ animation: 'fadeIn 0.3s ease' }}>
+            {/* Summary Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '14px', marginBottom: '1.5rem' }}>
+                <MetricCard icon={MessageSquare} label="Total Feedback" value={summary?.total || 0} color={COLORS.primary} />
+                <MetricCard icon={ThumbsUp} label="Thumbs Up" value={summary?.thumbs_up || 0} color={COLORS.green} />
+                <MetricCard icon={ThumbsDown} label="Thumbs Down" value={summary?.thumbs_down || 0} color={COLORS.rose} />
+                <MetricCard icon={TrendingUp} label="Positive %" value={`${positivePct}%`} color={COLORS.amber} />
+            </div>
+
+            {/* Filters */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                <button onClick={() => setFilters(f => ({ ...f, rating: '' }))} style={pillStyle(!filters?.rating)}>All</button>
+                <button onClick={() => setFilters(f => ({ ...f, rating: 'up' }))} style={pillStyle(filters?.rating === 'up')}>👍 Up</button>
+                <button onClick={() => setFilters(f => ({ ...f, rating: 'down' }))} style={pillStyle(filters?.rating === 'down')}>👎 Down</button>
+                <span style={{ width: '1px', background: 'var(--border-default, rgba(255,255,255,0.08))', margin: '0 4px' }} />
+                <button onClick={() => setFilters(f => ({ ...f, source: '' }))} style={pillStyle(!filters?.source)}>All Sources</button>
+                <button onClick={() => setFilters(f => ({ ...f, source: 'agent' }))} style={pillStyle(filters?.source === 'agent')}>🤖 Agent</button>
+                <button onClick={() => setFilters(f => ({ ...f, source: 'direct' }))} style={pillStyle(filters?.source === 'direct')}>💬 Direct</button>
+            </div>
+
+            <Card title={`Feedback Entries (${filtered.length})`} icon={MessageSquare}>
+                {filtered.length === 0 ? <Empty text="No feedback yet — users can rate AI responses with thumbs up/down" /> : (
+                    <div>
+                        {/* Table header */}
+                        <div style={{
+                            display: 'grid', gridTemplateColumns: '100px 50px 1fr 100px 100px 70px 36px',
+                            gap: '8px', padding: '8px 12px', marginBottom: '4px',
+                            fontSize: '11px', fontWeight: 600, textTransform: 'uppercase',
+                            letterSpacing: '0.05em', color: 'var(--text-muted, #666)',
+                        }}>
+                            <span>Time</span>
+                            <span>Rating</span>
+                            <span>Comment</span>
+                            <span>User</span>
+                            <span>Organization</span>
+                            <span>Source</span>
+                            <span>Chat</span>
+                        </div>
+                        {filtered.map((f, i) => {
+                            const snapshot = parseSnapshot(f.conversation_snapshot);
+                            const hasSnapshot = snapshot && snapshot.length > 0;
+                            const isExpanded = expandedId === f.id;
+                            return (
+                                <div key={f.id || i}>
+                                    <div
+                                        onClick={() => hasSnapshot && setExpandedId(isExpanded ? null : f.id)}
+                                        style={{
+                                            display: 'grid', gridTemplateColumns: '100px 50px 1fr 100px 100px 70px 36px',
+                                            gap: '8px', padding: '10px 12px', borderRadius: '10px',
+                                            background: i % 2 === 0 ? 'transparent' : 'var(--bg-tertiary, rgba(255,255,255,0.02))',
+                                            alignItems: 'center', animation: `slideIn ${0.1 + i * 0.02}s ease`,
+                                            cursor: hasSnapshot ? 'pointer' : 'default',
+                                        }}
+                                    >
+                                        <span style={{ fontSize: '12px', color: 'var(--text-muted, #888)' }}>
+                                            {fmtTime(f.created_at)}
+                                        </span>
+                                        <span style={{ fontSize: '18px' }}>
+                                            {f.rating === 'up' ? '👍' : '👎'}
+                                        </span>
+                                        <span style={{
+                                            fontSize: '12px', color: f.comment ? 'var(--text-primary, #fff)' : 'var(--text-muted, #666)',
+                                            fontStyle: f.comment ? 'normal' : 'italic',
+                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                        }}>
+                                            {f.comment || 'No comment'}
+                                        </span>
+                                        <span style={{
+                                            fontSize: '12px', color: 'var(--text-secondary, #aaa)',
+                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                        }}>
+                                            {f.user_id || 'Anonymous'}
+                                        </span>
+                                        <span style={{
+                                            fontSize: '11px', color: 'var(--text-secondary, #aaa)',
+                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                        }}>
+                                            {f.organization_id || '—'}
+                                        </span>
+                                        <span style={{
+                                            fontSize: '11px', fontWeight: 600,
+                                            padding: '2px 8px', borderRadius: '8px',
+                                            background: f.source === 'agent' ? '#6366f115' : '#06b6d415',
+                                            color: f.source === 'agent' ? '#818cf8' : '#06b6d4',
+                                            textAlign: 'center',
+                                        }}>
+                                            {f.source === 'agent' ? '🤖 Agent' : '💬 Direct'}
+                                        </span>
+                                        <span style={{ fontSize: '13px', textAlign: 'center', opacity: hasSnapshot ? 1 : 0.25 }}
+                                            title={hasSnapshot ? 'Click to view conversation' : 'No conversation attached'}>
+                                            {hasSnapshot ? (isExpanded ? '▼' : '▶') : '—'}
+                                        </span>
+                                    </div>
+                                    {isExpanded && hasSnapshot && (
+                                        <div style={{
+                                            margin: '4px 12px 12px', padding: '16px',
+                                            borderRadius: '12px', border: '1px solid var(--border-default, rgba(255,255,255,0.08))',
+                                            background: 'var(--bg-secondary, #1a1a2e)',
+                                            maxHeight: '400px', overflowY: 'auto',
+                                        }}>
+                                            <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted, #888)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                                Shared Conversation ({snapshot.length} messages)
+                                            </div>
+                                            {snapshot.map((m, mi) => (
+                                                <div key={mi} style={{
+                                                    display: 'flex', flexDirection: 'column',
+                                                    alignItems: m.role === 'user' ? 'flex-end' : 'flex-start',
+                                                    marginBottom: '8px',
+                                                }}>
+                                                    <div style={{
+                                                        fontSize: '10px', fontWeight: 600, marginBottom: '2px',
+                                                        color: m.role === 'user' ? COLORS.primary : COLORS.green,
+                                                        textTransform: 'uppercase', letterSpacing: '0.04em',
+                                                    }}>
+                                                        {m.role === 'user' ? '👤 User' : '🤖 Assistant'}
+                                                        {m.timestamp && <span style={{ fontWeight: 400, marginLeft: '6px', color: 'var(--text-muted, #666)' }}>
+                                                            {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                                        </span>}
+                                                    </div>
+                                                    <div style={{
+                                                        padding: '8px 12px', borderRadius: '10px',
+                                                        maxWidth: '85%', fontSize: '12px', lineHeight: '1.5',
+                                                        color: 'var(--text-primary, #fff)',
+                                                        background: m.role === 'user'
+                                                            ? COLORS.primary + '15'
+                                                            : 'var(--bg-tertiary, rgba(255,255,255,0.04))',
+                                                        border: '1px solid ' + (m.role === 'user'
+                                                            ? COLORS.primary + '25'
+                                                            : 'var(--border-default, rgba(255,255,255,0.06))'),
+                                                        whiteSpace: m.role === 'user' ? 'pre-wrap' : 'normal',
+                                                        wordBreak: 'break-word',
+                                                    }}>
+                                                        {m.role === 'assistant'
+                                                            ? <MarkdownRenderer content={m.content?.length > 3000 ? m.content.slice(0, 3000) + '\n\n*...truncated...*' : m.content || ''} />
+                                                            : (m.content?.length > 1500 ? m.content.slice(0, 1500) + '...' : m.content)
+                                                        }
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            );
+                        })}
+                    </div>
+                )}
+            </Card>
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// SHARED SUB-COMPONENTS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function MetricCard({ icon: Icon, label, value, color, subtitle }) {
+    return (
+        <div style={{
+            background: 'var(--bg-secondary, #1a1a2e)', borderRadius: '14px',
+            padding: '18px', border: '1px solid var(--border-default, rgba(255,255,255,0.08))',
+            display: 'flex', flexDirection: 'column', gap: '8px',
+            transition: 'border-color 0.2s, transform 0.2s',
+        }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div style={{
+                    width: '30px', height: '30px', borderRadius: '8px',
+                    background: color + '15', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                }}>
+                    <Icon style={{ width: 16, height: 16, color }} />
+                </div>
+                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted, #888)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    {label}
+                </span>
+            </div>
+            <span style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--text-primary, #fff)', lineHeight: 1 }}>
+                {value}
+            </span>
+            {subtitle && <span style={{ fontSize: '11px', color: 'var(--text-muted, #888)' }}>{subtitle}</span>}
+        </div>
+    );
+}
+
+function Card({ title, icon: Icon, children, style: extraStyle }) {
+    return (
+        <div style={{
+            background: 'var(--bg-secondary, #1a1a2e)', borderRadius: '14px',
+            padding: '18px 20px', border: '1px solid var(--border-default, rgba(255,255,255,0.08))',
+            ...extraStyle,
+        }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
+                <Icon style={{ width: 16, height: 16, color: COLORS.primary }} />
+                <span style={{ fontSize: '14px', fontWeight: 700, color: 'var(--text-primary, #fff)' }}>{title}</span>
+            </div>
+            {children}
+        </div>
+    );
+}
+
+function Empty({ text }) {
+    return (
+        <div style={{
+            padding: '2.5rem 1rem', textAlign: 'center',
+            color: 'var(--text-muted, #666)', fontSize: '13px',
+            borderRadius: '10px', background: 'var(--bg-tertiary, rgba(255,255,255,0.02))',
+        }}>
+            {text}
+        </div>
+    );
+}
+
+function ModelRow({ model: m, index, maxTokens, cost }) {
+    return (
+        <div style={{
+            display: 'flex', alignItems: 'center', gap: '10px',
+            padding: '10px 0', borderBottom: '1px solid var(--border-default, rgba(255,255,255,0.05))',
+        }}>
+            <div style={{
+                width: '6px', height: '6px', borderRadius: '50%',
+                background: MODEL_COLORS[index % MODEL_COLORS.length], flexShrink: 0,
+            }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary, #fff)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {m.model || 'unknown'}
+                </div>
+                <div style={{ height: '4px', borderRadius: '2px', background: 'var(--bg-tertiary, #222)', overflow: 'hidden', marginTop: '4px' }}>
+                    <div style={{
+                        height: '100%', borderRadius: '2px',
+                        width: `${((m.total_tokens || 0) / maxTokens) * 100}%`,
+                        background: MODEL_COLORS[index % MODEL_COLORS.length],
+                        transition: 'width 0.3s ease',
+                    }} />
+                </div>
+            </div>
+            <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                <div style={{ fontSize: '12px', fontWeight: 600, color: COLORS.green }}>{fmt(m.total_tokens)}</div>
+                <div style={{ fontSize: '10px', color: 'var(--text-muted, #888)' }}>
+                    {m.calls} calls{cost ? ` · ${fmtCost(cost)}` : ''}
+                </div>
+            </div>
+        </div>
+    );
+}
+
+function AgentRow({ agent: a, index, detailed }) {
+    const style = getAgentStyle(a.agent_type);
+    return (
+        <div style={{
+            display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+            padding: '10px 0', borderBottom: '1px solid var(--border-default, rgba(255,255,255,0.05))',
+        }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', minWidth: 0 }}>
+                <span style={{
+                    padding: '3px 8px', borderRadius: '6px', fontSize: '10px', fontWeight: 700,
+                    background: style.bg, color: style.text, flexShrink: 0,
+                }}>{a.agent_type || 'chat'}</span>
+                <span style={{
+                    fontSize: '12px', fontWeight: 600, color: 'var(--text-primary, #fff)',
+                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: detailed ? '200px' : '130px',
+                }}>{a.agent_name || a.agent_id || 'Unknown'}</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', fontSize: '12px', flexShrink: 0 }}>
+                {detailed && (
+                    <span style={{ color: 'var(--text-muted, #888)' }}>{fmtDuration(a.avg_duration_ms)} avg</span>
+                )}
+                <span style={{ color: COLORS.green, fontWeight: 600 }}>{fmt(a.total_tokens)} tok</span>
+                <span style={{ color: 'var(--text-muted, #888)' }}>{a.calls} calls</span>
+                <span style={{ color: COLORS.amber, fontWeight: 600, minWidth: '50px', textAlign: 'right' }}>{fmtCost(a.estimated_cost || 0)}</span>
+            </div>
+        </div>
+    );
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// STYLES
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// DETAIL DRAWER
+// ═══════════════════════════════════════════════════════════════════════════════
+
+function DetailDrawer({ detail, modelCosts, costPerModel, recent, onClose }) {
+    const { type, data } = detail;
+
+    // Get recent calls related to this item
+    const relatedCalls = useMemo(() => {
+        if (type === 'model') {
+            return recent.filter(r => r.model === data.model).slice(0, 20);
+        }
+        if (type === 'agent') {
+            return recent.filter(r => r.agent_name === data.agent_name).slice(0, 20);
+        }
+        return [];
+    }, [type, data, recent]);
+
+    const overlayStyle = {
+        position: 'fixed', inset: 0, zIndex: 1000,
+        background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)',
+        animation: 'fadeIn 0.2s ease',
+    };
+
+    const drawerStyle = {
+        position: 'fixed', top: 0, right: 0, bottom: 0, width: '480px', maxWidth: '90vw',
+        zIndex: 1001, background: 'var(--bg-primary, #0f0f1a)',
+        borderLeft: '1px solid var(--border-default, rgba(255,255,255,0.08))',
+        display: 'flex', flexDirection: 'column',
+        animation: 'slideInRight 0.25s cubic-bezier(0.4, 0, 0.2, 1)',
+    };
+
+    const headerStyle = {
+        padding: '20px 24px', borderBottom: '1px solid var(--border-default, rgba(255,255,255,0.08))',
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    };
+
+    const statGridStyle = {
+        display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '12px',
+        padding: '16px 24px',
+    };
+
+    const statBoxStyle = {
+        padding: '14px', borderRadius: '12px',
+        background: 'var(--bg-secondary, #1a1a2e)',
+        border: '1px solid var(--border-default, rgba(255,255,255,0.06))',
+        textAlign: 'center',
+    };
+
+    return (
+        <>
+            <div style={overlayStyle} onClick={onClose} />
+            <div style={drawerStyle}>
+                {/* Header */}
+                <div style={headerStyle}>
+                    <div>
+                        <div style={{ fontSize: '10px', fontWeight: 600, color: COLORS.primary, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '4px' }}>
+                            {type === 'model' ? 'Model Details' : 'Agent Details'}
+                        </div>
+                        <div style={{ fontSize: '18px', fontWeight: 700, color: 'var(--text-primary, #fff)' }}>
+                            {type === 'model' ? data.model : data.agent_name || 'Unknown'}
+                        </div>
+                    </div>
+                    <button
+                        onClick={onClose}
+                        style={{
+                            width: '32px', height: '32px', borderRadius: '8px',
+                            border: '1px solid var(--border-default, rgba(255,255,255,0.1))',
+                            background: 'var(--bg-tertiary, #222)', color: 'var(--text-muted, #888)',
+                            cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            fontSize: '16px',
+                        }}
+                    >×</button>
+                </div>
+
+                {/* Stats */}
+                <div style={statGridStyle}>
+                    <div style={statBoxStyle}>
+                        <div style={{ fontSize: '22px', fontWeight: 800, color: 'var(--text-primary, #fff)' }}>
+                            {fmt(data.calls || 0)}
+                        </div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted, #888)', marginTop: '2px' }}>Calls</div>
+                    </div>
+                    <div style={statBoxStyle}>
+                        <div style={{ fontSize: '22px', fontWeight: 800, color: COLORS.green }}>
+                            {fmt(data.total_tokens || 0)}
+                        </div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted, #888)', marginTop: '2px' }}>Total Tokens</div>
+                    </div>
+                    <div style={statBoxStyle}>
+                        <div style={{ fontSize: '22px', fontWeight: 800, color: COLORS.amber }}>
+                            {type === 'model' && costPerModel[data.model]
+                                ? fmtCost(costPerModel[data.model])
+                                : fmtCost(data.estimated_cost || 0)}
+                        </div>
+                        <div style={{ fontSize: '10px', color: 'var(--text-muted, #888)', marginTop: '2px' }}>Est. Cost</div>
+                    </div>
+                </div>
+
+                {/* Token breakdown */}
+                <div style={{ padding: '0 24px 16px' }}>
+                    <div style={{
+                        padding: '16px', borderRadius: '12px',
+                        background: 'var(--bg-secondary, #1a1a2e)',
+                        border: '1px solid var(--border-default, rgba(255,255,255,0.06))',
+                    }}>
+                        <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted, #888)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Breakdown</div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                            <span style={{ fontSize: '12px', color: 'var(--text-secondary, #aaa)' }}>Input tokens</span>
+                            <span style={{ fontSize: '13px', fontWeight: 600, color: COLORS.blue }}>{fmt(data.prompt_tokens || 0)}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                            <span style={{ fontSize: '12px', color: 'var(--text-secondary, #aaa)' }}>Output tokens</span>
+                            <span style={{ fontSize: '13px', fontWeight: 600, color: COLORS.amber }}>{fmt(data.completion_tokens || 0)}</span>
+                        </div>
+                        {type === 'model' && modelCosts[data.model] && (
+                            <>
+                                <div style={{ borderTop: '1px solid var(--border-default, rgba(255,255,255,0.06))', margin: '10px 0' }} />
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                    <span style={{ fontSize: '12px', color: 'var(--text-secondary, #aaa)' }}>Input rate</span>
+                                    <span style={{ fontSize: '12px', color: 'var(--text-muted, #888)' }}>${modelCosts[data.model].input}/1M tokens</span>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                    <span style={{ fontSize: '12px', color: 'var(--text-secondary, #aaa)' }}>Output rate</span>
+                                    <span style={{ fontSize: '12px', color: 'var(--text-muted, #888)' }}>${modelCosts[data.model].output}/1M tokens</span>
+                                </div>
+                            </>
+                        )}
+                        {type === 'agent' && data.agent_type && (
+                            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                                <span style={{ fontSize: '12px', color: 'var(--text-secondary, #aaa)' }}>Agent type</span>
+                                <span style={{
+                                    padding: '2px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 600,
+                                    background: getAgentStyle(data.agent_type).bg, color: getAgentStyle(data.agent_type).text,
+                                }}>{data.agent_type}</span>
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Related calls */}
+                <div style={{ flex: 1, overflow: 'auto', padding: '0 24px 24px' }}>
+                    <div style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted, #888)', marginBottom: '10px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        Recent Calls ({relatedCalls.length})
+                    </div>
+                    {relatedCalls.length === 0 ? (
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted, #666)', textAlign: 'center', padding: '20px' }}>No recent calls found</div>
+                    ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                            {relatedCalls.map((r, i) => {
+                                const c = modelCosts[r.model];
+                                const cost = c ? ((r.prompt_tokens || 0) / 1e6) * (c.input || 0) + ((r.completion_tokens || 0) / 1e6) * (c.output || 0) : null;
+                                return (
+                                    <div key={i} style={{
+                                        padding: '10px 12px', borderRadius: '8px',
+                                        background: 'var(--bg-secondary, #1a1a2e)',
+                                        border: '1px solid var(--border-default, rgba(255,255,255,0.06))',
+                                        fontSize: '11px',
+                                    }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                                            <span style={{ color: 'var(--text-muted, #888)' }}>{fmtTime(r.timestamp)}</span>
+                                            <span style={{ color: COLORS.amber, fontWeight: 600 }}>{cost != null ? fmtCost(cost) : '—'}</span>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '12px', color: 'var(--text-secondary, #aaa)' }}>
+                                            {type !== 'model' && <span>{r.model || '—'}</span>}
+                                            {type !== 'agent' && <span>{r.agent_name || '—'}</span>}
+                                            <span style={{ color: COLORS.blue }}>{fmt(r.prompt_tokens)} in</span>
+                                            <span style={{ color: COLORS.amber }}>{fmt(r.completion_tokens)} out</span>
+                                            <span style={{ color: 'var(--text-muted, #666)' }}>{fmtDuration(r.duration_ms)}</span>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            </div>
+
+            <style>{`
+                @keyframes slideInRight {
+                    from { transform: translateX(100%); }
+                    to { transform: translateX(0); }
+                }
+            `}</style>
+        </>
+    );
+}
+
+const styles = {
+    container: {
+        display: 'flex', height: '100%', fontFamily: 'var(--font-family, Inter, sans-serif)',
+        background: 'var(--bg-primary, #0f0f1a)',
+    },
+    sidebar: {
+        width: '220px', flexShrink: 0,
+        background: 'var(--bg-secondary, #1a1a2e)',
+        borderRight: '1px solid var(--border-default, rgba(255,255,255,0.08))',
+        display: 'flex', flexDirection: 'column',
+        padding: '16px 0',
+    },
+    sidebarHeader: {
+        display: 'flex', alignItems: 'center', gap: '10px',
+        padding: '0 18px', marginBottom: '20px',
+    },
+    sidebarTitle: {
+        fontSize: '16px', fontWeight: 800,
+        color: 'var(--text-primary, #fff)',
+        letterSpacing: '-0.3px',
+    },
+    nav: {
+        display: 'flex', flexDirection: 'column', gap: '2px',
+        padding: '0 8px', flex: 1,
+    },
+    navItem: {
+        display: 'flex', alignItems: 'center', gap: '10px',
+        padding: '9px 12px', borderRadius: '10px',
+        background: 'transparent', border: 'none',
+        cursor: 'pointer', transition: 'all 0.15s',
+        width: '100%',
+    },
+    navItemActive: {
+        background: 'var(--accent-primary, #6366f1)' + '12',
+    },
+    sidebarStats: {
+        padding: '12px 18px', margin: '0 8px',
+        borderTop: '1px solid var(--border-default, rgba(255,255,255,0.06))',
+        display: 'flex', flexDirection: 'column', gap: '8px',
+    },
+    sidebarStatItem: {
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+    },
+    main: {
+        flex: 1, display: 'flex', flexDirection: 'column',
+        overflow: 'hidden',
+    },
+    topBar: {
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+        padding: '16px 24px',
+        borderBottom: '1px solid var(--border-default, rgba(255,255,255,0.06))',
+        flexShrink: 0,
+    },
+    pageTitle: {
+        fontSize: '18px', fontWeight: 700,
+        color: 'var(--text-primary, #fff)', margin: 0,
+    },
+    pageDesc: {
+        fontSize: '12px', color: 'var(--text-muted, #888)',
+        margin: '2px 0 0', fontWeight: 400,
+    },
+    rangeGroup: {
+        display: 'flex', borderRadius: '10px', overflow: 'hidden',
+        border: '1px solid var(--border-default, rgba(255,255,255,0.1))',
+    },
+    rangeBtn: {
+        padding: '7px 14px', fontSize: '12px', fontWeight: 500,
+        border: 'none', cursor: 'pointer', transition: 'all 0.15s',
+        background: 'var(--bg-secondary, #1a1a2e)',
+        color: 'var(--text-muted, #888)',
+    },
+    rangeBtnActive: {
+        background: COLORS.primary, color: '#fff', fontWeight: 700,
+    },
+    refreshBtn: {
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        width: '34px', height: '34px', borderRadius: '10px',
+        border: '1px solid var(--border-default, rgba(255,255,255,0.1))',
+        background: 'var(--bg-secondary, #1a1a2e)', cursor: 'pointer',
+        color: 'var(--text-muted, #888)', transition: 'all 0.15s',
+    },
+    content: {
+        flex: 1, overflow: 'auto', padding: '20px 24px',
+    },
+};
+
+export default MonitoringPanel;

@@ -1,0 +1,704 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import { Users, UserPlus, Shield, Trash2, Edit2, Check, X, Plus, ChevronDown, ChevronRight, Mail, Clock } from 'lucide-react';
+import { API_BASE, authFetch } from '../../utils/helpers';
+
+const ORG_ROLES = [
+    {
+        id: 'org_admin', name: 'Organisation Admin',
+        description: 'Full organisation control — manage users, groups, permissions, Privacy Shield settings, and all agent capabilities.',
+        color: '#8b5cf6',
+        permissions: [
+            { label: 'Manage Users', desc: 'Add, remove, and assign roles to organisation members' },
+            { label: 'Edit Organisation Settings', desc: 'Change branding, legal details, and configuration' },
+            { label: 'Privacy Shield', desc: 'Configure data redaction and compliance rules' },
+            { label: 'All Agent Permissions', desc: 'Create, edit, and publish all agents' },
+        ],
+    },
+    {
+        id: 'agent_admin', name: 'Agent Admin',
+        description: 'Create and manage all agents — both published and in-progress drafts.',
+        color: '#f59e0b',
+        permissions: [
+            { label: 'Create Agents', desc: 'Build new agents from scratch or templates' },
+            { label: 'Edit Published Agents', desc: 'Modify agents that are live and available to users' },
+            { label: 'Edit Unpublished Agents', desc: 'Work on draft agents before publishing' },
+        ],
+    },
+    {
+        id: 'agent_editor', name: 'Agent Editor',
+        description: 'Create agents and edit published ones, but cannot modify unpublished drafts from others.',
+        color: '#10b981',
+        permissions: [
+            { label: 'Create Agents', desc: 'Build new agents from scratch or templates' },
+            { label: 'Edit Published Agents', desc: 'Modify agents that are live and available to users' },
+        ],
+    },
+];
+
+// Skeleton loader
+const TableSkeleton = () => (
+    <div className="animate-pulse">
+        <div className="px-5 py-4 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)] flex justify-between">
+            <div className="space-y-1.5">
+                <div className="h-5 w-40 bg-[var(--bg-tertiary)] rounded" />
+                <div className="h-3 w-64 bg-[var(--bg-tertiary)] rounded" />
+            </div>
+        </div>
+        {[1, 2, 3].map(i => (
+            <div key={i} className="px-5 py-3 flex items-center gap-4 border-b border-[var(--border-subtle)]">
+                <div className="w-9 h-9 rounded-full bg-[var(--bg-tertiary)]" />
+                <div className="flex-1 space-y-1.5">
+                    <div className="h-4 w-32 bg-[var(--bg-tertiary)] rounded" />
+                    <div className="h-3 w-48 bg-[var(--bg-tertiary)] rounded" />
+                </div>
+            </div>
+        ))}
+    </div>
+);
+
+const OrgUsersPanel = ({ user }) => {
+    const [users, setUsers] = useState([]);
+    const [groups, setGroups] = useState([]);
+    const [roles, setRoles] = useState([]);
+    const [organizations, setOrganizations] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [activeSection, setActiveSection] = useState('users');
+
+    // Group creation form
+    const [showCreateGroup, setShowCreateGroup] = useState(false);
+    const [newGroupName, setNewGroupName] = useState('');
+    const [newGroupDesc, setNewGroupDesc] = useState('');
+    const [newGroupOrg, setNewGroupOrg] = useState('');
+    const [creatingGroup, setCreatingGroup] = useState(false);
+
+    // Editing
+    const [editingGroup, setEditingGroup] = useState(null);
+    const [editGroupDesc, setEditGroupDesc] = useState('');
+
+    // User role editing
+    const [editingUserRole, setEditingUserRole] = useState(null);
+
+    // Expanded role details
+    const [expandedRole, setExpandedRole] = useState(null);
+
+    const fetchData = useCallback(async () => {
+        setLoading(true);
+        try {
+            const [usersRes, groupsRes, rolesRes, orgsRes] = await Promise.all([
+                authFetch(`${API_BASE}/auth/users`),
+                authFetch(`${API_BASE}/auth/groups`),
+                authFetch(`${API_BASE}/auth/roles`),
+                authFetch(`${API_BASE}/auth/organizations`),
+            ]);
+            if (usersRes.ok) setUsers(await usersRes.json());
+            if (groupsRes.ok) setGroups(await groupsRes.json());
+            if (rolesRes.ok) setRoles(await rolesRes.json());
+            if (orgsRes.ok) setOrganizations(await orgsRes.json());
+        } catch (err) {
+            console.error('Failed to fetch org data:', err);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => { fetchData(); }, [fetchData]);
+
+    useEffect(() => {
+        if (!newGroupOrg && organizations.length > 0) {
+            setNewGroupOrg(organizations[0].id);
+        }
+    }, [organizations, newGroupOrg]);
+
+    const handleCreateGroup = async () => {
+        if (!newGroupName.trim()) return;
+        setCreatingGroup(true);
+        try {
+            const res = await authFetch(`${API_BASE}/auth/groups`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: newGroupName.trim(),
+                    description: newGroupDesc.trim(),
+                    organizationId: newGroupOrg || null,
+                }),
+            });
+            if (res.ok) {
+                setNewGroupName('');
+                setNewGroupDesc('');
+                setShowCreateGroup(false);
+                await fetchData();
+            }
+        } catch (err) {
+            console.error('Failed to create group:', err);
+        } finally {
+            setCreatingGroup(false);
+        }
+    };
+
+    const handleDeleteGroup = async (groupId) => {
+        if (!confirm('Delete this group? Users will be unassigned.')) return;
+        try {
+            const res = await authFetch(`${API_BASE}/auth/groups/${groupId}`, { method: 'DELETE' });
+            if (res.ok) await fetchData();
+        } catch (err) {
+            console.error('Failed to delete group:', err);
+        }
+    };
+
+    const handleUpdateGroupDesc = async (groupId) => {
+        try {
+            const res = await authFetch(`${API_BASE}/auth/groups/${groupId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ description: editGroupDesc }),
+            });
+            if (res.ok) {
+                setEditingGroup(null);
+                await fetchData();
+            }
+        } catch (err) {
+            console.error('Failed to update group:', err);
+        }
+    };
+
+    const handleUserRoleChange = async (userId, newRole) => {
+        try {
+            const res = await authFetch(`${API_BASE}/auth/users/${userId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orgRole: newRole }),
+            });
+            if (res.ok) {
+                setEditingUserRole(null);
+                await fetchData();
+            }
+        } catch (err) {
+            console.error('Failed to update user role:', err);
+        }
+    };
+
+    const handleUserGroupToggle = async (userId, groupId, currentGroups) => {
+        const updatedGroups = currentGroups.includes(groupId)
+            ? currentGroups.filter(g => g !== groupId)
+            : [...currentGroups, groupId];
+        try {
+            const res = await authFetch(`${API_BASE}/auth/users/${userId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ groups: updatedGroups }),
+            });
+            if (res.ok) await fetchData();
+        } catch (err) {
+            console.error('Failed to update user groups:', err);
+        }
+    };
+
+    const handleApproveUser = async (userId) => {
+        try {
+            const res = await authFetch(`${API_BASE}/auth/users/${userId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ status: 'active', orgRole: 'user' }),
+            });
+            if (res.ok) await fetchData();
+        } catch (err) {
+            console.error('Failed to approve user:', err);
+        }
+    };
+
+    const handleRejectUser = async (userId) => {
+        if (!confirm('Reject and remove this user? They can sign up again later.')) return;
+        try {
+            const res = await authFetch(`${API_BASE}/auth/users/${userId}`, { method: 'DELETE' });
+            if (res.ok) await fetchData();
+        } catch (err) {
+            console.error('Failed to reject user:', err);
+        }
+    };
+
+    // Resolve org IDs from user's direct assignment and groups
+    const getUserOrgIds = () => {
+        const orgIds = new Set();
+        // Direct org assignment
+        if (user?.organizationId) orgIds.add(user.organizationId);
+        // Group-based detection (fallback)
+        const myGroups = user?.groups || [];
+        for (const gid of myGroups) {
+            const group = groups.find(g => g.id === gid);
+            if (group?.organizationId) orgIds.add(group.organizationId);
+        }
+        return orgIds;
+    };
+
+    const userOrgIds = getUserOrgIds();
+    const orgGroups = groups.filter(g => g.organizationId && userOrgIds.has(g.organizationId));
+    const orgRoles = roles.filter(r => ['org_admin', 'agent_admin', 'agent_editor'].includes(r.id));
+
+    const orgUsers = users.filter(u => {
+        if (u.isSystem) return false;
+        // Include users directly assigned to this org
+        if (u.organizationId && userOrgIds.has(u.organizationId)) return true;
+        // Include users in org-scoped groups
+        const uGroups = Array.isArray(u.groups) ? u.groups : [];
+        return uGroups.some(gid => orgGroups.some(og => og.id === gid));
+    });
+
+    const getGroupCount = (groupId) => {
+        return users.filter(u => {
+            const uGroups = Array.isArray(u.groups) ? u.groups : [];
+            return uGroups.includes(groupId);
+        }).length;
+    };
+
+    const getRoleBadge = (role) => {
+        const orgRole = ORG_ROLES.find(r => r.id === role);
+        if (orgRole) {
+            return (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold text-white" style={{ background: orgRole.color }}>
+                    {orgRole.name}
+                </span>
+            );
+        }
+        return (
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-medium bg-[var(--bg-tertiary)] text-[var(--text-secondary)]">
+                {role || 'user'}
+            </span>
+        );
+    };
+
+    // Count users with a specific role
+    const getUsersWithRole = (roleId) => {
+        return users.filter(u => u.role === roleId && !u.isSystem).length;
+    };
+
+    if (loading) {
+        return (
+            <div className="max-w-4xl mx-auto space-y-6">
+                <div className="flex gap-2">
+                    {[1, 2, 3].map(i => (
+                        <div key={i} className="h-10 w-28 bg-[var(--bg-tertiary)] rounded-xl animate-pulse" />
+                    ))}
+                </div>
+                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden">
+                    <TableSkeleton />
+                </div>
+            </div>
+        );
+    }
+
+    const sections = [
+        { id: 'users', label: 'Users', icon: Users, count: orgUsers.length },
+        { id: 'groups', label: 'Groups', icon: UserPlus, count: orgGroups.length },
+        { id: 'roles', label: 'Roles', icon: Shield, count: orgRoles.length },
+    ];
+
+    return (
+        <div className="max-w-4xl mx-auto space-y-6">
+            {/* Section tabs */}
+            <div className="flex gap-2">
+                {sections.map(s => (
+                    <button
+                        key={s.id}
+                        onClick={() => setActiveSection(s.id)}
+                        className={`flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-all ${activeSection === s.id
+                            ? 'bg-[var(--accent-primary)] text-white shadow-md'
+                            : 'bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]'
+                            }`}
+                    >
+                        <s.icon className="w-4 h-4" />
+                        {s.label}
+                        <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-bold ${activeSection === s.id ? 'bg-white/20' : 'bg-white/10'}`}>
+                            {s.count}
+                        </span>
+                    </button>
+                ))}
+            </div>
+
+            {/* ═══════════════ USERS SECTION ═══════════════ */}
+            {activeSection === 'users' && (
+                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden">
+                    <div className="px-5 py-4 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
+                        <h3 className="text-base font-semibold text-[var(--text-primary)]">Organisation Members</h3>
+                        <p className="text-xs text-[var(--text-muted)] mt-0.5">Manage roles and group assignments for users in your organisation</p>
+                    </div>
+                    {orgUsers.length === 0 ? (
+                        <div className="px-5 py-12 text-center">
+                            <Users className="w-10 h-10 mx-auto mb-3 text-[var(--text-muted)] opacity-30" />
+                            <p className="text-sm font-medium text-[var(--text-primary)]">No users yet</p>
+                            <p className="text-xs text-[var(--text-muted)] mt-1 max-w-sm mx-auto">
+                                Users will appear here once they are assigned to your organisation.
+                                Add users via the admin panel or invite them by sharing a signup link.
+                            </p>
+                            <div className="flex items-center justify-center gap-3 mt-4">
+                                <button
+                                    onClick={() => setActiveSection('groups')}
+                                    className="inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium bg-[var(--accent-primary)] text-white hover:opacity-90 transition-opacity"
+                                >
+                                    <UserPlus className="w-4 h-4" />
+                                    Manage Groups
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <div className="divide-y divide-[var(--border-subtle)]">
+                            {orgUsers.map(u => {
+                                const uGroups = Array.isArray(u.groups) ? u.groups : [];
+                                const userOrgGroups = orgGroups.filter(g => uGroups.includes(g.id));
+                                return (
+                                    <div key={u.id} className="px-5 py-3 flex items-center gap-4 hover:bg-[var(--bg-secondary)] transition-colors">
+                                        {/* Avatar */}
+                                        {u.avatarType === 'emoji' && u.avatar ? (
+                                            <div className="w-9 h-9 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center text-lg shrink-0">
+                                                {u.avatar}
+                                            </div>
+                                        ) : u.avatarType === 'image' && u.avatar ? (
+                                            <img src={u.avatar.startsWith('/') ? `${API_BASE}${u.avatar}` : u.avatar} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
+                                        ) : u.avatar && (u.avatar.startsWith('http') || u.avatar.startsWith('/')) ? (
+                                            <img src={u.avatar.startsWith('/') ? `${API_BASE}${u.avatar}` : u.avatar} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
+                                        ) : (
+                                            <div className="w-9 h-9 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
+                                                {(u.displayName || u.username || '?')[0].toUpperCase()}
+                                            </div>
+                                        )}
+                                        {/* Info */}
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm font-medium text-[var(--text-primary)] truncate">{u.displayName || u.username}</span>
+                                                {u.status === 'pending' ? (
+                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-500 flex items-center gap-1">
+                                                        <Clock className="w-2.5 h-2.5" />
+                                                        Pending
+                                                    </span>
+                                                ) : (
+                                                    getRoleBadge(u.orgRole || u.role)
+                                                )}
+                                            </div>
+                                            <div className="flex items-center gap-1.5 mt-0.5 flex-wrap">
+                                                {u.email && (
+                                                    <span className="text-[10px] text-[var(--text-muted)] flex items-center gap-1">
+                                                        <Mail className="w-2.5 h-2.5" />
+                                                        {u.email}
+                                                    </span>
+                                                )}
+                                                {userOrgGroups.map(g => (
+                                                    <span key={g.id} className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--bg-tertiary)] text-[var(--text-muted)]">
+                                                        {g.name}
+                                                    </span>
+                                                ))}
+                                            </div>
+                                        </div>
+                                        {u.status === 'pending' ? (
+                                            <div className="flex items-center gap-1">
+                                                <button
+                                                    onClick={() => handleApproveUser(u.id)}
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-green-500/10 text-green-600 hover:bg-green-500/20 transition-colors"
+                                                    title="Approve user"
+                                                >
+                                                    <Check className="w-3.5 h-3.5" />
+                                                    Approve
+                                                </button>
+                                                <button
+                                                    onClick={() => handleRejectUser(u.id)}
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-red-500/10 text-red-500 hover:bg-red-500/20 transition-colors"
+                                                    title="Reject user"
+                                                >
+                                                    <X className="w-3.5 h-3.5" />
+                                                    Reject
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                {/* Role dropdown */}
+                                                <div className="relative">
+                                                    {editingUserRole === u.id ? (
+                                                        <div className="flex items-center gap-1">
+                                                            <select
+                                                                defaultValue={u.orgRole || 'user'}
+                                                                onChange={e => handleUserRoleChange(u.id, e.target.value)}
+                                                                className="text-xs px-2 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] outline-none"
+                                                            >
+                                                                <option value="user">User</option>
+                                                                {ORG_ROLES.map(r => (
+                                                                    <option key={r.id} value={r.id}>{r.name}</option>
+                                                                ))}
+                                                            </select>
+                                                            <button onClick={() => setEditingUserRole(null)} className="p-1 rounded hover:bg-white/10 text-[var(--text-muted)]">
+                                                                <X className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <button
+                                                            onClick={() => setEditingUserRole(u.id)}
+                                                            className="text-xs px-2 py-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors"
+                                                            title="Change role"
+                                                        >
+                                                            <Edit2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                {/* Group assignment dropdown */}
+                                                <div className="relative group/assign">
+                                                    <button className="text-xs px-2 py-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors" title="Assign groups">
+                                                        <UserPlus className="w-3.5 h-3.5" />
+                                                    </button>
+                                                    <div className="absolute right-0 top-full mt-1 w-52 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] shadow-xl z-20 opacity-0 pointer-events-none group-hover/assign:opacity-100 group-hover/assign:pointer-events-auto transition-all">
+                                                        <div className="p-2 text-xs font-medium text-[var(--text-muted)] border-b border-[var(--border-subtle)]">Assign to groups</div>
+                                                        <div className="max-h-48 overflow-auto p-1">
+                                                            {orgGroups.map(g => (
+                                                                <label key={g.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-[var(--bg-secondary)] cursor-pointer text-sm">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={uGroups.includes(g.id)}
+                                                                        onChange={() => handleUserGroupToggle(u.id, g.id, uGroups)}
+                                                                        className="rounded"
+                                                                    />
+                                                                    <span className="text-[var(--text-primary)]">{g.name}</span>
+                                                                </label>
+                                                            ))}
+                                                            {orgGroups.length === 0 && (
+                                                                <div className="px-2 py-2 text-xs text-[var(--text-muted)]">No groups in this organisation</div>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ═══════════════ GROUPS SECTION ═══════════════ */}
+            {activeSection === 'groups' && (
+                <div className="space-y-4">
+                    {/* Create group */}
+                    {!showCreateGroup ? (
+                        <button
+                            onClick={() => setShowCreateGroup(true)}
+                            className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-subtle)] text-sm font-medium text-[var(--text-muted)] hover:border-[var(--accent-primary)] hover:text-[var(--accent-primary)] transition-all"
+                        >
+                            <Plus className="w-4 h-4" />
+                            Create New Group
+                        </button>
+                    ) : (
+                        <div className="rounded-xl border border-[var(--accent-primary)]/30 bg-[var(--accent-primary)]/5 p-4 space-y-3">
+                            <div className="text-sm font-medium text-[var(--accent-primary)]">Create New Group</div>
+                            <input
+                                type="text"
+                                value={newGroupName}
+                                onChange={e => setNewGroupName(e.target.value)}
+                                className="w-full px-3 py-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-sm outline-none focus:border-[var(--accent-primary)]"
+                                placeholder="Group name"
+                                autoFocus
+                            />
+                            <input
+                                type="text"
+                                value={newGroupDesc}
+                                onChange={e => setNewGroupDesc(e.target.value)}
+                                className="w-full px-3 py-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-sm outline-none focus:border-[var(--accent-primary)]"
+                                placeholder="Description (optional)"
+                            />
+                            {organizations.length > 1 && (
+                                <select
+                                    value={newGroupOrg}
+                                    onChange={e => setNewGroupOrg(e.target.value)}
+                                    className="w-full px-3 py-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-sm outline-none"
+                                >
+                                    {organizations.map(org => (
+                                        <option key={org.id} value={org.id}>{org.name}</option>
+                                    ))}
+                                </select>
+                            )}
+                            <div className="flex gap-2 justify-end">
+                                <button
+                                    onClick={() => { setShowCreateGroup(false); setNewGroupName(''); setNewGroupDesc(''); }}
+                                    className="px-3 py-1.5 rounded-lg text-sm text-[var(--text-muted)] hover:bg-[var(--bg-tertiary)]"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    onClick={handleCreateGroup}
+                                    disabled={!newGroupName.trim() || creatingGroup}
+                                    className="px-4 py-1.5 rounded-lg text-sm font-medium text-white bg-[var(--accent-primary)] hover:opacity-90 disabled:opacity-50 transition-all"
+                                >
+                                    {creatingGroup ? 'Creating...' : 'Create'}
+                                </button>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Groups list */}
+                    {orgGroups.length === 0 && !showCreateGroup ? (
+                        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-12 text-center">
+                            <Shield className="w-10 h-10 mx-auto mb-3 text-[var(--text-muted)] opacity-30" />
+                            <p className="text-sm font-medium text-[var(--text-primary)]">No groups yet</p>
+                            <p className="text-xs text-[var(--text-muted)] mt-1 max-w-sm mx-auto">
+                                Groups let you organise users and control which agents they can access.
+                                Create a group to get started.
+                            </p>
+                        </div>
+                    ) : (
+                        <div className="grid gap-3">
+                            {orgGroups.map(group => {
+                                const count = getGroupCount(group.id);
+                                const isSystem = group.id === 'admins' || group.id === 'users';
+                                return (
+                                    <div key={group.id} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 hover:border-[var(--border-subtle)] transition-all">
+                                        <div className="flex items-start justify-between gap-3">
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-sm font-semibold text-[var(--text-primary)]">{group.name}</span>
+                                                    {isSystem && (
+                                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-500 font-medium">System</span>
+                                                    )}
+                                                </div>
+                                                {editingGroup === group.id ? (
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <input
+                                                            type="text"
+                                                            value={editGroupDesc}
+                                                            onChange={e => setEditGroupDesc(e.target.value)}
+                                                            className="flex-1 px-2 py-1 rounded border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs outline-none"
+                                                        />
+                                                        <button onClick={() => handleUpdateGroupDesc(group.id)} className="p-1 text-green-500 hover:bg-green-500/10 rounded">
+                                                            <Check className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <button onClick={() => setEditingGroup(null)} className="p-1 text-[var(--text-muted)] hover:bg-[var(--bg-tertiary)] rounded">
+                                                            <X className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </div>
+                                                ) : (
+                                                    <p className="text-xs text-[var(--text-muted)] mt-0.5">{group.description || 'No description'}</p>
+                                                )}
+                                            </div>
+                                            <div className="flex items-center gap-2 shrink-0">
+                                                <span className="text-xs text-[var(--text-muted)] flex items-center gap-1">
+                                                    <Users className="w-3 h-3" />
+                                                    {count} {count === 1 ? 'member' : 'members'}
+                                                </span>
+                                                {!isSystem && (
+                                                    <>
+                                                        <button
+                                                            onClick={() => { setEditingGroup(group.id); setEditGroupDesc(group.description || ''); }}
+                                                            className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+                                                            title="Edit description"
+                                                        >
+                                                            <Edit2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteGroup(group.id)}
+                                                            className="p-1.5 rounded-lg hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-500 transition-colors"
+                                                            title="Delete group"
+                                                        >
+                                                            <Trash2 className="w-3.5 h-3.5" />
+                                                        </button>
+                                                    </>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* ═══════════════ ROLES SECTION ═══════════════ */}
+            {activeSection === 'roles' && (
+                <div className="space-y-3">
+                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden">
+                        <div className="px-5 py-4 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
+                            <h3 className="text-base font-semibold text-[var(--text-primary)]">Organisation Roles</h3>
+                            <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                                These roles define what members can do within your organisation. Assign roles in the Users tab.
+                            </p>
+                        </div>
+                        <div className="divide-y divide-[var(--border-subtle)]">
+                            {ORG_ROLES.map(role => {
+                                const isExpanded = expandedRole === role.id;
+                                const assignedCount = getUsersWithRole(role.id);
+                                return (
+                                    <div key={role.id} className="group">
+                                        <button
+                                            onClick={() => setExpandedRole(isExpanded ? null : role.id)}
+                                            className="w-full px-5 py-4 flex items-start gap-4 text-left hover:bg-[var(--bg-secondary)] transition-colors"
+                                        >
+                                            <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: `${role.color}15` }}>
+                                                <Shield className="w-5 h-5" style={{ color: role.color }} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-sm font-semibold text-[var(--text-primary)]">{role.name}</span>
+                                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold text-white" style={{ background: role.color }}>
+                                                        {role.id}
+                                                    </span>
+                                                    {assignedCount > 0 && (
+                                                        <span className="text-[10px] text-[var(--text-muted)] flex items-center gap-1">
+                                                            <Users className="w-2.5 h-2.5" />
+                                                            {assignedCount} {assignedCount === 1 ? 'user' : 'users'}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                <p className="text-xs text-[var(--text-muted)] mt-1 leading-relaxed">{role.description}</p>
+
+                                                {/* Permission badges - always visible */}
+                                                <div className="flex flex-wrap gap-1.5 mt-2">
+                                                    {role.permissions.map(p => {
+                                                        const badgeColors = {
+                                                            org_admin: 'bg-purple-500/15 text-purple-500',
+                                                            agent_admin: 'bg-amber-500/15 text-amber-500',
+                                                            agent_editor: 'bg-emerald-500/15 text-emerald-500',
+                                                        };
+                                                        return (
+                                                            <span key={p.label} className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${badgeColors[role.id]}`}>
+                                                                {p.label}
+                                                            </span>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                            <div className="shrink-0 mt-1">
+                                                {isExpanded
+                                                    ? <ChevronDown className="w-4 h-4 text-[var(--text-muted)]" />
+                                                    : <ChevronRight className="w-4 h-4 text-[var(--text-muted)]" />
+                                                }
+                                            </div>
+                                        </button>
+
+                                        {/* Expanded permission details */}
+                                        {isExpanded && (
+                                            <div className="px-5 pb-4 pt-0 ml-14">
+                                                <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] overflow-hidden">
+                                                    <div className="px-3 py-2 bg-[var(--bg-tertiary)] text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                                                        Permissions
+                                                    </div>
+                                                    <div className="divide-y divide-[var(--border-subtle)]">
+                                                        {role.permissions.map(p => (
+                                                            <div key={p.label} className="px-3 py-2.5 flex items-start gap-2">
+                                                                <Check className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: role.color }} />
+                                                                <div>
+                                                                    <div className="text-xs font-medium text-[var(--text-primary)]">{p.label}</div>
+                                                                    <div className="text-[11px] text-[var(--text-muted)] mt-0.5">{p.desc}</div>
+                                                                </div>
+                                                            </div>
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default OrgUsersPanel;
