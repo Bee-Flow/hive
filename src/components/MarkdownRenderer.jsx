@@ -32,6 +32,7 @@ import QuoteRenderer from './QuoteRenderer';
 import VegaLiteRenderer from './VegaLiteRenderer';
 import MapEmbedRenderer from './MapEmbedRenderer';
 import BuildingIndicator from './BuildingIndicator';
+import MermaidRenderer from './MermaidRenderer';
 
 // Register languages
 hljs.registerLanguage('python', python);
@@ -574,6 +575,31 @@ const MarkdownRenderer = ({ content, className = '', onFormSubmit, formId, isFor
                                     </div>
                                 );
                             }
+                        }
+
+                        // Check if this is a Mermaid diagram code block
+                        const isMermaid = language === 'mermaid';
+
+                        if (!inline && isMermaid) {
+                            if (isLoading) {
+                                return (
+                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
+                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
+                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Rendering diagram...</span>
+                                    </div>
+                                );
+                            }
+                            return (
+                                <div style={{
+                                    width: '100%',
+                                    maxWidth: '100%',
+                                    overflow: 'visible',
+                                    whiteSpace: 'normal',
+                                    fontFamily: 'var(--font-family, sans-serif)'
+                                }}>
+                                    <MermaidRenderer code={codeString} />
+                                </div>
+                            );
                         }
 
                         // Check if this is a map embed code block

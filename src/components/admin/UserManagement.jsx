@@ -290,6 +290,8 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
         { id: 'google-slides', label: 'Slides' },
         { id: 'google-sheets', label: 'Sheets' },
         { id: 'google-docs', label: 'Docs' },
+        { id: 'google-contacts', label: 'Contacts' },
+        { id: 'google-keep', label: 'Keep' },
         { id: 'image-gen', label: 'Image Gen' },
         { id: 'music-gen', label: 'Music Gen' },
         { id: 'video-gen', label: 'Video Gen' },

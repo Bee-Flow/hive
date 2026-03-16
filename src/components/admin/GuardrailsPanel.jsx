@@ -41,6 +41,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     const [orgShieldCategories, setOrgShieldCategories] = useState([]);
     const [euModeEnabled, setEuModeEnabled] = useState(false);
     const [orgWebSearchGuard, setOrgWebSearchGuard] = useState(false);
+    const [orgDisableSearchOnUpload, setOrgDisableSearchOnUpload] = useState(false);
 
     const MODERATION_CATEGORIES = [
         { id: 'S1', label: 'Violent Crimes', icon: '⚔️' },
@@ -117,6 +118,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 setOrgShieldCategories(data.moderationCategories?.length > 0 ? data.moderationCategories : MODERATION_CATEGORIES.map(c => c.id));
                 setEuModeEnabled(data.euModeEnabled || false);
                 setOrgWebSearchGuard(data.webSearchGuardEnabled || false);
+                setOrgDisableSearchOnUpload(data.disableSearchOnUpload || false);
             }
         } catch (e) {
             console.error('Failed to fetch org shield', e);
@@ -148,6 +150,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                     moderationCategories: orgShieldCategories,
                     euModeEnabled: euModeEnabled,
                     webSearchGuardEnabled: orgWebSearchGuard,
+                    disableSearchOnUpload: orgDisableSearchOnUpload,
                 })
             });
             if (res.ok) {
@@ -632,7 +635,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 )}
 
                 {activeTab === 'orgshield' && (
-                    <div className="max-w-2xl mx-auto space-y-6 animate-fadeIn">
+                    <div className="max-w-3xl mx-auto space-y-8 animate-fadeIn">
                         <div>
                             <h2 className="text-xl font-bold mb-1 text-primary">Organization Privacy Shield</h2>
                             <p className="text-sm text-muted">Set regex guardrails that apply to all agents and direct chat within an organization. Agent-level guardrails are additive on top.</p>
@@ -667,7 +670,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                 ) : (
                                     <>
                                         {/* Enable Toggle */}
-                                        <div className="flex items-center justify-between p-3 rounded-lg border bg-white/5 border-white/10 mb-6">
+                                        <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10 mb-6">
                                             <div>
                                                 <span className="text-sm font-medium text-[var(--text-primary)] block">Enable Privacy Shield</span>
                                                 <span className="text-xs text-muted">Applies to all agents and direct chat in this org</span>
@@ -679,9 +682,9 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                         </div>
 
                                         {orgShieldEnabled && (
-                                            <div className="space-y-6 animate-fadeIn">
+                                            <div className="space-y-8 animate-fadeIn">
                                                 {/* AI Content Moderation Toggle */}
-                                                <div className="flex items-center justify-between p-3 rounded-lg border bg-white/5 border-white/10">
+                                                <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
                                                     <div>
                                                         <span className="text-sm font-medium text-[var(--text-primary)] block">AI Content Moderation</span>
                                                         <span className="text-xs text-muted">Automatically check all messages for harmful content</span>
@@ -695,7 +698,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                 {orgShieldModeration && (
                                                     <div>
                                                         <label className="text-xs font-medium text-muted mb-3 block">Blocked Categories</label>
-                                                        <div className="grid grid-cols-2 gap-2 p-3 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
+                                                        <div className="grid grid-cols-2 gap-2 p-4 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
                                                             {MODERATION_CATEGORIES.map(cat => (
                                                                 <label key={cat.id} className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer p-2 rounded hover:bg-white/5 transition-colors">
                                                                     <input
@@ -719,7 +722,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                 )}
 
                                                 {/* EU-Only Models */}
-                                                <div className="flex items-center justify-between p-3 rounded-lg border bg-white/5 border-white/10">
+                                                <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
                                                     <div>
                                                         <span className="text-sm font-medium text-[var(--text-primary)] block">🇪🇺 EU-Only Models</span>
                                                         <span className="text-xs text-muted">Use EU-hosted models instead of regular tiers (configure in AI Config → Chat Models)</span>
@@ -731,13 +734,25 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                 </div>
 
                                                 {/* Web Search Guard */}
-                                                <div className="flex items-center justify-between p-3 rounded-lg border bg-white/5 border-white/10">
+                                                <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
                                                     <div>
                                                         <span className="text-sm font-medium text-[var(--text-primary)] block">🔍 Web Search Guard</span>
                                                         <span className="text-xs text-muted">Block sensitive queries from being sent to external web search</span>
                                                     </div>
                                                     <label className="relative inline-flex items-center cursor-pointer">
                                                         <input type="checkbox" checked={orgWebSearchGuard} onChange={e => setOrgWebSearchGuard(e.target.checked)} className="sr-only peer" />
+                                                        <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                                                    </label>
+                                                </div>
+
+                                                {/* Disable Web Search on File Upload */}
+                                                <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
+                                                    <div>
+                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">📎 Disable Search on File Upload</span>
+                                                        <span className="text-xs text-muted">Prevent web searches when users upload files (protects sensitive document data)</span>
+                                                    </div>
+                                                    <label className="relative inline-flex items-center cursor-pointer">
+                                                        <input type="checkbox" checked={orgDisableSearchOnUpload} onChange={e => setOrgDisableSearchOnUpload(e.target.checked)} className="sr-only peer" />
                                                         <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
                                                     </label>
                                                 </div>

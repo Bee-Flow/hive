@@ -8,7 +8,8 @@ export default function EmailDraftCard({ msg, emailDraftStatuses, setEmailDraftS
     const handleSendEmail = async (draft, index) => {
         setEmailDraftStatuses(prev => ({ ...prev, [index]: 'sending' }));
         try {
-            const res = await authFetch(`${API_BASE}/api/integrations/gmail/send`, {
+            const endpoint = draft._provider === 'microsoft' ? 'outlook' : 'gmail';
+            const res = await authFetch(`${API_BASE}/api/integrations/${endpoint}/send`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(draft),
@@ -27,7 +28,8 @@ export default function EmailDraftCard({ msg, emailDraftStatuses, setEmailDraftS
     const handleSaveAsDraft = async (draft, index) => {
         setEmailDraftStatuses(prev => ({ ...prev, [index]: 'saving_draft' }));
         try {
-            const res = await authFetch(`${API_BASE}/api/integrations/gmail/draft`, {
+            const endpoint = draft._provider === 'microsoft' ? 'outlook' : 'gmail';
+            const res = await authFetch(`${API_BASE}/api/integrations/${endpoint}/draft`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(draft),
@@ -53,6 +55,7 @@ export default function EmailDraftCard({ msg, emailDraftStatuses, setEmailDraftS
         const isDraftSaved = status.startsWith('draft_saved');
         const isResolved = status === 'sent' || status === 'discarded' || isDraftSaved || status.startsWith('failed');
         const gmailLink = isDraftSaved ? status.split('draft_saved:')[1] : '';
+        const isOutlook = draft._provider === 'microsoft';
 
         return (
             <div key={i} className={`my-3 rounded-xl border overflow-hidden transition-all duration-300 ${status === 'sent' ? 'border-green-500/40 bg-green-500/5'
@@ -147,7 +150,7 @@ export default function EmailDraftCard({ msg, emailDraftStatuses, setEmailDraftS
                     <div className="px-4 py-2 text-xs text-blue-400 border-t border-blue-500/20 flex items-center gap-1.5">
                         <ExternalLink className="w-3 h-3" />
                         <a href={gmailLink} target="_blank" rel="noopener noreferrer" className="hover:underline">
-                            Open draft in Gmail →
+                            Open draft in {isOutlook ? 'Outlook' : 'Gmail'} →
                         </a>
                     </div>
                 )}

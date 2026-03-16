@@ -15,14 +15,13 @@ export default function useAgentApi(state, { systemMode, securityMode }) {
         setToolParams, setIsPublished, setSharedGroups, setStarterPrompts,
         setAvatar, setAllowCopy, setEmbedEnabled, setWorkspaceEnabled,
         setEnableGuardrails, setLlamaGuardEnabled, setWebSearchGuardEnabled,
-        setSequentialThinkingEnabled, setSequentialThinkingModel,
-        setStrictKnowledge, setIncludeSourceReferences, setKnowledgeBaseIds,
+
+        strictKnowledge, setStrictKnowledge, setIncludeSourceReferences, setKnowledgeBaseIds,
         setEnabledIntegrations, setRegexGuardrailsEnabled, setSelectedCollections,
         setRegexScope, setGuardrailAction, setMessages, setShowChat,
         setActiveSection, name, description, systemPrompt, selectedTools,
         toolParams, starterPrompts, avatar, workspaceEnabled, embedEnabled,
         enableGuardrails, llamaGuardEnabled, webSearchGuardEnabled,
-        sequentialThinkingEnabled, sequentialThinkingModel, strictKnowledge,
         includeSourceReferences, knowledgeBaseIds, enabledIntegrations,
         regexGuardrailsEnabled, selectedCollections, regexScope, guardrailAction,
         isPublished, sharedGroups, saving, setSaving, showPublishMenu, setShowPublishMenu,
@@ -156,8 +155,7 @@ export default function useAgentApi(state, { systemMode, securityMode }) {
                 setEnableGuardrails(config.enableGuardrails === true);
                 setLlamaGuardEnabled(config.llamaGuardEnabled === true);
                 setWebSearchGuardEnabled(config.webSearchGuardEnabled === true);
-                setSequentialThinkingEnabled(config.sequentialThinkingEnabled === true);
-                setSequentialThinkingModel(config.sequentialThinkingModel || '');
+
                 setStrictKnowledge(config.strictKnowledge === true);
                 setIncludeSourceReferences(config.includeSourceReferences === true);
                 setEnabledIntegrations(config.enabledIntegrations || null);
@@ -222,8 +220,6 @@ export default function useAgentApi(state, { systemMode, securityMode }) {
                 embedEnabled,
                 config: {
                     enableGuardrails, llamaGuardEnabled, webSearchGuardEnabled,
-                    sequentialThinkingEnabled,
-                    sequentialThinkingModel: sequentialThinkingModel || undefined,
                     strictKnowledge, includeSourceReferences,
                     knowledge_base_ids: knowledgeBaseIds,
                     enabledIntegrations: enabledIntegrations || undefined,
@@ -301,8 +297,7 @@ export default function useAgentApi(state, { systemMode, securityMode }) {
             setEnableGuardrails(config.enableGuardrails === true);
             setLlamaGuardEnabled(config.llamaGuardEnabled === true);
             setWebSearchGuardEnabled(config.webSearchGuardEnabled === true);
-            setSequentialThinkingEnabled(config.sequentialThinkingEnabled === true);
-            setSequentialThinkingModel(config.sequentialThinkingModel || '');
+
             setStrictKnowledge(config.strictKnowledge === true);
             setIncludeSourceReferences(config.includeSourceReferences === true);
             setKnowledgeBaseIds(config.knowledge_base_ids || []);

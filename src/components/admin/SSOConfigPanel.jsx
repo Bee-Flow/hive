@@ -400,6 +400,7 @@ const SSOConfigPanel = () => {
                                 <li>Add a redirect URI (Web): <code className="bg-black/30 px-2 py-0.5 rounded text-xs font-mono">{window.location.origin}/auth/callback/microsoft</code></li>
                                 <li>Create a client secret under "Certificates & secrets"</li>
                                 <li>Copy the Application (Client) ID and Secret Value here</li>
+                                <li>Under "API permissions", add the following <strong>Microsoft Graph</strong> delegated permissions and grant admin consent: <code className="bg-black/30 px-2 py-0.5 rounded text-xs font-mono">Mail.Read</code>, <code className="bg-black/30 px-2 py-0.5 rounded text-xs font-mono">Mail.Send</code>, <code className="bg-black/30 px-2 py-0.5 rounded text-xs font-mono">Calendars.ReadWrite</code>, <code className="bg-black/30 px-2 py-0.5 rounded text-xs font-mono">Files.ReadWrite</code>, <code className="bg-black/30 px-2 py-0.5 rounded text-xs font-mono">Contacts.ReadWrite</code>, <code className="bg-black/30 px-2 py-0.5 rounded text-xs font-mono">offline_access</code></li>
                             </ol>
                         </div>
 

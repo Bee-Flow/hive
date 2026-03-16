@@ -143,6 +143,16 @@ export default function CalendarDraftCard({ msg, calendarDraftStatuses, setCalen
                         </div>
                     )}
 
+                    {/* Microsoft Teams */}
+                    {draft.isOnlineMeeting && (
+                        <div className="flex items-center gap-2.5">
+                            <svg className="w-4 h-4 flex-shrink-0" viewBox="0 0 24 24" fill="none">
+                                <path d="M15.5 10.5V7.5C15.5 6.95 15.05 6.5 14.5 6.5H4.5C3.95 6.5 3.5 6.95 3.5 7.5V16.5C3.5 17.05 3.95 17.5 4.5 17.5H14.5C15.05 17.5 15.5 17.05 15.5 16.5V13.5L20.5 17.5V6.5L15.5 10.5Z" fill="#6264A7"/>
+                            </svg>
+                            <span className="text-xs font-medium" style={{ color: '#6264A7' }}>Microsoft Teams link will be created</span>
+                        </div>
+                    )}
+
                     {/* Attendees — shown as individual tags */}
                     {attendeeList.length > 0 && (
                         <div className="flex items-start gap-2.5">

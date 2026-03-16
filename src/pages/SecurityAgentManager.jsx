@@ -248,39 +248,8 @@ export default function SecurityAgentManager({ onBack }) {
                                                         <p className="text-[10px] text-muted mt-1">Custom instructions for the agent. Leave empty to use the default security scanner persona.</p>
                                                     </div>
 
-                                                    {/* Sequential Thinking */}
-                                                    <div className="flex items-center gap-3 p-4 rounded-xl bg-[var(--bg-tertiary)] border border-[var(--border-subtle)]">
-                                                        <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-purple-500/10 text-purple-500">
-                                                            🧠
-                                                        </div>
-                                                        <div className="flex-1">
-                                                            <label htmlFor="sequentialThinking" className="font-medium text-sm text-[var(--text-primary)] cursor-pointer select-none">Sequential Thinking</label>
-                                                            <p className="text-[var(--text-secondary)] text-xs">Structured chain-of-thought reasoning for planning complex scan strategies.</p>
-                                                        </div>
-                                                        <input
-                                                            id="sequentialThinking"
-                                                            type="checkbox"
-                                                            checked={selected.config?.sequentialThinkingEnabled === true}
-                                                            onChange={(e) => updateConfig('sequentialThinkingEnabled', e.target.checked)}
-                                                            className="w-5 h-5 text-cyan-600 bg-gray-100 border-gray-300 rounded focus:ring-cyan-500 cursor-pointer"
-                                                        />
-                                                    </div>
 
-                                                    {selected.config?.sequentialThinkingEnabled && (
-                                                        <div className="ml-2 p-4 rounded-xl bg-purple-500/5 border border-purple-500/15">
-                                                            <label className="text-xs font-semibold uppercase tracking-wider text-purple-400 mb-2 block">
-                                                                Thinking Model
-                                                                <span className="ml-2 normal-case font-normal opacity-60 text-[10px]">Optional — uses a separate model for reasoning</span>
-                                                            </label>
-                                                            <ModelSelector
-                                                                models={availableModels}
-                                                                value={selected.config?.sequentialThinkingModel || ''}
-                                                                onChange={(val) => updateConfig('sequentialThinkingModel', val || undefined)}
-                                                                defaultLabel="Same as agent model"
-                                                                compact
-                                                            />
-                                                        </div>
-                                                    )}
+
                                                 </div>
                                             )}
 

@@ -1,30 +1,18 @@
 import React, { useState } from 'react';
-import { Trash2 } from 'lucide-react';
-import ToolSelectorModal from '../../components/ToolSelectorModal';
 
 /**
  * SwarmAgentFullEditor — Rich editor for swarm LLM worker agents
  * Matches the AgentDesigner visual style with tabbed sidebar navigation
  */
-function SwarmAgentFullEditor({ data, onChange, components = [], availableModels = [] }) {
+function SwarmAgentFullEditor({ data, onChange, availableModels = [] }) {
     const [activeTab, setActiveTab] = useState('identity');
-    const [showToolSelector, setShowToolSelector] = useState(false);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
     const handleChange = (field, value) => onChange(field, value);
 
-    const handleToolToggle = (toolId) => {
-        const currentTools = data?.tools || [];
-        const newTools = currentTools.includes(toolId)
-            ? currentTools.filter(t => t !== toolId)
-            : [...currentTools, toolId];
-        onChange('tools', newTools);
-    };
-
     const tabs = [
         { id: 'identity', label: 'Identity', icon: '🆔' },
         { id: 'prompt', label: 'Instructions', icon: '📝' },
-        { id: 'tools', label: 'Tools', icon: '🔧', badge: (data?.tools || []).length || null },
     ];
 
     const tierCards = [
@@ -52,11 +40,6 @@ function SwarmAgentFullEditor({ data, onChange, components = [], availableModels
                     >
                         <span className="text-base">{tab.icon}</span>
                         <span className="flex-1">{tab.label}</span>
-                        {tab.badge && (
-                            <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-bold ${activeTab === tab.id ? 'bg-white/20 text-white' : 'bg-white/10 text-[var(--text-muted)]'}`}>
-                                {tab.badge}
-                            </span>
-                        )}
                     </button>
                 ))}
             </div>
@@ -224,84 +207,8 @@ function SwarmAgentFullEditor({ data, onChange, components = [], availableModels
                         </div>
                     )}
 
-                    {/* TOOLS TAB */}
-                    {activeTab === 'tools' && (
-                        <div className="space-y-6 animate-fadeIn">
-                            <div className="flex items-center justify-between">
-                                <div>
-                                    <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Tools</h2>
-                                    <p className="text-sm text-[var(--text-secondary)] mt-1">
-                                        {(data?.tools || []).length} tool{(data?.tools || []).length !== 1 ? 's' : ''} assigned
-                                    </p>
-                                </div>
-                                <button
-                                    onClick={() => setShowToolSelector(true)}
-                                    className="px-4 py-2 rounded-xl text-sm font-medium bg-[var(--accent-primary)] text-white hover:shadow-lg hover:shadow-[var(--accent-primary)]/20 hover:scale-[1.02] transition-all"
-                                >
-                                    + Manage Tools
-                                </button>
-                            </div>
-
-                            {(data?.tools || []).length > 0 ? (
-                                <div className="space-y-2">
-                                    {(data?.tools || []).map(toolId => {
-                                        const comp = components.find(c => c.id === toolId);
-                                        return (
-                                            <div
-                                                key={toolId}
-                                                className="flex items-center gap-3 px-4 py-3 rounded-xl border bg-[var(--bg-secondary)] hover:bg-white/[0.03] group transition-all"
-                                                style={{ borderColor: 'var(--border-default)' }}
-                                            >
-                                                <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-[var(--accent-primary)]/10 to-[var(--accent-primary)]/5 flex items-center justify-center text-lg flex-shrink-0">
-                                                    {comp?.icon || '🔧'}
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <div className="text-sm font-medium text-[var(--text-primary)] truncate">{comp?.name || toolId}</div>
-                                                    {comp?.description && (
-                                                        <div className="text-[11px] text-[var(--text-muted)] truncate mt-0.5">{comp.description}</div>
-                                                    )}
-                                                </div>
-                                                <button
-                                                    onClick={() => handleToolToggle(toolId)}
-                                                    className="p-1.5 rounded-lg opacity-0 group-hover:opacity-100 hover:bg-red-500/10 text-[var(--text-tertiary)] hover:text-red-400 transition-all"
-                                                >
-                                                    <Trash2 className="w-4 h-4" />
-                                                </button>
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            ) : (
-                                <div className="text-center py-16 border-2 border-dashed rounded-2xl" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-tertiary)' }}>
-                                    <div className="text-4xl mb-3">🔧</div>
-                                    <div className="text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>No tools assigned</div>
-                                    <div className="text-xs mb-4">Give this agent capabilities by adding tools.</div>
-                                    <button
-                                        onClick={() => setShowToolSelector(true)}
-                                        className="text-xs px-4 py-2 rounded-lg bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] hover:bg-[var(--accent-primary)]/20 transition-colors font-medium"
-                                    >
-                                        + Add Tools
-                                    </button>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
                 </div>
             </div>
-
-            {/* Tool Selector Modal */}
-            <ToolSelectorModal
-                isOpen={showToolSelector}
-                onClose={() => setShowToolSelector(false)}
-                components={components}
-                selectedTools={data?.tools || []}
-                onToggle={handleToolToggle}
-                onSelectAll={() => handleChange('tools', components.map(c => c.id))}
-                onClear={() => handleChange('tools', [])}
-                toolParams={data?.toolParams || {}}
-                onUpdateParams={(params) => handleChange('toolParams', params)}
-            />
         </div>
     );
 }

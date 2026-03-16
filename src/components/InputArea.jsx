@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Paperclip, X, StopCircle, MessageCircle, FileText, Image, File, FileSpreadsheet, ArrowUp, Sparkles, LayoutGrid } from 'lucide-react';
+import { Send, Paperclip, X, StopCircle, MessageCircle, FileText, Image, File, FileSpreadsheet, ArrowUp, Sparkles, LayoutGrid, Globe } from 'lucide-react';
 import ModelTierSelector from './ModelTierSelector';
 import GoogleDrivePicker from './chat/GoogleDrivePicker';
 import GmailPicker from './chat/GmailPicker';
@@ -34,6 +34,14 @@ const APP_DEFS = [
     {
         id: 'google-docs', label: 'Google Docs', description: 'Create & read documents', requiresGoogle: true,
         iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><path d="M40 45H8c-1.66 0-3-1.34-3-3V6c0-1.66 1.34-3 3-3h22l13 13v27c0 1.66-1.34 3-3 3z" fill="#4285F4" /><path d="M30 3l13 13H33c-1.66 0-3-1.34-3-3V3z" fill="#2A67C8" /><rect x="14" y="22" width="16" height="2" rx="1" fill="#fff" /><rect x="14" y="27" width="20" height="2" rx="1" fill="#fff" /><rect x="14" y="32" width="12" height="2" rx="1" fill="#fff" /></svg>,
+    },
+    {
+        id: 'google-contacts', label: 'Google Contacts', description: 'Search, create & update contacts', requiresGoogle: true,
+        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><path d="M40 45H8c-1.66 0-3-1.34-3-3V6c0-1.66 1.34-3 3-3h22l13 13v27c0 1.66-1.34 3-3 3z" fill="#4285F4" /><path d="M30 3l13 13H33c-1.66 0-3-1.34-3-3V3z" fill="#2A67C8" /><circle cx="24" cy="22" r="6" fill="#fff" /><path d="M14 38c0-5.52 4.48-10 10-10s10 4.48 10 10" fill="#fff" /></svg>,
+    },
+    {
+        id: 'google-keep', label: 'Google Keep', description: 'List, create & delete notes', requiresGoogle: true,
+        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="3" width="38" height="42" rx="3" fill="#FBBC04" /><rect x="14" y="16" width="20" height="3" rx="1.5" fill="#fff" /><rect x="14" y="23" width="20" height="3" rx="1.5" fill="#fff" /><rect x="14" y="30" width="14" height="3" rx="1.5" fill="#fff" /><circle cx="24" cy="10" r="3" fill="#fff" /></svg>,
     },
     {
         id: 'fireflies', label: 'Fireflies.ai', description: 'Meeting transcripts', requiresFireflies: true,
@@ -102,6 +110,10 @@ const InputArea = ({
     const [disabledMedia, setDisabledMedia] = useState(() => {
         try { return JSON.parse(localStorage.getItem('disabledMedia') || '{}'); } catch { return {}; }
     });
+    const [webSearchEnabled, setWebSearchEnabled] = useState(() => {
+        try { const v = localStorage.getItem('webSearchEnabled'); return v === null ? true : v === 'true'; } catch { return true; }
+    });
+    const [orgDisableSearchOnUpload, setOrgDisableSearchOnUpload] = useState(false);
     const [hasFirefliesKey, setHasFirefliesKey] = useState(false);
     const [orgEnabledIntegrations, setOrgEnabledIntegrations] = useState(null);
     const [hasYouTrackConfig, setHasYouTrackConfig] = useState(false);
@@ -190,6 +202,7 @@ const InputArea = ({
                     setIsGoogleUser(!!data.isGoogleUser);
                     if (data.enabledApps) setEnabledApps(data.enabledApps);
                     if (data.orgEnabledIntegrations !== undefined) setOrgEnabledIntegrations(data.orgEnabledIntegrations);
+                    if (data.disableSearchOnUpload) setOrgDisableSearchOnUpload(true);
                 }
             })
             .catch(() => { });
@@ -709,6 +722,19 @@ const InputArea = ({
                                         anchorRef={videoGenBtnRef}
                                     />
                                 </div>
+                                {/* Web Search Toggle */}
+                                <button
+                                    onClick={() => {
+                                        if (orgDisableSearchOnUpload && attachments.length > 0) return;
+                                        const next = !webSearchEnabled;
+                                        setWebSearchEnabled(next);
+                                        localStorage.setItem('webSearchEnabled', String(next));
+                                    }}
+                                    className={`p-2 rounded-lg transition-colors ${orgDisableSearchOnUpload && attachments.length > 0 ? 'text-orange-400/60 opacity-50 cursor-not-allowed bg-orange-500/5' : webSearchEnabled ? 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20' : 'text-[var(--text-tertiary)] opacity-40 hover:opacity-70 hover:bg-[var(--bg-tertiary)]'}`}
+                                    title={orgDisableSearchOnUpload && attachments.length > 0 ? 'Web search disabled by organisation policy (files attached)' : webSearchEnabled ? 'Web search enabled (click to disable)' : 'Web search disabled (click to enable)'}
+                                >
+                                    <Globe className="w-5 h-5" />
+                                </button>
                                 {/* Apps Button — hidden if no apps available */}
                                 {(() => {
                                     const n8nAppDefs = n8nWorkflows.map(wf => ({
@@ -759,6 +785,8 @@ const InputArea = ({
                                                         case 'google-slides': setInput('List my recent presentations'); break;
                                                         case 'google-sheets': setInput('List my Google Sheets spreadsheets'); break;
                                                         case 'google-docs': setInput('List my recent Google Docs documents'); break;
+                                                        case 'google-contacts': setInput('Search my contacts for '); break;
+                                                        case 'google-keep': setInput('List my Google Keep notes'); break;
                                                         case 'fireflies': setInput('List my recent meeting transcripts'); break;
                                                         case 'youtrack': setInput('Search my YouTrack issues'); break;
                                                         case 'gamma': setInput('Create a presentation about '); break;

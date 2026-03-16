@@ -9,16 +9,20 @@ const ALL_INTEGRATIONS = [
     { id: 'google-slides', label: 'Slides', description: 'Create presentations', category: 'Google' },
     { id: 'google-sheets', label: 'Sheets', description: 'Work with spreadsheets', category: 'Google' },
     { id: 'google-docs', label: 'Docs', description: 'Create and edit documents', category: 'Google' },
+    { id: 'google-contacts', label: 'Contacts', description: 'Search, create & update contacts', category: 'Google' },
+    { id: 'google-keep', label: 'Keep', description: 'List, create & delete notes (Workspace only)', category: 'Google' },
     { id: 'image-gen', label: 'Image Generation', description: 'Generate images with AI', category: 'AI' },
     { id: 'music-gen', label: 'Music Generation', description: 'Generate music with AI (ElevenLabs)', category: 'AI' },
     { id: 'video-gen', label: 'Video Generation', description: 'Generate short videos with AI (Veo)', category: 'AI' },
     { id: 'elevenlabs', label: 'ElevenLabs', description: 'Music with vocals, TTS & sound effects', category: 'AI' },
     { id: 'agent-search', label: 'Agent Search', description: 'AI-powered web search with reranking', category: 'AI' },
+    { id: 'transcription', label: 'Meeting Transcription', description: 'Transcribe audio with speaker diarization (Voxtral)', category: 'AI' },
     { id: 'fireflies', label: 'Fireflies', description: 'Meeting transcripts', category: 'Third-Party' },
     { id: 'youtrack', label: 'YouTrack', description: 'Issue tracking', category: 'Third-Party' },
     { id: 'gamma', label: 'Gamma', description: 'Create presentations', category: 'Third-Party' },
     { id: 'n8n', label: 'n8n', description: 'Workflow automation', category: 'Third-Party' },
     { id: 'linkedin', label: 'LinkedIn', description: 'Post to LinkedIn', category: 'Third-Party' },
+    { id: 'github', label: 'GitHub', description: 'Repository management, view code', category: 'Third-Party' },
 ];
 
 export default function IntegrationsAdminPanel() {

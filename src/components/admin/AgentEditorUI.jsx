@@ -1,5 +1,4 @@
 import React, { useState, useEffect } from 'react';
-import ToolSelectorModal from '../ToolSelectorModal';
 import KnowledgePanel from '../KnowledgePanel';
 import VersionHistory from '../VersionHistory';
 import { API_BASE } from '../../utils/helpers';
@@ -19,7 +18,6 @@ import { API_BASE } from '../../utils/helpers';
 const AgentEditorUI = ({
     data,
     onChange,
-    components = [],
     availableModels = [],
     isSystem = false,
     hasKnowledge = true,
@@ -32,7 +30,6 @@ const AgentEditorUI = ({
     groups = []
 }) => {
     const [activeTab, setActiveTab] = useState('general');
-    const [showToolSelector, setShowToolSelector] = useState(false);
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
     // Local handler to simplify standard inputs
@@ -40,19 +37,11 @@ const AgentEditorUI = ({
         onChange(field, value);
     };
 
-    const handleToolToggle = (toolId) => {
-        const currentTools = data.tools || [];
-        const newTools = currentTools.includes(toolId)
-            ? currentTools.filter(t => t !== toolId)
-            : [...currentTools, toolId];
-        onChange('tools', newTools);
-    };
-
     return (
         <div className="flex flex-col h-full bg-[var(--bg-primary)]">
             {/* Tabs */}
             <div className="flex border-b border-[var(--border-default)] bg-[var(--bg-secondary)]">
-                {['General', ...(hasKnowledge ? ['Knowledge'] : []), 'Tools'].map(tab => (
+                {['General', ...(hasKnowledge ? ['Knowledge'] : [])].map(tab => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab.toLowerCase())}
@@ -439,54 +428,7 @@ const AgentEditorUI = ({
                     <KnowledgePanel agentId={agentId} API_BASE={API_BASE} strictKnowledge={data.strictKnowledge} onStrictKnowledgeChange={(val) => onChange('strictKnowledge', val)} includeSourceReferences={data.includeSourceReferences} onIncludeSourceReferencesChange={(val) => onChange('includeSourceReferences', val)} />
                 )}
 
-                {/* TOOLS TAB */}
-                {activeTab === 'tools' && (
-                    <div className="max-w-2xl space-y-4">
-                        <button
-                            onClick={() => setShowToolSelector(true)}
-                            className="w-full p-4 rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] text-left hover:border-[var(--accent-primary)] transition-all group"
-                        >
-                            <div className="flex items-center justify-between mb-2">
-                                <div className="flex items-center gap-2">
-                                    <span className="font-semibold text-[var(--text-primary)]">Selected Tools</span>
-                                    <span className="text-xs px-2 py-0.5 rounded-full bg-white/10 text-[var(--text-muted)]">
-                                        {(data.tools || []).length}
-                                    </span>
-                                </div>
-                                <span className="text-sm text-[var(--accent-primary)] group-hover:underline">Manage Tools</span>
-                            </div>
-
-                            {(data.tools || []).length > 0 ? (
-                                <div className="flex flex-wrap gap-2">
-                                    {(data.tools || []).map(toolId => {
-                                        const comp = components.find(c => c.id === toolId);
-                                        return (
-                                            <span key={toolId} className="px-2 py-1 text-xs rounded-md bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] border border-[var(--accent-primary)]/20">
-                                                {comp?.name || toolId}
-                                            </span>
-                                        );
-                                    })}
-                                </div>
-                            ) : (
-                                <p className="text-sm text-[var(--text-muted)] italic">No tools selected</p>
-                            )}
-                        </button>
-                    </div>
-                )}
             </div>
-
-            {/* Tool Selector Modal */}
-            <ToolSelectorModal
-                isOpen={showToolSelector}
-                onClose={() => setShowToolSelector(false)}
-                components={components}
-                selectedTools={data.tools || []}
-                onToggle={handleToolToggle}
-                onSelectAll={() => handleChange('tools', components.map(c => c.id))}
-                onClear={() => handleChange('tools', [])}
-                toolParams={data.toolParams || {}}
-                onUpdateParams={(params) => handleChange('toolParams', params)}
-            />
         </div>
     );
 };

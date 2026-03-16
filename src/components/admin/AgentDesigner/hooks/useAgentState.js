@@ -39,8 +39,7 @@ export default function useAgentState() {
     const [enableGuardrails, setEnableGuardrails] = useState(false);
     const [llamaGuardEnabled, setLlamaGuardEnabled] = useState(false);
     const [webSearchGuardEnabled, setWebSearchGuardEnabled] = useState(false);
-    const [sequentialThinkingEnabled, setSequentialThinkingEnabled] = useState(false);
-    const [sequentialThinkingModel, setSequentialThinkingModel] = useState('');
+
     const [strictKnowledge, setStrictKnowledge] = useState(false);
     const [includeSourceReferences, setIncludeSourceReferences] = useState(false);
     const [knowledgeBaseIds, setKnowledgeBaseIds] = useState([]);
@@ -114,8 +113,7 @@ export default function useAgentState() {
         allowCopy, setAllowCopy, embedEnabled, setEmbedEnabled,
         workspaceEnabled, setWorkspaceEnabled, enableGuardrails, setEnableGuardrails,
         llamaGuardEnabled, setLlamaGuardEnabled, webSearchGuardEnabled, setWebSearchGuardEnabled,
-        sequentialThinkingEnabled, setSequentialThinkingEnabled,
-        sequentialThinkingModel, setSequentialThinkingModel,
+
         strictKnowledge, setStrictKnowledge,
         includeSourceReferences, setIncludeSourceReferences,
         knowledgeBaseIds, setKnowledgeBaseIds,

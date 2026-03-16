@@ -1,6 +1,5 @@
 import React, { useEffect } from "react";
 
-import ToolSelectorModal from "../../ToolSelectorModal";
 import MarkdownRenderer from "../../MarkdownRenderer";
 import KnowledgePanel from "../../KnowledgePanel";
 import VersionHistory from "../../VersionHistory";
@@ -98,11 +97,8 @@ const AgentDesigner = ({
     setLlamaGuardEnabled,
     webSearchGuardEnabled,
     setWebSearchGuardEnabled,
-    sequentialThinkingEnabled,
-    setSequentialThinkingEnabled,
-    sequentialThinkingModel,
-    setSequentialThinkingModel,
     strictKnowledge,
+
     setStrictKnowledge,
     includeSourceReferences,
     setIncludeSourceReferences,
@@ -627,7 +623,7 @@ const AgentDesigner = ({
                     {[
                       { id: "identity", label: "Identity" },
                       { id: "knowledge", label: "Knowledge" },
-                      { id: "tools", label: "Capabilities" },
+                      { id: "tools", label: "Integrations" },
                       { id: "behavior", label: "Behavior" },
                       { id: "guardrails", label: "Guardrails" },
                     ].map((item) => (
@@ -748,19 +744,6 @@ const AgentDesigner = ({
           )}
         </div>
       </div>
-
-      {/* Tool Selector Modal - Kept as is */}
-      <ToolSelectorModal
-        isOpen={showToolSelector}
-        onClose={() => setShowToolSelector(false)}
-        components={components}
-        selectedTools={selectedTools}
-        onToggle={toggleTool}
-        onSelectAll={() => setSelectedTools(components.map((c) => c.id))}
-        onClear={() => setSelectedTools([])}
-        toolParams={toolParams}
-        onUpdateParams={setToolParams}
-      />
 
       {/* System Prompt Designer Modal */}
       {showPromptDesigner && (

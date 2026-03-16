@@ -5,11 +5,7 @@ import React, { useState, useMemo } from 'react';
  * Used for AI-generated interactive forms
  */
 const FormRenderer = ({ code, title = 'Form', onSubmit, initialSubmitted = false, initialFormData = {} }) => {
-    const [formData, setFormData] = useState(initialFormData);
-    const [isSubmitted, setIsSubmitted] = useState(initialSubmitted);
-    const [isExpanded, setIsExpanded] = useState(true);
-
-    // Parse the form definition
+    // Parse form definition first for default values
     const formDef = useMemo(() => {
         try {
             return JSON.parse(code);
@@ -17,6 +13,20 @@ const FormRenderer = ({ code, title = 'Form', onSubmit, initialSubmitted = false
             return null;
         }
     }, [code]);
+
+    // Build initial state from defaultValues + initialFormData
+    const [formData, setFormData] = useState(() => {
+        const defaults = {};
+        if (formDef?.fields) {
+            formDef.fields.forEach(f => {
+                if (f.defaultValue !== undefined) defaults[f.name] = f.defaultValue;
+                if (f.type === 'checkbox' && f.defaultValue === undefined) defaults[f.name] = false;
+            });
+        }
+        return { ...defaults, ...initialFormData };
+    });
+    const [isSubmitted, setIsSubmitted] = useState(initialSubmitted);
+    const [isExpanded, setIsExpanded] = useState(true);
 
     if (!formDef) {
         return (

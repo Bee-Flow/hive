@@ -9,6 +9,8 @@ import GroupChatConfig from './pages/GroupChatConfig';
 import TerminalAgentManager from './pages/TerminalAgentManager';
 import TasksPage from './pages/TasksPage';
 import MonitoringDashboard from './pages/monitoring/MonitoringDashboard';
+import MeetingNotesPage from './pages/MeetingNotesPage';
+import TemplatesPage from './pages/TemplatesPage';
 import AgentDesigner from './components/admin/AgentDesigner';
 import LoginPage from './pages/LoginPage';
 import EncryptionSetup from './pages/EncryptionSetup';
@@ -30,6 +32,8 @@ const PAGE_ROUTES = {
     terminalAgents: '/terminal-agents',
     tasks: '/tasks',
     monitoring: '/monitoring',
+    meetingNotes: '/meeting-notes',
+    templates: '/templates',
 };
 
 // Reverse lookup: path → page key
@@ -491,6 +495,12 @@ function App() {
             if (user?.featureFlags?.monitoring === false) return navigateToPage('agents');
             return <MonitoringDashboard onBack={() => navigateToPage('agents')} user={user} />;
         }
+        if (currentPage === 'meetingNotes') {
+            return <MeetingNotesPage user={user} onBack={() => navigateToPage('agents')} />;
+        }
+        if (currentPage === 'templates') {
+            return <TemplatesPage user={user} onBack={() => navigateToPage('agents')} />;
+        }
         return <AgentHub onNavigate={navigateToPage} user={user} initialAgentId={initialUrlRef.current.agentId} initialConversationId={initialUrlRef.current.conversationId} initialDirectConvId={initialDirectConvRef.current} onLogout={handleLogout} currentPage={currentPage} />;
     };
 
@@ -555,7 +565,7 @@ function App() {
                 >
                     <div className="absolute inset-0 bg-black/50 backdrop-blur-sm cursor-pointer" onClick={() => setShowSettings(false)} />
                     <div
-                        className="relative w-[92vw] h-[90vh] max-w-[1000px] rounded-2xl overflow-hidden shadow-2xl border"
+                        className="relative w-[92vw] h-[90vh] max-w-[1200px] rounded-2xl overflow-hidden shadow-2xl border"
                         style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', animation: 'overlayContentIn .25s ease-out' }}
                     >
                         <AdvancedSettings onBack={null} onNavigate={navigateToPage} onLogout={handleLogout} user={user} />

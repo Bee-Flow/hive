@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, CheckSquare, BarChart3, FolderOpen, Plus, FolderInput } from 'lucide-react';
+import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, CheckSquare, BarChart3, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText } from 'lucide-react';
 import { API_BASE } from '../utils/helpers';
 import NotificationCenter from './NotificationCenter';
 
@@ -25,6 +25,132 @@ const readExpanded = (k, fallback) => {
 };
 const writeExpanded = (k, v) => { try { localStorage.setItem(storageKey(k), v ? '1' : '0'); } catch { } };
 
+/* ─── Inline label creator (with color wheel) ─── */
+const CreateLabelInline = ({ onCreateLabel }) => {
+    const [isCreating, setIsCreating] = useState(false);
+    const [name, setName] = useState('');
+    const [color, setColor] = useState('#6366f1');
+    const inputRef = useRef(null);
+    const containerRef = useRef(null);
+
+    useEffect(() => {
+        if (isCreating && inputRef.current) inputRef.current.focus();
+    }, [isCreating]);
+
+    useEffect(() => {
+        if (!isCreating) return;
+        const close = (e) => {
+            if (containerRef.current && !containerRef.current.contains(e.target)) {
+                setIsCreating(false); setName('');
+            }
+        };
+        document.addEventListener('mousedown', close);
+        return () => document.removeEventListener('mousedown', close);
+    }, [isCreating]);
+
+    const handleCreate = async () => {
+        const trimmed = name.trim();
+        if (trimmed && onCreateLabel) {
+            await onCreateLabel(trimmed, color);
+            setName(''); setColor('#6366f1'); setIsCreating(false);
+        }
+    };
+
+    if (!isCreating) {
+        return (
+            <button
+                onClick={(e) => { e.stopPropagation(); setIsCreating(true); }}
+                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] hover:bg-[var(--bg-secondary)] rounded-md transition-colors text-left text-[var(--text-tertiary)]"
+            >
+                <Plus className="w-3 h-3" /> New label
+            </button>
+        );
+    }
+
+    return (
+        <div ref={containerRef} className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-1.5">
+                <input
+                    type="color"
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
+                    className="w-6 h-6 rounded cursor-pointer border-0 p-0 bg-transparent"
+                    title="Pick a color"
+                    style={{ WebkitAppearance: 'none' }}
+                />
+                <input
+                    ref={inputRef}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' && name.trim()) handleCreate();
+                        if (e.key === 'Escape') { setName(''); setIsCreating(false); }
+                    }}
+                    placeholder="Label name..."
+                    className="flex-1 text-[12px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded px-2 py-1 outline-none focus:border-[var(--accent-primary)] text-[var(--text-primary)] min-w-0"
+                />
+                <button
+                    onClick={handleCreate}
+                    disabled={!name.trim()}
+                    className="text-[11px] px-2 py-0.5 rounded-md bg-[var(--accent-primary)] text-white font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
+                >
+                    Add
+                </button>
+            </div>
+        </div>
+    );
+};
+
+/* ─── Inline label editor ─── */
+const EditLabelInline = ({ label, onSave, onCancel }) => {
+    const [name, setName] = useState(label.name);
+    const [color, setColor] = useState(label.color);
+    const inputRef = useRef(null);
+
+    useEffect(() => {
+        if (inputRef.current) { inputRef.current.focus(); inputRef.current.select(); }
+    }, []);
+
+    const handleSave = () => {
+        const trimmed = name.trim();
+        if (trimmed && (trimmed !== label.name || color !== label.color)) {
+            onSave(label.id, { name: trimmed, color });
+        }
+        onCancel();
+    };
+
+    return (
+        <div className="px-2 py-1.5" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-1.5">
+                <input
+                    type="color"
+                    value={color}
+                    onChange={(e) => setColor(e.target.value)}
+                    className="w-6 h-6 rounded cursor-pointer border-0 p-0 bg-transparent"
+                    title="Pick a color"
+                    style={{ WebkitAppearance: 'none' }}
+                />
+                <input
+                    ref={inputRef}
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') handleSave();
+                        if (e.key === 'Escape') onCancel();
+                    }}
+                    className="flex-1 text-[12px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded px-2 py-1 outline-none focus:border-[var(--accent-primary)] text-[var(--text-primary)] min-w-0"
+                />
+                <button onClick={handleSave} className="text-[11px] px-2 py-0.5 rounded-md bg-[var(--accent-primary)] text-white font-medium hover:opacity-90">
+                    Save
+                </button>
+                <button onClick={onCancel} className="text-[11px] p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
+                    <X className="w-3.5 h-3.5" />
+                </button>
+            </div>
+        </div>
+    );
+};
+
 const Sidebar = ({
     isOpen, isMobile = false, onClose,
     selectedAgent, onClearSelection,
@@ -46,6 +172,13 @@ const Sidebar = ({
     onCreateProject,
     onEditProject,
     onMoveToProject,
+    onRenameConversation,
+    onPinConversation,
+    onLabelConversation,
+    conversationLabels = [],
+    onCreateLabel,
+    onDeleteLabel,
+    onEditLabel,
 }) => {
     // We'll use the 'isOpen' prop as 'sidebarOpen' (expanded state)
     // and if !isOpen, we'll show the narrow 'Power Bar'
@@ -87,7 +220,7 @@ const Sidebar = ({
         return convs.filter(c => !c.project_id);
     })();
 
-    /* ── Time-grouped conversations ── */
+    /* ── Time-grouped conversations (with pinned section) ── */
     const groupedConvs = (() => {
         const convs = allConvs;
         if (convs.length === 0) return [];
@@ -95,8 +228,13 @@ const Sidebar = ({
         const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const yesterdayStart = new Date(todayStart); yesterdayStart.setDate(yesterdayStart.getDate() - 1);
         const monthStart = new Date(todayStart); monthStart.setDate(monthStart.getDate() - 30);
-        const groups = { today: [], yesterday: [], month: [], older: [] };
+        const groups = { pinned: [], today: [], yesterday: [], month: [], older: [] };
         convs.forEach(c => {
+            // Pinned conversations go to their own group
+            if (c.pinned) {
+                groups.pinned.push(c);
+                return;
+            }
             const rawDate = c.updated_at || c.created_at;
             const d = rawDate ? new Date(rawDate) : new Date(0);
 
@@ -109,6 +247,7 @@ const Sidebar = ({
             else groups.older.push(c);
         });
         return [
+            { label: 'Pinned', items: groups.pinned, isPinned: true },
             { label: 'Today', items: groups.today },
             { label: 'Yesterday', items: groups.yesterday },
             { label: 'Last 30 Days', items: groups.month },
@@ -125,15 +264,61 @@ const Sidebar = ({
     /* ─── Conversation row ─── */
     const ConvRow = ({ conv }) => {
         const active = convIsActive(conv);
-        const [showMoveMenu, setShowMoveMenu] = useState(false);
-        const moveRef = useRef(null);
+        const [showMenu, setShowMenu] = useState(false);
+        const [isRenaming, setIsRenaming] = useState(false);
+        const [renameValue, setRenameValue] = useState(conv.title || '');
+        const [editingLabelId, setEditingLabelId] = useState(null);
+        const menuRef = useRef(null);
+        const inputRef = useRef(null);
+
         // Close menu on outside click
         useEffect(() => {
-            if (!showMoveMenu) return;
-            const close = (e) => { if (moveRef.current && !moveRef.current.contains(e.target)) setShowMoveMenu(false); };
+            if (!showMenu) return;
+            const close = (e) => { if (menuRef.current && !menuRef.current.contains(e.target)) setShowMenu(false); };
             document.addEventListener('mousedown', close);
             return () => document.removeEventListener('mousedown', close);
-        }, [showMoveMenu]);
+        }, [showMenu]);
+
+        // Focus input when rename starts
+        useEffect(() => {
+            if (isRenaming && inputRef.current) {
+                inputRef.current.focus();
+                inputRef.current.select();
+            }
+        }, [isRenaming]);
+
+        const handleRename = () => {
+            const trimmed = renameValue.trim();
+            if (trimmed && trimmed !== conv.title) {
+                onRenameConversation?.(conv, trimmed);
+            }
+            setIsRenaming(false);
+        };
+
+        const handlePin = () => {
+            onPinConversation?.(conv);
+            setShowMenu(false);
+        };
+
+        if (isRenaming) {
+            return (
+                <div className={`${CONV_ROW} pr-2`}>
+                    <input
+                        ref={inputRef}
+                        value={renameValue}
+                        onChange={(e) => setRenameValue(e.target.value)}
+                        onBlur={handleRename}
+                        onKeyDown={(e) => {
+                            if (e.key === 'Enter') handleRename();
+                            if (e.key === 'Escape') { setRenameValue(conv.title || ''); setIsRenaming(false); }
+                        }}
+                        className="flex-1 text-[13px] bg-white border border-[var(--accent-primary)] rounded px-1.5 py-0.5 outline-none text-black min-w-0"
+                        onClick={(e) => e.stopPropagation()}
+                    />
+                </div>
+            );
+        }
+
         return (
             <div
                 onClick={() => selectConv(conv)}
@@ -141,57 +326,127 @@ const Sidebar = ({
                 title={conv.updated_at ? new Date(conv.updated_at).toLocaleString() : ''}
             >
                 {active && <div className={ACCENT_BAR_CONV} />}
+                {conv.pinned && <Pin className="w-3 h-3 text-[var(--accent-primary)] flex-shrink-0 -rotate-45" />}
+                {/* Label dots */}
+                {(() => { try { const ls = JSON.parse(conv.labels_json || '[]'); return ls.length > 0 ? <div className="flex gap-0.5 flex-shrink-0">{ls.map(lid => { const l = conversationLabels.find(x => x.id === lid); return l ? <div key={lid} className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: l.color }} title={l.name} /> : null; })}</div> : null; } catch { return null; } })()}
                 <span className={`text-[14px] truncate flex-1 leading-snug ${active ? TEXT_ACTIVE : TEXT_IDLE}`}>
                     {conv.title || 'Untitled Chat'}
                 </span>
-                {/* Move to project button */}
-                {projects.length > 0 && (
-                    <div className="relative" ref={moveRef}>
-                        <button
-                            onClick={(e) => { e.stopPropagation(); setShowMoveMenu(v => !v); }}
-                            className="opacity-0 group-hover:opacity-100 p-1 text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] rounded transition-opacity flex-shrink-0"
-                            title="Move to project"
+                {/* Three-dot menu */}
+                <div className="relative" ref={menuRef}>
+                    <button
+                        onClick={(e) => { e.stopPropagation(); setShowMenu(v => !v); }}
+                        className="opacity-0 group-hover:opacity-100 p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded transition-opacity flex-shrink-0"
+                        title="Options"
+                    >
+                        <MoreHorizontal className="w-3.5 h-3.5" />
+                    </button>
+                    {showMenu && (
+                        <div
+                            className="absolute right-0 top-full mt-1 w-52 rounded-lg border shadow-xl overflow-hidden z-50"
+                            style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', animation: 'sidebarMenuIn .15s ease-out' }}
                         >
-                            <FolderInput className="w-3.5 h-3.5" />
-                        </button>
-                        {showMoveMenu && (
-                            <div
-                                className="absolute right-0 top-full mt-1 w-44 rounded-lg border shadow-xl overflow-hidden z-50"
-                                style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)' }}
-                            >
-                                <div className="p-1">
-                                    {conv.project_id && (
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); onMoveToProject?.(conv, null); setShowMoveMenu(false); }}
-                                            className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] hover:bg-[var(--bg-secondary)] rounded-md transition-colors text-left text-[var(--text-secondary)]"
-                                        >
-                                            <X className="w-3.5 h-3.5" /> Remove from project
-                                        </button>
-                                    )}
-                                    {projects.filter(p => p.id !== conv.project_id).map(p => (
-                                        <button
-                                            key={p.id}
-                                            onClick={(e) => { e.stopPropagation(); onMoveToProject?.(conv, p); setShowMoveMenu(false); }}
-                                            className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] hover:bg-[var(--bg-secondary)] rounded-md transition-colors text-left text-[var(--text-primary)]"
-                                        >
-                                            <div className="w-4 h-4 rounded flex items-center justify-center text-[10px] flex-shrink-0" style={{ background: (p.color || '#6366f1') + '20' }}>
-                                                {p.icon || '📁'}
-                                            </div>
-                                            <span className="truncate">{p.name}</span>
-                                        </button>
-                                    ))}
+                            <div className="p-1">
+                                {/* Pin / Unpin */}
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); handlePin(); }}
+                                    className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] hover:bg-[var(--bg-secondary)] rounded-md transition-colors text-left text-[var(--text-primary)]"
+                                >
+                                    {conv.pinned
+                                        ? <><PinOff className="w-3.5 h-3.5" /> Unpin</>
+                                        : <><Pin className="w-3.5 h-3.5" /> Pin to top</>
+                                    }
+                                </button>
+                                {/* Rename */}
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); setShowMenu(false); setIsRenaming(true); }}
+                                    className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] hover:bg-[var(--bg-secondary)] rounded-md transition-colors text-left text-[var(--text-primary)]"
+                                >
+                                    <Pencil className="w-3.5 h-3.5" /> Rename
+                                </button>
+                                {/* Labels */}
+                                <div className="mx-1 my-1 border-t border-[var(--border-subtle)]" />
+                                <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] flex items-center gap-1.5">
+                                    <Tag className="w-3 h-3" /> Labels
                                 </div>
+                                <div className="max-h-40 overflow-y-auto">
+                                    {conversationLabels.map(label => {
+                                        if (editingLabelId === label.id) {
+                                            return <EditLabelInline key={label.id} label={label} onSave={(id, updates) => { onEditLabel?.(id, updates); setEditingLabelId(null); }} onCancel={() => setEditingLabelId(null)} />;
+                                        }
+                                        const convLabels = (() => { try { return JSON.parse(conv.labels_json || '[]'); } catch { return []; } })();
+                                        const has = convLabels.includes(label.id);
+                                        return (
+                                            <div key={label.id} className="group/lbl flex items-center">
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); onLabelConversation?.(conv, label.id); }}
+                                                    className="flex-1 flex items-center gap-2 px-2.5 py-1.5 text-[12px] hover:bg-[var(--bg-secondary)] rounded-md transition-colors text-left text-[var(--text-primary)] min-w-0"
+                                                >
+                                                    <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 ring-1 ring-black/10" style={{ background: label.color }} />
+                                                    <span className="flex-1 truncate">{label.name}</span>
+                                                    {has && <Check className="w-3.5 h-3.5 text-[var(--accent-primary)] flex-shrink-0" />}
+                                                </button>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); setEditingLabelId(label.id); }}
+                                                    className="p-1 text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] rounded transition-all flex-shrink-0 opacity-0 group-hover/lbl:opacity-100"
+                                                    title="Edit label"
+                                                >
+                                                    <Pencil className="w-2.5 h-2.5" />
+                                                </button>
+                                                <button
+                                                    onClick={(e) => { e.stopPropagation(); if (confirm(`Delete label "${label.name}"?`)) { onDeleteLabel?.(label.id); } }}
+                                                    className="p-1 mr-1 text-[var(--text-tertiary)] hover:text-red-500 rounded transition-all flex-shrink-0 opacity-0 group-hover/lbl:opacity-100"
+                                                    title="Delete label"
+                                                >
+                                                    <X className="w-2.5 h-2.5" />
+                                                </button>
+                                            </div>
+                                        );
+                                    })}
+                                    {conversationLabels.length === 0 && (
+                                        <div className="px-2.5 py-1.5 text-[11px] text-[var(--text-tertiary)] italic">No labels yet</div>
+                                    )}
+                                </div>
+                                {/* Create new label inline */}
+                                <CreateLabelInline onCreateLabel={onCreateLabel} />
+                                {/* Move to project */}
+                                {projects.length > 0 && (
+                                    <>
+                                        <div className="mx-1 my-1 border-t border-[var(--border-subtle)]" />
+                                        {conv.project_id && (
+                                            <button
+                                                onClick={(e) => { e.stopPropagation(); onMoveToProject?.(conv, null); setShowMenu(false); }}
+                                                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] hover:bg-[var(--bg-secondary)] rounded-md transition-colors text-left text-[var(--text-secondary)]"
+                                            >
+                                                <X className="w-3.5 h-3.5" /> Remove from project
+                                            </button>
+                                        )}
+                                        {projects.filter(p => p.id !== conv.project_id).map(p => (
+                                            <button
+                                                key={p.id}
+                                                onClick={(e) => { e.stopPropagation(); onMoveToProject?.(conv, p); setShowMenu(false); }}
+                                                className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] hover:bg-[var(--bg-secondary)] rounded-md transition-colors text-left text-[var(--text-primary)]"
+                                            >
+                                                <div className="w-4 h-4 rounded flex items-center justify-center text-[10px] flex-shrink-0" style={{ background: (p.color || '#6366f1') + '20' }}>
+                                                    {p.icon || '📁'}
+                                                </div>
+                                                <span className="truncate">{p.name}</span>
+                                            </button>
+                                        ))}
+                                    </>
+                                )}
+                                {/* Delete */}
+                                <div className="mx-1 my-1 border-t border-[var(--border-subtle)]" />
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); deleteConv(conv.id); setShowMenu(false); }}
+                                    className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] hover:bg-red-50 rounded-md transition-colors text-left text-red-500"
+                                >
+                                    <Trash2 className="w-3.5 h-3.5" /> Delete
+                                </button>
                             </div>
-                        )}
-                    </div>
-                )}
-                <button
-                    onClick={(e) => { e.stopPropagation(); deleteConv(conv.id); }}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-[var(--text-tertiary)] hover:text-red-500 rounded transition-opacity flex-shrink-0"
-                    title="Delete"
-                >
-                    <Trash2 className="w-3.5 h-3.5" />
-                </button>
+                        </div>
+                    )}
+                </div>
             </div>
         );
     };
@@ -390,14 +645,11 @@ const Sidebar = ({
 
             {/* ── Recent Chats ── */}
             <div className={`flex-1 min-h-0 flex flex-col overflow-hidden ${isOpen ? '' : 'hidden'}`}>
-                <div className={SECTION_HDR} onClick={toggleChats}>
+                <div className="flex items-center justify-between px-3 h-9 select-none">
                     <span className={SECTION_LBL}>Chats</span>
-                    <div className="flex items-center gap-1.5">
-                        {allConvs.length > 0 && (
-                            <span className="text-[10px] text-[var(--text-tertiary)] font-medium tabular-nums">{allConvs.length}</span>
-                        )}
-                        <ChevronDown className={`w-3.5 h-3.5 text-[var(--text-tertiary)] transition-transform duration-200 ${chatsOpen ? '' : '-rotate-90'}`} />
-                    </div>
+                    {allConvs.length > 0 && (
+                        <span className="text-[10px] text-[var(--text-tertiary)] font-medium tabular-nums">{allConvs.length}</span>
+                    )}
                 </div>
 
                 <div className="flex-1 overflow-y-auto custom-scrollbar px-1.5 pb-1">
@@ -406,29 +658,17 @@ const Sidebar = ({
                             {selectedAgent || directChatMode ? 'No chats yet' : 'Select an agent to begin'}
                         </p>
                     ) : (
-                        !chatsOpen ? (
-                            <>
-                                {previewConvs.map(c => <ConvRow key={c.id} conv={c} />)}
-                                {hasMore && (
-                                    <button onClick={toggleChats} className={`${ROW} ${ROW_IDLE} h-8 justify-center`}>
-                                        <span className="text-[12px] font-medium text-[var(--accent-primary)]">
-                                            View all ({allConvs.length})
-                                        </span>
-                                    </button>
-                                )}
-                            </>
-                        ) : (
-                            groupedConvs.map(group => (
-                                <div key={group.label} className="mt-3 first:mt-0">
-                                    <h3 className="px-3 py-1 text-[10px] font-bold text-gray-500 uppercase tracking-widest">
-                                        {group.label}
-                                    </h3>
-                                    <div className="space-y-px">
-                                        {group.items.map(c => <ConvRow key={c.id} conv={c} />)}
-                                    </div>
+                        groupedConvs.map(group => (
+                            <div key={group.label} className="mt-3 first:mt-0">
+                                <h3 className={`px-3 py-1 text-[10px] font-bold uppercase tracking-widest ${group.isPinned ? 'text-[var(--accent-primary)]' : 'text-gray-500'}`}>
+                                    {group.isPinned && <Pin className="w-2.5 h-2.5 inline mr-1 -mt-0.5 -rotate-45" />}
+                                    {group.label}
+                                </h3>
+                                <div className="space-y-px">
+                                    {group.items.map(c => <ConvRow key={c.id} conv={c} />)}
                                 </div>
-                            ))
-                        )
+                            </div>
+                        ))
                     )) : null}
                 </div>
             </div>
@@ -527,6 +767,28 @@ const Sidebar = ({
                                     {currentPage === 'settings' && <div className={ACCENT_BAR} />}
                                     <Settings className={`w-4 h-4 ${currentPage === 'settings' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
                                     <span className={`text-[13px] ${currentPage === 'settings' ? TEXT_ACTIVE : TEXT_IDLE}`}>Settings</span>
+                                </button>
+                            )}
+                        </div>
+                        <div className="border-t border-[var(--border-subtle)] p-1">
+                            {!isMobile && (
+                                <button
+                                    onClick={() => { setShowProfileMenu(false); onNavigate('meetingNotes'); }}
+                                    className={`${ROW} ${currentPage === 'meetingNotes' ? ROW_ACTIVE : ROW_IDLE}`}
+                                >
+                                    {currentPage === 'meetingNotes' && <div className={ACCENT_BAR} />}
+                                    <Mic className={`w-4 h-4 ${currentPage === 'meetingNotes' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
+                                    <span className={`text-[13px] ${currentPage === 'meetingNotes' ? TEXT_ACTIVE : TEXT_IDLE}`}>Meeting Notes</span>
+                                </button>
+                            )}
+                            {!isMobile && (
+                                <button
+                                    onClick={() => { setShowProfileMenu(false); onNavigate('templates'); }}
+                                    className={`${ROW} ${currentPage === 'templates' ? ROW_ACTIVE : ROW_IDLE}`}
+                                >
+                                    {currentPage === 'templates' && <div className={ACCENT_BAR} />}
+                                    <FileText className={`w-4 h-4 ${currentPage === 'templates' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
+                                    <span className={`text-[13px] ${currentPage === 'templates' ? TEXT_ACTIVE : TEXT_IDLE}`}>Templates</span>
                                 </button>
                             )}
                         </div>

@@ -11,8 +11,8 @@ export const BehaviorSection = ({
   availableCollections, selectedCollections, setSelectedCollections,
   regexScope, setRegexScope, guardrailAction, setGuardrailAction,
   enabledIntegrations, setEnabledIntegrations, integrationStatus,
-  sequentialThinkingEnabled, setSequentialThinkingEnabled,
-  sequentialThinkingModel, setSequentialThinkingModel, availableModels,
+  availableModels,
+
   CAPABILITIES, checkCapability, toggleCapability,
   allowCopy, setAllowCopy, embedEnabled, setEmbedEnabled,
   bubbleColor, setBubbleColor, bubblePosition, setBubblePosition,

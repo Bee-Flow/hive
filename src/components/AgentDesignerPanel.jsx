@@ -14,7 +14,6 @@ const AgentDesignerPanel = ({
     onSave,
     onDelete
 }) => {
-    const [components, setComponents] = useState([]);
     const [saving, setSaving] = useState(false);
     const [availableModels, setAvailableModels] = useState([]);
     const [organizations, setOrganizations] = useState([]);
@@ -83,22 +82,11 @@ const AgentDesignerPanel = ({
     }, [agent]);
 
     useEffect(() => {
-        fetchComponents();
         fetchModels();
         fetchOrgsAndGroups();
     }, []);
 
-    const fetchComponents = async () => {
-        try {
-            const res = await authFetch(`${API_BASE}/agents/meta/components`);
-            const data = await res.json();
-            if (Array.isArray(data)) {
-                setComponents(data);
-            }
-        } catch (err) {
-            console.error('Failed to fetch components:', err);
-        }
-    };
+
 
     const fetchModels = async () => {
         try {
@@ -264,7 +252,6 @@ const AgentDesignerPanel = ({
                 <AgentEditorUI
                     data={formData}
                     onChange={handleFieldChange}
-                    components={components}
                     availableModels={availableModels}
                     hasKnowledge={!!agent}
                     agentId={agent ? agent.id : null}

@@ -26,6 +26,14 @@ export const INTEGRATION_CATALOG = [
         iconSvg: <svg className="w-5 h-5" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><path d="M40 45H8c-1.66 0-3-1.34-3-3V6c0-1.66 1.34-3 3-3h22l13 13v27c0 1.66-1.34 3-3 3z" fill="#FBBC04" /><path d="M30 3l13 13H33c-1.66 0-3-1.34-3-3V3z" fill="#E8A400" /><rect x="13" y="24" width="22" height="14" rx="1.5" fill="#fff" /><rect x="17" y="28" width="14" height="2" rx="1" fill="#FBBC04" /><rect x="17" y="33" width="10" height="2" rx="1" fill="#FBBC04" /></svg>
     },
     {
+        id: 'google-contacts', label: 'Contacts', group: 'google', description: 'Search, create & update contacts',
+        iconSvg: <svg className="w-5 h-5" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><path d="M40 45H8c-1.66 0-3-1.34-3-3V6c0-1.66 1.34-3 3-3h22l13 13v27c0 1.66-1.34 3-3 3z" fill="#4285F4" /><path d="M30 3l13 13H33c-1.66 0-3-1.34-3-3V3z" fill="#2A67C8" /><circle cx="24" cy="22" r="6" fill="#fff" /><path d="M14 38c0-5.52 4.48-10 10-10s10 4.48 10 10" fill="#fff" /></svg>
+    },
+    {
+        id: 'google-keep', label: 'Keep', group: 'google', description: 'List, create & delete notes (Workspace only)',
+        iconSvg: <svg className="w-5 h-5" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="3" width="38" height="42" rx="3" fill="#FBBC04" /><rect x="14" y="16" width="20" height="3" rx="1.5" fill="#fff" /><rect x="14" y="23" width="20" height="3" rx="1.5" fill="#fff" /><rect x="14" y="30" width="14" height="3" rx="1.5" fill="#fff" /><circle cx="24" cy="10" r="3" fill="#fff" /></svg>
+    },
+    {
         id: 'image-gen', label: 'Image Generation', group: 'platform', description: 'Generate images with AI',
         iconSvg: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="18" height="18" rx="3" fill="url(#ig_g1)" /><circle cx="9" cy="9" r="2" fill="white" fillOpacity="0.9" /><path d="M3 15l5-4 3 3 4-5 6 7v2a3 3 0 01-3 3H6a3 3 0 01-3-3v-3z" fill="white" fillOpacity="0.4" /><defs><linearGradient id="ig_g1" x1="3" y1="3" x2="21" y2="21" gradientUnits="userSpaceOnUse"><stop stopColor="#F59E0B" /><stop offset="1" stopColor="#EF4444" /></linearGradient></defs></svg>
     },
@@ -64,5 +72,9 @@ export const INTEGRATION_CATALOG = [
     {
         id: 'linkedin', label: 'LinkedIn', group: 'third-party', description: 'Post to LinkedIn',
         iconSvg: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="2" y="2" width="20" height="20" rx="4" fill="#0A66C2" /><path d="M7.5 9.5h2v7h-2v-7zm1-3.2a1.2 1.2 0 110 2.4 1.2 1.2 0 010-2.4zm3.5 3.2h1.9v1h0c.27-.5 .92-1.1 1.9-1.1 2 0 2.4 1.3 2.4 3.1v3.6h-2v-3.2c0-.8 0-1.8-1.1-1.8s-1.3.9-1.3 1.7v3.3h-2v-6.6z" fill="white" /></svg>
+    },
+    {
+        id: 'transcription', label: 'Meeting Transcription', group: 'platform', description: 'Transcribe audio with speaker diarization',
+        iconSvg: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="18" height="18" rx="3" fill="url(#tr_g1)" /><path d="M12 7v6m0 0l-2-2m2 2l2-2" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /><path d="M8 15a4 4 0 008 0" stroke="white" strokeWidth="1.5" strokeLinecap="round" fill="none" /><line x1="12" y1="19" x2="12" y2="20" stroke="white" strokeWidth="1.5" strokeLinecap="round" /><defs><linearGradient id="tr_g1" x1="3" y1="3" x2="21" y2="21" gradientUnits="userSpaceOnUse"><stop stopColor="#6366F1" /><stop offset="1" stopColor="#06B6D4" /></linearGradient></defs></svg>
     },
 ];

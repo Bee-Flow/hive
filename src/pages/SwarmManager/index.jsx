@@ -1019,42 +1019,8 @@ The final answer is ALWAYS produced by {last_worker}, never by you directly.`,
                                                         </label>
                                                     </div>
 
-                                                    {/* Sequential Thinking */}
-                                                    <div className="p-4 rounded-xl bg-white/5 border border-transparent hover:border-[var(--border-subtle)] transition-colors space-y-3">
-                                                        <div className="flex items-center justify-between">
-                                                            <div>
-                                                                <h4 className="text-sm font-medium text-primary flex items-center gap-2">
-                                                                    💭 Orchestrator Thinking
-                                                                </h4>
-                                                                <p className="text-xs text-muted mt-0.5">Run a separate thinking model before the orchestrator responds, to plan worker coordination.</p>
-                                                            </div>
-                                                            <label className="relative inline-flex items-center cursor-pointer">
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={selected.config?.sequentialThinkingEnabled || false}
-                                                                    onChange={(e) => updateSelected('config', { ...selected.config, sequentialThinkingEnabled: e.target.checked })}
-                                                                    className="sr-only peer"
-                                                                />
-                                                                <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-500"></div>
-                                                            </label>
-                                                        </div>
-                                                        {selected.config?.sequentialThinkingEnabled && (
-                                                            <div>
-                                                                <label className="block text-xs text-muted mb-1">Thinking Model</label>
-                                                                <select
-                                                                    value={selected.config?.sequentialThinkingModel || ''}
-                                                                    onChange={(e) => updateSelected('config', { ...selected.config, sequentialThinkingModel: e.target.value || undefined })}
-                                                                    className="w-full bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded-lg px-3 py-2 text-sm"
-                                                                    style={{ color: 'var(--text-primary)' }}
-                                                                >
-                                                                    <option value="">Same as orchestrator model</option>
-                                                                    {availableModels.map(m => (
-                                                                        <option key={m.id} value={m.id}>{m.displayName || m.name}</option>
-                                                                    ))}
-                                                                </select>
-                                                            </div>
-                                                        )}
-                                                    </div>
+
+
 
                                                     {/* Version History */}
                                                     {selected.id && !isCreating && (
@@ -1303,7 +1269,6 @@ The final answer is ALWAYS produced by {last_worker}, never by you directly.`,
                                     <SwarmAgentFullEditor
                                         data={getCurrentAgentData()}
                                         onChange={handleAgentEditorChange}
-                                        components={components}
                                         availableModels={availableModels}
                                     />
                                 )}

@@ -15,6 +15,8 @@ import EmailDraftCard from './EmailDraftCard';
 import CalendarDraftCard from './CalendarDraftCard';
 import LinkedInDraftCard from './LinkedInDraftCard';
 import WhatsAppDraftCard from './WhatsAppDraftCard';
+import ContactsDraftCard from './ContactsDraftCard';
+import KeepDraftCard from './KeepDraftCard';
 import { SheetsResultCard, SheetsDraftCard } from './SheetsResultCard';
 import { SheetsReportCard } from './SheetsReportView';
 
@@ -49,6 +51,8 @@ const MessageItem = ({
     const [calendarDraftStatuses, setCalendarDraftStatuses] = useState({});
     const [linkedInDraftStatuses, setLinkedInDraftStatuses] = useState({});
     const [whatsappDraftStatuses, setWhatsappDraftStatuses] = useState({});
+    const [contactsDraftStatuses, setContactsDraftStatuses] = useState({});
+    const [keepDraftStatuses, setKeepDraftStatuses] = useState({});
     const [sheetsDraftStatuses, setSheetsDraftStatuses] = useState({});
     const [feedbackRating, setFeedbackRating] = useState(null);
     const [showFeedbackForm, setShowFeedbackForm] = useState(false);
@@ -154,11 +158,6 @@ const MessageItem = ({
                         <div className="font-bold">
                             {msg.willRedact ? 'Content Policy Violation' : 'Message Policy Violation'}
                         </div>
-                        {msg.violationCategories && (
-                            <div className="text-xs text-white/90 mt-0.5 font-medium">
-                                Detected: {msg.violationCategories}
-                            </div>
-                        )}
                         <div className="text-xs text-white/70 mt-0.5">
                             {msg.willRedact
                                 ? `Sensitive content will be redacted in ${msg.deleteIn || 5} seconds`
@@ -261,6 +260,12 @@ const MessageItem = ({
                     {!isUser && msg.whatsappDrafts && (
                         <WhatsAppDraftCard msg={msg} whatsappDraftStatuses={whatsappDraftStatuses} setWhatsappDraftStatuses={setWhatsappDraftStatuses} />
                     )}
+                    {!isUser && msg.contactsDrafts && (
+                        <ContactsDraftCard msg={msg} contactsDraftStatuses={contactsDraftStatuses} setContactsDraftStatuses={setContactsDraftStatuses} />
+                    )}
+                    {!isUser && msg.keepDrafts && (
+                        <KeepDraftCard msg={msg} keepDraftStatuses={keepDraftStatuses} setKeepDraftStatuses={setKeepDraftStatuses} />
+                    )}
                     {!isUser && msg.mapEmbeds && msg.mapEmbeds.length > 0 && (
                         <div className="map-embeds-container">
                             {msg.mapEmbeds.map((embed, i) => (
@@ -329,18 +334,21 @@ const MessageItem = ({
                     {/* AI Generated Images — rendered after text (skip if album art for audio) */}
                     {!isUser && msg.images && msg.images.length > 0 && !(msg.audioFiles && msg.audioFiles.length > 0) && (
                         <div className="mt-3 flex flex-wrap gap-2">
-                            {msg.images.map((img, i) => (
+                            {msg.images.map((img, i) => {
+                                const imgSrc = img.url || (img.data ? `data:${img.mimeType};base64,${img.data}` : null);
+                                if (!imgSrc) return null;
+                                return (
                                 <div key={i} className="relative rounded-xl overflow-hidden border border-[var(--border-subtle)] shadow-lg group/img max-w-md">
                                     <img
-                                        src={`data:${img.mimeType};base64,${img.data}`}
+                                        src={imgSrc}
                                         alt="AI generated image"
                                         className="w-full h-auto object-contain cursor-pointer hover:opacity-95 transition-opacity"
                                         style={{ background: 'var(--bg-tertiary)', maxHeight: '400px' }}
-                                        onClick={() => setLightboxImage(`data:${img.mimeType};base64,${img.data}`)}
+                                        onClick={() => setLightboxImage(imgSrc)}
                                     />
                                     <div className="absolute bottom-2 right-2 opacity-0 group-hover/img:opacity-100 transition-opacity">
                                         <a
-                                            href={`data:${img.mimeType};base64,${img.data}`}
+                                            href={imgSrc}
                                             download={`ai-image-${Date.now()}.png`}
                                             className="flex items-center gap-1 px-2 py-1 rounded-lg text-[10px] font-medium text-white bg-black/60 backdrop-blur-sm hover:bg-black/80 transition-colors"
                                         >
@@ -348,7 +356,8 @@ const MessageItem = ({
                                         </a>
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                     {/* AI Generated Audio — Premium Player with Album Art */}
@@ -508,11 +517,24 @@ const MessageItem = ({
                 {/* Attachments */}
                 {msg.attachments && msg.attachments.length > 0 && (
                     <div className="mt-2 flex flex-wrap gap-2">
-                        {msg.attachments.map((att, i) => (
-                            <div key={i} className={`rounded p-1.5 text-xs border flex items-center gap-1 ${isUser ? 'bg-white/10 border-white/20' : 'bg-[var(--bg-primary)] border-[var(--border-subtle)]'}`}>
-                                <span className="opacity-70">FILE:</span> <span className="font-medium">{att.name || 'Attachment'}</span>
-                            </div>
-                        ))}
+                        {msg.attachments.map((att, i) => {
+                            const isImage = att.type?.startsWith('image/');
+                            const previewSrc = isImage ? (att.url || att.content) : null;
+                            return (
+                                <div key={i} className={`rounded-lg overflow-hidden text-xs border flex items-center gap-1.5 ${isUser ? 'bg-white/10 border-white/20' : 'bg-[var(--bg-primary)] border-[var(--border-subtle)]'}`}>
+                                    {previewSrc && (
+                                        <img src={previewSrc} alt={att.name} className="w-12 h-12 object-cover flex-shrink-0 cursor-pointer" onClick={() => setLightboxImage(previewSrc)} />
+                                    )}
+                                    <div className="px-2 py-1.5 min-w-0">
+                                        {att.url ? (
+                                            <a href={att.url} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline truncate block max-w-[200px]">{att.name || 'Attachment'}</a>
+                                        ) : (
+                                            <span className="font-medium truncate block max-w-[200px]">{att.name || 'Attachment'}</span>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
                 )}
 

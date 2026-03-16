@@ -214,7 +214,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user }) => {
 
                 {/* Content panel */}
                 <div className="flex-1 overflow-auto">
-                    <div className={`mx-auto px-8 py-8 ${activeTab === 'organisation' ? 'max-w-4xl' : 'max-w-lg'}`}>
+                    <div className={`mx-auto px-8 py-8 ${activeTab === 'organisation' ? 'max-w-5xl' : 'max-w-lg'}`}>
                         {renderContent()}
                     </div>
                 </div>

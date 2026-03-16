@@ -227,7 +227,7 @@ const AIConfigPanel = () => {
         { id: 'providers', label: 'API Keys', icon: '🔑' },
         { id: 'models', label: 'Models', icon: '🧠' },
         { id: 'allowedModels', label: 'Agent Models', icon: '🛡️' },
-        { id: 'chatModels', label: 'Chat Models', icon: '' },
+        { id: 'chatModels', label: 'Chat Models', icon: '🗨️' },
         { id: 'directChat', label: 'Direct Chat', icon: '💬' },
         { id: 'modelCosts', label: 'Model Costs', icon: '💰' },
     ];

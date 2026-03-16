@@ -64,6 +64,9 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
     const [showProjectModal, setShowProjectModal] = useState(false);
     const [editingProject, setEditingProject] = useState(null);
 
+    // Conversation Labels State
+    const [conversationLabels, setConversationLabels] = useState([]);
+
     // Chat engine hook — owns messages, isLoading, sendMessage, stopGenerating
     const { messages, setMessages, isLoading, sendMessage, stopGenerating, retryMessage, editAndRegenerate, submittedFormIds, setSubmittedFormIds } = useChatEngine({
         selectedAgent,
@@ -230,6 +233,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                     }
 
                     setAgents(data);
+                    loadLabels(); // Always load labels on init
 
                     // Startup Logic — URL agent takes priority over localStorage
                     let targetId = initialAgentId;
@@ -240,6 +244,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                         if (mode === 'direct-chat') {
                             setDirectChatMode(true);
                             loadDirectConversations();
+                            loadLabels();
                             loadModelTiers();
                         } else if (mode === 'specific' && defaultId) {
                             targetId = defaultId;
@@ -248,6 +253,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                             if (lastMode === 'direct-chat') {
                                 setDirectChatMode(true);
                                 loadDirectConversations();
+                                loadLabels();
                                 loadModelTiers();
                             } else if (lastUsedId) {
                                 targetId = lastUsedId;
@@ -259,6 +265,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                     if (initialDirectConvId) {
                         setDirectChatMode(true);
                         loadModelTiers();
+                        loadLabels();
                         loadDirectConversations().then(async () => {
                             try {
                                 const convPrefix = initialDirectConvId;
@@ -394,7 +401,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 // Filter out tool messages and empty messages - only show user and assistant with content
                 parsedMessages = parsedMessages.filter(m =>
                     m.role !== 'tool' &&
-                    ((m.content && m.content.trim().length > 0) || (m.images && m.images.length > 0) || (m.audioFiles && m.audioFiles.length > 0) || (m.videoFiles && m.videoFiles.length > 0) || m.sheetsResults || m.sheetsDrafts || m.sheetsReports || m.emailDrafts || m.calendarDrafts)
+                    ((m.content && m.content.trim().length > 0) || (m.images && m.images.length > 0) || (m.audioFiles && m.audioFiles.length > 0) || (m.videoFiles && m.videoFiles.length > 0) || m.sheetsResults || m.sheetsDrafts || m.sheetsReports || m.emailDrafts || m.calendarDrafts || m.contactsDrafts)
                 );
 
                 // Strip streaming-only progress fields — these are only relevant during live chat
@@ -409,7 +416,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
 
                 // Remove messages that became empty after cleanup
                 parsedMessages = parsedMessages.filter(m =>
-                    m.role === 'user' || (m.content && m.content.trim().length > 0) || (m.images && m.images.length > 0) || (m.audioFiles && m.audioFiles.length > 0) || (m.videoFiles && m.videoFiles.length > 0) || m.sheetsResults || m.sheetsDrafts || m.sheetsReports || m.emailDrafts || m.calendarDrafts
+                    m.role === 'user' || (m.content && m.content.trim().length > 0) || (m.images && m.images.length > 0) || (m.audioFiles && m.audioFiles.length > 0) || (m.videoFiles && m.videoFiles.length > 0) || m.sheetsResults || m.sheetsDrafts || m.sheetsReports || m.emailDrafts || m.calendarDrafts || m.contactsDrafts
                 );
 
                 setMessages(parsedMessages);
@@ -456,6 +463,13 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
         } catch (e) { console.error('Failed to load direct conversations:', e); }
     };
 
+    const loadLabels = async () => {
+        try {
+            const res = await authFetch(`${API_BASE}/ai/labels`);
+            if (res.ok) setConversationLabels(await res.json());
+        } catch (e) { console.error('Failed to load labels:', e); }
+    };
+
     const loadModelTiers = async () => {
         try {
             const res = await authFetch(`${API_BASE}/ai/config/chat-models`);
@@ -500,6 +514,122 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
             else if (selectedAgent) loadConversations(selectedAgent.id);
         } catch (e) {
             console.error('Failed to move conversation to project:', e);
+        }
+    };
+
+    const handleRenameConversation = async (conv, newTitle) => {
+        try {
+            if (directChatMode) {
+                await authFetch(`${API_BASE}/ai/direct/conversations/${conv.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: newTitle }),
+                });
+                setDirectConversations(prev => prev.map(c => c.id === conv.id ? { ...c, title: newTitle } : c));
+            } else {
+                const agentId = conv.agent_id || selectedAgent?.id;
+                await authFetch(`${API_BASE}/agents/${agentId}/conversations/${conv.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ title: newTitle }),
+                });
+                setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, title: newTitle } : c));
+            }
+        } catch (e) {
+            console.error('Failed to rename conversation:', e);
+        }
+    };
+
+    const handlePinConversation = async (conv) => {
+        const newPinned = !conv.pinned;
+        try {
+            if (directChatMode) {
+                await authFetch(`${API_BASE}/ai/direct/conversations/${conv.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pinned: newPinned }),
+                });
+                setDirectConversations(prev => prev.map(c => c.id === conv.id ? { ...c, pinned: newPinned } : c));
+            } else {
+                const agentId = conv.agent_id || selectedAgent?.id;
+                await authFetch(`${API_BASE}/agents/${agentId}/conversations/${conv.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ pinned: newPinned }),
+                });
+                setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, pinned: newPinned } : c));
+            }
+        } catch (e) {
+            console.error('Failed to pin/unpin conversation:', e);
+        }
+    };
+
+    const handleLabelConversation = async (conv, label) => {
+        // Toggle label: if already has it, remove; otherwise add
+        const currentLabels = (() => { try { return JSON.parse(conv.labels_json || '[]'); } catch { return []; } })();
+        const newLabels = currentLabels.includes(label)
+            ? currentLabels.filter(l => l !== label)
+            : [...currentLabels, label];
+        try {
+            if (directChatMode) {
+                await authFetch(`${API_BASE}/ai/direct/conversations/${conv.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ labels: newLabels }),
+                });
+                setDirectConversations(prev => prev.map(c => c.id === conv.id ? { ...c, labels_json: JSON.stringify(newLabels) } : c));
+            } else {
+                const agentId = conv.agent_id || selectedAgent?.id;
+                await authFetch(`${API_BASE}/agents/${agentId}/conversations/${conv.id}`, {
+                    method: 'PATCH',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ labels: newLabels }),
+                });
+                setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, labels_json: JSON.stringify(newLabels) } : c));
+            }
+        } catch (e) {
+            console.error('Failed to update conversation labels:', e);
+        }
+    };
+
+    const handleCreateLabel = async (name, color) => {
+        try {
+            const res = await authFetch(`${API_BASE}/ai/labels`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, color }),
+            });
+            if (res.ok) {
+                const label = await res.json();
+                setConversationLabels(prev => [...prev, label]);
+                return label;
+            }
+        } catch (e) {
+            console.error('Failed to create label:', e);
+        }
+    };
+
+    const handleDeleteLabel = async (labelId) => {
+        try {
+            await authFetch(`${API_BASE}/ai/labels/${labelId}`, { method: 'DELETE' });
+            setConversationLabels(prev => prev.filter(l => l.id !== labelId));
+        } catch (e) {
+            console.error('Failed to delete label:', e);
+        }
+    };
+
+    const handleEditLabel = async (labelId, updates) => {
+        try {
+            const res = await authFetch(`${API_BASE}/ai/labels/${labelId}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updates),
+            });
+            if (res.ok) {
+                setConversationLabels(prev => prev.map(l => l.id === labelId ? { ...l, ...updates } : l));
+            }
+        } catch (e) {
+            console.error('Failed to edit label:', e);
         }
     };
 
@@ -753,6 +883,13 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 onCreateProject={() => { setEditingProject(null); setShowProjectModal(true); }}
                 onEditProject={(p) => { setEditingProject(p); setShowProjectModal(true); }}
                 onMoveToProject={handleMoveToProject}
+                onRenameConversation={handleRenameConversation}
+                onPinConversation={handlePinConversation}
+                onLabelConversation={handleLabelConversation}
+                conversationLabels={conversationLabels}
+                onCreateLabel={handleCreateLabel}
+                onDeleteLabel={handleDeleteLabel}
+                onEditLabel={handleEditLabel}
             />
 
             {/* Main Content Area */}

@@ -208,6 +208,24 @@ export default function useChatEngine({
                 ));
                 break;
 
+            case 'contacts_draft':
+                setMessages(prev => prev.map(m =>
+                    m.id === assistantMsgId ? {
+                        ...m,
+                        contactsDrafts: [...(m.contactsDrafts || []), { ...data, status: 'pending' }]
+                    } : m
+                ));
+                break;
+
+            case 'keep_draft':
+                setMessages(prev => prev.map(m =>
+                    m.id === assistantMsgId ? {
+                        ...m,
+                        keepDrafts: [...(m.keepDrafts || []), { ...data, status: 'pending' }]
+                    } : m
+                ));
+                break;
+
             case 'sheets_result':
                 setMessages(prev => prev.map(m =>
                     m.id === assistantMsgId ? {
@@ -645,10 +663,10 @@ export default function useChatEngine({
             let url, payload;
 
             if (isDirectMode) {
-                // Direct chat mode — post to /ai/chat/direct/stream
-                url = `${API_BASE}/ai/chat/direct/stream`;
+                // Direct chat mode — post to custom endpoint or /ai/chat/direct/stream
+                url = directMode.customEndpoint ? `${API_BASE}${directMode.customEndpoint}` : `${API_BASE}/ai/chat/direct/stream`;
                 // Build history from current messages (exclude current user message)
-                const history = messages.filter(m => m.role === 'user' || m.role === 'assistant').map(m => ({
+                const history = messages.filter(m => (m.role === 'user' || m.role === 'assistant') && m.content?.trim()).map(m => ({
                     role: m.role,
                     content: m.content
                 }));
@@ -659,6 +677,7 @@ export default function useChatEngine({
                     attachments,
                     history,
                     ...getWorkspacePayload?.(),
+                    ...(directMode.systemPrompt ? { systemPrompt: directMode.systemPrompt } : {}),
                     imageGenSettings: (() => {
                         try {
                             const s = localStorage.getItem('imageGenSettings');
@@ -677,8 +696,12 @@ export default function useChatEngine({
                             return s ? JSON.parse(s) : {};
                         } catch { return {}; }
                     })(),
+                    webSearchEnabled: (() => {
+                        try { const v = localStorage.getItem('webSearchEnabled'); return v === null ? true : v === 'true'; } catch { return true; }
+                    })(),
                     ...(activeProject?.id ? { projectId: activeProject.id } : {}),
                     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                    ...(typeof directMode.getExtraPayload === 'function' ? directMode.getExtraPayload() : {}),
                 };
             } else {
                 // Agent chat mode — post to /agents/:id/chat/stream

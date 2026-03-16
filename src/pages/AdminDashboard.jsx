@@ -1,7 +1,6 @@
 import React from 'react';
 import { ArrowLeft } from 'lucide-react';
 import AgentConfigHub from '../components/admin/AgentConfigHub';
-import ComponentsHub from '../components/admin/ComponentsHub';
 import AIConfigPanel from '../components/admin/AIConfig';
 import SecurityHub from '../components/admin/SecurityHub';
 import IntegrationsAdminPanel from '../components/admin/IntegrationsAdminPanel';
@@ -22,7 +21,6 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
     // 'agents' tab accepts admin_agents (catch-all) OR any granular admin_agents_* permission
     const tabs = [
         { id: 'agents', label: 'Agents', perm: ['admin_agents', 'admin_agents_chat', 'admin_agents_swarm', 'admin_agents_browser', 'admin_agents_terminal', 'admin_agents_group', 'admin_agents_system', 'admin_agents_pipeline'], superAdminOnly: false },
-        { id: 'components', label: 'Tools', perm: ['admin_components'], superAdminOnly: true },
         { id: 'ai-config', label: 'AI Config', perm: ['admin_ai_config'], superAdminOnly: true },
         { id: 'security', label: 'Security', perm: ['admin_security'], superAdminOnly: false },
         { id: 'integrations', label: 'Integrations', perm: ['admin_security'], superAdminOnly: true },
@@ -141,10 +139,6 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                     activeTab === 'agents' ? (
                         <div className="absolute inset-0">
                             <AgentConfigHub user={user} hasPermission={hasPermission} activeSection={agentSection} onNavigate={onNavigate} />
-                        </div>
-                    ) : activeTab === 'components' ? (
-                        <div className="absolute inset-0">
-                            <ComponentsHub hasPermission={hasPermission} activeSection={adminPath.seg2} onNavigate={onNavigate} />
                         </div>
                     ) : activeTab === 'ai-config' ? (
                         <div className="absolute inset-0 overflow-hidden p-6">
