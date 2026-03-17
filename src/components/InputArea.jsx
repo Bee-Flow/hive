@@ -44,6 +44,22 @@ const APP_DEFS = [
         iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="3" width="38" height="42" rx="3" fill="#FBBC04" /><rect x="14" y="16" width="20" height="3" rx="1.5" fill="#fff" /><rect x="14" y="23" width="20" height="3" rx="1.5" fill="#fff" /><rect x="14" y="30" width="14" height="3" rx="1.5" fill="#fff" /><circle cx="24" cy="10" r="3" fill="#fff" /></svg>,
     },
     {
+        id: 'outlook', label: 'Outlook', description: 'Send & read emails', requiresMicrosoft: true,
+        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="ol_g1" x1="24" y1="2" x2="24" y2="46" gradientUnits="userSpaceOnUse"><stop stopColor="#1490DF"/><stop offset="1" stopColor="#1068BF"/></linearGradient></defs><path d="M44 10.88V37.12A2.88 2.88 0 0 1 41.12 40H22V8h19.12A2.88 2.88 0 0 1 44 10.88z" fill="#1490DF"/><path d="M22 8h11v16H22z" fill="#1068BF" fillOpacity="0.5"/><path d="M33 8h8.12A2.88 2.88 0 0 1 44 10.88V24H33z" fill="#28A8EA"/><path d="M33 24H44v13.12A2.88 2.88 0 0 1 41.12 40H33z" fill="#0078D4"/><path d="M22 24h11v16H22z" fill="#1068BF"/><path d="M26 14L44 14V10.88A2.88 2.88 0 0 0 41.12 8H22l4 6z" fill="#28A8EA" fillOpacity="0.7"/><rect x="2" y="12" width="24" height="24" rx="2.4" fill="url(#ol_g1)"/><text x="14" y="30" textAnchor="middle" fontFamily="Segoe UI,Arial,sans-serif" fontWeight="600" fontSize="16" fill="white">O</text></svg>,
+    },
+    {
+        id: 'ms-calendar', label: 'MS Calendar', description: 'Manage your schedule', requiresMicrosoft: true,
+        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="mc_g1" x1="24" y1="2" x2="24" y2="46" gradientUnits="userSpaceOnUse"><stop stopColor="#1490DF"/><stop offset="1" stopColor="#1068BF"/></linearGradient></defs><path d="M44 10.88V37.12A2.88 2.88 0 0 1 41.12 40H22V8h19.12A2.88 2.88 0 0 1 44 10.88z" fill="#1490DF"/><path d="M22 8h11v16H22z" fill="#1068BF" fillOpacity="0.5"/><path d="M33 8h8.12A2.88 2.88 0 0 1 44 10.88V24H33z" fill="#28A8EA"/><path d="M33 24H44v13.12A2.88 2.88 0 0 1 41.12 40H33z" fill="#0078D4"/><path d="M22 24h11v16H22z" fill="#1068BF"/><rect x="27" y="14" width="3" height="3" rx="0.5" fill="white"/><rect x="32" y="14" width="3" height="3" rx="0.5" fill="white"/><rect x="37" y="14" width="3" height="3" rx="0.5" fill="white"/><rect x="27" y="19" width="3" height="3" rx="0.5" fill="white"/><rect x="32" y="19" width="3" height="3" rx="0.5" fill="white"/><rect x="37" y="19" width="3" height="3" rx="0.5" fill="white"/><rect x="27" y="29" width="3" height="3" rx="0.5" fill="white" fillOpacity="0.7"/><rect x="32" y="29" width="3" height="3" rx="0.5" fill="white" fillOpacity="0.7"/><rect x="27" y="34" width="3" height="3" rx="0.5" fill="white" fillOpacity="0.7"/><rect x="2" y="12" width="24" height="24" rx="2.4" fill="url(#mc_g1)"/><rect x="7" y="19" width="14" height="14" rx="1" fill="white"/><rect x="7" y="17" width="14" height="4" rx="1" fill="#1068BF"/><rect x="10" y="15.5" width="1.5" height="3" rx="0.75" fill="white"/><rect x="16.5" y="15.5" width="1.5" height="3" rx="0.75" fill="white"/><rect x="9" y="24" width="3" height="2" rx="0.5" fill="#1490DF" fillOpacity="0.8"/><rect x="14" y="24" width="3" height="2" rx="0.5" fill="#1490DF" fillOpacity="0.5"/><rect x="9" y="28" width="3" height="2" rx="0.5" fill="#1490DF" fillOpacity="0.5"/></svg>,
+    },
+    {
+        id: 'onedrive', label: 'OneDrive', description: 'Access files & folders', requiresMicrosoft: true,
+        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><path d="M19.55 22.1l8.65-5.3a11.09 11.09 0 0 1 5.7-1.57A11.23 11.23 0 0 1 44 24.9l.08.6A7.54 7.54 0 0 1 39.5 39H14.05a9.05 9.05 0 0 1-3.85-17.25z" fill="#0364B8"/><path d="M19.55 22.1l.15-.25A12.8 12.8 0 0 1 26.35 17a11.09 11.09 0 0 1 1.85-.17l-.4-.03A12.75 12.75 0 0 0 14.95 8.5a12.8 12.8 0 0 0-12.7 10.72 9.55 9.55 0 0 1 7.95 2.53z" fill="#0078D4"/><path d="M10.2 21.75A9.55 9.55 0 0 0 2.25 19.22 9.55 9.55 0 0 0 3.9 38.04l.15.01 10-1.05.01-.01a9.05 9.05 0 0 1-3.86-15.24z" fill="#1490DF"/><path d="M33.9 15.23A11.23 11.23 0 0 0 28.2 16.8l-8.65 5.3a9.05 9.05 0 0 0 3.85 14.95l.65.01H39.5a7.54 7.54 0 0 0 4.58-13.56l-.08-.6a11.23 11.23 0 0 0-10.1-7.67z" fill="#28A8EA"/></svg>,
+    },
+    {
+        id: 'ms-contacts', label: 'MS Contacts', description: 'Search & manage contacts', requiresMicrosoft: true,
+        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="mp_g1" x1="24" y1="2" x2="24" y2="46" gradientUnits="userSpaceOnUse"><stop stopColor="#1490DF"/><stop offset="1" stopColor="#1068BF"/></linearGradient></defs><path d="M44 10.88V37.12A2.88 2.88 0 0 1 41.12 40H22V8h19.12A2.88 2.88 0 0 1 44 10.88z" fill="#1490DF"/><path d="M22 8h11v16H22z" fill="#1068BF" fillOpacity="0.5"/><path d="M33 8h8.12A2.88 2.88 0 0 1 44 10.88V24H33z" fill="#28A8EA"/><path d="M33 24H44v13.12A2.88 2.88 0 0 1 41.12 40H33z" fill="#0078D4"/><path d="M22 24h11v16H22z" fill="#1068BF"/><circle cx="34" cy="17" r="4" fill="white"/><path d="M27.5 31c0-3.59 2.91-6.5 6.5-6.5s6.5 2.91 6.5 6.5" fill="white"/><rect x="2" y="12" width="24" height="24" rx="2.4" fill="url(#mp_g1)"/><circle cx="14" cy="21" r="3.5" fill="white"/><path d="M8 31c0-3.31 2.69-6 6-6s6 2.69 6 6" fill="white"/></svg>,
+    },
+    {
         id: 'fireflies', label: 'Fireflies.ai', description: 'Meeting transcripts', requiresFireflies: true,
         iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="22 20 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M30.5749 22H24V28.5267H30.5749V22Z" fill="url(#ff_app_g1)" /><path d="M38.3633 29.8789H31.7883V36.4056H38.3633V29.8789Z" fill="url(#ff_app_g2)" /><path d="M38.3633 22H31.7883V28.5267H43.9998V27.594C43.9997 26.1104 43.4058 24.6875 42.3489 23.6384C41.2919 22.5894 39.8585 22 38.3638 22H38.3633Z" fill="url(#ff_app_g3)" /><path d="M24 29.8789V36.4056C24.0002 37.8892 24.594 39.3121 25.6509 40.3612C26.7079 41.4103 28.1413 41.9996 29.636 41.9996H30.5749V29.8789H24Z" fill="url(#ff_app_g4)" /><defs><linearGradient id="ff_app_g1" x1="40.08" y1="38.51" x2="12.44" y2="9.47" gradientUnits="userSpaceOnUse"><stop stopColor="#E82A73" /><stop offset="0.54" stopColor="#9B4AB0" /><stop offset="1" stopColor="#3B73FF" /></linearGradient><linearGradient id="ff_app_g2" x1="40.18" y1="38.42" x2="12.54" y2="9.38" gradientUnits="userSpaceOnUse"><stop stopColor="#FF3C82" /><stop offset="0.49" stopColor="#B251B2" /><stop offset="1" stopColor="#3B73FF" /></linearGradient><linearGradient id="ff_app_g3" x1="44.77" y1="34.05" x2="35.4" y2="0.12" gradientUnits="userSpaceOnUse"><stop stopColor="#E82A73" /><stop offset="0.54" stopColor="#9B4AB0" /><stop offset="1" stopColor="#3B73FF" /></linearGradient><linearGradient id="ff_app_g4" x1="35.55" y1="42.82" x2="2.03" y2="32.61" gradientUnits="userSpaceOnUse"><stop stopColor="#E82A73" /><stop offset="0.54" stopColor="#9B4AB0" /><stop offset="1" stopColor="#3B73FF" /></linearGradient></defs></svg>,
     },
@@ -122,6 +138,7 @@ const InputArea = ({
     const [n8nWorkflows, setN8nWorkflows] = useState([]);
 
     const [isGoogleUser, setIsGoogleUser] = useState(false);
+    const [isMicrosoftUser, setIsMicrosoftUser] = useState(false);
     const imageGenBtnRef = useRef(null);
     const musicGenBtnRef = useRef(null);
     const elevenLabsBtnRef = useRef(null);
@@ -200,6 +217,7 @@ const InputArea = ({
                     setHasGammaKey(!!data.hasGammaKey);
 
                     setIsGoogleUser(!!data.isGoogleUser);
+                    setIsMicrosoftUser(!!data.isMicrosoftUser);
                     if (data.enabledApps) setEnabledApps(data.enabledApps);
                     if (data.orgEnabledIntegrations !== undefined) setOrgEnabledIntegrations(data.orgEnabledIntegrations);
                     if (data.disableSearchOnUpload) setOrgDisableSearchOnUpload(true);
@@ -748,11 +766,14 @@ const InputArea = ({
                                     const availableApps = allAppDefs.filter(app => {
                                         // Base availability checks
                                         if (app.requiresGoogle && !isGoogleUser) return false;
+                                        if (app.requiresMicrosoft && !isMicrosoftUser) return false;
                                         if (app.requiresFireflies && !hasFirefliesKey) return false;
                                         if (app.requiresYouTrack && !hasYouTrackConfig) return false;
                                         if (app.requiresGamma && !hasGammaKey) return false;
                                         if (app.requiresWhatsApp && !hasWhatsApp) return false;
-                                        if (orgEnabledIntegrations && !app.isN8n && !orgEnabledIntegrations.includes(app.id)) return false;
+                                        // Org-level gating — only applies to third-party integrations (matches backend ORG_GATED_APPS)
+                                        const ORG_GATED_IDS = ['fireflies', 'youtrack', 'gamma', 'linkedin', 'github', 'whatsapp'];
+                                        if (orgEnabledIntegrations && !app.isN8n && ORG_GATED_IDS.includes(app.id) && !orgEnabledIntegrations.includes(app.id)) return false;
                                         if (app.requiresNone) return false;
                                         // Agent-level integration filtering
                                         if (agentIntegrations) {
@@ -791,6 +812,10 @@ const InputArea = ({
                                                         case 'youtrack': setInput('Search my YouTrack issues'); break;
                                                         case 'gamma': setInput('Create a presentation about '); break;
                                                         case 'whatsapp': setInput('List my recent WhatsApp chats'); break;
+                                                        case 'outlook': setInput('Show my recent Outlook emails'); break;
+                                                        case 'ms-calendar': setInput("What's on my calendar this week?"); break;
+                                                        case 'onedrive': setInput('List my OneDrive files'); break;
+                                                        case 'ms-contacts': setInput('Search my contacts for '); break;
                                                         default:
                                                             if (app.isN8n) {
                                                                 setInput(`Run the ${app.label} workflow `);

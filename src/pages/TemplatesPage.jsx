@@ -199,9 +199,30 @@ export default function TemplatesPage({ user, onBack }) {
                     if (res.ok) {
                         const { downloadUrl, fileName } = await res.json();
                         const fullDownloadUrl = downloadUrl.startsWith('http') ? downloadUrl : `${API_BASE}${downloadUrl}`;
+                        
+                        // Trigger authenticated download immediately
+                        try {
+                            const dlRes = await authFetch(fullDownloadUrl);
+                            if (dlRes.ok) {
+                                const blob = await dlRes.blob();
+                                const blobUrl = URL.createObjectURL(blob);
+                                const a = document.createElement('a');
+                                a.href = blobUrl;
+                                a.download = fileName;
+                                document.body.appendChild(a);
+                                a.click();
+                                document.body.removeChild(a);
+                                setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+                            }
+                        } catch (dlErr) {
+                            console.warn('Auto-download failed:', dlErr);
+                        }
+
                         setChatMessages(prev => prev.map(m => m.id === genMsgId ? {
                             ...m,
                             content: `✅ **Document generated!**\n\n📄 [Download ${fileName}](${fullDownloadUrl})`,
+                            _downloadUrl: fullDownloadUrl,
+                            _downloadFileName: fileName,
                         } : m));
                     } else {
                         const err = await res.json().catch(() => ({}));

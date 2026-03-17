@@ -363,7 +363,18 @@ const MarkdownRenderer = ({ content, className = '', onFormSubmit, formId, isFor
         return cleaned;
     };
 
-    const cleanContent = stripWrappingCodeBlock(textContent);
+    // Strip :::directive blocks (e.g. :::writing Title) emitted by newer GPT models
+    const stripDirectiveBlocks = (text) => {
+        if (typeof text !== 'string') return text;
+        // Convert :::writing Title  →  ## Title
+        // Convert :::note Title, :::tip Title, etc. the same way
+        let cleaned = text.replace(/^:::(writing|note|tip|warning|important|caution)[\t ]+(.+)$/gm, '## $2');
+        // Remove standalone closing ::: markers (on their own line)
+        cleaned = cleaned.replace(/^:::[\t ]*$/gm, '');
+        return cleaned;
+    };
+
+    const cleanContent = stripDirectiveBlocks(stripWrappingCodeBlock(textContent));
 
     const unclosedBlock = detectUnclosedCodeBlock(cleanContent);
 

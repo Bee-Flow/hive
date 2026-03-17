@@ -40,12 +40,20 @@ export default function ProjectModal({ project, onClose, onSaved, onDeleted, use
     const [kbUrlInput, setKbUrlInput] = useState('');
     const [kbIngesting, setKbIngesting] = useState(false);
     const [kbIngestStatus, setKbIngestStatus] = useState('');
+    const [useAzureKB, setUseAzureKB] = useState(false);
 
     const isEdit = !!project?.id;
 
     useEffect(() => {
         if (isEdit) loadShares();
         loadKBs();
+        // Fetch Azure config
+        (async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/api/ai/config`);
+                if (res.ok) { const d = await res.json(); setUseAzureKB(!!d.useAzureDocProcessing); }
+            } catch {}
+        })();
         setTimeout(() => nameRef.current?.focus(), 100);
     }, []);
 
@@ -459,7 +467,7 @@ export default function ProjectModal({ project, onClose, onSaved, onDeleted, use
                                             <h4 className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
                                                 📚 {selectedKB.name}
                                             </h4>
-                                            <span className="text-[10px] px-2 py-0.5 rounded-full font-medium" style={{ background: 'rgba(16,185,129,0.08)', color: 'rgb(16,185,129)' }}>bge-m3</span>
+                                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${useAzureKB ? 'bg-blue-500/10 text-blue-400' : ''}`} style={useAzureKB ? {} : { background: 'rgba(16,185,129,0.08)', color: 'rgb(16,185,129)' }}>{useAzureKB ? '☁️ Azure OpenAI' : 'bge-m3'}</span>
                                         </div>
 
                                         {/* Ingest mode tabs */}

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Copy, Check, Bot, ChevronDown, Send, ThumbsUp, ThumbsDown, RefreshCw, Pencil } from 'lucide-react';
+import { Copy, Check, Bot, ChevronDown, Send, ThumbsUp, ThumbsDown, RefreshCw, Pencil, Download } from 'lucide-react';
 import MarkdownRenderer from '../../MarkdownRenderer';
 import MapEmbedRenderer from '../../MapEmbedRenderer';
 import FormRenderer from '../../FormRenderer';
@@ -62,7 +62,15 @@ const MessageItem = ({
     const [isEditing, setIsEditing] = useState(false);
     const [editContent, setEditContent] = useState('');
     const retryMenuRef = useRef(null);
+    const contentRef = useRef(null);
     const [includeConversation, setIncludeConversation] = useState(false);
+
+    // Resolve server-relative URLs (e.g. /api/storage/file/...) to full server URL
+    const resolveUrl = (url) => {
+        if (!url) return url;
+        if (url.startsWith('/api/')) return `${API_BASE || ''}${url}`;
+        return url;
+    };
 
     // Click-outside handler for retry tier menu
     useEffect(() => {
@@ -128,6 +136,98 @@ const MessageItem = ({
         setTimeout(() => setCopied(false), 2000);
     };
 
+    const handleExportPdf = () => {
+        // Use the ref to get the already-rendered markdown HTML
+        const contentEl = contentRef.current;
+        if (!contentEl) return;
+
+        const htmlContent = contentEl.innerHTML;
+        if (!htmlContent || htmlContent.trim().length === 0) return;
+
+        const printWindow = window.open('', '_blank', 'width=800,height=600');
+        if (!printWindow) return;
+
+        printWindow.document.write(`<!DOCTYPE html>
+<html><head>
+    <title>AI Response Export</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: white; color: #1a1a1a;
+            padding: 48px 40px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.75; font-size: 15px;
+            max-width: 800px; margin: 0 auto;
+        }
+        h1 { font-size: 1.8em; font-weight: 700; margin: 1.2em 0 0.6em; color: #111; }
+        h2 { font-size: 1.4em; font-weight: 600; margin: 1.2em 0 0.5em; color: #222; }
+        h3 { font-size: 1.15em; font-weight: 600; margin: 1em 0 0.4em; color: #333; }
+        h4, h5, h6 { font-size: 1em; font-weight: 600; margin: 0.8em 0 0.3em; color: #444; }
+        p { margin: 0.6em 0; }
+        ul, ol { margin: 0.5em 0; padding-left: 1.8em; }
+        li { margin: 0.25em 0; }
+        a { color: #2563eb; text-decoration: underline; }
+        strong { font-weight: 600; }
+        em { font-style: italic; }
+        blockquote {
+            border-left: 3px solid #d1d5db; margin: 0.8em 0;
+            padding: 0.5em 1em; color: #555; background: #f9fafb;
+        }
+        pre {
+            background: #f3f4f6 !important; color: #1f2937 !important;
+            padding: 16px; border-radius: 8px; overflow-x: auto;
+            margin: 0.8em 0; border: 1px solid #e5e7eb;
+            font-size: 13px; line-height: 1.5;
+        }
+        code {
+            font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+            font-size: 0.88em;
+        }
+        :not(pre) > code {
+            background: #f3f4f6; padding: 2px 6px; border-radius: 4px;
+            color: #d63384; font-size: 0.85em;
+        }
+        pre code { background: none !important; padding: 0; color: inherit !important; }
+        table {
+            border-collapse: collapse; width: 100%; margin: 0.8em 0;
+            font-size: 14px;
+        }
+        th, td { border: 1px solid #d1d5db; padding: 8px 12px; text-align: left; }
+        th { background: #f3f4f6; font-weight: 600; }
+        img { max-width: 100%; height: auto; border-radius: 6px; margin: 0.5em 0; }
+        hr { border: none; border-top: 1px solid #e5e7eb; margin: 1.5em 0; }
+        .hljs, .hljs span { color: #1f2937 !important; }
+        .timestamp {
+            text-align: right; color: #9ca3af; font-size: 11px;
+            margin-top: 40px; border-top: 1px solid #e5e7eb;
+            padding-top: 10px;
+        }
+        /* Hide interactive elements in export */
+        button, .copy-btn, [data-copy] { display: none !important; }
+        /* Override dark theme code block colors */
+        [style*="background: #1e1e2e"], [style*="background:#1e1e2e"] {
+            background: #f3f4f6 !important;
+            border-color: #e5e7eb !important;
+        }
+        [style*="color: #94a3b8"] { color: #6b7280 !important; }
+        @media print {
+            body { padding: 20px !important; }
+            pre { white-space: pre-wrap !important; word-break: break-word !important; }
+        }
+    </style>
+</head><body>
+    ${htmlContent}
+    <div class="timestamp">Exported on ${new Date().toLocaleString()}</div>
+</body></html>`);
+        printWindow.document.close();
+
+        // Wait for content to render then trigger print
+        setTimeout(() => {
+            printWindow.focus();
+            printWindow.print();
+        }, 400);
+    };
+
     const allowCopy = !selectedAgent?.config || selectedAgent.config.allowCopy !== false;
 
     // Get render functions from ToolOutput
@@ -136,7 +236,7 @@ const MessageItem = ({
     const hasSheets = !!(msg.sheetsResults || msg.sheetsDrafts || msg.sheetsReports);
 
     return (
-        <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} group animate-fade-in w-full ${hasSheets ? '' : 'max-w-[900px] mx-auto'}`}>
+        <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} group animate-fade-in w-full ${hasSheets ? '' : 'max-w-[900px] mx-auto'}`} data-msg-id={`msg-${msg.id || idx}`}>
 
             {/* Sender Info (Multi-agent support) */}
             {!isUser && !isTool && msg.respondingAgentName && (
@@ -225,7 +325,7 @@ const MessageItem = ({
                 {!isUser && !isTool && renderToolCall()}
 
                 {/* Content */}
-                <div className={`prose prose-sm dark:prose-invert max-w-none break-words ${!isUser ? '' : 'text-black prose-headings:text-black prose-a:text-black prose-strong:text-black prose-code:text-black/90 [&_a]:!text-black [&_a]:underline'}`}>
+                <div ref={contentRef} className={`prose prose-sm dark:prose-invert max-w-none break-words ${!isUser ? '' : 'text-black prose-headings:text-black prose-a:text-black prose-strong:text-black prose-code:text-black/90 [&_a]:!text-black [&_a]:underline'}`}>
                     {!isUser && msg.swarmActivity && (
                         <SwarmProgress
                             msg={msg}
@@ -335,7 +435,7 @@ const MessageItem = ({
                     {!isUser && msg.images && msg.images.length > 0 && !(msg.audioFiles && msg.audioFiles.length > 0) && (
                         <div className="mt-3 flex flex-wrap gap-2">
                             {msg.images.map((img, i) => {
-                                const imgSrc = img.url || (img.data ? `data:${img.mimeType};base64,${img.data}` : null);
+                                const imgSrc = resolveUrl(img.url) || (img.data ? `data:${img.mimeType};base64,${img.data}` : null);
                                 if (!imgSrc) return null;
                                 return (
                                 <div key={i} className="relative rounded-xl overflow-hidden border border-[var(--border-subtle)] shadow-lg group/img max-w-md">
@@ -364,7 +464,7 @@ const MessageItem = ({
                     {!isUser && msg.audioFiles && msg.audioFiles.length > 0 && (() => {
                         // Use first image in the message as album art (generated in parallel)
                         const albumArt = msg.images && msg.images.length > 0
-                            ? (msg.images[0].url || `data:${msg.images[0].mimeType};base64,${msg.images[0].data}`)
+                            ? (resolveUrl(msg.images[0].url) || `data:${msg.images[0].mimeType};base64,${msg.images[0].data}`)
                             : null;
                         const sourceLabel = {
                             'elevenlabs_music': 'ElevenLabs Music',
@@ -374,7 +474,7 @@ const MessageItem = ({
                         return (
                             <div className="mt-3 flex flex-col gap-2">
                                 {msg.audioFiles.map((audio, i) => {
-                                    const audioSrc = audio.url || (audio.data ? `data:${audio.mimeType};base64,${audio.data}` : null);
+                                    const audioSrc = resolveUrl(audio.url) || (audio.data ? `data:${audio.mimeType};base64,${audio.data}` : null);
                                     if (!audioSrc) return null;
                                     return (
                                         <AudioPlayerInline
@@ -417,11 +517,11 @@ const MessageItem = ({
                                                 background: '#000',
                                                 boxShadow: '0 8px 32px rgba(0,0,0,0.4)',
                                             }}
-                                            src={vid.url}
+                                            src={resolveUrl(vid.url)}
                                         />
                                     </div>
                                     <div className="px-4 pb-3 flex justify-end">
-                                        <a href={vid.url} download={`ai-video-${Date.now()}.mp4`}
+                                        <a href={resolveUrl(vid.url)} download={`ai-video-${Date.now()}.mp4`}
                                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all duration-200"
                                             style={{ color: '#7c3aed', background: 'rgba(124,58,237,0.1)', border: '1px solid rgba(124,58,237,0.2)' }}
                                             onMouseEnter={e => { e.currentTarget.style.background = 'rgba(124,58,237,0.2)'; }}
@@ -501,7 +601,7 @@ const MessageItem = ({
                         <FormRenderer
                             code={msg.form}
                             onSubmit={(data) => {
-                                handleFormSubmit(msg, { text: "Form Submitted", formData: data.formData }, `form-${msg.id || idx}`);
+                                handleFormSubmit(msg, { text: data.text || "Form Submitted", formData: data.formData }, `form-${msg.id || idx}`);
                             }}
                             initialSubmitted={isFormSubmitted || !!msg.savedFormData}
                             initialFormData={msg.savedFormData || {}}
@@ -519,7 +619,7 @@ const MessageItem = ({
                     <div className="mt-2 flex flex-wrap gap-2">
                         {msg.attachments.map((att, i) => {
                             const isImage = att.type?.startsWith('image/');
-                            const previewSrc = isImage ? (att.url || att.content) : null;
+                            const previewSrc = isImage ? (resolveUrl(att.url) || att.content) : null;
                             return (
                                 <div key={i} className={`rounded-lg overflow-hidden text-xs border flex items-center gap-1.5 ${isUser ? 'bg-white/10 border-white/20' : 'bg-[var(--bg-primary)] border-[var(--border-subtle)]'}`}>
                                     {previewSrc && (
@@ -527,7 +627,7 @@ const MessageItem = ({
                                     )}
                                     <div className="px-2 py-1.5 min-w-0">
                                         {att.url ? (
-                                            <a href={att.url} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline truncate block max-w-[200px]">{att.name || 'Attachment'}</a>
+                                            <a href={resolveUrl(att.url)} target="_blank" rel="noopener noreferrer" className="font-medium hover:underline truncate block max-w-[200px]">{att.name || 'Attachment'}</a>
                                         ) : (
                                             <span className="font-medium truncate block max-w-[200px]">{att.name || 'Attachment'}</span>
                                         )}
@@ -550,6 +650,16 @@ const MessageItem = ({
                                     title="Copy"
                                 >
                                     {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                                </button>
+                            )}
+                            {/* Export PDF */}
+                            {allowCopy && msg.content && (
+                                <button
+                                    onClick={handleExportPdf}
+                                    className="p-1.5 hover:bg-[var(--bg-tertiary)] rounded text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+                                    title="Export as PDF"
+                                >
+                                    <Download className="w-3.5 h-3.5" />
                                 </button>
                             )}
                             {/* Thumbs feedback */}

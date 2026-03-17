@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { AlertCircle } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { opaqueLogin } from '../lib/opaque';
+import InitSetupWizard from '../components/InitSetupWizard';
 
 import LoginForm from './login/LoginForm';
 import SignupStepOrg from './login/SignupStepOrg';
@@ -61,6 +62,8 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                     setIsMicrosoftConfigured(data.isMicrosoftConfigured);
                     if (data.serverUrl) setServerUrl(data.serverUrl);
                     if (!data.isSetupComplete) setSetupMode(true);
+                    // Also track raw setup-complete flag for wizard
+                    setIsSetupComplete(data.isSetupComplete);
                 }
 
                 const orgRes = await authFetch(`${API_BASE}/auth/organizations/public`);
@@ -296,6 +299,18 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
         return 'Complete your account';
     };
 
+    // Show the full setup wizard when setup is not complete
+    if (!isSetupComplete && setupMode) {
+        return (
+            <InitSetupWizard
+                onComplete={() => {
+                    setSetupMode(false);
+                    setIsSetupComplete(true);
+                }}
+            />
+        );
+    }
+
     return (
         <div className="min-h-screen flex items-center justify-center p-4 relative"
             style={{ background: 'linear-gradient(160deg, var(--bg-primary) 0%, var(--bg-secondary) 50%, var(--bg-tertiary) 100%)' }}>
@@ -340,7 +355,7 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                     style={{ background: 'radial-gradient(circle, var(--accent-secondary), transparent 70%)', top: '15%', right: '30%', animation: 'pulse 7s ease-in-out infinite 2s' }} />
             </div>
 
-            <div className={`w-full ${signupMode ? 'max-w-xl' : setupMode ? 'max-w-lg' : 'max-w-md'} relative z-10 transition-all duration-300`}>
+            <div className={`w-full ${signupMode ? 'max-w-xl' : 'max-w-md'} relative z-10 transition-all duration-300`}>
                 <div className="backdrop-blur-xl rounded-3xl p-8 shadow-2xl border relative overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)' }}>
                     {/* Top highlight line for glass effect */}
                     <div className="absolute top-0 left-8 right-8 h-px bg-gradient-to-r from-transparent via-[var(--border-default)] to-transparent" />
@@ -350,9 +365,9 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                         <div className="w-36 h-36 mx-auto mb-5 rounded-full overflow-hidden shadow-xl ring-4 ring-[var(--border-subtle)]">
                             <img src="/bee-flow-logo.svg" alt="Bee Flow" className="w-full h-full object-cover" />
                         </div>
-                        {(setupMode || signupMode) && (
+                        {signupMode && (
                             <h1 className="text-2xl font-bold text-[var(--text-primary)]">
-                                {setupMode ? 'Welcome to Bee Flow' : 'Create Account'}
+                                Create Account
                             </h1>
                         )}
                         <p className="text-sm text-[var(--text-secondary)] mt-1">{getSubtitle()}</p>

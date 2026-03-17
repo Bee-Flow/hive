@@ -17,8 +17,12 @@ export default function EmailDraftCard({ msg, emailDraftStatuses, setEmailDraftS
             if (res.ok) {
                 setEmailDraftStatuses(prev => ({ ...prev, [index]: 'sent' }));
             } else {
-                const err = await res.json();
-                setEmailDraftStatuses(prev => ({ ...prev, [index]: `failed: ${err.error}` }));
+                let errorMsg = `HTTP ${res.status}`;
+                try {
+                    const err = await res.json();
+                    errorMsg = err.error || errorMsg;
+                } catch (_) {}
+                setEmailDraftStatuses(prev => ({ ...prev, [index]: `failed: ${errorMsg}` }));
             }
         } catch (err) {
             setEmailDraftStatuses(prev => ({ ...prev, [index]: `failed: ${err.message}` }));
@@ -38,8 +42,12 @@ export default function EmailDraftCard({ msg, emailDraftStatuses, setEmailDraftS
                 const data = await res.json();
                 setEmailDraftStatuses(prev => ({ ...prev, [index]: `draft_saved:${data.gmailLink || ''}` }));
             } else {
-                const err = await res.json();
-                setEmailDraftStatuses(prev => ({ ...prev, [index]: `failed: ${err.error}` }));
+                let errorMsg = `HTTP ${res.status}`;
+                try {
+                    const err = await res.json();
+                    errorMsg = err.error || errorMsg;
+                } catch (_) {}
+                setEmailDraftStatuses(prev => ({ ...prev, [index]: `failed: ${errorMsg}` }));
             }
         } catch (err) {
             setEmailDraftStatuses(prev => ({ ...prev, [index]: `failed: ${err.message}` }));

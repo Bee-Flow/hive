@@ -42,6 +42,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     const [euModeEnabled, setEuModeEnabled] = useState(false);
     const [orgWebSearchGuard, setOrgWebSearchGuard] = useState(false);
     const [orgDisableSearchOnUpload, setOrgDisableSearchOnUpload] = useState(false);
+    const [activeModerationProvider, setActiveModerationProvider] = useState('llamaguard');
 
     const MODERATION_CATEGORIES = [
         { id: 'S1', label: 'Violent Crimes', icon: '⚔️' },
@@ -58,6 +59,13 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
         { id: 'S12', label: 'Sexual Content', icon: '🔞' },
         { id: 'S13', label: 'Elections', icon: '🗳️' },
         { id: 'S14', label: 'Code Interpreter Abuse', icon: '💻' },
+    ];
+
+    const AZURE_MODERATION_CATEGORIES = [
+        { id: 'Hate', label: 'Hate and Fairness', icon: '🚷' },
+        { id: 'Violence', label: 'Violence', icon: '⚔️' },
+        { id: 'Sexual', label: 'Sexual', icon: '🔞' },
+        { id: 'SelfHarm', label: 'Self-Harm', icon: '💔' },
     ];
 
     // Navigation State (default to AI Moderation, or orgshield if orgShieldOnly)
@@ -84,6 +92,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                     setDcScope(dc.scope || { userInput: true, agentOutput: true });
                     setDcAction(dc.action || 'delete');
                 }
+                setActiveModerationProvider(data.moderationProvider || 'llamaguard');
             }
 
             // Fetch orgs for privacy shield
@@ -697,9 +706,11 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
 
                                                 {orgShieldModeration && (
                                                     <div>
-                                                        <label className="text-xs font-medium text-muted mb-3 block">Blocked Categories</label>
+                                                        <label className="text-xs font-medium text-muted mb-3 block">
+                                                            Blocked Categories {activeModerationProvider === 'azure' ? '(Azure AI Content Safety)' : '(Llama Guard)'}
+                                                        </label>
                                                         <div className="grid grid-cols-2 gap-2 p-4 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
-                                                            {MODERATION_CATEGORIES.map(cat => (
+                                                            {(activeModerationProvider === 'azure' ? AZURE_MODERATION_CATEGORIES : MODERATION_CATEGORIES).map(cat => (
                                                                 <label key={cat.id} className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer p-2 rounded hover:bg-white/5 transition-colors">
                                                                     <input
                                                                         type="checkbox"
@@ -857,13 +868,54 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
 };
 
 // ----------------------------------------------------------------------
-// AI Moderation Config Component — Guard Service (Llama Guard)
+// AI Moderation Config Component — Guard Service (Llama Guard) + Azure Content Safety
 // ----------------------------------------------------------------------
 const AIModerationConfig = () => {
     const [config, setConfig] = useState({ enabled: false, threshold: 0.7 });
+    const [moderationProvider, setModerationProvider] = useState('llamaguard');
+    const [azureEndpoint, setAzureEndpoint] = useState('');
+    const [azureKey, setAzureKey] = useState('');
+    const [hasAzureEndpoint, setHasAzureEndpoint] = useState(false);
+    const [hasAzureKey, setHasAzureKey] = useState(false);
+    const [severityThreshold, setSeverityThreshold] = useState(2);
+    const [azureEnabledCategories, setAzureEnabledCategories] = useState(['Hate', 'Violence', 'Sexual', 'SelfHarm']);
+    const [piiEnabled, setPiiEnabled] = useState(false);
+    const [piiCategories, setPiiCategories] = useState([]);
+    const [piiConfidenceThreshold, setPiiConfidenceThreshold] = useState(0.7);
     const [saving, setSaving] = useState(false);
     const [msg, setMsg] = useState(null);
     const [guardHealth, setGuardHealth] = useState(null);
+
+    const PII_CATEGORY_GROUPS = [
+        { name: 'Personal', icon: '👤', categories: [
+            { id: 'Person', label: 'Person Name' }, { id: 'PersonType', label: 'Person Type' },
+            { id: 'Age', label: 'Age' }, { id: 'DateOfBirth', label: 'Date of Birth' },
+        ]},
+        { name: 'Contact', icon: '📱', categories: [
+            { id: 'PhoneNumber', label: 'Phone Number' }, { id: 'Email', label: 'Email Address' },
+            { id: 'Address', label: 'Physical Address' },
+        ]},
+        { name: 'Financial', icon: '💳', categories: [
+            { id: 'CreditCardNumber', label: 'Credit Card' }, { id: 'BankAccountNumber', label: 'Bank Account' },
+            { id: 'InternationalBankingAccountNumber', label: 'IBAN' }, { id: 'ABARoutingNumber', label: 'ABA Routing' },
+            { id: 'SWIFTCode', label: 'SWIFT Code' },
+        ]},
+        { name: 'Identity', icon: '🆔', categories: [
+            { id: 'USSocialSecurityNumber', label: 'SSN (US)' },
+            { id: 'PassportNumber', label: 'Passport Number' }, { id: 'DriversLicenseNumber', label: "Driver's License" },
+        ]},
+        { name: 'Digital / Secrets', icon: '🔑', categories: [
+            { id: 'IPAddress', label: 'IP Address' }, { id: 'URL', label: 'URL' },
+            { id: 'AzureDocumentDBAuthKey', label: 'Azure CosmosDB Key' }, { id: 'AzureStorageAccountKey', label: 'Azure Storage Key' },
+        ]},
+        { name: 'Organization', icon: '🏢', categories: [
+            { id: 'Organization', label: 'Organization' },
+        ]},
+        { name: '🇳🇱 Netherlands', icon: '🇳🇱', categories: [
+            { id: 'EUNationalIdentificationNumber', label: 'BSN / National ID (EU)' },
+        ]},
+    ];
+    const ALL_PII_IDS = PII_CATEGORY_GROUPS.flatMap(g => g.categories.map(c => c.id));
 
     useEffect(() => {
         fetchData();
@@ -881,6 +933,14 @@ const AIModerationConfig = () => {
                         threshold: data.llamaGuardConfig.threshold || 0.7
                     });
                 }
+                setModerationProvider(data.moderationProvider || 'llamaguard');
+                setHasAzureEndpoint(data.hasAzureContentSafetyEndpoint || false);
+                setHasAzureKey(data.hasAzureContentSafetyKey || false);
+                setSeverityThreshold(data.azureContentSafetySeverityThreshold ?? 2);
+                setAzureEnabledCategories(data.azureContentSafetyCategories || ['Hate', 'Violence', 'Sexual', 'SelfHarm']);
+                setPiiEnabled(data.piiDetectionEnabled || false);
+                setPiiCategories(data.piiDetectionCategories || ALL_PII_IDS);
+                setPiiConfidenceThreshold(data.piiDetectionConfidenceThreshold ?? 0.7);
             }
         } catch (e) {
             console.error(e);
@@ -904,13 +964,29 @@ const AIModerationConfig = () => {
         setSaving(true);
         setMsg(null);
         try {
+            const body = {
+                llamaGuardConfig: config,
+                moderationProvider,
+                azureContentSafetySeverityThreshold: severityThreshold,
+                azureContentSafetyCategories: azureEnabledCategories,
+                piiDetectionEnabled: piiEnabled,
+                piiDetectionCategories: piiCategories,
+                piiDetectionConfidenceThreshold: piiConfidenceThreshold,
+            };
+            if (azureEndpoint) body.azureContentSafetyEndpoint = azureEndpoint;
+            if (azureKey) body.azureContentSafetyKey = azureKey;
+
             const res = await authFetch(`${API_BASE}/ai/config`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ llamaGuardConfig: config }),
+                body: JSON.stringify(body),
             });
             if (res.ok) {
                 setMsg({ type: 'success', text: 'Saved successfully!' });
+                if (azureEndpoint) setHasAzureEndpoint(true);
+                if (azureKey) setHasAzureKey(true);
+                setAzureEndpoint('');
+                setAzureKey('');
             } else {
                 setMsg({ type: 'error', text: 'Failed to save.' });
             }
@@ -921,7 +997,7 @@ const AIModerationConfig = () => {
         }
     };
 
-    const categories = [
+    const llamaCategories = [
         { id: 'S1', label: 'Violent Crimes', icon: '⚔️' },
         { id: 'S2', label: 'Non-Violent Crimes', icon: '⚠️' },
         { id: 'S3', label: 'Sex-Related Crimes', icon: '🚫' },
@@ -938,35 +1014,95 @@ const AIModerationConfig = () => {
         { id: 'S14', label: 'Code Interpreter Abuse', icon: '💻' },
     ];
 
+    const azureCategories = [
+        { id: 'Hate', label: 'Hate and Fairness', icon: '🚷', desc: 'Discrimination, slurs, identity attacks' },
+        { id: 'Violence', label: 'Violence', icon: '⚔️', desc: 'Physical harm, weapons, extremism' },
+        { id: 'Sexual', label: 'Sexual', icon: '🔞', desc: 'Sexual content, nudity, exploitation' },
+        { id: 'SelfHarm', label: 'Self-Harm', icon: '💔', desc: 'Self-injury, suicide, eating disorders' },
+    ];
+
     const guardOnline = guardHealth?.status === 'ok';
     const guardFastOk = guardHealth?.guard_fast === 'ok';
+    const isAzure = moderationProvider === 'azure';
 
     return (
         <div className="max-w-2xl mx-auto space-y-6 animate-fadeIn">
             <div>
                 <h2 className="text-xl font-bold mb-2 text-primary">AI Moderation</h2>
-                <p className="text-sm text-muted">Self-hosted AI content moderation using Llama Guard.</p>
+                <p className="text-sm text-muted">Configure AI-powered content moderation to automatically detect and block harmful content.</p>
             </div>
 
+            {/* Provider Selector */}
             <div className="p-6 rounded-xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
-                <div className="flex items-center gap-4 mb-6">
-                    <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl" style={{ background: 'rgba(16, 185, 129, 0.15)' }}>🛡️</div>
-                    <div className="flex-1">
-                        <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>Guard Service</h3>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            Powered by <code className="px-1.5 py-0.5 rounded text-xs" style={{ background: 'var(--bg-tertiary)' }}>Llama-Guard-3-1B</code> — self-hosted
-                        </p>
-                    </div>
-                    {guardHealth && (
-                        <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${guardOnline ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
-                            <span className={`w-2 h-2 rounded-full ${guardOnline ? 'bg-emerald-400' : 'bg-red-400'}`}></span>
-                            {guardOnline ? (guardFastOk ? 'Online' : 'Degraded') : 'Offline'}
+                <label className="block text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>Moderation Provider</label>
+                <div className="grid grid-cols-2 gap-3">
+                    <button
+                        onClick={() => setModerationProvider('llamaguard')}
+                        className={`p-4 rounded-xl border-2 text-left transition-all ${!isAzure
+                            ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/5 shadow-md'
+                            : 'border-[var(--border-default)] hover:border-[var(--border-subtle)] bg-white/5'}`}
+                    >
+                        <div className="flex items-center gap-3 mb-2">
+                            <span className="text-xl">🦙</span>
+                            <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Llama Guard</span>
                         </div>
-                    )}
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Self-hosted • No data leaves your servers • 14 categories</p>
+                    </button>
+                    <button
+                        onClick={() => setModerationProvider('azure')}
+                        className={`p-4 rounded-xl border-2 text-left transition-all ${isAzure
+                            ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/5 shadow-md'
+                            : 'border-[var(--border-default)] hover:border-[var(--border-subtle)] bg-white/5'}`}
+                    >
+                        <div className="flex items-center gap-3 mb-2">
+                            <span className="text-xl">🔷</span>
+                            <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Azure AI Content Safety</span>
+                        </div>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Cloud-based • Microsoft Azure • 4 categories with severity levels</p>
+                    </button>
                 </div>
+            </div>
+
+            {/* Provider-Specific Config */}
+            <div className="p-6 rounded-xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
+
+                {/* Header — different per provider */}
+                {!isAzure ? (
+                    <div className="flex items-center gap-4 mb-6">
+                        <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl" style={{ background: 'rgba(16, 185, 129, 0.15)' }}>🛡️</div>
+                        <div className="flex-1">
+                            <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>Guard Service</h3>
+                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Powered by <code className="px-1.5 py-0.5 rounded text-xs" style={{ background: 'var(--bg-tertiary)' }}>Llama-Guard-3-1B</code> — self-hosted
+                            </p>
+                        </div>
+                        {guardHealth && (
+                            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${guardOnline ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
+                                <span className={`w-2 h-2 rounded-full ${guardOnline ? 'bg-emerald-400' : 'bg-red-400'}`}></span>
+                                {guardOnline ? (guardFastOk ? 'Online' : 'Degraded') : 'Offline'}
+                            </div>
+                        )}
+                    </div>
+                ) : (
+                    <div className="flex items-center gap-4 mb-6">
+                        <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl" style={{ background: 'rgba(59, 130, 246, 0.15)' }}>🔷</div>
+                        <div className="flex-1">
+                            <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>Azure AI Content Safety</h3>
+                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                Cloud-based content moderation via <code className="px-1.5 py-0.5 rounded text-xs" style={{ background: 'var(--bg-tertiary)' }}>@azure-rest/ai-content-safety</code>
+                            </p>
+                        </div>
+                        {hasAzureEndpoint && hasAzureKey && (
+                            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-400">
+                                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+                                Configured
+                            </div>
+                        )}
+                    </div>
+                )}
 
                 <div className="space-y-5">
-                    {/* Enabled Toggle */}
+                    {/* Enabled Toggle (shared) */}
                     <div className="flex items-center justify-between p-3 rounded-lg border bg-white/5 border-white/10">
                         <span className="text-sm font-medium text-[var(--text-primary)]">Enable AI Moderation</span>
                         <label className="relative inline-flex items-center cursor-pointer">
@@ -975,40 +1111,206 @@ const AIModerationConfig = () => {
                         </label>
                     </div>
 
-                    {/* Threshold Slider */}
+                    {/* Azure-specific: Endpoint + API Key */}
+                    {isAzure && (
+                        <div className="space-y-4 animate-fadeIn">
+                            <div>
+                                <label className="text-sm font-medium mb-1.5 block" style={{ color: 'var(--text-primary)' }}>Content Safety Endpoint</label>
+                                <input
+                                    type="text"
+                                    value={azureEndpoint}
+                                    onChange={e => setAzureEndpoint(e.target.value)}
+                                    placeholder={hasAzureEndpoint ? '••• endpoint configured •••' : 'https://your-resource.cognitiveservices.azure.com/'}
+                                    className="w-full px-4 py-2.5 rounded-lg border text-sm"
+                                    style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)', background: 'var(--bg-tertiary)' }}
+                                />
+                                <p className="text-xs text-muted mt-1">The endpoint of your Azure AI Content Safety resource.</p>
+                            </div>
+                            <div>
+                                <label className="text-sm font-medium mb-1.5 block" style={{ color: 'var(--text-primary)' }}>API Key</label>
+                                <input
+                                    type="password"
+                                    value={azureKey}
+                                    onChange={e => setAzureKey(e.target.value)}
+                                    placeholder={hasAzureKey ? '••• key configured •••' : 'Enter API key'}
+                                    className="w-full px-4 py-2.5 rounded-lg border text-sm"
+                                    style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)', background: 'var(--bg-tertiary)' }}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Threshold: different per provider */}
+                    {isAzure ? (
+                        <div>
+                            <div className="flex items-center justify-between mb-2">
+                                <label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Severity Threshold</label>
+                                <span className="text-sm font-mono px-2 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--accent-primary)' }}>≥ {severityThreshold}</span>
+                            </div>
+                            <input
+                                type="range"
+                                min="0"
+                                max="7"
+                                step="1"
+                                value={severityThreshold}
+                                onChange={e => setSeverityThreshold(parseInt(e.target.value))}
+                                className="w-full accent-[var(--accent-primary)]"
+                            />
+                            <div className="flex justify-between text-xs text-muted mt-1">
+                                <span>Block more (0)</span>
+                                <span>Block less (7)</span>
+                            </div>
+                            <p className="text-xs text-muted mt-1">Content with severity at or above this value will be blocked. Scale: 0 (safe) to 7 (most severe).</p>
+                        </div>
+                    ) : (
+                        <div>
+                            <div className="flex items-center justify-between mb-2">
+                                <label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Confidence Threshold</label>
+                                <span className="text-sm font-mono px-2 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--accent-primary)' }}>{config.threshold}</span>
+                            </div>
+                            <input
+                                type="range"
+                                min="0.1"
+                                max="1.0"
+                                step="0.05"
+                                value={config.threshold}
+                                onChange={e => setConfig({ ...config, threshold: parseFloat(e.target.value) })}
+                                className="w-full accent-[var(--accent-primary)]"
+                            />
+                            <div className="flex justify-between text-xs text-muted mt-1">
+                                <span>Block more (0.1)</span>
+                                <span>Block less (1.0)</span>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Categories */}
                     <div>
-                        <div className="flex items-center justify-between mb-2">
-                            <label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Confidence Threshold</label>
-                            <span className="text-sm font-mono px-2 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--accent-primary)' }}>{config.threshold}</span>
-                        </div>
-                        <input
-                            type="range"
-                            min="0.1"
-                            max="1.0"
-                            step="0.05"
-                            value={config.threshold}
-                            onChange={e => setConfig({ ...config, threshold: parseFloat(e.target.value) })}
-                            className="w-full accent-[var(--accent-primary)]"
-                        />
-                        <div className="flex justify-between text-xs text-muted mt-1">
-                            <span>Block more (0.1)</span>
-                            <span>Block less (1.0)</span>
-                        </div>
+                        <label className="block text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>
+                            {isAzure ? 'Enforced Categories' : 'Detected Categories'}
+                        </label>
+                        {isAzure ? (
+                            <div className="grid grid-cols-2 gap-2 p-3 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
+                                {azureCategories.map(cat => (
+                                    <label key={cat.id} className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer hover:bg-white/5 transition-colors">
+                                        <input
+                                            type="checkbox"
+                                            checked={azureEnabledCategories.includes(cat.id)}
+                                            onChange={(e) => {
+                                                if (e.target.checked) {
+                                                    setAzureEnabledCategories([...azureEnabledCategories, cat.id]);
+                                                } else {
+                                                    setAzureEnabledCategories(azureEnabledCategories.filter(id => id !== cat.id));
+                                                }
+                                            }}
+                                            className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0"
+                                        />
+                                        <span className="text-base">{cat.icon}</span>
+                                        <div>
+                                            <span className="text-sm block" style={{ color: 'var(--text-secondary)' }}>{cat.label}</span>
+                                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{cat.desc}</span>
+                                        </div>
+                                    </label>
+                                ))}
+                            </div>
+                        ) : (
+                            <div className="grid grid-cols-3 gap-2">
+                                {llamaCategories.map(cat => (
+                                    <div key={cat.id} className="flex items-center gap-2 p-2.5 rounded-lg" style={{ background: 'var(--bg-tertiary)' }}>
+                                        <span className="text-base">{cat.icon}</span>
+                                        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{cat.label}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                        <p className="text-xs text-muted mt-2">
+                            {isAzure
+                                ? 'Only checked categories will be analyzed. Unchecked categories are ignored by Azure.'
+                                : 'All categories are checked automatically. Content with confidence above the threshold will be blocked.'}
+                        </p>
                     </div>
 
-                    {/* Categories Info */}
-                    <div>
-                        <label className="block text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>Detected Categories</label>
-                        <div className="grid grid-cols-3 gap-2">
-                            {categories.map(cat => (
-                                <div key={cat.id} className="flex items-center gap-2 p-2.5 rounded-lg" style={{ background: 'var(--bg-tertiary)' }}>
-                                    <span className="text-base">{cat.icon}</span>
-                                    <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{cat.label}</span>
+                    {/* PII Detection (only shown for Azure — shared endpoint) */}
+                    {isAzure && (
+                        <div className="mt-6 pt-6 border-t border-white/10">
+                            <div className="flex items-center gap-3 mb-4">
+                                <div className="w-10 h-10 rounded-lg flex items-center justify-center text-xl" style={{ background: 'rgba(139, 92, 246, 0.15)' }}>🔒</div>
+                                <div className="flex-1">
+                                    <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>PII Detection</h3>
+                                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Detect personal data like credit cards, SSNs, emails, phone numbers</p>
                                 </div>
-                            ))}
+                                <label className="relative inline-flex items-center cursor-pointer">
+                                    <input type="checkbox" checked={piiEnabled} onChange={e => setPiiEnabled(e.target.checked)} className="sr-only peer" />
+                                    <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-500"></div>
+                                </label>
+                            </div>
+
+                            {piiEnabled && (
+                                <div className="space-y-4 animate-fadeIn">
+                                    {/* PII Confidence Threshold */}
+                                    <div>
+                                        <div className="flex items-center justify-between mb-2">
+                                            <label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>PII Confidence Threshold</label>
+                                            <span className="text-xs px-2 py-1 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                                                ≥ {piiConfidenceThreshold.toFixed(2)}
+                                            </span>
+                                        </div>
+                                        <input
+                                            type="range" min="0.1" max="1.0" step="0.05"
+                                            value={piiConfidenceThreshold}
+                                            onChange={e => setPiiConfidenceThreshold(parseFloat(e.target.value))}
+                                            className="w-full accent-violet-500"
+                                        />
+                                        <div className="flex justify-between text-xs text-muted mt-1">
+                                            <span>Detect more (0.1)</span><span>Detect less (1.0)</span>
+                                        </div>
+                                    </div>
+
+                                    {/* PII Categories by Group */}
+                                    <div>
+                                        <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Enforced PII Categories</label>
+                                        <div className="space-y-2">
+                                            {PII_CATEGORY_GROUPS.map(group => {
+                                                const gIds = group.categories.map(c => c.id);
+                                                const selCount = gIds.filter(id => piiCategories.includes(id)).length;
+                                                const allSel = selCount === gIds.length;
+                                                return (
+                                                    <div key={group.name} className="rounded-lg border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
+                                                        <div
+                                                            className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-white/5 rounded-t-lg transition-colors"
+                                                            onClick={() => {
+                                                                if (allSel) setPiiCategories(prev => prev.filter(id => !gIds.includes(id)));
+                                                                else setPiiCategories(prev => [...new Set([...prev, ...gIds])]);
+                                                            }}
+                                                        >
+                                                            <input type="checkbox" checked={allSel} readOnly className="w-3.5 h-3.5 rounded border-gray-600 bg-gray-700 text-violet-500 focus:ring-0" />
+                                                            <span className="text-sm">{group.icon}</span>
+                                                            <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{group.name}</span>
+                                                            <span className="text-xs text-muted ml-auto">{selCount}/{gIds.length}</span>
+                                                        </div>
+                                                        <div className="grid grid-cols-2 gap-0.5 px-3 pb-2">
+                                                            {group.categories.map(cat => (
+                                                                <label key={cat.id} className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)] cursor-pointer p-1.5 rounded hover:bg-white/5 transition-colors">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={piiCategories.includes(cat.id)}
+                                                                        onChange={() => setPiiCategories(prev => prev.includes(cat.id) ? prev.filter(c => c !== cat.id) : [...prev, cat.id])}
+                                                                        className="w-3 h-3 rounded border-gray-600 bg-gray-700 text-violet-500 focus:ring-0"
+                                                                    />
+                                                                    {cat.label}
+                                                                </label>
+                                                            ))}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                        <p className="text-xs text-muted mt-2">Only checked PII categories will be scanned. Uses the same Azure endpoint as Content Safety.</p>
+                                    </div>
+                                </div>
+                            )}
                         </div>
-                        <p className="text-xs text-muted mt-2">All categories are checked automatically. Content with confidence above the threshold will be blocked.</p>
-                    </div>
+                    )}
 
                     <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/5">
                         {msg && <span className={`text-sm ${msg.type === 'success' ? 'text-green-500' : 'text-red-500'}`}>{msg.text}</span>}
@@ -1025,10 +1327,18 @@ const AIModerationConfig = () => {
                 </div>
             </div>
 
-            <div className="p-4 rounded-lg flex gap-3" style={{ background: 'rgba(16, 185, 129, 0.08)', border: '1px solid rgba(16, 185, 129, 0.15)' }}>
-                <div className="shrink-0">✅</div>
+            <div className="p-4 rounded-lg flex gap-3" style={{ background: isAzure ? 'rgba(59, 130, 246, 0.08)' : 'rgba(16, 185, 129, 0.08)', border: `1px solid ${isAzure ? 'rgba(59, 130, 246, 0.15)' : 'rgba(16, 185, 129, 0.15)'}` }}>
+                <div className="shrink-0">{isAzure ? '🔷' : '✅'}</div>
                 <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                    <strong style={{ color: 'var(--text-primary)' }}>Self-hosted:</strong> AI Moderation runs on your own infrastructure using <code className="text-xs px-1 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)' }}>Llama Guard</code>. No data leaves your servers and there are no per-token costs.
+                    {isAzure ? (
+                        <>
+                            <strong style={{ color: 'var(--text-primary)' }}>Cloud-based:</strong> Azure AI Content Safety analyzes content using Microsoft's AI models. Data is sent to Azure for analysis. Works at global, organization, and agent level.
+                        </>
+                    ) : (
+                        <>
+                            <strong style={{ color: 'var(--text-primary)' }}>Self-hosted:</strong> AI Moderation runs on your own infrastructure using <code className="text-xs px-1 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)' }}>Llama Guard</code>. No data leaves your servers and there are no per-token costs.
+                        </>
+                    )}
                 </p>
             </div>
         </div>

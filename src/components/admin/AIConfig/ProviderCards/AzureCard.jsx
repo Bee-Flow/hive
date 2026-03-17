@@ -5,8 +5,10 @@ const AzureConfigCard = ({ onMessage }) => {
     const [endpoint, setEndpoint] = useState('');
     const [apiKey, setApiKey] = useState('');
     const [apiVersion, setApiVersion] = useState('2025-04-01-preview');
+    const [models, setModels] = useState('');
     const [hasEndpoint, setHasEndpoint] = useState(false);
     const [hasKey, setHasKey] = useState(false);
+    const [savedModels, setSavedModels] = useState('');
     const [saving, setSaving] = useState(false);
     const [showKey, setShowKey] = useState(false);
 
@@ -22,6 +24,10 @@ const AzureConfigCard = ({ onMessage }) => {
                 setHasEndpoint(!!data.hasAzureEndpoint);
                 setHasKey(!!data.hasAzureApiKey);
                 if (data.azureApiVersion) setApiVersion(data.azureApiVersion);
+                if (data.azureModels) {
+                    setSavedModels(data.azureModels);
+                    setModels(data.azureModels);
+                }
             }
         } catch (e) {
             console.error('Failed to fetch Azure AI status:', e);
@@ -29,13 +35,14 @@ const AzureConfigCard = ({ onMessage }) => {
     };
 
     const handleSave = async () => {
-        if (!endpoint.trim() && !apiKey.trim()) return;
+        if (!endpoint.trim() && !apiKey.trim() && !models.trim()) return;
         setSaving(true);
         try {
             const body = {};
             if (endpoint.trim()) body.azureEndpoint = endpoint;
             if (apiKey.trim()) body.azureApiKey = apiKey;
             body.azureApiVersion = apiVersion;
+            body.azureModels = models.trim();
 
             const res = await authFetch(`${API_BASE}/ai/config`, {
                 method: 'POST',
@@ -45,6 +52,7 @@ const AzureConfigCard = ({ onMessage }) => {
             if (res.ok) {
                 if (endpoint.trim()) setHasEndpoint(true);
                 if (apiKey.trim()) setHasKey(true);
+                setSavedModels(models.trim());
                 setEndpoint('');
                 setApiKey('');
                 onMessage?.({ type: 'success', text: 'Azure AI config saved!' });
@@ -59,6 +67,7 @@ const AzureConfigCard = ({ onMessage }) => {
     };
 
     const isConfigured = hasEndpoint && hasKey;
+    const modelCount = savedModels ? savedModels.split(',').filter(m => m.trim()).length : 0;
 
     return (
         <div className="mb-6 p-5 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)' }}>
@@ -75,6 +84,7 @@ const AzureConfigCard = ({ onMessage }) => {
                 <div className="flex gap-1.5">
                     {hasEndpoint && <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/20 text-green-400">Endpoint</span>}
                     {hasKey && <span className="text-[10px] px-2 py-0.5 rounded-full bg-green-500/20 text-green-400">Key</span>}
+                    {modelCount > 0 && <span className="text-[10px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-400">{modelCount} model{modelCount !== 1 ? 's' : ''}</span>}
                 </div>
             </div>
             <div className="space-y-3">
@@ -122,6 +132,22 @@ const AzureConfigCard = ({ onMessage }) => {
                     />
                 </div>
 
+                {/* Models input */}
+                <div>
+                    <input
+                        type="text"
+                        value={models}
+                        onChange={e => setModels(e.target.value)}
+                        placeholder="Deployment names, e.g. gpt-4o, gpt-4.1, o3-mini"
+                        className="w-full px-4 py-2.5 rounded-lg border outline-none focus:border-[var(--accent-primary)] text-sm"
+                        style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                        title="Comma-separated list of your Azure deployment names"
+                    />
+                    <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                        Comma-separated deployment names from your Azure portal
+                    </p>
+                </div>
+
                 {/* Help + Save */}
                 <div className="flex items-center justify-between">
                     <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -129,7 +155,7 @@ const AzureConfigCard = ({ onMessage }) => {
                     </p>
                     <button
                         onClick={handleSave}
-                        disabled={saving || (!endpoint.trim() && !apiKey.trim())}
+                        disabled={saving || (!endpoint.trim() && !apiKey.trim() && models === savedModels)}
                         className="px-5 py-2.5 rounded-lg font-medium text-white text-sm transition-all disabled:opacity-50"
                         style={{ background: 'var(--accent-primary)' }}
                     >

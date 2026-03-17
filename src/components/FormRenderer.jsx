@@ -43,35 +43,31 @@ const FormRenderer = ({ code, title = 'Form', onSubmit, initialSubmitted = false
 
     const handleSubmit = (e) => {
         e.preventDefault();
-        console.log('[FormRenderer] handleSubmit called');
-        console.log('[FormRenderer] formData:', formData);
-        console.log('[FormRenderer] onSubmit prop exists:', !!onSubmit);
-        console.log('[FormRenderer] isSubmitted:', isSubmitted);
 
         // Prevent resubmission
-        if (isSubmitted) {
-            console.log('[FormRenderer] Already submitted, returning early');
-            return;
-        }
+        if (isSubmitted) return;
 
         setIsSubmitted(true);
 
-        // Send form data to agent (pass object with flag for hidden message)
         if (onSubmit) {
-            // Format the response for the AI but flag as form submission
-            const formattedResponse = Object.entries(formData)
-                .map(([key, value]) => `${key}: ${value}`)
-                .join('\n');
+            // Format using human-readable labels from the form definition
+            const fields = formDef?.fields || [];
+            const formattedLines = Object.entries(formData)
+                .filter(([, value]) => value !== '' && value !== false && value !== undefined)
+                .map(([key, value]) => {
+                    const field = fields.find(f => f.name === key);
+                    const label = field?.label || key;
+                    if (typeof value === 'boolean') return `${label}: ${value ? 'Ja' : 'Nee'}`;
+                    return `${label}: ${value}`;
+                });
 
-            const submissionData = {
-                text: `Form submitted:\n${formattedResponse}`,
+            const text = formattedLines.join('\n');
+
+            onSubmit({
+                text,
                 isFormSubmission: true,
                 formData: formData
-            };
-            console.log('[FormRenderer] Calling onSubmit with:', submissionData);
-            onSubmit(submissionData);
-        } else {
-            console.log('[FormRenderer] No onSubmit prop provided!');
+            });
         }
     };
 

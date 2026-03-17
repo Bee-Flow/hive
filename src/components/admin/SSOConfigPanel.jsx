@@ -13,6 +13,7 @@ const SSOConfigPanel = () => {
     const [testing, setTesting] = useState({});
     const [message, setMessage] = useState(null);
     const [activeTab, setActiveTab] = useState('nextcloud');
+    const [serverUrl, setServerUrl] = useState('');
 
     const navItems = [
         { id: 'nextcloud', label: 'Nextcloud', icon: '☁️', color: '#0082c9' },
@@ -22,7 +23,20 @@ const SSOConfigPanel = () => {
 
     useEffect(() => {
         fetchProviders();
+        // Fetch server URL for redirect URI instructions
+        (async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/auth/setup-status`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.serverUrl) setServerUrl(data.serverUrl);
+                }
+            } catch (_) {}
+        })();
     }, []);
+
+    // Compute the base URL for OAuth redirect URIs shown in instructions
+    const redirectBase = serverUrl || API_BASE;
 
     const fetchProviders = async () => {
         try {
@@ -124,6 +138,19 @@ const SSOConfigPanel = () => {
             </span>
         );
     };
+
+    // Helper: check if a tenantId looks like a valid GUID or known alias
+    const isTenantIdValid = (tid) => {
+        if (!tid) return true; // empty defaults to common
+        const knownAliases = ['common', 'organizations', 'consumers'];
+        if (knownAliases.includes(tid.toLowerCase().trim())) return true;
+        // GUID pattern
+        return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(tid.trim());
+    };
+
+    const tenantId = providers.microsoft.tenantId || '';
+    const tenantIdValid = isTenantIdValid(tenantId);
+    const isMultiTenant = !tenantId || tenantId.toLowerCase().trim() === 'common' || tenantId.toLowerCase().trim() === 'organizations' || tenantId.toLowerCase().trim() === 'consumers';
 
     return (
         <div className="flex h-full border rounded-xl overflow-hidden shadow-sm" style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)' }}>
@@ -237,7 +264,7 @@ const SSOConfigPanel = () => {
                             <ol className="text-sm text-secondary space-y-2 list-decimal list-inside">
                                 <li>Go to Nextcloud → Settings → Security → OAuth 2.0 clients</li>
                                 <li>Click "Add client" and enter a name (e.g., "Bee Flow")</li>
-                                <li>Set the redirect URL to: <code className="bg-black/30 px-2 py-0.5 rounded text-xs font-mono">{window.location.origin}/auth/callback/nextcloud</code></li>
+                                <li>Set the redirect URL to: <code className="bg-black/30 px-2 py-0.5 rounded text-xs font-mono">{redirectBase}/auth/callback/nextcloud</code></li>
                                 <li>Copy the Client ID and Client Secret here</li>
                             </ol>
                         </div>
@@ -310,7 +337,7 @@ const SSOConfigPanel = () => {
                             <ol className="text-sm text-secondary space-y-2 list-decimal list-inside">
                                 <li>Go to <a href="https://console.cloud.google.com/apis/credentials" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Google Cloud Console → Credentials</a></li>
                                 <li>Create a new OAuth 2.0 Client ID (Web application)</li>
-                                <li>Add authorized redirect URI: <code className="bg-black/30 px-2 py-0.5 rounded text-xs font-mono">{window.location.origin}/auth/callback/google</code></li>
+                                <li>Add authorized redirect URI: <code className="bg-black/30 px-2 py-0.5 rounded text-xs font-mono">{redirectBase}/auth/callback/google</code></li>
                                 <li>Copy the Client ID and Client Secret here</li>
                             </ol>
                         </div>
@@ -377,7 +404,14 @@ const SSOConfigPanel = () => {
                                 </div>
                                 <div className="lg:col-span-2">
                                     <label className="block text-sm font-medium text-secondary mb-2">
-                                        Tenant ID <span className="text-muted text-xs">(optional, defaults to "common" for multi-tenant)</span>
+                                        Tenant ID
+                                        {isMultiTenant ? (
+                                            <span className="text-blue-400 text-xs ml-2">(multi-tenant)</span>
+                                        ) : tenantIdValid ? (
+                                            <span className="text-green-400 text-xs ml-2">(single-tenant)</span>
+                                        ) : (
+                                            <span className="text-orange-400 text-xs ml-2">(invalid format — should be a GUID or "common")</span>
+                                        )}
                                     </label>
                                     <input
                                         type="text"
@@ -385,9 +419,16 @@ const SSOConfigPanel = () => {
                                         onChange={(e) => updateProviderField('microsoft', 'tenantId', e.target.value)}
                                         placeholder="common"
                                         className="w-full px-4 py-2.5 rounded-lg text-sm font-mono"
-                                        style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
+                                        style={{
+                                            background: 'var(--bg-tertiary)',
+                                            border: `1px solid ${!tenantIdValid ? 'rgba(251, 146, 60, 0.5)' : 'var(--border-default)'}`,
+                                            color: 'var(--text-primary)'
+                                        }}
                                     />
-                                    <p className="text-xs text-muted mt-1">Use "common" for any Microsoft account, or your Azure AD tenant ID for organization-only access</p>
+                                    <div className="mt-2 p-3 rounded-lg text-xs" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-default)' }}>
+                                        <p className="text-secondary mb-1"><strong>Single-tenant app</strong> — paste your Directory (tenant) ID from Azure Portal → App Overview (e.g. <code className="text-muted">xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx</code>). Required if "Supported account types" is set to "Single tenant".</p>
+                                        <p className="text-secondary"><strong>Multi-tenant app</strong> — use <code className="text-muted">common</code> (any Microsoft account), <code className="text-muted">organizations</code> (work/school only), or <code className="text-muted">consumers</code> (personal only).</p>
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -397,9 +438,10 @@ const SSOConfigPanel = () => {
                             <ol className="text-sm text-secondary space-y-2 list-decimal list-inside">
                                 <li>Go to <a href="https://portal.azure.com/#blade/Microsoft_AAD_RegisteredApps/ApplicationsListBlade" target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">Azure Portal → App registrations</a></li>
                                 <li>Register a new application or select an existing one</li>
-                                <li>Add a redirect URI (Web): <code className="bg-black/30 px-2 py-0.5 rounded text-xs font-mono">{window.location.origin}/auth/callback/microsoft</code></li>
+                                <li>Add a redirect URI (Web): <code className="bg-black/30 px-2 py-0.5 rounded text-xs font-mono">{redirectBase}/auth/callback/microsoft</code></li>
                                 <li>Create a client secret under "Certificates & secrets"</li>
                                 <li>Copy the Application (Client) ID and Secret Value here</li>
+                                <li>For <strong>single-tenant apps</strong>: copy the Directory (tenant) ID from the app Overview page and paste it in the Tenant ID field above</li>
                                 <li>Under "API permissions", add the following <strong>Microsoft Graph</strong> delegated permissions and grant admin consent: <code className="bg-black/30 px-2 py-0.5 rounded text-xs font-mono">Mail.Read</code>, <code className="bg-black/30 px-2 py-0.5 rounded text-xs font-mono">Mail.Send</code>, <code className="bg-black/30 px-2 py-0.5 rounded text-xs font-mono">Calendars.ReadWrite</code>, <code className="bg-black/30 px-2 py-0.5 rounded text-xs font-mono">Files.ReadWrite</code>, <code className="bg-black/30 px-2 py-0.5 rounded text-xs font-mono">Contacts.ReadWrite</code>, <code className="bg-black/30 px-2 py-0.5 rounded text-xs font-mono">offline_access</code></li>
                             </ol>
                         </div>

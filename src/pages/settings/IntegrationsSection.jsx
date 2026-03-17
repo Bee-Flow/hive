@@ -551,6 +551,106 @@ const WhatsAppIntegration = ({ onSaved }) => {
     );
 };
 
+// ── MCP Server Credentials ───────────────────────────────────────────────────
+const McpCredentialsIntegration = ({ onSaved }) => {
+    const [mcpServers, setMcpServers] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [credValues, setCredValues] = useState({}); // { `${serverId}:${credKey}`: 'value' }
+    const [saving, setSaving] = useState(null); // `${serverId}:${credKey}` currently saving
+
+    React.useEffect(() => { loadMcpServers(); }, []);
+
+    const loadMcpServers = async () => {
+        try {
+            const res = await authFetch(`${API_BASE}/ai/mcp-servers/user-credentials`);
+            if (res.ok) {
+                const data = await res.json();
+                setMcpServers(data.servers || []);
+            }
+        } catch (e) { /* ignore */ }
+        setLoading(false);
+    };
+
+    const saveCred = async (serverId, credKey) => {
+        const stateKey = `${serverId}:${credKey}`;
+        const value = credValues[stateKey];
+        if (!value?.trim()) return;
+        setSaving(stateKey);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/mcp-servers/user-credentials`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ serverId, credKey, value: value.trim() }),
+            });
+            if (res.ok) {
+                setCredValues(prev => ({ ...prev, [stateKey]: '' }));
+                loadMcpServers();
+                onSaved?.();
+            }
+        } catch (e) { console.error(e); }
+        setSaving(null);
+    };
+
+    if (loading || mcpServers.length === 0) return null;
+
+    return mcpServers.map(server => (
+        <IntegrationRow
+            key={server.id}
+            connected={server.allConfigured}
+            name={server.name}
+            description={server.allConfigured
+                ? `${server.toolCount} tool${server.toolCount !== 1 ? 's' : ''} available — credentials configured`
+                : `Configure your credentials for ${server.toolCount} tool${server.toolCount !== 1 ? 's' : ''}`
+            }
+            icon={
+                <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '18px', height: '18px' }}>
+                    <rect x="2" y="2" width="20" height="20" rx="4" fill="url(#mcp_g)" />
+                    <path d="M8 12h8M12 8v8" stroke="white" strokeWidth="2" strokeLinecap="round" />
+                    <defs>
+                        <linearGradient id="mcp_g" x1="2" y1="2" x2="22" y2="22">
+                            <stop stopColor="#6366F1" /><stop offset="1" stopColor="#8B5CF6" />
+                        </linearGradient>
+                    </defs>
+                </svg>
+            }
+        >
+            <div className="space-y-2 mt-1">
+                {server.credentials.map(cred => {
+                    const stateKey = `${server.id}:${cred.key}`;
+                    return (
+                        <div key={cred.key}>
+                            <div className="flex gap-2">
+                                <input
+                                    type="password"
+                                    value={credValues[stateKey] || ''}
+                                    onChange={e => setCredValues(prev => ({ ...prev, [stateKey]: e.target.value }))}
+                                    placeholder={cred.configured ? '••••••••••••••••' : `Enter ${cred.label || cred.key}`}
+                                    className="flex-1 px-3 py-2 rounded-lg border outline-none text-sm focus:border-[var(--accent-primary)] transition-colors"
+                                    style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                                    onKeyDown={e => e.key === 'Enter' && saveCred(server.id, cred.key)}
+                                />
+                                <button
+                                    onClick={() => saveCred(server.id, cred.key)}
+                                    disabled={saving === stateKey || !(credValues[stateKey] || '').trim()}
+                                    className="px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50"
+                                    style={{ background: 'var(--accent-primary)' }}
+                                >
+                                    {saving === stateKey ? '…' : 'Save'}
+                                </button>
+                            </div>
+                            {cred.configured && (
+                                <p className="text-[10px] mt-0.5 flex items-center gap-1" style={{ color: '#4ade80' }}>
+                                    ✓ Configured{cred.description ? ` — ${cred.description}` : ''}
+                                </p>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+        </IntegrationRow>
+    ));
+};
+
 // ── Integrations Section ─────────────────────────────────────────────────────
 const IntegrationsSection = ({ statuses, onSaved, enabledIntegrations, isOrgAdmin }) => {
     // enabledIntegrations: null = all enabled, array = only those IDs
@@ -564,17 +664,6 @@ const IntegrationsSection = ({ statuses, onSaved, enabledIntegrations, isOrgAdmi
     const showGitHub = isEnabled('github');
     const showWhatsApp = true; // Always available — no admin config needed
 
-    if (!showFireflies && !showYouTrack && !showGamma && !showN8nInteg && !showLinkedIn && !showGitHub && !showWhatsApp) {
-        return (
-            <section>
-                <h2 className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>
-                    Integrations
-                </h2>
-                <p className="text-sm py-6 text-center" style={{ color: 'var(--text-muted)' }}>No integrations available for your organization.</p>
-            </section>
-        );
-    }
-
     return (
         <section>
             <h2 className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>
@@ -586,6 +675,7 @@ const IntegrationsSection = ({ statuses, onSaved, enabledIntegrations, isOrgAdmi
             {showLinkedIn && <LinkedInIntegration connected={statuses.linkedInConnected} linkedInName={statuses.linkedInName} hasLinkedInConfig={statuses.hasLinkedInConfig} onSaved={() => onSaved('linkedin')} />}
             {showGitHub && <GitHubIntegration onSaved={() => onSaved('github')} />}
             {showWhatsApp && <WhatsAppIntegration onSaved={() => onSaved('whatsapp')} />}
+            <McpCredentialsIntegration onSaved={() => onSaved('mcp')} />
         </section>
     );
 };

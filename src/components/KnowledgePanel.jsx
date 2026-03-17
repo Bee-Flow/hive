@@ -39,6 +39,7 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
     const [sitemapMaxPages, setSitemapMaxPages] = useState(50);
     const [reindexing, setReindexing] = useState(false);
     const [reindexStatus, setReindexStatus] = useState('');
+    const [useAzureKB, setUseAzureKB] = useState(false);
 
     useEffect(() => { fetchKnowledge(); }, [agentId]);
     useEffect(() => { setSelectedIds(new Set()); }, [items]);
@@ -57,6 +58,20 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
             } catch { }
         };
         checkDrive();
+    }, []);
+
+    // Fetch Azure KB processing config
+    useEffect(() => {
+        const fetchAzureConfig = async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/api/ai/config`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setUseAzureKB(!!data.useAzureDocProcessing);
+                }
+            } catch { }
+        };
+        fetchAzureConfig();
     }, []);
 
     useEffect(() => {
@@ -471,7 +486,7 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
                         ) : kbs.length === 0 ? (
                             <div className="text-center py-8 text-xs rounded-xl border border-dashed"
                                 style={{ color: 'var(--text-muted)', borderColor: 'var(--border-subtle)' }}>
-                                No knowledge bases yet. Create one to get started with bge-m3 embeddings + hybrid search.
+                                No knowledge bases yet. Create one to get started with {useAzureKB ? 'Azure OpenAI' : 'bge-m3'} embeddings + hybrid search.
                             </div>
                         ) : (
                             <div className="space-y-2">
@@ -538,7 +553,7 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
                                             title="Re-fetch URLs and re-embed all documents with current model">
                                             {reindexing ? '⏳ Re-indexing...' : '🔄 Re-index'}
                                         </button>
-                                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 font-medium">bge-m3</span>
+                                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${useAzureKB ? 'bg-blue-500/10 text-blue-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{useAzureKB ? '☁️ Azure OpenAI' : 'bge-m3'}</span>
                                     </div>
                                 </div>
 
@@ -673,7 +688,7 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
                         <div className="p-3 rounded-lg flex gap-2 text-xs" style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.12)' }}>
                             <span className="flex-shrink-0">💡</span>
                             <p style={{ color: 'var(--text-secondary)' }}>
-                                <strong style={{ color: 'var(--text-primary)' }}>Multi-KB:</strong> Link knowledge bases to this agent. Each KB uses <code className="text-[10px] px-1 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)' }}>bge-m3</code> embeddings with hybrid search + reranking for high-quality retrieval.
+                                <strong style={{ color: 'var(--text-primary)' }}>Multi-KB:</strong> Link knowledge bases to this agent. Each KB uses <code className="text-[10px] px-1 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)' }}>{useAzureKB ? 'Azure OpenAI (text-embedding-3-small)' : 'bge-m3'}</code> embeddings with {useAzureKB ? 'cosine similarity reranking' : 'hybrid search + reranking'} for high-quality retrieval. {useAzureKB && <span style={{ color: 'rgb(59,130,246)' }}>☁️ Azure pipeline active</span>}
                             </p>
                         </div>
                     </div>

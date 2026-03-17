@@ -727,33 +727,25 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
         selectConversation(result.agent_id, result.id);
     };
 
-    const handleFormSubmit = async (msg, formSubmission, formKey) => {
-        console.log('[AgentHub] handleFormSubmit called');
-        console.log('[AgentHub] msg:', msg);
-        console.log('[AgentHub] formSubmission:', formSubmission);
-        console.log('[AgentHub] formKey:', formKey);
-
+    const handleFormSubmit = (msg, formSubmission, formKey) => {
         setSubmittedFormIds(prev => new Set([...prev, formKey]));
 
         setMessages(prev => prev.map(m =>
             m.id === msg.id ? { ...m, savedFormData: formSubmission.formData } : m
         ));
 
+        // Persist form data in background (don't block)
         if (currentConversation?.id && selectedAgent) {
-            try {
-                await authFetch(`${API_BASE}/agents/${selectedAgent.id}/conversations/${currentConversation.id}/form-data`, {
-                    method: 'PATCH',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ messageId: msg.id, formData: formSubmission.formData })
-                });
-            } catch (err) {
-                console.error("Failed to persist form data", err);
-            }
+            authFetch(`${API_BASE}/agents/${selectedAgent.id}/conversations/${currentConversation.id}/form-data`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ messageId: msg.id, formData: formSubmission.formData })
+            }).catch(err => console.error("Failed to persist form data", err));
         }
 
-        console.log('[AgentHub] Calling sendMessage with text:', formSubmission.text, 'isHidden: true');
-        shouldForceScrollRef.current = true;
-        sendMessage(formSubmission.text, [], true);
+        // Populate the input field with the form answers so the user can send it
+        const messageText = formSubmission.text || 'Form submitted';
+        setChatInput(messageText);
     };
 
     const getGroupedConversations = () => {
