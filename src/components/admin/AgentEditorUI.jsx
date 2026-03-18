@@ -27,10 +27,15 @@ const AgentEditorUI = ({
     showSwarmFields = false,
     // Organization & group sharing
     organizations = [],
-    groups = []
+    groups = [],
+    // Agent categories
+    categories = [],
+    onCreateCategory
 }) => {
     const [activeTab, setActiveTab] = useState('general');
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+    const [showNewCategory, setShowNewCategory] = useState(false);
+    const [newCategoryName, setNewCategoryName] = useState('');
 
     // Local handler to simplify standard inputs
     const handleChange = (field, value) => {
@@ -154,6 +159,76 @@ const AgentEditorUI = ({
                                 </div>
                             </div>
                         </div>
+
+                        {/* Category */}
+                        {!showSwarmFields && (
+                            <div>
+                                <label className="text-xs mb-1 block text-[var(--text-muted)]">Category</label>
+                                <div className="flex items-center gap-2">
+                                    <select
+                                        value={data.categoryId || ''}
+                                        onChange={e => handleChange('categoryId', e.target.value || null)}
+                                        className="flex-1 px-4 py-2 rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] text-[var(--text-primary)] focus:border-[var(--accent-primary)] outline-none text-sm"
+                                    >
+                                        <option value="">None (default "Agent")</option>
+                                        {categories.map(cat => (
+                                            <option key={cat.id} value={cat.id}>{cat.icon} {cat.name}</option>
+                                        ))}
+                                    </select>
+                                    {onCreateCategory && (
+                                        <button
+                                            type="button"
+                                            onClick={() => setShowNewCategory(!showNewCategory)}
+                                            className="px-3 py-2 rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] text-[var(--text-primary)] hover:border-[var(--accent-primary)] transition-all text-sm"
+                                            title="Create new category"
+                                        >
+                                            +
+                                        </button>
+                                    )}
+                                </div>
+                                {showNewCategory && onCreateCategory && (
+                                    <div className="mt-2 flex items-center gap-2">
+                                        <input
+                                            type="text"
+                                            value={newCategoryName}
+                                            onChange={e => setNewCategoryName(e.target.value)}
+                                            className="flex-1 px-3 py-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-tertiary)] text-[var(--text-primary)] text-sm"
+                                            placeholder="Category name..."
+                                            onKeyDown={e => {
+                                                if (e.key === 'Enter' && newCategoryName.trim()) {
+                                                    onCreateCategory(newCategoryName.trim());
+                                                    setNewCategoryName('');
+                                                    setShowNewCategory(false);
+                                                }
+                                            }}
+                                            autoFocus
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => {
+                                                if (newCategoryName.trim()) {
+                                                    onCreateCategory(newCategoryName.trim());
+                                                    setNewCategoryName('');
+                                                    setShowNewCategory(false);
+                                                }
+                                            }}
+                                            disabled={!newCategoryName.trim()}
+                                            className="px-3 py-2 rounded-lg text-xs font-medium text-white transition-all"
+                                            style={{ background: newCategoryName.trim() ? 'var(--accent-primary)' : 'var(--bg-secondary)' }}
+                                        >
+                                            Create
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => { setShowNewCategory(false); setNewCategoryName(''); }}
+                                            className="px-2 py-2 rounded-lg text-xs text-[var(--text-muted)] hover:bg-white/10"
+                                        >
+                                            ✕
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        )}
 
                         {/* Description */}
                         <div>

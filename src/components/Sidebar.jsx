@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, CheckSquare, BarChart3, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText } from 'lucide-react';
 import { API_BASE } from '../utils/helpers';
 import NotificationCenter from './NotificationCenter';
+import NavLink from './NavLink';
 
 /* ─── Design tokens ─── */
 const ROW = 'w-full flex items-center gap-2.5 px-3 h-9 rounded-lg transition-all duration-150 text-left relative';
@@ -718,36 +719,45 @@ const Sidebar = ({
                     >
                         <div className="p-1">
                             {!isMobile && (user?.isAdmin || user?.permissions?.includes('all')) && (
-                                <button
-                                    onClick={() => { setShowProfileMenu(false); onNavigate('admin'); }}
+                                <NavLink
+                                    href="/admin"
+                                    onClick={() => setShowProfileMenu(false)}
+                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('admin'); }}
                                     className={`${ROW} ${currentPage === 'admin' ? ROW_ACTIVE : ROW_IDLE}`}
+                                    style={{ textDecoration: 'none', color: 'inherit' }}
                                 >
                                     {currentPage === 'admin' && <div className={ACCENT_BAR} />}
                                     <Shield className={`w-4 h-4 ${currentPage === 'admin' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
                                     <span className={`text-[13px] ${currentPage === 'admin' ? TEXT_ACTIVE : TEXT_IDLE}`}>Admin Dashboard</span>
-                                </button>
+                                </NavLink>
                             )}
                             {!isMobile && user?.featureFlags?.tasks !== false && (user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('tasks'))) && (
-                                <button
-                                    onClick={() => { setShowProfileMenu(false); onNavigate('tasks'); }}
+                                <NavLink
+                                    href="/tasks"
+                                    onClick={() => setShowProfileMenu(false)}
+                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('tasks'); }}
                                     className={`${ROW} ${currentPage === 'tasks' ? ROW_ACTIVE : ROW_IDLE}`}
+                                    style={{ textDecoration: 'none', color: 'inherit' }}
                                 >
                                     {currentPage === 'tasks' && <div className={ACCENT_BAR} />}
                                     <CheckSquare className={`w-4 h-4 ${currentPage === 'tasks' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
                                     <span className={`text-[13px] ${currentPage === 'tasks' ? TEXT_ACTIVE : TEXT_IDLE}`}>Tasks</span>
                                     <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
-                                </button>
+                                </NavLink>
                             )}
                             {!isMobile && user?.featureFlags?.monitoring !== false && (user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('monitoring'))) && (
-                                <button
-                                    onClick={() => { setShowProfileMenu(false); onNavigate('monitoring'); }}
+                                <NavLink
+                                    href="/monitoring"
+                                    onClick={() => setShowProfileMenu(false)}
+                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('monitoring'); }}
                                     className={`${ROW} ${currentPage === 'monitoring' ? ROW_ACTIVE : ROW_IDLE}`}
+                                    style={{ textDecoration: 'none', color: 'inherit' }}
                                 >
                                     {currentPage === 'monitoring' && <div className={ACCENT_BAR} />}
                                     <BarChart3 className={`w-4 h-4 ${currentPage === 'monitoring' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
                                     <span className={`text-[13px] ${currentPage === 'monitoring' ? TEXT_ACTIVE : TEXT_IDLE}`}>Monitoring</span>
                                     <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
-                                </button>
+                                </NavLink>
                             )}
                             {!isMobile && (user?.isAdmin || user?.permissions?.includes('all') || user?.permissions?.includes('org_admin') || user?.permissions?.some?.(p => p.startsWith?.('admin_')) || user?.orgRole === 'admin' || user?.orgRole === 'org_admin') && (
                                 <button
@@ -772,24 +782,30 @@ const Sidebar = ({
                         </div>
                         <div className="border-t border-[var(--border-subtle)] p-1">
                             {!isMobile && (
-                                <button
-                                    onClick={() => { setShowProfileMenu(false); onNavigate('meetingNotes'); }}
+                                <NavLink
+                                    href="/meeting-notes"
+                                    onClick={() => setShowProfileMenu(false)}
+                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('meetingNotes'); }}
                                     className={`${ROW} ${currentPage === 'meetingNotes' ? ROW_ACTIVE : ROW_IDLE}`}
+                                    style={{ textDecoration: 'none', color: 'inherit' }}
                                 >
                                     {currentPage === 'meetingNotes' && <div className={ACCENT_BAR} />}
                                     <Mic className={`w-4 h-4 ${currentPage === 'meetingNotes' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
                                     <span className={`text-[13px] ${currentPage === 'meetingNotes' ? TEXT_ACTIVE : TEXT_IDLE}`}>Meeting Notes</span>
-                                </button>
+                                </NavLink>
                             )}
                             {!isMobile && (
-                                <button
-                                    onClick={() => { setShowProfileMenu(false); onNavigate('templates'); }}
+                                <NavLink
+                                    href="/templates"
+                                    onClick={() => setShowProfileMenu(false)}
+                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('templates'); }}
                                     className={`${ROW} ${currentPage === 'templates' ? ROW_ACTIVE : ROW_IDLE}`}
+                                    style={{ textDecoration: 'none', color: 'inherit' }}
                                 >
                                     {currentPage === 'templates' && <div className={ACCENT_BAR} />}
                                     <FileText className={`w-4 h-4 ${currentPage === 'templates' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
                                     <span className={`text-[13px] ${currentPage === 'templates' ? TEXT_ACTIVE : TEXT_IDLE}`}>Templates</span>
-                                </button>
+                                </NavLink>
                             )}
                         </div>
                         <div className="border-t border-[var(--border-subtle)] p-1">

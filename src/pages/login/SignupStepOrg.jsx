@@ -4,6 +4,36 @@ import { Building, MapPin, Phone, FileText, ArrowLeft, ArrowRight } from 'lucide
 const SignupStepOrg = ({ signupData, setSignupData, signupOrgs, handleSignupNext, resetSignup, inputClass, inputClassSimple, labelClass }) => {
     return (
         <form onSubmit={e => { e.preventDefault(); handleSignupNext(); }} className="space-y-4">
+            {/* New / Join existing toggle — only show when public orgs exist */}
+            {signupOrgs.length > 0 && (
+                <div style={{
+                    display: 'flex', gap: '4px', padding: '3px', borderRadius: '10px',
+                    background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', marginBottom: '4px',
+                }}>
+                    {[
+                        { id: 'new', label: 'New Organisation' },
+                        { id: 'existing', label: 'Join Existing' },
+                    ].map(opt => {
+                        const active = signupData.signupType === opt.id;
+                        return (
+                            <button key={opt.id} type="button"
+                                onClick={() => setSignupData(p => ({ ...p, signupType: opt.id }))}
+                                style={{
+                                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    padding: '8px 12px', borderRadius: '8px', fontSize: '13px',
+                                    fontWeight: active ? 600 : 500, border: 'none', cursor: 'pointer',
+                                    transition: 'all .15s ease',
+                                    background: active ? 'var(--accent-primary)' : 'transparent',
+                                    color: active ? '#fff' : 'var(--text-muted)',
+                                }}
+                            >
+                                {opt.label}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+
             {signupData.signupType === 'new' ? (
                 <>
                     <div>

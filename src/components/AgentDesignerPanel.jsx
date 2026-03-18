@@ -3,7 +3,6 @@ import AgentEditorUI from './admin/AgentEditorUI';
 import { filterVisibleModels } from '../utils/modelMeta.js';
 import { API_BASE, authFetch } from '../utils/helpers';
 
-// API base URL - configurable via environment variable
 /**
  * AgentDesignerPanel - Editing panel for agents within Agent Hub
  * Receives selected agent from parent, manages editing state
@@ -18,6 +17,7 @@ const AgentDesignerPanel = ({
     const [availableModels, setAvailableModels] = useState([]);
     const [organizations, setOrganizations] = useState([]);
     const [groups, setGroups] = useState([]);
+    const [categories, setCategories] = useState([]);
 
     // Form state object
     const [formData, setFormData] = useState({
@@ -34,7 +34,8 @@ const AgentDesignerPanel = ({
         isPublished: false,
         embedEnabled: false,
         organizationId: '',
-        sharedGroups: []
+        sharedGroups: [],
+        categoryId: ''
     });
 
     // Load agent data when agent changes
@@ -58,7 +59,8 @@ const AgentDesignerPanel = ({
                 organizationId: agent.organization_id || '',
                 sharedGroups: typeof agent.shared_groups === 'string'
                     ? (() => { try { return JSON.parse(agent.shared_groups || '[]'); } catch (_) { return []; } })()
-                    : (agent.shared_groups || [])
+                    : (agent.shared_groups || []),
+                categoryId: agent.category_id || ''
             });
         } else {
             // New agent
@@ -76,7 +78,8 @@ const AgentDesignerPanel = ({
                 isPublished: false,
                 embedEnabled: false,
                 organizationId: '',
-                sharedGroups: []
+                sharedGroups: [],
+                categoryId: ''
             });
         }
     }, [agent]);
@@ -84,9 +87,8 @@ const AgentDesignerPanel = ({
     useEffect(() => {
         fetchModels();
         fetchOrgsAndGroups();
+        fetchCategories();
     }, []);
-
-
 
     const fetchModels = async () => {
         try {
@@ -116,6 +118,36 @@ const AgentDesignerPanel = ({
             }
         } catch (err) {
             console.error('Failed to fetch orgs/groups:', err);
+        }
+    };
+
+    const fetchCategories = async () => {
+        try {
+            const res = await authFetch(`${API_BASE}/agents/categories`);
+            if (res.ok) {
+                const data = await res.json();
+                setCategories(Array.isArray(data) ? data : []);
+            }
+        } catch (err) {
+            console.error('Failed to fetch categories:', err);
+        }
+    };
+
+    const handleCreateCategory = async (name) => {
+        try {
+            const res = await authFetch(`${API_BASE}/agents/categories`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name })
+            });
+            if (res.ok) {
+                const cat = await res.json();
+                setCategories(prev => [...prev, cat]);
+                // Auto-select the newly created category
+                setFormData(prev => ({ ...prev, categoryId: cat.id }));
+            }
+        } catch (err) {
+            console.error('Failed to create category:', err);
         }
     };
 
@@ -170,7 +202,8 @@ const AgentDesignerPanel = ({
                 copyEnabled: formData.copyEnabled,
                 embedEnabled: formData.embedEnabled,
                 organizationId: formData.organizationId || null,
-                sharedGroups: formData.sharedGroups || []
+                sharedGroups: formData.sharedGroups || [],
+                categoryId: formData.categoryId || null
             };
 
             let savedAgent = agent;
@@ -258,6 +291,8 @@ const AgentDesignerPanel = ({
                     API_BASE={API_BASE}
                     organizations={organizations}
                     groups={groups}
+                    categories={categories}
+                    onCreateCategory={handleCreateCategory}
                 />
             </div>
 

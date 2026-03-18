@@ -1,16 +1,22 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { getAgentInitials, getAgentColor } from '../utils/helpers';
-import { ChevronDown, ChevronUp, X, Search, Heart } from 'lucide-react';
+import { ChevronDown, ChevronUp, X, Search, Heart, EyeOff } from 'lucide-react';
 
-const CATEGORIES = [
+const STATIC_CATEGORIES_BEFORE = [
     { key: 'popular', label: 'Popular' },
     { key: 'lastused', label: 'Last Used' },
     { key: 'agent', label: 'Agent' },
+];
+
+const SPECIAL_TYPE_CATEGORIES = [
     { key: 'swarm', label: 'Swarm' },
     { key: 'browser', label: 'Browsing' },
     { key: 'terminal', label: 'Dev & Coding' },
     { key: 'security', label: 'Security' },
     { key: 'roundtable', label: 'Round Table' },
+];
+
+const STATIC_CATEGORIES_AFTER = [
     { key: 'favorites', label: 'Favorites' },
     { key: 'all', label: 'All' },
 ];
@@ -29,7 +35,7 @@ const SORT_OPTIONS = [
     { key: 'az', label: 'Alphabetical' },
 ];
 
-const TYPE_MAP = {
+const STATIC_TYPE_MAP = {
     swarm: 'Swarm',
     browser: 'Browser',
     terminal: 'Terminal',
@@ -44,23 +50,36 @@ const getAgentType = (a) => {
     if (a.is_terminal_agent) return 'terminal';
     if (a.is_security_agent) return 'security';
     if (a._type === 'roundtable') return 'roundtable';
+    if (a.category_id) return `cat_${a.category_id}`;
     return 'agent';
 };
 
 /* ── Agent Card ── */
-const AgentCard = React.memo(({ agentId, name, avatar, description, typeLabel, isFavorite, onSelect, onToggleFavorite }) => (
+const AgentCard = React.memo(({ agentId, name, avatar, description, typeLabel, isFavorite, isOwner, onSelect, onToggleFavorite, onUnpublish }) => (
     <div
         onClick={onSelect}
         className="group relative p-4 rounded-xl border cursor-pointer transition-shadow duration-150 hover:shadow-md flex flex-col"
         style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', minHeight: '130px' }}
     >
-        <button
-            onClick={(e) => { e.stopPropagation(); onToggleFavorite(agentId); }}
-            className={`absolute top-3 right-3 p-1.5 rounded-lg transition-opacity z-10 ${isFavorite ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
-            style={{ background: 'var(--bg-tertiary)' }}
-        >
-            <Heart className={`w-3.5 h-3.5 ${isFavorite ? 'text-red-500 fill-red-500' : ''}`} style={isFavorite ? {} : { color: 'var(--text-muted)' }} />
-        </button>
+        <div className="absolute top-3 right-3 flex items-center gap-1 z-10">
+            {isOwner && onUnpublish && (
+                <button
+                    onClick={(e) => { e.stopPropagation(); onUnpublish(agentId); }}
+                    className="p-1.5 rounded-lg transition-opacity opacity-0 group-hover:opacity-100"
+                    style={{ background: 'var(--bg-tertiary)' }}
+                    title="Unpublish agent"
+                >
+                    <EyeOff className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+                </button>
+            )}
+            <button
+                onClick={(e) => { e.stopPropagation(); onToggleFavorite(agentId); }}
+                className={`p-1.5 rounded-lg transition-opacity ${isFavorite ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}
+                style={{ background: 'var(--bg-tertiary)' }}
+            >
+                <Heart className={`w-3.5 h-3.5 ${isFavorite ? 'text-red-500 fill-red-500' : ''}`} style={isFavorite ? {} : { color: 'var(--text-muted)' }} />
+            </button>
+        </div>
 
         <div className="flex items-start gap-3">
             <div
@@ -93,7 +112,7 @@ const AgentCard = React.memo(({ agentId, name, avatar, description, typeLabel, i
 /* ── Main Store ── */
 const API = (import.meta.env.VITE_API_URL || '') + '/api/usage';
 
-const AgentMarketplace = ({ agents = [], favorites = [], onToggleFavorite, onSelect, onClose }) => {
+const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onToggleFavorite, onSelect, onClose, onUnpublish, user }) => {
     const [search, setSearch] = useState('');
     const [showFilters, setShowFilters] = useState(false);
     const [activeCategory, setActiveCategory] = useState('popular');
@@ -103,6 +122,19 @@ const AgentMarketplace = ({ agents = [], favorites = [], onToggleFavorite, onSel
     const [recents] = useState(() => {
         try { return JSON.parse(localStorage.getItem('agent_marketplace_recents') || '[]'); } catch (_) { return []; }
     });
+
+    // Build category list dynamically: static before + dynamic org categories + special types + static after
+    const CATEGORIES = useMemo(() => {
+        const dynamicCats = categories.map(c => ({ key: `cat_${c.id}`, label: `${c.icon || ''} ${c.name}`.trim() }));
+        return [...STATIC_CATEGORIES_BEFORE, ...dynamicCats, ...SPECIAL_TYPE_CATEGORIES, ...STATIC_CATEGORIES_AFTER];
+    }, [categories]);
+
+    // Build a type map that includes dynamic categories
+    const TYPE_MAP = useMemo(() => {
+        const map = { ...STATIC_TYPE_MAP };
+        categories.forEach(c => { map[`cat_${c.id}`] = c.name; });
+        return map;
+    }, [categories]);
 
     // Fetch popularity data from monitoring API
     useEffect(() => {
@@ -174,10 +206,13 @@ const AgentMarketplace = ({ agents = [], favorites = [], onToggleFavorite, onSel
     const isSearching = search.trim().length > 0;
 
     // Pre-compute card data to avoid work inside render
-    const cardData = useMemo(() => filtered.map(a => ({
-        id: a.id, name: a.name, avatar: a.avatar, description: a.description,
-        typeLabel: TYPE_MAP[getAgentType(a)], isFavorite: favorites.includes(a.id), agent: a,
-    })), [filtered, favorites]);
+    const cardData = useMemo(() => filtered.map(a => {
+        const isOwner = user && (a.owner_id === user.id || user.isAdmin || (user.permissions || []).includes('all'));
+        return {
+            id: a.id, name: a.name, avatar: a.avatar, description: a.description,
+            typeLabel: TYPE_MAP[getAgentType(a)] || 'Agent', isFavorite: favorites.includes(a.id), isOwner, agent: a,
+        };
+    }), [filtered, favorites, TYPE_MAP, user]);
 
     return (
         <div className="flex-1 flex flex-col overflow-hidden w-full h-full" style={{ background: 'var(--bg-secondary)' }}>
@@ -283,7 +318,9 @@ const AgentMarketplace = ({ agents = [], favorites = [], onToggleFavorite, onSel
                             {cardData.map(d => (
                                 <AgentCard key={d.id} agentId={d.id} name={d.name} avatar={d.avatar}
                                     description={d.description} typeLabel={d.typeLabel} isFavorite={d.isFavorite}
+                                    isOwner={d.isOwner}
                                     onSelect={() => handleSelect(d.agent)} onToggleFavorite={onToggleFavorite}
+                                    onUnpublish={onUnpublish}
                                 />
                             ))}
                         </div>

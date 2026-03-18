@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState as useLocalState } from 'react';
 import ModelTierSelector from '../../../ModelTierSelector';
 import VersionHistory from '../../../VersionHistory';
 
@@ -22,8 +22,29 @@ export const IdentitySection = ({
   chatFont, setChatFont, chatFontSize, setChatFontSize,
   chatLineHeight, setChatLineHeight, userBubbleColor, setUserBubbleColor,
   assistantBubbleColor, setAssistantBubbleColor, warningText, setWarningText,
-  setPromptDesignerMessages, setPromptDesignerInput, setShowPromptDesigner
+  setPromptDesignerMessages, setPromptDesignerInput, setShowPromptDesigner,
+  categoryId, setCategoryId, agentCategories, setAgentCategories,
 }) => {
+  const [showNewCategory, setShowNewCategory] = useLocalState(false);
+  const [newCategoryName, setNewCategoryName] = useLocalState('');
+
+  const handleCreateCategory = async () => {
+    if (!newCategoryName.trim()) return;
+    try {
+      const res = await authFetch(`${API_BASE}/agents/categories`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: newCategoryName.trim() })
+      });
+      if (res.ok) {
+        const cat = await res.json();
+        setAgentCategories(prev => [...prev, cat]);
+        setCategoryId(cat.id);
+        setNewCategoryName('');
+        setShowNewCategory(false);
+      }
+    } catch (err) { console.error('Failed to create category:', err); }
+  };
   return (
                                                 <div className="space-y-6 animate-fadeIn">
                                                     <div className="flex items-center justify-between">
@@ -193,6 +214,84 @@ export const IdentitySection = ({
                                                             />
                                                         </div>
                                                     </div>
+
+                                                    {/* Category */}
+                                                    {agentCategories && agentCategories.length > 0 || showNewCategory ? (
+                                                        <div className="mt-4">
+                                                            <label className="text-xs font-medium text-muted mb-1.5 block">Category</label>
+                                                            <div className="flex items-center gap-2">
+                                                                {!showNewCategory ? (
+                                                                    <>
+                                                                        <select
+                                                                            value={categoryId || ''}
+                                                                            onChange={(e) => setCategoryId(e.target.value || null)}
+                                                                            className="input flex-1 px-3 py-2 text-sm"
+                                                                        >
+                                                                            <option value="">No category</option>
+                                                                            {(agentCategories || []).map(c => (
+                                                                                <option key={c.id} value={c.id}>{c.name}</option>
+                                                                            ))}
+                                                                        </select>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => setShowNewCategory(true)}
+                                                                            className="p-2 rounded-lg border hover:bg-[var(--bg-tertiary)] transition-colors"
+                                                                            style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
+                                                                            title="Create new category"
+                                                                        >
+                                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                                                            </svg>
+                                                                        </button>
+                                                                    </>
+                                                                ) : (
+                                                                    <>
+                                                                        <input
+                                                                            type="text"
+                                                                            value={newCategoryName}
+                                                                            onChange={(e) => setNewCategoryName(e.target.value)}
+                                                                            onKeyDown={(e) => e.key === 'Enter' && handleCreateCategory()}
+                                                                            className="input flex-1 px-3 py-2 text-sm"
+                                                                            placeholder="Category name..."
+                                                                            autoFocus
+                                                                        />
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={handleCreateCategory}
+                                                                            disabled={!newCategoryName.trim()}
+                                                                            className="px-3 py-2 rounded-lg text-xs font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition-colors disabled:opacity-40"
+                                                                        >
+                                                                            Create
+                                                                        </button>
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => { setShowNewCategory(false); setNewCategoryName(''); }}
+                                                                            className="p-2 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors"
+                                                                            style={{ color: 'var(--text-muted)' }}
+                                                                        >
+                                                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                                            </svg>
+                                                                        </button>
+                                                                    </>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    ) : (
+                                                        <div className="mt-4">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setShowNewCategory(true)}
+                                                                className="flex items-center gap-1.5 text-xs font-medium transition-all hover:text-[var(--text-primary)]"
+                                                                style={{ color: 'var(--text-muted)' }}
+                                                            >
+                                                                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                                                </svg>
+                                                                Add to category
+                                                            </button>
+                                                        </div>
+                                                    )}
 
                                                     {/* Intelligence & Instructions (merged) */}
                                                     <div className="mt-5 pt-5 border-t" style={{ borderColor: 'var(--border-subtle)' }}>

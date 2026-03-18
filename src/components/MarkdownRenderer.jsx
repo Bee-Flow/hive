@@ -222,7 +222,7 @@ const CollapsibleCodeBlock = ({ className, children, ...props }) => {
             <div style={{ position: 'relative' }}>
                 <pre ref={codeRef} className="hljs" style={{
                     maxHeight: needsCollapse && !expanded ? `${COLLAPSE_HEIGHT}px` : 'none',
-                    overflow: 'hidden',
+                    overflow: 'auto',
                     transition: 'max-height 0.25s ease',
                     margin: 0,
                     padding: '0.6rem 0.75rem',
@@ -408,7 +408,15 @@ const MarkdownRenderer = ({ content, className = '', onFormSubmit, formId, isFor
                             language === 'form-json';
 
                         if (!inline && isForm) {
-                            // Check if form JSON is valid/complete
+                            // While streaming, show loading — don't attempt partial JSON renders
+                            if (isLoading) {
+                                return (
+                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
+                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
+                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Creating form...</span>
+                                    </div>
+                                );
+                            }
                             try {
                                 JSON.parse(codeString);
                                 return (
@@ -437,7 +445,14 @@ const MarkdownRenderer = ({ content, className = '', onFormSubmit, formId, isFor
                             language === 'page-json';
 
                         if (!inline && isPage) {
-                            // Check if page JSON is valid/complete
+                            if (isLoading) {
+                                return (
+                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
+                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
+                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Creating page...</span>
+                                    </div>
+                                );
+                            }
                             try {
                                 JSON.parse(codeString);
                                 return (
@@ -471,6 +486,14 @@ const MarkdownRenderer = ({ content, className = '', onFormSubmit, formId, isFor
                             language === 'research-json';
 
                         if (!inline && isResearch) {
+                            if (isLoading) {
+                                return (
+                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
+                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
+                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Building research report...</span>
+                                    </div>
+                                );
+                            }
                             try {
                                 const researchData = JSON.parse(codeString);
                                 return (
@@ -500,6 +523,14 @@ const MarkdownRenderer = ({ content, className = '', onFormSubmit, formId, isFor
                             language === 'test-report-json';
 
                         if (!inline && isTestReport) {
+                            if (isLoading) {
+                                return (
+                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
+                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
+                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Building test report...</span>
+                                    </div>
+                                );
+                            }
                             try {
                                 const testData = JSON.parse(codeString);
                                 return (
@@ -530,6 +561,14 @@ const MarkdownRenderer = ({ content, className = '', onFormSubmit, formId, isFor
                             language === 'json-offerte';
 
                         if (!inline && isQuote) {
+                            if (isLoading) {
+                                return (
+                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
+                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
+                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Creating quote...</span>
+                                    </div>
+                                );
+                            }
                             try {
                                 const quoteData = JSON.parse(codeString);
                                 return (

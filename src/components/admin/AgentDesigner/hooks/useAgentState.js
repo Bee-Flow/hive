@@ -32,6 +32,10 @@ export default function useAgentState() {
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [emojiCategory, setEmojiCategory] = useState('smileys');
 
+    // Categories
+    const [categoryId, setCategoryId] = useState(null);
+    const [agentCategories, setAgentCategories] = useState([]);
+
     // Behavior
     const [allowCopy, setAllowCopy] = useState(true);
     const [embedEnabled, setEmbedEnabled] = useState(false);
@@ -109,6 +113,7 @@ export default function useAgentState() {
         modelTiers, setModelTiers, starterPrompts, setStarterPrompts,
         avatar, setAvatar, showEmojiPicker, setShowEmojiPicker,
         emojiCategory, setEmojiCategory,
+        categoryId, setCategoryId, agentCategories, setAgentCategories,
         // Behavior
         allowCopy, setAllowCopy, embedEnabled, setEmbedEnabled,
         workspaceEnabled, setWorkspaceEnabled, enableGuardrails, setEnableGuardrails,

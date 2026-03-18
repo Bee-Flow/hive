@@ -1,17 +1,95 @@
 import React, { useState, useEffect, useRef } from 'react';
 import MarkdownRenderer from './MarkdownRenderer';
-import { MessageSquarePlus, Bold, Italic, ArrowUp } from 'lucide-react';
+import { MessageSquarePlus, Bold, Italic, ArrowUp, Copy, Check, Download, FileText } from 'lucide-react';
 
 const WorkspacePanel = ({ content, onChange, onSave, onSelectionChange, onAskAI, onClose }) => {
     const [localContent, setLocalContent] = useState(content || '');
     const [viewMode, setViewMode] = useState('preview'); // 'edit' or 'preview'
     const [isDirty, setIsDirty] = useState(false);
+    const [copySuccess, setCopySuccess] = useState(false);
 
     // Floating Toolbar State
     const [toolbar, setToolbar] = useState({ visible: false, top: 0, left: 0, text: '', mode: 'default' }); // mode: 'default' | 'input'
     const [promptText, setPromptText] = useState('');
     const containerRef = useRef(null);
     const toolbarRef = useRef(null);
+
+    // Export: Copy raw markdown to clipboard
+    const handleCopyMarkdown = async () => {
+        if (!localContent) return;
+        try {
+            await navigator.clipboard.writeText(localContent);
+            setCopySuccess(true);
+            setTimeout(() => setCopySuccess(false), 2000);
+        } catch (e) {
+            console.error('[Workspace] Copy failed:', e);
+        }
+    };
+
+    // Export: Download as .md file
+    const handleDownloadMd = () => {
+        if (!localContent) return;
+        const blob = new Blob([localContent], { type: 'text/markdown;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `workspace-${Date.now()}.md`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
+    // Export: Print-to-PDF (styled preview)
+    const handleExportPdf = () => {
+        const contentEl = containerRef.current?.querySelector('.prose');
+        if (!contentEl) return;
+        const htmlContent = contentEl.innerHTML;
+        if (!htmlContent || htmlContent.trim().length === 0) return;
+
+        const printWindow = window.open('', '_blank', 'width=800,height=600');
+        if (!printWindow) return;
+
+        printWindow.document.write(`<!DOCTYPE html>
+<html><head>
+    <title>Workspace Export</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            background: white; color: #1a1a1a;
+            padding: 48px 40px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            line-height: 1.75; font-size: 15px;
+            max-width: 800px; margin: 0 auto;
+        }
+        h1 { font-size: 1.8em; font-weight: 700; margin: 1.2em 0 0.6em; color: #111; }
+        h2 { font-size: 1.4em; font-weight: 600; margin: 1.2em 0 0.5em; color: #222; }
+        h3 { font-size: 1.15em; font-weight: 600; margin: 1em 0 0.4em; color: #333; }
+        p { margin: 0.6em 0; }
+        ul, ol { margin: 0.5em 0; padding-left: 1.8em; }
+        li { margin: 0.25em 0; }
+        a { color: #2563eb; text-decoration: underline; }
+        blockquote { border-left: 3px solid #d1d5db; margin: 0.8em 0; padding: 0.5em 1em; color: #555; background: #f9fafb; }
+        pre { background: #f3f4f6 !important; color: #1f2937 !important; padding: 16px; border-radius: 8px; overflow-x: auto; margin: 0.8em 0; border: 1px solid #e5e7eb; font-size: 13px; }
+        code { font-family: 'SFMono-Regular', Consolas, monospace; font-size: 0.88em; }
+        :not(pre) > code { background: #f3f4f6; padding: 2px 6px; border-radius: 4px; color: #d63384; }
+        pre code { background: none !important; padding: 0; color: inherit !important; }
+        table { border-collapse: collapse; width: 100%; margin: 0.8em 0; font-size: 14px; }
+        th, td { border: 1px solid #d1d5db; padding: 8px 12px; text-align: left; }
+        th { background: #f3f4f6; font-weight: 600; }
+        img { max-width: 100%; height: auto; border-radius: 6px; margin: 0.5em 0; }
+        hr { border: none; border-top: 1px solid #e5e7eb; margin: 1.5em 0; }
+        button, .copy-btn, [data-copy] { display: none !important; }
+        .timestamp { text-align: right; color: #9ca3af; font-size: 11px; margin-top: 40px; border-top: 1px solid #e5e7eb; padding-top: 10px; }
+        @media print { body { padding: 20px !important; } pre { white-space: pre-wrap !important; word-break: break-word !important; } }
+    </style>
+</head><body>
+    ${htmlContent}
+    <div class="timestamp">Exported from Workspace on ${new Date().toLocaleString()}</div>
+</body></html>`);
+        printWindow.document.close();
+        setTimeout(() => { printWindow.focus(); printWindow.print(); }, 400);
+    };
 
     // Sync local content when prop changes (from AI update)
     useEffect(() => {
@@ -237,6 +315,32 @@ const WorkspacePanel = ({ content, onChange, onSave, onSelectionChange, onAskAI,
                             Edit
                         </button>
                     </div>
+                    {/* Export Actions */}
+                    {localContent && (
+                        <div className="flex items-center gap-0.5 border-l pl-2 ml-1" style={{ borderColor: 'var(--border-subtle)' }}>
+                            <button
+                                onClick={handleCopyMarkdown}
+                                className="p-1.5 rounded-lg hover:bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                                title="Copy as Markdown"
+                            >
+                                {copySuccess ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                            </button>
+                            <button
+                                onClick={handleExportPdf}
+                                className="p-1.5 rounded-lg hover:bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                                title="Export as PDF"
+                            >
+                                <Download className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                                onClick={handleDownloadMd}
+                                className="p-1.5 rounded-lg hover:bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                                title="Download as .md file"
+                            >
+                                <FileText className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
+                    )}
                     {onClose && (
                         <button
                             onClick={onClose}

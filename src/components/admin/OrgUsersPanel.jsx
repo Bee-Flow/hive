@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Users, UserPlus, Shield, Trash2, Edit2, Check, X, Plus, ChevronDown, ChevronRight, Mail, Clock } from 'lucide-react';
+import { Users, UserPlus, Shield, Trash2, Edit2, Check, X, Plus, ChevronDown, ChevronRight, Mail, Clock, Send, Link2, AlertCircle } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 
 const ORG_ROLES = [
@@ -81,6 +81,15 @@ const OrgUsersPanel = ({ user }) => {
     // Expanded role details
     const [expandedRole, setExpandedRole] = useState(null);
 
+    // Invitation state
+    const [showInviteForm, setShowInviteForm] = useState(false);
+    const [inviteEmail, setInviteEmail] = useState('');
+    const [inviteRole, setInviteRole] = useState('user');
+    const [sendingInvite, setSendingInvite] = useState(false);
+    const [inviteResult, setInviteResult] = useState(null); // { success, message, inviteUrl? }
+    const [invitations, setInvitations] = useState([]);
+    const [loadingInvitations, setLoadingInvitations] = useState(false);
+
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
@@ -102,6 +111,21 @@ const OrgUsersPanel = ({ user }) => {
     }, []);
 
     useEffect(() => { fetchData(); }, [fetchData]);
+
+    // Fetch invitations
+    const fetchInvitations = useCallback(async () => {
+        setLoadingInvitations(true);
+        try {
+            const res = await authFetch(`${API_BASE}/auth/invitations`);
+            if (res.ok) setInvitations(await res.json());
+        } catch (err) {
+            console.error('Failed to fetch invitations:', err);
+        } finally {
+            setLoadingInvitations(false);
+        }
+    }, []);
+
+    useEffect(() => { fetchInvitations(); }, [fetchInvitations]);
 
     useEffect(() => {
         if (!newGroupOrg && organizations.length > 0) {
@@ -216,6 +240,46 @@ const OrgUsersPanel = ({ user }) => {
         }
     };
 
+    // Invitation handlers
+    const handleSendInvite = async () => {
+        if (!inviteEmail.trim()) return;
+        setSendingInvite(true);
+        setInviteResult(null);
+        try {
+            const res = await authFetch(`${API_BASE}/auth/invitations`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: inviteEmail.trim(), role: inviteRole }),
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                setInviteResult({
+                    success: true,
+                    message: data.emailSent ? `Invitation sent to ${inviteEmail}` : `Invitation created but email delivery failed. Share the link manually:`,
+                    inviteUrl: !data.emailSent ? data.inviteUrl : null,
+                });
+                setInviteEmail('');
+                setInviteRole('user');
+                await fetchInvitations();
+            } else {
+                setInviteResult({ success: false, message: data.error || 'Failed to send invitation' });
+            }
+        } catch (err) {
+            setInviteResult({ success: false, message: 'Network error — please try again' });
+        } finally {
+            setSendingInvite(false);
+        }
+    };
+
+    const handleRevokeInvite = async (invitationId) => {
+        try {
+            const res = await authFetch(`${API_BASE}/auth/invitations/${invitationId}`, { method: 'DELETE' });
+            if (res.ok) await fetchInvitations();
+        } catch (err) {
+            console.error('Failed to revoke invitation:', err);
+        }
+    };
+
     // Resolve org IDs from user's direct assignment and groups
     const getUserOrgIds = () => {
         const orgIds = new Set();
@@ -316,11 +380,82 @@ const OrgUsersPanel = ({ user }) => {
 
             {/* ═══════════════ USERS SECTION ═══════════════ */}
             {activeSection === 'users' && (
-                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden">
-                    <div className="px-5 py-4 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
-                        <h3 className="text-base font-semibold text-[var(--text-primary)]">Organisation Members</h3>
-                        <p className="text-xs text-[var(--text-muted)] mt-0.5">Manage roles and group assignments for users in your organisation</p>
+                <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)]">
+                    <div className="px-5 py-4 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)] rounded-t-xl flex items-center justify-between">
+                        <div>
+                            <h3 className="text-base font-semibold text-[var(--text-primary)]">Organisation Members</h3>
+                            <p className="text-xs text-[var(--text-muted)] mt-0.5">Manage roles and group assignments for users in your organisation</p>
+                        </div>
+                        <button
+                            onClick={() => { setShowInviteForm(v => !v); setInviteResult(null); }}
+                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--accent-primary)] text-white hover:opacity-90 transition-opacity"
+                        >
+                            <Send className="w-3.5 h-3.5" />
+                            Invite User
+                        </button>
                     </div>
+
+                    {/* Invite form */}
+                    {showInviteForm && (
+                        <div className="px-5 py-4 border-b border-[var(--border-subtle)] bg-[var(--accent-primary)]/5">
+                            <div className="flex items-end gap-3">
+                                <div className="flex-1">
+                                    <label className="block text-[10px] font-medium text-[var(--text-muted)] mb-1 uppercase tracking-wider">Email Address</label>
+                                    <input
+                                        type="email"
+                                        value={inviteEmail}
+                                        onChange={e => setInviteEmail(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && handleSendInvite()}
+                                        className="w-full px-3 py-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-sm outline-none focus:border-[var(--accent-primary)] transition-colors"
+                                        placeholder="colleague@example.com"
+                                        autoFocus
+                                    />
+                                </div>
+                                <div className="w-40">
+                                    <label className="block text-[10px] font-medium text-[var(--text-muted)] mb-1 uppercase tracking-wider">Role</label>
+                                    <select
+                                        value={inviteRole}
+                                        onChange={e => setInviteRole(e.target.value)}
+                                        className="w-full px-3 py-2 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-sm outline-none"
+                                    >
+                                        <option value="user">User</option>
+                                        {ORG_ROLES.map(r => (
+                                            <option key={r.id} value={r.id}>{r.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                                <button
+                                    onClick={handleSendInvite}
+                                    disabled={sendingInvite || !inviteEmail.trim()}
+                                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium bg-[var(--accent-primary)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+                                >
+                                    {sendingInvite ? (
+                                        <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                                    ) : (
+                                        <Send className="w-3.5 h-3.5" />
+                                    )}
+                                    Send
+                                </button>
+                            </div>
+                            {inviteResult && (
+                                <div className={`mt-3 flex items-start gap-2 text-xs px-3 py-2 rounded-lg ${inviteResult.success ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                                    {inviteResult.success ? <Check className="w-3.5 h-3.5 mt-0.5 shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />}
+                                    <div>
+                                        <span>{inviteResult.message}</span>
+                                        {inviteResult.inviteUrl && (
+                                            <button
+                                                onClick={() => { navigator.clipboard.writeText(inviteResult.inviteUrl); }}
+                                                className="flex items-center gap-1 mt-1 text-[var(--accent-primary)] hover:underline"
+                                            >
+                                                <Link2 className="w-3 h-3" />
+                                                Copy invite link
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    )}
                     {orgUsers.length === 0 ? (
                         <div className="px-5 py-12 text-center">
                             <Users className="w-10 h-10 mx-auto mb-3 text-[var(--text-muted)] opacity-30" />
@@ -441,7 +576,7 @@ const OrgUsersPanel = ({ user }) => {
                                                     <button className="text-xs px-2 py-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors" title="Assign groups">
                                                         <UserPlus className="w-3.5 h-3.5" />
                                                     </button>
-                                                    <div className="absolute right-0 top-full mt-1 w-52 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] shadow-xl z-20 opacity-0 pointer-events-none group-hover/assign:opacity-100 group-hover/assign:pointer-events-auto transition-all">
+                                                    <div className="absolute right-0 top-full mt-1 w-52 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] shadow-xl z-50 opacity-0 pointer-events-none group-hover/assign:opacity-100 group-hover/assign:pointer-events-auto transition-all">
                                                         <div className="p-2 text-xs font-medium text-[var(--text-muted)] border-b border-[var(--border-subtle)]">Assign to groups</div>
                                                         <div className="max-h-48 overflow-auto p-1">
                                                             {orgGroups.map(g => (
@@ -466,6 +601,44 @@ const OrgUsersPanel = ({ user }) => {
                                     </div>
                                 );
                             })}
+                        </div>
+                    )}
+
+                    {/* Pending Invitations */}
+                    {invitations.filter(i => i.status === 'pending').length > 0 && (
+                        <div className="border-t border-[var(--border-subtle)]">
+                            <div className="px-5 py-3 bg-[var(--bg-secondary)]">
+                                <h4 className="text-xs font-semibold text-[var(--text-muted)] uppercase tracking-wider">Pending Invitations</h4>
+                            </div>
+                            <div className="divide-y divide-[var(--border-subtle)]">
+                                {invitations.filter(i => i.status === 'pending').map(inv => (
+                                    <div key={inv.id} className="px-5 py-2.5 flex items-center gap-4">
+                                        <div className="w-9 h-9 rounded-full bg-[var(--accent-primary)]/10 flex items-center justify-center shrink-0">
+                                            <Mail className="w-4 h-4 text-[var(--accent-primary)]" />
+                                        </div>
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-sm font-medium text-[var(--text-primary)] truncate">{inv.email}</span>
+                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-500/15 text-amber-500 flex items-center gap-1">
+                                                    <Clock className="w-2.5 h-2.5" />
+                                                    Invited
+                                                </span>
+                                                {inv.role && inv.role !== 'user' && getRoleBadge(inv.role)}
+                                            </div>
+                                            <div className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                                                Expires {new Date(inv.expires_at).toLocaleDateString()}
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={() => handleRevokeInvite(inv.id)}
+                                            className="text-xs px-2 py-1 rounded-lg text-[var(--text-muted)] hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                                            title="Revoke invitation"
+                                        >
+                                            <X className="w-3.5 h-3.5" />
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
                         </div>
                     )}
                 </div>

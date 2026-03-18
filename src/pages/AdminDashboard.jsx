@@ -1,5 +1,6 @@
 import React from 'react';
 import { ArrowLeft } from 'lucide-react';
+import NavLink from '../components/NavLink';
 import AgentConfigHub from '../components/admin/AgentConfigHub';
 import AIConfigPanel from '../components/admin/AIConfig';
 import SecurityHub from '../components/admin/SecurityHub';
@@ -116,16 +117,18 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                         if (!checkTabAccess(tab)) return null;
 
                         return (
-                            <button
+                            <NavLink
                                 key={tab.id}
-                                onClick={() => handleTabClick(tab.id)}
+                                href={`/admin/${tab.id}`}
+                                onNavigate={() => handleTabClick(tab.id)}
                                 className={`px-4 py-1.5 rounded-md text-sm font-medium transition-all ${activeTab === tab.id
                                     ? 'bg-[var(--accent-primary)] text-white shadow-sm'
                                     : 'text-muted hover:text-primary hover:bg-white/5'
                                     }`}
+                                style={{ textDecoration: 'none', color: 'inherit' }}
                             >
                                 {tab.label}
-                            </button>
+                            </NavLink>
                         );
                     })}
                 </div>
@@ -152,7 +155,7 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                         </div>
                     ) : activeTab === 'integrations' ? (
                         <div className="absolute inset-0">
-                            <IntegrationsAdminPanel />
+                            <IntegrationsAdminPanel activeSection={adminPath.seg2} onNavigate={onNavigate} />
                         </div>
                     ) : activeTab === 'monitoring' ? (
                         <div className="absolute inset-0">

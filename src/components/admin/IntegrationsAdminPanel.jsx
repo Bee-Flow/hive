@@ -1,6 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE, authFetch } from '../../utils/helpers';
-import { Loader2, ToggleLeft, ToggleRight, Check, Settings, Plus, Trash2, RefreshCw, Plug, ChevronDown, ExternalLink } from 'lucide-react';
+import { Loader2, ToggleLeft, ToggleRight, Check, Settings, Plus, Trash2, RefreshCw, Plug, ChevronDown, ExternalLink, Mail, Send, Layers, Search as SearchIcon, Cloud } from 'lucide-react';
+
+const SECTIONS = [
+    { id: 'platform', label: 'Platform', icon: Layers, color: '#6366f1' },
+    { id: 'email', label: 'Email', icon: Mail, color: '#ea4335' },
+    { id: 'services', label: 'Services', icon: ExternalLink, color: '#0A66C2' },
+    { id: 'search', label: 'Search', icon: SearchIcon, color: '#10b981' },
+    { id: 'mcp', label: 'MCP', icon: Plug, color: '#f59e0b' },
+];
 
 const ALL_INTEGRATIONS = [
     { id: 'gmail', label: 'Gmail', description: 'Send and read emails', category: 'Google' },
@@ -29,7 +37,11 @@ const ALL_INTEGRATIONS = [
     { id: 'github', label: 'GitHub', description: 'Repository management, view code', category: 'Third-Party' },
 ];
 
-export default function IntegrationsAdminPanel() {
+export default function IntegrationsAdminPanel({ activeSection: activeProp = 'platform', onNavigate }) {
+    const active = SECTIONS.map(s => s.id).includes(activeProp) ? activeProp : 'platform';
+    const handleSectionClick = (id) => {
+        if (onNavigate) onNavigate(`admin/integrations/${id}`);
+    };
     const [defaults, setDefaults] = useState(null); // null = all enabled
     const [organizations, setOrganizations] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -71,6 +83,16 @@ export default function IntegrationsAdminPanel() {
     const [savingAzureEmbed, setSavingAzureEmbed] = useState(false);
     const [useAzureDocProcessing, setUseAzureDocProcessing] = useState(false);
     const [savingAzureToggle, setSavingAzureToggle] = useState(false);
+
+    // Service Email (Gmail SMTP)
+    const [serviceEmailAddress, setServiceEmailAddress] = useState('');
+    const [serviceEmailPassword, setServiceEmailPassword] = useState('');
+    const [serviceEmailDisplayName, setServiceEmailDisplayName] = useState('');
+    const [hasServiceEmail, setHasServiceEmail] = useState(false);
+    const [savingServiceEmail, setSavingServiceEmail] = useState(false);
+    const [testingServiceEmail, setTestingServiceEmail] = useState(false);
+    const [testEmailRecipient, setTestEmailRecipient] = useState('');
+    const [showTestEmail, setShowTestEmail] = useState(false);
 
     // MCP Servers
     const [mcpServers, setMcpServers] = useState([]);
@@ -124,6 +146,9 @@ export default function IntegrationsAdminPanel() {
                 setHasAzureEmbedKey(!!configData.hasAzureOpenaiEmbeddingKey);
                 if (configData.azureOpenaiEmbeddingModel) setAzureEmbedModel(configData.azureOpenaiEmbeddingModel);
                 setUseAzureDocProcessing(!!configData.useAzureDocProcessing);
+                // Service Email
+                setHasServiceEmail(!!configData.hasServiceEmail);
+                if (configData.serviceEmailDisplayName) setServiceEmailDisplayName(configData.serviceEmailDisplayName);
             }
         } catch (e) { console.error(e); }
         try {
@@ -218,22 +243,75 @@ export default function IntegrationsAdminPanel() {
     }
 
     return (
-        <div className="h-full overflow-auto p-6">
-            <div className="max-w-4xl mx-auto space-y-8">
-                {/* Header + status message */}
-                <div className="flex items-center justify-between">
-                    <div>
-                        <h2 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Integrations</h2>
-                        <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-                            Manage which integrations are available globally and per organization
-                        </p>
-                    </div>
-                    {message && (
-                        <span className={`text-sm font-medium px-3 py-1.5 rounded-lg ${message.type === 'success' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                            {message.text}
-                        </span>
-                    )}
+        <div style={{ display: 'flex', height: '100%', overflow: 'hidden' }}>
+            {/* ── Left Sidebar ── */}
+            <div style={{
+                width: '56px',
+                flexShrink: 0,
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '2px',
+                padding: '8px 0',
+                background: 'var(--bg-secondary, #111)',
+                borderRight: '1px solid var(--border-default, rgba(255,255,255,0.08))',
+            }}>
+                {SECTIONS.map(sec => {
+                    const Icon = sec.icon;
+                    const isActive = active === sec.id;
+                    return (
+                        <button
+                            key={sec.id}
+                            onClick={() => handleSectionClick(sec.id)}
+                            title={sec.label}
+                            style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                gap: '3px',
+                                padding: '10px 4px',
+                                margin: '0 4px',
+                                borderRadius: '8px',
+                                border: 'none',
+                                cursor: 'pointer',
+                                transition: 'all 0.15s ease',
+                                background: isActive ? `${sec.color}20` : 'transparent',
+                                borderLeft: isActive ? `3px solid ${sec.color}` : '3px solid transparent',
+                            }}
+                        >
+                            <Icon style={{
+                                width: 20, height: 20,
+                                color: isActive ? sec.color : 'var(--text-muted, #888)',
+                                transition: 'color 0.15s ease',
+                            }} />
+                            <span style={{
+                                fontSize: '9px',
+                                fontWeight: isActive ? '700' : '500',
+                                color: isActive ? sec.color : 'var(--text-muted, #888)',
+                                textAlign: 'center',
+                                lineHeight: 1.1,
+                                transition: 'color 0.15s ease',
+                            }}>
+                                {sec.label}
+                            </span>
+                        </button>
+                    );
+                })}
+            </div>
+
+            {/* ── Main Content Panel ── */}
+            <div style={{ flex: 1, overflow: 'auto', position: 'relative' }}>
+            {/* Status message toast */}
+            {message && (
+                <div style={{ position: 'sticky', top: 0, zIndex: 10, padding: '8px 24px' }}>
+                    <span className={`text-sm font-medium px-3 py-1.5 rounded-lg inline-block ${message.type === 'success' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                        {message.text}
+                    </span>
                 </div>
+            )}
+
+            {active === 'platform' && (
+            <div className="p-6">
+            <div className="max-w-4xl mx-auto space-y-8">
 
                 {/* Global Defaults */}
                 <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
@@ -395,6 +473,164 @@ export default function IntegrationsAdminPanel() {
                     </div>
                 </div>
 
+            </div>
+            </div>
+            )}
+
+            {active === 'email' && (
+            <div className="p-6">
+            <div className="max-w-4xl mx-auto space-y-8">
+                {/* Service Email (Gmail SMTP) */}
+                <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
+                    <div className="px-6 py-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+                        <h3 className="font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                            <Mail className="w-4 h-4" style={{ color: '#ea4335' }} />
+                            Service Email (Gmail)
+                            {hasServiceEmail && <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-500">Configured</span>}
+                        </h3>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                            Configure a Gmail service account to send emails to customers from the platform.
+                        </p>
+                    </div>
+                    <div className="p-6 space-y-3">
+                        <div className="space-y-2">
+                            <input
+                                type="email"
+                                value={serviceEmailAddress}
+                                onChange={e => setServiceEmailAddress(e.target.value)}
+                                placeholder={hasServiceEmail ? 'Update Gmail address' : 'service@yourcompany.com'}
+                                className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 transition-all"
+                                style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
+                            />
+                            <div className="flex gap-2">
+                                <input
+                                    type="password"
+                                    value={serviceEmailPassword}
+                                    onChange={e => setServiceEmailPassword(e.target.value)}
+                                    placeholder={hasServiceEmail ? '••••••••••••••••' : 'Gmail App Password'}
+                                    className="flex-1 px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 transition-all"
+                                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
+                                />
+                                <input
+                                    type="text"
+                                    value={serviceEmailDisplayName}
+                                    onChange={e => setServiceEmailDisplayName(e.target.value)}
+                                    placeholder="Display Name (e.g. BeeFlow)"
+                                    className="flex-1 px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 transition-all"
+                                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
+                                />
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={async () => {
+                                    if (!serviceEmailAddress.trim() && !serviceEmailPassword.trim()) return;
+                                    setSavingServiceEmail(true);
+                                    try {
+                                        const body = {};
+                                        if (serviceEmailAddress.trim()) body.serviceEmailAddress = serviceEmailAddress;
+                                        if (serviceEmailPassword.trim()) body.serviceEmailPassword = serviceEmailPassword;
+                                        if (serviceEmailDisplayName.trim()) body.serviceEmailDisplayName = serviceEmailDisplayName;
+                                        const res = await authFetch(`${API_BASE}/ai/config`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify(body),
+                                        });
+                                        if (res.ok) {
+                                            setHasServiceEmail(true);
+                                            setServiceEmailAddress('');
+                                            setServiceEmailPassword('');
+                                            setMessage({ type: 'success', text: 'Service email credentials saved' });
+                                        }
+                                    } catch (e) {
+                                        setMessage({ type: 'error', text: 'Failed to save service email credentials' });
+                                    }
+                                    setSavingServiceEmail(false);
+                                    setTimeout(() => setMessage(null), 3000);
+                                }}
+                                disabled={savingServiceEmail || (!serviceEmailAddress.trim() && !serviceEmailPassword.trim())}
+                                className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-1.5"
+                                style={{ background: 'var(--accent-primary)', color: '#fff' }}
+                            >
+                                {savingServiceEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                Save
+                            </button>
+                            {hasServiceEmail && (
+                                <button
+                                    onClick={() => setShowTestEmail(!showTestEmail)}
+                                    className="px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5"
+                                    style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}
+                                >
+                                    <Send className="w-3.5 h-3.5" />
+                                    Send Test Email
+                                </button>
+                            )}
+                        </div>
+                        {/* Test Email inline form */}
+                        {showTestEmail && hasServiceEmail && (
+                            <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+                                <input
+                                    type="email"
+                                    value={testEmailRecipient}
+                                    onChange={e => setTestEmailRecipient(e.target.value)}
+                                    placeholder="recipient@example.com"
+                                    className="flex-1 px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 transition-all"
+                                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter' && testEmailRecipient.trim()) {
+                                            e.preventDefault();
+                                            document.getElementById('btn-send-test-email')?.click();
+                                        }
+                                    }}
+                                />
+                                <button
+                                    id="btn-send-test-email"
+                                    onClick={async () => {
+                                        if (!testEmailRecipient.trim()) return;
+                                        setTestingServiceEmail(true);
+                                        try {
+                                            const res = await authFetch(`${API_BASE}/ai/config/test-service-email`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ testRecipient: testEmailRecipient }),
+                                            });
+                                            const data = await res.json();
+                                            if (res.ok && data.success) {
+                                                setMessage({ type: 'success', text: `Test email sent to ${testEmailRecipient}` });
+                                                setTestEmailRecipient('');
+                                                setShowTestEmail(false);
+                                            } else {
+                                                setMessage({ type: 'error', text: data.error || 'Failed to send test email' });
+                                            }
+                                        } catch (e) {
+                                            setMessage({ type: 'error', text: 'Failed to send test email' });
+                                        }
+                                        setTestingServiceEmail(false);
+                                        setTimeout(() => setMessage(null), 5000);
+                                    }}
+                                    disabled={testingServiceEmail || !testEmailRecipient.trim()}
+                                    className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-1.5"
+                                    style={{ background: '#10b981', color: '#fff' }}
+                                >
+                                    {testingServiceEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                                    Send
+                                </button>
+                            </div>
+                        )}
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                            Requires a Gmail account with <strong>2-Step Verification</strong> enabled. Generate an App Password from your{' '}
+                            <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer" className="underline" style={{ color: 'var(--accent-primary)' }}>Google Account → App Passwords</a>.
+                        </p>
+                    </div>
+                </div>
+
+            </div>
+            </div>
+            )}
+
+            {active === 'services' && (
+            <div className="p-6">
+            <div className="max-w-4xl mx-auto space-y-8">
                 {/* LinkedIn Configuration */}
                 <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
                     <div className="px-6 py-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
@@ -648,6 +884,13 @@ export default function IntegrationsAdminPanel() {
                     </div>
                 </div>
 
+            </div>
+            </div>
+            )}
+
+            {active === 'search' && (
+            <div className="p-6">
+            <div className="max-w-4xl mx-auto space-y-8">
                 {/* Global API Keys for Integrations */}
                 <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
                     <div className="px-6 py-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
@@ -987,8 +1230,14 @@ export default function IntegrationsAdminPanel() {
                         )}
                         </div>
                     </div>
-                </div>
 
+            </div>
+            </div>
+            )}
+
+            {active === 'mcp' && (
+            <div className="p-6">
+            <div className="max-w-4xl mx-auto space-y-8">
                 {/* MCP Servers */}
                 <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
                     <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-subtle)' }}>
@@ -1248,5 +1497,10 @@ export default function IntegrationsAdminPanel() {
                     </div>
                 </div>
             </div>
+            </div>
+            )}
+
+            </div>
+        </div>
     );
 }

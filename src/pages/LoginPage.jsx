@@ -25,12 +25,14 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
     const [confirmPassword, setConfirmPassword] = useState('');
     const [adminRecoveryKey, setAdminRecoveryKey] = useState(null);
 
+    // Invite token state
+    const [inviteToken, setInviteToken] = useState(null);
+    const [inviteInfo, setInviteInfo] = useState(null); // { email, organizationId, orgName, role }
+
     // Signup state
     const [signupMode, setSignupMode] = useState(() => {
         const params = new URLSearchParams(window.location.search);
-        if (params.get('signup') === '1') {
-            // Clean up the URL
-            window.history.replaceState({}, '', window.location.pathname);
+        if (params.get('signup') === '1' || params.get('invite')) {
             return true;
         }
         return false;
@@ -76,6 +78,50 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
             }
         };
         checkSetup();
+    }, []);
+
+    // Detect and validate invite token
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get('invite');
+        if (!token) return;
+
+        setInviteToken(token);
+        // Clean up URL but keep invite context
+        window.history.replaceState({}, '', window.location.pathname);
+
+        const validateInvite = async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/auth/invite/${token}`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.valid) {
+                        setInviteInfo(data);
+                        // Auto-fill signup data
+                        setSignupData(prev => ({
+                            ...prev,
+                            signupType: 'existing',
+                            organizationId: data.organizationId,
+                            email: data.email || prev.email,
+                        }));
+                        // Skip org selection, go straight to account step
+                        setSignupStep(4);
+                        setSignupMode(true);
+                    } else {
+                        setError('This invitation link has expired or is no longer valid.');
+                        setInviteToken(null);
+                    }
+                } else {
+                    setError('This invitation link has expired or is no longer valid.');
+                    setInviteToken(null);
+                }
+            } catch (err) {
+                console.error('Failed to validate invite:', err);
+                setError('Failed to validate invitation. Please try again.');
+                setInviteToken(null);
+            }
+        };
+        validateInvite();
     }, []);
 
     const handleSubmit = async (e) => {
@@ -219,6 +265,11 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                 };
             } else {
                 body.organizationId = signupData.organizationId;
+            }
+
+            // Attach invite token if present
+            if (inviteToken) {
+                body.inviteToken = inviteToken;
             }
 
             const res = await authFetch(`${API_BASE}/auth/signup`, {
@@ -367,10 +418,12 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                         </div>
                         {signupMode && (
                             <h1 className="text-2xl font-bold text-[var(--text-primary)]">
-                                Create Account
+                                {inviteInfo ? 'Accept Invitation' : 'Create Account'}
                             </h1>
                         )}
-                        <p className="text-sm text-[var(--text-secondary)] mt-1">{getSubtitle()}</p>
+                        <p className="text-sm text-[var(--text-secondary)] mt-1">
+                            {inviteInfo ? `You've been invited to join ${inviteInfo.orgName}` : getSubtitle()}
+                        </p>
                     </div>
 
                     {/* Step indicator */}

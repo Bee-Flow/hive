@@ -25,6 +25,7 @@ export default function useAgentApi(state, { systemMode, securityMode }) {
         includeSourceReferences, knowledgeBaseIds, enabledIntegrations,
         regexGuardrailsEnabled, selectedCollections, regexScope, guardrailAction,
         isPublished, sharedGroups, saving, setSaving, showPublishMenu, setShowPublishMenu,
+        categoryId, setCategoryId, setAgentCategories,
     } = state;
 
     const fetchAgents = async () => {
@@ -108,6 +109,16 @@ export default function useAgentApi(state, { systemMode, securityMode }) {
         fetchCollections();
         fetchModelTiers();
         fetchIntegrationStatus();
+        // Fetch agent categories
+        (async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/agents/categories`);
+                if (res.ok) {
+                    const cats = await res.json();
+                    setAgentCategories(Array.isArray(cats) ? cats : []);
+                }
+            } catch (e) { console.warn('Failed to load agent categories', e); }
+        })();
     }, []);
 
     // Load org data for publish targets
@@ -147,6 +158,7 @@ export default function useAgentApi(state, { systemMode, securityMode }) {
                 setSharedGroups(Array.isArray(freshAgent.shared_groups) ? freshAgent.shared_groups : (() => { try { return JSON.parse(freshAgent.shared_groups || '[]'); } catch (_) { return []; } })());
                 setStarterPrompts(typeof freshAgent.starter_prompts === 'string' ? JSON.parse(freshAgent.starter_prompts || '[]') : (freshAgent.starter_prompts || []));
                 setAvatar(freshAgent.avatar || '🤖');
+                setCategoryId(freshAgent.category_id || null);
 
                 const config = freshAgent.config || {};
                 setAllowCopy(config.allowCopy !== false);
@@ -202,6 +214,7 @@ export default function useAgentApi(state, { systemMode, securityMode }) {
         setLlamaGuardEnabled(false);
         setWebSearchGuardEnabled(false);
         setAvatar('🤖');
+        setCategoryId(null);
         setStrictKnowledge(false);
         setIncludeSourceReferences(false);
         setKnowledgeBaseIds([]);
@@ -231,6 +244,8 @@ export default function useAgentApi(state, { systemMode, securityMode }) {
                     }
                 }
             };
+
+            body.categoryId = categoryId || null;
 
             if (selectedAgent) {
                 await authFetch(securityMode ? `${API_BASE}/security-agents/${selectedAgent.id}` : `${API_BASE}/agents/${selectedAgent.id}`, {
@@ -289,6 +304,7 @@ export default function useAgentApi(state, { systemMode, securityMode }) {
             setSharedGroups([]);
             setStarterPrompts(typeof freshAgent.starter_prompts === 'string' ? JSON.parse(freshAgent.starter_prompts || '[]') : (freshAgent.starter_prompts || []));
             setAvatar(freshAgent.avatar || '🤖');
+            setCategoryId(freshAgent.category_id || null);
 
             const config = freshAgent.config || {};
             setAllowCopy(config.allowCopy !== false);

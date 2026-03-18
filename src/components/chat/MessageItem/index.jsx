@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Copy, Check, Bot, ChevronDown, Send, ThumbsUp, ThumbsDown, RefreshCw, Pencil, Download } from 'lucide-react';
+import { Copy, Check, Bot, ChevronDown, Send, ThumbsUp, ThumbsDown, RefreshCw, Pencil, Download, FileText } from 'lucide-react';
 import MarkdownRenderer from '../../MarkdownRenderer';
 import MapEmbedRenderer from '../../MapEmbedRenderer';
 import FormRenderer from '../../FormRenderer';
@@ -40,6 +40,7 @@ const MessageItem = ({
     const isUser = msg.role === 'user';
     const isTool = msg.role === 'tool';
     const [copied, setCopied] = useState(false);
+    const [copiedMd, setCopiedMd] = useState(false);
     const [showSwarmLogs, setShowSwarmLogs] = useState(false);
     const [showBrain, setShowBrain] = useState(false);
     const [showBrowserActions, setShowBrowserActions] = useState(false);
@@ -134,6 +135,17 @@ const MessageItem = ({
         onCopy(msg.content);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
+    };
+
+    const handleCopyMarkdown = async () => {
+        if (!msg.content) return;
+        try {
+            await navigator.clipboard.writeText(msg.content);
+            setCopiedMd(true);
+            setTimeout(() => setCopiedMd(false), 2000);
+        } catch (e) {
+            console.error('[MessageItem] MD copy failed:', e);
+        }
     };
 
     const handleExportPdf = () => {
@@ -650,6 +662,16 @@ const MessageItem = ({
                                     title="Copy"
                                 >
                                     {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                                </button>
+                            )}
+                            {/* Copy Markdown */}
+                            {allowCopy && msg.content && (
+                                <button
+                                    onClick={handleCopyMarkdown}
+                                    className="p-1.5 hover:bg-[var(--bg-tertiary)] rounded text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+                                    title="Copy as Markdown"
+                                >
+                                    {copiedMd ? <Check className="w-3.5 h-3.5 text-green-500" /> : <FileText className="w-3.5 h-3.5" />}
                                 </button>
                             )}
                             {/* Export PDF */}

@@ -15,7 +15,7 @@ import ProjectModal from './components/ProjectModal';
 import useChatEngine from './hooks/useChatEngine';
 
 import { API_BASE, generateMessageId, authFetch } from './utils/helpers';
-import { X, Sparkles, PenLine, Heart, MoreVertical, Menu } from 'lucide-react';
+import { X, Sparkles, PenLine, Heart, MoreVertical, Menu, EyeOff } from 'lucide-react';
 
 const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = null, initialConversationId = null, initialDirectConvId = null }) => {
     // Permission helper - checks if user has a specific permission
@@ -41,6 +41,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
 
     // Core State
     const [agents, setAgents] = useState([]);
+    const [agentCategories, setAgentCategories] = useState([]);
     const [selectedAgent, setSelectedAgent] = useState(null);
     const [conversations, setConversations] = useState([]);
     const [currentConversation, setCurrentConversation] = useState(null);
@@ -201,118 +202,142 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
 
 
 
+    // Reusable function to (re-)fetch published agents + group chats
+    const refreshAgents = useCallback(async () => {
+        try {
+            const res = await authFetch(`${API_BASE}/agents/published?t=${Date.now()}`, { cache: 'no-store' });
+            if (res.ok) {
+                let data = await res.json();
+
+                // Also load group chats and merge them in (if roundtable is allowed)
+                const userAllowedTypes = user?.allowedAgentTypes || [];
+                const isSuperAdmin = user?.isAdmin || user?.role === 'admin' || (user?.permissions || []).includes('all');
+                const skipRoundtable = !isSuperAdmin && userAllowedTypes.length > 0 && !userAllowedTypes.includes('roundtable');
+                if (!skipRoundtable) {
+                    try {
+                        const gcRes = await authFetch(`${API_BASE}/group-chats`);
+                        if (gcRes.ok) {
+                            const groupChats = await gcRes.json();
+                            const asAgents = groupChats.map(gc => ({
+                                id: gc.id,
+                                name: gc.name,
+                                description: gc.description || 'Group conversation with multiple agents',
+                                avatar: gc.avatar || '👥',
+                                _type: 'roundtable',
+                                participantIds: gc.participantIds,
+                                config: gc.config
+                            }));
+                            data = [...data, ...asAgents];
+                        }
+                    } catch (e) { console.warn('Failed to load group chats', e); }
+                }
+
+                setAgents(data);
+
+                // Also load agent categories
+                try {
+                    const catRes = await authFetch(`${API_BASE}/agents/categories`);
+                    if (catRes.ok) {
+                        const cats = await catRes.json();
+                        setAgentCategories(Array.isArray(cats) ? cats : []);
+                    }
+                } catch (e) { console.warn('Failed to load agent categories', e); }
+
+                return data;
+            }
+        } catch (err) {
+            console.error("Failed to refresh agents", err);
+        }
+        return null;
+    }, [user]);
+
+    // Refresh agents whenever the Agent Store (marketplace) opens
+    useEffect(() => {
+        if (showMarketplace) refreshAgents();
+    }, [showMarketplace, refreshAgents]);
+
     // Load Agents and Handle Startup Logic
     useEffect(() => {
         const loadAgents = async () => {
-            try {
-                const res = await authFetch(`${API_BASE}/agents/published?t=${Date.now()}`, { cache: 'no-store' });
-                if (res.ok) {
-                    let data = await res.json();
+            const data = await refreshAgents();
+            if (!data) return;
 
-                    // Also load group chats and merge them in (if roundtable is allowed)
-                    const userAllowedTypes = user?.allowedAgentTypes || [];
-                    const isSuperAdmin = user?.isAdmin || user?.role === 'admin' || (user?.permissions || []).includes('all');
-                    const skipRoundtable = !isSuperAdmin && userAllowedTypes.length > 0 && !userAllowedTypes.includes('roundtable');
-                    if (!skipRoundtable) {
-                        try {
-                            const gcRes = await authFetch(`${API_BASE}/group-chats`);
-                            if (gcRes.ok) {
-                                const groupChats = await gcRes.json();
-                                const asAgents = groupChats.map(gc => ({
-                                    id: gc.id,
-                                    name: gc.name,
-                                    description: gc.description || 'Group conversation with multiple agents',
-                                    avatar: gc.avatar || '👥',
-                                    _type: 'roundtable',
-                                    participantIds: gc.participantIds,
-                                    config: gc.config
-                                }));
-                                data = [...data, ...asAgents];
-                            }
-                        } catch (e) { console.warn('Failed to load group chats', e); }
-                    }
+            loadLabels(); // Always load labels on init
 
-                    setAgents(data);
-                    loadLabels(); // Always load labels on init
-
-                    // Startup Logic — URL agent takes priority over localStorage
-                    let targetId = initialAgentId;
-                    if (!targetId && !initialDirectConvId) {
-                        const mode = localStorage.getItem('defaultAgentMode') || 'last-used';
-                        const defaultId = localStorage.getItem('defaultAgentId');
-                        const lastUsedId = localStorage.getItem('lastUsedAgentId');
-                        if (mode === 'direct-chat') {
-                            setDirectChatMode(true);
-                            loadDirectConversations();
-                            loadLabels();
-                            loadModelTiers();
-                        } else if (mode === 'specific' && defaultId) {
-                            targetId = defaultId;
-                        } else if (mode === 'last-used') {
-                            const lastMode = localStorage.getItem('lastUsedMode');
-                            if (lastMode === 'direct-chat') {
-                                setDirectChatMode(true);
-                                loadDirectConversations();
-                                loadLabels();
-                                loadModelTiers();
-                            } else if (lastUsedId) {
-                                targetId = lastUsedId;
-                            }
-                        }
-                    }
-
-                    // Auto-load direct chat conversation from URL /d/:convId
-                    if (initialDirectConvId) {
+            // Startup Logic — URL agent takes priority over localStorage
+            let targetId = initialAgentId;
+            if (!targetId && !initialDirectConvId) {
+                const mode = localStorage.getItem('defaultAgentMode') || 'last-used';
+                const defaultId = localStorage.getItem('defaultAgentId');
+                const lastUsedId = localStorage.getItem('lastUsedAgentId');
+                if (mode === 'direct-chat') {
+                    setDirectChatMode(true);
+                    loadDirectConversations();
+                    loadLabels();
+                    loadModelTiers();
+                } else if (mode === 'specific' && defaultId) {
+                    targetId = defaultId;
+                } else if (mode === 'last-used') {
+                    const lastMode = localStorage.getItem('lastUsedMode');
+                    if (lastMode === 'direct-chat') {
                         setDirectChatMode(true);
-                        loadModelTiers();
+                        loadDirectConversations();
                         loadLabels();
-                        loadDirectConversations().then(async () => {
-                            try {
-                                const convPrefix = initialDirectConvId;
-                                const listRes = await authFetch(`${API_BASE}/ai/direct/conversations`);
-                                if (listRes.ok) {
-                                    const convs = await listRes.json();
-                                    const match = convs.find(c => c.id === convPrefix || c.id.startsWith(convPrefix));
-                                    if (match) {
-                                        const detailRes = await authFetch(`${API_BASE}/ai/direct/conversations/${match.id}`);
-                                        if (detailRes.ok) {
-                                            const detailData = await detailRes.json();
-                                            setCurrentDirectConversation(detailData);
-                                            setMessages(detailData.messages || []);
-                                            if (detailData.model_tier) setSelectedTier(detailData.model_tier);
-                                            updateDirectChatUrl(match.id);
-
-                                            // Fetch workspace content
-                                            try {
-                                                const wsRes = await authFetch(`${API_BASE}/ai/direct/conversations/${match.id}/workspace`);
-                                                if (wsRes.ok) {
-                                                    const wsData = await wsRes.json();
-                                                    const convContent = wsData.content || '';
-                                                    if (convContent.trim().length > 0) {
-                                                        setWorkspaceContent(convContent);
-                                                        setShowWorkspace(true);
-                                                    }
-                                                }
-                                            } catch (wsErr) {
-                                                console.error('Failed to fetch direct workspace from URL:', wsErr);
-                                            }
-                                        }
-                                    }
-                                }
-                            } catch (e) { console.error('Failed to load direct conversation from URL:', e); }
-                        });
-                        localStorage.setItem('lastUsedMode', 'direct-chat');
-                    }
-
-                    if (targetId) {
-                        const targetAgent = data.find(a => a.id === targetId || a.id.startsWith(targetId));
-                        if (targetAgent) {
-                            setSelectedAgent(targetAgent);
-                        }
+                        loadModelTiers();
+                    } else if (lastUsedId) {
+                        targetId = lastUsedId;
                     }
                 }
-            } catch (err) {
-                console.error("Failed to load agents", err);
+            }
+
+            // Auto-load direct chat conversation from URL /d/:convId
+            if (initialDirectConvId) {
+                setDirectChatMode(true);
+                loadModelTiers();
+                loadLabels();
+                loadDirectConversations().then(async () => {
+                    try {
+                        const convPrefix = initialDirectConvId;
+                        const listRes = await authFetch(`${API_BASE}/ai/direct/conversations`);
+                        if (listRes.ok) {
+                            const convs = await listRes.json();
+                            const match = convs.find(c => c.id === convPrefix || c.id.startsWith(convPrefix));
+                            if (match) {
+                                const detailRes = await authFetch(`${API_BASE}/ai/direct/conversations/${match.id}`);
+                                if (detailRes.ok) {
+                                    const detailData = await detailRes.json();
+                                    setCurrentDirectConversation(detailData);
+                                    setMessages(detailData.messages || []);
+                                    if (detailData.model_tier) setSelectedTier(detailData.model_tier);
+                                    updateDirectChatUrl(match.id);
+
+                                    // Fetch workspace content
+                                    try {
+                                        const wsRes = await authFetch(`${API_BASE}/ai/direct/conversations/${match.id}/workspace`);
+                                        if (wsRes.ok) {
+                                            const wsData = await wsRes.json();
+                                            const convContent = wsData.content || '';
+                                            if (convContent.trim().length > 0) {
+                                                setWorkspaceContent(convContent);
+                                                setShowWorkspace(true);
+                                            }
+                                        }
+                                    } catch (wsErr) {
+                                        console.error('Failed to fetch direct workspace from URL:', wsErr);
+                                    }
+                                }
+                            }
+                        }
+                    } catch (e) { console.error('Failed to load direct conversation from URL:', e); }
+                });
+                localStorage.setItem('lastUsedMode', 'direct-chat');
+            }
+
+            if (targetId) {
+                const targetAgent = data.find(a => a.id === targetId || a.id.startsWith(targetId));
+                if (targetAgent) {
+                    setSelectedAgent(targetAgent);
+                }
             }
         };
         loadAgents();
@@ -776,6 +801,26 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
         localStorage.setItem('agentFavorites', JSON.stringify(newFavs));
     };
 
+    const handleUnpublishAgent = async (agentId) => {
+        if (!confirm('Unpublish this agent? It will no longer be visible in the Agent Store, but its configuration will be preserved.')) return;
+        try {
+            const res = await authFetch(`${API_BASE}/agents/${agentId}/publish`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ isPublished: false })
+            });
+            if (res.ok) {
+                // If this was the currently selected agent, deselect it
+                if (selectedAgent?.id === agentId) {
+                    setSelectedAgent(null);
+                }
+                refreshAgents();
+            }
+        } catch (err) {
+            console.error('Failed to unpublish agent:', err);
+        }
+    };
+
     const saveWorkspace = async (content) => {
         setWorkspaceContent(content); // Optimistic update
 
@@ -811,21 +856,13 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 onSave={(newAgent) => {
                     if (newAgent && newAgent.id) {
                         setSelectedAgent(newAgent);
-                        // Force a refresh of the agents list
-                        authFetch(`${API_BASE}/agents/published?t=${Date.now()}`)
-                            .then(res => res.json())
-                            .then(data => setAgents(data))
-                            .catch(e => console.error(e));
+                        refreshAgents();
                     }
                 }}
                 onDelete={() => {
                     setSelectedAgent(null);
                     setDesignMode(false);
-                    // Force a refresh 
-                    authFetch(`${API_BASE}/agents/published?t=${Date.now()}`)
-                        .then(res => res.json())
-                        .then(data => setAgents(data))
-                        .catch(e => console.error(e));
+                    refreshAgents();
                 }}
             />
         );
@@ -930,6 +967,16 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                                 >
                                                     {favorites.includes(selectedAgent.id) ? 'Remove from favorites' : 'Add to favorites'}
                                                 </button>
+                                                {(selectedAgent.owner_id === user?.id || user?.isAdmin || (user?.permissions || []).includes('all')) && (
+                                                    <button
+                                                        onClick={() => { handleUnpublishAgent(selectedAgent.id); setShowAgentMenu(false); }}
+                                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-[var(--bg-secondary)] transition-colors text-left"
+                                                        style={{ color: 'var(--error, #ef4444)' }}
+                                                    >
+                                                        <EyeOff className="w-4 h-4" />
+                                                        Unpublish Agent
+                                                    </button>
+                                                )}
                                             </div>
                                         </>
                                     )}
@@ -1212,9 +1259,12 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                         <AgentMarketplace
                             agents={agents}
                             favorites={favorites}
+                            categories={agentCategories}
                             onToggleFavorite={handleToggleFavorite}
                             onSelect={handleSelectAgent}
                             onClose={() => setShowMarketplace(false)}
+                            onUnpublish={handleUnpublishAgent}
+                            user={user}
                         />
                     </div>
                 </div>
