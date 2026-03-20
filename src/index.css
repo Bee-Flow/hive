@@ -1,4 +1,6 @@
 @import "tailwindcss";
+@import "./pages/home/home.css";
+
 
 :root {
     /* Color Palette - Dark Professional Theme */

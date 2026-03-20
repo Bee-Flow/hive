@@ -22,7 +22,7 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
     const tierKeys = Object.keys(TIER_META);
 
     return (
-        <div ref={ref} style={{ position: 'relative', display: 'inline-block' }}>
+        <div ref={ref} style={{ position: 'relative', display: 'inline-block' }} data-testid="model-tier-selector">
             {/* Compact pill trigger */}
             <button
                 onClick={() => setOpen(!open)}
@@ -36,6 +36,7 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
                     height: '36px'
                 }}
                 title="Select model tier"
+                data-testid="model-tier-trigger"
             >
                 <span>{current.icon}</span>
                 <span>{current.label}</span>
@@ -69,6 +70,7 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
                                 key={key}
                                 onClick={() => { onChange(key); setOpen(false); }}
                                 disabled={!isConfigured}
+                                data-testid={`model-tier-${key}`}
                                 style={{
                                     display: 'flex', alignItems: 'center', gap: '10px',
                                     width: '100%', padding: '10px 12px',

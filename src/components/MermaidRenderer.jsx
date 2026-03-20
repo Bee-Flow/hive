@@ -5,6 +5,17 @@ import { Maximize2, X, Download } from 'lucide-react';
 
 let instanceCounter = 0;
 
+/** Detect errors caused by stale Vite chunks after redeployment */
+const isStaleChunkError = (err) => {
+    const msg = (err?.message || err || '').toString();
+    return (
+        msg.includes('Failed to fetch dynamically imported module') ||
+        msg.includes('dynamically imported module') ||
+        msg.includes('Importing a module script failed') ||
+        msg.includes('error loading dynamically imported module')
+    );
+};
+
 const MERMAID_THEME = {
     darkMode: true,
     background: '#1e1e2e',
@@ -105,7 +116,16 @@ const MermaidOverlay = ({ code, onClose }) => {
             } catch (err) {
                 console.error('Mermaid overlay render error:', err);
                 if (containerRef.current) {
-                    containerRef.current.innerHTML = `<div style="color: #f87171; padding: 20px;">Failed to render diagram</div>`;
+                    if (isStaleChunkError(err)) {
+                        containerRef.current.innerHTML = `
+                            <div style="color: #94a3b8; padding: 20px; text-align: center;">
+                                <div style="font-weight: 600; margin-bottom: 8px;">🔄 New version available</div>
+                                <div style="margin-bottom: 12px; font-size: 13px; opacity: 0.8;">Reload the page to view this diagram.</div>
+                                <button onclick="window.location.reload()" style="padding: 8px 20px; border-radius: 8px; background: rgba(99,102,241,0.2); border: 1px solid rgba(99,102,241,0.4); color: #818cf8; cursor: pointer; font-size: 13px; font-weight: 600;">Reload page</button>
+                            </div>`;
+                    } else {
+                        containerRef.current.innerHTML = `<div style="color: #f87171; padding: 20px;">Failed to render diagram</div>`;
+                    }
                 }
                 const errorEl = document.getElementById('d' + idRef.current);
                 if (errorEl) errorEl.remove();
@@ -262,7 +282,11 @@ const MermaidRenderer = ({ code }) => {
                 }
             } catch (err) {
                 console.error('Mermaid render error:', err);
-                setError(err.message || 'Failed to render diagram');
+                if (isStaleChunkError(err)) {
+                    setError('__STALE_CHUNK__');
+                } else {
+                    setError(err.message || 'Failed to render diagram');
+                }
                 // Clean up any error elements mermaid may have injected
                 const errorEl = document.getElementById('d' + id);
                 if (errorEl) errorEl.remove();
@@ -279,6 +303,41 @@ const MermaidRenderer = ({ code }) => {
     }, [code, initMermaid]);
 
     if (error) {
+        // Stale Vite chunk — show friendly reload prompt
+        if (error === '__STALE_CHUNK__') {
+            return (
+                <div style={{
+                    padding: '16px 20px',
+                    borderRadius: '10px',
+                    background: 'var(--bg-tertiary, #1e1e2e)',
+                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                    color: 'var(--text-secondary, #94a3b8)',
+                    fontSize: '13px',
+                    margin: '8px 0',
+                    textAlign: 'center',
+                }}>
+                    <div style={{ fontWeight: 600, marginBottom: '6px' }}>🔄 New version available</div>
+                    <div style={{ opacity: 0.8, marginBottom: '12px' }}>Reload the page to view this diagram.</div>
+                    <button
+                        onClick={() => window.location.reload()}
+                        style={{
+                            padding: '8px 20px',
+                            borderRadius: '8px',
+                            background: 'rgba(99, 102, 241, 0.15)',
+                            border: '1px solid rgba(99, 102, 241, 0.4)',
+                            color: '#818cf8',
+                            cursor: 'pointer',
+                            fontSize: '13px',
+                            fontWeight: 600,
+                            transition: 'all 0.15s',
+                        }}
+                    >
+                        Reload page
+                    </button>
+                </div>
+            );
+        }
+
         return (
             <div style={{
                 padding: '12px 16px',

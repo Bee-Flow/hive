@@ -307,7 +307,9 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                 if (detailRes.ok) {
                                     const detailData = await detailRes.json();
                                     setCurrentDirectConversation(detailData);
-                                    setMessages(detailData.messages || []);
+                                    setMessages((detailData.messages || []).map(m =>
+                                        m.content === '[Message removed - policy violation]' ? { ...m, isDeleted: true } : m
+                                    ));
                                     if (detailData.model_tier) setSelectedTier(detailData.model_tier);
                                     updateDirectChatUrl(match.id);
 
@@ -426,22 +428,26 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 // Filter out tool messages and empty messages - only show user and assistant with content
                 parsedMessages = parsedMessages.filter(m =>
                     m.role !== 'tool' &&
-                    ((m.content && m.content.trim().length > 0) || (m.images && m.images.length > 0) || (m.audioFiles && m.audioFiles.length > 0) || (m.videoFiles && m.videoFiles.length > 0) || m.sheetsResults || m.sheetsDrafts || m.sheetsReports || m.emailDrafts || m.calendarDrafts || m.contactsDrafts)
+                    ((m.content && typeof m.content === 'string' && m.content.trim().length > 0) || (m.images && m.images.length > 0) || (m.audioFiles && m.audioFiles.length > 0) || (m.videoFiles && m.videoFiles.length > 0) || m.sheetsResults || m.sheetsDrafts || m.sheetsReports || m.emailDrafts || m.calendarDrafts || m.contactsDrafts)
                 );
 
                 // Strip streaming-only progress fields — these are only relevant during live chat
                 parsedMessages = parsedMessages.map(m => {
                     const { swarmActivity, browserActivity, terminalActivity, toolCall, isStreaming, ...clean } = m;
                     // Strip raw tool-call JSON blocks from content (e.g. { "action": "generate_image", ... })
-                    if (clean.content && clean.role === 'assistant') {
+                    if (clean.content && typeof clean.content === 'string' && clean.role === 'assistant') {
                         clean.content = clean.content.replace(/\{\s*"action":\s*"[^"]*"\s*,\s*"action_input":\s*"[^"]*"(?:\s*\}\s*,\s*"thought":\s*"[^"]*"\s*\}|\s*\})/g, '').trim();
+                    }
+                    // Mark persisted guardrail violation messages so they display consistently
+                    if (clean.content === '[Message removed - policy violation]') {
+                        clean.isDeleted = true;
                     }
                     return clean;
                 });
 
                 // Remove messages that became empty after cleanup
                 parsedMessages = parsedMessages.filter(m =>
-                    m.role === 'user' || (m.content && m.content.trim().length > 0) || (m.images && m.images.length > 0) || (m.audioFiles && m.audioFiles.length > 0) || (m.videoFiles && m.videoFiles.length > 0) || m.sheetsResults || m.sheetsDrafts || m.sheetsReports || m.emailDrafts || m.calendarDrafts || m.contactsDrafts
+                    m.role === 'user' || (m.content && typeof m.content === 'string' && m.content.trim().length > 0) || (m.images && m.images.length > 0) || (m.audioFiles && m.audioFiles.length > 0) || (m.videoFiles && m.videoFiles.length > 0) || m.sheetsResults || m.sheetsDrafts || m.sheetsReports || m.emailDrafts || m.calendarDrafts || m.contactsDrafts
                 );
 
                 setMessages(parsedMessages);
@@ -676,7 +682,11 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
             if (res.ok) {
                 const data = await res.json();
                 setCurrentDirectConversation(data);
-                setMessages(data.messages || []);
+                // Mark persisted guardrail violation messages so they display consistently
+                const loadedMessages = (data.messages || []).map(m =>
+                    m.content === '[Message removed - policy violation]' ? { ...m, isDeleted: true } : m
+                );
+                setMessages(loadedMessages);
                 if (data.model_tier) setSelectedTier(data.model_tier);
                 updateDirectChatUrl(conv.id);
 

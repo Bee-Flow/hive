@@ -274,7 +274,12 @@ export default function useAgentApi(state, { systemMode, securityMode }) {
     const deleteAgent = async (id) => {
         if (!confirm('Delete this agent?')) return;
         try {
-            await authFetch(securityMode ? `${API_BASE}/security-agents/${id}` : `${API_BASE}/agents/${id}`, { method: 'DELETE' });
+            const res = await authFetch(securityMode ? `${API_BASE}/security-agents/${id}` : `${API_BASE}/agents/${id}`, { method: 'DELETE' });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                alert(data.error || 'Failed to delete agent. Please try again.');
+                return;
+            }
             if (selectedAgent?.id === id) {
                 setSelectedAgent(null);
                 setName(''); setDescription(''); setSystemPrompt('');
@@ -284,6 +289,7 @@ export default function useAgentApi(state, { systemMode, securityMode }) {
             fetchAgents();
         } catch (err) {
             console.error('Failed to delete agent:', err);
+            alert('Failed to delete agent. Please try again.');
         }
     };
 

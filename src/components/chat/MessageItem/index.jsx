@@ -248,7 +248,7 @@ const MessageItem = ({
     const hasSheets = !!(msg.sheetsResults || msg.sheetsDrafts || msg.sheetsReports);
 
     return (
-        <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} group animate-fade-in w-full ${hasSheets ? '' : 'max-w-[900px] mx-auto'}`} data-msg-id={`msg-${msg.id || idx}`}>
+        <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} group animate-fade-in w-full ${hasSheets ? '' : 'max-w-[900px] mx-auto'}`} data-msg-id={`msg-${msg.id || idx}`} data-testid={`message-${msg.id || idx}`}>
 
             {/* Sender Info (Multi-agent support) */}
             {!isUser && !isTool && msg.respondingAgentName && (
@@ -264,7 +264,7 @@ const MessageItem = ({
 
             {/* Guardrail Violation Warning */}
             {msg.isGuardrailViolation && (
-                <div className="mb-3 px-4 py-3 rounded-xl bg-red-600 border-2 border-red-400 text-white text-sm font-semibold flex items-center gap-3 shadow-lg">
+                <div className="mb-3 px-4 py-3 rounded-xl bg-red-600 border-2 border-red-400 text-white text-sm font-semibold flex items-center gap-3 shadow-lg" data-testid="msg-guardrail-warning">
                     <span className="text-xl">🛡️</span>
                     <div>
                         <div className="font-bold">
@@ -660,6 +660,7 @@ const MessageItem = ({
                                     onClick={handleCopy}
                                     className="p-1.5 hover:bg-[var(--bg-tertiary)] rounded text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
                                     title="Copy"
+                                    data-testid="msg-copy-btn"
                                 >
                                     {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
                                 </button>
@@ -670,6 +671,7 @@ const MessageItem = ({
                                     onClick={handleCopyMarkdown}
                                     className="p-1.5 hover:bg-[var(--bg-tertiary)] rounded text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
                                     title="Copy as Markdown"
+                                    data-testid="msg-copy-md-btn"
                                 >
                                     {copiedMd ? <Check className="w-3.5 h-3.5 text-green-500" /> : <FileText className="w-3.5 h-3.5" />}
                                 </button>
@@ -680,6 +682,7 @@ const MessageItem = ({
                                     onClick={handleExportPdf}
                                     className="p-1.5 hover:bg-[var(--bg-tertiary)] rounded text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
                                     title="Export as PDF"
+                                    data-testid="msg-export-pdf-btn"
                                 >
                                     <Download className="w-3.5 h-3.5" />
                                 </button>
@@ -689,6 +692,7 @@ const MessageItem = ({
                                 onClick={() => handleThumbClick('up')}
                                 className={`p-1.5 rounded transition-colors ${feedbackRating === 'up' ? 'text-green-500 bg-green-500/10' : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}
                                 title="Good response"
+                                data-testid="msg-thumbs-up"
                             >
                                 <ThumbsUp className="w-3.5 h-3.5" />
                             </button>
@@ -696,6 +700,7 @@ const MessageItem = ({
                                 onClick={() => handleThumbClick('down')}
                                 className={`p-1.5 rounded transition-colors ${feedbackRating === 'down' ? 'text-red-500 bg-red-500/10' : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}
                                 title="Bad response"
+                                data-testid="msg-thumbs-down"
                             >
                                 <ThumbsDown className="w-3.5 h-3.5" />
                             </button>
@@ -711,6 +716,7 @@ const MessageItem = ({
                                             onClick={() => onRetry(idx)}
                                             className="p-1.5 rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
                                             title="Retry response"
+                                            data-testid="msg-retry-btn"
                                         >
                                             <RefreshCw className="w-3.5 h-3.5" />
                                         </button>

@@ -85,10 +85,18 @@ export default function useAgentManager(endpoint, agentType, defaultAgent) {
     const deleteAgent = async (id) => {
         if (!confirm('Delete this agent?')) return;
         try {
-            await authFetch(`${API_BASE}${endpoint}/${id}`, { method: 'DELETE' });
+            const res = await authFetch(`${API_BASE}${endpoint}/${id}`, { method: 'DELETE' });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                alert(data.error || 'Failed to delete agent. Please try again.');
+                return;
+            }
             setAgents(prev => prev.filter(a => a.id !== id));
             if (selected?.id === id) { setSelected(null); setIsCreating(false); }
-        } catch (err) { console.error('Delete error:', err); }
+        } catch (err) {
+            console.error('Delete error:', err);
+            alert('Failed to delete agent. Please try again.');
+        }
     };
 
     const duplicateAgent = (agent) => {

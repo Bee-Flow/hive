@@ -11,6 +11,8 @@ const MemoryPanel = ({ onClose, projectId }) => {
     const [newMemory, setNewMemory] = useState({ content: '', type: 'fact' });
     const [filterType, setFilterType] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
+    const [selectedIds, setSelectedIds] = useState(new Set());
+    const [isSelectMode, setIsSelectMode] = useState(false);
 
     useEffect(() => {
         fetchMemories();
@@ -49,6 +51,41 @@ const MemoryPanel = ({ onClose, projectId }) => {
             console.error('Failed to delete memory:', err);
         }
     };
+
+    const handleBulkDelete = async () => {
+        if (selectedIds.size === 0) return;
+        if (!confirm(`Delete ${selectedIds.size} selected ${selectedIds.size === 1 ? 'memory' : 'memories'}? This cannot be undone.`)) return;
+
+        try {
+            const res = await authFetch(`${API_BASE}/agents/memory/bulk-delete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids: Array.from(selectedIds) })
+            });
+            if (res.ok) {
+                setMemories(prev => prev.filter(m => !selectedIds.has(m.id)));
+                setSelectedIds(new Set());
+                setIsSelectMode(false);
+            }
+        } catch (err) {
+            console.error('Failed to bulk delete memories:', err);
+        }
+    };
+
+    const toggleSelect = (id) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
+    };
+
+    const selectAll = () => {
+        const ids = filteredMemories.map(m => m.id);
+        setSelectedIds(new Set(ids));
+    };
+
+    const deselectAll = () => setSelectedIds(new Set());
 
     const handleEdit = (memory) => {
         setEditingId(memory.id);
@@ -168,7 +205,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
     }, {});
 
     return (
-        <div className="h-full flex flex-col" style={{ background: 'var(--bg-primary)' }}>
+        <div className="h-full flex flex-col" style={{ background: 'var(--bg-primary)' }} data-testid="memory-panel">
             {/* Header */}
             <div className="px-5 py-4 border-b" style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)' }}>
                 <div className="flex items-center justify-between mb-4">
@@ -188,6 +225,22 @@ const MemoryPanel = ({ onClose, projectId }) => {
                         </div>
                     </div>
                     <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => { setIsSelectMode(!isSelectMode); setSelectedIds(new Set()); }}
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all"
+                            style={{
+                                background: isSelectMode ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
+                                color: isSelectMode ? '#818cf8' : 'var(--text-muted)',
+                                border: `1px solid ${isSelectMode ? 'rgba(99, 102, 241, 0.3)' : 'var(--border-subtle)'}`,
+                            }}
+                            title={isSelectMode ? 'Exit select mode' : 'Select multiple'}
+                            data-testid="memory-select-toggle"
+                        >
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                            </svg>
+                            {isSelectMode ? 'Cancel' : 'Select'}
+                        </button>
                         <button
                             onClick={() => setShowAddForm(!showAddForm)}
                             className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-sm font-medium transition-all"
@@ -223,6 +276,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                             onChange={(e) => setSearchTerm(e.target.value)}
                             placeholder="Search memories..."
                             className="input w-full pl-10 text-sm"
+                            data-testid="memory-search"
                         />
                     </div>
                     <div className="flex gap-1">
@@ -233,6 +287,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                                 background: filterType === 'all' ? 'var(--accent-primary)' : 'transparent',
                                 color: filterType === 'all' ? 'white' : 'var(--text-muted)',
                             }}
+                            data-testid="memory-filter-all"
                         >
                             All
                         </button>
@@ -247,6 +302,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                                         color: filterType === key ? cfg.color : 'var(--text-muted)',
                                         border: filterType === key ? `1px solid ${cfg.border}` : '1px solid transparent',
                                     }}
+                                    data-testid={`memory-filter-${key}`}
                                 >
                                     <span style={{ fontSize: '11px' }}>{cfg.icon}</span>
                                     {typeCounts[key]}
@@ -329,19 +385,61 @@ const MemoryPanel = ({ onClose, projectId }) => {
                         </div>
                     ) : (
                         <div className="space-y-2">
+                            {/* Bulk select actions bar */}
+                            {isSelectMode && filteredMemories.length > 0 && (
+                                <div className="flex items-center justify-between px-4 py-2.5 rounded-xl mb-3" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}>
+                                    <div className="flex items-center gap-3">
+                                        <button onClick={selectedIds.size === filteredMemories.length ? deselectAll : selectAll}
+                                            className="text-xs font-medium px-2.5 py-1 rounded-md transition-all"
+                                            style={{ color: 'var(--accent-primary)', background: 'rgba(99, 102, 241, 0.1)' }}
+                                            data-testid="memory-select-all-btn">
+                                            {selectedIds.size === filteredMemories.length ? 'Deselect All' : 'Select All'}
+                                        </button>
+                                        <span className="text-xs" style={{ color: 'var(--text-muted)' }} data-testid="memory-selected-count">
+                                            {selectedIds.size} selected
+                                        </span>
+                                    </div>
+                                    {selectedIds.size > 0 && (
+                                        <button onClick={handleBulkDelete}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:bg-red-500/20"
+                                            style={{ color: '#f87171' }}
+                                            data-testid="memory-bulk-delete-btn">
+                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                                            </svg>
+                                            Delete {selectedIds.size}
+                                        </button>
+                                    )}
+                                </div>
+                            )}
                             {filteredMemories.map(memory => {
                                 const cfg = typeConfig[memory.type] || typeConfig.fact;
                                 return (
                                     <div
                                         key={memory.id}
-                                        className="rounded-xl p-4 transition-all group"
+                                        className={`rounded-xl p-4 transition-all group ${isSelectMode ? 'cursor-pointer' : ''}`}
                                         style={{
-                                            background: 'var(--bg-secondary)',
-                                            border: '1px solid var(--border-subtle)',
+                                            background: selectedIds.has(memory.id) ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-secondary)',
+                                            border: selectedIds.has(memory.id) ? '1px solid rgba(99, 102, 241, 0.3)' : '1px solid var(--border-subtle)',
                                             borderLeft: `3px solid ${cfg.color}`,
                                         }}
+                                        onClick={isSelectMode ? () => toggleSelect(memory.id) : undefined}
+                                        data-testid={`memory-item-${memory.id}`}
                                     >
                                         <div className="flex items-start gap-3">
+                                            {isSelectMode && (
+                                                <div className="flex items-center mt-1 flex-shrink-0">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedIds.has(memory.id)}
+                                                        onChange={() => toggleSelect(memory.id)}
+                                                        onClick={(e) => e.stopPropagation()}
+                                                        className="w-4 h-4 rounded"
+                                                        style={{ accentColor: 'var(--accent-primary)' }}
+                                                        data-testid={`memory-checkbox-${memory.id}`}
+                                                    />
+                                                </div>
+                                            )}
                                             <div
                                                 className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
                                                 style={{ background: cfg.bg, fontSize: '14px' }}
@@ -402,6 +500,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                                                         className="p-1.5 rounded-lg transition-colors hover:bg-white/10"
                                                         style={{ color: 'var(--text-muted)' }}
                                                         title="Edit"
+                                                        data-testid={`memory-edit-${memory.id}`}
                                                     >
                                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
@@ -412,6 +511,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                                                         className="p-1.5 rounded-lg transition-colors hover:bg-red-500/20"
                                                         style={{ color: 'var(--text-muted)' }}
                                                         title="Delete"
+                                                        data-testid={`memory-delete-${memory.id}`}
                                                     >
                                                         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -435,6 +535,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                         onClick={handleClearAll}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:bg-red-500/10"
                         style={{ color: '#f87171' }}
+                        data-testid="memory-clear-all"
                     >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
@@ -445,6 +546,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                         onClick={handleExport}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:bg-white/5"
                         style={{ color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}
+                        data-testid="memory-export"
                     >
                         <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />

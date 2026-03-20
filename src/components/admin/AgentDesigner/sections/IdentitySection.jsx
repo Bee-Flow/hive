@@ -68,6 +68,7 @@ export const IdentitySection = ({
                                                                     if (data.description) setDescription(data.description);
                                                                 } catch (err) {
                                                                     console.error('Failed to improve identity:', err);
+                                                                    alert('Failed to improve identity. Please try again.');
                                                                 }
                                                             }}
                                                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}

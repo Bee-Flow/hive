@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { Loader2, ToggleLeft, ToggleRight, Check, Settings, Plus, Trash2, RefreshCw, Plug, ChevronDown, ExternalLink, Mail, Send, Layers, Search as SearchIcon, Cloud } from 'lucide-react';
+import McpMarketplace from './McpMarketplace';
 
 const SECTIONS = [
     { id: 'platform', label: 'Platform', icon: Layers, color: '#6366f1' },
@@ -203,17 +204,29 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
         setTimeout(() => setMessage(null), 3000);
     };
 
+    // Build combined integrations list: built-in + installed MCP servers
+    const allIntegrations = useMemo(() => {
+        const mcpIntegrations = mcpServers.map(s => ({
+            id: `mcp:${s.id}`,
+            label: s.name,
+            description: s.description || `${(s.tools_cache || []).length} tool(s)`,
+            category: 'MCP',
+            icon: s.icon || '🔌',
+        }));
+        return [...ALL_INTEGRATIONS, ...mcpIntegrations];
+    }, [mcpServers]);
+
     const isDefaultEnabled = (id) => !defaults || defaults.includes(id);
     const toggleDefault = (id) => {
         if (defaults === null) {
             // Switch from "all enabled" to custom — enable all except this one
-            saveDefaults(ALL_INTEGRATIONS.map(i => i.id).filter(x => x !== id));
+            saveDefaults(allIntegrations.map(i => i.id).filter(x => x !== id));
         } else {
             const newDefaults = defaults.includes(id)
                 ? defaults.filter(x => x !== id)
                 : [...defaults, id];
             // If all are enabled, switch back to null
-            saveDefaults(newDefaults.length === ALL_INTEGRATIONS.length ? null : newDefaults);
+            saveDefaults(newDefaults.length === allIntegrations.length ? null : newDefaults);
         }
     };
 
@@ -232,7 +245,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
         return !ints || ints.includes(id);
     };
 
-    const categories = [...new Set(ALL_INTEGRATIONS.map(i => i.category))];
+    const categories = [...new Set(allIntegrations.map(i => i.category))];
 
     if (loading) {
         return (
@@ -336,7 +349,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
                             <div key={cat} className="mb-4 last:mb-0">
                                 <div className="text-xs font-semibold uppercase tracking-wider mb-2 px-2" style={{ color: 'var(--text-muted)' }}>{cat}</div>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                                    {ALL_INTEGRATIONS.filter(i => i.category === cat).map(integ => {
+                                    {allIntegrations.filter(i => i.category === cat).map(integ => {
                                         const enabled = isDefaultEnabled(integ.id);
                                         return (
                                             <button key={integ.id} onClick={() => toggleDefault(integ.id)}
@@ -346,6 +359,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
                                                     ? <ToggleRight className="w-5 h-5 shrink-0" style={{ color: '#10b981' }} />
                                                     : <ToggleLeft className="w-5 h-5 shrink-0" style={{ color: 'var(--text-muted)' }} />
                                                 }
+                                                {integ.icon && <span className="text-base shrink-0">{integ.icon}</span>}
                                                 <div className="min-w-0">
                                                     <div className="text-sm font-medium truncate" style={{ color: enabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>{integ.label}</div>
                                                     <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{integ.description}</div>
@@ -373,7 +387,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
                             const isExpanded = expandedOrg === org.id;
                             const usingDefaults = orgInts === null;
                             const enabledCount = usingDefaults
-                                ? (defaults === null ? ALL_INTEGRATIONS.length : defaults.length)
+                                ? (defaults === null ? allIntegrations.length : defaults.length)
                                 : orgInts.length;
 
                             return (
@@ -395,7 +409,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
                                         </div>
                                         <div className="flex items-center gap-3">
                                             <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${usingDefaults ? 'bg-blue-500/10 text-blue-500' : 'bg-amber-500/10 text-amber-500'}`}>
-                                                {usingDefaults ? 'Using Defaults' : `Custom (${enabledCount}/${ALL_INTEGRATIONS.length})`}
+                                                {usingDefaults ? 'Using Defaults' : `Custom (${enabledCount}/${allIntegrations.length})`}
                                             </span>
                                             <svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                                                 <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
@@ -414,7 +428,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
                                                 <button onClick={() => {
                                                     if (usingDefaults) {
                                                         // Switch to custom — copy current effective integrations
-                                                        const effective = defaults === null ? ALL_INTEGRATIONS.map(i => i.id) : [...defaults];
+                                                        const effective = defaults === null ? allIntegrations.map(i => i.id) : [...defaults];
                                                         saveOrgIntegrations(org.id, effective);
                                                     }
                                                 }}
@@ -425,7 +439,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
                                                 {!usingDefaults && (
                                                     <>
                                                         <div className="flex-1" />
-                                                        <button onClick={() => saveOrgIntegrations(org.id, ALL_INTEGRATIONS.map(i => i.id))}
+                                                        <button onClick={() => saveOrgIntegrations(org.id, allIntegrations.map(i => i.id))}
                                                             className="text-xs px-2.5 py-1 rounded-lg font-medium" style={{ color: '#10b981' }}>
                                                             Enable All
                                                         </button>
@@ -438,7 +452,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
                                             </div>
                                             {!usingDefaults && (
                                                 <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                                    {ALL_INTEGRATIONS.map(integ => {
+                                                    {allIntegrations.map(integ => {
                                                         const enabled = isOrgIntegrationEnabled(org, integ.id);
                                                         return (
                                                             <button key={integ.id} onClick={() => {
@@ -454,6 +468,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
                                                                     ? <ToggleRight className="w-4 h-4 shrink-0" style={{ color: '#10b981' }} />
                                                                     : <ToggleLeft className="w-4 h-4 shrink-0" style={{ color: 'var(--text-muted)' }} />
                                                                 }
+                                                                {integ.icon && <span className="text-sm shrink-0">{integ.icon}</span>}
                                                                 <span className="text-sm" style={{ color: enabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>{integ.label}</span>
                                                             </button>
                                                         );
@@ -1236,268 +1251,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
             )}
 
             {active === 'mcp' && (
-            <div className="p-6">
-            <div className="max-w-4xl mx-auto space-y-8">
-                {/* MCP Servers */}
-                <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
-                    <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-subtle)' }}>
-                        <div>
-                            <h3 className="font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                                <Plug className="w-4 h-4" />
-                                MCP Servers
-                                {mcpServers.filter(s => s.enabled && s.status === 'ready').length > 0 && (
-                                    <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-500">
-                                        {mcpServers.filter(s => s.enabled && s.status === 'ready').length} active
-                                    </span>
-                                )}
-                            </h3>
-                            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                Add MCP tool servers (npx, uv, etc.). Tools are auto-discovered and available to all agents.
-                                Users configure their own credentials in Settings → Integrations.
-                            </p>
-                        </div>
-                        <button
-                            onClick={() => { setMcpShowAdd(!mcpShowAdd); setMcpTestResult(null); }}
-                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:opacity-80"
-                            style={{ background: 'var(--accent-primary)', color: '#fff' }}
-                        >
-                            <Plus className="w-3.5 h-3.5" /> Add Server
-                        </button>
-                    </div>
-
-                    {/* Add New Server Form */}
-                    {mcpShowAdd && (
-                        <div className="px-6 py-4 border-b space-y-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                <input
-                                    type="text"
-                                    value={mcpNewName}
-                                    onChange={e => setMcpNewName(e.target.value)}
-                                    placeholder="Server name (e.g. GitHub)"
-                                    className="px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 transition-all"
-                                    style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
-                                />
-                                <input
-                                    type="text"
-                                    value={mcpNewCommand}
-                                    onChange={e => setMcpNewCommand(e.target.value)}
-                                    placeholder="Command (e.g. npx or uv)"
-                                    className="px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 transition-all"
-                                    style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
-                                />
-                                <input
-                                    type="text"
-                                    value={mcpNewArgs}
-                                    onChange={e => setMcpNewArgs(e.target.value)}
-                                    placeholder="Args (e.g. -y @modelcontextprotocol/server-github)"
-                                    className="px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 transition-all"
-                                    style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
-                                />
-                            </div>
-                            <input
-                                type="text"
-                                value={mcpNewCreds}
-                                onChange={e => setMcpNewCreds(e.target.value)}
-                                placeholder='Required user credentials (comma-separated env var names, e.g. GITHUB_TOKEN, API_KEY)'
-                                className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 transition-all"
-                                style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
-                            />
-                            <div className="flex items-center gap-2">
-                                <button
-                                    onClick={async () => {
-                                        if (!mcpNewCommand.trim()) return;
-                                        setMcpTesting(true); setMcpTestResult(null);
-                                        try {
-                                            const args = mcpNewArgs.trim() ? mcpNewArgs.trim().split(/\s+/) : [];
-                                            const res = await authFetch(`${API_BASE}/ai/mcp-servers/test`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ command: mcpNewCommand.trim(), args }),
-                                            });
-                                            const data = await res.json();
-                                            setMcpTestResult(data);
-                                        } catch (e) {
-                                            setMcpTestResult({ success: false, error: e.message });
-                                        }
-                                        setMcpTesting(false);
-                                    }}
-                                    disabled={mcpTesting || !mcpNewCommand.trim()}
-                                    className="px-3 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-1.5"
-                                    style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--border-default)' }}
-                                >
-                                    {mcpTesting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ExternalLink className="w-4 h-4" />}
-                                    Test Command
-                                </button>
-                                <button
-                                    onClick={async () => {
-                                        if (!mcpNewName.trim() || !mcpNewCommand.trim()) return;
-                                        setMcpAdding(true);
-                                        try {
-                                            const args = mcpNewArgs.trim() ? mcpNewArgs.trim().split(/\s+/) : [];
-                                            const required_credentials = mcpNewCreds.trim()
-                                                ? mcpNewCreds.split(',').map(s => s.trim()).filter(Boolean).map(key => ({ key, label: key }))
-                                                : [];
-                                            const res = await authFetch(`${API_BASE}/ai/mcp-servers`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ name: mcpNewName, command: mcpNewCommand.trim(), args, required_credentials }),
-                                            });
-                                            if (res.ok) {
-                                                setMcpNewName(''); setMcpNewCommand(''); setMcpNewArgs(''); setMcpNewCreds(''); setMcpShowAdd(false); setMcpTestResult(null);
-                                                setMessage({ type: 'success', text: 'MCP server added' });
-                                                const mcpRes = await authFetch(`${API_BASE}/ai/mcp-servers`);
-                                                if (mcpRes.ok) setMcpServers((await mcpRes.json()).servers || []);
-                                            } else {
-                                                const err = await res.json();
-                                                setMessage({ type: 'error', text: err.error || 'Failed to add server' });
-                                            }
-                                        } catch (e) {
-                                            setMessage({ type: 'error', text: 'Failed to add server: ' + e.message });
-                                        }
-                                        setMcpAdding(false);
-                                        setTimeout(() => setMessage(null), 3000);
-                                    }}
-                                    disabled={mcpAdding || !mcpNewName.trim() || !mcpNewCommand.trim()}
-                                    className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-1.5"
-                                    style={{ background: 'var(--accent-primary)', color: '#fff' }}
-                                >
-                                    {mcpAdding ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                                    Add Server
-                                </button>
-                            </div>
-                            {mcpTestResult && (
-                                <div className={`text-xs px-3 py-2 rounded-lg ${mcpTestResult.success ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>
-                                    {mcpTestResult.success
-                                        ? `\u2705 Connected \u2014 ${mcpTestResult.tools?.length || 0} tool(s): ${(mcpTestResult.tools || []).map(t => t.name).join(', ')}`
-                                        : `\u274c Failed: ${mcpTestResult.error}`
-                                    }
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    {/* Server List */}
-                    <div className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
-                        {mcpServers.length === 0 && !mcpShowAdd && (
-                            <div className="px-6 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
-                                No MCP servers configured. Click "Add Server" to connect external tools.
-                            </div>
-                        )}
-                        {mcpServers.map(server => {
-                            const isExpanded = mcpExpanded === server.id;
-                            const toolCount = server.tools_cache?.length || 0;
-                            return (
-                                <div key={server.id}>
-                                    <div className="flex items-center gap-3 px-6 py-3">
-                                        <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${server.status === 'ready' ? 'bg-green-500' : server.status === 'error' ? 'bg-red-500' : 'bg-gray-500'}`}
-                                            title={server.status === 'error' ? server.error : server.status} />
-
-                                        <button onClick={() => setMcpExpanded(isExpanded ? null : server.id)} className="flex-1 text-left min-w-0">
-                                            <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{server.name}</div>
-                                            <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
-                                                {server.command} {(server.args || []).join(' ')} \u00b7 {toolCount} tool{toolCount !== 1 ? 's' : ''}
-                                                {(server.required_credentials || []).length > 0 && ` \u00b7 ${server.required_credentials.length} credential(s) needed`}
-                                            </div>
-                                        </button>
-
-                                        <div className="flex items-center gap-1.5 flex-shrink-0">
-                                            <button
-                                                onClick={async () => {
-                                                    try {
-                                                        await authFetch(`${API_BASE}/ai/mcp-servers/${server.id}/refresh`, { method: 'POST' });
-                                                        const mcpRes = await authFetch(`${API_BASE}/ai/mcp-servers`);
-                                                        if (mcpRes.ok) setMcpServers((await mcpRes.json()).servers || []);
-                                                        setMessage({ type: 'success', text: `Refreshed ${server.name}` });
-                                                    } catch (e) {
-                                                        setMessage({ type: 'error', text: 'Refresh failed' });
-                                                    }
-                                                    setTimeout(() => setMessage(null), 3000);
-                                                }}
-                                                className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors"
-                                                title="Refresh tools"
-                                            >
-                                                <RefreshCw className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
-                                            </button>
-
-                                            <button
-                                                onClick={async () => {
-                                                    const newEnabled = !server.enabled;
-                                                    try {
-                                                        await authFetch(`${API_BASE}/ai/mcp-servers/${server.id}`, {
-                                                            method: 'PUT',
-                                                            headers: { 'Content-Type': 'application/json' },
-                                                            body: JSON.stringify({ enabled: newEnabled }),
-                                                        });
-                                                        const mcpRes = await authFetch(`${API_BASE}/ai/mcp-servers`);
-                                                        if (mcpRes.ok) setMcpServers((await mcpRes.json()).servers || []);
-                                                        setMessage({ type: 'success', text: `${server.name} ${newEnabled ? 'enabled' : 'disabled'}` });
-                                                    } catch (e) {
-                                                        setMessage({ type: 'error', text: 'Failed to update server' });
-                                                    }
-                                                    setTimeout(() => setMessage(null), 3000);
-                                                }}
-                                                className="p-0.5"
-                                            >
-                                                {server.enabled
-                                                    ? <ToggleRight className="w-5 h-5" style={{ color: '#10b981' }} />
-                                                    : <ToggleLeft className="w-5 h-5" style={{ color: 'var(--text-muted)' }} />
-                                                }
-                                            </button>
-
-                                            <button
-                                                onClick={async () => {
-                                                    if (!confirm(`Remove MCP server "${server.name}"?`)) return;
-                                                    try {
-                                                        await authFetch(`${API_BASE}/ai/mcp-servers/${server.id}`, { method: 'DELETE' });
-                                                        setMcpServers(prev => prev.filter(s => s.id !== server.id));
-                                                        setMessage({ type: 'success', text: `Removed ${server.name}` });
-                                                    } catch (e) {
-                                                        setMessage({ type: 'error', text: 'Failed to remove server' });
-                                                    }
-                                                    setTimeout(() => setMessage(null), 3000);
-                                                }}
-                                                className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors"
-                                                title="Remove server"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" style={{ color: '#ef4444' }} />
-                                            </button>
-
-                                            <button onClick={() => setMcpExpanded(isExpanded ? null : server.id)} className="p-1">
-                                                <ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} />
-                                            </button>
-                                        </div>
-                                    </div>
-
-                                    {isExpanded && (
-                                        <div className="px-6 pb-4">
-                                            {server.error && (
-                                                <div className="text-xs px-3 py-2 rounded-lg bg-red-500/10 text-red-400 mb-2">
-                                                    Error: {server.error}
-                                                </div>
-                                            )}
-                                            {toolCount === 0 ? (
-                                                <div className="text-xs py-2" style={{ color: 'var(--text-muted)' }}>No tools discovered. Try refreshing.</div>
-                                            ) : (
-                                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
-                                                    {(server.tools_cache || []).map((tool, idx) => (
-                                                        <div key={idx} className="px-3 py-2 rounded-lg text-xs" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)' }}>
-                                                            <div className="font-medium" style={{ color: 'var(--text-primary)' }}>{tool.name}</div>
-                                                            {tool.description && (
-                                                                <div className="mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>{tool.description}</div>
-                                                            )}
-                                                        </div>
-                                                    ))}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            </div>
-            </div>
+                <McpMarketplace setMessage={setMessage} />
             )}
 
             </div>

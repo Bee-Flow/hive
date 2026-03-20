@@ -167,14 +167,16 @@ export default function useChatEngine({
                 ));
                 break;
 
-            case 'email_draft':
-                setMessages(prev => prev.map(m =>
-                    m.id === assistantMsgId ? {
-                        ...m,
-                        emailDrafts: [...(m.emailDrafts || []), { ...data, status: 'pending' }]
-                    } : m
-                ));
+            case 'email_draft': {
+                const draftKey = JSON.stringify({ to: data.to, subject: data.subject, body: data.body });
+                setMessages(prev => prev.map(m => {
+                    if (m.id !== assistantMsgId) return m;
+                    const existing = m.emailDrafts || [];
+                    if (existing.some(d => JSON.stringify({ to: d.to, subject: d.subject, body: d.body }) === draftKey)) return m;
+                    return { ...m, emailDrafts: [...existing, { ...data, status: 'pending' }] };
+                }));
                 break;
+            }
 
             case 'linkedin_draft':
                 console.log('[DEBUG] linkedin_draft event received!', data, 'assistantMsgId:', assistantMsgId);
@@ -190,41 +192,49 @@ export default function useChatEngine({
                 });
                 break;
 
-            case 'calendar_draft':
-                setMessages(prev => prev.map(m =>
-                    m.id === assistantMsgId ? {
-                        ...m,
-                        calendarDrafts: [...(m.calendarDrafts || []), { ...data, status: 'pending' }]
-                    } : m
-                ));
+            case 'calendar_draft': {
+                const draftKey = JSON.stringify({ summary: data.summary, start: data.start, end: data.end });
+                setMessages(prev => prev.map(m => {
+                    if (m.id !== assistantMsgId) return m;
+                    const existing = m.calendarDrafts || [];
+                    if (existing.some(d => JSON.stringify({ summary: d.summary, start: d.start, end: d.end }) === draftKey)) return m;
+                    return { ...m, calendarDrafts: [...existing, { ...data, status: 'pending' }] };
+                }));
                 break;
+            }
 
-            case 'whatsapp_draft':
-                setMessages(prev => prev.map(m =>
-                    m.id === assistantMsgId ? {
-                        ...m,
-                        whatsappDrafts: [...(m.whatsappDrafts || []), { ...data, status: 'pending' }]
-                    } : m
-                ));
+            case 'whatsapp_draft': {
+                const draftKey = JSON.stringify({ to: data.to, message: data.message });
+                setMessages(prev => prev.map(m => {
+                    if (m.id !== assistantMsgId) return m;
+                    const existing = m.whatsappDrafts || [];
+                    if (existing.some(d => JSON.stringify({ to: d.to, message: d.message }) === draftKey)) return m;
+                    return { ...m, whatsappDrafts: [...existing, { ...data, status: 'pending' }] };
+                }));
                 break;
+            }
 
-            case 'contacts_draft':
-                setMessages(prev => prev.map(m =>
-                    m.id === assistantMsgId ? {
-                        ...m,
-                        contactsDrafts: [...(m.contactsDrafts || []), { ...data, status: 'pending' }]
-                    } : m
-                ));
+            case 'contacts_draft': {
+                const draftKey = JSON.stringify({ name: data.name, email: data.email, phone: data.phone });
+                setMessages(prev => prev.map(m => {
+                    if (m.id !== assistantMsgId) return m;
+                    const existing = m.contactsDrafts || [];
+                    if (existing.some(d => JSON.stringify({ name: d.name, email: d.email, phone: d.phone }) === draftKey)) return m;
+                    return { ...m, contactsDrafts: [...existing, { ...data, status: 'pending' }] };
+                }));
                 break;
+            }
 
-            case 'keep_draft':
-                setMessages(prev => prev.map(m =>
-                    m.id === assistantMsgId ? {
-                        ...m,
-                        keepDrafts: [...(m.keepDrafts || []), { ...data, status: 'pending' }]
-                    } : m
-                ));
+            case 'keep_draft': {
+                const draftKey = JSON.stringify({ title: data.title, content: data.content });
+                setMessages(prev => prev.map(m => {
+                    if (m.id !== assistantMsgId) return m;
+                    const existing = m.keepDrafts || [];
+                    if (existing.some(d => JSON.stringify({ title: d.title, content: d.content }) === draftKey)) return m;
+                    return { ...m, keepDrafts: [...existing, { ...data, status: 'pending' }] };
+                }));
                 break;
+            }
 
             case 'sheets_result':
                 setMessages(prev => prev.map(m =>
@@ -235,14 +245,16 @@ export default function useChatEngine({
                 ));
                 break;
 
-            case 'sheets_draft':
-                setMessages(prev => prev.map(m =>
-                    m.id === assistantMsgId ? {
-                        ...m,
-                        sheetsDrafts: [...(m.sheetsDrafts || []), { ...data, status: 'pending' }]
-                    } : m
-                ));
+            case 'sheets_draft': {
+                const draftKey = JSON.stringify({ spreadsheetId: data.spreadsheetId, range: data.range });
+                setMessages(prev => prev.map(m => {
+                    if (m.id !== assistantMsgId) return m;
+                    const existing = m.sheetsDrafts || [];
+                    if (existing.some(d => JSON.stringify({ spreadsheetId: d.spreadsheetId, range: d.range }) === draftKey)) return m;
+                    return { ...m, sheetsDrafts: [...existing, { ...data, status: 'pending' }] };
+                }));
                 break;
+            }
 
             case 'sheets_report':
                 setMessages(prev => prev.map(m =>

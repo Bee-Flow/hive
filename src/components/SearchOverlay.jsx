@@ -151,6 +151,7 @@ const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
             <div
                 className="bg-[var(--bg-primary)] w-[800px] max-w-[95vw] max-h-[85vh] flex flex-col rounded-2xl shadow-2xl border border-[var(--border-subtle)] overflow-hidden"
                 onClick={e => e.stopPropagation()}
+                data-testid="search-overlay"
             >
                 {/* Header / Input */}
                 <div className="flex flex-col bg-[var(--bg-secondary)]/30 border-b border-[var(--border-subtle)]">
@@ -163,6 +164,7 @@ const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
                             onChange={handleInput}
                             placeholder="Search across all conversations..."
                             className="flex-1 bg-transparent border-none text-lg text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:ring-0 focus:outline-none font-medium"
+                            data-testid="search-input"
                         />
                         <button onClick={onClose} className="p-2 hover:bg-[var(--bg-secondary)] rounded-xl transition-colors">
                             <X className="w-5 h-5 text-[var(--text-tertiary)]" />
@@ -234,6 +236,7 @@ const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
                                     key={result.id}
                                     onClick={() => onSelectResult(result)}
                                     className="w-full text-left p-4 rounded-xl hover:bg-[var(--bg-secondary)] transition-all group flex flex-col gap-2 border border-transparent hover:border-[var(--border-subtle)] hover:shadow-sm"
+                                    data-testid={`search-result-${result.id}`}
                                 >
                                     <div className="flex items-start justify-between">
                                         <div className="flex items-center gap-3">

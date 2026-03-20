@@ -60,6 +60,7 @@ const AgentCard = React.memo(({ agentId, name, avatar, description, typeLabel, i
         onClick={onSelect}
         className="group relative p-4 rounded-xl border cursor-pointer transition-shadow duration-150 hover:shadow-md flex flex-col"
         style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', minHeight: '130px' }}
+        data-testid={`agent-card-${agentId}`}
     >
         <div className="absolute top-3 right-3 flex items-center gap-1 z-10">
             {isOwner && onUnpublish && (
@@ -215,7 +216,7 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
     }), [filtered, favorites, TYPE_MAP, user]);
 
     return (
-        <div className="flex-1 flex flex-col overflow-hidden w-full h-full" style={{ background: 'var(--bg-secondary)' }}>
+        <div className="flex-1 flex flex-col overflow-hidden w-full h-full" style={{ background: 'var(--bg-secondary)' }} data-testid="agent-marketplace">
             {/* Header */}
             <div className="px-6 pt-5 pb-4 border-b" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)' }}>
                 <div className="flex items-center justify-between mb-3">
@@ -235,6 +236,7 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
                         onChange={(e) => setSearch(e.target.value)}
                         className="w-full pl-9 pr-4 py-2 rounded-lg border text-sm focus:outline-none transition-all"
                         style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
+                        data-testid="marketplace-search"
                     />
                 </div>
 
@@ -251,6 +253,7 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
                                     color: active ? 'var(--bg-primary)' : 'var(--text-secondary)',
                                     borderColor: active ? 'var(--text-primary)' : 'var(--border-subtle)',
                                 }}
+                                data-testid={`marketplace-category-${cat.key}`}
                             >{cat.label}</button>
                         );
                     })}

@@ -626,7 +626,7 @@ const OrgUsersPanel = ({ user }) => {
                                                 {inv.role && inv.role !== 'user' && getRoleBadge(inv.role)}
                                             </div>
                                             <div className="text-[10px] text-[var(--text-muted)] mt-0.5">
-                                                Expires {new Date(inv.expires_at).toLocaleDateString()}
+                                                Invited by {inv.inviterName || 'Unknown'} · Expires {new Date(inv.expires_at).toLocaleDateString()}
                                             </div>
                                         </div>
                                         <button

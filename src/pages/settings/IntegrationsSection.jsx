@@ -662,7 +662,10 @@ const IntegrationsSection = ({ statuses, onSaved, enabledIntegrations, isOrgAdmi
     const showN8nInteg = isEnabled('n8n');
     const showLinkedIn = isEnabled('linkedin');
     const showGitHub = isEnabled('github');
-    const showWhatsApp = true; // Always available — no admin config needed
+    const showWhatsApp = isEnabled('whatsapp');
+
+    // Check if any MCP server is enabled at org level
+    const showMcp = !enabledIntegrations || enabledIntegrations.some(id => id.startsWith('mcp:'));
 
     return (
         <section>
@@ -675,7 +678,7 @@ const IntegrationsSection = ({ statuses, onSaved, enabledIntegrations, isOrgAdmi
             {showLinkedIn && <LinkedInIntegration connected={statuses.linkedInConnected} linkedInName={statuses.linkedInName} hasLinkedInConfig={statuses.hasLinkedInConfig} onSaved={() => onSaved('linkedin')} />}
             {showGitHub && <GitHubIntegration onSaved={() => onSaved('github')} />}
             {showWhatsApp && <WhatsAppIntegration onSaved={() => onSaved('whatsapp')} />}
-            <McpCredentialsIntegration onSaved={() => onSaved('mcp')} />
+            {showMcp && <McpCredentialsIntegration onSaved={() => onSaved('mcp')} />}
         </section>
     );
 };

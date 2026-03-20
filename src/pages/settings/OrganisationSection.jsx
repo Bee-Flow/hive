@@ -167,25 +167,45 @@ const OrganisationSection = ({ user }) => {
                 </div>
             )}
 
-            {subTab === 'integrations' && isOrgAdmin && (
-                <div>
-                    <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Organisation Integrations</h3>
-                    <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-                        These integrations are shared across all members of your organisation.
-                    </p>
-                    <div className="rounded-xl border p-4 mb-4" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
-                        <div className="flex items-center gap-2.5 mb-3">
-                            <img src="/n8n-color.png" alt="n8n" className="w-6 h-6 object-contain" />
-                            <div>
-                                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>n8n</p>
-                                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Connect n8n workflows as AI tools for your organisation</p>
-                            </div>
+            {subTab === 'integrations' && isOrgAdmin && (() => {
+                // Org-level enabled integrations (null = all enabled, array = only those IDs)
+                const ei = user?.enabledIntegrations;
+                const showN8n = !ei || ei.includes('n8n');
+                const showGoogleMaps = !ei || ei.includes('google-maps');
+
+                if (!showN8n && !showGoogleMaps) {
+                    return (
+                        <div>
+                            <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Organisation Integrations</h3>
+                            <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+                                No integrations are enabled for this organisation. Contact your platform administrator.
+                            </p>
                         </div>
-                        <N8nSection />
+                    );
+                }
+
+                return (
+                    <div>
+                        <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Organisation Integrations</h3>
+                        <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
+                            These integrations are shared across all members of your organisation.
+                        </p>
+                        {showN8n && (
+                            <div className="rounded-xl border p-4 mb-4" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
+                                <div className="flex items-center gap-2.5 mb-3">
+                                    <img src="/n8n-color.png" alt="n8n" className="w-6 h-6 object-contain" />
+                                    <div>
+                                        <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>n8n</p>
+                                        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Connect n8n workflows as AI tools for your organisation</p>
+                                    </div>
+                                </div>
+                                <N8nSection />
+                            </div>
+                        )}
+                        {showGoogleMaps && <GoogleMapsConfig />}
                     </div>
-                    <GoogleMapsConfig />
-                </div>
-            )}
+                );
+            })()}
         </div>
     );
 };

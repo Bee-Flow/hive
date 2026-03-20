@@ -15,25 +15,37 @@ import AgentDesigner from './components/admin/AgentDesigner';
 import LoginPage from './pages/LoginPage';
 import EncryptionSetup from './pages/EncryptionSetup';
 import EmbedChat from './pages/EmbedChat';
+import HomePage, { FeaturesPage, HowItWorksPage, SecurityPage, IntegrationsPage, AboutPage, PrivacyPage, TermsPage, ContactPage } from './pages/home/HomePage';
 import { LogOut, User, Shield, Settings, ChevronDown } from 'lucide-react';
 
 import { API_BASE, authFetch } from './utils/helpers';
 
 // ── Route mapping ──────────────────────────────────────────────
 const PAGE_ROUTES = {
-    agents: '/',
-    admin: '/admin',
-    orgSettings: '/org-settings',
-    settings: '/settings',
-    agentDesigner: '/agent-designer',
+    // ── Public homepage routes ──
+    home: '/',
+    features: '/features',
+    howItWorks: '/how-it-works',
+    security: '/security',
+    integrations: '/integrations',
+    about: '/about',
+    privacy: '/privacy',
+    terms: '/terms',
+    contact: '/contact',
+    // ── App routes (all under /app/) ──
+    agents: '/app',
+    admin: '/app/admin',
+    orgSettings: '/app/org-settings',
+    settings: '/app/settings',
+    agentDesigner: '/app/agent-designer',
     reports: '/app/reports',
     components: '/app/components',
-    groupChats: '/group-chats',
-    terminalAgents: '/terminal-agents',
-    tasks: '/tasks',
-    monitoring: '/monitoring',
-    meetingNotes: '/meeting-notes',
-    templates: '/templates',
+    groupChats: '/app/group-chats',
+    terminalAgents: '/app/terminal-agents',
+    tasks: '/app/tasks',
+    monitoring: '/app/monitoring',
+    meetingNotes: '/app/meeting-notes',
+    templates: '/app/templates',
 };
 
 // Reverse lookup: path → page key
@@ -42,16 +54,35 @@ const PATH_TO_PAGE = Object.fromEntries(
 );
 
 function pageFromPath(pathname) {
-    // Exact match first
+    // Homepage / public marketing routes
+    if (pathname === '/') return 'home';
+    if (pathname === '/features') return 'features';
+    if (pathname === '/how-it-works') return 'howItWorks';
+    if (pathname === '/security') return 'security';
+    if (pathname === '/integrations') return 'integrations';
+    if (pathname === '/about') return 'about';
+    if (pathname === '/privacy') return 'privacy';
+    if (pathname === '/terms') return 'terms';
+    if (pathname === '/contact') return 'contact';
+    // Exact match for app routes
     if (PATH_TO_PAGE[pathname]) return PATH_TO_PAGE[pathname];
-    // /admin or /admin/* → admin page
+    // /app/admin or /app/admin/* → admin page
+    if (pathname === '/app/admin' || pathname.startsWith('/app/admin/')) return 'admin';
+    // Legacy bare /admin → redirect to /app/admin (handled below)
     if (pathname === '/admin' || pathname.startsWith('/admin/')) return 'admin';
-    // /org-settings or /org-settings/* → orgSettings page
+    // /app/org-settings or /app/org-settings/* → orgSettings
+    if (pathname === '/app/org-settings' || pathname.startsWith('/app/org-settings/')) return 'orgSettings';
+    // Legacy bare /org-settings
     if (pathname === '/org-settings' || pathname.startsWith('/org-settings/')) return 'orgSettings';
-    // /a/:shortId or /agent/:id → agents page
+    // /app/a/:shortId or /app/agent/:id → agents page
+    if (pathname.startsWith('/app/a/') || pathname.startsWith('/app/agent/')) return 'agents';
+    // /app/d/:convId → direct chat
+    if (pathname.startsWith('/app/d/')) return 'agents';
+    // Legacy bare paths (backward compat)
     if (pathname.startsWith('/a/') || pathname.startsWith('/agent/')) return 'agents';
-    // /d/:convId → direct chat (agents page in direct mode)
     if (pathname.startsWith('/d/')) return 'agents';
+    // /app/* catch-all → agents
+    if (pathname.startsWith('/app/')) return 'agents';
     // Legacy ?page= param support (backward compat)
     const params = new URLSearchParams(window.location.search);
     const legacyPage = params.get('page');
@@ -60,9 +91,9 @@ function pageFromPath(pathname) {
     return 'agents';
 }
 
-// Parse /admin/{seg1}/{seg2}/{seg3} from the URL
+// Parse /app/admin/{seg1}/{seg2}/{seg3} from the URL
 function parseAdminPath(pathname) {
-    const match = pathname.match(/^\/admin(?:\/([^/]+))?(?:\/([^/]+))?(?:\/([^/]+))?/);
+    const match = pathname.match(/^\/(?:app\/)?admin(?:\/([^/]+))?(?:\/([^/]+))?(?:\/([^/]+))?/);
     return {
         seg1: match?.[1] || '',
         seg2: match?.[2] || '',
@@ -70,9 +101,9 @@ function parseAdminPath(pathname) {
     };
 }
 
-// Parse /org-settings/{seg1}/{seg2} from the URL
+// Parse /app/org-settings/{seg1}/{seg2} from the URL
 function parseOrgSettingsPath(pathname) {
-    const match = pathname.match(/^\/org-settings(?:\/([^/]+))?(?:\/([^/]+))?/);
+    const match = pathname.match(/^\/(?:app\/)?org-settings(?:\/([^/]+))?(?:\/([^/]+))?/);
     return {
         seg1: match?.[1] || '',
         seg2: match?.[2] || '',
@@ -80,18 +111,18 @@ function parseOrgSettingsPath(pathname) {
 }
 
 // Extract agent ID prefix and conversation ID prefix from URL
-// Supports: /a/:shortId, /a/:shortId/:shortConvId, /agent/:fullId, /agent/:fullId/:fullConvId
+// Supports: /app/a/:shortId, /app/a/:shortId/:shortConvId, /app/agent/:fullId, and legacy bare forms
 function parseAgentUrl(pathname) {
-    const match = pathname.match(/^\/(?:a|agent)\/([a-zA-Z0-9_-]+)(?:\/([a-zA-Z0-9_-]+))?/);
+    const match = pathname.match(/^\/(?:app\/)?(?:a|agent)\/([a-zA-Z0-9_-]+)(?:\/([a-zA-Z0-9_-]+))?/);
     if (match) {
         return { agentId: match[1], conversationId: match[2] || null };
     }
     return { agentId: null, conversationId: null };
 }
 
-// Extract direct chat conversation ID from URL: /d/:shortConvId
+// Extract direct chat conversation ID from URL: /app/d/:shortConvId (legacy: /d/:shortConvId)
 function parseDirectChatUrl(pathname) {
-    const match = pathname.match(/^\/d\/([a-zA-Z0-9_-]+)/);
+    const match = pathname.match(/^\/(?:app\/)?d\/([a-zA-Z0-9_-]+)/);
     return match ? match[1] : null;
 }
 
@@ -176,6 +207,7 @@ function App() {
     const [orgSettingsPath, setOrgSettingsPath] = useState(() => parseOrgSettingsPath(window.location.pathname));
     const [user, setUser] = useState(null);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
+    const [showLogin, setShowLogin] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [showProfileMenu, setShowProfileMenu] = useState(false);
     const [showAgentDesigner, setShowAgentDesigner] = useState(false);
@@ -276,6 +308,37 @@ function App() {
     }, []);
 
     const navigateToPage = useCallback((page) => {
+        // Homepage sub-routes (public, works even when not authenticated)
+        if (page === '/' || page === 'home') {
+            setShowLogin(false);
+            setCurrentPage('home');
+            window.history.pushState({}, '', '/');
+            return;
+        }
+        if (['/features','features'].includes(page)) {
+            setCurrentPage('features'); window.history.pushState({}, '', '/features'); return;
+        }
+        if (['/how-it-works','howItWorks'].includes(page)) {
+            setCurrentPage('howItWorks'); window.history.pushState({}, '', '/how-it-works'); return;
+        }
+        if (['/security','security'].includes(page)) {
+            setCurrentPage('security'); window.history.pushState({}, '', '/security'); return;
+        }
+        if (['/integrations','integrations'].includes(page)) {
+            setCurrentPage('integrations'); window.history.pushState({}, '', '/integrations'); return;
+        }
+        if (['/about','about'].includes(page)) {
+            setCurrentPage('about'); window.history.pushState({}, '', '/about'); return;
+        }
+        if (['/privacy','privacy'].includes(page)) {
+            setCurrentPage('privacy'); window.history.pushState({}, '', '/privacy'); return;
+        }
+        if (['/terms','terms'].includes(page)) {
+            setCurrentPage('terms'); window.history.pushState({}, '', '/terms'); return;
+        }
+        if (['/contact','contact'].includes(page)) {
+            setCurrentPage('contact'); window.history.pushState({}, '', '/contact'); return;
+        }
         // Agent Designer opens as overlay, not a page
         if (page === 'agentDesigner') {
             setShowAgentDesigner(true);
@@ -288,7 +351,8 @@ function App() {
         }
         // Support admin sub-paths like 'admin/ai-config' or 'admin/security/sso'
         if (page.startsWith('admin')) {
-            const path = '/' + page; // e.g. '/admin/ai-config'
+            const subPath = page === 'admin' ? '' : page.slice('admin'.length); // e.g. '/ai-config'
+            const path = '/app/admin' + subPath;
             setCurrentPage('admin');
             setAdminPath(parseAdminPath(path));
             setShowProfileMenu(false);
@@ -297,7 +361,8 @@ function App() {
         }
         // Support org-settings sub-paths like 'org-settings/agents'
         if (page === 'orgSettings' || page.startsWith('org-settings')) {
-            const path = '/' + (page === 'orgSettings' ? 'org-settings' : page);
+            const subPage = page === 'orgSettings' ? 'org-settings' : page;
+            const path = '/app/' + subPage;
             setCurrentPage('orgSettings');
             setOrgSettingsPath(parseOrgSettingsPath(path));
             setShowProfileMenu(false);
@@ -334,6 +399,9 @@ function App() {
             setUser(userData);
         }
         setIsAuthenticated(true);
+        // Reset to main app view after login (currentPage may still be a homepage route)
+        setCurrentPage('agents');
+        window.history.pushState({ page: 'agents' }, '', '/app');
         // Show recovery key if one was generated (new user or migration)
         if (recoveryKey) {
             setEncryptionState({ recoveryKey });
@@ -368,9 +436,19 @@ function App() {
         );
     }
 
-    // Show login page if not authenticated
+    // Show homepage / public routes if not authenticated
     if (!isAuthenticated) {
-        return <LoginPage onLogin={handleLogin} onDemoLogin={handleLogin} />;
+        const homeProps = { onNavigate: navigateToPage, onLoginClick: () => setShowLogin(true) };
+        if (showLogin) return <LoginPage onLogin={handleLogin} onDemoLogin={handleLogin} />;
+        if (currentPage === 'features') return <FeaturesPage {...homeProps} />;
+        if (currentPage === 'howItWorks') return <HowItWorksPage {...homeProps} />;
+        if (currentPage === 'security') return <SecurityPage {...homeProps} />;
+        if (currentPage === 'integrations') return <IntegrationsPage {...homeProps} />;
+        if (currentPage === 'about') return <AboutPage {...homeProps} />;
+        if (currentPage === 'privacy') return <PrivacyPage {...homeProps} />;
+        if (currentPage === 'terms') return <TermsPage {...homeProps} />;
+        if (currentPage === 'contact') return <ContactPage {...homeProps} />;
+        return <HomePage {...homeProps} />;
     }
 
     // Show encryption setup/unlock gate for SSO users
@@ -468,6 +546,11 @@ function App() {
     }
 
     const renderContent = () => {
+        // If an authenticated user somehow hits a homepage route, redirect to app
+        if (['home', 'features', 'howItWorks', 'security', 'integrations'].includes(currentPage)) {
+            window.history.replaceState({}, '', '/app');
+            return null; // navigateToPage('agents') runs in useEffect via popstate below
+        }
         if (currentPage === 'admin') {
             return <AdminDashboard user={user} onBack={() => navigateToPage('agents')} adminPath={adminPath} onNavigate={navigateToPage} />;
         }
@@ -496,9 +579,11 @@ function App() {
             return <MonitoringDashboard onBack={() => navigateToPage('agents')} user={user} />;
         }
         if (currentPage === 'meetingNotes') {
+            if (user?.featureFlags?.meeting_notes === false) return navigateToPage('agents');
             return <MeetingNotesPage user={user} onBack={() => navigateToPage('agents')} />;
         }
         if (currentPage === 'templates') {
+            if (user?.featureFlags?.templates === false) return navigateToPage('agents');
             return <TemplatesPage user={user} onBack={() => navigateToPage('agents')} />;
         }
         return <AgentHub onNavigate={navigateToPage} user={user} initialAgentId={initialUrlRef.current.agentId} initialConversationId={initialUrlRef.current.conversationId} initialDirectConvId={initialDirectConvRef.current} onLogout={handleLogout} currentPage={currentPage} />;

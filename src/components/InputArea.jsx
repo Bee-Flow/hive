@@ -136,6 +136,7 @@ const InputArea = ({
     const [hasGammaKey, setHasGammaKey] = useState(false);
     const [hasWhatsApp, setHasWhatsApp] = useState(false);
     const [n8nWorkflows, setN8nWorkflows] = useState([]);
+    const [mcpServers, setMcpServers] = useState([]);
 
     const [isGoogleUser, setIsGoogleUser] = useState(false);
     const [isMicrosoftUser, setIsMicrosoftUser] = useState(false);
@@ -239,6 +240,15 @@ const InputArea = ({
             .then(data => {
                 if (data && (data.status === 'connected' || data.hasSavedSession)) {
                     setHasWhatsApp(true);
+                }
+            })
+            .catch(() => { });
+        // Fetch MCP servers for apps menu
+        authFetch(`${API_BASE}/ai/mcp-servers/user-credentials`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => {
+                if (data?.servers?.length) {
+                    setMcpServers(data.servers.filter(s => s.toolCount > 0));
                 }
             })
             .catch(() => { });
@@ -623,7 +633,7 @@ const InputArea = ({
                     )}
 
 
-                    <div className={`relative flex flex-col bg-[var(--bg-secondary)] rounded-2xl border border-[var(--border-subtle)] shadow-sm transition-all focus-within:border-[var(--accent-primary)] focus-within:shadow-md ${(activeThreadParent || attachments.length > 0) ? 'rounded-t-none border-t-0' : ''} ${isDragOver ? 'border-[var(--accent-primary)]' : ''}`}>
+                    <div role="form" aria-label="Chat message input" data-testid="chat-input-form" className={`relative flex flex-col bg-[var(--bg-secondary)] rounded-2xl border border-[var(--border-subtle)] shadow-sm transition-all focus-within:border-[var(--accent-primary)] focus-within:shadow-md ${(activeThreadParent || attachments.length > 0) ? 'rounded-t-none border-t-0' : ''} ${isDragOver ? 'border-[var(--accent-primary)]' : ''}`}>
 
                         {/* Hidden file input */}
                         <input
@@ -633,17 +643,23 @@ const InputArea = ({
                             multiple
                             accept="image/*,.pdf,.docx,.csv,.xlsx,.xls,.txt,.md,.json,.js,.jsx,.ts,.tsx,.py,.html,.css"
                             className="hidden"
+                            aria-label="Upload file attachment"
+                            data-testid="file-upload"
                         />
 
                         {/* Textarea Row */}
                         <div className={`${isMobile ? 'px-2' : 'px-4'} pt-3 pb-1`}>
                             <textarea
                                 ref={textareaRef}
+                                id="chat-message-input"
+                                name="message"
                                 value={input}
                                 onChange={(e) => setInput(e.target.value)}
                                 onKeyDown={handleKeyDown}
                                 onPaste={handlePaste}
                                 placeholder={activeThreadParent ? "Reply to thread..." : directMode ? "Message AI..." : "Message " + (selectedAgent?.name || "Agent") + "..."}
+                                aria-label="Chat message"
+                                data-testid="chat-message-input"
                                 rows={1}
                                 className="w-full max-h-[180px] bg-transparent border-none focus:ring-0 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] resize-none py-2 text-[15px] leading-relaxed overflow-y-auto outline-none"
                             />
@@ -657,90 +673,113 @@ const InputArea = ({
                                     onClick={() => fileInputRef.current?.click()}
                                     className="p-2 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] rounded-lg transition-colors"
                                     title="Attach file"
+                                    aria-label="Attach file"
+                                    data-testid="attach-file-button"
                                 >
                                     <Paperclip className="w-5 h-5" />
                                 </button>
-                                {/* Multimedia Creation — grouped dropdown */}
-                                <div className="relative">
-                                    <button
-                                        ref={mediaMenuBtnRef}
-                                        onClick={() => setMediaMenuOpen(!mediaMenuOpen)}
-                                        className={`p-2 rounded-lg transition-colors text-base leading-none ${mediaMenuOpen || imageGenOpen || musicGenOpen || elevenLabsOpen || videoGenOpen ? 'bg-purple-500/10 text-purple-400' : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'}`}
-                                        title="Multimedia Creation"
-                                    >
-                                        🎨
-                                    </button>
-                                    {mediaMenuOpen && (
-                                        <div
-                                            ref={mediaMenuRef}
-                                            className="absolute bottom-full left-0 mb-2 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl shadow-xl p-1.5 min-w-[180px] z-50"
-                                        >
+                                {/* Multimedia Creation — grouped dropdown (gated by org settings) */}
+                                {(() => {
+                                    const orgOn = (id) => !orgEnabledIntegrations || orgEnabledIntegrations.includes(id);
+                                    const showImageGen = orgOn('image-gen');
+                                    const showMusicGen = orgOn('music-gen');
+                                    const showElevenLabs = orgOn('elevenlabs');
+                                    const showVideoGen = orgOn('video-gen');
+                                    if (!showImageGen && !showMusicGen && !showElevenLabs && !showVideoGen) return null;
+                                    return (
+                                        <div className="relative">
                                             <button
-                                                ref={imageGenBtnRef}
-                                                onClick={() => { setMediaMenuOpen(false); setImageGenOpen(true); }}
-                                                onContextMenu={(e) => { e.preventDefault(); const next = { ...disabledMedia, image: !disabledMedia.image }; setDisabledMedia(next); localStorage.setItem('disabledMedia', JSON.stringify(next)); }}
-                                                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors text-sm text-left"
-                                                style={{ opacity: disabledMedia.image ? 0.35 : 1 }}
+                                                ref={mediaMenuBtnRef}
+                                                onClick={() => setMediaMenuOpen(!mediaMenuOpen)}
+                                                className={`p-2 rounded-lg transition-colors text-base leading-none ${mediaMenuOpen || imageGenOpen || musicGenOpen || elevenLabsOpen || videoGenOpen ? 'bg-purple-500/10 text-purple-400' : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'}`}
+                                                title="Multimedia Creation"
+                                                aria-label="Multimedia Creation"
+                                                data-testid="multimedia-button"
                                             >
-                                                <span className="text-base">🍌</span>
-                                                <span className="text-[var(--text-primary)]">Image Generation</span>
+                                                🎨
                                             </button>
-                                            <button
-                                                ref={musicGenBtnRef}
-                                                onClick={() => { setMediaMenuOpen(false); setMusicGenOpen(true); }}
-                                                onContextMenu={(e) => { e.preventDefault(); const next = { ...disabledMedia, music: !disabledMedia.music }; setDisabledMedia(next); localStorage.setItem('disabledMedia', JSON.stringify(next)); }}
-                                                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors text-sm text-left"
-                                                style={{ opacity: disabledMedia.music ? 0.35 : 1 }}
-                                            >
-                                                <span className="text-base">🎹</span>
-                                                <span className="text-[var(--text-primary)]">Music Generation</span>
-                                            </button>
-                                            <button
-                                                ref={elevenLabsBtnRef}
-                                                onClick={() => { setMediaMenuOpen(false); setElevenLabsOpen(true); }}
-                                                onContextMenu={(e) => { e.preventDefault(); const next = { ...disabledMedia, elevenlabs: !disabledMedia.elevenlabs }; setDisabledMedia(next); localStorage.setItem('disabledMedia', JSON.stringify(next)); }}
-                                                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors text-sm text-left"
-                                                style={{ opacity: disabledMedia.elevenlabs ? 0.35 : 1 }}
-                                            >
-                                                <span className="text-base">🎵</span>
-                                                <span className="text-[var(--text-primary)]">ElevenLabs</span>
-                                            </button>
-                                            <button
-                                                ref={videoGenBtnRef}
-                                                onClick={() => { setMediaMenuOpen(false); setVideoGenOpen(true); }}
-                                                onContextMenu={(e) => { e.preventDefault(); const next = { ...disabledMedia, video: !disabledMedia.video }; setDisabledMedia(next); localStorage.setItem('disabledMedia', JSON.stringify(next)); }}
-                                                className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors text-sm text-left"
-                                                style={{ opacity: disabledMedia.video ? 0.35 : 1 }}
-                                            >
-                                                <span className="text-base">🎬</span>
-                                                <span className="text-[var(--text-primary)]">Video Generation</span>
-                                            </button>
+                                            {mediaMenuOpen && (
+                                                <div
+                                                    ref={mediaMenuRef}
+                                                    className="absolute bottom-full left-0 mb-2 bg-[var(--bg-secondary)] border border-[var(--border-primary)] rounded-xl shadow-xl p-1.5 min-w-[180px] z-50"
+                                                >
+                                                    {showImageGen && (
+                                                        <button
+                                                            ref={imageGenBtnRef}
+                                                            onClick={() => { setMediaMenuOpen(false); setImageGenOpen(true); }}
+                                                            onContextMenu={(e) => { e.preventDefault(); const next = { ...disabledMedia, image: !disabledMedia.image }; setDisabledMedia(next); localStorage.setItem('disabledMedia', JSON.stringify(next)); }}
+                                                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors text-sm text-left"
+                                                            style={{ opacity: disabledMedia.image ? 0.35 : 1 }}
+                                                        >
+                                                            <span className="text-base">🍌</span>
+                                                            <span className="text-[var(--text-primary)]">Image Generation</span>
+                                                        </button>
+                                                    )}
+                                                    {showMusicGen && (
+                                                        <button
+                                                            ref={musicGenBtnRef}
+                                                            onClick={() => { setMediaMenuOpen(false); setMusicGenOpen(true); }}
+                                                            onContextMenu={(e) => { e.preventDefault(); const next = { ...disabledMedia, music: !disabledMedia.music }; setDisabledMedia(next); localStorage.setItem('disabledMedia', JSON.stringify(next)); }}
+                                                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors text-sm text-left"
+                                                            style={{ opacity: disabledMedia.music ? 0.35 : 1 }}
+                                                        >
+                                                            <span className="text-base">🎹</span>
+                                                            <span className="text-[var(--text-primary)]">Music Generation</span>
+                                                        </button>
+                                                    )}
+                                                    {showElevenLabs && (
+                                                        <button
+                                                            ref={elevenLabsBtnRef}
+                                                            onClick={() => { setMediaMenuOpen(false); setElevenLabsOpen(true); }}
+                                                            onContextMenu={(e) => { e.preventDefault(); const next = { ...disabledMedia, elevenlabs: !disabledMedia.elevenlabs }; setDisabledMedia(next); localStorage.setItem('disabledMedia', JSON.stringify(next)); }}
+                                                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors text-sm text-left"
+                                                            style={{ opacity: disabledMedia.elevenlabs ? 0.35 : 1 }}
+                                                        >
+                                                            <span className="text-base">🎵</span>
+                                                            <span className="text-[var(--text-primary)]">ElevenLabs</span>
+                                                        </button>
+                                                    )}
+                                                    {showVideoGen && (
+                                                        <button
+                                                            ref={videoGenBtnRef}
+                                                            onClick={() => { setMediaMenuOpen(false); setVideoGenOpen(true); }}
+                                                            onContextMenu={(e) => { e.preventDefault(); const next = { ...disabledMedia, video: !disabledMedia.video }; setDisabledMedia(next); localStorage.setItem('disabledMedia', JSON.stringify(next)); }}
+                                                            className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors text-sm text-left"
+                                                            style={{ opacity: disabledMedia.video ? 0.35 : 1 }}
+                                                        >
+                                                            <span className="text-base">🎬</span>
+                                                            <span className="text-[var(--text-primary)]">Video Generation</span>
+                                                        </button>
+                                                    )}
+                                                </div>
+                                            )}
+                                            <ImageGenSettings
+                                                isOpen={imageGenOpen}
+                                                onClose={() => setImageGenOpen(false)}
+                                                anchorRef={imageGenBtnRef}
+                                                settings={imageGenSettings}
+                                                onSettingsChange={setImageGenSettings}
+                                            />
+                                            <MusicGenSettings
+                                                isOpen={musicGenOpen}
+                                                onClose={() => setMusicGenOpen(false)}
+                                                anchorRef={musicGenBtnRef}
+                                            />
+                                            <ElevenLabsSettings
+                                                isOpen={elevenLabsOpen}
+                                                onClose={() => setElevenLabsOpen(false)}
+                                                anchorRef={elevenLabsBtnRef}
+                                            />
+                                            <VideoGenSettings
+                                                isOpen={videoGenOpen}
+                                                onClose={() => setVideoGenOpen(false)}
+                                                anchorRef={videoGenBtnRef}
+                                            />
                                         </div>
-                                    )}
-                                    <ImageGenSettings
-                                        isOpen={imageGenOpen}
-                                        onClose={() => setImageGenOpen(false)}
-                                        anchorRef={imageGenBtnRef}
-                                        settings={imageGenSettings}
-                                        onSettingsChange={setImageGenSettings}
-                                    />
-                                    <MusicGenSettings
-                                        isOpen={musicGenOpen}
-                                        onClose={() => setMusicGenOpen(false)}
-                                        anchorRef={musicGenBtnRef}
-                                    />
-                                    <ElevenLabsSettings
-                                        isOpen={elevenLabsOpen}
-                                        onClose={() => setElevenLabsOpen(false)}
-                                        anchorRef={elevenLabsBtnRef}
-                                    />
-                                    <VideoGenSettings
-                                        isOpen={videoGenOpen}
-                                        onClose={() => setVideoGenOpen(false)}
-                                        anchorRef={videoGenBtnRef}
-                                    />
-                                </div>
-                                {/* Web Search Toggle */}
+                                    );
+                                })()}
+                                {/* Web Search Toggle (gated by org settings for agent-search) */}
+                                {(!orgEnabledIntegrations || orgEnabledIntegrations.includes('agent-search')) && (
                                 <button
                                     onClick={() => {
                                         if (orgDisableSearchOnUpload && attachments.length > 0) return;
@@ -750,9 +789,13 @@ const InputArea = ({
                                     }}
                                     className={`p-2 rounded-lg transition-colors ${orgDisableSearchOnUpload && attachments.length > 0 ? 'text-orange-400/60 opacity-50 cursor-not-allowed bg-orange-500/5' : webSearchEnabled ? 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20' : 'text-[var(--text-tertiary)] opacity-40 hover:opacity-70 hover:bg-[var(--bg-tertiary)]'}`}
                                     title={orgDisableSearchOnUpload && attachments.length > 0 ? 'Web search disabled by organisation policy (files attached)' : webSearchEnabled ? 'Web search enabled (click to disable)' : 'Web search disabled (click to enable)'}
+                                    aria-label={webSearchEnabled ? 'Web search enabled' : 'Web search disabled'}
+                                    aria-pressed={webSearchEnabled}
+                                    data-testid="web-search-toggle"
                                 >
                                     <Globe className="w-5 h-5" />
                                 </button>
+                                )}
                                 {/* Apps Button — hidden if no apps available */}
                                 {(() => {
                                     const n8nAppDefs = n8nWorkflows.map(wf => ({
@@ -762,7 +805,16 @@ const InputArea = ({
                                         iconSvg: (s = 'w-5 h-5') => <img src="/n8n-color.png" alt="n8n" className={`${s} object-contain`} />,
                                         isN8n: true,
                                     }));
-                                    const allAppDefs = [...APP_DEFS, ...n8nAppDefs];
+                                    const mcpAppDefs = mcpServers.map(srv => ({
+                                        id: `mcp_${srv.id}`,
+                                        label: srv.name,
+                                        description: `${srv.toolCount} tools available${srv.allConfigured ? '' : ' — credentials needed'}`,
+                                        iconSvg: (s = 'w-5 h-5') => <span className={`${s} flex items-center justify-center text-base`}>{srv.icon || '🔌'}</span>,
+                                        isMcp: true,
+                                        mcpConfigured: srv.allConfigured,
+                                        requiresNone: false,
+                                    }));
+                                    const allAppDefs = [...APP_DEFS, ...n8nAppDefs, ...mcpAppDefs];
                                     const availableApps = allAppDefs.filter(app => {
                                         // Base availability checks
                                         if (app.requiresGoogle && !isGoogleUser) return false;
@@ -771,12 +823,22 @@ const InputArea = ({
                                         if (app.requiresYouTrack && !hasYouTrackConfig) return false;
                                         if (app.requiresGamma && !hasGammaKey) return false;
                                         if (app.requiresWhatsApp && !hasWhatsApp) return false;
-                                        // Org-level gating — only applies to third-party integrations (matches backend ORG_GATED_APPS)
-                                        const ORG_GATED_IDS = ['fireflies', 'youtrack', 'gamma', 'linkedin', 'github', 'whatsapp'];
-                                        if (orgEnabledIntegrations && !app.isN8n && ORG_GATED_IDS.includes(app.id) && !orgEnabledIntegrations.includes(app.id)) return false;
+                                        // Org-level gating — gate ALL apps (matching backend ORG_EXEMPT_APPS logic)
+                                        if (orgEnabledIntegrations) {
+                                            if (app.isMcp) {
+                                                // MCP servers use mcp:{serverId} format in enabledIntegrations
+                                                const mcpId = `mcp:${app.id.replace(/^mcp_/, '')}`;
+                                                if (!orgEnabledIntegrations.includes(mcpId)) return false;
+                                            } else if (app.isN8n) {
+                                                if (!orgEnabledIntegrations.includes('n8n')) return false;
+                                            } else if (!app.requiresNone) {
+                                                // All standard apps (Google, Microsoft, AI, third-party)
+                                                if (!orgEnabledIntegrations.includes(app.id)) return false;
+                                            }
+                                        }
                                         if (app.requiresNone) return false;
-                                        // Agent-level integration filtering
-                                        if (agentIntegrations) {
+                                        // Agent-level integration filtering (MCP apps bypass — they're globally available)
+                                        if (agentIntegrations && !app.isMcp) {
                                             if (app.isN8n) return agentIntegrations.includes('n8n');
                                             return agentIntegrations.includes(app.id);
                                         }
@@ -819,6 +881,8 @@ const InputArea = ({
                                                         default:
                                                             if (app.isN8n) {
                                                                 setInput(`Run the ${app.label} workflow `);
+                                                            } else if (app.isMcp) {
+                                                                setInput(`Use ${app.label} to `);
                                                             }
                                                             break;
 
@@ -902,6 +966,8 @@ const InputArea = ({
                                         onClick={onStopGenerating}
                                         className="p-2 bg-red-500 text-white rounded-full hover:bg-red-600 transition-colors shadow-sm active:scale-95 transform duration-100"
                                         title="Stop generating"
+                                        aria-label="Stop generating"
+                                        data-testid="stop-generating-button"
                                     >
                                         <StopCircle className="w-5 h-5" />
                                     </button>
@@ -911,6 +977,8 @@ const InputArea = ({
                                         disabled={!input.trim() && attachments.length === 0}
                                         className="p-2 bg-[var(--text-primary)] text-[var(--bg-primary)] rounded-full hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-sm active:scale-95 transform duration-100"
                                         title="Send message (Enter)"
+                                        aria-label="Send message"
+                                        data-testid="send-message-button"
                                     >
                                         <ArrowUp className="w-6 h-6" />
                                     </button>

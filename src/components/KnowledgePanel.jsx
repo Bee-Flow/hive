@@ -383,7 +383,7 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
     };
 
     return (
-        <div className="flex flex-col h-full space-y-4">
+        <div className="flex flex-col h-full space-y-4" data-testid="knowledge-panel">
             {/* Google Drive Picker Modal */}
             <GoogleDrivePicker
                 isOpen={drivePickerOpen}
@@ -452,7 +452,8 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
                             </h3>
                             <button onClick={() => setShowCreateKB(!showCreateKB)}
                                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white"
-                                style={{ background: 'var(--accent-primary)' }}>
+                                style={{ background: 'var(--accent-primary)' }}
+                                data-testid="kb-create-btn">
                                 + Create KB
                             </button>
                         </div>
@@ -497,7 +498,8 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
                                         <div key={kb.id}
                                             className={`p-3 rounded-lg border group cursor-pointer transition-all ${isSelected ? 'ring-2 ring-[var(--accent-primary)] border-transparent' : 'hover:border-[var(--border-hover)]'}`}
                                             style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)' }}
-                                            onClick={() => setSelectedKB(isSelected ? null : kb)}>
+                                            onClick={() => setSelectedKB(isSelected ? null : kb)}
+                                            data-testid={`kb-item-${kb.id}`}>
                                             <div className="flex items-center justify-between">
                                                 <div className="flex items-center gap-3">
                                                     <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm"
@@ -518,7 +520,8 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
                                                         {isLinked ? '✓ Linked' : '+ Link'}
                                                     </button>
                                                     <button onClick={() => deleteKB(kb.id)}
-                                                        className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/10" title="Delete KB">
+                                                        className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/10" title="Delete KB"
+                                                        data-testid={`kb-delete-${kb.id}`}>
                                                         <svg className="w-3.5 h-3.5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                                     </button>
                                                 </div>
@@ -658,7 +661,8 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
                                         <div className="space-y-1.5">
                                             {kbDocs.map(doc => (
                                                 <div key={doc.id} className="flex items-center justify-between p-2.5 rounded-lg group"
-                                                    style={{ background: 'var(--bg-tertiary)' }}>
+                                                    style={{ background: 'var(--bg-tertiary)' }}
+                                                    data-testid={`kb-doc-${doc.id}`}>
                                                     <div className="flex items-center gap-2 min-w-0">
                                                         <span className="text-sm flex-shrink-0">
                                                             {doc.source_type === 'web' ? '🌐' : doc.source_type === 'upload' ? '📄' : '📝'}
@@ -671,7 +675,8 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
                                                         </div>
                                                     </div>
                                                     <button onClick={() => deleteDoc(doc.id)}
-                                                        className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/10 flex-shrink-0">
+                                                        className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/10 flex-shrink-0"
+                                                        data-testid={`kb-doc-delete-${doc.id}`}>
                                                         <svg className="w-3.5 h-3.5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                                                         </svg>

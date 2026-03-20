@@ -35,19 +35,23 @@ const MicrosoftIcon = () => (
     </svg>
 );
 
-const PasswordInput = ({ value, onChange, inputClass, placeholder = "••••••••", label = "Password", labelClass, setupMode, minLength }) => {
+const PasswordInput = ({ value, onChange, inputClass, placeholder = "••••••••", label = "Password", labelClass, setupMode, minLength, id = "password" }) => {
     const [showPassword, setShowPassword] = useState(false);
     return (
         <div>
-            <label className={labelClass}>{label}</label>
+            <label htmlFor={id} className={labelClass}>{label}</label>
             <div className="relative">
                 <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-tertiary)]" />
                 <input
+                    id={id}
+                    name={id}
                     type={showPassword ? "text" : "password"}
                     value={value}
                     onChange={onChange}
                     className={inputClass}
                     placeholder={placeholder}
+                    aria-label={label}
+                    data-testid={id}
                     required
                     minLength={minLength}
                 />
@@ -55,6 +59,7 @@ const PasswordInput = ({ value, onChange, inputClass, placeholder = "•••�
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
                     className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+                    aria-label={showPassword ? 'Toggle password visibility' : 'Toggle password visibility'}
                     tabIndex={-1}
                 >
                     {showPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
@@ -128,16 +133,18 @@ const LoginForm = ({
         return (
             <div className="space-y-4 animate-[fadeIn_0.3s_ease-out]">
                 {preferredMethod === 'password' && (
-                    <form onSubmit={handlePasswordLogin} className="space-y-5">
+                    <form onSubmit={handlePasswordLogin} className="space-y-5" aria-label="Login form">
                         <div>
-                            <label className={labelClass}>Username</label>
+                            <label htmlFor="username" className={labelClass}>Username</label>
                             <div className="relative">
                                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-tertiary)]" />
-                                <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} placeholder="admin" required />
+                                <input id="username" name="username" type="text" value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} placeholder="Enter your username" aria-label="Username" data-testid="username" autoComplete="username" required />
                             </div>
                         </div>
-                        <PasswordInput value={password} onChange={(e) => setPassword(e.target.value)} inputClass={inputClass} labelClass={labelClass} />
+                        <PasswordInput id="password" value={password} onChange={(e) => setPassword(e.target.value)} inputClass={inputClass} labelClass={labelClass} />
                         <button type="submit" disabled={isLoading}
+                            aria-label="Sign in to your account"
+                            data-testid="login-submit-button"
                             className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-base shadow-lg shadow-amber-500/20 mt-2">
                             {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><LogIn className="w-5 h-5" /> Sign In</>}
                         </button>
@@ -186,28 +193,30 @@ const LoginForm = ({
     // ── Full login form (default or "show all methods") ──
     return (
         <div className={showAllMethods ? 'animate-[fadeIn_0.3s_ease-out]' : ''}>
-            <form onSubmit={handlePasswordLogin} className="space-y-5">
+            <form onSubmit={handlePasswordLogin} className="space-y-5" aria-label="Login form">
                 {!setupMode && (
                     <div>
-                        <label className={labelClass}>Username</label>
+                        <label htmlFor="username" className={labelClass}>Username</label>
                         <div className="relative">
                             <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-tertiary)]" />
-                            <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} placeholder="admin" required />
+                            <input id="username" name="username" type="text" value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} placeholder="Enter your username" aria-label="Username" data-testid="username" autoComplete="username" required />
                         </div>
                     </div>
                 )}
 
                 <PasswordInput
+                    id={setupMode ? 'root-password' : 'password'}
                     value={password} onChange={(e) => setPassword(e.target.value)}
                     inputClass={inputClass} labelClass={labelClass}
                     label={setupMode ? 'Create Root Password' : 'Password'}
-                    placeholder={setupMode ? "Enter a strong password" : "••••••••"}
+                    placeholder={setupMode ? "Enter a strong password" : "Enter your password"}
                     setupMode={setupMode}
                     minLength={setupMode ? 8 : 1}
                 />
 
                 {setupMode && (
                     <PasswordInput
+                        id="confirm-password"
                         value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
                         inputClass={inputClass} labelClass={labelClass}
                         label="Confirm Password"
@@ -217,6 +226,8 @@ const LoginForm = ({
                 )}
 
                 <button type="submit" disabled={isLoading}
+                    aria-label={setupMode ? 'Initialize system' : 'Sign in to your account'}
+                    data-testid="login-submit-button"
                     className={`w-full py-3 ${setupMode
                         ? 'bg-green-600 hover:bg-green-700'
                         : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-lg shadow-amber-500/20'
@@ -235,6 +246,7 @@ const LoginForm = ({
                     <div className="space-y-3">
                         {isDemoEnabled && (
                             <button onClick={handleDemoLogin} disabled={isLoading}
+                                data-testid="demo-login-button"
                                 className="w-full py-2.5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 hover:from-amber-500/20 hover:to-orange-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-xl font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-50">
                                 <Zap className="w-5 h-5" /> Demo Mode
                             </button>
@@ -242,6 +254,8 @@ const LoginForm = ({
 
                         {isOAuthConfigured && (
                             <button onClick={handleOAuthWithCookie} disabled={isLoading}
+                                data-testid="sso-nextcloud-button"
+                                aria-label="Continue with Nextcloud"
                                 className="w-full py-2.5 bg-[var(--bg-primary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)] border border-[var(--border-default)] rounded-xl font-medium transition-all flex items-center justify-center gap-2.5 disabled:opacity-50">
                                 <NextcloudIcon /> Sign in with Nextcloud
                             </button>
@@ -249,6 +263,8 @@ const LoginForm = ({
 
                         {isGoogleConfigured && (
                             <button onClick={handleGoogleWithCookie} disabled={isLoading}
+                                data-testid="sso-google-button"
+                                aria-label="Continue with Google"
                                 className="w-full py-2.5 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-xl font-medium transition-all flex items-center justify-center gap-2.5 disabled:opacity-50 shadow-sm">
                                 <GoogleIcon /> Sign in with Google
                             </button>
@@ -256,12 +272,15 @@ const LoginForm = ({
 
                         {isMicrosoftConfigured && (
                             <button onClick={handleMicrosoftWithCookie} disabled={isLoading}
+                                data-testid="sso-microsoft-button"
+                                aria-label="Continue with Microsoft"
                                 className="w-full py-2.5 bg-white hover:bg-gray-50 text-gray-700 border border-gray-200 rounded-xl font-medium transition-all flex items-center justify-center gap-2.5 disabled:opacity-50 shadow-sm">
                                 <MicrosoftIcon /> Sign in with Microsoft
                             </button>
                         )}
 
                         <button onClick={() => { setSignupMode(true); setError(''); }}
+                            data-testid="create-account-button"
                             className="w-full py-2.5 bg-[var(--bg-primary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-default)] rounded-xl font-medium transition-all flex items-center justify-center gap-2">
                             <UserPlus className="w-4.5 h-4.5" /> Create Account
                         </button>

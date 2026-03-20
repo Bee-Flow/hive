@@ -267,6 +267,7 @@ export default function ProjectModal({ project, onClose, onSaved, onDeleted, use
                 className="relative w-full max-w-2xl rounded-2xl border shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200"
                 style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)' }}
                 onClick={e => e.stopPropagation()}
+                data-testid="project-modal"
             >
                 {/* Header */}
                 <div className="flex items-center justify-between px-6 py-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
@@ -313,6 +314,7 @@ export default function ProjectModal({ project, onClose, onSaved, onDeleted, use
                                     placeholder="e.g. Marketing Campaign Q2"
                                     className="w-full px-3 py-2.5 rounded-xl text-sm border transition-colors outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/30"
                                     style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
+                                    data-testid="project-name-input"
                                 />
                             </div>
 
@@ -707,7 +709,7 @@ export default function ProjectModal({ project, onClose, onSaved, onDeleted, use
                     <div className="flex items-center justify-between px-6 py-4 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
                         <div>
                         {isEdit && (
-                            <button onClick={handleDelete} className="text-xs text-red-400 hover:text-red-600 transition-colors font-medium">
+                            <button onClick={handleDelete} className="text-xs text-red-400 hover:text-red-600 transition-colors font-medium" data-testid="project-delete-btn">
                                 Delete Project
                             </button>
                         )}
@@ -721,6 +723,7 @@ export default function ProjectModal({ project, onClose, onSaved, onDeleted, use
                             disabled={!name.trim() || saving}
                             className="px-5 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:brightness-110 disabled:opacity-50"
                             style={{ background: color }}
+                            data-testid="project-save-btn"
                         >
                             {saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Project'}
                         </button>

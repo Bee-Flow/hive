@@ -237,12 +237,18 @@ const AgentDesignerPanel = ({
         if (!confirm('Delete this agent?')) return;
 
         try {
-            await authFetch(`${API_BASE}/agents/${agent.id}`, {
+            const res = await authFetch(`${API_BASE}/agents/${agent.id}`, {
                 method: 'DELETE',
             });
-            if (onDelete) onDelete();
+            if (res.ok) {
+                if (onDelete) onDelete();
+            } else {
+                const data = await res.json().catch(() => ({}));
+                alert(data.error || 'Failed to delete agent');
+            }
         } catch (err) {
             console.error('Failed to delete agent:', err);
+            alert('Failed to delete agent. Please try again.');
         }
     };
 
@@ -251,7 +257,7 @@ const AgentDesignerPanel = ({
     };
 
     return (
-        <div className="flex flex-col h-full" style={{ background: 'var(--bg-primary)' }}>
+        <div className="flex flex-col h-full" style={{ background: 'var(--bg-primary)' }} data-testid="agent-designer-panel">
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)' }}>
                 <div className="flex items-center gap-3">
@@ -305,6 +311,7 @@ const AgentDesignerPanel = ({
                                 onClick={handleDelete}
                                 className="px-4 py-2 rounded-xl text-sm font-medium transition-all hover:bg-red-500/20"
                                 style={{ color: 'var(--error)' }}
+                                data-testid="agent-delete-btn"
                             >
                                 Delete
                             </button>
@@ -344,6 +351,7 @@ const AgentDesignerPanel = ({
                         className="px-6 py-2 rounded-xl text-sm font-medium text-white transition-all hover:scale-[1.02]"
                         style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)' }}
                         disabled={saving || !formData.name.trim()}
+                        data-testid="agent-save-btn"
                     >
                         {saving ? 'Saving...' : agent ? 'Save Changes' : 'Create Agent'}
                     </button>
