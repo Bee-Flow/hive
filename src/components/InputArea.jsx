@@ -625,38 +625,58 @@ const InputArea = ({
 
                     {/* Attachment Preview */}
                     {attachments.length > 0 && (
-                        <div className={`flex flex-wrap gap-2 bg-[var(--bg-secondary)] px-3 py-2 border-x border-t border-[var(--border-subtle)] ${activeThreadParent ? '' : 'rounded-t-lg'}`}>
-                            {attachments.map((att, idx) => (
-                                <div
-                                    key={idx}
-                                    className="flex items-center gap-2 bg-[var(--bg-tertiary)] px-2 py-1.5 rounded-lg text-xs text-[var(--text-secondary)]"
-                                >
-                                    {att.type.startsWith('image/') ? (
+                        <div className={`flex flex-wrap gap-2 bg-[var(--bg-secondary)] px-3 py-2.5 border-x border-t border-[var(--border-subtle)] ${activeThreadParent ? '' : 'rounded-t-xl'}`}>
+                            {attachments.map((att, idx) =>
+                                att.type.startsWith('image/') ? (
+                                    // Image attachment — card with thumbnail + overlaid remove button
+                                    <div
+                                        key={idx}
+                                        className="relative group flex-shrink-0"
+                                    >
                                         <img
                                             src={att.content}
                                             alt={att.name}
-                                            className="w-8 h-8 object-cover rounded"
+                                            className="w-16 h-16 object-cover rounded-xl border border-[var(--border-subtle)] shadow-sm"
                                         />
-                                    ) : (
-                                        getFileIcon(att.type)
-                                    )}
-                                    <div className="flex flex-col min-w-0">
-                                        <span className="truncate max-w-[120px] font-medium">{att.name}</span>
-                                        <span className="text-[10px] text-[var(--text-tertiary)]">{formatFileSize(att.size)}</span>
+                                        {/* Filename overlay at bottom */}
+                                        <div className="absolute bottom-0 left-0 right-0 bg-black/50 rounded-b-xl px-1 py-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <span className="text-white text-[9px] truncate block">{att.name}</span>
+                                        </div>
+                                        {/* Remove button — top-right corner */}
+                                        <button
+                                            onClick={() => removeAttachment(idx)}
+                                            className="absolute -top-1.5 -right-1.5 bg-[var(--bg-primary)] border border-[var(--border-subtle)] rounded-full p-0.5 shadow-md opacity-0 group-hover:opacity-100 transition-all hover:bg-red-50 hover:border-red-300 hover:text-red-500 text-[var(--text-tertiary)]"
+                                            aria-label="Remove attachment"
+                                        >
+                                            <X className="w-3 h-3" />
+                                        </button>
                                     </div>
-                                    <button
-                                        onClick={() => removeAttachment(idx)}
-                                        className="p-0.5 hover:bg-[var(--bg-secondary)] rounded text-[var(--text-tertiary)] hover:text-red-500 transition-colors"
+                                ) : (
+                                    // Non-image attachment — refined pill
+                                    <div
+                                        key={idx}
+                                        className="flex items-center gap-2 bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] hover:border-[var(--border-primary)] px-2.5 py-2 rounded-xl text-xs text-[var(--text-secondary)] transition-colors group"
                                     >
-                                        <X className="w-3 h-3" />
-                                    </button>
-                                </div>
-                            ))}
+                                        <div className="text-[var(--text-tertiary)]">{getFileIcon(att.type)}</div>
+                                        <div className="flex flex-col min-w-0">
+                                            <span className="truncate max-w-[120px] font-medium text-[var(--text-primary)]">{att.name}</span>
+                                            <span className="text-[10px] text-[var(--text-tertiary)]">{formatFileSize(att.size)}</span>
+                                        </div>
+                                        <button
+                                            onClick={() => removeAttachment(idx)}
+                                            className="p-0.5 ml-0.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] hover:text-red-500 transition-colors"
+                                            aria-label="Remove attachment"
+                                        >
+                                            <X className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                )
+                            )}
                         </div>
                     )}
 
 
-                    <div role="form" aria-label="Chat message input" data-testid="chat-input-form" className={`relative flex flex-col bg-[var(--bg-secondary)] rounded-2xl border border-[var(--border-subtle)] shadow-sm transition-all focus-within:border-[var(--accent-primary)] focus-within:shadow-md ${(activeThreadParent || attachments.length > 0) ? 'rounded-t-none border-t-0' : ''} ${isDragOver ? 'border-[var(--accent-primary)]' : ''}`}>
+                    <div role="form" aria-label="Chat message input" data-testid="chat-input-form" className={`relative flex flex-col bg-[var(--bg-secondary)] rounded-2xl border border-[var(--border-subtle)] shadow-md transition-all focus-within:border-[var(--accent-primary)] focus-within:shadow-lg focus-within:shadow-[var(--accent-primary)]/10 ${(activeThreadParent || attachments.length > 0) ? 'rounded-t-none border-t-0' : ''} ${isDragOver ? 'border-[var(--accent-primary)] shadow-lg' : ''}`}>
 
                         {/* Hidden file input */}
                         <input
