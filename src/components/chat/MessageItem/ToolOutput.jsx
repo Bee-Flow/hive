@@ -98,23 +98,51 @@ export default function ToolOutput({ msg }) {
             const icon = getToolIcon(msg.toolCall.name);
             const label = getToolLabel(msg.toolCall.name);
 
+            // Completed tools from history (excluding sequentialthinking and the currently running one)
+            const completedTools = (msg.toolHistory || []).filter(
+                t => t.status === 'done' && t.name !== 'sequentialthinking'
+            );
+
             return (
-                <div className="mt-2 flex items-center gap-1.5">
-                    <div
-                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-300 animate-fade-in"
-                        style={{
-                            background: 'var(--bg-tertiary)',
-                            color: 'var(--text-secondary)',
-                            border: '1px solid var(--border-subtle)',
-                        }}
-                    >
-                        <span className="text-xs">{icon}</span>
-                        <span>{label}</span>
-                        <span className="flex items-center gap-0.5 ml-0.5">
-                            <span className="w-1 h-1 rounded-full animate-pulse" style={{ background: 'var(--accent-primary)' }}></span>
-                            <span className="w-1 h-1 rounded-full animate-pulse" style={{ background: 'var(--accent-primary)', animationDelay: '150ms' }}></span>
-                            <span className="w-1 h-1 rounded-full animate-pulse" style={{ background: 'var(--accent-primary)', animationDelay: '300ms' }}></span>
-                        </span>
+                <div className="mt-2 flex flex-col gap-1 animate-fade-in">
+                    {/* Completed steps mini-timeline */}
+                    {completedTools.length > 0 && (
+                        <div className="flex flex-col gap-0.5 mb-0.5">
+                            {completedTools.map((t, i) => {
+                                const dur = t.endTime && t.startTime ? (t.endTime - t.startTime) / 1000 : null;
+                                return (
+                                    <div key={i} className="flex items-center gap-1.5 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                                        <span className="flex-shrink-0" style={{ color: 'var(--accent-primary)', opacity: 0.7 }}>✓</span>
+                                        <span className="text-xs">{getToolIcon(t.name)}</span>
+                                        <span className="font-medium" style={{ color: 'var(--text-secondary)' }}>{getToolLabel(t.name)}</span>
+                                        {dur !== null && (
+                                            <span className="tabular-nums opacity-60">
+                                                {dur < 1 ? `${Math.round(dur * 1000)}ms` : `${dur.toFixed(1)}s`}
+                                            </span>
+                                        )}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                    {/* Currently running chip */}
+                    <div className="flex items-center gap-1.5">
+                        <div
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-300"
+                            style={{
+                                background: 'var(--bg-tertiary)',
+                                color: 'var(--text-secondary)',
+                                border: '1px solid var(--border-subtle)',
+                            }}
+                        >
+                            <span className="text-xs">{icon}</span>
+                            <span>{label}</span>
+                            <span className="flex items-center gap-0.5 ml-0.5">
+                                <span className="w-1 h-1 rounded-full animate-pulse" style={{ background: 'var(--accent-primary)' }}></span>
+                                <span className="w-1 h-1 rounded-full animate-pulse" style={{ background: 'var(--accent-primary)', animationDelay: '150ms' }}></span>
+                                <span className="w-1 h-1 rounded-full animate-pulse" style={{ background: 'var(--accent-primary)', animationDelay: '300ms' }}></span>
+                            </span>
+                        </div>
                     </div>
                 </div>
             );

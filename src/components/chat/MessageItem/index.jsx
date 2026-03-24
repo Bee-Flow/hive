@@ -562,144 +562,199 @@ const MessageItem = ({
 
                 {/* How I got this answer — comprehensive collapsed section */}
                 {!isUser && !isTool && !msg.isStreaming && msg.content && (
-                    (msg.thinking || msg.orchestratorThinking || msg.toolHistory?.length > 0 || msg.autoSelectedTier) && (
-                    <div className="mt-3 pt-3 p-3 rounded-lg" style={{ backgroundColor: 'rgba(0,0,0,0.015)', border: '1px solid rgba(0,0,0,0.03)' }}>
-                        <details className="group/reasoning">
-                            <summary className="flex items-center gap-2 cursor-pointer text-xs transition-colors select-none list-none [&::-webkit-details-marker]:hidden" style={{ color: 'var(--text-primary, #000)' }}>
-                                <span className="text-sm opacity-70">🧠</span>
-                                <span className="font-medium">How I got this answer</span>
-                                {msg.toolHistory?.filter(t => t.name !== 'sequentialthinking').length > 0 && (
-                                    <span className="opacity-50 text-[10px]">· {msg.toolHistory.filter(t => t.name !== 'sequentialthinking').length} tool{msg.toolHistory.filter(t => t.name !== 'sequentialthinking').length !== 1 ? 's' : ''} used</span>
-                                )}
-                                <svg className="w-3 h-3 transition-transform group-open/reasoning:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                            </summary>
-                            <div className="mt-2 space-y-2">
+                    (msg.thinking || msg.orchestratorThinking || msg.toolHistory?.length > 0 || msg.autoSelectedTier) && (() => {
+                        const visibleTools = msg.toolHistory?.filter(t => t.name !== 'sequentialthinking') || [];
+                        const totalMs = visibleTools.reduce((acc, t) => acc + (t.endTime && t.startTime ? t.endTime - t.startTime : 0), 0);
+                        const totalSec = totalMs > 0 ? (totalMs / 1000).toFixed(1) : null;
+                        return (
+                        <div className="mt-3 pt-3 p-3 rounded-lg" style={{ backgroundColor: 'rgba(0,0,0,0.018)', border: '1px solid rgba(0,0,0,0.05)' }}>
+                            <details className="group/reasoning">
+                                <summary className="flex items-center gap-2 cursor-pointer text-xs transition-colors select-none list-none [&::-webkit-details-marker]:hidden" style={{ color: 'var(--text-primary, #000)' }}>
+                                    <span className="text-sm opacity-70">🧠</span>
+                                    <span className="font-medium">How I got this answer</span>
+                                    {/* Aggregate stats bar */}
+                                    <span className="flex items-center gap-1.5 ml-1 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                                        {visibleTools.length > 0 && (
+                                            <span className="px-1.5 py-0.5 rounded-full font-medium" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                                                {visibleTools.length} tool{visibleTools.length !== 1 ? 's' : ''}{totalSec ? ` · ${totalSec}s` : ''}
+                                            </span>
+                                        )}
+                                        {msg.autoSelectedTier && (
+                                            <span className="px-1.5 py-0.5 rounded-full" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                                                Auto → {msg.autoSelectedTier.charAt(0).toUpperCase() + msg.autoSelectedTier.slice(1)}
+                                            </span>
+                                        )}
+                                    </span>
+                                    <svg className="w-3 h-3 transition-transform group-open/reasoning:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                </summary>
+                                <div className="mt-3 space-y-2">
 
-                                {/* Auto-selected model tier */}
-                                {msg.autoSelectedTier && (
-                                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px]" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
-                                        <span>📊</span>
-                                        <span>Model: <strong style={{ color: 'var(--text-primary)' }}>Auto → {msg.autoSelectedTier.charAt(0).toUpperCase() + msg.autoSelectedTier.slice(1)}</strong></span>
-                                    </div>
-                                )}
+                                    {/* Model Reasoning / Thinking */}
+                                    {msg.thinking && (
+                                        <details className="group/think">
+                                            <summary className="flex items-center gap-2 cursor-pointer text-[11px] px-2 py-1.5 rounded-lg select-none list-none [&::-webkit-details-marker]:hidden transition-colors hover:bg-[var(--bg-tertiary)]" style={{ color: 'var(--text-secondary)' }}>
+                                                <span className="text-xs">💭</span>
+                                                <span className="font-medium">Reasoning</span>
+                                                <svg className="w-2.5 h-2.5 transition-transform group-open/think:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                            </summary>
+                                            <div className="mt-1 px-3 py-2 rounded-lg text-xs whitespace-pre-wrap leading-relaxed max-h-[300px] overflow-y-auto custom-scrollbar" style={{ fontStyle: 'italic', opacity: 0.8, color: 'var(--text-secondary)', background: 'var(--bg-tertiary)' }}>
+                                                {msg.thinking}
+                                            </div>
+                                        </details>
+                                    )}
 
-                                {/* Model Reasoning / Thinking */}
-                                {msg.thinking && (
-                                    <details className="group/think">
-                                        <summary className="flex items-center gap-2 cursor-pointer text-[11px] px-2 py-1.5 rounded-lg select-none list-none [&::-webkit-details-marker]:hidden transition-colors" style={{ color: 'var(--text-secondary)' }}>
-                                            <span className="text-xs">💭</span>
-                                            <span className="font-medium">Reasoning</span>
-                                            <svg className="w-2.5 h-2.5 transition-transform group-open/think:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                                        </summary>
-                                        <div className="mt-1 px-3 py-2 rounded-lg text-xs whitespace-pre-wrap leading-relaxed max-h-[300px] overflow-y-auto custom-scrollbar" style={{ fontStyle: 'italic', opacity: 0.8, color: 'var(--text-secondary)', background: 'var(--bg-tertiary)' }}>
-                                            {msg.thinking}
+                                    {/* Orchestrator Thinking */}
+                                    {msg.orchestratorThinking && (
+                                        <details className="group/orch">
+                                            <summary className="flex items-center gap-2 cursor-pointer text-[11px] px-2 py-1.5 rounded-lg select-none list-none [&::-webkit-details-marker]:hidden transition-colors hover:bg-[var(--bg-tertiary)]" style={{ color: 'var(--text-secondary)' }}>
+                                                <span className="text-xs">🎯</span>
+                                                <span className="font-medium">Orchestrator Thinking</span>
+                                                <svg className="w-2.5 h-2.5 transition-transform group-open/orch:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                            </summary>
+                                            <div className="mt-1 px-3 py-2 rounded-lg text-xs whitespace-pre-wrap leading-relaxed max-h-[300px] overflow-y-auto custom-scrollbar" style={{ fontStyle: 'italic', opacity: 0.8, color: 'var(--text-secondary)', background: 'var(--bg-tertiary)' }}>
+                                                {msg.orchestratorThinking}
+                                            </div>
+                                        </details>
+                                    )}
+
+                                    {/* Sequential Thinking reference */}
+                                    {msg.thinkingSteps?.length > 0 && (
+                                        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px]" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                                            <span>🔄</span>
+                                            <span>Sequential Thinking: <strong style={{ color: 'var(--text-primary)' }}>{msg.thinkingSteps.length} step{msg.thinkingSteps.length !== 1 ? 's' : ''}</strong></span>
+                                            <span className="opacity-40 text-[10px]">↑ shown above</span>
                                         </div>
-                                    </details>
-                                )}
+                                    )}
 
-                                {/* Tools Used */}
-                                {msg.toolHistory?.filter(t => t.name !== 'sequentialthinking').length > 0 && (
-                                    <details className="group/tools">
-                                        <summary className="flex items-center gap-2 cursor-pointer text-[11px] px-2 py-1.5 rounded-lg select-none list-none [&::-webkit-details-marker]:hidden transition-colors" style={{ color: 'var(--text-secondary)' }}>
-                                            <span className="text-xs">🔧</span>
-                                            <span className="font-medium">Tools Used ({msg.toolHistory.filter(t => t.name !== 'sequentialthinking').length})</span>
-                                            <svg className="w-2.5 h-2.5 transition-transform group-open/tools:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                                        </summary>
-                                        <div className="mt-1 space-y-1">
-                                            {msg.toolHistory.filter(t => t.name !== 'sequentialthinking').map((tool, i) => {
-                                                const duration = tool.endTime && tool.startTime ? Math.round((tool.endTime - tool.startTime) / 1000) : null;
-                                                const argsSummary = tool.args ? Object.entries(tool.args).filter(([k]) => !k.startsWith('_')).slice(0, 2).map(([k, v]) => {
-                                                    const val = typeof v === 'string' ? (v.length > 40 ? v.slice(0, 40) + '…' : v) : JSON.stringify(v).slice(0, 30);
-                                                    return `${k}: ${val}`;
-                                                }).join(', ') : '';
-                                                return (
-                                                    <div key={i} className="flex items-start gap-2 px-3 py-1.5 rounded-lg text-[11px]" style={{ background: 'var(--bg-tertiary)' }}>
-                                                        <span className="text-xs flex-shrink-0 mt-0.5">{getToolIcon(tool.name)}</span>
-                                                        <div className="min-w-0 flex-1">
-                                                            <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{getToolLabel(tool.name)}</span>
-                                                            {argsSummary && (
-                                                                <span className="ml-1.5 opacity-60" style={{ color: 'var(--text-tertiary)' }}>— {argsSummary}</span>
-                                                            )}
-                                                        </div>
-                                                        {duration !== null && (
-                                                            <span className="text-[10px] flex-shrink-0 opacity-50" style={{ color: 'var(--text-tertiary)' }}>{duration}s</span>
-                                                        )}
-                                                    </div>
-                                                );
-                                            })}
+                                    {/* Tools Used — vertical timeline */}
+                                    {visibleTools.length > 0 && (
+                                        <div>
+                                            <div className="text-[10px] font-semibold uppercase tracking-wider mb-2 px-1" style={{ color: 'var(--text-tertiary)' }}>Tools Used</div>
+                                            <div className="relative">
+                                                {/* Connector line */}
+                                                {visibleTools.length > 1 && (
+                                                    <div className="absolute left-[11px] top-4 bottom-4 w-px" style={{ background: 'var(--border-subtle)' }} />
+                                                )}
+                                                <div className="space-y-2">
+                                                {visibleTools.map((tool, i) => {
+                                                    const duration = tool.endTime && tool.startTime ? (tool.endTime - tool.startTime) / 1000 : null;
+                                                    const argEntries = tool.args ? Object.entries(tool.args).filter(([k]) => !k.startsWith('_')) : [];
+                                                    const preview = tool.resultPreview ? tool.resultPreview.slice(0, 150) : null;
+                                                    return (
+                                                        <details key={i} className="group/tool-step relative flex gap-2.5">
+                                                            {/* Step badge */}
+                                                            <div className="flex-shrink-0 w-5.5 h-5.5 mt-0.5 z-10 relative">
+                                                                <div className="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold" style={{ background: 'var(--bg-secondary)', border: '1.5px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>
+                                                                    {i + 1}
+                                                                </div>
+                                                            </div>
+                                                            {/* Card */}
+                                                            <div className="flex-1 min-w-0">
+                                                                <summary className="flex items-center gap-2 cursor-pointer rounded-lg px-2.5 py-2 select-none list-none [&::-webkit-details-marker]:hidden transition-colors hover:bg-[var(--bg-tertiary)]" style={{ background: 'var(--bg-tertiary)', border: '1px solid transparent' }}>
+                                                                    <span className="text-sm flex-shrink-0">{getToolIcon(tool.name)}</span>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                                            <span className="text-[11px] font-semibold" style={{ color: 'var(--text-primary)' }}>{getToolLabel(tool.name)}</span>
+                                                                            {/* Arg chips */}
+                                                                            {argEntries.slice(0, 3).map(([k, v]) => {
+                                                                                const val = typeof v === 'string' ? (v.length > 35 ? v.slice(0, 35) + '…' : v) : JSON.stringify(v).slice(0, 25);
+                                                                                return (
+                                                                                    <span key={k} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] max-w-[160px] overflow-hidden" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}>
+                                                                                        <span className="font-medium opacity-50 flex-shrink-0" style={{ color: 'var(--text-secondary)' }}>{k}</span>
+                                                                                        <span className="truncate" style={{ color: 'var(--text-primary)' }}>{val}</span>
+                                                                                    </span>
+                                                                                );
+                                                                            })}
+                                                                        </div>
+                                                                    </div>
+                                                                    <div className="flex items-center gap-1.5 flex-shrink-0">
+                                                                        {duration !== null && (
+                                                                            <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-secondary)', color: 'var(--text-tertiary)' }}>
+                                                                                {duration < 1 ? `${Math.round(duration * 1000)}ms` : `${duration.toFixed(1)}s`}
+                                                                            </span>
+                                                                        )}
+                                                                        {preview && (
+                                                                            <svg className="w-2.5 h-2.5 transition-transform group-open/tool-step:rotate-90 opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                                                        )}
+                                                                    </div>
+                                                                </summary>
+                                                                {/* Result preview */}
+                                                                {preview && (
+                                                                    <div className="mt-1 mx-0.5 px-3 py-2 rounded-b-lg text-[10px] leading-relaxed" style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)', borderTop: '1px solid var(--border-subtle)', fontFamily: 'monospace', opacity: 0.85 }}>
+                                                                        <div className="line-clamp-3">{preview}{tool.resultPreview?.length > 150 ? ' …' : ''}</div>
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        </details>
+                                                    );
+                                                })}
+                                                </div>
+                                            </div>
                                         </div>
-                                    </details>
-                                )}
+                                    )}
 
-                                {/* Orchestrator Thinking */}
-                                {msg.orchestratorThinking && (
-                                    <details className="group/orch">
-                                        <summary className="flex items-center gap-2 cursor-pointer text-[11px] px-2 py-1.5 rounded-lg select-none list-none [&::-webkit-details-marker]:hidden transition-colors" style={{ color: 'var(--text-secondary)' }}>
-                                            <span className="text-xs">🎯</span>
-                                            <span className="font-medium">Orchestrator Thinking</span>
-                                            <svg className="w-2.5 h-2.5 transition-transform group-open/orch:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                                        </summary>
-                                        <div className="mt-1 px-3 py-2 rounded-lg text-xs whitespace-pre-wrap leading-relaxed max-h-[300px] overflow-y-auto custom-scrollbar" style={{ fontStyle: 'italic', opacity: 0.8, color: 'var(--text-secondary)', background: 'var(--bg-tertiary)' }}>
-                                            {msg.orchestratorThinking}
-                                        </div>
-                                    </details>
-                                )}
-
-                                {/* Sequential Thinking reference */}
-                                {msg.thinkingSteps?.length > 0 && (
-                                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px]" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
-                                        <span>🔄</span>
-                                        <span>Sequential Thinking: <strong style={{ color: 'var(--text-primary)' }}>{msg.thinkingSteps.length} step{msg.thinkingSteps.length !== 1 ? 's' : ''}</strong></span>
-                                        <span className="opacity-40 text-[10px]">↑ shown above</span>
-                                    </div>
-                                )}
-
-                            </div>
-                        </details>
-                    </div>
-                    )
+                                </div>
+                            </details>
+                        </div>
+                        );
+                    })()
                 )}
 
                 {/* KB Source References */}
-                {!isUser && !isTool && msg.kbSources && msg.kbSources.length > 0 && !msg.isStreaming && (
+                {!isUser && !isTool && msg.kbSources && msg.kbSources.length > 0 && !msg.isStreaming && (() => {
+                    const seen = new Map();
+                    msg.kbSources.forEach(s => {
+                        if (!seen.has(s.title) || (s.score || 0) > (seen.get(s.title).score || 0)) seen.set(s.title, s);
+                    });
+                    const sources = [...seen.values()];
+                    return (
                     <div className="mt-3 pt-2">
                         <details className="group/sources">
                             <summary className="flex items-center gap-2 cursor-pointer text-xs transition-colors select-none list-none [&::-webkit-details-marker]:hidden px-1 py-1 rounded-lg hover:bg-[var(--bg-tertiary)]/50" style={{ color: 'var(--text-secondary)' }}>
                                 <span className="text-sm opacity-70">📚</span>
-                                <span className="font-medium">{(() => {
-                                    const unique = [...new Set(msg.kbSources.map(s => s.title))];
-                                    return `${unique.length} Source${unique.length !== 1 ? 's' : ''}`;
-                                })()}</span>
+                                <span className="font-medium">{sources.length} Source{sources.length !== 1 ? 's' : ''}</span>
                                 <svg className="w-3 h-3 transition-transform group-open/sources:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                             </summary>
                             <div className="mt-2 space-y-1.5">
-                                {(() => {
-                                    const seen = new Map();
-                                    msg.kbSources.forEach(s => {
-                                        if (!seen.has(s.title) || (s.score || 0) > (seen.get(s.title).score || 0)) {
-                                            seen.set(s.title, s);
-                                        }
-                                    });
-                                    return [...seen.values()].map((source, i) => (
+                                {sources.map((source, i) => {
+                                    const typeLabel = source.type === 'url_import' ? '🌐 URL' : source.type === 'file_upload' ? '📄 File' : source.type === 'kb_chunk' ? '📦 KB' : '📝';
+                                    const scorePercent = source.score != null ? Math.round(source.score * 100) : null;
+                                    const excerpt = source.content ? source.content.slice(0, 200) : null;
+                                    return (
                                         <details key={i} className="group/src rounded-lg border transition-colors" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
-                                            <summary className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden text-xs" style={{ color: 'var(--text-primary)' }}>
-                                                <svg className="w-3.5 h-3.5 flex-shrink-0 opacity-50" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
-                                                <span className="font-medium truncate flex-1">{source.title}</span>
-                                                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium opacity-60" style={{ background: 'var(--bg-tertiary)' }}>
-                                                    {source.type === 'url_import' ? '🌐 URL' : source.type === 'file_upload' ? '📄 File' : source.type === 'kb_chunk' ? '📦 KB' : '📝'}
-                                                </span>
-                                                <svg className="w-3 h-3 transition-transform group-open/src:rotate-90 opacity-40 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                            <summary className="flex items-start gap-2 px-3 py-2.5 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden text-xs" style={{ color: 'var(--text-primary)' }}>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                        <span className="font-medium truncate max-w-[200px]">{source.title}</span>
+                                                        <span className="px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>{typeLabel}</span>
+                                                    </div>
+                                                    {/* Relevance score bar */}
+                                                    {scorePercent != null && (
+                                                        <div className="flex items-center gap-1.5 mt-1.5">
+                                                            <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: 'var(--border-subtle)' }}>
+                                                                <div className="h-full rounded-full transition-all" style={{ width: `${scorePercent}%`, background: scorePercent >= 80 ? 'var(--accent-primary)' : scorePercent >= 60 ? '#f59e0b' : '#9ca3af' }} />
+                                                            </div>
+                                                            <span className="text-[9px] flex-shrink-0 tabular-nums" style={{ color: 'var(--text-tertiary)' }}>{scorePercent}%</span>
+                                                        </div>
+                                                    )}
+                                                    {/* Excerpt preview */}
+                                                    {excerpt && (
+                                                        <div className="mt-1 text-[10px] line-clamp-2 leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>{excerpt}{source.content?.length > 200 ? '…' : ''}</div>
+                                                    )}
+                                                </div>
+                                                <svg className="w-3 h-3 transition-transform group-open/src:rotate-90 opacity-40 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                                             </summary>
-                                            <div className="px-3 pb-3 pt-1 text-xs leading-relaxed whitespace-pre-wrap max-h-[300px] overflow-y-auto custom-scrollbar" style={{ color: 'var(--text-secondary)', borderTop: '1px solid var(--border-subtle)' }}>
+                                            <div className="px-3 pb-3 pt-2 text-xs leading-relaxed whitespace-pre-wrap max-h-[300px] overflow-y-auto custom-scrollbar" style={{ color: 'var(--text-secondary)', borderTop: '1px solid var(--border-subtle)' }}>
                                                 {source.content}
                                             </div>
                                         </details>
-                                    ));
-                                })()}
+                                    );
+                                })}
                             </div>
                         </details>
                     </div>
-                )}
+                    );
+                })()}
 
                 {/* Forms */}
                 {msg.form && (
