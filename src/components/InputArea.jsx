@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Paperclip, X, StopCircle, MessageCircle, FileText, Image, File, FileSpreadsheet, ArrowUp, Sparkles, LayoutGrid, Globe } from 'lucide-react';
+import { Send, Paperclip, X, StopCircle, MessageCircle, FileText, Image, File as FileIcon, FileSpreadsheet, ArrowUp, Sparkles, LayoutGrid, Globe } from 'lucide-react';
 import ModelTierSelector from './ModelTierSelector';
 import GoogleDrivePicker from './chat/GoogleDrivePicker';
 import GmailPicker from './chat/GmailPicker';
@@ -558,7 +558,7 @@ const InputArea = ({
         if (type.startsWith('image/')) return <Image className="w-4 h-4" />;
         if (type.includes('pdf') || type.includes('word') || type.includes('.document')) return <FileText className="w-4 h-4" />;
         if (type.includes('spreadsheet') || type.includes('excel') || type.includes('csv')) return <FileSpreadsheet className="w-4 h-4" />;
-        return <File className="w-4 h-4" />;
+        return <FileIcon className="w-4 h-4" />;
     };
 
     const formatFileSize = (bytes) => {
