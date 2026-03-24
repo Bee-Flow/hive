@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import AgentEditorUI from './admin/AgentEditorUI';
 import { filterVisibleModels } from '../utils/modelMeta.js';
 import { API_BASE, authFetch } from '../utils/helpers';
+import { useTranslation } from '../hooks/useTranslation';
 
 /**
  * AgentDesignerPanel - Editing panel for agents within Agent Hub
@@ -14,6 +15,7 @@ const AgentDesignerPanel = ({
     onDelete
 }) => {
     const [saving, setSaving] = useState(false);
+    const { t } = useTranslation();
     const [availableModels, setAvailableModels] = useState([]);
     const [organizations, setOrganizations] = useState([]);
     const [groups, setGroups] = useState([]);
@@ -234,7 +236,7 @@ const AgentDesignerPanel = ({
 
     const handleDelete = async () => {
         if (!agent) return;
-        if (!confirm('Delete this agent?')) return;
+        if (!confirm(t('agent.delete_confirm'))) return;
 
         try {
             const res = await authFetch(`${API_BASE}/agents/${agent.id}`, {
@@ -268,17 +270,17 @@ const AgentDesignerPanel = ({
                     </div>
                     <div>
                         <h2 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
-                            {agent ? 'Edit Agent' : 'Create Agent'}
+                            {agent ? t('agent.edit_agent') : t('agent.create_agent')}
                         </h2>
                         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                            {formData.name || 'New Agent'}
+                            {formData.name || t('agent.new_agent')}
                         </p>
                     </div>
                 </div>
                 <button
                     onClick={onClose}
                     className="p-2 rounded-lg hover:bg-white/10 transition-all"
-                    title="Back to chat"
+                    title={t('agent.back_to_chat')}
                 >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--text-muted)' }}>
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -313,7 +315,7 @@ const AgentDesignerPanel = ({
                                 style={{ color: 'var(--error)' }}
                                 data-testid="agent-delete-btn"
                             >
-                                Delete
+                                {t('common.delete')}
                             </button>
                             <button
                                 onClick={togglePublish}
@@ -333,7 +335,7 @@ const AgentDesignerPanel = ({
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                                     )}
                                 </svg>
-                                {formData.isPublished ? 'Published' : 'Publish'}
+                                {formData.isPublished ? t('agent.published') : t('agent.publish')}
                             </button>
                         </>
                     )}
@@ -344,7 +346,7 @@ const AgentDesignerPanel = ({
                         className="px-4 py-2 rounded-xl text-sm font-medium transition-all hover:bg-white/5"
                         style={{ color: 'var(--text-muted)' }}
                     >
-                        Cancel
+                        {t('common.cancel')}
                     </button>
                     <button
                         onClick={saveAgent}
@@ -353,7 +355,7 @@ const AgentDesignerPanel = ({
                         disabled={saving || !formData.name.trim()}
                         data-testid="agent-save-btn"
                     >
-                        {saving ? 'Saving...' : agent ? 'Save Changes' : 'Create Agent'}
+                        {saving ? t('agent.saving') : agent ? t('agent.save_changes') : t('agent.create_agent')}
                     </button>
                 </div>
             </div>

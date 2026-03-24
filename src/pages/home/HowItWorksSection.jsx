@@ -3,27 +3,27 @@ import React from 'react';
 const STEPS = [
   {
     num: '1',
-    icon: '💬',
-    title: 'Describe in plain language',
-    desc: 'Type what you need — in any language. Bee Flow classifies your request, selects the right AI model tier, and determines which tools and agents are needed.',
-    ex: '"Summarise all emails from last week about the budget, create a to-do list, and schedule a follow-up meeting with finance."',
-    tech: 'Prompt classifier · Two-layer scoring · Auto model tier selection',
+    icon: '🤖',
+    title: 'Build your own AI expert — no code needed',
+    desc: 'Create custom AI assistants tailored to your organisation with a visual no-code designer. Choose from 7+ AI providers including local models, attach knowledge bases, and configure the assistant for your exact use case.',
+    ex: '"Create an HR assistant that answers questions about our employment contracts, vacation policies, and onboarding procedures — based on our own documents."',
+    tech: 'No-code agent designer · 7+ AI providers (incl. local) · Knowledge base linking · No programming required',
   },
   {
     num: '2',
-    icon: '⚙️',
-    title: 'Agents work for you',
-    desc: 'One or more AI agents execute your request — calling integrations, searching your knowledge base, browsing the web, running code, or conferring with each other in a multi-agent swarm.',
-    ex: 'Simultaneously reads Gmail, queries your knowledge base, and checks your Google Calendar — then drafts a reply and creates a YouTrack task.',
-    tech: 'Swarm orchestrator · Tool dispatcher · Browser/terminal agents',
+    icon: '🧠',
+    title: 'Connect your knowledge & tools',
+    desc: 'Upload documents, connect Google Workspace, Microsoft 365, WhatsApp, GitHub and more. BeeFlow builds a searchable AI memory from all your existing knowledge — with source references on every answer.',
+    ex: 'BeeFlow ingests your PDFs, crawls your website, and indexes your Drive — then answers questions with exact document and section citations.',
+    tech: 'Hybrid vector + full-text search · OCR for scanned docs · 40+ integrations · Website crawler',
   },
   {
     num: '3',
-    icon: '✅',
-    title: 'Review and act',
-    desc: 'Results stream back in real-time. Review drafts, approve actions, download files, or ask follow-up questions. Everything is encrypted end-to-end and never stored in plaintext.',
-    ex: 'AI generates the email draft and calendar invite — you approve with one click. The conversation key is derived fresh each session.',
-    tech: 'SSE streaming · Zero-knowledge encryption · Abort/retry/edit',
+    icon: '🔒',
+    title: 'Stay in control — private, secure, compliant',
+    desc: 'Everything runs on your own server. Zero-knowledge encryption means even your admins can\'t read your data. Full RBAC, audit trails, content moderation, and PII detection — AVG/GDPR compliant out of the box.',
+    ex: '"Our legal team needed full data sovereignty. BeeFlow runs on our own infrastructure — we own every byte."',
+    tech: 'AES-256-GCM · Argon2id · Llama Guard · RBAC · OPAQUE auth · Self-hosted',
   },
 ];
 
@@ -33,9 +33,9 @@ export default function HowItWorksSection() {
       <div className="hp-container">
         <div className="hp-section-hdr hp-reveal">
           <span className="hp-label">How It Works</span>
-          <h2 className="hp-h2">From intent to outcome in seconds</h2>
+          <h2 className="hp-h2">Your AI workplace, set up in minutes</h2>
           <p className="hp-body--sm">
-            No workflow diagrams to draw, no code to write. Just describe what you want and Bee Flow handles the rest.
+            No technical knowledge required. Build your own AI assistants, connect your knowledge, and keep full control of your data — all from one platform that runs on your own servers.
           </p>
         </div>
         <div className="hp-steps">
@@ -50,14 +50,16 @@ export default function HowItWorksSection() {
           ))}
         </div>
 
-        {/* Extended capability callouts */}
+        {/* Platform highlights */}
         <div className="hp-reveal" style={{ marginTop: 64 }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16 }}>
             {[
-              { icon: '🧠', title: 'Memory across sessions', desc: 'Bee Flow extracts and stores structured memories — people, preferences, projects — and retrieves them automatically.' },
-              { icon: '🔄', title: 'Round-table debates', desc: 'Multiple specialised agents discuss, debate, and reach consensus on complex research or strategy questions.' },
-              { icon: '📅', title: 'Scheduled automation', desc: 'Set workflows to run on a schedule — daily reports, weekly summaries, automated follow-ups — without manual triggers.' },
-              { icon: '🔌', title: 'Bring your own tools', desc: 'Connect any tool via MCP protocol or n8n webhooks. If it has an API, Bee Flow can call it.' },
+              { icon: '🎙️', title: 'Meeting Notes', desc: 'Upload a recording or send a bot to your Google Meet. BeeFlow transcribes, identifies speakers, and extracts structured action items — in 14+ languages.' },
+              { icon: '📚', title: 'AI Knowledge Bases', desc: 'Build searchable knowledge bases from PDFs, Word, Excel, URLs and sitemaps. Every answer comes with exact source and section references.' },
+              { icon: '📓', title: 'AI Notebooks', desc: 'A research workspace where you add sources and generate summaries, FAQ, flashcards, quizzes, and audio podcasts — automatically.' },
+              { icon: '📄', title: 'Document Templates', desc: 'Upload a Word template — BeeFlow auto-detects fill-in fields and completes the entire document in one click based on your data.' },
+              { icon: '📂', title: 'Projects & Sharing', desc: 'Group conversations, knowledge bases, and AI instructions into projects. Share with your team with view/edit permissions and per-project AI memories.' },
+              { icon: '📊', title: 'Monitoring Dashboards', desc: 'Build visual dashboards over your apps with a no-code query builder. Import from Gmail, Calendar, Sheets, YouTrack and more.' },
             ].map(c => (
               <div key={c.title} style={{ background: '#fff', border: '1px solid rgba(0,0,0,.07)', borderRadius: 12, padding: '20px 18px' }}>
                 <div style={{ fontSize: '1.4rem', marginBottom: 8 }}>{c.icon}</div>

@@ -42,7 +42,7 @@ export default function HomeLayout({ children, onNavigate, onLoginClick }) {
     );
     document.querySelectorAll('.hp-reveal:not([data-revealed])').forEach(el => observer.observe(el));
     return () => observer.disconnect();
-  });
+  }, []);
 
   return (
     <div className="hp-page">

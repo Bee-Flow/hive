@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from '../hooks/useTranslation';
 import { ArrowLeft } from 'lucide-react';
 import NavLink from '../components/NavLink';
 import AgentConfigHub from '../components/admin/AgentConfigHub';
@@ -7,9 +8,12 @@ import SecurityHub from '../components/admin/SecurityHub';
 import IntegrationsAdminPanel from '../components/admin/IntegrationsAdminPanel';
 import MonitoringPanel from '../components/admin/MonitoringPanel';
 import SubscriptionsPanel from '../components/admin/SubscriptionsPanel';
+import LanguagesPanel from '../components/admin/LanguagesPanel';
+import AppearanceAdminPanel from '../components/admin/AppearanceAdminPanel';
 
 
 const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
+    const { t } = useTranslation();
     // Permission helper - checks if user has a specific permission
     const hasPermission = (perm) => {
         const perms = user?.permissions || [];
@@ -21,12 +25,14 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
     // Tab definitions — each tab requires its page-level permission
     // 'agents' tab accepts admin_agents (catch-all) OR any granular admin_agents_* permission
     const tabs = [
-        { id: 'agents', label: 'Agents', perm: ['admin_agents', 'admin_agents_chat', 'admin_agents_swarm', 'admin_agents_browser', 'admin_agents_terminal', 'admin_agents_group', 'admin_agents_system', 'admin_agents_pipeline'], superAdminOnly: false },
-        { id: 'ai-config', label: 'AI Config', perm: ['admin_ai_config'], superAdminOnly: true },
-        { id: 'security', label: 'Security', perm: ['admin_security'], superAdminOnly: false },
-        { id: 'integrations', label: 'Integrations', perm: ['admin_security'], superAdminOnly: true },
-        { id: 'monitoring', label: 'Monitoring', perm: ['admin_monitoring'], superAdminOnly: false },
-        { id: 'subscriptions', label: 'Subscriptions', perm: ['admin_subscriptions'], superAdminOnly: true },
+        { id: 'agents', label: t('admin.tab_agents'), perm: ['admin_agents', 'admin_agents_chat', 'admin_agents_swarm', 'admin_agents_browser', 'admin_agents_terminal', 'admin_agents_group', 'admin_agents_system', 'admin_agents_pipeline'], superAdminOnly: false },
+        { id: 'ai-config', label: t('admin.tab_ai_config'), perm: ['admin_ai_config'], superAdminOnly: true },
+        { id: 'security', label: t('admin.tab_security'), perm: ['admin_security'], superAdminOnly: false },
+        { id: 'integrations', label: t('admin.tab_integrations'), perm: ['admin_security'], superAdminOnly: true },
+        { id: 'monitoring', label: t('admin.tab_monitoring'), perm: ['admin_monitoring'], superAdminOnly: false },
+        { id: 'subscriptions', label: t('admin.tab_subscriptions'), perm: ['admin_subscriptions'], superAdminOnly: true },
+        { id: 'appearance', label: t('admin.tab_appearance'), perm: ['admin_ai_config'], superAdminOnly: true },
+        { id: 'languages', label: t('admin.tab_languages'), perm: ['admin_ai_config'], superAdminOnly: true },
     ];
 
     // If current tab isn't allowed, fall back to the first tab the user has access to
@@ -68,9 +74,9 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                     <div className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ background: 'rgba(239, 68, 68, 0.1)' }}>
                         <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="rgb(239, 68, 68)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10" /><line x1="4.93" y1="4.93" x2="19.07" y2="19.07" /></svg>
                     </div>
-                    <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Access Denied</h2>
-                    <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>You don't have permission to access the Admin Dashboard.</p>
-                    {onBack && <button onClick={onBack} className="px-4 py-2 rounded-lg font-medium text-white" style={{ background: 'var(--accent-primary)' }}>Go Back</button>}
+                    <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>{t('admin.access_denied_title')}</h2>
+                    <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>{t('admin.access_denied_desc')}</p>
+                    {onBack && <button onClick={onBack} className="px-4 py-2 rounded-lg font-medium text-white" style={{ background: 'var(--accent-primary)' }}>{t('admin.go_back')}</button>}
                 </div>
             </div>
         );
@@ -87,8 +93,8 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                 <div className="w-14 h-14 mx-auto mb-3 rounded-full flex items-center justify-center" style={{ background: 'rgba(239, 68, 68, 0.1)' }}>
                     <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgb(239, 68, 68)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" /></svg>
                 </div>
-                <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Forbidden</h3>
-                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>You don't have permission to access this section.</p>
+                <h3 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{t('admin.forbidden_title')}</h3>
+                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{t('admin.forbidden_desc')}</p>
             </div>
         </div>
     );
@@ -102,13 +108,13 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                         <button
                             onClick={onBack}
                             className="p-1.5 rounded-lg transition-colors hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                            title="Back to chat"
+                            title={t('admin.back_to_chat')}
                         >
                             <ArrowLeft className="w-5 h-5" />
                         </button>
                     )}
                     <h2 className="text-lg font-semibold text-primary">
-                        Admin Dashboard
+                        {t('admin.dashboard_title')}
                     </h2>
                 </div>
 
@@ -164,6 +170,14 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                     ) : activeTab === 'subscriptions' ? (
                         <div className="absolute inset-0 overflow-hidden">
                             <SubscriptionsPanel />
+                        </div>
+                    ) : activeTab === 'appearance' ? (
+                        <div className="absolute inset-0">
+                            <AppearanceAdminPanel />
+                        </div>
+                    ) : activeTab === 'languages' ? (
+                        <div className="absolute inset-0 overflow-hidden">
+                            <LanguagesPanel />
                         </div>
                     ) : null}
             </div>

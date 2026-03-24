@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useTranslation } from '../../../hooks/useTranslation';
 import {
     Activity, Cpu, Zap, Clock, Wrench, BarChart3, RefreshCw,
     TrendingUp, Users, DollarSign, ChevronRight, Globe, Bot,
@@ -20,10 +21,10 @@ const AI_API = (import.meta.env.VITE_API_URL || '') + '/ai';
 const FEEDBACK_API = (import.meta.env.VITE_API_URL || '') + '/api/feedback';
 
 const RANGES = [
-    { id: 'today', label: 'Today', icon: '☀️' },
-    { id: '7d', label: '7 Days', icon: '📅' },
-    { id: '30d', label: '30 Days', icon: '📆' },
-    { id: 'all', label: 'All Time', icon: '♾️' },
+    { id: 'today', labelKey: 'admin.mon_today', icon: '☀️' },
+    { id: '7d', labelKey: 'admin.mon_7d', icon: '📅' },
+    { id: '30d', labelKey: 'admin.mon_30d', icon: '📆' },
+    { id: 'all', labelKey: 'admin.mon_all_time', icon: '♾️' },
 ];
 
 function rangeToFilter(rangeId) {
@@ -41,17 +42,18 @@ function rangeToFilter(rangeId) {
 }
 
 const PAGES = [
-    { id: 'overview', label: 'Overview', icon: BarChart3, description: 'Dashboard summary' },
-    { id: 'models', label: 'Models', icon: Cpu, description: 'Token usage per model' },
-    { id: 'agents', label: 'Agents', icon: Bot, description: 'Agent performance' },
-    { id: 'users', label: 'Users', icon: Users, description: 'Per-user breakdown' },
-    { id: 'conversations', label: 'Conversations', icon: MessageSquare, description: 'Per-conversation costs' },
-    { id: 'costs', label: 'Costs', icon: DollarSign, description: 'Cost estimation' },
-    { id: 'feedback', label: 'Feedback', icon: ThumbsUp, description: 'User feedback on AI responses' },
-    { id: 'activity', label: 'Activity Log', icon: Clock, description: 'Recent calls' },
+    { id: 'overview', labelKey: 'admin.mon_overview', icon: BarChart3, description: 'Dashboard summary' },
+    { id: 'models', labelKey: 'admin.mon_models', icon: Cpu, description: 'Token usage per model' },
+    { id: 'agents', labelKey: 'admin.mon_agents', icon: Bot, description: 'Agent performance' },
+    { id: 'users', labelKey: 'admin.mon_users', icon: Users, description: 'Per-user breakdown' },
+    { id: 'conversations', labelKey: 'admin.mon_conversations', icon: MessageSquare, description: 'Per-conversation costs' },
+    { id: 'costs', labelKey: 'admin.mon_costs', icon: DollarSign, description: 'Cost estimation' },
+    { id: 'feedback', labelKey: 'admin.mon_feedback', icon: ThumbsUp, description: 'User feedback on AI responses' },
+    { id: 'activity', labelKey: 'admin.mon_activity', icon: Clock, description: 'Recent calls' },
 ];
 
 export default function MonitoringPanel({ activeSection = '', onNavigate }) {
+    const { t } = useTranslation();
 
     const VALID_IDS = PAGES.map(p => p.id);
     const page = VALID_IDS.includes(activeSection) ? activeSection : 'overview';
@@ -187,7 +189,7 @@ export default function MonitoringPanel({ activeSection = '', onNavigate }) {
                                 <div style={{
                                     fontSize: '13px', fontWeight: page === p.id ? 600 : 500,
                                     color: page === p.id ? 'var(--text-primary, #fff)' : 'var(--text-secondary, #aaa)',
-                                }}>{p.label}</div>
+                                }}>{t(p.labelKey)}</div>
                             </div>
                             {page === p.id && <ChevronRight style={{ width: 14, height: 14, color: COLORS.primary, flexShrink: 0 }} />}
                         </button>
@@ -217,7 +219,7 @@ export default function MonitoringPanel({ activeSection = '', onNavigate }) {
                 <div style={styles.topBar}>
                     <div>
                         <h2 style={styles.pageTitle}>
-                            {PAGES.find(p => p.id === page)?.label}
+                            {t(PAGES.find(p => p.id === page)?.labelKey)}
                         </h2>
                         <p style={styles.pageDesc}>
                             {PAGES.find(p => p.id === page)?.description}
@@ -253,7 +255,7 @@ export default function MonitoringPanel({ activeSection = '', onNavigate }) {
                                         ...(range === r.id ? styles.rangeBtnActive : {}),
                                     }}
                                 >
-                                    {r.label}
+                                    {t(r.labelKey)}
                                 </button>
                             ))}
                         </div>

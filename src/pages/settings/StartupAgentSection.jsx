@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from '../../hooks/useTranslation';
 
 const RadioOption = ({ value, currentValue, onChange, label, description }) => {
     const isSelected = currentValue === value;
@@ -31,10 +32,11 @@ const RadioOption = ({ value, currentValue, onChange, label, description }) => {
 };
 
 const StartupAgentSection = ({ defaultAgentMode, setDefaultAgentMode, defaultAgentId, setDefaultAgentId, agents }) => {
+    const { t } = useTranslation();
     return (
         <section>
             <h2 className="text-[11px] font-semibold uppercase tracking-wider mb-4" style={{ color: 'var(--text-muted)' }}>
-                Preferences
+                {t('settings.preferences')}
             </h2>
 
             <div className="flex items-center gap-2.5 mb-3">
@@ -44,8 +46,8 @@ const StartupAgentSection = ({ defaultAgentMode, setDefaultAgentMode, defaultAge
                     </svg>
                 </div>
                 <div>
-                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Startup Agent</p>
-                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Choose which agent opens when you visit Agent Hub</p>
+                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{t('settings.startup_agent')}</p>
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{t('settings.startup_agent_desc')}</p>
                 </div>
             </div>
 
@@ -54,22 +56,22 @@ const StartupAgentSection = ({ defaultAgentMode, setDefaultAgentMode, defaultAge
                     value="last-used"
                     currentValue={defaultAgentMode}
                     onChange={e => setDefaultAgentMode(e.target.value)}
-                    label="Continue where you left off"
-                    description="Restores your last agent or Direct Chat session"
+                    label={t('settings.continue_where_left')}
+                    description={t('settings.continue_where_left_desc')}
                 />
                 <RadioOption
                     value="specific"
                     currentValue={defaultAgentMode}
                     onChange={e => setDefaultAgentMode(e.target.value)}
-                    label="Always open a specific agent"
-                    description="Jump straight into your preferred agent"
+                    label={t('settings.always_open_specific')}
+                    description={t('settings.always_open_specific_desc')}
                 />
                 <RadioOption
                     value="direct-chat"
                     currentValue={defaultAgentMode}
                     onChange={e => setDefaultAgentMode(e.target.value)}
-                    label="Start with Direct Chat"
-                    description="Open Direct Chat mode on startup"
+                    label={t('settings.start_direct_chat')}
+                    description={t('settings.start_direct_chat_desc')}
                 />
 
                 {defaultAgentMode === 'specific' && (
@@ -80,7 +82,7 @@ const StartupAgentSection = ({ defaultAgentMode, setDefaultAgentMode, defaultAge
                             className="w-full px-3 py-2 rounded-lg border bg-transparent outline-none focus:border-[var(--accent-primary)] transition-colors text-sm"
                             style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)', background: 'var(--bg-secondary)' }}
                         >
-                            <option value="">Select an agent...</option>
+                            <option value="">{t('settings.select_agent')}</option>
                             {agents.map(agent => (
                                 <option key={agent.id} value={agent.id}>{agent.name}</option>
                             ))}

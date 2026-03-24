@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from '../hooks/useTranslation';
 import { AlertCircle } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { opaqueLogin } from '../lib/opaque';
@@ -11,6 +12,7 @@ import SignupStepPrivacy from './login/SignupStepPrivacy';
 import SignupStepAccount from './login/SignupStepAccount';
 
 const LoginPage = ({ onLogin, onDemoLogin }) => {
+    const { t } = useTranslation();
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -132,7 +134,7 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
         try {
             if (setupMode) {
                 if (password !== confirmPassword) {
-                    setError('Passwords do not match');
+                    setError(t('login.passwords_no_match'));
                     setIsLoading(false);
                     return;
                 }
@@ -155,7 +157,7 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                     setError('');
                 } else {
                     const data = await res.json();
-                    setError(data.error || 'Setup failed');
+                    setError(data.error || t('login.setup_failed'));
                 }
             } else {
                 const res = await authFetch(`${API_BASE}/auth/admin-login`, {
@@ -170,23 +172,23 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                     try {
                         const result = await opaqueLogin(username, password);
                         if (result.useLegacy) {
-                            setError('Authentication error — please contact admin');
+                            setError(t('login.auth_error_contact_admin'));
                         } else if (result.success) {
                             onLogin(result.user);
                         } else {
-                            setError('Login failed');
+                            setError(t('login.login_failed'));
                         }
                     } catch (opaqueErr) {
-                        setError(opaqueErr.message || 'Login failed');
+                        setError(opaqueErr.message || t('login.login_failed'));
                     }
                 } else if (res.ok && data.success) {
                     onLogin(data.user, data.recoveryKey);
                 } else {
-                    setError(data.error || 'Login failed');
+                    setError(data.error || t('login.login_failed'));
                 }
             }
         } catch (err) {
-            setError('Connection error. Please try again.');
+            setError(t('login.connection_error'));
         } finally {
             setIsLoading(false);
         }
@@ -224,7 +226,7 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
         setError('');
 
         if (signupData.password !== signupData.confirmPassword) {
-            setError('Passwords do not match');
+            setError(t('login.passwords_no_match'));
             return;
         }
         if (signupData.password.length < 4) {
@@ -281,7 +283,7 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
             if (res.ok && data.success) {
                 onLogin(data.user, data.recoveryKey);
             } else {
-                setError(data.error || 'Signup failed');
+                setError(data.error || t('login.signup_failed'));
             }
         } catch (err) {
             setError('Connection error. Please try again.');
@@ -342,25 +344,16 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
 
     // Determine step subtitle
     const getSubtitle = () => {
-        if (setupMode) return 'Create your admin password to get started';
-        if (!signupMode) return 'Sign in to continue';
-        if (signupStep === 1) return 'Set up your organization';
-        if (signupStep === 2) return 'How will your team sign in?';
-        if (signupStep === 3) return 'Protect your organisation';
-        return 'Complete your account';
+        if (setupMode) return t('login.create_admin_password');
+        if (!signupMode) return t('login.sign_in_continue');
+        if (signupStep === 1) return t('login.setup_org');
+        if (signupStep === 2) return t('login.how_team_signin');
+        if (signupStep === 3) return t('login.protect_org');
+        return t('login.complete_account');
     };
 
-    // Show the full setup wizard when setup is not complete
-    if (!isSetupComplete && setupMode) {
-        return (
-            <InitSetupWizard
-                onComplete={() => {
-                    setSetupMode(false);
-                    setIsSetupComplete(true);
-                }}
-            />
-        );
-    }
+    // Setup mode now only shows password creation (LoginForm handles this).
+    // All AI/service configuration is handled by the Docker install wizard.
 
     return (
         <div className="min-h-screen flex items-center justify-center p-4 relative"
@@ -372,8 +365,8 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                     <div className="w-full max-w-md p-6 rounded-2xl shadow-2xl space-y-5" style={{ background: 'var(--bg-secondary)' }}>
                         <div className="text-center">
                             <div className="text-3xl mb-2">🔐</div>
-                            <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Save Your Recovery Key</h3>
-                            <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>This is the only way to recover encrypted data if you lose your password. Store it securely.</p>
+                            <h3 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>{t('login.save_recovery_key')}</h3>
+                            <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>{t('login.recovery_key_desc')}</p>
                         </div>
                         <div className="p-4 rounded-xl font-mono text-sm text-center break-all select-all cursor-text" style={{ background: 'var(--bg-primary)', border: '2px dashed var(--border-default)', color: 'var(--text-primary)' }}>
                             {adminRecoveryKey}
@@ -383,12 +376,12 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                                 onClick={() => { navigator.clipboard.writeText(adminRecoveryKey); }}
                                 className="flex-1 py-2.5 rounded-xl font-medium text-sm border transition-colors"
                                 style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
-                            >📋 Copy</button>
+                            >📋 {t('common.copy')}</button>
                             <button
                                 onClick={() => { setAdminRecoveryKey(null); setSetupMode(false); setIsSetupComplete(true); }}
                                 className="flex-1 py-2.5 rounded-xl font-semibold text-sm text-white"
                                 style={{ background: 'var(--accent-primary)' }}
-                            >I've Saved It</button>
+                            >{t('login.ive_saved_it')}</button>
                         </div>
                     </div>
                 </div>
@@ -418,7 +411,7 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                         </div>
                         {signupMode && (
                             <h1 className="text-2xl font-bold text-[var(--text-primary)]">
-                                {inviteInfo ? 'Accept Invitation' : 'Create Account'}
+                                {inviteInfo ? t('login.accept_invitation') : t('login.create_account')}
                             </h1>
                         )}
                         <p className="text-sm text-[var(--text-secondary)] mt-1">
@@ -495,7 +488,7 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                 </div>
 
                 <p className="text-center text-xs text-[var(--text-tertiary)] mt-6">
-                    Bee Flow AI Agent Platform
+                    {t('login.platform_name')}
                 </p>
             </div>
         </div>

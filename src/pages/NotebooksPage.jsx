@@ -1,0 +1,1003 @@
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
+import {
+    ArrowLeft, Plus, FileText, Trash2,
+    BookOpen, Loader2, AlertCircle, CheckCircle2, Search,
+    X, ChevronRight, Pencil, Download, HelpCircle,
+    ClipboardList, ListChecks, PanelLeft
+} from 'lucide-react';
+import html2pdf from 'html2pdf.js';
+import { API_BASE, authFetch } from '../utils/helpers';
+import useChatEngine from '../hooks/useChatEngine';
+import NotebookEditor from './notebooks/NotebookEditor';
+import NotebookChat from './notebooks/NotebookChat';
+import NotebookStudio from './notebooks/NotebookStudio';
+import NotebookSources from './notebooks/NotebookSources';
+import CitationOverlay from './notebooks/CitationOverlay';
+import GenerationOverlay from './notebooks/GenerationOverlay';
+import { preprocessMermaidContent } from './notebooks/MermaidExtension';
+import { renderMermaidToSVG, svgToPngDataUrl } from './notebooks/MermaidBlock';
+
+/* ── Time helper ──────────────────────────────────────────────── */
+function timeAgo(dateStr) {
+    const d = new Date(dateStr);
+    const now = new Date();
+    const diff = (now - d) / 1000;
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+    return d.toLocaleDateString();
+}
+
+/* ── Source type metadata ─────────────────────────────────────── */
+const SOURCE_META = {
+    pdf:      { icon: '📄', color: '#ef4444', label: 'PDF' },
+    docx:     { icon: '📝', color: '#3b82f6', label: 'Word' },
+    xlsx:     { icon: '📊', color: '#22c55e', label: 'Excel' },
+    csv:      { icon: '📊', color: '#22c55e', label: 'CSV' },
+    text:     { icon: '📋', color: '#8b5cf6', label: 'Text' },
+    url:      { icon: '🌐', color: '#f59e0b', label: 'URL' },
+    gdrive:   { icon: '🔵', color: '#4285f4', label: 'Drive' },
+    onedrive: { icon: '☁️', color: '#0078d4', label: 'OneDrive' },
+    file:     { icon: '📁', color: '#6b7280', label: 'File' },
+};
+
+const STATUS_CONFIG = {
+    processing: { bg: 'linear-gradient(135deg, #fef3c7, #fde68a)', text: '#92400e', icon: Loader2, anim: 'animate-spin', label: 'Processing' },
+    ready:      { bg: 'linear-gradient(135deg, #d1fae5, #a7f3d0)', text: '#065f46', icon: CheckCircle2, anim: '', label: 'Ready' },
+    error:      { bg: 'linear-gradient(135deg, #fecaca, #fca5a5)', text: '#991b1b', icon: AlertCircle, anim: '', label: 'Error' },
+};
+
+/* ── API helpers ──────────────────────────────────────────────── */
+async function api(path, opts = {}) {
+    const url = `${API_BASE}/api/notebooks${path === '/' ? '' : path}`;
+    const res = await authFetch(url, {
+        headers: { 'Content-Type': 'application/json', ...opts.headers },
+        ...opts,
+    });
+    if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        console.error('[Notebooks] API error:', res.status, data);
+        throw new Error(data.error || `API ${res.status}`);
+    }
+    return res.json();
+}
+
+async function uploadSourceFile(notebookId, file) {
+    const form = new FormData();
+    form.append('file', file);
+    const res = await authFetch(`${API_BASE}/api/notebooks/${notebookId}/sources/file`, {
+        method: 'POST',
+        body: form,
+    });
+    if (!res.ok) throw new Error('Upload failed');
+    return res.json();
+}
+
+
+
+/* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+
+export default function NotebooksPage({ user, onBack }) {
+    const [notebooks, setNotebooks] = useState([]);
+    const [selected, setSelected] = useState(null);
+    const [sources, setSources] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [creating, setCreating] = useState(false);
+    const [newName, setNewName] = useState('');
+    const [search, setSearch] = useState('');
+    const [error, setError] = useState(null);
+    const [renamingId, setRenamingId] = useState(null);
+    const [renameValue, setRenameValue] = useState('');
+    const [dragOver, setDragOver] = useState(false);
+
+    // Layout states
+    const [leftPanelOpen, setLeftPanelOpen] = useState(true);
+    const [rightPanelWidth, setRightPanelWidth] = useState(320);
+    const rightPanelDragRef = useRef(false);
+
+    useEffect(() => {
+        const handleMouseMove = (e) => {
+            if (!rightPanelDragRef.current) return;
+            // The right panel is bounded by the right edge of the screen
+            const newWidth = document.body.clientWidth - e.clientX;
+            setRightPanelWidth(Math.max(250, Math.min(newWidth, 800)));
+        };
+        const handleMouseUp = () => {
+            if (rightPanelDragRef.current) {
+                rightPanelDragRef.current = false;
+                document.body.style.cursor = 'default';
+                document.body.style.userSelect = 'auto';
+            }
+        };
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        return () => {
+            document.removeEventListener('mousemove', handleMouseMove);
+            document.removeEventListener('mouseup', handleMouseUp);
+        };
+    }, []);
+
+
+    // Chat + model tier state (matches direct chat pattern)
+    const [selectedTier, setSelectedTier] = useState('auto');
+    const [modelTiers, setModelTiers] = useState({});
+    const [chatInput, setChatInput] = useState('');
+    const chatEndRef = useRef(null);
+    const chatContainerRef = useRef(null);
+
+    // Document editor state
+    const [documentContent, setDocumentContent] = useState('');
+    const [docSaving, setDocSaving] = useState(false);
+    const editorRef = useRef(null);
+
+    // Citation overlay
+    const [citationSource, setCitationSource] = useState(null);
+
+    // Studio generation state
+    const [generating, setGenerating] = useState(null);
+    const [aiFilling, setAiFilling] = useState(false);
+
+    // Last generated content for export
+    const [lastGeneratedContent, setLastGeneratedContent] = useState('');
+
+    // Generation overlay & history
+    const [generationHistory, setGenerationHistory] = useState([]);
+    const [activeGeneration, setActiveGeneration] = useState(null);
+
+    /* ── useChatEngine — reuses direct chat pattern ──────────── */
+    const { messages: chatMessages, setMessages: setChatMessages, isLoading: chatLoading,
+        sendMessage: sendChatMessage, stopGenerating: stopChatGenerating,
+        retryMessage: retryChatMessage, editAndRegenerate: editAndRegenerateChat,
+        submittedFormIds, setSubmittedFormIds
+    } = useChatEngine({
+        selectedAgent: null,
+        currentConversation: null,
+        onConversationCreated: useCallback(() => {}, []),
+        getWorkspacePayload: useCallback(() => ({}), []),
+        onWorkspaceUpdate: useCallback(() => {}, []),
+        directMode: useMemo(() => ({
+            enabled: true,
+            modelTier: selectedTier,
+            customEndpoint: selected ? '/ai/chat/notebook/stream' : undefined,
+            getExtraPayload: () => selected ? { notebookId: selected.id, documentContent } : {},
+        }), [selectedTier, selected?.id, documentContent]),
+        onDirectConversationCreated: useCallback(() => {}, []),
+        // Notebook-specific callbacks
+        onNotebookDocUpdate: useCallback((content, title) => {
+            setDocumentContent(content);
+            editorRef.current?.setContent?.(content);
+        }, []),
+        onNotebookSourceAdded: useCallback((source) => {
+            // Add the new source to the sources list
+            setSources(prev => [...prev, source]);
+        }, []),
+    });
+
+    // Auto-scroll chat
+    const fileInputRef = useRef(null);
+
+    // Import Document to Editor
+    const handleImportFile = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file || !selected) return;
+        try {
+            const formData = new FormData();
+            formData.append('file', file);
+            
+            const res = await authFetch(`${API_BASE}/api/notebooks/${selected.id}/import-file`, {
+                method: 'POST',
+                body: formData
+            });
+            if (!res.ok) throw new Error('Failed to parse file for import');
+            
+            const data = await res.json();
+            if (data.text && editorRef.current) {
+                // TipTap natively parses both HTML and plain-text (with newlines) correctly.
+                // We no longer escape HTML tags manually so DOCX formatting is preserved.
+                const contentToInsert = data.text;
+                editorRef.current.insertContent(contentToInsert);
+            }
+        } catch (err) {
+            setError('Import error: ' + err.message);
+        } finally {
+            e.target.value = ''; // Reset input
+        }
+    };
+
+    useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, [chatMessages]);
+
+    /* ── Load model tiers ────────────────────────────────────── */
+    useEffect(() => {
+        authFetch(`${API_BASE}/ai/config/chat-models`)
+            .then(r => r.ok ? r.json() : {})
+            .then(data => setModelTiers(data))
+            .catch(() => {});
+    }, []);
+
+    /* ── Fetch notebooks ─────────────────────────────────────── */
+    const fetchNotebooks = useCallback(async () => {
+        try {
+            setLoading(true);
+            const data = await api('/');
+            setNotebooks(data.notebooks || []);
+        } catch (e) { setError(e.message); }
+        finally { setLoading(false); }
+    }, []);
+
+    useEffect(() => { fetchNotebooks(); }, [fetchNotebooks]);
+
+    /* ── Select notebook ─────────────────────────────────────── */
+    const selectNotebook = useCallback(async (nb) => {
+        try {
+            const data = await api(`/${nb.id}`);
+            setSelected(data.notebook);
+            setSources(data.sources || []);
+            setDocumentContent(data.notebook?.documentContent || '');
+            setChatMessages([]);
+            setLastGeneratedContent('');
+        } catch (e) { setError(e.message); }
+    }, [setChatMessages]);
+
+    /* ── Poll processing sources ─────────────────────────────── */
+    useEffect(() => {
+        if (!selected) return;
+        const hasProcessing = sources.some(s => s.status === 'processing');
+        if (!hasProcessing) return;
+        const interval = setInterval(async () => {
+            try {
+                const data = await api(`/${selected.id}/sources`);
+                setSources(data.sources || []);
+            } catch {}
+        }, 3000);
+        return () => clearInterval(interval);
+    }, [selected, sources]);
+
+    /* ── Send chat message ───────────────────────────────────── */
+    const handleSendMessage = useCallback((text, attachments) => {
+        if (!text?.trim() && !attachments?.length) return;
+        sendChatMessage(text, attachments);
+    }, [sendChatMessage]);
+
+    /* ── Save document content ───────────────────────────────── */
+    const handleDocSave = useCallback(async (html) => {
+        if (!selected) return;
+        try {
+            setDocSaving(true);
+            await api(`/${selected.id}`, { method: 'PUT', body: JSON.stringify({ documentContent: html }) });
+        } catch (e) { console.error('[Notebooks] Doc save failed:', e); }
+        finally { setDocSaving(false); }
+    }, [selected]);
+
+    /* ── Editor AI action (from TipTap bubble menu) ──────────── */
+    const handleEditorAIAction = useCallback((actionKey, selectedText, range, customQuery) => {
+        if (!selectedText?.trim()) return;
+        const prompts = {
+            rewrite: `Rewrite the following text from my document and apply the change directly using the notebook_doc_replace tool. Find the original text and replace it with your rewritten version. Use <p> tags for the replacement text for consistent styling.\n\nOriginal text to find and replace:\n${selectedText}`,
+            shorten: `Shorten the following text from my document and apply the change directly using the notebook_doc_replace tool. Find the original text and replace it with a more concise version. Use <p> tags for the replacement text for consistent styling.\n\nOriginal text to find and replace:\n${selectedText}`,
+            expand: `Expand the following text from my document with more detail and apply the change directly using the notebook_doc_replace tool. Find the original text and replace it with an expanded version. Use <p> tags for the replacement text for consistent styling.\n\nOriginal text to find and replace:\n${selectedText}`,
+            ask: customQuery 
+                ? `> **Selected text from document:**\n> ${selectedText.split('\n').join('\n> ')}\n\n${customQuery}`
+                : `> **Selected text from document:**\n> ${selectedText.split('\n').join('\n> ')}\n\nAnalyze this text and provide insights.`,
+        };
+        sendChatMessage(prompts[actionKey] || prompts.ask);
+    }, [sendChatMessage]);
+
+    /* ── AI Fill: Replace {{params}} using sources ──────────── */
+    const handleAIFill = useCallback(async () => {
+        if (!selected || aiFilling) return;
+        const html = editorRef.current?.getEditor?.()?.getHTML?.();
+        if (!html?.trim()) return;
+
+        // Quick check: does the doc have any {{params}}?
+        if (!/\{\{[^}]+\}\}/.test(html)) {
+            setError('No {{parameters}} found in the document to fill.');
+            return;
+        }
+
+        setAiFilling(true);
+        try {
+            const res = await authFetch(`${API_BASE}/api/notebooks/${selected.id}/ai-fill`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ documentContent: html, modelTier: selectedTier }),
+            });
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || 'AI Fill failed');
+            }
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let filledContent = '';
+            let currentEvent = '';
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+                for (const line of lines) {
+                    if (line.startsWith('event: ')) {
+                        currentEvent = line.slice(7).trim();
+                    } else if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            if (currentEvent === 'content' && data.text) {
+                                filledContent += data.text;
+                            } else if (currentEvent === 'error') {
+                                throw new Error(data.error || 'AI Fill error');
+                            }
+                        } catch (e) {
+                            if (e.message.includes('Fill') || e.message.includes('error')) throw e;
+                        }
+                    }
+                }
+            }
+
+            if (filledContent && editorRef.current) {
+                editorRef.current.setMarkdown(filledContent);
+                const editor = editorRef.current.getEditor?.();
+                if (editor) {
+                    const newHtml = editor.getHTML();
+                    setDocumentContent(newHtml);
+                    handleDocSave(newHtml);
+                }
+            }
+        } catch (e) {
+            setError(e.message);
+        } finally {
+            setAiFilling(false);
+        }
+    }, [selected, aiFilling, selectedTier, authFetch, handleDocSave]);
+
+    /* ── Insert AI content into document ─────────────────────── */
+    const handleInsertToDocument = useCallback((content) => {
+        // Convert plain text to simple HTML paragraphs
+        const html = content.split('\n').filter(l => l.trim()).map(l => `<p>${l}</p>`).join('');
+        setDocumentContent(prev => prev + html);
+    }, []);
+
+    /* ── Studio: Generate content → inject into TipTap document ── */
+    const handleGenerate = useCallback(async (type) => {
+        if (!selected || generating) return;
+        setGenerating(type);
+        setLastGeneratedContent('');
+
+        // Add a user message and a placeholder assistant response in chat
+        const label = type.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        const userMsg = { id: `gen-user-${Date.now()}`, role: 'user', content: `Generate ${label} from my sources` };
+        const assistantMsg = { id: `gen-asst-${Date.now()}`, role: 'assistant', content: `⏳ Generating ${label}...` };
+        setChatMessages(prev => [...prev, userMsg, assistantMsg]);
+
+        try {
+            const res = await authFetch(`${API_BASE}/api/notebooks/${selected.id}/generate/${type}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ modelTier: selectedTier, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+            });
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || 'Generation failed');
+            }
+
+            const reader = res.body.getReader();
+            const decoder = new TextDecoder();
+            let buffer = '';
+            let content = '';
+            let currentEvent = '';
+            let audioFiles = [];
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const lines = buffer.split('\n');
+                buffer = lines.pop() || '';
+
+                for (const line of lines) {
+                    if (line.startsWith('event: ')) {
+                        currentEvent = line.slice(7).trim();
+                    } else if (line.startsWith('data: ')) {
+                        try {
+                            const data = JSON.parse(line.slice(6));
+                            if (currentEvent === 'content' && data.text) {
+                                content += data.text;
+                                // Don't update chat during streaming to prevent flickering
+                            } else if (currentEvent === 'audio' && data.url) {
+                                // Collect audio files to render via AudioPlayer in chat
+                                audioFiles.push({
+                                    url: data.url,
+                                    mimeType: data.mimeType || 'audio/mpeg',
+                                    source: data.source || 'elevenlabs_tts',
+                                });
+                            } else if (currentEvent === 'error') {
+                                throw new Error(data.error || 'Generation error');
+                            }
+                        } catch (e) {
+                            if (e.message.includes('Generation') || e.message.includes('error')) throw e;
+                        }
+                    }
+                }
+            }
+            setLastGeneratedContent(content);
+
+            // Update chat with final content + audio files for AudioPlayer rendering
+            const isStudyAid = ['flashcards', 'studyGuide', 'quiz'].includes(type);
+            setChatMessages(prev => prev.map(m =>
+                m.id === assistantMsg.id ? {
+                    ...m,
+                    content: isStudyAid
+                        ? `✅ ${label} generated successfully.`
+                        : `✅ ${label} generated and inserted into the document.`,
+                    ...(audioFiles.length > 0 ? { audioFiles } : {}),
+                } : m
+            ));
+
+            // Save to generation history and open overlay
+            const genEntry = {
+                id: `gen-${Date.now()}`,
+                type,
+                label,
+                content,
+                audioFiles: audioFiles.length > 0 ? audioFiles : undefined,
+                timestamp: new Date().toISOString(),
+            };
+            setGenerationHistory(prev => [...prev, genEntry]);
+            setActiveGeneration(genEntry);
+
+            // Preprocess mermaid content and insert into the TipTap editor
+            // Skip insertion for study aid types — they only show in the overlay
+            if (content && editorRef.current && !isStudyAid) {
+                const processed = preprocessMermaidContent(content);
+                editorRef.current.setContent(processed);
+                // Trigger a save of the new document content
+                const editor = editorRef.current.getEditor?.();
+                if (editor) {
+                    const html = editor.getHTML();
+                    setDocumentContent(html);
+                    handleDocSave(html);
+                }
+            }
+        } catch (e) {
+            setError(e.message);
+            // Update chat message to show error
+            setChatMessages(prev => prev.map(m =>
+                m.id?.startsWith('gen-asst-') && m.content?.startsWith('⏳') ? { ...m, content: `❌ Generation failed: ${e.message}` } : m
+            ));
+        } finally {
+            setGenerating(null);
+        }
+    }, [selected, generating, selectedTier, setChatMessages, handleDocSave]);
+
+    /* ── Export (PDF/Word) — uses document content or last generated ── */
+    const getExportContent = useCallback(() => {
+        if (documentContent) return documentContent;
+        if (lastGeneratedContent) return lastGeneratedContent;
+        const lastAssistant = [...chatMessages].reverse().find(m => m.role === 'assistant' && m.content);
+        return lastAssistant?.content || '';
+    }, [documentContent, lastGeneratedContent, chatMessages]);
+
+    const handleExport = useCallback(async (format) => {
+        let content = getExportContent();
+        if (!selected || !content) return;
+        try {
+            // Render mermaid diagrams to images for export
+            const mermaidDivRegex = /<div[^>]*data-type="mermaid-diagram"[^>]*data-code="([^"]*?)"[^>]*>.*?<\/div>/gi;
+            const mermaidMatches = [...content.matchAll(mermaidDivRegex)];
+            
+            for (const match of mermaidMatches) {
+                const mermaidCode = match[1]
+                    .replace(/&amp;/g, '&')
+                    .replace(/&lt;/g, '<')
+                    .replace(/&gt;/g, '>')
+                    .replace(/&quot;/g, '"');
+                try {
+                    const svg = await renderMermaidToSVG(mermaidCode);
+                    if (svg) {
+                        const pngDataUrl = await svgToPngDataUrl(svg);
+                        if (pngDataUrl) {
+                            content = content.replace(match[0], `<div style="text-align:center;margin:16px 0;"><img src="${pngDataUrl}" style="max-width:100%;border-radius:8px;" alt="Diagram" /></div>`);
+                        } else {
+                            // Fallback: embed SVG directly
+                            content = content.replace(match[0], `<div style="text-align:center;margin:16px 0;">${svg}</div>`);
+                        }
+                    }
+                } catch (err) {
+                    console.error('[Notebooks] Mermaid export render failed:', err);
+                    // Leave as-is on failure
+                }
+            }
+
+            if (format === 'pdf') {
+                const opt = {
+                    margin:       0.5,
+                    filename:     `${selected.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')}.pdf`,
+                    image:        { type: 'jpeg', quality: 0.98 },
+                    html2canvas:  { scale: 2, useCORS: true, logging: false },
+                    jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' },
+                    pagebreak:    { mode: 'avoid-all' }
+                };
+                
+                // Wrap content in a styled parent so html2pdf can properly calculate page breaks
+                // Setting margin/padding to 0 for inner elements and a clean font
+                const wrappedContent = `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #111827; line-height: 1.6;">${content}</div>`;
+                
+                html2pdf().set(opt).from(wrappedContent).save();
+            } else if (format === 'docx') {
+                const header = `xmlns:v="urn:schemas-microsoft-com:vml"
+xmlns:o="urn:schemas-microsoft-com:office:office"
+xmlns:w="urn:schemas-microsoft-com:office:word"
+xmlns:m="http://schemas.microsoft.com/office/2004/12/omml"
+xmlns="http://www.w3.org/TR/REC-html40"`;
+
+                const preHtml = `<html ${header}>
+<head>
+<meta charset="utf-8">
+<title>${selected.name}</title>
+<!--[if gte mso 9]>
+<xml>
+  <w:WordDocument>
+    <w:View>Print</w:View>
+    <w:Zoom>100</w:Zoom>
+    <w:DoNotOptimizeForBrowser/>
+  </w:WordDocument>
+</xml>
+<![endif]-->
+<style>
+    @page {
+        size: 8.5in 11.0in;
+        margin: 1.0in 1.0in 1.0in 1.0in;
+    }
+    body {
+        font-family: 'Calibri', 'Arial', sans-serif;
+        font-size: 11pt;
+        line-height: 1.5;
+        padding: 0;
+        margin: 0;
+    }
+    p, h1, h2, h3, h4, h5, h6, ul, ol, li {
+        margin-top: 0;
+        margin-bottom: 10pt;
+        padding: 0;
+        max-width: none !important;
+        width: auto !important;
+    }
+    ul, ol { margin-left: 0.5in; }
+    table { border-collapse: collapse; width: 100%; border: 1px solid #ccc; }
+    th, td { border: 1px solid #ccc; padding: 4pt; }
+</style>
+</head>
+<body>
+    <div class="Section1">
+        ${content.replace(/class="[^"]*"/g, '').replace(/style="[^"]*"/g, '').replace(/<div[^>]*data-type="mermaid-diagram"[^>]*>.*?<\/div>/gi, '<p><em>[Diagram - see PDF export]</em></p>')}
+    </div>
+</body>
+</html>`;
+
+                const blob = new Blob(['\ufeff', preHtml], {
+                    type: 'application/msword'
+                });
+                
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${selected.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')}.doc`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+            }
+        } catch (e) { 
+            console.error('[Notebooks] Export failed:', e);
+            setError(e.message); 
+        }
+    }, [selected, getExportContent]);
+
+    /* ── Create notebook ─────────────────────────────────────── */
+    const handleCreate = async () => {
+        const name = newName.trim();
+        if (!name) return;
+        try {
+            console.log('[Notebooks] Creating notebook:', name);
+            setCreating(true);
+            const data = await api('/', { 
+                method: 'POST', 
+                body: JSON.stringify({ name }) 
+            });
+            console.log('[Notebooks] Created:', data);
+            setNewName('');
+            await fetchNotebooks();
+            if (data.notebook) {
+                await selectNotebook(data.notebook);
+            }
+        } catch (e) { 
+            console.error('[Notebooks] Create failed:', e);
+            setError(e.message); 
+        } finally { 
+            setCreating(false); 
+        }
+    };
+
+    /* ── Delete notebook ─────────────────────────────────────── */
+    const handleDelete = async (id) => {
+        if (!confirm('Delete this notebook and all its sources?')) return;
+        try {
+            await api(`/${id}`, { method: 'DELETE' });
+            if (selected?.id === id) { setSelected(null); setSources([]); }
+            fetchNotebooks();
+        } catch (e) { setError(e.message); }
+    };
+
+    /* ── Rename notebook ─────────────────────────────────────── */
+    const handleRename = async (id) => {
+        if (!renameValue.trim()) return;
+        try {
+            await api(`/${id}`, { method: 'PUT', body: JSON.stringify({ name: renameValue.trim() }) });
+            if (selected?.id === id) setSelected(prev => ({ ...prev, name: renameValue.trim() }));
+            fetchNotebooks();
+        } catch (e) { setError(e.message); }
+        setRenamingId(null);
+    };
+
+    /* ── Add sources ─────────────────────────────────────────── */
+    const handleFileUpload = async (files) => {
+        if (!files?.length || !selected) return;
+        for (const file of files) {
+            try { await uploadSourceFile(selected.id, file); }
+            catch (err) { setError(`Failed to upload ${file.name}: ${err.message}`); }
+        }
+        const data = await api(`/${selected.id}/sources`);
+        setSources(data.sources || []);
+        fetchNotebooks();
+    };
+
+    const handleAddUrl = async (url) => {
+        if (!url?.trim() || !selected) return;
+        try {
+            await api(`/${selected.id}/sources/url`, { method: 'POST', body: JSON.stringify({ url: url.trim() }) });
+            const data = await api(`/${selected.id}/sources`);
+            setSources(data.sources || []);
+            fetchNotebooks();
+        } catch (e) { setError(e.message); }
+    };
+
+    const handleAddText = async (text, name) => {
+        if (!text?.trim() || !selected) return;
+        try {
+            await api(`/${selected.id}/sources/text`, { method: 'POST', body: JSON.stringify({ text: text.trim(), name: name?.trim() || undefined }) });
+            const data = await api(`/${selected.id}/sources`);
+            setSources(data.sources || []);
+            fetchNotebooks();
+        } catch (e) { setError(e.message); }
+    };
+
+    const handleAddMeeting = async (meetingId) => {
+        if (!meetingId || !selected) return;
+        try {
+            await api(`/${selected.id}/sources/meeting`, { method: 'POST', body: JSON.stringify({ meetingId }) });
+            const data = await api(`/${selected.id}/sources`);
+            setSources(data.sources || []);
+            fetchNotebooks();
+        } catch (e) { setError(e.message); }
+    };
+
+    const handleDeleteSource = async (sid) => {
+        if (!selected) return;
+        try {
+            await api(`/${selected.id}/sources/${sid}`, { method: 'DELETE' });
+            setSources(prev => prev.filter(s => s.id !== sid));
+            fetchNotebooks();
+        } catch (e) { setError(e.message); }
+    };
+
+    /* ── Filtered notebooks ──────────────────────────────────── */
+    const filtered = notebooks.filter(nb =>
+        nb.name.toLowerCase().includes(search.toLowerCase())
+    );
+    const readySources = sources.filter(s => s.status === 'ready');
+    const totalWords = sources.reduce((s, src) => s + (src.wordCount || 0), 0);
+    const hasExportContent = !!getExportContent();
+
+    /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+    /* ── NOTEBOOK DETAIL VIEW (3-panel: Sources + Editor + Studio/Chat) */
+    /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+    if (selected) {
+        return (
+            <div className="h-full flex flex-col" style={{ background: 'var(--bg-primary)' }}>
+                <input 
+                    type="file" 
+                    ref={fileInputRef} 
+                    className="hidden" 
+                    onChange={handleImportFile} 
+                    accept=".pdf,.doc,.docx,.txt,.md,.csv,.xlsx" 
+                />
+                
+                {/* ── Header ── */}
+                <div className="shrink-0 px-6 py-3 border-b flex items-center gap-3" style={{ borderColor: 'var(--border-subtle)' }}>
+                    <div className="flex items-center gap-1">
+                        <button onClick={() => setLeftPanelOpen(p => !p)} className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors" title="Toggle Sidebar">
+                            <PanelLeft className="w-5 h-5" style={{ color: leftPanelOpen ? 'var(--accent-primary)' : 'var(--text-secondary)' }} />
+                        </button>
+                        <button onClick={() => { setSelected(null); setSources([]); setChatMessages([]); setDocumentContent(''); }} className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors" title="Back to Notebooks">
+                            <ArrowLeft className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
+                        </button>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                            <BookOpen className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
+                            <h2 className="text-base font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                                {selected.name}
+                            </h2>
+                        </div>
+                        <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                            {sources.length} source{sources.length !== 1 ? 's' : ''} · {totalWords.toLocaleString()} words · Created {timeAgo(selected.createdAt)}
+                        </p>
+                    </div>
+                    
+                    <NotebookStudio
+                        onGenerate={handleGenerate}
+                        generating={generating}
+                        onExport={handleExport}
+                        hasContent={hasExportContent}
+                        readySourceCount={readySources.length}
+                        generationCount={generationHistory.length}
+                        onHistoryClick={() => {
+                            if (generationHistory.length > 0) {
+                                setActiveGeneration(generationHistory[generationHistory.length - 1]);
+                            }
+                        }}
+                    />
+                </div>
+
+                {/* ── Error toast ── */}
+                {error && (
+                    <div className="mx-4 mt-2 flex items-center gap-2 px-3 py-2 rounded-xl border bg-red-50 border-red-200 text-red-700 text-xs" style={{ animation: 'slideDown .2s ease-out' }}>
+                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                        <span className="flex-1">{error}</span>
+                        <button onClick={() => setError(null)} className="font-bold text-sm leading-none">&times;</button>
+                    </div>
+                )}
+
+                {/* ── 3-Panel Layout: Sources | Editor | Studio+Chat ── */}
+                <div className="flex-1 flex overflow-hidden">
+
+                    {/* ═══ LEFT: Sources Panel ═══ */}
+                    {leftPanelOpen && (
+                    <div className="w-[240px] shrink-0 border-r flex flex-col overflow-hidden" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
+                        <NotebookSources
+                            sources={sources}
+                            onFileUpload={(files) => handleFileUpload(Array.from(files))}
+                            onAddUrl={(url) => { if (url?.trim()) handleAddUrl(url); }}
+                            onAddText={(text, name) => { if (text?.trim()) handleAddText(text, name); }}
+                            onAddMeeting={handleAddMeeting}
+                            onDeleteSource={handleDeleteSource}
+                            dragOver={dragOver}
+                            setDragOver={setDragOver}
+                            totalWords={totalWords}
+                            readyCount={readySources.length}
+                        />
+                    </div>
+                    )}
+
+                    {/* ═══ CENTER: Document Editor (TipTap) ═══ */}
+                    <div className="flex-1 flex flex-col min-w-0" style={{ background: 'var(--bg-primary)' }}>
+                        <NotebookEditor
+                            ref={editorRef}
+                            onImportClick={() => fileInputRef.current?.click()}
+                            content={documentContent}
+                            onChange={setDocumentContent}
+                            onSave={handleDocSave}
+                            onAIAction={handleEditorAIAction}
+                            onAIFill={handleAIFill}
+                            aiFilling={aiFilling}
+                            saving={docSaving}
+                            generating={generating}
+                        />
+                    </div>
+
+                    {/* ═══ RIGHT: Studio (top) + AI Chat (bottom) ═══ */}
+                    <div 
+                        className="w-[4px] hover:bg-[var(--accent-primary)] cursor-col-resize transition-colors shrink-0 z-10 -ml-[2px]"
+                        style={{ borderLeft: '1px solid var(--border-subtle)' }}
+                        onMouseDown={(e) => {
+                            e.preventDefault();
+                            rightPanelDragRef.current = true;
+                            document.body.style.cursor = 'col-resize';
+                            document.body.style.userSelect = 'none';
+                        }}
+                    />
+                    <div className="shrink-0 flex flex-col overflow-hidden" style={{ width: rightPanelWidth, background: 'var(--bg-primary)' }}>
+                        {/* Chat section */}
+                        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                            <NotebookChat
+                                messages={chatMessages}
+                                isLoading={chatLoading}
+                                onSend={handleSendMessage}
+                                onStop={stopChatGenerating}
+                                onRetry={retryChatMessage}
+                                onEdit={editAndRegenerateChat}
+                                modelTiers={modelTiers}
+                                selectedTier={selectedTier}
+                                onTierChange={setSelectedTier}
+                                submittedFormIds={submittedFormIds}
+                                setSubmittedFormIds={setSubmittedFormIds}
+                                onInsertToDocument={handleInsertToDocument}
+                                onCitationClick={(source) => setCitationSource(source)}
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Citation overlay */}
+                <CitationOverlay source={citationSource} onClose={() => setCitationSource(null)} />
+
+                {/* Generation overlay */}
+                <GenerationOverlay
+                    generation={activeGeneration}
+                    history={generationHistory}
+                    onClose={() => setActiveGeneration(null)}
+                    onSelectHistory={(item) => setActiveGeneration(item)}
+                    onSourceClick={(sourceName) => {
+                        // Close overlay and try to highlight the matching source in sidebar
+                        setActiveGeneration(null);
+                        // Flash the source in the sources panel — find by partial name match
+                        const matchingSource = sources.find(s =>
+                            s.name?.toLowerCase().includes(sourceName.toLowerCase()) ||
+                            sourceName.toLowerCase().includes(s.name?.toLowerCase())
+                        );
+                        if (matchingSource) {
+                            // Scroll to the source element in the sidebar
+                            setTimeout(() => {
+                                const el = document.querySelector(`[data-source-id="${matchingSource.id}"]`);
+                                if (el) {
+                                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                                    el.style.transition = 'background 0.3s';
+                                    el.style.background = 'var(--accent-primary)';
+                                    el.style.opacity = '0.15';
+                                    setTimeout(() => { el.style.background = ''; el.style.opacity = ''; }, 2000);
+                                }
+                            }, 300);
+                        }
+                    }}
+                    onInsertToDocument={(content) => {
+                        if (editorRef.current) {
+                            const processed = preprocessMermaidContent(content);
+                            editorRef.current.setContent(processed);
+                            const editor = editorRef.current.getEditor?.();
+                            if (editor) {
+                                const html = editor.getHTML();
+                                setDocumentContent(html);
+                                handleDocSave(html);
+                            }
+                        }
+                    }}
+                />
+            </div>
+        );
+    }
+
+    /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+    /* ── NOTEBOOK LIST VIEW ──────────────────────────────────── */
+    /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+    return (
+        <div className="h-full flex flex-col" style={{ background: 'var(--bg-primary)' }}>
+            <div className="shrink-0 px-6 py-4 border-b flex items-center gap-4" style={{ borderColor: 'var(--border-subtle)' }}>
+                <button onClick={onBack} className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors">
+                    <ArrowLeft className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
+                </button>
+                <div className="flex-1">
+                    <div className="flex items-center gap-2">
+                        <BookOpen className="w-5 h-5" style={{ color: 'var(--accent-primary)' }} />
+                        <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Notebooks</h1>
+                    </div>
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Upload sources, chat with your documents, and generate content</p>
+                </div>
+                <div className="flex items-center gap-3">
+                    <div className="relative">
+                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+                        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search notebooks..."
+                            className="pl-8 pr-3 py-1.5 text-sm rounded-lg border w-48 focus:outline-none focus:ring-1"
+                            style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }} />
+                    </div>
+                    <div className="flex gap-2">
+                        <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleCreate()}
+                            placeholder="New notebook name..."
+                            className="px-3 py-1.5 text-sm rounded-lg border w-48 focus:outline-none focus:ring-1"
+                            style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }} />
+                        <button onClick={handleCreate} disabled={!newName.trim() || creating}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.02] disabled:opacity-40"
+                            style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}>
+                            {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                            Create
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            {error && (
+                <div className="mx-6 mt-3 flex items-center gap-2 px-4 py-2.5 rounded-xl border bg-red-50 border-red-200 text-red-700 text-sm" style={{ animation: 'slideDown .2s ease-out' }}>
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span className="flex-1">{error}</span>
+                    <button onClick={() => setError(null)} className="font-bold text-lg leading-none">&times;</button>
+                </div>
+            )}
+
+            <div className="flex-1 overflow-auto p-6">
+                {loading ? (
+                    <div className="flex items-center justify-center h-full">
+                        <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--text-muted)' }} />
+                    </div>
+                ) : filtered.length === 0 ? (
+                    <div className="flex items-center justify-center h-full">
+                        <div className="text-center">
+                            <div className="w-20 h-20 mx-auto mb-4 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(99, 102, 241, 0.08)' }}>
+                                <BookOpen className="w-10 h-10" style={{ color: '#6366f1', opacity: 0.5 }} />
+                            </div>
+                            <h3 className="text-base font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+                                {search ? 'No notebooks found' : 'Create your first notebook'}
+                            </h3>
+                            <p className="text-sm mb-4 max-w-sm" style={{ color: 'var(--text-muted)' }}>
+                                {search ? 'Try a different search' : 'Upload PDFs, documents, and URLs — then chat with your sources and generate summaries, study guides, and more.'}
+                            </p>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {filtered.map(nb => (
+                            <div key={nb.id} onClick={() => selectNotebook(nb)}
+                                className="group rounded-xl border p-4 cursor-pointer transition-all hover:shadow-lg hover:border-[var(--accent-primary)]/30 hover:scale-[1.01]"
+                                style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
+                                <div className="flex items-start gap-3">
+                                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1))' }}>
+                                        <BookOpen className="w-5 h-5" style={{ color: '#6366f1' }} />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        {renamingId === nb.id ? (
+                                            <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                                <input autoFocus value={renameValue} onChange={e => setRenameValue(e.target.value)}
+                                                    onKeyDown={e => { if (e.key === 'Enter') handleRename(nb.id); if (e.key === 'Escape') setRenamingId(null); }}
+                                                    className="text-sm font-semibold px-2 py-0.5 rounded border focus:outline-none focus:ring-1 w-full"
+                                                    style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)', background: 'var(--bg-primary)', '--tw-ring-color': 'var(--accent-primary)' }} />
+                                            </div>
+                                        ) : (
+                                            <h3 className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{nb.name}</h3>
+                                        )}
+                                        <div className="flex items-center gap-2 mt-1">
+                                            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{nb.sourceCount || 0} source{nb.sourceCount !== 1 ? 's' : ''}</span>
+                                            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>·</span>
+                                            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{timeAgo(nb.updatedAt || nb.createdAt)}</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity" onClick={e => e.stopPropagation()}>
+                                        <button onClick={() => { setRenamingId(nb.id); setRenameValue(nb.name); }}
+                                            className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors" title="Rename">
+                                            <Pencil className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+                                        </button>
+                                        <button onClick={() => handleDelete(nb.id)}
+                                            className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors" title="Delete">
+                                            <Trash2 className="w-3.5 h-3.5 text-red-400" />
+                                        </button>
+                                    </div>
+                                </div>
+                                <div className="flex items-center justify-end mt-3 pt-2 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+                                    <span className="text-[11px] font-medium flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: 'var(--accent-primary)' }}>
+                                        Open <ChevronRight className="w-3 h-3" />
+                                    </span>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+            <style>{`@keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+        </div>
+    );
+}

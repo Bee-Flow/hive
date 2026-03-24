@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Users, UserPlus, Shield, Trash2, Edit2, Check, X, Plus, ChevronDown, ChevronRight, Mail, Clock, Send, Link2, AlertCircle } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
-
+import { useTranslation } from '../../hooks/useTranslation';
 const ORG_ROLES = [
     {
         id: 'org_admin', name: 'Organisation Admin',
@@ -57,6 +57,7 @@ const TableSkeleton = () => (
 );
 
 const OrgUsersPanel = ({ user }) => {
+    const { t } = useTranslation();
     const [users, setUsers] = useState([]);
     const [groups, setGroups] = useState([]);
     const [roles, setRoles] = useState([]);
@@ -383,15 +384,15 @@ const OrgUsersPanel = ({ user }) => {
                 <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)]">
                     <div className="px-5 py-4 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)] rounded-t-xl flex items-center justify-between">
                         <div>
-                            <h3 className="text-base font-semibold text-[var(--text-primary)]">Organisation Members</h3>
-                            <p className="text-xs text-[var(--text-muted)] mt-0.5">Manage roles and group assignments for users in your organisation</p>
+                            <h3 className="text-base font-semibold text-[var(--text-primary)]">{t('admin.org_members_title', 'Organisation Members')}</h3>
+                            <p className="text-xs text-[var(--text-muted)] mt-0.5">{t('admin.org_members_desc', 'Manage roles and group assignments for users in your organisation')}</p>
                         </div>
                         <button
                             onClick={() => { setShowInviteForm(v => !v); setInviteResult(null); }}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-[var(--accent-primary)] text-white hover:opacity-90 transition-opacity"
                         >
                             <Send className="w-3.5 h-3.5" />
-                            Invite User
+                            {t('admin.org_invite_user', 'Invite User')}
                         </button>
                     </div>
 
@@ -459,10 +460,9 @@ const OrgUsersPanel = ({ user }) => {
                     {orgUsers.length === 0 ? (
                         <div className="px-5 py-12 text-center">
                             <Users className="w-10 h-10 mx-auto mb-3 text-[var(--text-muted)] opacity-30" />
-                            <p className="text-sm font-medium text-[var(--text-primary)]">No users yet</p>
+                            <p className="text-sm font-medium text-[var(--text-primary)]">{t('admin.org_no_users', 'No users yet')}</p>
                             <p className="text-xs text-[var(--text-muted)] mt-1 max-w-sm mx-auto">
-                                Users will appear here once they are assigned to your organisation.
-                                Add users via the admin panel or invite them by sharing a signup link.
+                                {t('admin.org_no_users_desc', 'Users will appear here once they are assigned to your organisation. Add users via the admin panel or invite them by sharing a signup link.')}
                             </p>
                             <div className="flex items-center justify-center gap-3 mt-4">
                                 <button
@@ -530,7 +530,7 @@ const OrgUsersPanel = ({ user }) => {
                                                     title="Approve user"
                                                 >
                                                     <Check className="w-3.5 h-3.5" />
-                                                    Approve
+                                                    {t('admin.org_approve', 'Approve')}
                                                 </button>
                                                 <button
                                                     onClick={() => handleRejectUser(u.id)}
@@ -538,7 +538,7 @@ const OrgUsersPanel = ({ user }) => {
                                                     title="Reject user"
                                                 >
                                                     <X className="w-3.5 h-3.5" />
-                                                    Reject
+                                                    {t('admin.org_reject', 'Reject')}
                                                 </button>
                                             </div>
                                         ) : (
@@ -654,11 +654,11 @@ const OrgUsersPanel = ({ user }) => {
                             className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-xl border-2 border-dashed border-[var(--border-subtle)] text-sm font-medium text-[var(--text-muted)] hover:border-[var(--accent-primary)] hover:text-[var(--accent-primary)] transition-all"
                         >
                             <Plus className="w-4 h-4" />
-                            Create New Group
+                            {t('admin.org_new_group', 'Create New Group')}
                         </button>
                     ) : (
                         <div className="rounded-xl border border-[var(--accent-primary)]/30 bg-[var(--accent-primary)]/5 p-4 space-y-3">
-                            <div className="text-sm font-medium text-[var(--accent-primary)]">Create New Group</div>
+                            <div className="text-sm font-medium text-[var(--accent-primary)]">{t('admin.org_new_group', 'Create New Group')}</div>
                             <input
                                 type="text"
                                 value={newGroupName}
@@ -690,14 +690,14 @@ const OrgUsersPanel = ({ user }) => {
                                     onClick={() => { setShowCreateGroup(false); setNewGroupName(''); setNewGroupDesc(''); }}
                                     className="px-3 py-1.5 rounded-lg text-sm text-[var(--text-muted)] hover:bg-[var(--bg-tertiary)]"
                                 >
-                                    Cancel
+                                    {t('admin.org_cancel', 'Cancel')}
                                 </button>
                                 <button
                                     onClick={handleCreateGroup}
                                     disabled={!newGroupName.trim() || creatingGroup}
                                     className="px-4 py-1.5 rounded-lg text-sm font-medium text-white bg-[var(--accent-primary)] hover:opacity-90 disabled:opacity-50 transition-all"
                                 >
-                                    {creatingGroup ? 'Creating...' : 'Create'}
+                                    {creatingGroup ? t('admin.org_creating', 'Creating...') : t('admin.org_create', 'Create')}
                                 </button>
                             </div>
                         </div>
@@ -707,7 +707,7 @@ const OrgUsersPanel = ({ user }) => {
                     {orgGroups.length === 0 && !showCreateGroup ? (
                         <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-5 py-12 text-center">
                             <Shield className="w-10 h-10 mx-auto mb-3 text-[var(--text-muted)] opacity-30" />
-                            <p className="text-sm font-medium text-[var(--text-primary)]">No groups yet</p>
+                            <p className="text-sm font-medium text-[var(--text-primary)]">{t('admin.org_no_groups', 'No groups yet')}</p>
                             <p className="text-xs text-[var(--text-muted)] mt-1 max-w-sm mx-auto">
                                 Groups let you organise users and control which agents they can access.
                                 Create a group to get started.
@@ -785,9 +785,9 @@ const OrgUsersPanel = ({ user }) => {
                 <div className="space-y-3">
                     <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden">
                         <div className="px-5 py-4 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
-                            <h3 className="text-base font-semibold text-[var(--text-primary)]">Organisation Roles</h3>
+                            <h3 className="text-base font-semibold text-[var(--text-primary)]">{t('admin.org_roles_title', 'Organisation Roles')}</h3>
                             <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                                These roles define what members can do within your organisation. Assign roles in the Users tab.
+                                {t('admin.org_roles_desc', 'These roles define what members can do within your organisation. Assign roles in the Users tab.')}
                             </p>
                         </div>
                         <div className="divide-y divide-[var(--border-subtle)]">

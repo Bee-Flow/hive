@@ -25,6 +25,8 @@ export default function useChatEngine({
     directMode,
     onDirectConversationCreated,
     activeProject,
+    onNotebookDocUpdate,
+    onNotebookSourceAdded,
 }) {
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -115,7 +117,16 @@ export default function useChatEngine({
             case 'tool_start':
                 setMessages(prev => prev.map(m => {
                     if (m.id === assistantMsgId) {
-                        const update = { ...m, toolCall: { name: data.name, status: 'running' } };
+                        const update = {
+                            ...m,
+                            toolCall: { name: data.name, status: 'running' },
+                            toolHistory: [...(m.toolHistory || []), {
+                                name: data.name,
+                                args: data.args,
+                                status: 'running',
+                                startTime: Date.now()
+                            }]
+                        };
                         if (data.name === 'sequentialthinking' && data.args?.thought) {
                             const steps = [...(m.thinkingSteps || [])];
                             steps.push({
@@ -141,10 +152,24 @@ export default function useChatEngine({
                 setMessages(prev => prev.map(m => {
                     if (m.id === assistantMsgId) {
                         const trs = m.toolResults || [];
+                        // Mark the matching running tool in toolHistory as done
+                        const updatedHistory = (m.toolHistory || []).map(t =>
+                            t.name === data.name && t.status === 'running'
+                                ? {
+                                    ...t,
+                                    status: 'done',
+                                    endTime: Date.now(),
+                                    resultPreview: typeof data.result === 'string'
+                                        ? data.result.slice(0, 120)
+                                        : JSON.stringify(data.result || '').slice(0, 120)
+                                }
+                                : t
+                        );
                         const update = {
                             ...m,
                             toolResults: [...trs, { name: data.name, result: data.result }],
-                            toolCall: null
+                            toolCall: null,
+                            toolHistory: updatedHistory,
                         };
                         if (data.name === 'sequentialthinking' && m.thinkingSteps?.length > 0) {
                             const steps = [...m.thinkingSteps];
@@ -332,6 +357,14 @@ export default function useChatEngine({
 
             case 'workspace_update':
                 onWorkspaceUpdate?.(data.content);
+                break;
+
+            case 'notebook_doc_update':
+                onNotebookDocUpdate?.(data.content, data.title);
+                break;
+
+            case 'notebook_source_added':
+                onNotebookSourceAdded?.(data.source);
                 break;
 
             case 'done':

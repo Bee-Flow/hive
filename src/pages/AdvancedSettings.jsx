@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import MemoryPanel from '../components/MemoryPanel';
 import { API_BASE, authFetch } from '../utils/helpers';
+import { useTranslation } from '../hooks/useTranslation';
 import AccountSection from './settings/AccountSection';
 import StartupAgentSection from './settings/StartupAgentSection';
 import MemorySection from './settings/MemorySection';
@@ -11,7 +12,7 @@ import OrganisationSection from './settings/OrganisationSection';
 const NAV_ITEMS = [
     {
         id: 'account',
-        label: 'Account',
+        labelKey: 'settings.account',
         icon: (
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ width: '15px', height: '15px' }}>
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
@@ -20,7 +21,7 @@ const NAV_ITEMS = [
     },
     {
         id: 'preferences',
-        label: 'Preferences',
+        labelKey: 'settings.preferences',
         icon: (
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ width: '15px', height: '15px' }}>
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" />
@@ -29,7 +30,7 @@ const NAV_ITEMS = [
     },
     {
         id: 'memory',
-        label: 'Memory',
+        labelKey: 'settings.memory',
         icon: (
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ width: '15px', height: '15px' }}>
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
@@ -38,7 +39,7 @@ const NAV_ITEMS = [
     },
     {
         id: 'integrations',
-        label: 'Integrations',
+        labelKey: 'settings.integrations',
         icon: (
             <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ width: '15px', height: '15px' }}>
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" />
@@ -49,7 +50,7 @@ const NAV_ITEMS = [
 
 const ORG_NAV_ITEM = {
     id: 'organisation',
-    label: 'Organisation',
+    labelKey: 'settings.organisation',
     icon: (
         <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ width: '15px', height: '15px' }}>
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
@@ -60,6 +61,7 @@ const ORG_NAV_ITEM = {
 
 
 const AdvancedSettings = ({ onBack, onNavigate, onLogout, user }) => {
+    const { t } = useTranslation();
     const [activeTab, setActiveTab] = useState('account');
 
     // Determine if user can see org settings
@@ -184,14 +186,14 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user }) => {
                         </svg>
                     </button>
                 )}
-                <h1 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>Settings</h1>
+                <h1 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{t('settings.title')}</h1>
             </div>
 
             {/* Body */}
             <div className="flex-1 flex overflow-hidden">
                 {/* Left Nav */}
                 <nav className="w-44 flex-shrink-0 flex flex-col gap-0.5 pt-5 px-3" style={{ borderRight: '1px solid var(--border-subtle)' }}>
-                    {navItems.map(({ id, label, icon }) => {
+                    {navItems.map(({ id, labelKey, icon }) => {
                         const isActive = activeTab === id;
                         return (
                             <button
@@ -206,7 +208,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user }) => {
                                 onMouseLeave={e => { if (!isActive) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)'; } }}
                             >
                                 <span style={{ opacity: isActive ? 1 : 0.55, flexShrink: 0 }}>{icon}</span>
-                                {label}
+                                {t(labelKey)}
                             </button>
                         );
                     })}

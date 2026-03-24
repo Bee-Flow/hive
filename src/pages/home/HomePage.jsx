@@ -7,6 +7,15 @@ import SecuritySection from './SecuritySection';
 import IntegrationsSection from './IntegrationsSection';
 import ArchitectureSection from './ArchitectureSection';
 import CtaSection from './CtaSection';
+import DeepResearchSection from './DeepResearchSection';
+import NotebooksSection from './NotebooksSection';
+import MeetingNotesSection from './MeetingNotesSection';
+import McpMarketplaceSection from './McpMarketplaceSection';
+import AgentDesignerSection from './AgentDesignerSection';
+import KnowledgeBasesSection from './KnowledgeBasesSection';
+import TaskAutomationSection from './TaskAutomationSection';
+import SearchEngineSection from './SearchEngineSection';
+import ChatDemo from './ChatDemo';
 
 // ─── Sub-page wrappers ────────────────────────────────────────
 
@@ -66,7 +75,7 @@ export function IntegrationsPage({ onNavigate, onLoginClick }) {
         <div className="hp-container">
           <span className="hp-label">Integrations</span>
           <h1 className="hp-h1">Connect everything you already use</h1>
-          <p className="hp-body--sm">43+ integrations available as AI-callable tools — Google Workspace, Microsoft 365, GitHub, WhatsApp, and much more.</p>
+          <p className="hp-body--sm">65+ integrations available as AI-callable tools — Google Workspace, Microsoft 365, GitHub, WhatsApp, and much more.</p>
         </div>
       </div>
       <IntegrationsSection />
@@ -105,7 +114,7 @@ export function AboutPage({ onNavigate, onLoginClick }) {
               <p className="hp-body">
                 Bee Flow is built with Node.js, React 18, and Python microservices (FastAPI). 
                 It supports seven AI providers (OpenAI, Claude, Google Gemini, Vertex AI, Mistral, Azure OpenAI, and local models), 
-                43+ live integrations, and runs fully in Docker on your own hardware.
+                65+ live integrations, and runs fully in Docker on your own hardware.
               </p>
               <p className="hp-body" style={{ marginTop: 12 }}>
                 The platform includes a self-hosted embedding and reranking inference server with automatic hardware detection 
@@ -125,7 +134,7 @@ export function AboutPage({ onNavigate, onLoginClick }) {
               {[
                 { n: '2250h', l: 'R&D hours logged' },
                 { n: '22', l: 'technical novelties' },
-                { n: '43+', l: 'live integrations' },
+                { n: '65+', l: 'live integrations' },
               ].map(s => (
                 <div key={s.l} className="hp-stat">
                   <span className="n">{s.n}</span>
@@ -346,6 +355,152 @@ export function ContactPage({ onNavigate, onLoginClick }) {
           </div>
         </div>
       </section>
+    </HomeLayout>
+  );
+}
+
+// ─── Feature deep-dive pages ──────────────────────────────────
+
+export function DeepResearchPage({ onNavigate, onLoginClick }) {
+  return (
+    <HomeLayout onNavigate={onNavigate} onLoginClick={onLoginClick}>
+      <div className="hp-page-hero">
+        <div className="hp-container">
+          <span className="hp-label">Deep Research</span>
+          <h1 className="hp-h1">AI-powered multi-agent research</h1>
+          <p className="hp-body--sm">A 4-phase pipeline with 8 specialised agents that clarify, plan, research in parallel, and synthesise fully cited reports.</p>
+        </div>
+      </div>
+      <DeepResearchSection />
+      <CtaSection onLoginClick={onLoginClick} />
+    </HomeLayout>
+  );
+}
+
+export function NotebooksFeaturePage({ onNavigate, onLoginClick }) {
+  return (
+    <HomeLayout onNavigate={onNavigate} onLoginClick={onLoginClick}>
+      <div className="hp-page-hero">
+        <div className="hp-container">
+          <span className="hp-label">AI Notebooks</span>
+          <h1 className="hp-h1">Your AI-powered knowledge workspace</h1>
+          <p className="hp-body--sm">Upload sources, write with AI assistance, and generate 10 content types — from executive summaries to AI podcasts.</p>
+        </div>
+      </div>
+      <NotebooksSection />
+      <CtaSection onLoginClick={onLoginClick} />
+    </HomeLayout>
+  );
+}
+
+export function MeetingNotesFeaturePage({ onNavigate, onLoginClick }) {
+  return (
+    <HomeLayout onNavigate={onNavigate} onLoginClick={onLoginClick}>
+      <div className="hp-page-hero">
+        <div className="hp-container">
+          <span className="hp-label">Meeting Notes</span>
+          <h1 className="hp-h1">Record, transcribe, and enrich meetings</h1>
+          <p className="hp-body--sm">AI transcription with speaker detection, automatic summaries, action items, and a searchable chat interface — in 14 languages.</p>
+        </div>
+      </div>
+      <MeetingNotesSection />
+      <CtaSection onLoginClick={onLoginClick} />
+    </HomeLayout>
+  );
+}
+
+export function McpMarketplacePage({ onNavigate, onLoginClick }) {
+  return (
+    <HomeLayout onNavigate={onNavigate} onLoginClick={onLoginClick}>
+      <div className="hp-page-hero">
+        <div className="hp-container">
+          <span className="hp-label">MCP Marketplace</span>
+          <h1 className="hp-h1">65+ tool servers, one click to install</h1>
+          <p className="hp-body--sm">Browse a curated registry of MCP servers across 10 categories — Development, Productivity, Data, DevOps, and more.</p>
+        </div>
+      </div>
+      <McpMarketplaceSection />
+      <CtaSection onLoginClick={onLoginClick} />
+    </HomeLayout>
+  );
+}
+
+export function AgentDesignerPage({ onNavigate, onLoginClick }) {
+  return (
+    <HomeLayout onNavigate={onNavigate} onLoginClick={onLoginClick}>
+      <div className="hp-page-hero">
+        <div className="hp-container">
+          <span className="hp-label">AI Agent Designer</span>
+          <h1 className="hp-h1">Build your own AI expert — no code needed</h1>
+          <p className="hp-body--sm">Create custom AI assistants with a visual drag-and-drop builder. Attach knowledge bases, assign tools, choose from 7+ AI providers including local models.</p>
+        </div>
+      </div>
+      <AgentDesignerSection />
+      <CtaSection onLoginClick={onLoginClick} />
+    </HomeLayout>
+  );
+}
+
+export function KnowledgeBasesPage({ onNavigate, onLoginClick }) {
+  return (
+    <HomeLayout onNavigate={onNavigate} onLoginClick={onLoginClick}>
+      <div className="hp-page-hero">
+        <div className="hp-container">
+          <span className="hp-label">Knowledge Bases</span>
+          <h1 className="hp-h1">Your organisation's AI memory</h1>
+          <p className="hp-body--sm">Build searchable knowledge bases from documents, URLs, and cloud storage. Hybrid search with AI reranking — fully self-hosted.</p>
+        </div>
+      </div>
+      <KnowledgeBasesSection />
+      <CtaSection onLoginClick={onLoginClick} />
+    </HomeLayout>
+  );
+}
+
+export function TaskAutomationPage({ onNavigate, onLoginClick }) {
+  return (
+    <HomeLayout onNavigate={onNavigate} onLoginClick={onLoginClick}>
+      <div className="hp-page-hero">
+        <div className="hp-container">
+          <span className="hp-label">Task Automation</span>
+          <h1 className="hp-h1">Your own digital employee</h1>
+          <p className="hp-body--sm">AI scans your apps, discovers patterns, and automates tasks — with human approval on every action.</p>
+        </div>
+      </div>
+      <TaskAutomationSection />
+      <CtaSection onLoginClick={onLoginClick} />
+    </HomeLayout>
+  );
+}
+
+export function SearchEnginePage({ onNavigate, onLoginClick }) {
+  return (
+    <HomeLayout onNavigate={onNavigate} onLoginClick={onLoginClick}>
+      <div className="hp-page-hero">
+        <div className="hp-container">
+          <span className="hp-label">Search Engine</span>
+          <h1 className="hp-h1">Self-hosted AI search engine</h1>
+          <p className="hp-body--sm">Web search via Google/Bing/Tavily, hybrid knowledge base search, and local GPU inference — no data leaves your network.</p>
+        </div>
+      </div>
+      <SearchEngineSection />
+      <CtaSection onLoginClick={onLoginClick} />
+    </HomeLayout>
+  );
+}
+
+export function ChatPage({ onNavigate, onLoginClick }) {
+  return (
+    <HomeLayout onNavigate={onNavigate} onLoginClick={onLoginClick}>
+      <div className="hp-page-hero">
+        <div className="hp-container">
+          <span className="hp-label">Direct Chat</span>
+          <h1 className="hp-h1">Your AI assistant — grounded in your own knowledge</h1>
+          <p className="hp-body--sm">Chat with any AI agent you've built. Every answer is grounded in your organisation's documents, with source citations included — no hallucinations.</p>
+        </div>
+      </div>
+      <ChatDemo />
+      <CtaSection onLoginClick={onLoginClick} />
     </HomeLayout>
   );
 }

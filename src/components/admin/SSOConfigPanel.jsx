@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE, authFetch } from '../../utils/helpers';
+import { useTranslation } from '../../hooks/useTranslation';
 
 const SSOConfigPanel = () => {
+    const { t } = useTranslation();
     const [providers, setProviders] = useState({
         nextcloud: { enabled: false, url: '', clientId: '', clientSecretSet: false },
         google: { enabled: false, clientId: '', clientSecretSet: false },
@@ -233,7 +235,7 @@ const SSOConfigPanel = () => {
                                     />
                                 </div>
                                 <div>
-                                    <label className="block text-sm font-medium text-secondary mb-2">Client ID</label>
+                                    <label className="block text-sm font-medium text-secondary mb-2">{t('admin.sso_client_id')}</label>
                                     <input
                                         type="text"
                                         value={providers.nextcloud.clientId}
@@ -245,13 +247,13 @@ const SSOConfigPanel = () => {
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-secondary mb-2">
-                                        Client Secret {providers.nextcloud.clientSecretSet && <span className="text-green-400 text-xs">(configured)</span>}
+                                        {t('admin.sso_client_secret')} {providers.nextcloud.clientSecretSet && <span className="text-green-400 text-xs">{t('admin.sso_secret_configured')}</span>}
                                     </label>
                                     <input
                                         type="password"
                                         value={secrets.nextcloud}
                                         onChange={(e) => setSecrets(prev => ({ ...prev, nextcloud: e.target.value }))}
-                                        placeholder={providers.nextcloud.clientSecretSet ? "Leave empty to keep current" : "OAuth Client Secret"}
+                                        placeholder={providers.nextcloud.clientSecretSet ? t('admin.sso_secret_empty') : "OAuth Client Secret"}
                                         className="w-full px-4 py-2.5 rounded-lg text-sm font-mono"
                                         style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
                                     />
@@ -273,12 +275,12 @@ const SSOConfigPanel = () => {
                             <button onClick={() => handleSaveProvider('nextcloud')} disabled={saving.nextcloud}
                                 className="px-5 py-2.5 rounded-lg text-sm font-medium text-white shadow-md"
                                 style={{ background: 'var(--accent-primary)' }}>
-                                {saving.nextcloud ? 'Saving...' : 'Save Configuration'}
+                                {saving.nextcloud ? t('admin.sso_saving') : t('admin.sso_save')}
                             </button>
                             <button onClick={() => handleTestProvider('nextcloud')} disabled={testing.nextcloud || !providers.nextcloud.url}
                                 className="px-5 py-2.5 rounded-lg text-sm font-medium border"
                                 style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}>
-                                {testing.nextcloud ? 'Testing...' : 'Test Connection'}
+                                {testing.nextcloud ? t('admin.sso_testing') : t('admin.sso_test')}
                             </button>
                         </div>
                     </div>
@@ -306,7 +308,7 @@ const SSOConfigPanel = () => {
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 <div>
-                                    <label className="block text-sm font-medium text-secondary mb-2">Client ID</label>
+                                    <label className="block text-sm font-medium text-secondary mb-2">{t('admin.sso_client_id')}</label>
                                     <input
                                         type="text"
                                         value={providers.google.clientId}
@@ -318,13 +320,13 @@ const SSOConfigPanel = () => {
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-secondary mb-2">
-                                        Client Secret {providers.google.clientSecretSet && <span className="text-green-400 text-xs">(configured)</span>}
+                                        {t('admin.sso_client_secret')} {providers.google.clientSecretSet && <span className="text-green-400 text-xs">{t('admin.sso_secret_configured')}</span>}
                                     </label>
                                     <input
                                         type="password"
                                         value={secrets.google}
                                         onChange={(e) => setSecrets(prev => ({ ...prev, google: e.target.value }))}
-                                        placeholder={providers.google.clientSecretSet ? "Leave empty to keep current" : "OAuth Client Secret"}
+                                        placeholder={providers.google.clientSecretSet ? t('admin.sso_secret_empty') : "OAuth Client Secret"}
                                         className="w-full px-4 py-2.5 rounded-lg text-sm font-mono"
                                         style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
                                     />
@@ -346,12 +348,12 @@ const SSOConfigPanel = () => {
                             <button onClick={() => handleSaveProvider('google')} disabled={saving.google}
                                 className="px-5 py-2.5 rounded-lg text-sm font-medium text-white shadow-md"
                                 style={{ background: 'var(--accent-primary)' }}>
-                                {saving.google ? 'Saving...' : 'Save Configuration'}
+                                {saving.google ? t('admin.sso_saving') : t('admin.sso_save')}
                             </button>
                             <button onClick={() => handleTestProvider('google')} disabled={testing.google || !providers.google.clientId}
                                 className="px-5 py-2.5 rounded-lg text-sm font-medium border"
                                 style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}>
-                                {testing.google ? 'Testing...' : 'Validate Format'}
+                                {testing.google ? t('admin.sso_testing') : t('admin.sso_validate')}
                             </button>
                         </div>
                     </div>
@@ -379,7 +381,7 @@ const SSOConfigPanel = () => {
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                                 <div>
-                                    <label className="block text-sm font-medium text-secondary mb-2">Application (Client) ID</label>
+                                    <label className="block text-sm font-medium text-secondary mb-2">Application ({t('admin.sso_client_id')})</label>
                                     <input
                                         type="text"
                                         value={providers.microsoft.clientId}
@@ -391,13 +393,13 @@ const SSOConfigPanel = () => {
                                 </div>
                                 <div>
                                     <label className="block text-sm font-medium text-secondary mb-2">
-                                        Client Secret {providers.microsoft.clientSecretSet && <span className="text-green-400 text-xs">(configured)</span>}
+                                        {t('admin.sso_client_secret')} {providers.microsoft.clientSecretSet && <span className="text-green-400 text-xs">{t('admin.sso_secret_configured')}</span>}
                                     </label>
                                     <input
                                         type="password"
                                         value={secrets.microsoft}
                                         onChange={(e) => setSecrets(prev => ({ ...prev, microsoft: e.target.value }))}
-                                        placeholder={providers.microsoft.clientSecretSet ? "Leave empty to keep current" : "Client Secret Value"}
+                                        placeholder={providers.microsoft.clientSecretSet ? t('admin.sso_secret_empty') : "Client Secret Value"}
                                         className="w-full px-4 py-2.5 rounded-lg text-sm font-mono"
                                         style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }}
                                     />
@@ -450,12 +452,12 @@ const SSOConfigPanel = () => {
                             <button onClick={() => handleSaveProvider('microsoft')} disabled={saving.microsoft}
                                 className="px-5 py-2.5 rounded-lg text-sm font-medium text-white shadow-md"
                                 style={{ background: 'var(--accent-primary)' }}>
-                                {saving.microsoft ? 'Saving...' : 'Save Configuration'}
+                                {saving.microsoft ? t('admin.sso_saving') : t('admin.sso_save')}
                             </button>
                             <button onClick={() => handleTestProvider('microsoft')} disabled={testing.microsoft || !providers.microsoft.clientId}
                                 className="px-5 py-2.5 rounded-lg text-sm font-medium border"
                                 style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)', background: 'var(--bg-secondary)' }}>
-                                {testing.microsoft ? 'Testing...' : 'Validate Format'}
+                                {testing.microsoft ? t('admin.sso_testing') : t('admin.sso_validate')}
                             </button>
                         </div>
                     </div>

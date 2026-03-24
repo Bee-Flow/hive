@@ -103,3 +103,30 @@ export const TOOL_NAME_MAP = {
     'crossref_lookup': 'CrossRef',
     'serper_search': 'Web Search',
 };
+
+/**
+ * Returns a human-friendly label for a tool name.
+ * Falls back to prettifying the raw name (snake_case → Title Case).
+ */
+export const getToolLabel = (name) => {
+    if (!name) return 'Tool';
+    if (TOOL_NAME_MAP[name]) return TOOL_NAME_MAP[name];
+    return name.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+};
+
+/**
+ * Returns an emoji icon for a known tool, or a generic wrench.
+ */
+export const getToolIcon = (name) => {
+    const icons = {
+        'agent_search': '🔍', 'google_search': '🔍', 'serper_search': '🔍',
+        'scholar_search': '🔍', 'arxiv_search': '🔍', 'pubmed_search': '🔍', 'crossref_lookup': '🔍',
+        'web_browser': '🌐', 'browser_agent': '🌐',
+        'terminal_exec': '💻', 'python_interpreter': '🐍',
+        'notebook_doc_write': '📝', 'notebook_add_source': '📎',
+        'sql_query': '🗄️', 'file_read': '📂', 'document_reader': '📄',
+        'gmail_tool': '📧', 'calendar_tool': '📅',
+        'sequentialthinking': '🧠', 'api_fetcher': '🔗',
+    };
+    return icons[name] || '🔧';
+};

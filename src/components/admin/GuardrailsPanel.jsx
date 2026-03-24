@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
+import { useTranslation } from '../../hooks/useTranslation';
 import { API_BASE, authFetch } from '../../utils/helpers';
 
 // Guardrails Configuration Panel (Regex Rules)
 const GuardrailsPanel = ({ orgShieldOnly = false }) => {
+    const { t } = useTranslation();
     // Global Regex Rules State
     const [rules, setRules] = useState([]);
     const [collections, setCollections] = useState([]);
@@ -198,7 +200,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 })
             });
             if (res.ok) {
-                setOrgShieldMessage({ type: 'success', text: 'Privacy shield saved!' });
+                setOrgShieldMessage({ type: 'success', text: t('admin.guard_saved') });
             } else {
                 const data = await res.json();
                 setOrgShieldMessage({ type: 'error', text: data.error || 'Failed to save.' });
@@ -246,7 +248,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 body: JSON.stringify({ regexGuardrails: { rules, collections } })
             });
             if (res.ok) {
-                setRulesMessage({ type: 'success', text: 'Rules & collections saved!' });
+                setRulesMessage({ type: 'success', text: t('admin.guard_saved') });
             } else {
                 setRulesMessage({ type: 'error', text: 'Failed to save' });
             }
@@ -301,7 +303,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 })
             });
             if (res.ok) {
-                setPiiMessage({ type: 'success', text: 'PII detection settings saved!' });
+                setPiiMessage({ type: 'success', text: t('admin.guard_saved') });
             } else {
                 setPiiMessage({ type: 'error', text: 'Failed to save.' });
             }
@@ -329,7 +331,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 })
             });
             if (res.ok) {
-                setDcMessage({ type: 'success', text: 'Saved!' });
+                setDcMessage({ type: 'success', text: t('admin.guard_saved') });
             } else {
                 setDcMessage({ type: 'error', text: 'Failed to save.' });
             }
@@ -348,7 +350,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
             {!orgShieldOnly && (
                 <div className="w-64 flex flex-col p-2 border-r" style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)' }}>
                     <div className="p-4 mb-2">
-                        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted">Guardrails</h3>
+                        <h3 className="text-xs font-semibold uppercase tracking-wider text-muted">{t('admin.guard_title')}</h3>
                     </div>
                     <div className="space-y-1">
                         <button
@@ -359,7 +361,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                 }`}
                         >
                             <span className="text-lg">🛡️</span>
-                            AI Moderation
+                            {t('admin.guard_tab_mod')}
                         </button>
                         <button
                             onClick={() => setActiveTab('regex')}
@@ -369,7 +371,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                 }`}
                         >
                             <span className="text-lg">📝</span>
-                            Regex Rules
+                            {t('admin.guard_tab_regex')}
                         </button>
                         <button
                             onClick={() => setActiveTab('directchat')}
@@ -379,7 +381,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                 }`}
                         >
                             <span className="text-lg">💬</span>
-                            Direct Chat
+                            {t('admin.guard_tab_direct')}
                         </button>
                         <button
                             onClick={() => setActiveTab('orgshield')}
@@ -389,7 +391,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                 }`}
                         >
                             <span className="text-lg">🏢</span>
-                            Org Privacy Shield
+                            {t('admin.guard_tab_org')}
                         </button>
                         <button
                             onClick={() => setActiveTab('pii')}
@@ -398,8 +400,8 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                 : 'text-[var(--text-secondary)] hover:bg-white/5 hover:text-[var(--text-primary)]'
                                 }`}
                         >
-                            <span className="text-lg">🔍</span>
-                            PII Detection
+                            <span className="text-lg">🕵️</span>
+                            {t('admin.guard_tab_pii')}
                         </button>
                     </div>
                 </div>
@@ -415,8 +417,8 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                     <div className="max-w-full space-y-6 animate-fadeIn h-full flex flex-col">
                         <div className="flex items-center justify-between shrink-0">
                             <div>
-                                <h2 className="text-xl font-bold mb-1 text-primary">Regex Rules</h2>
-                                <p className="text-sm text-muted">Manage regular expression patterns and rule collections.</p>
+                                <h2 className="text-xl font-bold mb-1 text-primary">{t('admin.guard_regex_title')}</h2>
+                                <p className="text-sm text-muted">{t('admin.guard_regex_desc')}</p>
                             </div>
                             <button
                                 onClick={handleSaveRules}
@@ -424,7 +426,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                 className="px-6 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50 shadow-lg shadow-purple-500/20 transition-all hover:opacity-90"
                                 style={{ background: 'var(--accent-primary)', color: 'white' }}
                             >
-                                {savingRules ? 'Saving...' : 'Save All Changes'}
+                                {savingRules ? t('admin.guard_saving') : t('admin.guard_save_all')}
                             </button>
                         </div>
                         {rulesMessage && <div className={`px-4 py-3 rounded-lg text-sm shrink-0 ${rulesMessage.type === 'success' ? 'bg-green-500/10 text-green-500 border border-green-500/20' : 'bg-red-500/10 text-red-500 border border-red-500/20'}`}>{rulesMessage.text}</div>}
@@ -615,8 +617,8 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 {activeTab === 'directchat' && (
                     <div className="max-w-2xl mx-auto space-y-6 animate-fadeIn">
                         <div>
-                            <h2 className="text-xl font-bold mb-1 text-primary">Direct Chat Guardrails</h2>
-                            <p className="text-sm text-muted">Apply regex rules to the direct chat. This works the same way as agent guardrails.</p>
+                            <h2 className="text-xl font-bold mb-1 text-primary">{t('admin.guard_direct_title')}</h2>
+                            <p className="text-sm text-muted">{t('admin.guard_direct_desc')}</p>
                         </div>
 
                         <div className="p-6 rounded-xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
@@ -708,7 +710,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                     className="px-6 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50 shadow-lg transition-all hover:opacity-90"
                                     style={{ background: 'var(--accent-primary)', color: 'white' }}
                                 >
-                                    {dcSaving ? 'Saving...' : 'Save Configuration'}
+                                    {dcSaving ? t('admin.guard_saving') : t('admin.guard_save_all')}
                                 </button>
                             </div>
                         </div>
@@ -718,8 +720,8 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 {activeTab === 'orgshield' && (
                     <div className="max-w-3xl mx-auto space-y-8 animate-fadeIn">
                         <div>
-                            <h2 className="text-xl font-bold mb-1 text-primary">Organization Privacy Shield</h2>
-                            <p className="text-sm text-muted">Set regex guardrails that apply to all agents and direct chat within an organization. Agent-level guardrails are additive on top.</p>
+                            <h2 className="text-xl font-bold mb-1 text-primary">{t('admin.guard_org_title')}</h2>
+                            <p className="text-sm text-muted">{t('admin.guard_org_desc')}</p>
                         </div>
 
                         {orgList.length === 0 ? (
@@ -917,7 +919,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                 className="px-6 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50 shadow-lg transition-all hover:opacity-90"
                                                 style={{ background: 'var(--accent-primary)', color: 'white' }}
                                             >
-                                                {orgShieldSaving ? 'Saving...' : 'Save Privacy Shield'}
+                                                {orgShieldSaving ? t('admin.guard_saving') : t('admin.guard_save_all')}
                                             </button>
                                         </div>
                                     </>
@@ -938,8 +940,8 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 {activeTab === 'pii' && (
                     <div className="max-w-3xl mx-auto space-y-6 animate-fadeIn">
                         <div>
-                            <h2 className="text-xl font-bold mb-1 text-primary">PII Detection</h2>
-                            <p className="text-sm text-muted">Detect and protect personally identifiable information in messages sent to the AI.</p>
+                            <h2 className="text-xl font-bold mb-1 text-primary">{t('admin.guard_pii_title')}</h2>
+                            <p className="text-sm text-muted">{t('admin.guard_pii_desc')}</p>
                         </div>
 
                         <div className="p-6 rounded-xl border space-y-6" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
@@ -1103,7 +1105,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                     className="px-6 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50 shadow-lg transition-all hover:opacity-90"
                                     style={{ background: 'var(--accent-primary)', color: 'white' }}
                                 >
-                                    {piiSaving ? 'Saving...' : 'Save Configuration'}
+                                    {piiSaving ? t('admin.guard_saving') : t('admin.guard_save_all')}
                                 </button>
                             </div>
                         </div>
@@ -1125,6 +1127,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
 // AI Moderation Config Component — Guard Service (Llama Guard) + Azure Content Safety
 // ----------------------------------------------------------------------
 const AIModerationConfig = () => {
+    const { t } = useTranslation();
     const [config, setConfig] = useState({ enabled: false, threshold: 0.7 });
     const [moderationProvider, setModerationProvider] = useState('llamaguard');
     const [azureEndpoint, setAzureEndpoint] = useState('');
@@ -1236,7 +1239,7 @@ const AIModerationConfig = () => {
                 body: JSON.stringify(body),
             });
             if (res.ok) {
-                setMsg({ type: 'success', text: 'Saved successfully!' });
+                setMsg({ type: 'success', text: t('admin.guard_saved') });
                 if (azureEndpoint) setHasAzureEndpoint(true);
                 if (azureKey) setHasAzureKey(true);
                 setAzureEndpoint('');
@@ -1282,8 +1285,8 @@ const AIModerationConfig = () => {
     return (
         <div className="max-w-2xl mx-auto space-y-6 animate-fadeIn">
             <div>
-                <h2 className="text-xl font-bold mb-2 text-primary">AI Moderation</h2>
-                <p className="text-sm text-muted">Configure AI-powered content moderation to automatically detect and block harmful content.</p>
+                <h2 className="text-xl font-bold mb-2 text-primary">{t('admin.guard_mod_title')}</h2>
+                <p className="text-sm text-muted">{t('admin.guard_mod_desc')}</p>
             </div>
 
             {/* Provider Selector */}
@@ -1574,7 +1577,7 @@ const AIModerationConfig = () => {
                             className="px-6 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50 shadow-lg transition-all hover:opacity-90"
                             style={{ background: 'var(--accent-primary)', color: 'white' }}
                         >
-                            {saving ? 'Saving...' : 'Save Configuration'}
+                            {saving ? t('admin.guard_saving') : t('admin.guard_save_all')}
                         </button>
                     </div>
 

@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { LogOut } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
+import { useTranslation } from '../../hooks/useTranslation';
 
 // ── Emoji picker data ─────────────────────────────────────────────────────────
 const EMOJI_CATEGORIES = [
@@ -211,6 +212,7 @@ const AvatarPicker = ({ user, onSaved }) => {
 
 // ── PIN Change (SSO users) ────────────────────────────────────────────────────
 const PinChangeSection = ({ user }) => {
+    const { t } = useTranslation();
     const [open, setOpen] = useState(false);
     const [oldPin, setOldPin] = useState('');
     const [newPin, setNewPin] = useState('');
@@ -248,8 +250,8 @@ const PinChangeSection = ({ user }) => {
         <div className="pt-4" style={{ borderTop: '1px solid var(--border-subtle)' }}>
             <div className="flex items-center justify-between mb-1">
                 <div>
-                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Encryption PIN</p>
-                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Protects your encrypted data</p>
+                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{t('settings.encryption_pin')}</p>
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{t('settings.protects_encrypted_data')}</p>
                 </div>
                 {!open && !recoveryKey && (
                     <button onClick={() => setOpen(true)} type="button"
@@ -319,6 +321,7 @@ const PinChangeSection = ({ user }) => {
 
 // ── Account Section ──────────────────────────────────────────────────────────
 const AccountSection = ({ user, onLogout, onAvatarChange }) => {
+    const { t } = useTranslation();
     const [localUser, setLocalUser] = useState(user);
 
     // Sync if parent user prop changes
@@ -351,13 +354,13 @@ const AccountSection = ({ user, onLogout, onAvatarChange }) => {
                             }}>{localUser.role}</span>
                         )}
                     </div>
-                    <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>Click avatar to change</p>
+                    <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>{t('settings.click_avatar_to_change')}</p>
                 </div>
                 {onLogout && (
                     <button onClick={onLogout}
                         className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors hover:bg-red-500/10 flex-shrink-0"
                         style={{ color: '#f87171' }}>
-                        <LogOut size={13} /> Sign out
+                        <LogOut size={13} /> {t('settings.sign_out')}
                     </button>
                 )}
             </div>

@@ -80,12 +80,21 @@ const WorkspacePanel = ({ content, onChange, onSave, onSelectionChange, onAskAI,
         img { max-width: 100%; height: auto; border-radius: 6px; margin: 0.5em 0; }
         hr { border: none; border-top: 1px solid #e5e7eb; margin: 1.5em 0; }
         button, .copy-btn, [data-copy] { display: none !important; }
-        .timestamp { text-align: right; color: #9ca3af; font-size: 11px; margin-top: 40px; border-top: 1px solid #e5e7eb; padding-top: 10px; }
+        .export-footer { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 48px; padding-top: 12px; border-top: 1px solid #e5e7eb; font-size: 12px; color: #6b7280; font-weight: 500; }
+        .export-footer a { color: #2563eb; text-decoration: none; font-weight: 600; }
+        .export-footer a:hover { text-decoration: underline; }
+        .export-footer .sep { color: #d1d5db; }
         @media print { body { padding: 20px !important; } pre { white-space: pre-wrap !important; word-break: break-word !important; } }
     </style>
 </head><body>
     ${htmlContent}
-    <div class="timestamp">Exported from Workspace on ${new Date().toLocaleString()}</div>
+    <div class="export-footer">
+        <span>&copy; ${new Date().getFullYear()} Bee Flow</span>
+        <span class="sep">&middot;</span>
+        <span>Exported on ${new Date().toLocaleString()}</span>
+        <span class="sep">&middot;</span>
+        <a href="https://beeflow.nl" target="_blank" rel="noopener">beeflow.nl</a>
+    </div>
 </body></html>`);
         printWindow.document.close();
         setTimeout(() => { printWindow.focus(); printWindow.print(); }, 400);

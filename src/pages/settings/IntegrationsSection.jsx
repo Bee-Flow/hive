@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { API_BASE, authFetch } from '../../utils/helpers';
+import { useTranslation } from '../../hooks/useTranslation';
 
 // ── Reusable integration row shell ───────────────────────────────────────────
 const IntegrationRow = ({ icon, name, description, connected, badge, children }) => {
@@ -653,6 +654,7 @@ const McpCredentialsIntegration = ({ onSaved }) => {
 
 // ── Integrations Section ─────────────────────────────────────────────────────
 const IntegrationsSection = ({ statuses, onSaved, enabledIntegrations, isOrgAdmin }) => {
+    const { t } = useTranslation();
     // enabledIntegrations: null = all enabled, array = only those IDs
     const isEnabled = (id) => !enabledIntegrations || enabledIntegrations.includes(id);
 
@@ -670,7 +672,7 @@ const IntegrationsSection = ({ statuses, onSaved, enabledIntegrations, isOrgAdmi
     return (
         <section>
             <h2 className="text-[11px] font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>
-                Integrations
+                {t('settings.integrations')}
             </h2>
             {showFireflies && <FirefliesIntegration hasFirefliesKey={statuses.hasFirefliesKey} onSaved={() => onSaved('fireflies')} />}
             {showYouTrack && <YouTrackIntegration hasYouTrackConfig={statuses.hasYouTrackConfig} onSaved={() => onSaved('youtrack')} />}

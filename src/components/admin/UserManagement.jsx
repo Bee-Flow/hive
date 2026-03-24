@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useTranslation } from '../../hooks/useTranslation';
 import { Users, UserPlus, Shield, Trash2, Edit2, Key, Loader2, Tag, Image, Smile, Building, ChevronDown } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 
@@ -10,6 +11,7 @@ const ORG_ROLES = [
 ];
 
 const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, user: currentUser }) => {
+    const { t } = useTranslation();
     const VALID_SECTIONS = ['users', 'organizations', 'groups', 'roles', 'permissions', 'my-organization'];
     const activeSection = VALID_SECTIONS.includes(activeSectionProp) ? activeSectionProp : 'users';
 
@@ -366,22 +368,22 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
     };
 
     const sections = isFullAdmin ? [
-        { key: 'users', label: 'Users', icon: Users },
-        { key: 'organizations', label: 'Organizations', icon: () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" /><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" /><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" /><path d="M10 6h4" /><path d="M10 10h4" /><path d="M10 14h4" /><path d="M10 18h4" /></svg> },
-        { key: 'groups', label: 'Groups', icon: Shield },
-        { key: 'roles', label: 'Roles', icon: Tag },
-        { key: 'permissions', label: 'Permissions', icon: Key },
+        { key: 'users', labelKey: 'admin.users_tab_users', icon: Users },
+        { key: 'organizations', labelKey: 'admin.users_tab_organizations', icon: () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" /><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" /><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" /><path d="M10 6h4" /><path d="M10 10h4" /><path d="M10 14h4" /><path d="M10 18h4" /></svg> },
+        { key: 'groups', labelKey: 'admin.users_tab_groups', icon: Shield },
+        { key: 'roles', labelKey: 'admin.users_tab_roles', icon: Tag },
+        { key: 'permissions', labelKey: 'admin.users_tab_permissions', icon: Key },
     ] : [
-        { key: 'users', label: 'Users', icon: Users },
-        { key: 'groups', label: 'Groups', icon: Shield },
-        ...(userOrgIds.length > 0 ? [{ key: 'my-organization', label: 'My Organization', icon: Building }] : []),
+        { key: 'users', labelKey: 'admin.users_tab_users', icon: Users },
+        { key: 'groups', labelKey: 'admin.users_tab_groups', icon: Shield },
+        ...(userOrgIds.length > 0 ? [{ key: 'my-organization', labelKey: 'admin.users_tab_my_org', icon: Building }] : []),
     ];
 
     return (
         <div className="h-full flex flex-col">
             {/* Section Tabs */}
             <div className="px-6 py-4 border-b flex items-center gap-4" style={{ borderColor: 'var(--border-subtle)' }}>
-                {sections.map(({ key, label, icon: Icon }) => (
+                {sections.map(({ key, labelKey, icon: Icon }) => (
                     <button
                         key={key}
                         onClick={() => { if (onNavigate) onNavigate(`admin/security/users/${key}`); }}
@@ -391,7 +393,7 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                             }`}
                     >
                         <Icon className="w-4 h-4" />
-                        {label}
+                        {t(labelKey)}
                     </button>
                 ))}
                 <div className="flex-1" />

@@ -1,7 +1,9 @@
 import React from 'react';
 import { MessageSquare, Sparkles } from 'lucide-react';
+import { useTranslation } from '../hooks/useTranslation';
 
 const WelcomeScreen = ({ agent, onSendMessage, children }) => {
+    const { t } = useTranslation();
     // Parse starter prompts (handle string or array)
     const starterPrompts = Array.isArray(agent?.starter_prompts)
         ? agent.starter_prompts
@@ -38,7 +40,7 @@ const WelcomeScreen = ({ agent, onSendMessage, children }) => {
             </h1>
 
             <p className="text-[var(--text-secondary)] mb-8 max-w-lg leading-relaxed text-sm">
-                {agent?.description || "I'm ready to help you with your tasks."}
+                {agent?.description || t('chat.default_agent_description')}
             </p>
 
             {/* Render passing InputArea here */}

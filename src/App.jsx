@@ -11,11 +11,14 @@ import TasksPage from './pages/TasksPage';
 import MonitoringDashboard from './pages/monitoring/MonitoringDashboard';
 import MeetingNotesPage from './pages/MeetingNotesPage';
 import TemplatesPage from './pages/TemplatesPage';
+import NotebooksPage from './pages/NotebooksPage';
+import E2ETestingPage from './pages/e2e-testing';
 import AgentDesigner from './components/admin/AgentDesigner';
 import LoginPage from './pages/LoginPage';
 import EncryptionSetup from './pages/EncryptionSetup';
 import EmbedChat from './pages/EmbedChat';
-import HomePage, { FeaturesPage, HowItWorksPage, SecurityPage, IntegrationsPage, AboutPage, PrivacyPage, TermsPage, ContactPage } from './pages/home/HomePage';
+import HomePage, { FeaturesPage, HowItWorksPage, SecurityPage, IntegrationsPage, AboutPage, PrivacyPage, TermsPage, ContactPage, DeepResearchPage, NotebooksFeaturePage, MeetingNotesFeaturePage, McpMarketplacePage, AgentDesignerPage, KnowledgeBasesPage, TaskAutomationPage, SearchEnginePage } from './pages/home/HomePage';
+import CareersPage from './pages/home/CareersPage';
 import { LogOut, User, Shield, Settings, ChevronDown } from 'lucide-react';
 
 import { API_BASE, authFetch } from './utils/helpers';
@@ -32,6 +35,15 @@ const PAGE_ROUTES = {
     privacy: '/privacy',
     terms: '/terms',
     contact: '/contact',
+    careers: '/careers',
+    deepResearch: '/deep-research',
+    aiNotebooks: '/ai-notebooks',
+    meetingNotesPage: '/meeting-notes',
+    mcpMarketplace: '/mcp-marketplace',
+    agentDesignerPage: '/agent-designer',
+    knowledgeBasesPage: '/knowledge-bases',
+    taskAutomationPage: '/task-automation',
+    searchEnginePage: '/search-engine',
     // ── App routes (all under /app/) ──
     agents: '/app',
     admin: '/app/admin',
@@ -46,6 +58,8 @@ const PAGE_ROUTES = {
     monitoring: '/app/monitoring',
     meetingNotes: '/app/meeting-notes',
     templates: '/app/templates',
+    notebooks: '/app/notebooks',
+    e2eTesting: '/app/e2e-testing',
 };
 
 // Reverse lookup: path → page key
@@ -64,6 +78,15 @@ function pageFromPath(pathname) {
     if (pathname === '/privacy') return 'privacy';
     if (pathname === '/terms') return 'terms';
     if (pathname === '/contact') return 'contact';
+    if (pathname === '/careers') return 'careers';
+    if (pathname === '/deep-research') return 'deepResearch';
+    if (pathname === '/ai-notebooks') return 'aiNotebooks';
+    if (pathname === '/meeting-notes') return 'meetingNotesPage';
+    if (pathname === '/mcp-marketplace') return 'mcpMarketplace';
+    if (pathname === '/agent-designer') return 'agentDesignerPage';
+    if (pathname === '/knowledge-bases') return 'knowledgeBasesPage';
+    if (pathname === '/task-automation') return 'taskAutomationPage';
+    if (pathname === '/search-engine') return 'searchEnginePage';
     // Exact match for app routes
     if (PATH_TO_PAGE[pathname]) return PATH_TO_PAGE[pathname];
     // /app/admin or /app/admin/* → admin page
@@ -339,6 +362,33 @@ function App() {
         if (['/contact','contact'].includes(page)) {
             setCurrentPage('contact'); window.history.pushState({}, '', '/contact'); return;
         }
+        if (['/careers','careers'].includes(page)) {
+            setCurrentPage('careers'); window.history.pushState({}, '', '/careers'); return;
+        }
+        if (['/deep-research','deepResearch'].includes(page)) {
+            setCurrentPage('deepResearch'); window.history.pushState({}, '', '/deep-research'); return;
+        }
+        if (['/ai-notebooks','aiNotebooks'].includes(page)) {
+            setCurrentPage('aiNotebooks'); window.history.pushState({}, '', '/ai-notebooks'); return;
+        }
+        if (['/meeting-notes','meetingNotesPage'].includes(page)) {
+            setCurrentPage('meetingNotesPage'); window.history.pushState({}, '', '/meeting-notes'); return;
+        }
+        if (['/mcp-marketplace','mcpMarketplace'].includes(page)) {
+            setCurrentPage('mcpMarketplace'); window.history.pushState({}, '', '/mcp-marketplace'); return;
+        }
+        if (['/agent-designer','agentDesignerPage'].includes(page)) {
+            setCurrentPage('agentDesignerPage'); window.history.pushState({}, '', '/agent-designer'); return;
+        }
+        if (['/knowledge-bases','knowledgeBasesPage'].includes(page)) {
+            setCurrentPage('knowledgeBasesPage'); window.history.pushState({}, '', '/knowledge-bases'); return;
+        }
+        if (['/task-automation','taskAutomationPage'].includes(page)) {
+            setCurrentPage('taskAutomationPage'); window.history.pushState({}, '', '/task-automation'); return;
+        }
+        if (['/search-engine','searchEnginePage'].includes(page)) {
+            setCurrentPage('searchEnginePage'); window.history.pushState({}, '', '/search-engine'); return;
+        }
         // Agent Designer opens as overlay, not a page
         if (page === 'agentDesigner') {
             setShowAgentDesigner(true);
@@ -448,6 +498,15 @@ function App() {
         if (currentPage === 'privacy') return <PrivacyPage {...homeProps} />;
         if (currentPage === 'terms') return <TermsPage {...homeProps} />;
         if (currentPage === 'contact') return <ContactPage {...homeProps} />;
+        if (currentPage === 'careers') return <CareersPage {...homeProps} />;
+        if (currentPage === 'deepResearch') return <DeepResearchPage {...homeProps} />;
+        if (currentPage === 'aiNotebooks') return <NotebooksFeaturePage {...homeProps} />;
+        if (currentPage === 'meetingNotesPage') return <MeetingNotesFeaturePage {...homeProps} />;
+        if (currentPage === 'mcpMarketplace') return <McpMarketplacePage {...homeProps} />;
+        if (currentPage === 'agentDesignerPage') return <AgentDesignerPage {...homeProps} />;
+        if (currentPage === 'knowledgeBasesPage') return <KnowledgeBasesPage {...homeProps} />;
+        if (currentPage === 'taskAutomationPage') return <TaskAutomationPage {...homeProps} />;
+        if (currentPage === 'searchEnginePage') return <SearchEnginePage {...homeProps} />;
         return <HomePage {...homeProps} />;
     }
 
@@ -547,9 +606,13 @@ function App() {
 
     const renderContent = () => {
         // If an authenticated user somehow hits a homepage route, redirect to app
-        if (['home', 'features', 'howItWorks', 'security', 'integrations'].includes(currentPage)) {
-            window.history.replaceState({}, '', '/app');
-            return null; // navigateToPage('agents') runs in useEffect via popstate below
+        if (['home', 'features', 'howItWorks', 'security', 'integrations', 'careers',
+             'about', 'privacy', 'terms', 'contact', 'deepResearch', 'aiNotebooks',
+             'meetingNotesPage', 'mcpMarketplace', 'agentDesignerPage', 'knowledgeBasesPage',
+             'taskAutomationPage', 'searchEnginePage'].includes(currentPage)) {
+            // Use setTimeout to avoid updating state during render
+            setTimeout(() => navigateToPage('agents'), 0);
+            return null;
         }
         if (currentPage === 'admin') {
             return <AdminDashboard user={user} onBack={() => navigateToPage('agents')} adminPath={adminPath} onNavigate={navigateToPage} />;
@@ -585,6 +648,14 @@ function App() {
         if (currentPage === 'templates') {
             if (user?.featureFlags?.templates === false) return navigateToPage('agents');
             return <TemplatesPage user={user} onBack={() => navigateToPage('agents')} />;
+        }
+        if (currentPage === 'notebooks') {
+            if (user?.featureFlags?.templates === false) return navigateToPage('agents');
+            return <NotebooksPage user={user} onBack={() => navigateToPage('agents')} />;
+        }
+        if (currentPage === 'e2eTesting') {
+            if (user?.featureFlags?.e2e_testing === false) return navigateToPage('agents');
+            return <E2ETestingPage user={user} onBack={() => navigateToPage('agents')} />;
         }
         return <AgentHub onNavigate={navigateToPage} user={user} initialAgentId={initialUrlRef.current.agentId} initialConversationId={initialUrlRef.current.conversationId} initialDirectConvId={initialDirectConvRef.current} onLogout={handleLogout} currentPage={currentPage} />;
     };

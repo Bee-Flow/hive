@@ -36,6 +36,7 @@ const StepAzureSetup = ({
     msClientId, setMsClientId,
     msClientSecret, setMsClientSecret,
     msTenantId, setMsTenantId,
+    officeAppsEnabled, setOfficeAppsEnabled,
     inputClass, inputStyle,
 }) => (
     <div className="space-y-3">
@@ -118,6 +119,41 @@ const StepAzureSetup = ({
                 Get your key from{' '}
                 <a href="https://portal.azure.com/#create/microsoft.bingsearch" target="_blank" rel="noopener noreferrer"
                     className="underline" style={{ color: '#0078D4' }}>Azure Portal → Bing Search</a>
+            </p>
+        </Section>
+
+        {/* Office Application Integration — fourth */}
+        <Section Logo={MicrosoftLogo} title="Office Application Integration" subtitle="Outlook, OneDrive, and Calendar tools for users" defaultOpen={false}>
+            <div className="flex items-center justify-between py-1">
+                <div>
+                    <div className="text-sm font-medium" style={{ color: '#374151' }}>Enable Office 365 tools</div>
+                    <p className="text-xs mt-0.5" style={{ color: '#9ca3af' }}>
+                        Let users access Outlook mail, OneDrive files, and Calendar via Microsoft Graph
+                    </p>
+                </div>
+                <button
+                    type="button"
+                    role="switch"
+                    aria-checked={officeAppsEnabled}
+                    onClick={() => setOfficeAppsEnabled(!officeAppsEnabled)}
+                    className="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-offset-2"
+                    style={{
+                        background: officeAppsEnabled ? '#0078D4' : '#d1d5db',
+                        focusRingColor: '#0078D4',
+                    }}
+                >
+                    <span
+                        className="pointer-events-none inline-block h-5 w-5 rounded-full bg-white shadow-lg ring-0 transition-transform duration-200 ease-in-out"
+                        style={{ transform: officeAppsEnabled ? 'translateX(1.25rem)' : 'translateX(0)' }}
+                    />
+                </button>
+            </div>
+            <p className="text-xs" style={{ color: '#9ca3af' }}>
+                Requires the Entra ID app registration above with{' '}
+                <code className="px-1 py-0.5 rounded text-xs" style={{ background: '#f3f4f6' }}>Mail.Read</code>,{' '}
+                <code className="px-1 py-0.5 rounded text-xs" style={{ background: '#f3f4f6' }}>Mail.Send</code>,{' '}
+                <code className="px-1 py-0.5 rounded text-xs" style={{ background: '#f3f4f6' }}>Files.ReadWrite</code>, and{' '}
+                <code className="px-1 py-0.5 rounded text-xs" style={{ background: '#f3f4f6' }}>Calendars.ReadWrite</code> scopes.
             </p>
         </Section>
     </div>

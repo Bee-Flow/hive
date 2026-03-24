@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, CheckSquare, BarChart3, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText } from 'lucide-react';
+import { useTranslation } from '../hooks/useTranslation';
+import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, CheckSquare, BarChart3, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, FlaskConical } from 'lucide-react';
 import { API_BASE } from '../utils/helpers';
 import NotificationCenter from './NotificationCenter';
 import NavLink from './NavLink';
+import LanguagePicker from './LanguagePicker';
 
 /* ─── Design tokens ─── */
 const ROW = 'w-full flex items-center gap-2.5 px-3 h-9 rounded-lg transition-all duration-150 text-left relative';
@@ -63,7 +65,7 @@ const CreateLabelInline = ({ onCreateLabel }) => {
                 onClick={(e) => { e.stopPropagation(); setIsCreating(true); }}
                 className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] hover:bg-[var(--bg-secondary)] rounded-md transition-colors text-left text-[var(--text-tertiary)]"
             >
-                <Plus className="w-3 h-3" /> New label
+                <Plus className="w-3 h-3" /> {t('sidebar.new_label')}
             </button>
         );
     }
@@ -95,7 +97,7 @@ const CreateLabelInline = ({ onCreateLabel }) => {
                     disabled={!name.trim()}
                     className="text-[11px] px-2 py-0.5 rounded-md bg-[var(--accent-primary)] text-white font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
                 >
-                    Add
+                    {t('common.add')}
                 </button>
             </div>
         </div>
@@ -142,7 +144,7 @@ const EditLabelInline = ({ label, onSave, onCancel }) => {
                     className="flex-1 text-[12px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded px-2 py-1 outline-none focus:border-[var(--accent-primary)] text-[var(--text-primary)] min-w-0"
                 />
                 <button onClick={handleSave} className="text-[11px] px-2 py-0.5 rounded-md bg-[var(--accent-primary)] text-white font-medium hover:opacity-90">
-                    Save
+                    {t('common.save')}
                 </button>
                 <button onClick={onCancel} className="text-[11px] p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
                     <X className="w-3.5 h-3.5" />
@@ -181,6 +183,7 @@ const Sidebar = ({
     onDeleteLabel,
     onEditLabel,
 }) => {
+    const { t } = useTranslation();
     // We'll use the 'isOpen' prop as 'sidebarOpen' (expanded state)
     // and if !isOpen, we'll show the narrow 'Power Bar'
     const [showProfileMenu, setShowProfileMenu] = useState(false);
@@ -248,11 +251,11 @@ const Sidebar = ({
             else groups.older.push(c);
         });
         return [
-            { label: 'Pinned', items: groups.pinned, isPinned: true },
-            { label: 'Today', items: groups.today },
-            { label: 'Yesterday', items: groups.yesterday },
-            { label: 'Last 30 Days', items: groups.month },
-            { label: 'Older', items: groups.older },
+            { label: t('sidebar.pinned'), items: groups.pinned, isPinned: true },
+            { label: t('sidebar.today'), items: groups.today },
+            { label: t('sidebar.yesterday'), items: groups.yesterday },
+            { label: t('sidebar.last_30_days'), items: groups.month },
+            { label: t('sidebar.older'), items: groups.older },
         ].filter(g => g.items.length > 0);
     })();
     const previewConvs = allConvs.slice(0, 3);
@@ -332,7 +335,7 @@ const Sidebar = ({
                 {/* Label dots */}
                 {(() => { try { const ls = JSON.parse(conv.labels_json || '[]'); return ls.length > 0 ? <div className="flex gap-0.5 flex-shrink-0">{ls.map(lid => { const l = conversationLabels.find(x => x.id === lid); return l ? <div key={lid} className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: l.color }} title={l.name} /> : null; })}</div> : null; } catch { return null; } })()}
                 <span className={`text-[14px] truncate flex-1 leading-snug ${active ? TEXT_ACTIVE : TEXT_IDLE}`}>
-                    {conv.title || 'Untitled Chat'}
+                    {conv.title || t('sidebar.untitled_chat')}
                 </span>
                 {/* Three-dot menu */}
                 <div className="relative" ref={menuRef}>
@@ -356,8 +359,8 @@ const Sidebar = ({
                                     className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] hover:bg-[var(--bg-secondary)] rounded-md transition-colors text-left text-[var(--text-primary)]"
                                 >
                                     {conv.pinned
-                                        ? <><PinOff className="w-3.5 h-3.5" /> Unpin</>
-                                        : <><Pin className="w-3.5 h-3.5" /> Pin to top</>
+                                        ? <><PinOff className="w-3.5 h-3.5" /> {t('sidebar.unpin')}</>
+                                        : <><Pin className="w-3.5 h-3.5" /> {t('sidebar.pin_to_top')}</>
                                     }
                                 </button>
                                 {/* Rename */}
@@ -365,12 +368,12 @@ const Sidebar = ({
                                     onClick={(e) => { e.stopPropagation(); setShowMenu(false); setIsRenaming(true); }}
                                     className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] hover:bg-[var(--bg-secondary)] rounded-md transition-colors text-left text-[var(--text-primary)]"
                                 >
-                                    <Pencil className="w-3.5 h-3.5" /> Rename
+                                    <Pencil className="w-3.5 h-3.5" /> {t('sidebar.rename')}
                                 </button>
                                 {/* Labels */}
                                 <div className="mx-1 my-1 border-t border-[var(--border-subtle)]" />
                                 <div className="px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] flex items-center gap-1.5">
-                                    <Tag className="w-3 h-3" /> Labels
+                                    <Tag className="w-3 h-3" /> {t('sidebar.labels')}
                                 </div>
                                 <div className="max-h-40 overflow-y-auto">
                                     {conversationLabels.map(label => {
@@ -407,7 +410,7 @@ const Sidebar = ({
                                         );
                                     })}
                                     {conversationLabels.length === 0 && (
-                                        <div className="px-2.5 py-1.5 text-[11px] text-[var(--text-tertiary)] italic">No labels yet</div>
+                                        <div className="px-2.5 py-1.5 text-[11px] text-[var(--text-tertiary)] italic">{t('sidebar.no_labels_yet')}</div>
                                     )}
                                 </div>
                                 {/* Create new label inline */}
@@ -421,7 +424,7 @@ const Sidebar = ({
                                                 onClick={(e) => { e.stopPropagation(); onMoveToProject?.(conv, null); setShowMenu(false); }}
                                                 className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] hover:bg-[var(--bg-secondary)] rounded-md transition-colors text-left text-[var(--text-secondary)]"
                                             >
-                                                <X className="w-3.5 h-3.5" /> Remove from project
+                                                <X className="w-3.5 h-3.5" /> {t('sidebar.remove_from_project')}
                                             </button>
                                         )}
                                         {projects.filter(p => p.id !== conv.project_id).map(p => (
@@ -445,7 +448,7 @@ const Sidebar = ({
                                     className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] hover:bg-red-50 rounded-md transition-colors text-left text-red-500"
                                     data-testid={`conv-delete-${conv.id}`}
                                 >
-                                    <Trash2 className="w-3.5 h-3.5" /> Delete
+                                    <Trash2 className="w-3.5 h-3.5" /> {t('common.delete')}
                                 </button>
                             </div>
                         </div>
@@ -496,9 +499,9 @@ const Sidebar = ({
             {/* ── Nav rows ── */}
             <nav aria-label="Main navigation" data-testid="main-navigation" className={`px-2 pt-4 flex-shrink-0 flex flex-col gap-2 ${isOpen ? '' : 'items-center'}`}>
                 {[
-                    { label: 'Direct Chat', icon: MessageSquare, onClick: onDirectChat, active: directChatMode && !selectedAgent },
-                    { label: 'Agent Store', icon: Store, onClick: onOpenMarketplace, active: currentPage === 'marketplace' },
-                    { label: 'Search', icon: Search, onClick: onOpenSearch, active: false },
+                    { label: t('sidebar.direct_chat'), icon: MessageSquare, onClick: onDirectChat, active: directChatMode && !selectedAgent },
+                    { label: t('sidebar.agent_store'), icon: Store, onClick: onOpenMarketplace, active: currentPage === 'marketplace' },
+                    { label: t('sidebar.search'), icon: Search, onClick: onOpenSearch, active: false },
                 ].map(({ label, icon: Icon, onClick, active, primary, beta }) => (
                     <button
                         key={label}
@@ -542,7 +545,7 @@ const Sidebar = ({
             {isOpen && projects.length > 0 && (
                 <div className="flex-shrink-0 mt-1">
                     <div className={SECTION_HDR} onClick={toggleProjects}>
-                        <span className={SECTION_LBL}>Projects</span>
+                        <span className={SECTION_LBL}>{t('sidebar.projects')}</span>
                         <div className="flex items-center gap-1">
                             <button
                                 onClick={(e) => { e.stopPropagation(); onCreateProject?.(); }}
@@ -598,7 +601,7 @@ const Sidebar = ({
                         className={`${ROW} ${ROW_IDLE} text-[var(--text-tertiary)]`}
                     >
                         <Plus className="w-4 h-4" />
-                        <span className="text-[13px]">New Project</span>
+                        <span className="text-[13px]">{t('sidebar.new_project')}</span>
                     </button>
                 </div>
             )}
@@ -610,7 +613,7 @@ const Sidebar = ({
             {isOpen && (
                 <div className="flex-shrink-0">
                     <div className={SECTION_HDR} onClick={toggleAgents}>
-                        <span className={SECTION_LBL}>My Agents</span>
+                        <span className={SECTION_LBL}>{t('sidebar.my_agents')}</span>
                         <ChevronDown className={`w-3.5 h-3.5 text-[var(--text-tertiary)] transition-transform duration-200 ${agentsOpen ? '' : '-rotate-90'}`} />
                     </div>
 
@@ -645,7 +648,7 @@ const Sidebar = ({
                                 );
                             }) : (
                                 <button onClick={onOpenMarketplace} className={`${ROW} ${ROW_IDLE} text-[var(--text-tertiary)]`}>
-                                    <span className="text-[13px]">Discover AI Agents</span>
+                                    <span className="text-[13px]">{t('sidebar.discover_agents')}</span>
                                 </button>
                             )}
                         </div>
@@ -657,7 +660,7 @@ const Sidebar = ({
             {/* ── Recent Chats ── */}
             <div className={`flex-1 min-h-0 flex flex-col overflow-hidden ${isOpen ? '' : 'hidden'}`}>
                 <div className="flex items-center justify-between px-3 h-9 select-none">
-                    <span className={SECTION_LBL}>Chats</span>
+                    <span className={SECTION_LBL}>{t('sidebar.chats')}</span>
                     {allConvs.length > 0 && (
                         <span className="text-[10px] text-[var(--text-tertiary)] font-medium tabular-nums">{allConvs.length}</span>
                     )}
@@ -666,7 +669,7 @@ const Sidebar = ({
                 <div className="flex-1 overflow-y-auto custom-scrollbar px-1.5 pb-1">
                     {isOpen ? (allConvs.length === 0 ? (
                         <p className="px-3 py-2 text-[12px] text-[var(--text-tertiary)]">
-                            {selectedAgent || directChatMode ? 'No chats yet' : 'Select an agent to begin'}
+                            {selectedAgent || directChatMode ? t('sidebar.no_chats_yet') : t('sidebar.select_agent_to_begin')}
                         </p>
                     ) : (
                         groupedConvs.map(group => (
@@ -741,7 +744,7 @@ const Sidebar = ({
                                 >
                                     {currentPage === 'admin' && <div className={ACCENT_BAR} />}
                                     <Shield className={`w-4 h-4 ${currentPage === 'admin' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'admin' ? TEXT_ACTIVE : TEXT_IDLE}`}>Admin Dashboard</span>
+                                    <span className={`text-[13px] ${currentPage === 'admin' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.admin_dashboard')}</span>
                                 </NavLink>
                             )}
                             {!isMobile && user?.featureFlags?.tasks !== false && (user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('tasks'))) && (
@@ -754,7 +757,7 @@ const Sidebar = ({
                                 >
                                     {currentPage === 'tasks' && <div className={ACCENT_BAR} />}
                                     <CheckSquare className={`w-4 h-4 ${currentPage === 'tasks' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'tasks' ? TEXT_ACTIVE : TEXT_IDLE}`}>Tasks</span>
+                                    <span className={`text-[13px] ${currentPage === 'tasks' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.tasks')}</span>
                                     <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
                                 </NavLink>
                             )}
@@ -768,31 +771,37 @@ const Sidebar = ({
                                 >
                                     {currentPage === 'monitoring' && <div className={ACCENT_BAR} />}
                                     <BarChart3 className={`w-4 h-4 ${currentPage === 'monitoring' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'monitoring' ? TEXT_ACTIVE : TEXT_IDLE}`}>Monitoring</span>
+                                    <span className={`text-[13px] ${currentPage === 'monitoring' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.monitoring')}</span>
                                     <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
                                 </NavLink>
                             )}
                             {!isMobile && (user?.isAdmin || user?.permissions?.includes('all') || user?.permissions?.includes('org_admin') || user?.permissions?.some?.(p => p.startsWith?.('admin_')) || user?.orgRole === 'admin' || user?.orgRole === 'org_admin') && (
-                                <button
-                                    onClick={() => { setShowProfileMenu(false); onNavigate('agentDesigner'); }}
+                                <NavLink
+                                    href="/agents"
+                                    onClick={() => setShowProfileMenu(false)}
+                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('agentDesigner'); }}
                                     className={`${ROW} ${currentPage === 'agentDesigner' ? ROW_ACTIVE : ROW_IDLE}`}
+                                    style={{ textDecoration: 'none', color: 'inherit' }}
                                     data-testid="profile-menu-agents"
                                 >
                                     {currentPage === 'agentDesigner' && <div className={ACCENT_BAR} />}
                                     <Bot className={`w-4 h-4 ${currentPage === 'agentDesigner' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'agentDesigner' ? TEXT_ACTIVE : TEXT_IDLE}`}>Agents</span>
-                                </button>
+                                    <span className={`text-[13px] ${currentPage === 'agentDesigner' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.agents')}</span>
+                                </NavLink>
                             )}
                             {!isMobile && (
-                                <button
-                                    onClick={() => { setShowProfileMenu(false); onNavigate('settings'); }}
+                                <NavLink
+                                    href="/settings"
+                                    onClick={() => setShowProfileMenu(false)}
+                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('settings'); }}
                                     className={`${ROW} ${currentPage === 'settings' ? ROW_ACTIVE : ROW_IDLE}`}
+                                    style={{ textDecoration: 'none', color: 'inherit' }}
                                     data-testid="profile-menu-settings"
                                 >
                                     {currentPage === 'settings' && <div className={ACCENT_BAR} />}
                                     <Settings className={`w-4 h-4 ${currentPage === 'settings' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'settings' ? TEXT_ACTIVE : TEXT_IDLE}`}>Settings</span>
-                                </button>
+                                    <span className={`text-[13px] ${currentPage === 'settings' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.settings')}</span>
+                                </NavLink>
                             )}
                         </div>
                         <div className="border-t border-[var(--border-subtle)] p-1">
@@ -806,29 +815,43 @@ const Sidebar = ({
                                 >
                                     {currentPage === 'meetingNotes' && <div className={ACCENT_BAR} />}
                                     <Mic className={`w-4 h-4 ${currentPage === 'meetingNotes' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'meetingNotes' ? TEXT_ACTIVE : TEXT_IDLE}`}>Meeting Notes</span>
+                                    <span className={`text-[13px] ${currentPage === 'meetingNotes' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.meeting_notes')}</span>
                                     <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
                                 </NavLink>
                             )}
-                            {!isMobile && user?.featureFlags?.templates !== false && (user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('templates'))) && (
+                            {!isMobile && user?.featureFlags?.notebooks !== false && (
                                 <NavLink
-                                    href="/templates"
+                                    href="/notebooks"
                                     onClick={() => setShowProfileMenu(false)}
-                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('templates'); }}
-                                    className={`${ROW} ${currentPage === 'templates' ? ROW_ACTIVE : ROW_IDLE}`}
+                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('notebooks'); }}
+                                    className={`${ROW} ${currentPage === 'notebooks' ? ROW_ACTIVE : ROW_IDLE}`}
                                     style={{ textDecoration: 'none', color: 'inherit' }}
                                 >
-                                    {currentPage === 'templates' && <div className={ACCENT_BAR} />}
-                                    <FileText className={`w-4 h-4 ${currentPage === 'templates' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'templates' ? TEXT_ACTIVE : TEXT_IDLE}`}>Templates</span>
+                                    {currentPage === 'notebooks' && <div className={ACCENT_BAR} />}
+                                    <FileText className={`w-4 h-4 ${currentPage === 'notebooks' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
+                                    <span className={`text-[13px] ${currentPage === 'notebooks' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.notebooks')}</span>
+                                </NavLink>
+                            )}
+                            {!isMobile && user?.featureFlags?.e2e_testing !== false && (user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('e2e_testing'))) && (
+                                <NavLink
+                                    href="/app/e2e-testing"
+                                    onClick={() => setShowProfileMenu(false)}
+                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('e2eTesting'); }}
+                                    className={`${ROW} ${currentPage === 'e2eTesting' ? ROW_ACTIVE : ROW_IDLE}`}
+                                    style={{ textDecoration: 'none', color: 'inherit' }}
+                                >
+                                    {currentPage === 'e2eTesting' && <div className={ACCENT_BAR} />}
+                                    <FlaskConical className={`w-4 h-4 ${currentPage === 'e2eTesting' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
+                                    <span className={`text-[13px] ${currentPage === 'e2eTesting' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.e2e_testing')}</span>
                                     <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
                                 </NavLink>
                             )}
                         </div>
                         <div className="border-t border-[var(--border-subtle)] p-1">
+                            <LanguagePicker />
                             <button onClick={onLogout} className={`${ROW} ${ROW_IDLE} group/so`} data-testid="sidebar-signout">
                                 <LogOut className="w-4 h-4 text-red-400 group-hover/so:text-red-500 transition-colors" strokeWidth={1.75} />
-                                <span className="text-[13px] text-[var(--text-tertiary)] group-hover/so:text-red-500 transition-colors">Sign Out</span>
+                                <span className="text-[13px] text-[var(--text-tertiary)] group-hover/so:text-red-500 transition-colors">{t('sidebar.sign_out')}</span>
                             </button>
                         </div>
                     </div>

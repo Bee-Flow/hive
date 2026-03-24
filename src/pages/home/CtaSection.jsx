@@ -6,10 +6,10 @@ export default function CtaSection({ onLoginClick }) {
       <div className="hp-container">
         <div className="hp-cta-inner hp-reveal">
           <span className="hp-label" style={{ textAlign: 'center', display: 'block' }}>Get Started</span>
-          <h2 className="hp-h2">Start building smarter workflows today</h2>
+          <h2 className="hp-h2">Your AI workplace — on your terms</h2>
           <p className="hp-body">
-            Join teams that use Bee Flow to automate repetitive work, surface insights faster,
-            and keep their data private — all from a single conversational interface.
+            Build custom AI assistants, make your organisation's knowledge instantly searchable,
+            and keep full control of your data — all from a single platform that runs on your own infrastructure.
           </p>
           <div className="hp-cta-btns">
             <button className="hp-btn hp-btn--primary" onClick={onLoginClick}>
@@ -20,7 +20,7 @@ export default function CtaSection({ onLoginClick }) {
               href="#features"
               onClick={e => { e.preventDefault(); document.getElementById('features')?.scrollIntoView({ behavior: 'smooth' }); }}
             >
-              Learn more
+              Explore features
             </a>
           </div>
         </div>

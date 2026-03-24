@@ -1,9 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { Copy, Check, Bot, ChevronDown, Send, ThumbsUp, ThumbsDown, RefreshCw, Pencil, Download, FileText } from 'lucide-react';
+import { Copy, Check, Bot, ChevronDown, Send, ThumbsUp, ThumbsDown, RefreshCw, Pencil, Download, FileText, MoreHorizontal } from 'lucide-react';
 import MarkdownRenderer from '../../MarkdownRenderer';
 import MapEmbedRenderer from '../../MapEmbedRenderer';
 import FormRenderer from '../../FormRenderer';
-import { API_BASE, authFetch } from '../../../utils/helpers';
+import { API_BASE, authFetch, getToolLabel, getToolIcon } from '../../../utils/helpers';
 import AudioPlayerInline from './AudioPlayer';
 import ImageLightbox from './ImageLightbox';
 import ToolOutput from './ToolOutput';
@@ -60,9 +60,11 @@ const MessageItem = ({
     const [feedbackComment, setFeedbackComment] = useState('');
     const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
     const [showRetryMenu, setShowRetryMenu] = useState(false);
+    const [showCopyMenu, setShowCopyMenu] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [editContent, setEditContent] = useState('');
     const retryMenuRef = useRef(null);
+    const copyMenuRef = useRef(null);
     const contentRef = useRef(null);
     const [includeConversation, setIncludeConversation] = useState(false);
 
@@ -82,6 +84,16 @@ const MessageItem = ({
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
     }, [showRetryMenu]);
+
+    // Click-outside handler for copy/export menu
+    useEffect(() => {
+        if (!showCopyMenu) return;
+        const handler = (e) => {
+            if (copyMenuRef.current && !copyMenuRef.current.contains(e.target)) setShowCopyMenu(false);
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [showCopyMenu]);
 
     const submitFeedback = async (rating, comment = '', withConversation = false) => {
         try {
@@ -548,22 +560,104 @@ const MessageItem = ({
                     )}
                 </div>
 
-                {/* Reasoning — collapsed below answer */}
-                {!isUser && !isTool && msg.thinking && !msg.isStreaming && msg.content && (
+                {/* How I got this answer — comprehensive collapsed section */}
+                {!isUser && !isTool && !msg.isStreaming && msg.content && (
+                    (msg.thinking || msg.orchestratorThinking || msg.toolHistory?.length > 0 || msg.autoSelectedTier) && (
                     <div className="mt-3 pt-3 p-3 rounded-lg" style={{ backgroundColor: 'rgba(0,0,0,0.015)', border: '1px solid rgba(0,0,0,0.03)' }}>
                         <details className="group/reasoning">
-                            <summary className="flex items-center gap-2 cursor-pointer text-xs transition-colors select-none list-none [&::-webkit-details-marker]:hidden" style={{ color: '#000' }}>
+                            <summary className="flex items-center gap-2 cursor-pointer text-xs transition-colors select-none list-none [&::-webkit-details-marker]:hidden" style={{ color: 'var(--text-primary, #000)' }}>
                                 <span className="text-sm opacity-70">🧠</span>
-                                <span className="font-medium">Reasoning</span>
-                                <span className="opacity-50">·</span>
-                                <span className="font-normal">How I got this answer</span>
+                                <span className="font-medium">How I got this answer</span>
+                                {msg.toolHistory?.filter(t => t.name !== 'sequentialthinking').length > 0 && (
+                                    <span className="opacity-50 text-[10px]">· {msg.toolHistory.filter(t => t.name !== 'sequentialthinking').length} tool{msg.toolHistory.filter(t => t.name !== 'sequentialthinking').length !== 1 ? 's' : ''} used</span>
+                                )}
                                 <svg className="w-3 h-3 transition-transform group-open/reasoning:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                             </summary>
-                            <div className="mt-2 p-3 rounded-lg text-xs whitespace-pre-wrap leading-relaxed max-h-[400px] overflow-y-auto custom-scrollbar" style={{ fontStyle: 'italic', opacity: 0.85, color: '#000' }}>
-                                {msg.thinking}
+                            <div className="mt-2 space-y-2">
+
+                                {/* Auto-selected model tier */}
+                                {msg.autoSelectedTier && (
+                                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px]" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                                        <span>📊</span>
+                                        <span>Model: <strong style={{ color: 'var(--text-primary)' }}>Auto → {msg.autoSelectedTier.charAt(0).toUpperCase() + msg.autoSelectedTier.slice(1)}</strong></span>
+                                    </div>
+                                )}
+
+                                {/* Model Reasoning / Thinking */}
+                                {msg.thinking && (
+                                    <details className="group/think">
+                                        <summary className="flex items-center gap-2 cursor-pointer text-[11px] px-2 py-1.5 rounded-lg select-none list-none [&::-webkit-details-marker]:hidden transition-colors" style={{ color: 'var(--text-secondary)' }}>
+                                            <span className="text-xs">💭</span>
+                                            <span className="font-medium">Reasoning</span>
+                                            <svg className="w-2.5 h-2.5 transition-transform group-open/think:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                        </summary>
+                                        <div className="mt-1 px-3 py-2 rounded-lg text-xs whitespace-pre-wrap leading-relaxed max-h-[300px] overflow-y-auto custom-scrollbar" style={{ fontStyle: 'italic', opacity: 0.8, color: 'var(--text-secondary)', background: 'var(--bg-tertiary)' }}>
+                                            {msg.thinking}
+                                        </div>
+                                    </details>
+                                )}
+
+                                {/* Tools Used */}
+                                {msg.toolHistory?.filter(t => t.name !== 'sequentialthinking').length > 0 && (
+                                    <details className="group/tools">
+                                        <summary className="flex items-center gap-2 cursor-pointer text-[11px] px-2 py-1.5 rounded-lg select-none list-none [&::-webkit-details-marker]:hidden transition-colors" style={{ color: 'var(--text-secondary)' }}>
+                                            <span className="text-xs">🔧</span>
+                                            <span className="font-medium">Tools Used ({msg.toolHistory.filter(t => t.name !== 'sequentialthinking').length})</span>
+                                            <svg className="w-2.5 h-2.5 transition-transform group-open/tools:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                        </summary>
+                                        <div className="mt-1 space-y-1">
+                                            {msg.toolHistory.filter(t => t.name !== 'sequentialthinking').map((tool, i) => {
+                                                const duration = tool.endTime && tool.startTime ? Math.round((tool.endTime - tool.startTime) / 1000) : null;
+                                                const argsSummary = tool.args ? Object.entries(tool.args).filter(([k]) => !k.startsWith('_')).slice(0, 2).map(([k, v]) => {
+                                                    const val = typeof v === 'string' ? (v.length > 40 ? v.slice(0, 40) + '…' : v) : JSON.stringify(v).slice(0, 30);
+                                                    return `${k}: ${val}`;
+                                                }).join(', ') : '';
+                                                return (
+                                                    <div key={i} className="flex items-start gap-2 px-3 py-1.5 rounded-lg text-[11px]" style={{ background: 'var(--bg-tertiary)' }}>
+                                                        <span className="text-xs flex-shrink-0 mt-0.5">{getToolIcon(tool.name)}</span>
+                                                        <div className="min-w-0 flex-1">
+                                                            <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{getToolLabel(tool.name)}</span>
+                                                            {argsSummary && (
+                                                                <span className="ml-1.5 opacity-60" style={{ color: 'var(--text-tertiary)' }}>— {argsSummary}</span>
+                                                            )}
+                                                        </div>
+                                                        {duration !== null && (
+                                                            <span className="text-[10px] flex-shrink-0 opacity-50" style={{ color: 'var(--text-tertiary)' }}>{duration}s</span>
+                                                        )}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </details>
+                                )}
+
+                                {/* Orchestrator Thinking */}
+                                {msg.orchestratorThinking && (
+                                    <details className="group/orch">
+                                        <summary className="flex items-center gap-2 cursor-pointer text-[11px] px-2 py-1.5 rounded-lg select-none list-none [&::-webkit-details-marker]:hidden transition-colors" style={{ color: 'var(--text-secondary)' }}>
+                                            <span className="text-xs">🎯</span>
+                                            <span className="font-medium">Orchestrator Thinking</span>
+                                            <svg className="w-2.5 h-2.5 transition-transform group-open/orch:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                        </summary>
+                                        <div className="mt-1 px-3 py-2 rounded-lg text-xs whitespace-pre-wrap leading-relaxed max-h-[300px] overflow-y-auto custom-scrollbar" style={{ fontStyle: 'italic', opacity: 0.8, color: 'var(--text-secondary)', background: 'var(--bg-tertiary)' }}>
+                                            {msg.orchestratorThinking}
+                                        </div>
+                                    </details>
+                                )}
+
+                                {/* Sequential Thinking reference */}
+                                {msg.thinkingSteps?.length > 0 && (
+                                    <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-[11px]" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                                        <span>🔄</span>
+                                        <span>Sequential Thinking: <strong style={{ color: 'var(--text-primary)' }}>{msg.thinkingSteps.length} step{msg.thinkingSteps.length !== 1 ? 's' : ''}</strong></span>
+                                        <span className="opacity-40 text-[10px]">↑ shown above</span>
+                                    </div>
+                                )}
+
                             </div>
                         </details>
                     </div>
+                    )
                 )}
 
                 {/* KB Source References */}
@@ -654,38 +748,65 @@ const MessageItem = ({
                 {!isUser && !msg.isStreaming && (
                     <div className="flex items-center justify-between mt-2">
                         <div className="flex items-center gap-1">
-                            {/* Copy */}
+                            {/* Copy / Export dropdown */}
                             {allowCopy && (
-                                <button
-                                    onClick={handleCopy}
-                                    className="p-1.5 hover:bg-[var(--bg-tertiary)] rounded text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
-                                    title="Copy"
-                                    data-testid="msg-copy-btn"
-                                >
-                                    {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-                                </button>
-                            )}
-                            {/* Copy Markdown */}
-                            {allowCopy && msg.content && (
-                                <button
-                                    onClick={handleCopyMarkdown}
-                                    className="p-1.5 hover:bg-[var(--bg-tertiary)] rounded text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
-                                    title="Copy as Markdown"
-                                    data-testid="msg-copy-md-btn"
-                                >
-                                    {copiedMd ? <Check className="w-3.5 h-3.5 text-green-500" /> : <FileText className="w-3.5 h-3.5" />}
-                                </button>
-                            )}
-                            {/* Export PDF */}
-                            {allowCopy && msg.content && (
-                                <button
-                                    onClick={handleExportPdf}
-                                    className="p-1.5 hover:bg-[var(--bg-tertiary)] rounded text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
-                                    title="Export as PDF"
-                                    data-testid="msg-export-pdf-btn"
-                                >
-                                    <Download className="w-3.5 h-3.5" />
-                                </button>
+                                <div className="relative" ref={copyMenuRef}>
+                                    <button
+                                        onClick={() => {
+                                            // Quick action: copy on click
+                                            handleCopy();
+                                        }}
+                                        className="p-1.5 hover:bg-[var(--bg-tertiary)] rounded text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+                                        title="Copy"
+                                        data-testid="msg-copy-btn"
+                                    >
+                                        {copied || copiedMd ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+                                    </button>
+                                    {msg.content && (
+                                        <button
+                                            onClick={() => setShowCopyMenu(!showCopyMenu)}
+                                            className="p-0.5 -ml-1 rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+                                            title="More export options"
+                                            data-testid="msg-copy-more-btn"
+                                        >
+                                            <ChevronDown className="w-3 h-3" />
+                                        </button>
+                                    )}
+                                    {showCopyMenu && (
+                                        <div className="absolute bottom-full left-0 mb-1 rounded-lg shadow-xl overflow-hidden z-[100] animate-fade-in"
+                                            style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', minWidth: '160px', boxShadow: '0 4px 16px rgba(0,0,0,0.2)' }}
+                                        >
+                                            <button
+                                                onClick={() => { handleCopy(); setShowCopyMenu(false); }}
+                                                className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-[var(--bg-tertiary)] transition-colors"
+                                                style={{ color: 'var(--text-primary)' }}
+                                                data-testid="msg-copy-btn-menu"
+                                            >
+                                                <Copy className="w-3.5 h-3.5 opacity-60" />
+                                                Copy
+                                            </button>
+                                            <button
+                                                onClick={() => { handleCopyMarkdown(); setShowCopyMenu(false); }}
+                                                className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-[var(--bg-tertiary)] transition-colors"
+                                                style={{ color: 'var(--text-primary)' }}
+                                                data-testid="msg-copy-md-btn"
+                                            >
+                                                <FileText className="w-3.5 h-3.5 opacity-60" />
+                                                Copy as Markdown
+                                            </button>
+                                            <div style={{ height: '1px', background: 'var(--border-subtle)' }} />
+                                            <button
+                                                onClick={() => { handleExportPdf(); setShowCopyMenu(false); }}
+                                                className="w-full text-left px-3 py-2 text-xs flex items-center gap-2 hover:bg-[var(--bg-tertiary)] transition-colors"
+                                                style={{ color: 'var(--text-primary)' }}
+                                                data-testid="msg-export-pdf-btn"
+                                            >
+                                                <Download className="w-3.5 h-3.5 opacity-60" />
+                                                Export as PDF
+                                            </button>
+                                        </div>
+                                    )}
+                                </div>
                             )}
                             {/* Thumbs feedback */}
                             <button

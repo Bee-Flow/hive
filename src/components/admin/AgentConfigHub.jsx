@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from '../../hooks/useTranslation';
 import { Bot, Bug, Globe, Settings, Workflow, Users, Terminal, Shield } from 'lucide-react';
 import AgentDesigner from './AgentDesigner';
 import SwarmManager from '../../pages/SwarmManager';
@@ -13,17 +14,18 @@ import SecurityAgentManager from '../../pages/SecurityAgentManager';
  * Wraps all agent-type panels behind a compact left sidebar.
  */
 const SECTIONS = [
-    { id: 'chat', label: 'Agent', icon: Bot, color: '#6366f1' },
-    { id: 'swarm', label: 'Swarm Agents', icon: Bug, color: '#f59e0b' },
-    { id: 'browser', label: 'Browser Agents', icon: Globe, color: '#10b981' },
-    { id: 'terminal', label: 'Terminal Agents', icon: Terminal, color: '#22c55e' },
-    { id: 'sec-agents', label: 'Security Agents', icon: Shield, color: '#ef4444' },
-    { id: 'group', label: 'Round Table', icon: Users, color: '#3b82f6' },
-    { id: 'system', label: 'System Agents', icon: Settings, color: '#8b5cf6' },
-    { id: 'pipeline', label: 'Pipeline', icon: Workflow, color: '#06b6d4' },
+    { id: 'chat', labelKey: 'admin.agents_chat', icon: Bot, color: '#6366f1' },
+    { id: 'swarm', labelKey: 'admin.agents_swarm', icon: Bug, color: '#f59e0b' },
+    { id: 'browser', labelKey: 'admin.agents_browser', icon: Globe, color: '#10b981' },
+    { id: 'terminal', labelKey: 'admin.agents_terminal', icon: Terminal, color: '#22c55e' },
+    { id: 'sec-agents', labelKey: 'admin.agents_security', icon: Shield, color: '#ef4444' },
+    { id: 'group', labelKey: 'admin.agents_group', icon: Users, color: '#3b82f6' },
+    { id: 'system', labelKey: 'admin.agents_system', icon: Settings, color: '#8b5cf6' },
+    { id: 'pipeline', labelKey: 'admin.agents_pipeline', icon: Workflow, color: '#06b6d4' },
 ];
 
 const AgentConfigHub = ({ hasPermission = () => true, user, activeSection = '', onNavigate }) => {
+    const { t } = useTranslation();
     // Map section IDs to agent type keys used in allowedAgentTypes
     const SECTION_TO_TYPE = { chat: 'chat', swarm: 'swarm', browser: 'browser', terminal: 'terminal', 'sec-agents': 'security', group: 'roundtable', system: 'system', pipeline: 'pipeline' };
 
@@ -63,7 +65,7 @@ const AgentConfigHub = ({ hasPermission = () => true, user, activeSection = '', 
                         <button
                             key={sec.id}
                             onClick={() => handleClick(sec.id)}
-                            title={sec.label}
+                            title={t(sec.labelKey)}
                             style={{
                                 display: 'flex',
                                 flexDirection: 'column',
@@ -103,7 +105,7 @@ const AgentConfigHub = ({ hasPermission = () => true, user, activeSection = '', 
                                 textOverflow: 'ellipsis',
                                 maxWidth: '48px',
                             }}>
-                                {sec.label.split(' ')[0]}
+                                {t(sec.labelKey).split(' ')[0]}
                             </span>
                         </button>
                     );

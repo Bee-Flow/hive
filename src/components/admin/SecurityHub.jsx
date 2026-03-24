@@ -1,4 +1,5 @@
 import React from 'react';
+import { useTranslation } from '../../hooks/useTranslation';
 import { Shield, KeyRound, Users, Sparkles } from 'lucide-react';
 import GuardrailsPanel from './GuardrailsPanel';
 import SSOConfigPanel from './SSOConfigPanel';
@@ -10,13 +11,14 @@ import BetaFeaturesPanel from './BetaFeaturesPanel';
  * Groups Guardrails and SSO behind a compact left sidebar.
  */
 const SECTIONS = [
-    { id: 'users', label: 'Users', icon: Users, color: '#3b82f6' },
-    { id: 'guardrails', label: 'Guardrails', icon: Shield, color: '#ef4444' },
-    { id: 'sso', label: 'SSO', icon: KeyRound, color: '#f59e0b' },
-    { id: 'beta', label: 'Beta', icon: Sparkles, color: '#8b5cf6', superAdminOnly: true },
+    { id: 'users', labelKey: 'admin.sec_users', icon: Users, color: '#3b82f6' },
+    { id: 'guardrails', labelKey: 'admin.sec_guardrails', icon: Shield, color: '#ef4444' },
+    { id: 'sso', labelKey: 'admin.sec_sso', icon: KeyRound, color: '#f59e0b' },
+    { id: 'beta', labelKey: 'admin.sec_beta', icon: Sparkles, color: '#8b5cf6', superAdminOnly: true },
 ];
 
 const SecurityHub = ({ activeSection: activeProp = 'users', userSection = '', onNavigate, user }) => {
+    const { t } = useTranslation();
     const isFullAdmin = user?.permissions?.includes('all') || user?.isAdmin;
     const visibleSections = isFullAdmin ? SECTIONS : SECTIONS.filter(s => !s.superAdminOnly && s.id !== 'sso');
     const VALID_IDS = visibleSections.map(s => s.id);
@@ -48,7 +50,7 @@ const SecurityHub = ({ activeSection: activeProp = 'users', userSection = '', on
                         <button
                             key={sec.id}
                             onClick={() => handleSectionClick(sec.id)}
-                            title={sec.label}
+                            title={t(sec.labelKey)}
                             style={{
                                 display: 'flex',
                                 flexDirection: 'column',
@@ -77,7 +79,7 @@ const SecurityHub = ({ activeSection: activeProp = 'users', userSection = '', on
                                 lineHeight: 1.1,
                                 transition: 'color 0.15s ease',
                             }}>
-                                {sec.label}
+                                {t(sec.labelKey)}
                             </span>
                         </button>
                     );

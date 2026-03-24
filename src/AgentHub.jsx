@@ -25,7 +25,9 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
     };
 
     // Beta feature helper - checks if user's org has a beta feature enabled
+    // Admins always have access to all beta features
     const hasBetaFeature = (featureId) => {
+        if (user?.isAdmin || (user?.permissions || []).includes('all')) return true;
         const features = Array.isArray(user?.betaFeatures) ? user.betaFeatures : [];
         return features.includes(featureId);
     };
@@ -1274,6 +1276,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                             onSelect={handleSelectAgent}
                             onClose={() => setShowMarketplace(false)}
                             onUnpublish={handleUnpublishAgent}
+                            onEditAgent={() => { setShowMarketplace(false); onNavigate('agentDesigner'); }}
                             user={user}
                         />
                     </div>

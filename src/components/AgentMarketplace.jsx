@@ -1,6 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { getAgentInitials, getAgentColor } from '../utils/helpers';
-import { ChevronDown, ChevronUp, X, Search, Heart, EyeOff } from 'lucide-react';
+import { ChevronDown, ChevronUp, X, Search, Heart, EyeOff, Pencil, Plus } from 'lucide-react';
 
 const STATIC_CATEGORIES_BEFORE = [
     { key: 'popular', label: 'Popular' },
@@ -9,6 +9,7 @@ const STATIC_CATEGORIES_BEFORE = [
 ];
 
 const SPECIAL_TYPE_CATEGORIES = [
+    { key: 'research', label: 'Research' },
     { key: 'swarm', label: 'Swarm' },
     { key: 'browser', label: 'Browsing' },
     { key: 'terminal', label: 'Dev & Coding' },
@@ -36,6 +37,7 @@ const SORT_OPTIONS = [
 ];
 
 const STATIC_TYPE_MAP = {
+    research: 'Research',
     swarm: 'Swarm',
     browser: 'Browser',
     terminal: 'Terminal',
@@ -45,17 +47,17 @@ const STATIC_TYPE_MAP = {
 };
 
 const getAgentType = (a) => {
+    if (a._type) return a._type;
     if (a.is_swarm) return 'swarm';
     if (a.is_browser_agent) return 'browser';
     if (a.is_terminal_agent) return 'terminal';
     if (a.is_security_agent) return 'security';
-    if (a._type === 'roundtable') return 'roundtable';
     if (a.category_id) return `cat_${a.category_id}`;
     return 'agent';
 };
 
 /* ── Agent Card ── */
-const AgentCard = React.memo(({ agentId, name, avatar, description, typeLabel, isFavorite, isOwner, onSelect, onToggleFavorite, onUnpublish }) => (
+const AgentCard = React.memo(({ agentId, name, avatar, description, typeLabel, isFavorite, isOwner, onSelect, onToggleFavorite, onUnpublish, onEdit }) => (
     <div
         onClick={onSelect}
         className="group relative p-4 rounded-xl border cursor-pointer transition-shadow duration-150 hover:shadow-md flex flex-col"
@@ -63,6 +65,17 @@ const AgentCard = React.memo(({ agentId, name, avatar, description, typeLabel, i
         data-testid={`agent-card-${agentId}`}
     >
         <div className="absolute top-3 right-3 flex items-center gap-1 z-10">
+            {isOwner && onEdit && (
+                <button
+                    onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                    className="p-1.5 rounded-lg transition-colors hover:brightness-90"
+                    style={{ background: 'var(--bg-tertiary)' }}
+                    title="Edit agent"
+                    data-testid={`agent-edit-${agentId}`}
+                >
+                    <Pencil className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+                </button>
+            )}
             {isOwner && onUnpublish && (
                 <button
                     onClick={(e) => { e.stopPropagation(); onUnpublish(agentId); }}
@@ -113,7 +126,7 @@ const AgentCard = React.memo(({ agentId, name, avatar, description, typeLabel, i
 /* ── Main Store ── */
 const API = (import.meta.env.VITE_API_URL || '') + '/api/usage';
 
-const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onToggleFavorite, onSelect, onClose, onUnpublish, user }) => {
+const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onToggleFavorite, onSelect, onClose, onUnpublish, onEditAgent, user }) => {
     const [search, setSearch] = useState('');
     const [showFilters, setShowFilters] = useState(false);
     const [activeCategory, setActiveCategory] = useState('popular');
@@ -214,6 +227,15 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
             typeLabel: TYPE_MAP[getAgentType(a)] || 'Agent', isFavorite: favorites.includes(a.id), isOwner, agent: a,
         };
     }), [filtered, favorites, TYPE_MAP, user]);
+    // Permission check: can this user edit/create agents?
+    const canManageAgents = user && (
+        user.isAdmin ||
+        (user.permissions || []).includes('all') ||
+        (user.permissions || []).includes('org_admin') ||
+        (user.permissions || []).some?.(p => p.startsWith?.('admin_')) ||
+        user.orgRole === 'admin' ||
+        user.orgRole === 'org_admin'
+    );
 
     return (
         <div className="flex-1 flex flex-col overflow-hidden w-full h-full" style={{ background: 'var(--bg-secondary)' }} data-testid="agent-marketplace">
@@ -224,9 +246,33 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
                         <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Agent Store</h1>
                         <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{filtered.length} of {agents.length} agents</p>
                     </div>
-                    <button onClick={onClose} className="p-2 rounded-lg transition-colors" style={{ color: 'var(--text-muted)' }}>
-                        <X className="w-5 h-5" />
-                    </button>
+                    <div className="flex items-center gap-2">
+                        {canManageAgents && onEditAgent && (
+                            <>
+                                <button
+                                    onClick={() => onEditAgent()}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all hover:bg-[var(--bg-tertiary)]"
+                                    style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}
+                                    data-testid="marketplace-edit-agents"
+                                >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                    Edit Agents
+                                </button>
+                                <button
+                                    onClick={() => onEditAgent()}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:brightness-110"
+                                    style={{ background: 'var(--accent-primary)' }}
+                                    data-testid="marketplace-create-agent"
+                                >
+                                    <Plus className="w-3.5 h-3.5" />
+                                    Create Agent
+                                </button>
+                            </>
+                        )}
+                        <button onClick={onClose} className="p-2 rounded-lg transition-colors" style={{ color: 'var(--text-muted)' }}>
+                            <X className="w-5 h-5" />
+                        </button>
+                    </div>
                 </div>
 
                 <div className="relative mb-3">
@@ -324,6 +370,7 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
                                     isOwner={d.isOwner}
                                     onSelect={() => handleSelect(d.agent)} onToggleFavorite={onToggleFavorite}
                                     onUnpublish={onUnpublish}
+                                    onEdit={d.isOwner && onEditAgent ? () => onEditAgent(d.agent) : undefined}
                                 />
                             ))}
                         </div>

@@ -58,6 +58,9 @@ const InitSetupWizard = ({ onComplete }) => {
     const [msClientSecret, setMsClientSecret] = useState('');
     const [msTenantId, setMsTenantId] = useState('');
 
+    // Step: Office apps integration (Azure only)
+    const [officeAppsEnabled, setOfficeAppsEnabled] = useState(false);
+
     const isAzure = deploymentType === 'azure';
     const clearMessages = () => setError('');
 
@@ -146,6 +149,7 @@ const InitSetupWizard = ({ onComplete }) => {
                 if (azureKey.trim()) aiBody.azureApiKey = azureKey;
                 aiBody.azureApiVersion = azureVersion;
                 aiBody.azureModels = azureModels.trim();
+                aiBody.officeAppsEnabled = officeAppsEnabled;
                 if (bingKey.trim()) {
                     aiBody.searchProvider = 'bing';
                     aiBody.bingSearchKey = bingKey;
@@ -344,6 +348,7 @@ const InitSetupWizard = ({ onComplete }) => {
                                 msClientId={msClientId} setMsClientId={setMsClientId}
                                 msClientSecret={msClientSecret} setMsClientSecret={setMsClientSecret}
                                 msTenantId={msTenantId} setMsTenantId={setMsTenantId}
+                                officeAppsEnabled={officeAppsEnabled} setOfficeAppsEnabled={setOfficeAppsEnabled}
                                 inputClass={INPUT_CLASS} inputStyle={INPUT_STYLE}
                             />
                         )}

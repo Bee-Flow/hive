@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useTranslation } from '../../../hooks/useTranslation';
 import { API_BASE, authFetch } from '../../../utils/helpers';
-import ChatModelTiersConfig from '../ChatModelTiersConfig';
 import { MISTRAL_MODEL_META, getModelMeta, CAT_COLORS } from './modelMeta';
 import EmbeddingsConfig from './EmbeddingsConfig';
 import OCRConfig from './OCRConfig';
@@ -14,9 +14,11 @@ import GoogleApiKeyCard from './ProviderCards/GoogleCard';
 import ElevenLabsApiKeyCard from './ProviderCards/ElevenLabsCard';
 import AzureConfigCard from './ProviderCards/AzureCard';
 import GoogleVertexConfigCard from './ProviderCards/GoogleVertexCard';
+import MiniMaxApiKeyCard from './ProviderCards/MiniMaxCard';
 
 
 const AIConfigPanel = () => {
+    const { t } = useTranslation();
     // Navigation State
     const [activeTab, setActiveTab] = useState('providers');
 
@@ -224,12 +226,12 @@ const AIConfigPanel = () => {
     if (loading) return <div className="text-sm p-4" style={{ color: 'var(--text-muted)' }}>Loading providers...</div>;
 
     const navItems = [
-        { id: 'providers', label: 'API Keys', icon: '🔑' },
-        { id: 'models', label: 'Models', icon: '🧠' },
-        { id: 'allowedModels', label: 'Agent Models', icon: '🛡️' },
-        { id: 'chatModels', label: 'Chat Models', icon: '🗨️' },
-        { id: 'directChat', label: 'Direct Chat', icon: '💬' },
-        { id: 'modelCosts', label: 'Model Costs', icon: '💰' },
+        { id: 'providers', labelKey: 'admin.ai_api_keys', icon: '🔑' },
+        { id: 'models', labelKey: 'admin.ai_models', icon: '🧠' },
+        { id: 'allowedModels', labelKey: 'admin.ai_agent_models', icon: '🛡️' },
+        { id: 'chatModels', labelKey: 'admin.ai_chat_models', icon: '🗨️' },
+        { id: 'directChat', labelKey: 'admin.ai_direct_chat', icon: '💬' },
+        { id: 'modelCosts', labelKey: 'admin.ai_model_costs', icon: '💰' },
     ];
 
     return (
@@ -250,7 +252,7 @@ const AIConfigPanel = () => {
                                 }`}
                         >
                             <span className="text-lg">{item.icon}</span>
-                            {item.label}
+                            {t(item.labelKey)}
                         </button>
                     ))}
                 </div>
@@ -381,6 +383,7 @@ const AIConfigPanel = () => {
                         <ElevenLabsApiKeyCard onMessage={setMessage} />
                         <GoogleVertexConfigCard onMessage={setMessage} />
                         <AzureConfigCard onMessage={setMessage} />
+                        <MiniMaxApiKeyCard onMessage={setMessage} />
                     </>
                 )}
 

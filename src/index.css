@@ -563,3 +563,202 @@ pre.hljs {
         font-size: 0.75rem;
     }
 }
+
+/* ── Notebook TipTap Editor Styles ─────────────────── */
+.notebook-editor .tiptap {
+    line-height: 1.55;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+    outline: none;
+}
+
+.notebook-editor .tiptap p {
+    margin: 0.3em 0;
+}
+
+.notebook-editor .tiptap h1 {
+    font-size: 1.75em;
+    font-weight: 700;
+    margin: 0.8em 0 0.3em;
+    line-height: 1.25;
+}
+
+.notebook-editor .tiptap h2 {
+    font-size: 1.35em;
+    font-weight: 650;
+    margin: 0.7em 0 0.25em;
+    line-height: 1.3;
+}
+
+.notebook-editor .tiptap h3 {
+    font-size: 1.15em;
+    font-weight: 600;
+    margin: 0.6em 0 0.2em;
+    line-height: 1.35;
+}
+
+.notebook-editor .tiptap a,
+.notebook-editor .tiptap a.notebook-link {
+    color: #3b82f6;
+    text-decoration: none;
+    border-bottom: 1px solid rgba(59, 130, 246, 0.3);
+    transition: all 0.15s ease;
+    cursor: pointer;
+}
+
+.notebook-editor .tiptap a:hover {
+    color: #60a5fa;
+    border-bottom-color: #60a5fa;
+}
+
+.notebook-editor .tiptap hr {
+    border: none;
+    border-top: 1px solid var(--border-default);
+    margin: 1em 0;
+}
+
+.notebook-editor .tiptap blockquote {
+    border-left: 3px solid var(--accent-primary);
+    padding-left: 0.75em;
+    margin: 0.5em 0;
+    color: var(--text-secondary);
+}
+
+.notebook-editor .tiptap ul,
+.notebook-editor .tiptap ol {
+    padding-left: 1.25em;
+    margin: 0.3em 0;
+}
+
+.notebook-editor .tiptap li {
+    margin: 0.1em 0;
+}
+
+.notebook-editor .tiptap li p {
+    margin: 0.1em 0;
+}
+
+.notebook-editor .tiptap code {
+    background: rgba(220, 38, 38, 0.08);
+    color: #dc2626;
+    padding: 0.1em 0.35em;
+    border-radius: 4px;
+    font-family: 'Fira Code', 'Monaco', monospace;
+    font-size: 0.88em;
+}
+
+.notebook-editor .tiptap pre {
+    background: #1e1e2e;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 8px;
+    padding: 0.6em 0.75em;
+    margin: 0.5em 0;
+    overflow-x: auto;
+}
+
+.notebook-editor .tiptap pre code {
+    background: none;
+    color: #e2e8f0;
+    padding: 0;
+    font-size: 0.85em;
+    line-height: 1.5;
+}
+
+.notebook-editor .tiptap mark {
+    background: rgba(250, 204, 21, 0.35);
+    border-radius: 2px;
+    padding: 0 2px;
+}
+
+/* Light mode overrides */
+[data-theme="light"] .notebook-editor .tiptap code {
+    background: rgba(220, 38, 38, 0.06);
+    color: #b91c1c;
+}
+
+[data-theme="light"] .notebook-editor .tiptap pre {
+    background: #f4f4f8;
+    border-color: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .notebook-editor .tiptap pre code {
+    color: #1e293b;
+}
+
+/* TipTap placeholder styling */
+.notebook-editor .tiptap p.is-editor-empty:first-child::before {
+    content: attr(data-placeholder);
+    color: var(--text-muted);
+    pointer-events: none;
+    float: left;
+    height: 0;
+}
+
+/* ── Markdown table styles for TipTap ─────────────── */
+.notebook-editor .tiptap table {
+    border-collapse: collapse;
+    width: 100%;
+    margin: 0.75em 0;
+    border-radius: 8px;
+    overflow: hidden;
+    font-size: 0.9em;
+}
+
+.notebook-editor .tiptap table th,
+.notebook-editor .tiptap table td {
+    border: 1px solid var(--border-default);
+    padding: 0.45em 0.65em;
+    text-align: left;
+}
+
+.notebook-editor .tiptap table th {
+    background: var(--bg-tertiary);
+    font-weight: 600;
+    font-size: 0.88em;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.notebook-editor .tiptap table tr:nth-child(even) td {
+    background: var(--bg-secondary);
+}
+
+/* Tiptap table interactive styles */
+.notebook-editor .tiptap table td.selectedCell,
+.notebook-editor .tiptap table th.selectedCell {
+    background: rgba(99, 102, 241, 0.15);
+}
+
+.notebook-editor .tiptap table .column-resize-handle {
+    position: absolute;
+    right: -2px;
+    top: 0;
+    bottom: -2px;
+    width: 4px;
+    background: var(--accent-primary);
+    pointer-events: none;
+}
+
+.notebook-editor .tiptap table td,
+.notebook-editor .tiptap table th {
+    position: relative;
+    min-width: 80px;
+    vertical-align: top;
+}
+
+.notebook-editor .tiptap.resize-cursor {
+    cursor: col-resize;
+}
+
+.notebook-editor .tiptap strong {
+    font-weight: 700;
+}
+
+.notebook-editor .tiptap em {
+    font-style: italic;
+}
+
+/* ── Tight list variant (from tiptap-markdown) ───── */
+.notebook-editor .tiptap .tight p {
+    margin: 0;
+}

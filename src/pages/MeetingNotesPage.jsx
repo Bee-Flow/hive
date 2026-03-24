@@ -3,7 +3,8 @@ import { API_BASE, authFetch, generateMessageId } from '../utils/helpers';
 import {
     ArrowLeft, Upload, Mic, Clock, Users, FileAudio, Trash2, Pencil, Check, X,
     Share2, Loader2, Search, ChevronDown, ChevronRight, Play, Download, Copy, UserPlus,
-    Square, MicOff, FileText, RefreshCw, MessageSquare, Send, Bot, Pause, Volume2, Video, Settings
+    Square, MicOff, FileText, RefreshCw, MessageSquare, Send, Bot, Pause, Volume2, Video, Settings,
+    CheckSquare, Tag, BarChart3, ChevronUp, ArrowDown, ArrowUp, Sparkles, ListChecks
 } from 'lucide-react';
 import useChatEngine from '../hooks/useChatEngine';
 import MessageItem from '../components/chat/MessageItem';
@@ -49,8 +50,8 @@ const LANGUAGES = [
 
 // ── Speaker color palette ───────────────────────────────
 const SPEAKER_COLORS = [
-    '#6366f1', '#ec4899', '#f59e0b', '#10b981', '#3b82f6',
-    '#8b5cf6', '#ef4444', '#06b6d4', '#84cc16', '#f97316',
+    '#3b82f6', '#ec4899', '#f59e0b', '#10b981', '#06b6d4',
+    '#8b5cf6', '#ef4444', '#f97316', '#84cc16', '#6366f1',
 ];
 
 export default function MeetingNotesPage({ user, onBack }) {
@@ -66,7 +67,7 @@ export default function MeetingNotesPage({ user, onBack }) {
     const [uploadProgress, setUploadProgress] = useState('');
     const [uploadLang, setUploadLang] = useState('nl');
     const [uploadTerms, setUploadTerms] = useState('');
-    const [uploadProvider, setUploadProvider] = useState('voxtral');
+    const [uploadProvider, setUploadProvider] = useState('whisperx');
     const [dragOver, setDragOver] = useState(false);
     const [uploadMode, setUploadMode] = useState('record'); // 'record' | 'upload' | 'bot'
     const fileInputRef = useRef(null);
@@ -94,6 +95,31 @@ export default function MeetingNotesPage({ user, onBack }) {
 
     // Detail view tab
     const [detailTab, setDetailTab] = useState('summary');
+
+    // Action items
+    const [savingActionItems, setSavingActionItems] = useState(false);
+
+    // Export
+    const [showExport, setShowExport] = useState(false);
+
+    // Transcript search
+    const [transcriptSearch, setTranscriptSearch] = useState('');
+    const [transcriptSearchIdx, setTranscriptSearchIdx] = useState(0);
+
+    // Speaker filter
+    const [speakerFilter, setSpeakerFilter] = useState(null);
+
+    // Summary template
+    const [regenerating, setRegenerating] = useState(false);
+    const [showTemplateMenu, setShowTemplateMenu] = useState(false);
+
+    // Tags
+    const [newTag, setNewTag] = useState('');
+    const [showTagInput, setShowTagInput] = useState(false);
+
+    // Audio player
+    const [audioCurrentTime, setAudioCurrentTime] = useState(0);
+    const [audioDuration, setAudioDuration] = useState(0);
 
     // Reprocessing state
     const [reprocessingId, setReprocessingId] = useState(null);
@@ -460,12 +486,135 @@ export default function MeetingNotesPage({ user, onBack }) {
     useEffect(() => {
         setChatMessages([]);
         setMeetingChatInput('');
+        setDetailTab('summary');
+        setTranscriptSearch('');
+        setSpeakerFilter(null);
     }, [selected?.id]);
 
     // Auto-scroll chat
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [chatMessages]);
+
+    // Toggle action item done
+    const toggleActionItem = async (itemId) => {
+        if (!selected || savingActionItems) return;
+        const updated = (selected.actionItems || []).map(ai =>
+            ai.id === itemId ? { ...ai, done: !ai.done } : ai
+        );
+        setSelected(prev => ({ ...prev, actionItems: updated }));
+        setSavingActionItems(true);
+        try {
+            await authFetch(`${API_BASE}/api/transcriptions/${selected.id}`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ actionItems: updated }),
+            });
+        } catch (err) { console.error('Toggle action item failed:', err); }
+        setSavingActionItems(false);
+    };
+
+    // Export
+    const handleExport = async (format) => {
+        setShowExport(false);
+        try {
+            const res = await authFetch(`${API_BASE}/api/transcriptions/${selected.id}/export?format=${format}`);
+            if (res.ok) {
+                const blob = await res.blob();
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${(selected.title || 'meeting').replace(/[^a-zA-Z0-9 ]/g, '')}.${format}`;
+                a.click();
+                URL.revokeObjectURL(url);
+            }
+        } catch (err) { console.error('Export failed:', err); }
+    };
+
+    // Regenerate summary with template
+    const handleRegenerateSummary = async (template) => {
+        setShowTemplateMenu(false);
+        setRegenerating(true);
+        try {
+            const res = await authFetch(`${API_BASE}/api/transcriptions/${selected.id}/regenerate-summary`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ template }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setSelected(prev => ({ ...prev, summary: data.summary, actionItems: data.actionItems || prev.actionItems }));
+            }
+        } catch (err) { console.error('Regenerate failed:', err); }
+        setRegenerating(false);
+    };
+
+    // Tags
+    const handleAddTag = async () => {
+        if (!newTag.trim() || !selected) return;
+        const updated = [...(selected.tags || []), newTag.trim()];
+        setSelected(prev => ({ ...prev, tags: updated }));
+        setNewTag('');
+        setShowTagInput(false);
+        await authFetch(`${API_BASE}/api/transcriptions/${selected.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tags: updated }),
+        });
+    };
+
+    const handleRemoveTag = async (tag) => {
+        if (!selected) return;
+        const updated = (selected.tags || []).filter(t => t !== tag);
+        setSelected(prev => ({ ...prev, tags: updated }));
+        await authFetch(`${API_BASE}/api/transcriptions/${selected.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tags: updated }),
+        });
+    };
+
+    // Seek audio to time
+    const seekAudio = (timeStr) => {
+        if (!audioRef.current) return;
+        const parts = timeStr.split(':').map(Number);
+        let seconds = 0;
+        if (parts.length === 3) seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+        else if (parts.length === 2) seconds = parts[0] * 60 + parts[1];
+        else seconds = parts[0] || 0;
+        audioRef.current.currentTime = seconds;
+        audioRef.current.play();
+    };
+
+    // Transcript search matches
+    const transcriptSearchMatches = useMemo(() => {
+        if (!transcriptSearch || !selected?.segments) return [];
+        const query = transcriptSearch.toLowerCase();
+        return selected.segments
+            .map((seg, idx) => ({ idx, ...seg }))
+            .filter(seg => seg.text?.toLowerCase().includes(query));
+    }, [transcriptSearch, selected?.segments]);
+
+    // Filtered segments (by speaker)
+    const filteredSegments = useMemo(() => {
+        if (!selected?.segments) return [];
+        if (!speakerFilter) return selected.segments;
+        return selected.segments.filter(seg => seg.speaker === speakerFilter);
+    }, [selected?.segments, speakerFilter]);
+
+    // Speaker talk time percentages
+    const speakerStats = useMemo(() => {
+        if (!selected?.speakers) return [];
+        const total = selected.durationSeconds || 1;
+        return selected.speakers.map(s => {
+            const timeStr = s.speakingTime || '0:00';
+            const parts = timeStr.split(':').map(Number);
+            let seconds = 0;
+            if (parts.length === 3) seconds = parts[0] * 3600 + parts[1] * 60 + parts[2];
+            else if (parts.length === 2) seconds = parts[0] * 60 + parts[1];
+            return { ...s, seconds, percentage: Math.round((seconds / total) * 100) };
+        });
+    }, [selected?.speakers, selected?.durationSeconds]);
 
     // Filter
     const filtered = transcriptions.filter(t =>
@@ -497,7 +646,7 @@ export default function MeetingNotesPage({ user, onBack }) {
                 <button
                     onClick={() => { setShowUpload(!showUpload); }}
                     className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
-                    style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
+                    style={{ background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))' }}
                 >
                     <Upload className="w-4 h-4" />
                     New Transcription
@@ -651,8 +800,8 @@ export default function MeetingNotesPage({ user, onBack }) {
                                         className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
                                         style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                                     >
+                                        <option value="whisperx">🖥️ WhisperX (recommended)</option>
                                         <option value="voxtral">☁️ Voxtral</option>
-                                        <option value="whisperx">🖥️ WhisperX</option>
                                     </select>
                                 </div>
                                 <div className="flex-1">
@@ -714,8 +863,8 @@ export default function MeetingNotesPage({ user, onBack }) {
                                         </div>
                                     ) : (
                                         <div className="flex flex-col items-center gap-4">
-                                            <div className="w-20 h-20 rounded-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1))' }}>
-                                                <Mic className="w-8 h-8" style={{ color: '#6366f1' }} />
+                                            <div className="w-20 h-20 rounded-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg, rgba(156, 163, 175, 0.1), rgba(209, 213, 219, 0.1))' }}>
+                                                <Mic className="w-8 h-8" style={{ color: 'var(--accent-primary)' }} />
                                             </div>
                                             <div>
                                                 <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Ready to record</p>
@@ -724,7 +873,7 @@ export default function MeetingNotesPage({ user, onBack }) {
                                             <button
                                                 onClick={startRecording}
                                                 className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.02] active:scale-[0.98]"
-                                                style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
+                                                style={{ background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-secondary))' }}
                                             >
                                                 <Mic className="w-4 h-4" />Start Recording
                                             </button>
@@ -739,7 +888,7 @@ export default function MeetingNotesPage({ user, onBack }) {
                                     onDrop={e => { e.preventDefault(); setDragOver(false); handleUpload(e.dataTransfer.files?.[0]); }}
                                     onClick={() => !uploading && fileInputRef.current?.click()}
                                     className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all ${dragOver ? 'border-[var(--accent-primary)]' : 'border-[var(--border-default)] hover:border-[var(--accent-primary)]'}`}
-                                    style={{ background: dragOver ? 'rgba(99, 102, 241, 0.04)' : 'var(--bg-secondary)' }}
+                                    style={{ background: dragOver ? 'var(--accent-glow)' : 'var(--bg-secondary)' }}
                                 >
                                     {uploading ? (
                                         <div className="flex flex-col items-center gap-3">
@@ -960,6 +1109,8 @@ export default function MeetingNotesPage({ user, onBack }) {
                                             onPlay={() => setIsPlayingAudio(true)}
                                             onPause={() => setIsPlayingAudio(false)}
                                             onEnded={() => setIsPlayingAudio(false)}
+                                            onTimeUpdate={() => setAudioCurrentTime(audioRef.current?.currentTime || 0)}
+                                            onLoadedMetadata={() => setAudioDuration(audioRef.current?.duration || 0)}
                                         />
                                         <button
                                             onClick={() => {
@@ -970,11 +1121,33 @@ export default function MeetingNotesPage({ user, onBack }) {
                                             style={{ color: isPlayingAudio ? 'var(--accent-primary)' : 'var(--text-secondary)', border: '1px solid var(--border-default)' }}
                                         >
                                             {isPlayingAudio ? <Pause className="w-3.5 h-3.5" /> : <Volume2 className="w-3.5 h-3.5" />}
-                                            {isPlayingAudio ? 'Pause' : 'Listen'}
+                                            {isPlayingAudio ? formatDuration(Math.round(audioCurrentTime)) : 'Listen'}
                                         </button>
                                     </>
                                 )}
                                 <div className="flex items-center gap-2">
+                                    {/* Export dropdown */}
+                                    <div className="relative">
+                                        <button
+                                            onClick={() => setShowExport(!showExport)}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:bg-[var(--bg-tertiary)]"
+                                            style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}
+                                        >
+                                            <Download className="w-3.5 h-3.5" />Export
+                                        </button>
+                                        {showExport && (
+                                            <div className="absolute right-0 top-full mt-1 rounded-lg border shadow-lg z-20 py-1 min-w-[140px]"
+                                                style={{ background: 'var(--bg-card)', borderColor: 'var(--border-default)' }}
+                                            >
+                                                <button onClick={() => handleExport('md')} className="w-full text-left px-3 py-2 text-xs hover:bg-[var(--bg-tertiary)] transition-colors" style={{ color: 'var(--text-primary)' }}>
+                                                    📝 Markdown (.md)
+                                                </button>
+                                                <button onClick={() => handleExport('txt')} className="w-full text-left px-3 py-2 text-xs hover:bg-[var(--bg-tertiary)] transition-colors" style={{ color: 'var(--text-primary)' }}>
+                                                    📄 Plain Text (.txt)
+                                                </button>
+                                            </div>
+                                        )}
+                                    </div>
                                     {selected.isOwner !== false && (
                                         <button
                                             onClick={() => { setShowShare(!showShare); if (!showShare) loadOrgUsers(); }}
@@ -1022,7 +1195,7 @@ export default function MeetingNotesPage({ user, onBack }) {
                                                 const isShared = (selected.sharedWith || []).includes(u.id);
                                                 return (
                                                     <div key={u.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors">
-                                                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: '#6366f1' }}>
+                                                        <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-bold text-white" style={{ background: 'var(--accent-primary)' }}>
                                                             {u.name?.[0]?.toUpperCase() || '?'}
                                                         </div>
                                                         <div className="flex-1 min-w-0">
@@ -1041,16 +1214,78 @@ export default function MeetingNotesPage({ user, onBack }) {
                                 </div>
                             )}
 
-                            {/* Speaker legend */}
-                            {selected.speakers?.length > 0 && (
-                                <div className="px-6 py-2.5 border-b flex items-center gap-3 flex-wrap" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
-                                    {selected.speakers.map((s, i) => (
-                                        <div key={s.id} className="flex items-center gap-1.5">
-                                            <div className="w-2.5 h-2.5 rounded-full" style={{ background: getSpeakerColor(s.id) }} />
-                                            <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{s.id}</span>
-                                            <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>({s.speakingTime})</span>
-                                        </div>
+                            {/* Speaker analytics bar */}
+                            {speakerStats.length > 0 && (
+                                <div className="px-6 py-2.5 border-b" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
+                                    {/* Stacked bar */}
+                                    <div className="flex rounded-full overflow-hidden h-2 mb-2" style={{ background: 'var(--bg-tertiary)' }}>
+                                        {speakerStats.map((s) => (
+                                            <div
+                                                key={s.id}
+                                                className="transition-all cursor-pointer hover:opacity-80"
+                                                style={{ width: `${s.percentage}%`, background: getSpeakerColor(s.id), minWidth: s.percentage > 0 ? '2px' : '0' }}
+                                                title={`${s.id}: ${s.percentage}%`}
+                                                onClick={() => setSpeakerFilter(speakerFilter === s.id ? null : s.id)}
+                                            />
+                                        ))}
+                                    </div>
+                                    <div className="flex items-center gap-3 flex-wrap">
+                                        {speakerStats.map((s) => (
+                                            <button
+                                                key={s.id}
+                                                onClick={() => setSpeakerFilter(speakerFilter === s.id ? null : s.id)}
+                                                className={`flex items-center gap-1.5 px-1.5 py-0.5 rounded transition-all text-xs ${speakerFilter === s.id ? 'ring-1' : 'hover:bg-[var(--bg-tertiary)]'}`}
+                                                style={{ ringColor: getSpeakerColor(s.id) }}
+                                            >
+                                                <div className="w-2.5 h-2.5 rounded-full" style={{ background: getSpeakerColor(s.id) }} />
+                                                <span className="font-medium" style={{ color: speakerFilter === s.id ? getSpeakerColor(s.id) : 'var(--text-primary)' }}>{s.id}</span>
+                                                <span style={{ color: 'var(--text-muted)' }}>{s.percentage}%</span>
+                                            </button>
+                                        ))}
+                                        {speakerFilter && (
+                                            <button onClick={() => setSpeakerFilter(null)} className="text-[10px] px-1.5 py-0.5 rounded-full" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>
+                                                Clear filter
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+
+                            {/* Tags */}
+                            {(selected.tags?.length > 0 || selected.isOwner !== false) && (
+                                <div className="px-6 py-2 border-b flex items-center gap-2 flex-wrap" style={{ borderColor: 'var(--border-subtle)' }}>
+                                    <Tag className="w-3 h-3" style={{ color: 'var(--text-muted)' }} />
+                                    {(selected.tags || []).map(tag => (
+                                        <span key={tag} className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full font-medium" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                                            {tag}
+                                            {selected.isOwner !== false && (
+                                                <button onClick={() => handleRemoveTag(tag)} className="hover:text-red-400 transition-colors">
+                                                    <X className="w-2.5 h-2.5" />
+                                                </button>
+                                            )}
+                                        </span>
                                     ))}
+                                    {selected.isOwner !== false && (
+                                        showTagInput ? (
+                                            <div className="flex items-center gap-1">
+                                                <input
+                                                    autoFocus
+                                                    value={newTag}
+                                                    onChange={e => setNewTag(e.target.value)}
+                                                    onKeyDown={e => { if (e.key === 'Enter') handleAddTag(); if (e.key === 'Escape') setShowTagInput(false); }}
+                                                    className="text-[11px] px-2 py-0.5 rounded-full border outline-none w-20"
+                                                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                                                    placeholder="tag name"
+                                                />
+                                                <button onClick={handleAddTag} className="p-0.5"><Check className="w-3 h-3 text-green-500" /></button>
+                                                <button onClick={() => setShowTagInput(false)} className="p-0.5"><X className="w-3 h-3 text-red-400" /></button>
+                                            </div>
+                                        ) : (
+                                            <button onClick={() => setShowTagInput(true)} className="text-[11px] px-2 py-0.5 rounded-full border border-dashed hover:border-[var(--accent-primary)] transition-all" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
+                                                + Add tag
+                                            </button>
+                                        )
+                                    )}
                                 </div>
                             )}
 
@@ -1062,6 +1297,18 @@ export default function MeetingNotesPage({ user, onBack }) {
                                     style={{ color: detailTab === 'summary' ? 'var(--accent-primary)' : 'var(--text-secondary)' }}
                                 >
                                     <FileText className="w-3.5 h-3.5" />Summary
+                                </button>
+                                <button
+                                    onClick={() => setDetailTab('actions')}
+                                    className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${detailTab === 'actions' ? 'bg-[var(--accent-primary)]/10' : 'hover:bg-[var(--bg-tertiary)]'}`}
+                                    style={{ color: detailTab === 'actions' ? 'var(--accent-primary)' : 'var(--text-secondary)' }}
+                                >
+                                    <ListChecks className="w-3.5 h-3.5" />Action Items
+                                    {(selected.actionItems || []).length > 0 && (
+                                        <span className="text-[10px] px-1.5 py-px rounded-full font-semibold" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>
+                                            {(selected.actionItems || []).filter(ai => !ai.done).length}
+                                        </span>
+                                    )}
                                 </button>
                                 <button
                                     onClick={() => setDetailTab('transcript')}
@@ -1080,39 +1327,158 @@ export default function MeetingNotesPage({ user, onBack }) {
                                     </div>
                                 ) : detailTab === 'summary' ? (
                                     /* Summary tab */
-                                    selected.summary ? (
-                                        <div className="prose prose-sm max-w-none" style={{ color: 'var(--text-primary)' }}>
-                                            <MarkdownRenderer content={selected.summary} />
-                                        </div>
-                                    ) : (
-                                        <div className="text-center py-12">
-                                            <FileText className="w-8 h-8 mx-auto mb-2" style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
-                                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No summary available for this transcription</p>
-                                        </div>
-                                    )
-                                ) : (
-                                    /* Transcript tab */
-                                    <div className="space-y-1">
-                                        {(selected.segments || []).map((seg, idx) => (
-                                            <div key={idx} className="group flex gap-3 py-2 px-3 rounded-lg hover:bg-[var(--bg-secondary)] transition-colors">
-                                                <div className="shrink-0 pt-0.5">
-                                                    <div
-                                                        className="text-[10px] font-bold text-white px-1.5 py-0.5 rounded-md whitespace-nowrap"
-                                                        style={{ background: getSpeakerColor(seg.speaker) }}
+                                    <div>
+                                        {/* Template selector */}
+                                        <div className="flex items-center gap-2 mb-4">
+                                            <div className="relative">
+                                                <button
+                                                    onClick={() => setShowTemplateMenu(!showTemplateMenu)}
+                                                    disabled={regenerating}
+                                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all hover:bg-[var(--bg-tertiary)] disabled:opacity-50"
+                                                    style={{ color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}
+                                                >
+                                                    {regenerating ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                                                    {regenerating ? 'Regenerating...' : 'Regenerate Summary'}
+                                                    <ChevronDown className="w-3 h-3" />
+                                                </button>
+                                                {showTemplateMenu && (
+                                                    <div className="absolute left-0 top-full mt-1 rounded-lg border shadow-lg z-20 py-1 min-w-[200px]"
+                                                        style={{ background: 'var(--bg-card)', borderColor: 'var(--border-default)' }}
                                                     >
-                                                        {seg.speaker}
+                                                        {[
+                                                            { key: 'general', label: '📋 General', desc: 'Default meeting summary' },
+                                                            { key: 'standup', label: '🚀 Standup / Daily Sync', desc: 'Done, doing, blockers' },
+                                                            { key: 'sales', label: '🎯 Sales Call', desc: 'Needs, objections, next steps' },
+                                                            { key: 'interview', label: '🤝 Interview', desc: 'Strengths, concerns, fit' },
+                                                            { key: 'retrospective', label: '🔄 Retrospective', desc: 'Went well, improve, actions' },
+                                                        ].map(t => (
+                                                            <button key={t.key} onClick={() => handleRegenerateSummary(t.key)} className="w-full text-left px-3 py-2 hover:bg-[var(--bg-tertiary)] transition-colors">
+                                                                <div className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{t.label}</div>
+                                                                <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{t.desc}</div>
+                                                            </button>
+                                                        ))}
                                                     </div>
-                                                </div>
-                                                <div className="flex-1 min-w-0">
-                                                    <p className="text-sm leading-relaxed" style={{ color: 'var(--text-primary)' }}>{seg.text}</p>
-                                                </div>
-                                                <div className="shrink-0 pt-0.5">
-                                                    <span className="text-[10px] tabular-nums" style={{ color: 'var(--text-muted)' }}>
-                                                        {seg.startFormatted || ''}
-                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        {selected.summary ? (
+                                            <div className="prose prose-sm max-w-none" style={{ color: 'var(--text-primary)' }}>
+                                                <MarkdownRenderer content={selected.summary} />
+                                            </div>
+                                        ) : (
+                                            <div className="text-center py-12">
+                                                <FileText className="w-8 h-8 mx-auto mb-2" style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
+                                                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No summary available for this transcription</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : detailTab === 'actions' ? (
+                                    /* Action Items tab */
+                                    <div>
+                                        {(selected.actionItems || []).length > 0 ? (
+                                            <div className="space-y-2">
+                                                {(selected.actionItems || []).map((ai) => (
+                                                    <div key={ai.id} className={`flex items-start gap-3 p-3 rounded-xl border transition-all ${ai.done ? 'opacity-60' : ''}`}
+                                                        style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}
+                                                    >
+                                                        <button onClick={() => toggleActionItem(ai.id)} className="mt-0.5 shrink-0">
+                                                            {ai.done ? (
+                                                                <div className="w-5 h-5 rounded flex items-center justify-center" style={{ background: 'var(--success)' }}>
+                                                                    <Check className="w-3 h-3 text-white" />
+                                                                </div>
+                                                            ) : (
+                                                                <div className="w-5 h-5 rounded border-2" style={{ borderColor: 'var(--border-default)' }} />
+                                                            )}
+                                                        </button>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className={`text-sm ${ai.done ? 'line-through' : ''}`} style={{ color: 'var(--text-primary)' }}>{ai.text}</p>
+                                                            <div className="flex items-center gap-2 mt-1">
+                                                                <span className="text-[10px] px-1.5 py-px rounded-full font-medium" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>
+                                                                    {ai.assignee}
+                                                                </span>
+                                                                {ai.timestamp && (
+                                                                    <button onClick={() => seekAudio(ai.timestamp)} className="text-[10px] hover:underline" style={{ color: 'var(--accent-primary)' }}>
+                                                                        🕗 {ai.timestamp}
+                                                                    </button>
+                                                                )}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                                <div className="flex items-center gap-2 pt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                                    <CheckSquare className="w-3.5 h-3.5" />
+                                                    {(selected.actionItems || []).filter(ai => ai.done).length} of {(selected.actionItems || []).length} completed
                                                 </div>
                                             </div>
-                                        ))}
+                                        ) : (
+                                            <div className="text-center py-12">
+                                                <ListChecks className="w-8 h-8 mx-auto mb-2" style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
+                                                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>No action items extracted</p>
+                                                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Try regenerating the summary to extract action items</p>
+                                            </div>
+                                        )}
+                                    </div>
+                                ) : (
+                                    /* Transcript tab */
+                                    <div>
+                                        {/* Search bar */}
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <div className="relative flex-1">
+                                                <Search className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+                                                <input
+                                                    value={transcriptSearch}
+                                                    onChange={e => { setTranscriptSearch(e.target.value); setTranscriptSearchIdx(0); }}
+                                                    placeholder="Search transcript..."
+                                                    className="w-full pl-9 pr-3 py-1.5 rounded-lg text-xs border outline-none focus:ring-1 transition-all"
+                                                    style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
+                                                />
+                                            </div>
+                                            {transcriptSearch && (
+                                                <span className="text-[10px] whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
+                                                    {transcriptSearchMatches.length} matches
+                                                </span>
+                                            )}
+                                        </div>
+                                        <div className="space-y-1">
+                                            {filteredSegments.map((seg, idx) => {
+                                                const isMatch = transcriptSearch && seg.text?.toLowerCase().includes(transcriptSearch.toLowerCase());
+                                                return (
+                                                    <div key={idx} className={`group flex gap-3 py-2 px-3 rounded-lg hover:bg-[var(--bg-secondary)] transition-colors ${isMatch ? 'ring-1' : ''}`}
+                                                        style={isMatch ? { ringColor: 'var(--warning)', background: 'rgba(245, 158, 11, 0.04)' } : {}}
+                                                    >
+                                                        <div className="shrink-0 pt-0.5">
+                                                            <div
+                                                                className="text-[10px] font-bold text-white px-1.5 py-0.5 rounded-md whitespace-nowrap"
+                                                                style={{ background: getSpeakerColor(seg.speaker) }}
+                                                            >
+                                                                {seg.speaker}
+                                                            </div>
+                                                        </div>
+                                                        <div className="flex-1 min-w-0">
+                                                            <p className="text-sm leading-relaxed" style={{ color: 'var(--text-primary)' }}>
+                                                                {transcriptSearch ? (
+                                                                    seg.text.split(new RegExp(`(${transcriptSearch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi')).map((part, i) =>
+                                                                        part.toLowerCase() === transcriptSearch.toLowerCase()
+                                                                            ? <mark key={i} style={{ background: 'rgba(245, 158, 11, 0.3)', borderRadius: '2px', padding: '0 1px' }}>{part}</mark>
+                                                                            : part
+                                                                    )
+                                                                ) : seg.text}
+                                                            </p>
+                                                        </div>
+                                                        <div className="shrink-0 pt-0.5">
+                                                            <button
+                                                                onClick={() => seg.startFormatted && seekAudio(seg.startFormatted)}
+                                                                className="text-[10px] tabular-nums hover:underline cursor-pointer"
+                                                                style={{ color: 'var(--text-muted)' }}
+                                                                title="Click to jump to this moment"
+                                                            >
+                                                                {seg.startFormatted || ''}
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 )}
                             </div>
@@ -1190,8 +1556,8 @@ export default function MeetingNotesPage({ user, onBack }) {
                         /* Empty state */
                         <div className="h-full flex items-center justify-center">
                             <div className="text-center">
-                                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(99, 102, 241, 0.08)' }}>
-                                    <Mic className="w-8 h-8" style={{ color: '#6366f1', opacity: 0.6 }} />
+                                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl flex items-center justify-center" style={{ background: 'var(--accent-glow)' }}>
+                                    <Mic className="w-8 h-8" style={{ color: 'var(--accent-primary)', opacity: 0.6 }} />
                                 </div>
                                 <h3 className="text-base font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Select a transcription</h3>
                                 <p className="text-sm" style={{ color: 'var(--text-muted)' }}>

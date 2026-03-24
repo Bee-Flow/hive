@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Terminal, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
+import { getToolLabel, getToolIcon } from '../../../utils/helpers';
 
 export default function ToolOutput({ msg }) {
     const [showRawToolOutput, setShowRawToolOutput] = useState(false);
@@ -87,20 +88,34 @@ export default function ToolOutput({ msg }) {
     };
 
     const renderToolCall = () => {
-        // Show thinking indicator when a tool is running
+        // Show subtle tool activity chip when a tool is running
         if (msg.toolCall && msg.toolCall.status === 'running') {
             // Don't show generic indicator for sequential thinking — handled by renderSequentialThinking
             if (msg.toolCall.name === 'sequentialthinking') return null;
             // Don't show when reasoning model thinking header is already visible
             if (msg.isStreaming && !msg.content) return null;
+
+            const icon = getToolIcon(msg.toolCall.name);
+            const label = getToolLabel(msg.toolCall.name);
+
             return (
-                <div className="mt-2 flex items-center gap-2 text-xs text-[var(--text-secondary)] italic">
-                    <div className="flex gap-1">
-                        <span className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-pulse"></span>
-                        <span className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-pulse delay-75"></span>
-                        <span className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-pulse delay-150"></span>
+                <div className="mt-2 flex items-center gap-1.5">
+                    <div
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium transition-all duration-300 animate-fade-in"
+                        style={{
+                            background: 'var(--bg-tertiary)',
+                            color: 'var(--text-secondary)',
+                            border: '1px solid var(--border-subtle)',
+                        }}
+                    >
+                        <span className="text-xs">{icon}</span>
+                        <span>{label}</span>
+                        <span className="flex items-center gap-0.5 ml-0.5">
+                            <span className="w-1 h-1 rounded-full animate-pulse" style={{ background: 'var(--accent-primary)' }}></span>
+                            <span className="w-1 h-1 rounded-full animate-pulse" style={{ background: 'var(--accent-primary)', animationDelay: '150ms' }}></span>
+                            <span className="w-1 h-1 rounded-full animate-pulse" style={{ background: 'var(--accent-primary)', animationDelay: '300ms' }}></span>
+                        </span>
                     </div>
-                    <span>Thinking...</span>
                 </div>
             );
         }

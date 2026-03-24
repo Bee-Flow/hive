@@ -250,7 +250,7 @@ const ModelCostsConfig = () => {
             </div>
 
             <p className="text-xs mt-3" style={{ color: 'var(--text-muted)' }}>
-                Edit costs inline and click Save. Custom overrides are highlighted with <span className="text-amber-400">amber</span>. Reset returns to LiteLLM default pricing.
+                Edit costs inline and click Save. Custom overrides are highlighted with <span className="text-amber-400">amber</span>. Reset returns to default pricing.
             </p>
         </div>
     );

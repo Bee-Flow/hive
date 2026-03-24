@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { Package, Building2, Plus, Pencil, Trash2, Save, X, Star, AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Shield, Infinity } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
-
+import { useTranslation } from '../../hooks/useTranslation';
 const FEATURE_OPTIONS = [
     { id: 'chat', label: 'Chat' },
     { id: 'agents', label: 'Agents' },
@@ -343,6 +343,7 @@ const PlanEditor = ({ plan, onSave, onCancel }) => {
 //  Plans View
 // ═══════════════════════════════════════════
 const PlansView = () => {
+    const { t } = useTranslation();
     const [plans, setPlans] = useState([]);
     const [editing, setEditing] = useState(null); // null | 'new' | plan object
     const [loading, setLoading] = useState(true);
@@ -398,18 +399,18 @@ const PlansView = () => {
         <div style={{ padding: '24px', height: '100%', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <div>
-                    <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)', margin: 0 }}>Subscription Plans</h2>
-                    <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '4px 0 0' }}>Create reusable plan templates with limits and feature access</p>
+                    <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)', margin: 0 }}>{t('admin.sub_title', 'Subscription Plans')}</h2>
+                    <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '4px 0 0' }}>{t('admin.sub_desc', 'Create reusable plan templates with limits and feature access')}</p>
                 </div>
                 <button onClick={() => setEditing('new')} style={btnPrimary}>
-                    <Plus style={{ width: 16, height: 16 }} /> New Plan
+                    <Plus style={{ width: 16, height: 16 }} /> {t('admin.sub_new_plan', 'New Plan')}
                 </button>
             </div>
 
             {plans.length === 0 ? (
                 <div style={{ ...card, textAlign: 'center', padding: '60px 20px' }}>
                     <Package style={{ width: 40, height: 40, color: 'var(--text-muted)', margin: '0 auto 12px' }} />
-                    <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>No plans yet. Create your first subscription plan.</p>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>{t('admin.sub_no_plans', 'No plans yet. Create your first subscription plan.')}</p>
                 </div>
             ) : (
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
@@ -448,7 +449,7 @@ const PlansView = () => {
 
                             <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--border-default)', paddingTop: '12px' }}>
                                 <button onClick={() => setEditing(plan)} style={{ ...btnSecondary, flex: 1, justifyContent: 'center' }}>
-                                    <Pencil style={{ width: 13, height: 13 }} /> Edit
+                                    <Pencil style={{ width: 13, height: 13 }} /> {t('admin.sub_edit', 'Edit')}
                                 </button>
                                 <button onClick={() => handleDelete(plan.id)} style={{ ...btnDanger, padding: '8px 12px' }}>
                                     <Trash2 style={{ width: 13, height: 13 }} />
@@ -574,6 +575,7 @@ const OrgDetail = ({ orgSub, plans, onSave, onClose, onRemove }) => {
 //  Organizations View
 // ═══════════════════════════════════════════
 const OrgsView = () => {
+    const { t } = useTranslation();
     const [orgs, setOrgs] = useState([]);
     const [subs, setSubs] = useState([]);
     const [plans, setPlans] = useState([]);
@@ -637,15 +639,15 @@ const OrgsView = () => {
         <div style={{ padding: '24px', height: '100%', overflowY: 'auto' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
                 <div>
-                    <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)', margin: 0 }}>Organization Subscriptions</h2>
-                    <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '4px 0 0' }}>Assign plans and manage limits for each organization</p>
+                    <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)', margin: 0 }}>{t('admin.sub_org_title', 'Organization Subscriptions')}</h2>
+                    <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '4px 0 0' }}>{t('admin.sub_org_desc', 'Assign plans and manage limits for each organization')}</p>
                 </div>
             </div>
 
             {/* Subscribed orgs */}
             {subs.length > 0 && (
                 <div style={{ marginBottom: '24px' }}>
-                    <h3 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '12px' }}>Active Subscriptions ({subs.length})</h3>
+                    <h3 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', marginBottom: '12px' }}>{t('admin.sub_active_subs', 'Active Subscriptions')} ({subs.length})</h3>
                     <div style={{ borderRadius: '12px', border: '1px solid var(--border-default)', overflow: 'hidden' }}>
                         <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
                             <thead>
@@ -730,7 +732,7 @@ const OrgsView = () => {
             {/* Unsubscribed orgs */}
             {unsubscribedOrgs.length > 0 && (
                 <div>
-                    <h3 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '12px' }}>Unsubscribed Organizations ({unsubscribedOrgs.length})</h3>
+                    <h3 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-secondary)', marginBottom: '12px' }}>{t('admin.sub_unsub_orgs', 'Unsubscribed Organizations')} ({unsubscribedOrgs.length})</h3>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '12px' }}>
                         {unsubscribedOrgs.map(org => (
                             <div key={org.id} style={{ ...card, display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '16px' }}>
@@ -744,7 +746,7 @@ const OrgsView = () => {
                                     onClick={() => setAssignOrg(org)}
                                     style={{ ...btnPrimary, padding: '6px 12px', fontSize: '12px' }}
                                 >
-                                    <Plus style={{ width: 13, height: 13 }} /> Assign Plan
+                                    <Plus style={{ width: 13, height: 13 }} /> {t('admin.sub_assign_plan', 'Assign Plan')}
                                 </button>
                             </div>
                         ))}
@@ -755,7 +757,7 @@ const OrgsView = () => {
             {orgs.length === 0 && subs.length === 0 && (
                 <div style={{ ...card, textAlign: 'center', padding: '60px 20px' }}>
                     <Building2 style={{ width: 40, height: 40, color: 'var(--text-muted)', margin: '0 auto 12px' }} />
-                    <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>No organizations found. Create organizations in Security → Users first.</p>
+                    <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>{t('admin.sub_no_orgs', 'No organizations found. Create organizations in Security → Users first.')}</p>
                 </div>
             )}
 

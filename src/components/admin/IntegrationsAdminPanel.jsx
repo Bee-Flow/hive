@@ -1,14 +1,15 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { useTranslation } from '../../hooks/useTranslation';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { Loader2, ToggleLeft, ToggleRight, Check, Settings, Plus, Trash2, RefreshCw, Plug, ChevronDown, ExternalLink, Mail, Send, Layers, Search as SearchIcon, Cloud } from 'lucide-react';
 import McpMarketplace from './McpMarketplace';
 
 const SECTIONS = [
-    { id: 'platform', label: 'Platform', icon: Layers, color: '#6366f1' },
-    { id: 'email', label: 'Email', icon: Mail, color: '#ea4335' },
-    { id: 'services', label: 'Services', icon: ExternalLink, color: '#0A66C2' },
-    { id: 'search', label: 'Search', icon: SearchIcon, color: '#10b981' },
-    { id: 'mcp', label: 'MCP', icon: Plug, color: '#f59e0b' },
+    { id: 'platform', labelKey: 'admin.integ_platform', icon: Layers, color: '#6366f1' },
+    { id: 'email', labelKey: 'admin.integ_email', icon: Mail, color: '#ea4335' },
+    { id: 'services', labelKey: 'admin.integ_services', icon: ExternalLink, color: '#0A66C2' },
+    { id: 'search', labelKey: 'admin.integ_search', icon: SearchIcon, color: '#10b981' },
+    { id: 'mcp', labelKey: 'admin.integ_mcp', icon: Plug, color: '#f59e0b' },
 ];
 
 const ALL_INTEGRATIONS = [
@@ -39,6 +40,7 @@ const ALL_INTEGRATIONS = [
 ];
 
 export default function IntegrationsAdminPanel({ activeSection: activeProp = 'platform', onNavigate }) {
+    const { t } = useTranslation();
     const active = SECTIONS.map(s => s.id).includes(activeProp) ? activeProp : 'platform';
     const handleSectionClick = (id) => {
         if (onNavigate) onNavigate(`admin/integrations/${id}`);
@@ -275,7 +277,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
                         <button
                             key={sec.id}
                             onClick={() => handleSectionClick(sec.id)}
-                            title={sec.label}
+                            title={t(sec.labelKey)}
                             style={{
                                 display: 'flex',
                                 flexDirection: 'column',
@@ -304,7 +306,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
                                 lineHeight: 1.1,
                                 transition: 'color 0.15s ease',
                             }}>
-                                {sec.label}
+                                {t(sec.labelKey)}
                             </span>
                         </button>
                     );

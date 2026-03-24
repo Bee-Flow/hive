@@ -8,13 +8,13 @@ const LAYERS = [
   },
   {
     label: 'Backend Core',
-    tags: ['Node.js / Express', 'Agent Runtime', 'Tool Dispatcher', 'Execution Engine', 'Guardrails Pipeline'],
-    detail: '50+ server modules · chatStream.js (1434 lines) · Provider adapters for 7 AI platforms',
+    tags: ['Node.js / Express', 'Agent Runtime', 'Tool Dispatcher', 'Execution Engine', 'Guardrails Pipeline', 'MCP Manager'],
+    detail: '50+ server modules · chatStream.js (1434 lines) · Provider adapters for 8 AI platforms',
   },
   {
     label: 'AI Providers',
-    tags: ['OpenAI / GPT-5', 'Claude Sonnet/Opus', 'Google Gemini', 'Vertex AI', 'Mistral', 'Azure OpenAI'],
-    detail: 'Unified streaming interface · Auto provider detection · Reasoning token support',
+    tags: ['OpenAI / GPT-5', 'Claude Sonnet/Opus', 'Google Gemini', 'Vertex AI', 'Mistral', 'Azure OpenAI', 'MiniMax', 'ElevenLabs TTS'],
+    detail: 'Unified streaming interface · Auto provider detection · Reasoning token support · Text-to-speech',
   },
   {
     label: 'Python Services',
@@ -28,16 +28,6 @@ const LAYERS = [
   },
 ];
 
-const STATS = [
-  { n: '43+', l: 'live integrations' },
-  { n: '7', l: 'AI providers' },
-  { n: '22', l: 'technical novelties' },
-  { n: '25+', l: 'SSE event types' },
-  { n: '12', l: 'agent capabilities' },
-  { n: '2250h', l: 'R&D logged' },
-  { n: '3', l: 'moderation layers' },
-  { n: '5', l: 'containerised services' },
-];
 
 export default function ArchitectureSection() {
   return (
@@ -72,14 +62,6 @@ export default function ArchitectureSection() {
           ))}
         </div>
 
-        <div className="hp-stats hp-reveal" style={{ marginTop: 52 }}>
-          {STATS.map(s => (
-            <div key={s.l} className="hp-stat">
-              <span className="n">{s.n}</span>
-              <span className="l">{s.l}</span>
-            </div>
-          ))}
-        </div>
       </div>
     </section>
   );

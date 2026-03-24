@@ -32,11 +32,24 @@ export default function HomeFooter({ onNavigate, onLoginClick }) {
           </div>
 
           <div className="hp-footer-col">
+            <h4>Solutions</h4>
+            <a href="/agent-designer" onClick={e => { e.preventDefault(); go('/agent-designer'); }}>AI Agents</a>
+            <a href="/knowledge-bases" onClick={e => { e.preventDefault(); go('/knowledge-bases'); }}>Knowledge Bases</a>
+            <a href="/deep-research" onClick={e => { e.preventDefault(); go('/deep-research'); }}>Deep Research</a>
+            <a href="/ai-notebooks" onClick={e => { e.preventDefault(); go('/ai-notebooks'); }}>AI Notebooks</a>
+            <a href="/meeting-notes" onClick={e => { e.preventDefault(); go('/meeting-notes'); }}>Meeting Notes</a>
+            <a href="/task-automation" onClick={e => { e.preventDefault(); go('/task-automation'); }}>Task Automation</a>
+            <a href="/search-engine" onClick={e => { e.preventDefault(); go('/search-engine'); }}>Search Engine</a>
+            <a href="/mcp-marketplace" onClick={e => { e.preventDefault(); go('/mcp-marketplace'); }}>MCP Marketplace</a>
+          </div>
+
+          <div className="hp-footer-col">
             <h4>Company</h4>
             <a href="/about" onClick={e => { e.preventDefault(); go('/about'); }}>About</a>
+            <a href="/careers" onClick={e => { e.preventDefault(); go('/careers'); }}>Careers</a>
+            <a href="/contact" onClick={e => { e.preventDefault(); go('/contact'); }}>Contact</a>
             <a href="/privacy" onClick={e => { e.preventDefault(); go('/privacy'); }}>Privacy Policy</a>
             <a href="/terms" onClick={e => { e.preventDefault(); go('/terms'); }}>Terms of Service</a>
-            <a href="/contact" onClick={e => { e.preventDefault(); go('/contact'); }}>Contact</a>
           </div>
 
           <div className="hp-footer-col">

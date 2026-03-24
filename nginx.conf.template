@@ -2,6 +2,9 @@ server {
     listen 80;
     server_name localhost;
 
+    # Hide Nginx version in responses
+    server_tokens off;
+
     # Docker DNS resolver for dynamic upstream resolution
     resolver 127.0.0.11 valid=30s ipv6=off;
     set $backend "http://${SERVER_HOST}:${SERVER_PORT}";
@@ -16,17 +19,34 @@ server {
     gzip on;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
 
+    # ── Security headers (server-level) ────────────────────────────────────────
+    add_header X-Content-Type-Options  "nosniff" always;
+    add_header X-Frame-Options         "SAMEORIGIN" always;
+    add_header X-XSS-Protection        "1; mode=block" always;
+    add_header Referrer-Policy         "strict-origin-when-cross-origin" always;
+    add_header Permissions-Policy      "camera=(), microphone=(self), geolocation=()" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'" always;
+
     # Handle SPA routing - redirect all non-file requests to index.html
+    # NOTE: add_header in a location block overrides all server-level add_header
+    # directives, so security headers must be re-declared here.
     location / {
         try_files $uri $uri/ /index.html;
-        # Disable cache for index.html to ensure updates are seen immediately
-        add_header Cache-Control "no-store, no-cache, must-revalidate";
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+        add_header X-Content-Type-Options  "nosniff" always;
+        add_header X-Frame-Options         "SAMEORIGIN" always;
+        add_header X-XSS-Protection        "1; mode=block" always;
+        add_header Referrer-Policy         "strict-origin-when-cross-origin" always;
     }
 
     # Vite assets are hashed (e.g. assets/index.1234.js), so we can cache them forever
     location /assets/ {
         expires 1y;
-        add_header Cache-Control "public, immutable";
+        add_header Cache-Control "public, immutable" always;
+        add_header X-Content-Type-Options  "nosniff" always;
+        add_header X-Frame-Options         "SAMEORIGIN" always;
+        add_header X-XSS-Protection        "1; mode=block" always;
+        add_header Referrer-Policy         "strict-origin-when-cross-origin" always;
     }
 
     # Proxy API requests to the backend server
