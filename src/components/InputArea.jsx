@@ -428,15 +428,17 @@ const InputArea = ({
     const clipboardMayHaveImage = useCallback((clipboardData) => {
         if (!clipboardData) return false;
         const items = Array.from(clipboardData.items || []);
-        // Check for any image type in items (even string items that hint at image content)
+        // Check for any image type in items
         for (const item of items) {
             if (item.type.startsWith('image/')) return true;
         }
-        // If clipboard has NO items at all, it might be Linux/Wayland with image data
-        // only accessible via async API — assume it might have an image
-        if (items.length === 0 && Array.from(clipboardData.files || []).length === 0) {
-            return true;
-        }
+        // Also check files list
+        const clipFiles = Array.from(clipboardData.files || []);
+        if (clipFiles.some(f => f.type.startsWith('image/'))) return true;
+        // NOTE: We no longer assume "no items" means "image" — on many Linux systems,
+        // a plain text paste also produces empty clipboardData.items, so that assumption
+        // caused preventDefault() to swallow text pastes. The async clipboard API is
+        // only attempted when items explicitly include an image type.
         return false;
     }, []);
 
@@ -463,21 +465,33 @@ const InputArea = ({
         }
 
         // Async fallback: navigator.clipboard.read() for Linux/Wayland screenshots
-        // On Linux, screenshots are often placed on the clipboard as raw image data
-        // that isn't available through the sync clipboardData API.
-        // Only preventDefault if the clipboard might contain image data (not plain text paste)
+        // This fires when the sync clipboardData shows image MIME types but getAsFile()
+        // returns null (a known Wayland/browser quirk).
+        // We also try if items has explicit image types but sync extraction somehow missed them.
         const hasClipboardAPI = !!navigator.clipboard?.read;
         const maybeImage = clipboardMayHaveImage(e.clipboardData);
 
         if (hasClipboardAPI && maybeImage) {
             console.log('[Paste] Trying async clipboard API (Linux/Wayland screenshot fallback)');
-            // Must preventDefault BEFORE the async call to avoid the textarea inserting garbage
-            e.preventDefault();
-            files = await readClipboardAsync();
-            if (files.length > 0) {
-                await processFiles(files);
-            } else {
-                console.log('[Paste] Async clipboard API returned no images');
+            // Check permission first to avoid blocking text paste if denied
+            let permissionOk = true;
+            try {
+                const perm = await navigator.permissions.query({ name: 'clipboard-read' });
+                if (perm.state === 'denied') {
+                    console.warn('[Paste] clipboard-read permission denied — skipping async API, letting text paste proceed');
+                    permissionOk = false;
+                }
+            } catch (_) { /* permissions API not available — proceed optimistically */ }
+
+            if (permissionOk) {
+                // Must preventDefault BEFORE the async call to avoid the textarea inserting garbage
+                e.preventDefault();
+                files = await readClipboardAsync();
+                if (files.length > 0) {
+                    await processFiles(files);
+                } else {
+                    console.log('[Paste] Async clipboard API returned no images');
+                }
             }
         }
         // If none of the above matched, let the default paste behavior handle it (text paste)
@@ -512,13 +526,21 @@ const InputArea = ({
                 return;
             }
 
-            // Async clipboard API fallback — only if clipboard might have image data
-            if (clipboardMayHaveImage(e.clipboardData)) {
-                e.preventDefault();
-                files = await readClipboardAsync();
-                if (files.length > 0) {
-                    await processFiles(files);
-                    textareaRef.current?.focus();
+            // Async clipboard API fallback — only if items explicitly show image types
+            if (clipboardMayHaveImage(e.clipboardData) && navigator.clipboard?.read) {
+                let permissionOk = true;
+                try {
+                    const perm = await navigator.permissions.query({ name: 'clipboard-read' });
+                    if (perm.state === 'denied') permissionOk = false;
+                } catch (_) { /* proceed */ }
+
+                if (permissionOk) {
+                    e.preventDefault();
+                    files = await readClipboardAsync();
+                    if (files.length > 0) {
+                        await processFiles(files);
+                        textareaRef.current?.focus();
+                    }
                 }
             }
         };
