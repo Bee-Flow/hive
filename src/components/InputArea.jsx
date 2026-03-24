@@ -435,10 +435,11 @@ const InputArea = ({
         // Also check files list
         const clipFiles = Array.from(clipboardData.files || []);
         if (clipFiles.some(f => f.type.startsWith('image/'))) return true;
-        // NOTE: We no longer assume "no items" means "image" — on many Linux systems,
-        // a plain text paste also produces empty clipboardData.items, so that assumption
-        // caused preventDefault() to swallow text pastes. The async clipboard API is
-        // only attempted when items explicitly include an image type.
+        // On Linux/Wayland, screenshot images are only accessible via the async
+        // navigator.clipboard.read() API — clipboardData.items will be empty.
+        // Text paste on the same systems DOES populate items with text/plain,
+        // so empty items reliably signals a potential screenshot, not plain text.
+        if (items.length === 0 && clipFiles.length === 0) return true;
         return false;
     }, []);
 
