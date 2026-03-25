@@ -224,12 +224,6 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
             >
                 <span className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>Settings</span>
                 <div className="flex items-center gap-2">
-                    <span
-                        className="text-[10px] font-medium px-1.5 py-0.5 rounded"
-                        style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}
-                    >
-                        Esc
-                    </span>
                     <button
                         onClick={handleClose}
                         className="w-7 h-7 rounded-md flex items-center justify-center transition-colors"

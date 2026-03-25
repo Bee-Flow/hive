@@ -1124,10 +1124,10 @@ export default function MeetingNotesPage({ user, onBack }) {
                                             {LANGUAGES.find(l => l.code === selected.language)?.label || selected.language}
                                         </span>
                                         <span className="text-xs px-2 py-0.5 rounded-full" style={{
-                                            background: selected.provider === 'whisperx' ? 'rgba(34,197,94,0.15)' : selected.provider === 'azure' ? 'rgba(0,120,212,0.15)' : 'rgba(99,102,241,0.15)',
-                                            color: selected.provider === 'whisperx' ? 'rgb(34,197,94)' : selected.provider === 'azure' ? 'rgb(0,120,212)' : 'rgb(99,102,241)',
+                                            background: selected.provider === 'whisperx' ? 'rgba(34,197,94,0.15)' : (selected.provider === 'azure' || selected.provider === 'whisper_azure') ? 'rgba(0,120,212,0.15)' : 'rgba(99,102,241,0.15)',
+                                            color: selected.provider === 'whisperx' ? 'rgb(34,197,94)' : (selected.provider === 'azure' || selected.provider === 'whisper_azure') ? 'rgb(0,120,212)' : 'rgb(99,102,241)',
                                         }}>
-                                            {selected.provider === 'whisperx' ? '🖥️ WhisperX' : selected.provider === 'azure' ? '☁️ Azure Speech' : '☁️ Voxtral'}
+                                            {selected.provider === 'whisperx' ? '🖥️ WhisperX' : selected.provider === 'whisper_azure' ? '🎙️ Azure Whisper' : selected.provider === 'azure' ? '☁️ Azure Speech' : '☁️ Voxtral'}
                                         </span>
                                     </div>
                                 </div>

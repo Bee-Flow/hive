@@ -1320,6 +1320,16 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
                                 ready: hasAzureSpeechKey,
                             },
                             {
+                                id: 'whisper_azure',
+                                name: 'Azure Whisper',
+                                badge: 'Batch API',
+                                emoji: '🎙️',
+                                badgeColor: '#0078D4',
+                                desc: 'Higher accuracy via Azure Batch Transcription (Whisper model). Async — large files, up to 35 speakers. Uses RustFS for temp audio storage.',
+                                requires: 'Azure Speech key + RustFS',
+                                ready: hasAzureSpeechKey,
+                            },
+                            {
                                 id: 'whisperx',
                                 name: 'WhisperX',
                                 badge: 'Self-hosted',
