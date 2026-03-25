@@ -101,12 +101,24 @@ const UsageSection = () => {
                     authFetch(`${API_BASE}/api/usage/agents?days=${days}`)
                 ]);
 
+                const safeJson = async (res, fallback) => {
+                    try {
+                        if (!res.ok) return fallback;
+                        const d = await res.json();
+                        return d?.error ? fallback : d;
+                    } catch { return fallback; }
+                };
+                const safeArray = async (res) => {
+                    const d = await safeJson(res, []);
+                    return Array.isArray(d) ? d : [];
+                };
+
                 setData({
-                    summary: await sumRes.json(),
-                    timeline: await timeRes.json(),
-                    users: await usrRes.json(),
-                    sources: await srcRes.json(),
-                    agents: await agtRes.json()
+                    summary: await safeJson(sumRes, { total_calls: 0, total_tokens: 0, total_estimated_cost: 0 }),
+                    timeline: await safeArray(timeRes),
+                    users: await safeArray(usrRes),
+                    sources: await safeArray(srcRes),
+                    agents: await safeArray(agtRes)
                 });
             } catch (err) {
                 console.error("Failed to load usage data", err);
