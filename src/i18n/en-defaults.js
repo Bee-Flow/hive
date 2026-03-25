@@ -146,6 +146,7 @@ const EN_DEFAULTS = {
     "admin.integ_email": "Email",
     "admin.integ_services": "Services",
     "admin.integ_search": "Search",
+    "admin.integ_transcription": "Transcription",
     "admin.integ_mcp": "MCP",
 
     "admin.mon_overview": "Overview",

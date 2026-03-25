@@ -29,7 +29,7 @@ export default defineConfig(({ mode }) => {
                         'vendor-katex': ['katex', 'rehype-katex', 'remark-math'],
                         // Editor / markdown
                         'vendor-tiptap': [
-                            '@tiptap/react', '@tiptap/starter-kit', '@tiptap/pm',
+                            '@tiptap/react', '@tiptap/starter-kit',
                             '@tiptap/extension-bubble-menu', '@tiptap/extension-highlight',
                             '@tiptap/extension-link', '@tiptap/extension-placeholder',
                             '@tiptap/extension-table', '@tiptap/extension-table-cell',

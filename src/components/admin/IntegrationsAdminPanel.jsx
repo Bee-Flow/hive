@@ -94,6 +94,12 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
     const [savingAzureSpeech, setSavingAzureSpeech] = useState(false);
     const [transcriptionProvider, setTranscriptionProvider] = useState('voxtral');
     const [savingTranscriptionProvider, setSavingTranscriptionProvider] = useState(false);
+    // WhisperX self-hosted
+    const [whisperxUrl, setWhisperxUrl] = useState('');
+    const [whisperxToken, setWhisperxToken] = useState('');
+    const [hasWhisperxUrl, setHasWhisperxUrl] = useState(false);
+    const [hasWhisperxToken, setHasWhisperxToken] = useState(false);
+    const [savingWhisperx, setSavingWhisperx] = useState(false);
 
     // Service Email (Gmail SMTP)
     const [serviceEmailAddress, setServiceEmailAddress] = useState('');
@@ -161,6 +167,9 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
                 setHasAzureSpeechKey(!!configData.hasAzureSpeechKey);
                 if (configData.azureSpeechRegion) setAzureSpeechRegion(configData.azureSpeechRegion);
                 setTranscriptionProvider(configData.transcriptionProvider || 'voxtral');
+                // WhisperX
+                setHasWhisperxUrl(!!configData.hasWhisperxUrl);
+                setHasWhisperxToken(!!configData.hasWhisperxToken);
                 // Service Email
                 setHasServiceEmail(!!configData.hasServiceEmail);
                 if (configData.serviceEmailDisplayName) setServiceEmailDisplayName(configData.serviceEmailDisplayName);
@@ -1386,6 +1395,380 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
                         )}
                         </div>
                     </div>
+
+            </div>
+            </div>
+            )}
+
+
+            {active === 'transcription' && (
+            <div className="p-6">
+            <div className="max-w-4xl mx-auto space-y-6">
+
+                {/* Header */}
+                <div>
+                    <h2 className="text-lg font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                        <Cloud className="w-5 h-5" style={{ color: '#8b5cf6' }} />
+                        Meeting Transcription
+                    </h2>
+                    <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+                        Configure which AI provider transcribes your meeting recordings. All providers support <strong>speaker diarization</strong> (who said what) and automatic
+                        speaker name identification. Switch providers at any time without losing settings.
+                    </p>
+                </div>
+
+                {/* Active provider picker */}
+                <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
+                    <div className="px-6 py-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+                        <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Active Provider</h3>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Choose which engine will be used when you transcribe audio in Meeting Notes.</p>
+                    </div>
+                    <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-3">
+                        {[
+                            {
+                                id: 'voxtral',
+                                name: 'Voxtral',
+                                badge: 'Mistral Cloud',
+                                emoji: '⚡',
+                                badgeColor: '#f59e0b',
+                                desc: 'Fast, high-quality cloud transcription with built-in diarization. Requires a Mistral API key.',
+                                requires: 'Mistral API key (AI Config)',
+                                ready: true, // always potentially ready via API key
+                            },
+                            {
+                                id: 'azure',
+                                name: 'Azure Speech',
+                                badge: 'Microsoft Cloud',
+                                emoji: '☁️',
+                                badgeColor: '#0078D4',
+                                desc: 'Enterprise-grade Whisper model on Azure. Great for compliance-conscious organisations.',
+                                requires: 'Azure Speech key + region',
+                                ready: hasAzureSpeechKey,
+                            },
+                            {
+                                id: 'whisperx',
+                                name: 'WhisperX',
+                                badge: 'Self-hosted',
+                                emoji: '🏠',
+                                badgeColor: '#8b5cf6',
+                                desc: 'Fully private. Run Whisper on your own server — audio never leaves your infrastructure.',
+                                requires: 'Self-hosted server URL',
+                                ready: hasWhisperxUrl,
+                            },
+                        ].map((p) => (
+                            <button
+                                key={p.id}
+                                onClick={async () => {
+                                    if (transcriptionProvider === p.id) return;
+                                    setSavingTranscriptionProvider(true);
+                                    try {
+                                        const res = await authFetch(`${API_BASE}/ai/config`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify({ transcriptionProvider: p.id }),
+                                        });
+                                        if (res.ok) {
+                                            setTranscriptionProvider(p.id);
+                                            setMessage({ type: 'success', text: `Active provider set to ${p.name}` });
+                                        }
+                                    } catch (e) {
+                                        setMessage({ type: 'error', text: 'Failed to save provider' });
+                                    }
+                                    setSavingTranscriptionProvider(false);
+                                    setTimeout(() => setMessage(null), 3000);
+                                }}
+                                disabled={savingTranscriptionProvider}
+                                className="relative rounded-xl border-2 p-4 text-left transition-all cursor-pointer disabled:opacity-50"
+                                style={{
+                                    background: transcriptionProvider === p.id ? 'color-mix(in srgb, var(--accent-primary) 8%, var(--bg-primary))' : 'var(--bg-primary)',
+                                    borderColor: transcriptionProvider === p.id ? 'var(--accent-primary)' : 'var(--border-default)',
+                                }}
+                            >
+                                {transcriptionProvider === p.id && (
+                                    <span className="absolute top-3 right-3 w-2 h-2 rounded-full bg-green-400" />
+                                )}
+                                <div className="text-2xl mb-2">{p.emoji}</div>
+                                <div className="font-semibold text-sm mb-1" style={{ color: 'var(--text-primary)' }}>{p.name}</div>
+                                <span className="text-xs px-1.5 py-0.5 rounded-full font-medium" style={{ background: p.badgeColor + '18', color: p.badgeColor }}>
+                                    {p.badge}
+                                </span>
+                                <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>{p.desc}</p>
+                                <p className="text-xs mt-2 font-medium" style={{ color: p.ready ? '#10b981' : 'var(--text-muted)' }}>
+                                    {p.ready ? '✓ Configured' : `⚠ Needs: ${p.requires}`}
+                                </p>
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                {/* ── Provider 1: Voxtral ─────────────────────────────────────────── */}
+                <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
+                    <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-subtle)' }}>
+                        <div>
+                            <h3 className="font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                                ⚡ Voxtral <span className="text-xs px-2 py-0.5 rounded-full font-normal" style={{ background: '#f59e0b18', color: '#f59e0b' }}>Mistral Cloud</span>
+                                {transcriptionProvider === 'voxtral' && <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-500">Active</span>}
+                            </h3>
+                            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Uses Mistral's <code>voxtral-mini-latest</code> model. Fast and accurate with speaker diarization.</p>
+                        </div>
+                    </div>
+                    <div className="p-6 space-y-3">
+                        <div className="rounded-xl p-4" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)' }}>
+                            <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Mistral API Key</p>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                Voxtral uses your existing Mistral API key configured in{' '}
+                                <strong>Admin → AI Config → API Keys → Mistral</strong>. No additional setup needed here.
+                            </p>
+                        </div>
+                        <div className="rounded-xl p-4" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)' }}>
+                            <p className="text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Capabilities</p>
+                            <ul className="text-xs space-y-1" style={{ color: 'var(--text-muted)' }}>
+                                <li>✅ Speaker diarization (who said what)</li>
+                                <li>✅ Word and segment timestamps</li>
+                                <li>✅ 30+ languages</li>
+                                <li>✅ Context terms to boost accuracy</li>
+                                <li>ℹ️ Audio sent to Mistral cloud servers</li>
+                            </ul>
+                        </div>
+                        <a
+                            href="https://console.mistral.ai"
+                            target="_blank" rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 text-sm underline"
+                            style={{ color: 'var(--accent-primary)' }}
+                        >
+                            <ExternalLink className="w-3.5 h-3.5" /> Open Mistral Console
+                        </a>
+                    </div>
+                </div>
+
+                {/* ── Provider 2: Azure AI Speech ─────────────────────────────────── */}
+                <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
+                    <div className="px-6 py-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+                        <h3 className="font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                            ☁️ Azure AI Speech
+                            <span className="text-xs px-2 py-0.5 rounded-full font-normal" style={{ background: '#0078D418', color: '#0078D4' }}>Microsoft Cloud</span>
+                            {transcriptionProvider === 'azure' && <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-500">Active</span>}
+                            {hasAzureSpeechKey && <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--bg-primary)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}>Key saved 🔒</span>}
+                        </h3>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Azure Cognitive Services Speech with optional Whisper model. Enterprise SLAs, GDPR-compliant regions available.</p>
+                    </div>
+                    <div className="p-6 space-y-4">
+                        {/* Credentials */}
+                        <div>
+                            <label className="text-sm font-medium block mb-2" style={{ color: 'var(--text-primary)' }}>Credentials</label>
+                            <div className="flex gap-2 mb-2">
+                                <div className="flex-1">
+                                    <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Region (e.g. <code>westeurope</code>, <code>eastus</code>)</p>
+                                    <input
+                                        type="text"
+                                        value={azureSpeechRegion}
+                                        onChange={e => setAzureSpeechRegion(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
+                                        placeholder="westeurope"
+                                        className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 transition-all"
+                                        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
+                                    />
+                                </div>
+                                <div className="flex-1">
+                                    <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>API Key (Key 1)</p>
+                                    <input
+                                        type="password"
+                                        value={azureSpeechKey}
+                                        onChange={e => setAzureSpeechKey(e.target.value)}
+                                        placeholder={hasAzureSpeechKey ? '••••••••••••••••' : 'Paste your subscription key'}
+                                        autoComplete="new-password"
+                                        className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 transition-all"
+                                        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
+                                    />
+                                </div>
+                            </div>
+                            <button
+                                onClick={async () => {
+                                    if (!azureSpeechRegion.trim() && !azureSpeechKey.trim()) return;
+                                    setSavingAzureSpeech(true);
+                                    try {
+                                        const body = {};
+                                        if (azureSpeechRegion.trim()) body.azureSpeechRegion = azureSpeechRegion.trim();
+                                        if (azureSpeechKey.trim()) body.azureSpeechKey = azureSpeechKey.trim();
+                                        const res = await authFetch(`${API_BASE}/ai/config`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify(body),
+                                        });
+                                        if (res.ok) {
+                                            if (azureSpeechKey.trim()) setHasAzureSpeechKey(true);
+                                            setAzureSpeechKey('');
+                                            setMessage({ type: 'success', text: 'Azure Speech credentials saved securely' });
+                                        } else {
+                                            const err = await res.json().catch(() => ({}));
+                                            setMessage({ type: 'error', text: err.error || 'Failed to save credentials' });
+                                        }
+                                    } catch (e) {
+                                        setMessage({ type: 'error', text: 'Failed to save credentials' });
+                                    }
+                                    setSavingAzureSpeech(false);
+                                    setTimeout(() => setMessage(null), 3000);
+                                }}
+                                disabled={savingAzureSpeech || (!azureSpeechRegion.trim() && !azureSpeechKey.trim())}
+                                className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-1.5"
+                                style={{ background: 'var(--accent-primary)', color: '#fff' }}
+                            >
+                                {savingAzureSpeech ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                Save credentials
+                            </button>
+                        </div>
+                        {/* Info */}
+                        <div className="rounded-xl p-4 space-y-1.5" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)' }}>
+                            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Capabilities</p>
+                            <ul className="text-xs space-y-1" style={{ color: 'var(--text-muted)' }}>
+                                <li>✅ Speaker diarization</li>
+                                <li>✅ Whisper model available</li>
+                                <li>✅ GDPR-compliant regions (e.g. <code>westeurope</code>)</li>
+                                <li>✅ Enterprise SLA</li>
+                                <li>🔒 Key encrypted at rest (AES-256-GCM) — never exposed in API responses</li>
+                            </ul>
+                        </div>
+                        <div className="flex items-start gap-2 rounded-xl p-3" style={{ background: 'var(--accent-primary)10', border: '1px solid var(--accent-primary)30' }}>
+                            <ExternalLink className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                Create a resource in the{' '}
+                                <a href="https://portal.azure.com/#create/Microsoft.CognitiveServicesSpeechServices" target="_blank" rel="noopener noreferrer" className="underline" style={{ color: 'var(--accent-primary)' }}>Azure Portal → AI Speech</a>.
+                                Copy <strong>Key 1</strong> and the <strong>Location / Region</strong>.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* ── Provider 3: WhisperX self-hosted ────────────────────────────── */}
+                <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
+                    <div className="px-6 py-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+                        <h3 className="font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                            🏠 WhisperX
+                            <span className="text-xs px-2 py-0.5 rounded-full font-normal" style={{ background: '#8b5cf618', color: '#8b5cf6' }}>Self-hosted</span>
+                            {transcriptionProvider === 'whisperx' && <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-500">Active</span>}
+                            {hasWhisperxUrl && <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--bg-primary)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}>URL saved 🔒</span>}
+                        </h3>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Point BeeFlow at your own WhisperX or Faster-Whisper server. Audio never leaves your network.</p>
+                    </div>
+                    <div className="p-6 space-y-4">
+                        {/* Server URL */}
+                        <div>
+                            <label className="text-sm font-medium block mb-2" style={{ color: 'var(--text-primary)' }}>Server Configuration</label>
+                            <div className="space-y-2">
+                                <div>
+                                    <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Server URL — base URL of your WhisperX HTTP API</p>
+                                    <input
+                                        type="url"
+                                        value={whisperxUrl}
+                                        onChange={e => setWhisperxUrl(e.target.value)}
+                                        placeholder={hasWhisperxUrl ? '••••••••••••••••' : 'http://whisperx:9000'}
+                                        className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 transition-all"
+                                        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
+                                    />
+                                </div>
+                                <div>
+                                    <p className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>Bearer Token <em>(optional — only if your server requires authentication)</em></p>
+                                    <input
+                                        type="password"
+                                        value={whisperxToken}
+                                        onChange={e => setWhisperxToken(e.target.value)}
+                                        placeholder={hasWhisperxToken ? '••••••••••••••••' : 'Leave empty if your server is internal-only'}
+                                        autoComplete="new-password"
+                                        className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 transition-all"
+                                        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
+                                    />
+                                </div>
+                            </div>
+                            <button
+                                onClick={async () => {
+                                    if (!whisperxUrl.trim() && !whisperxToken.trim()) return;
+                                    setSavingWhisperx(true);
+                                    try {
+                                        const body = {};
+                                        if (whisperxUrl.trim()) body.whisperxUrl = whisperxUrl.trim();
+                                        if (whisperxToken !== '') body.whisperxToken = whisperxToken;
+                                        const res = await authFetch(`${API_BASE}/ai/config`, {
+                                            method: 'POST',
+                                            headers: { 'Content-Type': 'application/json' },
+                                            body: JSON.stringify(body),
+                                        });
+                                        if (res.ok) {
+                                            if (whisperxUrl.trim()) setHasWhisperxUrl(true);
+                                            if (whisperxToken.trim()) setHasWhisperxToken(true);
+                                            setWhisperxUrl('');
+                                            setWhisperxToken('');
+                                            setMessage({ type: 'success', text: 'WhisperX server URL saved securely' });
+                                        } else {
+                                            const err = await res.json().catch(() => ({}));
+                                            setMessage({ type: 'error', text: err.error || 'Failed to save WhisperX settings' });
+                                        }
+                                    } catch (e) {
+                                        setMessage({ type: 'error', text: 'Failed to save WhisperX settings' });
+                                    }
+                                    setSavingWhisperx(false);
+                                    setTimeout(() => setMessage(null), 3000);
+                                }}
+                                disabled={savingWhisperx || (!whisperxUrl.trim() && !whisperxToken.trim())}
+                                className="mt-3 px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-1.5"
+                                style={{ background: 'var(--accent-primary)', color: '#fff' }}
+                            >
+                                {savingWhisperx ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                Save server config
+                            </button>
+                        </div>
+                        {/* Capabilities */}
+                        <div className="rounded-xl p-4" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)' }}>
+                            <p className="text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Capabilities</p>
+                            <ul className="text-xs space-y-1" style={{ color: 'var(--text-muted)' }}>
+                                <li>✅ Speaker diarization</li>
+                                <li>✅ Fully private — audio stays on your server</li>
+                                <li>✅ GPU-accelerated (faster than real-time)</li>
+                                <li>✅ No per-minute cost</li>
+                                <li>✅ Compatible with <code>whisperx-server</code> and <code>faster-whisper-server</code></li>
+                                <li>🔒 URL stored encrypted (AES-256-GCM)</li>
+                            </ul>
+                        </div>
+                        {/* Setup guide */}
+                        <div className="rounded-xl p-4 space-y-3" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)' }}>
+                            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Quick setup with Docker</p>
+                            <pre className="text-xs rounded-lg p-3 overflow-x-auto" style={{ background: 'var(--bg-secondary)', color: 'var(--text-secondary)', fontFamily: 'monospace' }}>{`docker run -d \\
+  --name whisperx \\
+  --gpus all \\
+  -p 9000:9000 \\
+  fedirz/faster-whisper-server:latest-cuda
+
+# Then set Server URL to: http://your-host:9000`}</pre>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                CPU-only: replace <code>latest-cuda</code> with <code>latest-cpu</code>. Diarization requires a Hugging Face token — see the{' '}
+                                <a href="https://github.com/fedirz/faster-whisper-server" target="_blank" rel="noopener noreferrer" className="underline" style={{ color: 'var(--accent-primary)' }}>faster-whisper-server docs</a>.
+                            </p>
+                        </div>
+                    </div>
+                </div>
+
+                {/* How transcription works */}
+                <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
+                    <div className="px-6 py-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+                        <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>How Transcription Works</h3>
+                    </div>
+                    <div className="p-6">
+                        <ol className="space-y-3">
+                            {[
+                                { step: '1', title: 'Upload audio', desc: 'In Meeting Notes, attach an audio file (MP3, WAV, M4A, WEBM, OGG, FLAC) to a message and say "Transcribe this".' },
+                                { step: '2', title: 'Provider transcribes', desc: 'The active provider converts speech to text and returns timed segments with a generic speaker ID per segment (e.g. SPEAKER_00, Guest).' },
+                                { step: '3', title: 'Speaker names identified', desc: 'Claude analyses the transcript context and maps generic speaker IDs to real names if they are mentioned in the conversation.' },
+                                { step: '4', title: 'Result returned', desc: 'A formatted transcript with timestamps and speaker names is returned in the chat and can be exported or summarised.' },
+                            ].map(item => (
+                                <li key={item.step} className="flex gap-3">
+                                    <span className="flex-shrink-0 w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center" style={{ background: 'var(--accent-primary)', color: '#fff' }}>{item.step}</span>
+                                    <div>
+                                        <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{item.title}</p>
+                                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{item.desc}</p>
+                                    </div>
+                                </li>
+                            ))}
+                        </ol>
+                    </div>
+                </div>
 
             </div>
             </div>
