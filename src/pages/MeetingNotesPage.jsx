@@ -364,7 +364,22 @@ export default function MeetingNotesPage({ user, onBack }) {
     const handleUpload = async (file) => {
         if (!file) return;
         setUploading(true);
-        setUploadProgress('Uploading & transcribing...');
+
+        // Cycle through stages to show progress during the long Azure pipeline
+        const stages = [
+            'Uploading audio...',
+            'Converting audio format...',
+            'Transcribing speech...',
+            'Identifying speakers...',
+            'Generating summary...',
+            'Finalizing...',
+        ];
+        let stageIdx = 0;
+        setUploadProgress(stages[0]);
+        const stageTimer = setInterval(() => {
+            stageIdx = Math.min(stageIdx + 1, stages.length - 1);
+            setUploadProgress(stages[stageIdx]);
+        }, 15000); // advance every 15s
 
         const title = file.name.startsWith('recording.')
             ? generateTitle()
@@ -386,19 +401,21 @@ export default function MeetingNotesPage({ user, onBack }) {
 
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 min (WhisperX can be slower)
+            const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 min
             const res = await authFetch(`${API_BASE}/api/transcriptions`, {
                 method: 'POST',
                 body: formData,
                 signal: controller.signal,
             });
             clearTimeout(timeoutId);
+            clearInterval(stageTimer);
 
             console.log('[Transcription] Response status:', res.status, res.statusText);
 
             if (res.ok) {
                 const result = await res.json();
                 console.log('[Transcription] Success:', { id: result.id, provider: result.provider, title: result.title, duration: result.duration });
+                setUploadProgress('');
                 setShowUpload(false);
                 setUploadTerms('');
                 await loadTranscriptions();
@@ -407,12 +424,13 @@ export default function MeetingNotesPage({ user, onBack }) {
                 const err = await res.json();
                 console.error('[Transcription] Server error:', err);
                 setUploadProgress(`Error: ${err.error}`);
-                setTimeout(() => setUploadProgress(''), 5000);
+                setTimeout(() => setUploadProgress(''), 6000);
             }
         } catch (err) {
+            clearInterval(stageTimer);
             console.error('[Transcription] Network/client error:', err);
             setUploadProgress(`Error: ${err.message}`);
-            setTimeout(() => setUploadProgress(''), 5000);
+            setTimeout(() => setUploadProgress(''), 6000);
         }
         setUploading(false);
     };
