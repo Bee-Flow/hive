@@ -400,17 +400,20 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 setCurrentConversation(data);
                 updateAgentUrl(agentId, data.id);
 
-                // Fetch workspace content — only override if current workspace is empty
+                // Fetch workspace content — always swap to match the selected conversation
                 if (agentId && data.id) {
                     try {
                         const wsRes = await authFetch(`${API_BASE}/agents/${agentId}/conversations/${data.id}/workspace`);
                         if (wsRes.ok) {
                             const wsData = await wsRes.json();
                             const convContent = wsData.content || '';
-                            // Only load conversation workspace if it has content AND current workspace is empty
                             if (convContent.trim().length > 0) {
-                                setWorkspaceContent(prev => prev.trim() ? prev : convContent);
+                                setWorkspaceContent(convContent);
                                 setShowWorkspace(true);
+                            } else {
+                                // New conversation has no workspace — hide and clear
+                                setWorkspaceContent('');
+                                setShowWorkspace(false);
                             }
                             setWorkspaceLastFetchedId(data.id);
                         }
@@ -692,15 +695,19 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 if (data.model_tier) setSelectedTier(data.model_tier);
                 updateDirectChatUrl(conv.id);
 
-                // Fetch workspace content for this direct conversation
+                // Fetch workspace content — always swap to match the selected conversation
                 try {
                     const wsRes = await authFetch(`${API_BASE}/ai/direct/conversations/${conv.id}/workspace`);
                     if (wsRes.ok) {
                         const wsData = await wsRes.json();
                         const convContent = wsData.content || '';
                         if (convContent.trim().length > 0) {
-                            setWorkspaceContent(prev => prev.trim() ? prev : convContent);
+                            setWorkspaceContent(convContent);
                             setShowWorkspace(true);
+                        } else {
+                            // New conversation has no workspace — hide and clear
+                            setWorkspaceContent('');
+                            setShowWorkspace(false);
                         }
                     }
                 } catch (e) {

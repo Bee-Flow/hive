@@ -179,6 +179,13 @@ const MemoryPanel = ({ onClose, projectId }) => {
         context: { icon: '🏢', label: 'Context', color: '#4ade80', bg: 'rgba(34, 197, 94, 0.1)', border: 'rgba(34, 197, 94, 0.25)' },
     };
 
+    // Types available when adding a memory manually, scoped by context:
+    // - Project panel: project-relevant types only (no personal/workflow entries)
+    // - User-global panel: personal types only (never 'project' — those belong to projects)
+    const allowedAddTypes = projectId
+        ? ['instruction', 'project', 'fact', 'context']
+        : ['instruction', 'person', 'preference', 'workflow', 'fact', 'context'];
+
     const formatDate = (dateStr) => {
         if (!dateStr) return '';
         const d = new Date(dateStr);
@@ -291,7 +298,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                         >
                             All
                         </button>
-                        {Object.entries(typeConfig).map(([key, cfg]) => (
+                        {Object.entries(typeConfig).filter(([key]) => allowedAddTypes.includes(key)).map(([key, cfg]) => (
                             typeCounts[key] > 0 && (
                                 <button
                                     key={key}
@@ -318,7 +325,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                 <div className="p-4 border-b" style={{ borderColor: 'var(--border-default)', background: 'var(--bg-tertiary)' }}>
                     <div className="max-w-2xl mx-auto">
                         <div className="flex gap-2 mb-3">
-                            {Object.entries(typeConfig).map(([key, cfg]) => (
+                            {Object.entries(typeConfig).filter(([key]) => allowedAddTypes.includes(key)).map(([key, cfg]) => (
                                 <button
                                     key={key}
                                     onClick={() => setNewMemory(prev => ({ ...prev, type: key }))}

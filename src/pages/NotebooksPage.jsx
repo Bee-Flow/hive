@@ -30,6 +30,7 @@ function timeAgo(dateStr) {
 }
 
 /* ── Source type metadata ─────────────────────────────────────── */
+/* Shared with NotebookSources.jsx — keep in sync */
 const SOURCE_META = {
     pdf:      { icon: '📄', color: '#ef4444', label: 'PDF' },
     docx:     { icon: '📝', color: '#3b82f6', label: 'Word' },
@@ -40,6 +41,7 @@ const SOURCE_META = {
     gdrive:   { icon: '🔵', color: '#4285f4', label: 'Drive' },
     onedrive: { icon: '☁️', color: '#0078d4', label: 'OneDrive' },
     file:     { icon: '📁', color: '#6b7280', label: 'File' },
+    meeting:  { icon: '🎙️', color: '#ec4899', label: 'Meeting' },
 };
 
 const STATUS_CONFIG = {
