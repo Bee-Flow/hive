@@ -269,6 +269,19 @@ export default function MeetingNotesPage({ user, onBack }) {
 
     useEffect(() => { loadTranscriptions(); }, [loadTranscriptions]);
 
+    // DEBUG: log active transcription provider from server config
+    useEffect(() => {
+        authFetch(`${API_BASE}/api/admin/ai-config`)
+            .then(r => r.json())
+            .then(cfg => {
+                console.log('[Transcription] Active provider from server config:', cfg.transcriptionProvider);
+                console.log('[Transcription] Azure configured:', cfg.hasAzureSpeechKey, '| region:', cfg.azureSpeechRegion);
+                console.log('[Transcription] WhisperX configured:', cfg.hasWhisperxUrl);
+            })
+            .catch(e => console.warn('[Transcription] Could not fetch config:', e.message));
+    }, []);
+
+
     // Load transcription detail
     const loadDetail = async (id) => {
         setSelectedId(id);
