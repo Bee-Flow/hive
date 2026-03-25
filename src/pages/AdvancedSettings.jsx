@@ -54,19 +54,14 @@ const NAV_GROUPS = [
     },
 ];
 
-const ORG_GROUP = {
-    label: 'SYSTEM',
-    items: [
-        {
-            id: 'organisation',
-            label: 'Organisation',
-            icon: (
-                <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
-                </svg>
-            ),
-        },
-    ],
+const ORG_NAV_ITEM = {
+    id: 'organisation',
+    label: 'Organisation',
+    icon: (
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+        </svg>
+    ),
 };
 
 /* ── NavItem ─────────────────────────────────────────────────────────────── */
@@ -95,9 +90,9 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
     const canSeeOrg = perms.includes('all') || perms.includes('org_admin') || perms.some(p => p.startsWith('admin_')) || user?.orgRole === 'admin' || user?.orgRole === 'org_admin';
 
     const navGroups = useMemo(() => {
-        const groups = [...NAV_GROUPS];
-        if (canSeeOrg) groups.push(ORG_GROUP);
-        return groups;
+        const baseItems = [...NAV_GROUPS[0].items];
+        if (canSeeOrg) baseItems.push(ORG_NAV_ITEM);
+        return [{ label: NAV_GROUPS[0].label, items: baseItems }];
     }, [canSeeOrg]);
 
     const [showMemoryPanel, setShowMemoryPanel] = useState(false);

@@ -118,7 +118,7 @@ const UsageBar = ({ label, icon: Icon, used, limit, unit, color = '#8b5cf6' }) =
     );
 };
 
-const OrgInfoPanel = ({ user }) => {
+const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange }) => {
     const [organizations, setOrganizations] = useState([]);
     const [groups, setGroups] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -126,7 +126,6 @@ const OrgInfoPanel = ({ user }) => {
     const [message, setMessage] = useState(null);
     const [orgData, setOrgData] = useState(null);
     const [hasChanges, setHasChanges] = useState(false);
-    const [activeSection, setActiveSection] = useState('license');
     const [subscription, setSubscription] = useState(null);
     const [subLoading, setSubLoading] = useState(false);
     const originalDataRef = useRef(null);
@@ -252,6 +251,7 @@ const OrgInfoPanel = ({ user }) => {
                 setMessage({ type: 'success', text: 'Changes saved' });
                 originalDataRef.current = JSON.stringify(orgData);
                 setHasChanges(false);
+                if (parentOnSave) parentOnSave();
             } else {
                 const data = await res.json();
                 setMessage({ type: 'error', text: data.error || 'Failed to save' });
@@ -262,6 +262,11 @@ const OrgInfoPanel = ({ user }) => {
             setSaving(false);
         }
     };
+
+    // Notify parent of save state
+    useEffect(() => {
+        if (onStateChange) onStateChange({ hasChanges, saving, message, handleSave });
+    }, [hasChanges, saving, message]);
 
     const handleLogoUpload = async (e) => {
         const file = e.target.files[0];
@@ -326,64 +331,7 @@ const OrgInfoPanel = ({ user }) => {
     const usage = sub?.current_usage || {};
 
     return (
-        <div className="flex h-full overflow-hidden">
-            {/* ═══ LEFT SIDEBAR ═══ */}
-            <div className="w-56 shrink-0 border-r border-[var(--border-subtle)] bg-[var(--bg-secondary)] flex flex-col">
-                <div className="p-4 pb-2">
-                    <h3 className="text-[11px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">Organisation</h3>
-                </div>
-                <nav className="flex-1 px-2 space-y-1">
-                    {SECTIONS.map(section => {
-                        const Icon = section.icon;
-                        const isActive = activeSection === section.id;
-                        return (
-                            <button
-                                key={section.id}
-                                onClick={() => setActiveSection(section.id)}
-                                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all text-left ${isActive
-                                    ? 'bg-[var(--accent-primary)] text-white shadow-sm'
-                                    : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]'
-                                    }`}
-                            >
-                                <div className={`w-7 h-7 rounded-md flex items-center justify-center shrink-0 ${isActive ? 'bg-white/20' : ''
-                                    }`} style={!isActive ? { background: `${section.color}12` } : {}}>
-                                    <Icon className="w-3.5 h-3.5" style={!isActive ? { color: section.color } : { color: 'white' }} />
-                                </div>
-                                {section.label}
-                            </button>
-                        );
-                    })}
-                </nav>
-
-                {/* Save button */}
-                <div className="p-3 border-t border-[var(--border-subtle)] space-y-2">
-                    {message && (
-                        <div className={`text-xs font-medium px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 ${message.type === 'success' ? 'bg-green-500/10 text-green-500 border border-green-500/20' : 'bg-red-500/10 text-red-500 border border-red-500/20'
-                            }`}>
-                            {message.type === 'success' && <Check className="w-3 h-3" />}
-                            {message.text}
-                        </div>
-                    )}
-                    {hasChanges && (
-                        <div className="text-[11px] text-amber-600 font-medium flex items-center gap-1.5 px-1">
-                            <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
-                            Unsaved changes
-                        </div>
-                    )}
-                    <button
-                        onClick={handleSave}
-                        disabled={saving || !hasChanges}
-                        className="w-full flex items-center justify-center gap-2 px-4 py-2 rounded-lg text-sm font-medium text-white transition-all hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed"
-                        style={{ background: hasChanges ? 'linear-gradient(135deg, #8b5cf6, #6366f1)' : '#9ca3af' }}
-                    >
-                        <Save className="w-3.5 h-3.5" />
-                        {saving ? 'Saving...' : 'Save Changes'}
-                    </button>
-                </div>
-            </div>
-
-            {/* ═══ CONTENT AREA ═══ */}
-            <div className="flex-1 overflow-y-auto p-8">
+        <div className="flex-1 overflow-y-auto p-6">
 
                 {/* ── License & Usage ── */}
                 {activeSection === 'license' && (
@@ -729,9 +677,8 @@ const OrgInfoPanel = ({ user }) => {
                         <GuardrailsPanel orgShieldOnly={true} />
                     </div>
                 )}
-            </div>
         </div>
     );
 };
-
+export { SECTIONS };
 export default OrgInfoPanel;
