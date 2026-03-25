@@ -44,6 +44,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     const [euModeEnabled, setEuModeEnabled] = useState(false);
     const [orgWebSearchGuard, setOrgWebSearchGuard] = useState(false);
     const [orgDisableSearchOnUpload, setOrgDisableSearchOnUpload] = useState(false);
+    const [orgAzurePiiEnabled, setOrgAzurePiiEnabled] = useState(false);
     const [activeModerationProvider, setActiveModerationProvider] = useState('llamaguard');
 
     // PII Detection State
@@ -165,6 +166,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 setEuModeEnabled(data.euModeEnabled || false);
                 setOrgWebSearchGuard(data.webSearchGuardEnabled || false);
                 setOrgDisableSearchOnUpload(data.disableSearchOnUpload || false);
+                setOrgAzurePiiEnabled(data.azurePiiEnabled || false);
             }
         } catch (e) {
             console.error('Failed to fetch org shield', e);
@@ -197,6 +199,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                     euModeEnabled: euModeEnabled,
                     webSearchGuardEnabled: orgWebSearchGuard,
                     disableSearchOnUpload: orgDisableSearchOnUpload,
+                    azurePiiEnabled: orgAzurePiiEnabled,
                 })
             });
             if (res.ok) {
@@ -842,33 +845,16 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                     </label>
                                                 </div>
 
-                                                {/* Collections */}
-                                                <div>
-                                                    <label className="text-xs font-medium text-muted mb-3 block">Rule Collections</label>
-                                                    <div className="space-y-2 p-3 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
-                                                        {collections.length === 0 ? (
-                                                            <p className="text-xs text-muted italic">No collections available. Create them in the Regex Rules tab.</p>
-                                                        ) : collections.map(col => (
-                                                            <label key={col.id} className="flex items-center gap-3 text-sm text-[var(--text-secondary)] cursor-pointer p-2 rounded hover:bg-white/5 transition-colors">
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={orgShieldCollections.includes(col.id)}
-                                                                    onChange={(e) => {
-                                                                        if (e.target.checked) {
-                                                                            setOrgShieldCollections([...orgShieldCollections, col.id]);
-                                                                        } else {
-                                                                            setOrgShieldCollections(orgShieldCollections.filter(id => id !== col.id));
-                                                                        }
-                                                                    }}
-                                                                    className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0"
-                                                                />
-                                                                <div className="flex-1">
-                                                                    <div className="font-medium text-[var(--text-primary)]">{col.name}</div>
-                                                                    <div className="text-xs text-muted">{col.ruleIds?.length || 0} rules</div>
-                                                                </div>
-                                                            </label>
-                                                        ))}
+                                                {/* Azure PII Detection */}
+                                                <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
+                                                    <div>
+                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">🔍 Azure PII Detection</span>
+                                                        <span className="text-xs text-muted">Use Azure AI Language to detect and block personally identifiable information (requires Azure setup)</span>
                                                     </div>
+                                                    <label className="relative inline-flex items-center cursor-pointer">
+                                                        <input type="checkbox" checked={orgAzurePiiEnabled} onChange={e => setOrgAzurePiiEnabled(e.target.checked)} className="sr-only peer" />
+                                                        <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                                                    </label>
                                                 </div>
 
                                                 <div className="grid grid-cols-2 gap-6">
