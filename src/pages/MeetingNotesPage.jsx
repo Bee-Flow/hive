@@ -67,7 +67,6 @@ export default function MeetingNotesPage({ user, onBack }) {
     const [uploadProgress, setUploadProgress] = useState('');
     const [uploadLang, setUploadLang] = useState('nl');
     const [uploadTerms, setUploadTerms] = useState('');
-    const [uploadProvider, setUploadProvider] = useState('whisperx');
     const [dragOver, setDragOver] = useState(false);
     const [uploadMode, setUploadMode] = useState('record'); // 'record' | 'upload' | 'bot'
     const fileInputRef = useRef(null);
@@ -362,7 +361,6 @@ export default function MeetingNotesPage({ user, onBack }) {
         formData.append('audio', file);
         formData.append('language', uploadLang);
         formData.append('title', title);
-        formData.append('provider', uploadProvider);
         if (uploadTerms) formData.append('context_terms', uploadTerms);
 
         try {
@@ -790,20 +788,8 @@ export default function MeetingNotesPage({ user, onBack }) {
                                 </button>
                             </div>
 
-                            {/* Provider + Language + Context (shared) */}
+                            {/* Language + Context (shared) — Provider is set in Admin → Integrations → Transcription */}
                             <div className="flex gap-3 mb-4">
-                                <div style={{ minWidth: 140 }}>
-                                    <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>Provider</label>
-                                    <select
-                                        value={uploadProvider}
-                                        onChange={e => setUploadProvider(e.target.value)}
-                                        className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
-                                        style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
-                                    >
-                                        <option value="whisperx">🖥️ WhisperX (recommended)</option>
-                                        <option value="voxtral">☁️ Voxtral</option>
-                                    </select>
-                                </div>
                                 <div className="flex-1">
                                     <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>Language</label>
                                     <select
@@ -1093,10 +1079,10 @@ export default function MeetingNotesPage({ user, onBack }) {
                                             {LANGUAGES.find(l => l.code === selected.language)?.label || selected.language}
                                         </span>
                                         <span className="text-xs px-2 py-0.5 rounded-full" style={{
-                                            background: selected.provider === 'whisperx' ? 'rgba(34,197,94,0.15)' : 'rgba(99,102,241,0.15)',
-                                            color: selected.provider === 'whisperx' ? 'rgb(34,197,94)' : 'rgb(99,102,241)',
+                                            background: selected.provider === 'whisperx' ? 'rgba(34,197,94,0.15)' : selected.provider === 'azure' ? 'rgba(0,120,212,0.15)' : 'rgba(99,102,241,0.15)',
+                                            color: selected.provider === 'whisperx' ? 'rgb(34,197,94)' : selected.provider === 'azure' ? 'rgb(0,120,212)' : 'rgb(99,102,241)',
                                         }}>
-                                            {selected.provider === 'whisperx' ? '🖥️ WhisperX' : '☁️ Voxtral'}
+                                            {selected.provider === 'whisperx' ? '🖥️ WhisperX' : selected.provider === 'azure' ? '☁️ Azure Speech' : '☁️ Voxtral'}
                                         </span>
                                     </div>
                                 </div>

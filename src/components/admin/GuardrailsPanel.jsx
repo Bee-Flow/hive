@@ -46,6 +46,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     const [orgDisableSearchOnUpload, setOrgDisableSearchOnUpload] = useState(false);
     const [orgAzurePiiEnabled, setOrgAzurePiiEnabled] = useState(false);
     const [activeModerationProvider, setActiveModerationProvider] = useState('llamaguard');
+    const [hasAzureEndpoint, setHasAzureEndpoint] = useState(false);
 
     // PII Detection State
     const [piiEnabled, setPiiEnabled] = useState(false);
@@ -122,6 +123,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                     setDcAction(dc.action || 'delete');
                 }
                 setActiveModerationProvider(data.moderationProvider || 'llamaguard');
+                setHasAzureEndpoint(data.hasAzureContentSafetyEndpoint || false);
                 // PII Detection
                 setPiiEnabled(data.piiDetectionEnabled || false);
                 setPiiCategories(data.piiDetectionCategories?.length > 0
