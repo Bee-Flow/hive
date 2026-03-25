@@ -15,6 +15,7 @@ import ElevenLabsApiKeyCard from './ProviderCards/ElevenLabsCard';
 import AzureConfigCard from './ProviderCards/AzureCard';
 import GoogleVertexConfigCard from './ProviderCards/GoogleVertexCard';
 import MiniMaxApiKeyCard from './ProviderCards/MiniMaxCard';
+import ChatModelTiersConfig from '../ChatModelTiersConfig';
 
 
 const AIConfigPanel = () => {
