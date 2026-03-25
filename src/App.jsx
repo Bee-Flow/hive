@@ -721,7 +721,7 @@ function App() {
                 >
                     <div className="absolute inset-0 bg-black/50 backdrop-blur-sm cursor-pointer" onClick={() => setShowSettings(false)} />
                     <div
-                        className="relative w-[92vw] h-[90vh] max-w-[1200px] rounded-2xl overflow-hidden shadow-2xl border"
+                        className="relative w-[95vw] h-[93vh] max-w-[1400px] rounded-2xl overflow-hidden shadow-2xl border"
                         style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', animation: 'overlayContentIn .25s ease-out' }}
                     >
                         <AdvancedSettings onBack={null} onNavigate={navigateToPage} onLogout={handleLogout} user={user} />

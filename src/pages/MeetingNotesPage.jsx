@@ -363,6 +363,14 @@ export default function MeetingNotesPage({ user, onBack }) {
         formData.append('title', title);
         if (uploadTerms) formData.append('context_terms', uploadTerms);
 
+        console.log('[Transcription] Starting upload:', {
+            fileName: file.name,
+            fileSize: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
+            language: uploadLang,
+            title,
+            endpoint: `${API_BASE}/api/transcriptions`,
+        });
+
         try {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 600000); // 10 min (WhisperX can be slower)
@@ -372,23 +380,30 @@ export default function MeetingNotesPage({ user, onBack }) {
                 signal: controller.signal,
             });
             clearTimeout(timeoutId);
+
+            console.log('[Transcription] Response status:', res.status, res.statusText);
+
             if (res.ok) {
                 const result = await res.json();
+                console.log('[Transcription] Success:', { id: result.id, provider: result.provider, title: result.title, duration: result.duration });
                 setShowUpload(false);
                 setUploadTerms('');
                 await loadTranscriptions();
                 loadDetail(result.id);
             } else {
                 const err = await res.json();
+                console.error('[Transcription] Server error:', err);
                 setUploadProgress(`Error: ${err.error}`);
                 setTimeout(() => setUploadProgress(''), 5000);
             }
         } catch (err) {
+            console.error('[Transcription] Network/client error:', err);
             setUploadProgress(`Error: ${err.message}`);
             setTimeout(() => setUploadProgress(''), 5000);
         }
         setUploading(false);
     };
+
 
     // Delete
     const handleDelete = async (id) => {
