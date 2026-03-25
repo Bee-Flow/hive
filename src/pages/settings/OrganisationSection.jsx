@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import OrgInfoPanel, { SECTIONS as INFO_SECTIONS } from '../../components/admin/OrgInfoPanel';
 import OrgUsersPanel from '../../components/admin/OrgUsersPanel';
 import N8nSection from './N8nSection';
+import UsageSection from './UsageSection';
 import { API_BASE, authFetch } from '../../utils/helpers';
 
 /* ── Google Maps integration card ────────────────────────────────────────── */
@@ -147,6 +148,11 @@ const OrganisationSection = ({ user, activeSection = 'license' }) => {
             {/* Users & Groups */}
             {activeSection === 'users' && (
                 <OrgUsersPanel user={user} />
+            )}
+
+            {/* Usage & Monitoring */}
+            {activeSection === 'usage' && (
+                <UsageSection />
             )}
 
             {/* Integrations */}

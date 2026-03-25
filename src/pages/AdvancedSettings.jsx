@@ -9,11 +9,12 @@ import IntegrationsSection from './settings/IntegrationsSection';
 import OrganisationSection from './settings/OrganisationSection';
 import { AvatarDisplay } from './settings/AccountSection';
 import { SECTIONS as ORG_SECTIONS } from '../components/admin/OrgInfoPanel';
-import { Users, Link2 } from 'lucide-react';
+import { Users, Link2, BarChart2 } from 'lucide-react';
 
 /* ── Org sub-items ────────────────────────────────────────────────────────── */
 const ORG_SUB_ITEMS = [
     ...ORG_SECTIONS,                                            // license, auth, privacy, branding, legal
+    { id: 'org_usage', label: 'Usage & Monitoring', icon: BarChart2, color: '#f59e0b' },
     { id: 'org_users', label: 'Users & Groups', icon: Users, color: '#3b82f6' },
     { id: 'org_integrations', label: 'Integrations', icon: Link2, color: '#0ea5e9' },
 ];
