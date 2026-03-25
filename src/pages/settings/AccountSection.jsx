@@ -336,35 +336,68 @@ const AccountSection = ({ user, onLogout, onAvatarChange }) => {
     };
 
     return (
-        <section className="space-y-5">
-            <div className="flex items-center gap-4">
-                <AvatarPicker user={localUser} onSaved={handleAvatarSaved} />
-                <div className="flex-1 min-w-0">
-                    <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                        {localUser.displayName || localUser.username || 'User'}
-                    </p>
-                    <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+        <section className="space-y-4">
+            {/* Profile card */}
+            <div className="rounded-xl p-5" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}>
+                <div className="flex items-center gap-4">
+                    <AvatarPicker user={localUser} onSaved={handleAvatarSaved} />
+                    <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                            {localUser.displayName || localUser.username || 'User'}
+                        </p>
                         {localUser.email && (
-                            <span className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{localUser.email}</span>
+                            <p className="text-xs truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{localUser.email}</p>
                         )}
-                        {localUser.role && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{
-                                background: localUser.role === 'admin' ? 'rgba(34,197,94,0.12)' : 'var(--bg-tertiary)',
-                                color: localUser.role === 'admin' ? '#4ade80' : 'var(--text-muted)',
-                            }}>{localUser.role}</span>
-                        )}
+                        <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>{t('settings.click_avatar_to_change')}</p>
                     </div>
-                    <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>{t('settings.click_avatar_to_change')}</p>
                 </div>
-                {onLogout && (
-                    <button onClick={onLogout}
-                        className="flex items-center gap-1.5 text-xs font-medium px-3 py-1.5 rounded-lg transition-colors hover:bg-red-500/10 flex-shrink-0"
-                        style={{ color: '#f87171' }}>
-                        <LogOut size={13} /> {t('settings.sign_out')}
-                    </button>
-                )}
             </div>
-            <PinChangeSection user={localUser} />
+
+            {/* Account details card */}
+            <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
+                {/* Role row */}
+                {localUser.role && (
+                    <div className="flex items-center justify-between px-5 py-3" style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-subtle)' }}>
+                        <span className="text-[13px] text-black">Role</span>
+                        <span
+                            className="text-[11px] px-2 py-0.5 rounded font-medium"
+                            style={{
+                                background: localUser.role === 'admin' ? 'rgba(34,197,94,0.12)' : 'var(--bg-tertiary)',
+                                color: localUser.role === 'admin' ? '#059669' : 'var(--text-muted)',
+                            }}
+                        >
+                            {localUser.role}
+                        </span>
+                    </div>
+                )}
+                {/* Auth provider row */}
+                {localUser.provider && (
+                    <div className="flex items-center justify-between px-5 py-3" style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-subtle)' }}>
+                        <span className="text-[13px] text-black">Sign-in method</span>
+                        <span className="text-[13px] capitalize" style={{ color: 'var(--text-muted)' }}>
+                            {localUser.provider === 'local' ? 'Email & password' : localUser.provider}
+                        </span>
+                    </div>
+                )}
+                {/* Encryption PIN row (SSO only) */}
+                <div className="px-5 py-1" style={{ background: 'var(--bg-secondary)' }}>
+                    <PinChangeSection user={localUser} />
+                </div>
+            </div>
+
+            {/* Sign out */}
+            {onLogout && (
+                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
+                    <button
+                        onClick={onLogout}
+                        className="w-full flex items-center gap-3 px-5 py-3 transition-colors hover:bg-red-50 text-left"
+                        style={{ background: 'var(--bg-secondary)', color: '#dc2626' }}
+                    >
+                        <LogOut size={14} />
+                        <span className="text-[13px] font-medium">{t('settings.sign_out')}</span>
+                    </button>
+                </div>
+            )}
         </section>
     );
 };

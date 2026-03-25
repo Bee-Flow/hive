@@ -190,9 +190,13 @@ const MemorySection = ({ memoryStats, onOpenMemory, user }) => {
 
     return (
         <section className="space-y-4">
-            {/* Description */}
-            <div>
-                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+            <p className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                Memory
+            </p>
+
+            {/* Description card */}
+            <div className="rounded-xl px-5 py-4" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}>
+                <p className="text-[13px]" style={{ color: 'var(--text-secondary)' }}>
                     Memories help the AI remember facts, preferences, and context from your conversations. They persist across sessions for a more personalised experience.
                 </p>
             </div>
@@ -232,7 +236,7 @@ const MemorySection = ({ memoryStats, onOpenMemory, user }) => {
             <button
                 onClick={onOpenMemory}
                 className="w-full flex items-center justify-center gap-2 py-2.5 rounded-lg text-sm font-medium transition-colors"
-                style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--border-default)' }}
+                style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)', border: '1px solid var(--border-default)' }}
                 onMouseEnter={e => e.currentTarget.style.borderColor = 'var(--accent-primary)'}
                 onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border-default)'}
             >

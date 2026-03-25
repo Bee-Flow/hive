@@ -177,46 +177,63 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user }) => {
 
     return (
         <div className="h-full flex flex-col" style={{ background: 'var(--bg-primary)' }}>
-            {/* Header */}
-            <div className="px-6 py-4 flex items-center gap-3 flex-shrink-0" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
-                {onBack && (
-                    <button onClick={onBack} className="p-1.5 rounded-lg hover:bg-white/5 transition-colors" title="Go back">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--text-muted)' }}>
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+            {/* Header — mirrors sidebar top bar */}
+            <div
+                className="px-6 py-3 flex items-center justify-between flex-shrink-0"
+                style={{ borderBottom: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)' }}
+            >
+                <h1 className="text-[13px] font-semibold tracking-normal" style={{ color: 'var(--text-primary)' }}>{t('settings.title')}</h1>
+                {onBack === null && (
+                    <button
+                        onClick={() => window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))}
+                        className="w-7 h-7 rounded-md flex items-center justify-center transition-colors hover:bg-[var(--bg-tertiary)]"
+                        style={{ color: 'var(--text-muted)' }}
+                        title="Close settings"
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <path d="M18 6L6 18M6 6l12 12" />
                         </svg>
                     </button>
                 )}
-                <h1 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>{t('settings.title')}</h1>
             </div>
 
             {/* Body */}
             <div className="flex-1 flex overflow-hidden">
-                {/* Left Nav */}
-                <nav className="w-44 flex-shrink-0 flex flex-col gap-0.5 pt-5 px-3" style={{ borderRight: '1px solid var(--border-subtle)' }}>
+                {/* Left Nav — mirrors sidebar design tokens exactly */}
+                <nav
+                    className="w-56 flex-shrink-0 flex flex-col gap-px pt-4 px-2 pb-4"
+                    style={{ borderRight: '1px solid var(--border-subtle)', background: 'var(--bg-secondary)' }}
+                >
                     {navItems.map(({ id, labelKey, icon }) => {
                         const isActive = activeTab === id;
                         return (
                             <button
                                 key={id}
                                 onClick={() => setActiveTab(id)}
-                                className="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium transition-all text-left w-full"
+                                className="relative w-full flex items-center gap-2.5 px-3 h-9 rounded-lg transition-all duration-150 text-left"
                                 style={{
-                                    background: isActive ? 'var(--bg-secondary)' : 'transparent',
+                                    background: isActive ? 'var(--bg-tertiary)' : 'transparent',
                                     color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
                                 }}
-                                onMouseEnter={e => { if (!isActive) { e.currentTarget.style.background = 'var(--bg-secondary)'; e.currentTarget.style.color = 'var(--text-primary)'; } }}
-                                onMouseLeave={e => { if (!isActive) { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'var(--text-muted)'; } }}
+                                onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--bg-tertiary)'; }}
+                                onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
                             >
-                                <span style={{ opacity: isActive ? 1 : 0.55, flexShrink: 0 }}>{icon}</span>
-                                {t(labelKey)}
+                                {/* Left accent bar — matches sidebar exactly */}
+                                {isActive && (
+                                    <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full" style={{ background: 'var(--accent-primary)' }} />
+                                )}
+                                <span style={{ color: isActive ? 'var(--accent-primary)' : 'var(--text-muted)', flexShrink: 0 }}>{icon}</span>
+                                <span className={`text-[13px] ${isActive ? 'font-semibold text-black' : 'text-black'}`}>
+                                    {t(labelKey)}
+                                </span>
                             </button>
                         );
                     })}
                 </nav>
 
                 {/* Content panel */}
-                <div className="flex-1 overflow-auto">
-                    <div className={`mx-auto px-8 py-8 ${activeTab === 'organisation' ? 'max-w-5xl' : 'max-w-lg'}`}>
+                <div className="flex-1 overflow-auto" style={{ background: 'var(--bg-primary)' }}>
+                    <div className={`mx-auto px-10 py-8 ${activeTab === 'organisation' ? 'max-w-5xl' : 'max-w-2xl'}`}>
                         {renderContent()}
                     </div>
                 </div>
