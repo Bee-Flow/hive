@@ -503,14 +503,15 @@ export default function MeetingNotesPage({ user, onBack }) {
         }
     };
 
-    // Reprocess failed transcription
+    // Reprocess transcription (re-run audio through speech pipeline)
     const handleReprocess = async (id) => {
+        if (!confirm('Re-transcribe this recording? The existing transcript, summary and action items will be replaced.')) return;
         setReprocessingId(id);
         try {
             const res = await authFetch(`${API_BASE}/api/transcriptions/${id}/reprocess`, { method: 'POST' });
             if (res.ok) {
-                loadTranscriptions();
-                // If we're viewing this one, reload it
+                await loadTranscriptions();
+                // If we're viewing this one, reload detail
                 if (selected?.id === id) {
                     const detailRes = await authFetch(`${API_BASE}/api/transcriptions/${id}`);
                     if (detailRes.ok) setSelected(await detailRes.json());
@@ -772,18 +773,16 @@ export default function MeetingNotesPage({ user, onBack }) {
                                         </div>
                                         {t.isOwner !== false && (
                                             <div className="flex items-center gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
-                                                {t.status === 'failed' && (
-                                                    <button
-                                                        onClick={() => handleReprocess(t.id)}
-                                                        disabled={reprocessingId === t.id}
-                                                        className="p-1 rounded hover:bg-green-500/10 transition-colors" title="Retry transcription"
-                                                    >
-                                                        {reprocessingId === t.id
-                                                            ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: 'var(--text-muted)' }} />
-                                                            : <RefreshCw className="w-3.5 h-3.5 text-green-500" />
-                                                        }
-                                                    </button>
-                                                )}
+                                                <button
+                                                    onClick={() => handleReprocess(t.id)}
+                                                    disabled={reprocessingId === t.id}
+                                                    className="p-1 rounded hover:bg-blue-500/10 transition-colors"
+                                                    title="Re-transcribe audio"
+                                                >
+                                                    {reprocessingId === t.id
+                                                        ? <Loader2 className="w-3.5 h-3.5 animate-spin" style={{ color: 'var(--text-muted)' }} />
+                                                        : <RefreshCw className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />}
+                                                </button>
                                                 <button onClick={() => { setRenamingId(t.id); setRenameValue(t.title); }} className="p-1 rounded hover:bg-[var(--bg-secondary)] transition-colors" title="Rename">
                                                     <Pencil className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
                                                 </button>
@@ -1158,6 +1157,20 @@ export default function MeetingNotesPage({ user, onBack }) {
                                     </>
                                 )}
                                 <div className="flex items-center gap-2">
+                                    {/* Reprocess button — re-run audio through speech pipeline */}
+                                    {selected.isOwner !== false && selected.audioPath && (
+                                        <button
+                                            onClick={() => handleReprocess(selected.id)}
+                                            disabled={reprocessingId === selected.id}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:bg-blue-500/10 disabled:opacity-50"
+                                            style={{ color: reprocessingId === selected.id ? 'var(--accent-primary)' : 'var(--text-secondary)', border: '1px solid var(--border-default)' }}
+                                            title="Re-run audio through transcription pipeline"
+                                        >
+                                            {reprocessingId === selected.id
+                                                ? <><Loader2 className="w-3.5 h-3.5 animate-spin" />Processing...</>
+                                                : <><RefreshCw className="w-3.5 h-3.5" />Reprocess</>}
+                                        </button>
+                                    )}
                                     {/* Export dropdown */}
                                     <div className="relative">
                                         <button
