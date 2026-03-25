@@ -809,6 +809,20 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                     </div>
                                                 )}
 
+                                                {/* Azure PII Detection — only shown when Azure is configured */}
+                                                {hasAzureEndpoint && (
+                                                <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
+                                                    <div>
+                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">🔍 Azure PII Detection</span>
+                                                        <span className="text-xs text-muted">Use Azure AI Language to detect and block personally identifiable information</span>
+                                                    </div>
+                                                    <label className="relative inline-flex items-center cursor-pointer">
+                                                        <input type="checkbox" checked={orgAzurePiiEnabled} onChange={e => setOrgAzurePiiEnabled(e.target.checked)} className="sr-only peer" />
+                                                        <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                                                    </label>
+                                                </div>
+                                                )}
+
                                                 {/* EU-Only Models */}
                                                 <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
                                                     <div>
@@ -841,18 +855,6 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                     </div>
                                                     <label className="relative inline-flex items-center cursor-pointer">
                                                         <input type="checkbox" checked={orgDisableSearchOnUpload} onChange={e => setOrgDisableSearchOnUpload(e.target.checked)} className="sr-only peer" />
-                                                        <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                                                    </label>
-                                                </div>
-
-                                                {/* Azure PII Detection */}
-                                                <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
-                                                    <div>
-                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">🔍 Azure PII Detection</span>
-                                                        <span className="text-xs text-muted">Use Azure AI Language to detect and block personally identifiable information (requires Azure setup)</span>
-                                                    </div>
-                                                    <label className="relative inline-flex items-center cursor-pointer">
-                                                        <input type="checkbox" checked={orgAzurePiiEnabled} onChange={e => setOrgAzurePiiEnabled(e.target.checked)} className="sr-only peer" />
                                                         <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
                                                     </label>
                                                 </div>

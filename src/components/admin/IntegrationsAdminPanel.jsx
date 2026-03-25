@@ -9,6 +9,7 @@ const SECTIONS = [
     { id: 'email', labelKey: 'admin.integ_email', icon: Mail, color: '#ea4335' },
     { id: 'services', labelKey: 'admin.integ_services', icon: ExternalLink, color: '#0A66C2' },
     { id: 'search', labelKey: 'admin.integ_search', icon: SearchIcon, color: '#10b981' },
+    { id: 'transcription', labelKey: 'admin.integ_transcription', icon: Cloud, color: '#8b5cf6' },
     { id: 'mcp', labelKey: 'admin.integ_mcp', icon: Plug, color: '#f59e0b' },
 ];
 
