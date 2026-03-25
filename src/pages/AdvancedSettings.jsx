@@ -182,7 +182,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
 
     // Map org sub-tab ids to the activeSection prop OrganisationSection expects
     const orgActiveSection = isOrgSubTab
-        ? (activeTab === 'org_users' ? 'users' : activeTab === 'org_integrations' ? 'integrations' : activeTab)
+        ? (activeTab === 'org_users' ? 'users' : activeTab === 'org_integrations' ? 'integrations' : activeTab === 'org_usage' ? 'usage' : activeTab)
         : 'license';
 
     const renderContent = () => {
