@@ -864,8 +864,93 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
         }
     };
 
+    const handleOpenInNotebook = async (markdownContent) => {
+        try {
+            // 1. Create new notebook
+            const createRes = await authFetch(`${API_BASE}/api/notebooks`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: `Workspace – ${new Date().toLocaleDateString()}` }),
+            });
+            if (!createRes.ok) throw new Error('Failed to create notebook');
+            const { notebook } = await createRes.json();
 
-    // --- Render ---
+            // 2. Convert markdown to HTML for TipTap
+            const markdownToHtml = (md) => {
+                let html = md;
+                // Escape HTML special chars in code blocks first (protect them)
+                const codeBlocks = [];
+                html = html.replace(/```[\s\S]*?```/g, (match) => {
+                    const code = match.slice(3, -3).replace(/^\w+\n/, ''); // strip language tag
+                    const escaped = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+                    codeBlocks.push(`<pre><code>${escaped}</code></pre>`);
+                    return `%%CODE_BLOCK_${codeBlocks.length - 1}%%`;
+                });
+                // Inline code
+                html = html.replace(/`([^`]+)`/g, (_, c) => `<code>${c.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>`);
+                // Headings
+                html = html.replace(/^######\s+(.+)$/gm, '<h6>$1</h6>');
+                html = html.replace(/^#####\s+(.+)$/gm, '<h5>$1</h5>');
+                html = html.replace(/^####\s+(.+)$/gm, '<h4>$1</h4>');
+                html = html.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
+                html = html.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
+                html = html.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
+                // Bold & italic
+                html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
+                html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+                html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
+                html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+                html = html.replace(/_(.+?)_/g, '<em>$1</em>');
+                // Horizontal rule
+                html = html.replace(/^---+$/gm, '<hr>');
+                // Unordered lists
+                html = html.replace(/((?:^[ \t]*[-*+] .+\n?)+)/gm, (block) => {
+                    const items = block.trim().split('\n').map(l => `<li>${l.replace(/^[ \t]*[-*+] /, '').trim()}</li>`).join('');
+                    return `<ul>${items}</ul>`;
+                });
+                // Ordered lists
+                html = html.replace(/((?:^[ \t]*\d+\. .+\n?)+)/gm, (block) => {
+                    const items = block.trim().split('\n').map(l => `<li>${l.replace(/^[ \t]*\d+\. /, '').trim()}</li>`).join('');
+                    return `<ol>${items}</ol>`;
+                });
+                // Tables
+                html = html.replace(/((?:^\|.+\|\n?)+)/gm, (block) => {
+                    const rows = block.trim().split('\n').filter(r => !/^[\s|:-]+$/.test(r));
+                    if (rows.length === 0) return block;
+                    const [header, ...body] = rows;
+                    const th = header.split('|').filter(Boolean).map(c => `<th>${c.trim()}</th>`).join('');
+                    const trs = body.map(r => `<tr>${r.split('|').filter(Boolean).map(c => `<td>${c.trim()}</td>`).join('')}</tr>`).join('');
+                    return `<table><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table>`;
+                });
+                // Paragraphs: wrap non-block lines
+                html = html.split('\n').map(line => {
+                    if (!line.trim()) return '';
+                    if (/^<(h[1-6]|ul|ol|li|table|pre|hr|blockquote)/.test(line)) return line;
+                    if (/%%CODE_BLOCK_/.test(line)) return line;
+                    return `<p>${line}</p>`;
+                }).join('');
+                // Restore code blocks
+                codeBlocks.forEach((block, i) => {
+                    html = html.replace(`%%CODE_BLOCK_${i}%%`, block);
+                });
+                return html;
+            };
+
+            const htmlContent = markdownToHtml(markdownContent);
+
+            await authFetch(`${API_BASE}/api/notebooks/${notebook.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ documentContent: htmlContent }),
+            });
+
+            // 3. Navigate instantly to the new notebook
+            if (onNavigate) onNavigate(`notebooks/${notebook.id}`);
+        } catch (err) {
+            console.error('[AgentHub] Failed to open workspace in notebook:', err);
+        }
+    };
+
 
     if (designMode) {
         return (
@@ -1113,6 +1198,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                             const msg = sel ? `> **Selected text:**\n> ${sel.split('\n').join('\n> ')}\n\n${prompt}` : prompt;
                                             sendMessage(msg, []);
                                         }}
+                                        onOpenInNotebook={handleOpenInNotebook}
                                     />
                                 </div>
                             )}
@@ -1243,6 +1329,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                             const msg = sel ? `> **Selected text:**\n> ${sel.split('\n').join('\n> ')}\n\n${prompt}` : prompt;
                                             sendMessage(msg, []);
                                         }}
+                                        onOpenInNotebook={handleOpenInNotebook}
                                     />
                                 </div>
                             )}

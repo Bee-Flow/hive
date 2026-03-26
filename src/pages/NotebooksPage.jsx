@@ -12,6 +12,7 @@ import NotebookEditor from './notebooks/NotebookEditor';
 import NotebookChat from './notebooks/NotebookChat';
 import NotebookStudio from './notebooks/NotebookStudio';
 import NotebookSources from './notebooks/NotebookSources';
+import NotebookTOC from './notebooks/NotebookTOC';
 import CitationOverlay from './notebooks/CitationOverlay';
 import GenerationOverlay from './notebooks/GenerationOverlay';
 import { preprocessMermaidContent } from './notebooks/MermaidExtension';
@@ -80,7 +81,7 @@ async function uploadSourceFile(notebookId, file) {
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
-export default function NotebooksPage({ user, onBack }) {
+export default function NotebooksPage({ user, onBack, initialNotebookId, onNotebookChange }) {
     const [notebooks, setNotebooks] = useState([]);
     const [selected, setSelected] = useState(null);
     const [sources, setSources] = useState([]);
@@ -97,6 +98,10 @@ export default function NotebooksPage({ user, onBack }) {
     const [leftPanelOpen, setLeftPanelOpen] = useState(true);
     const [rightPanelWidth, setRightPanelWidth] = useState(320);
     const rightPanelDragRef = useRef(false);
+
+    // Table of Contents state (populated by the TipTap TableOfContents extension)
+    const [tocItems, setTocItems] = useState([]);
+    const [tocOpen, setTocOpen] = useState(false);
 
     useEffect(() => {
         const handleMouseMove = (e) => {
@@ -220,14 +225,23 @@ export default function NotebooksPage({ user, onBack }) {
     }, []);
 
     /* ── Fetch notebooks ─────────────────────────────────────── */
+    const didAutoSelect = useRef(false);
+
     const fetchNotebooks = useCallback(async () => {
         try {
             setLoading(true);
             const data = await api('/');
-            setNotebooks(data.notebooks || []);
+            const list = data.notebooks || [];
+            setNotebooks(list);
+            // Auto-select notebook from URL on initial load
+            if (initialNotebookId && !didAutoSelect.current) {
+                didAutoSelect.current = true;
+                const match = list.find(nb => String(nb.id) === String(initialNotebookId));
+                if (match) selectNotebook(match);
+            }
         } catch (e) { setError(e.message); }
         finally { setLoading(false); }
-    }, []);
+    }, [initialNotebookId]);
 
     useEffect(() => { fetchNotebooks(); }, [fetchNotebooks]);
 
@@ -240,8 +254,9 @@ export default function NotebooksPage({ user, onBack }) {
             setDocumentContent(data.notebook?.documentContent || '');
             setChatMessages([]);
             setLastGeneratedContent('');
+            onNotebookChange?.(nb.id);
         } catch (e) { setError(e.message); }
-    }, [setChatMessages]);
+    }, [setChatMessages, onNotebookChange]);
 
     /* ── Poll processing sources ─────────────────────────────── */
     useEffect(() => {
@@ -725,8 +740,15 @@ xmlns="http://www.w3.org/TR/REC-html40"`;
                 {/* ── Header ── */}
                 <div className="shrink-0 px-6 py-3 border-b flex items-center gap-3" style={{ borderColor: 'var(--border-subtle)' }}>
                     <div className="flex items-center gap-1">
-                        <button onClick={() => setLeftPanelOpen(p => !p)} className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors" title="Toggle Sidebar">
+                        <button onClick={() => setLeftPanelOpen(p => !p)} className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors" title="Toggle Sources Sidebar">
                             <PanelLeft className="w-5 h-5" style={{ color: leftPanelOpen ? 'var(--accent-primary)' : 'var(--text-secondary)' }} />
+                        </button>
+                        <button
+                            onClick={() => setTocOpen(p => !p)}
+                            className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors"
+                            title={tocItems.length > 0 ? 'Toggle Table of Contents' : 'Add headings to enable Table of Contents'}
+                        >
+                            <BookOpen className="w-5 h-5" style={{ color: tocOpen ? 'var(--accent-primary)' : tocItems.length > 0 ? 'var(--text-secondary)' : 'var(--text-tertiary)' }} />
                         </button>
                         <button onClick={() => { setSelected(null); setSources([]); setChatMessages([]); setDocumentContent(''); }} className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors" title="Back to Notebooks">
                             <ArrowLeft className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
@@ -789,6 +811,16 @@ xmlns="http://www.w3.org/TR/REC-html40"`;
                     </div>
                     )}
 
+                    {/* ═══ TOC Panel (collapsible, between sources and editor) ═══ */}
+                    {tocOpen && (
+                        <div
+                            className="w-[200px] shrink-0 border-r flex flex-col overflow-hidden"
+                            style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}
+                        >
+                            <NotebookTOC items={tocItems} onClose={() => setTocOpen(false)} />
+                        </div>
+                    )}
+
                     {/* ═══ CENTER: Document Editor (TipTap) ═══ */}
                     <div className="flex-1 flex flex-col min-w-0" style={{ background: 'var(--bg-primary)' }}>
                         <NotebookEditor
@@ -802,6 +834,8 @@ xmlns="http://www.w3.org/TR/REC-html40"`;
                             aiFilling={aiFilling}
                             saving={docSaving}
                             generating={generating}
+                            onTocUpdate={setTocItems}
+                            notebookId={selected?.id}
                         />
                     </div>
 

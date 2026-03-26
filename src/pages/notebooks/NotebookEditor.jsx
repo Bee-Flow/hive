@@ -10,12 +10,29 @@ import Link from '@tiptap/extension-link';
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table';
 import { Markdown } from 'tiptap-markdown';
 import MermaidExtension from './MermaidExtension';
+import Mathematics from '@tiptap/extension-mathematics';
+import { TableOfContents } from '@tiptap/extension-table-of-contents';
+import { DragHandle } from '@tiptap/extension-drag-handle-react';
+import Emoji, { gitHubEmojis } from '@tiptap/extension-emoji';
+import Color from '@tiptap/extension-color';
+import { TextStyle } from '@tiptap/extension-text-style';
+import Typography from '@tiptap/extension-typography';
+import Image from '@tiptap/extension-image';
+import TaskList from '@tiptap/extension-task-list';
+import TaskItem from '@tiptap/extension-task-item';
+import { SectionDragExtension } from './SectionDragExtension';
+import { API_BASE } from '../../utils/helpers';
+
+// KaTeX CSS for math formula rendering
+import 'katex/dist/katex.min.css';
+
 import {
     Bold, Italic, Underline as UnderlineIcon, Strikethrough,
     List, ListOrdered, Quote, Heading1, Heading2, Heading3,
     AlignLeft, AlignCenter, AlignRight, Undo, Redo,
-    Highlighter, Wand2, RefreshCw, Scissors, Expand, Sparkles, Code, Link as LinkIcon, FileUp,
-    Loader2, Table2, Plus, Trash2, ChevronDown
+    Highlighter, Wand2, RefreshCw, Scissors, Expand, Code, Link as LinkIcon, FileUp,
+    Loader2, Table2, Plus, Trash2, ChevronDown, Sigma, GripVertical,
+    CheckSquare, ImageIcon, Palette,
 } from 'lucide-react';
 
 /* ── AI Actions for selection bubble menu ─────────────────────── */
@@ -96,6 +113,105 @@ function DropItem({ icon: Icon, label, onClick, danger }) {
     );
 }
 
+/* ── Color Picker Button ─────────────────────────────────────── */
+// Color palette grouped by section
+const PALETTE = [
+    // Reds / Oranges / Yellows
+    '#ef4444', '#f97316', '#eab308', '#84cc16',
+    // Greens / Teals / Blues
+    '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6',
+    // Purples / Pinks
+    '#8b5cf6', '#a855f7', '#ec4899', '#f43f5e',
+    // Grays / Neutrals
+    '#64748b', '#94a3b8', '#cbd5e1', '#000000',
+];
+
+function ColorPicker({ editor }) {
+    const [open, setOpen] = useState(false);
+    const ref = useRef(null);
+    const currentColor = editor.getAttributes('textStyle').color || null;
+
+    useEffect(() => {
+        const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+        if (open) document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [open]);
+
+    return (
+        <div className="relative" ref={ref}>
+            <button
+                onMouseDown={e => { e.preventDefault(); setOpen(o => !o); }}
+                className={`flex items-center gap-1 p-1.5 rounded-md transition-all duration-150 ${
+                    currentColor
+                        ? 'bg-[var(--accent-primary)]/10'
+                        : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]'
+                }`}
+                title="Text Color"
+            >
+                <Palette className="w-3.5 h-3.5" strokeWidth={2} style={{ color: currentColor || 'currentColor' }} />
+                {/* Color swatch indicator */}
+                <span
+                    className="w-3 h-1.5 rounded-sm"
+                    style={{ background: currentColor || 'var(--text-muted)' }}
+                />
+            </button>
+            {open && (
+                <div
+                    className="absolute top-full left-0 mt-1 z-50 p-2.5 rounded-xl shadow-2xl border"
+                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', minWidth: '176px' }}
+                >
+                    {/* Color grid */}
+                    <div className="grid grid-cols-4 gap-1.5 mb-2">
+                        {PALETTE.map(color => (
+                            <button
+                                key={color}
+                                onMouseDown={e => {
+                                    e.preventDefault();
+                                    editor.chain().focus().setColor(color).run();
+                                    setOpen(false);
+                                }}
+                                className="w-7 h-7 rounded-lg border-2 transition-all hover:scale-110 active:scale-95"
+                                style={{
+                                    background: color,
+                                    borderColor: currentColor === color ? 'white' : 'transparent',
+                                    boxShadow: currentColor === color ? `0 0 0 2px ${color}` : 'none',
+                                }}
+                                title={color}
+                            />
+                        ))}
+                    </div>
+
+                    {/* Divider */}
+                    <div className="h-px my-1.5" style={{ background: 'var(--border-subtle)' }} />
+
+                    {/* Custom + Reset row */}
+                    <div className="flex items-center gap-2">
+                        <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input
+                                type="color"
+                                value={currentColor || '#ffffff'}
+                                onChange={e => editor.chain().focus().setColor(e.target.value).run()}
+                                className="w-7 h-7 rounded-lg cursor-pointer p-0 border-0 bg-transparent"
+                                title="Custom color"
+                            />
+                            <span className="text-[10px] font-medium" style={{ color: 'var(--text-tertiary)' }}>Custom</span>
+                        </label>
+                        {currentColor && (
+                            <button
+                                onMouseDown={e => { e.preventDefault(); editor.chain().focus().unsetColor().run(); setOpen(false); }}
+                                className="ml-auto text-[10px] font-medium px-1.5 py-0.5 rounded hover:bg-red-500/10 transition-colors"
+                                style={{ color: 'var(--text-muted)' }}
+                            >
+                                ✕ Reset
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 /* ── Toolbar Button ──────────────────────────────────────────── */
 function ToolbarBtn({ onClick, active, icon: Icon, title, disabled }) {
     return (
@@ -110,13 +226,20 @@ function ToolbarBtn({ onClick, active, icon: Icon, title, disabled }) {
     );
 }
 
-/* ── Main Editor Component ───────────────────────────────────── */
-const NotebookEditor = forwardRef(function NotebookEditorInner({ content, onChange, onSave, onAIAction, onAIFill, saving, onImportClick, generating, aiFilling }, ref) {
+/* ── Main Editor Component ───────────────────────────────────────────────────── */
+const NotebookEditor = forwardRef(function NotebookEditorInner(
+    { content, onChange, onSave, onAIAction, onAIFill, saving, onImportClick, generating, aiFilling, onTocUpdate, notebookId },
+    ref
+) {
     const saveTimerRef = useRef(null);
     const [wordCount, setWordCount] = useState(0);
     const [showAskInput, setShowAskInput] = useState(false);
     const [askQuery, setAskQuery] = useState('');
     const askInputRef = useRef(null);
+    const imageInputRef = useRef(null);
+    // Always-fresh ref so the image upload closure never captures a stale notebookId
+    const notebookIdRef = useRef(notebookId);
+    useEffect(() => { notebookIdRef.current = notebookId; }, [notebookId]);
 
     const editor = useEditor({
         extensions: [
@@ -125,7 +248,7 @@ const NotebookEditor = forwardRef(function NotebookEditorInner({ content, onChan
                 codeBlock: { HTMLAttributes: { class: 'notebook-code-block' } },
             }),
             Placeholder.configure({
-                placeholder: 'Start writing your document... Use the toolbar above or press / for commands',
+                placeholder: 'Start writing… Type $formula$ for math, :emoji: for emoji, or use the toolbar.',
             }),
             Underline,
             TextAlign.configure({ types: ['heading', 'paragraph'] }),
@@ -133,11 +256,7 @@ const NotebookEditor = forwardRef(function NotebookEditorInner({ content, onChan
             Link.configure({
                 openOnClick: true,
                 autolink: true,
-                HTMLAttributes: {
-                    target: '_blank',
-                    rel: 'noopener noreferrer',
-                    class: 'notebook-link',
-                },
+                HTMLAttributes: { target: '_blank', rel: 'noopener noreferrer', class: 'notebook-link' },
             }),
             MermaidExtension,
             Table.configure({ resizable: true }),
@@ -145,41 +264,63 @@ const NotebookEditor = forwardRef(function NotebookEditorInner({ content, onChan
             TableHeader,
             TableCell,
             Markdown.configure({
-                html: true,
-                tightLists: true,
-                tightListClass: 'tight',
-                bulletListMarker: '-',
-                linkify: true,
-                breaks: false,
-                transformPastedText: true,
-                transformCopiedText: true,
+                html: true, tightLists: true, tightListClass: 'tight',
+                bulletListMarker: '-', linkify: true, breaks: false,
+                transformPastedText: true, transformCopiedText: true,
             }),
+
+            // ── BATCH 1 (prev session) ───────────────────────────────
+            Mathematics,
+            TableOfContents.configure({ onUpdate: (items) => onTocUpdate?.(items) }),
+            Emoji.configure({ emojis: gitHubEmojis, enableEmoticons: true }),
+
+            // ── BATCH 2 (this session) ───────────────────────────────
+            // TextStyle must come before Color
+            TextStyle,
+            Color,
+            Typography,
+            Image.configure({
+                inline: false,
+                allowBase64: true,
+                HTMLAttributes: { class: 'notebook-image' },
+            }),
+            TaskList,
+            TaskItem.configure({ nested: true }),
+
+            // ── Section-aware drag (heading grabs entire section) ────
+            SectionDragExtension,
         ],
         content: content || '',
         onUpdate: ({ editor }) => {
             const html = editor.getHTML();
             onChange?.(html);
-
-            // Word count
             const text = editor.getText();
             setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0);
-
-            // Auto-save debounce
             if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-            saveTimerRef.current = setTimeout(() => {
-                onSave?.(html);
-            }, 2000);
+            saveTimerRef.current = setTimeout(() => onSave?.(html), 2000);
         },
     });
+
+    // Track what node the DragHandle is hovering over (for heading indicator)
+    const [dragNodeType, setDragNodeType] = useState(null);
+
+
+    // Resolve /api/ image URLs in saved HTML to full server URLs (needed for dev mode)
+    // and fix legacy %2F-encoded storage URLs
+    const resolveContentUrls = useCallback((html) => {
+        if (!html || !API_BASE) return html; // production: API_BASE is '', no transform needed
+        // Prepend API_BASE to relative /api/ image src attributes
+        return html.replace(/(<img\s[^>]*src=")(\/(api\/[^"]+))/gi, `$1${API_BASE}/$3`);
+    }, []);
 
     // Sync content from props (e.g. when switching notebooks)
     useEffect(() => {
         if (!editor) return;
         const currentHTML = editor.getHTML();
         if (content !== currentHTML && content !== undefined) {
-            editor.commands.setContent(content || '', false);
+            editor.commands.setContent(resolveContentUrls(content) || '', false);
         }
-    }, [content, editor]);
+    }, [content, editor, resolveContentUrls]);
 
     // Handle AI action on selected text
     const handleAIAction = useCallback((actionKey, customQuery = null) => {
@@ -187,49 +328,96 @@ const NotebookEditor = forwardRef(function NotebookEditorInner({ content, onChan
         const { from, to } = editor.state.selection;
         const selectedText = editor.state.doc.textBetween(from, to, ' ');
         if (!selectedText.trim()) return;
-        
         onAIAction?.(actionKey, selectedText, { from, to }, customQuery);
-        
-        if (actionKey === 'ask') {
-            setShowAskInput(false);
-            setAskQuery('');
-        }
+        if (actionKey === 'ask') { setShowAskInput(false); setAskQuery(''); }
     }, [editor, onAIAction]);
 
-    // Focus input when Ask AI is clicked
-    useEffect(() => {
-        if (showAskInput && askInputRef.current) {
-            askInputRef.current.focus();
+    // Insert inline math at cursor / wrap selection
+    const insertMath = useCallback(() => {
+        if (!editor) return;
+        const { from, to } = editor.state.selection;
+        const selectedText = editor.state.doc.textBetween(from, to, ' ');
+        editor.chain().focus().insertContent(selectedText.trim() ? `$${selectedText}$` : '$formula$').run();
+    }, [editor]);
+
+    // Upload image to RustFS via notebook image endpoint
+    const handleImageUpload = useCallback(async (file) => {
+        if (!editor) return;
+        const nbId = notebookIdRef.current;
+        if (!nbId) {
+            console.warn('[NotebookEditor] Image upload skipped — notebookId not set yet');
+            return;
         }
+        if (!file || !/^image\//.test(file.type)) return;
+
+        const formData = new FormData();
+        formData.append('image', file);
+
+        try {
+            const res = await fetch(`${API_BASE}/api/notebooks/${nbId}/images`, {
+                method: 'POST',
+                body: formData,
+                credentials: 'include',
+            });
+            const contentType = res.headers.get('content-type') || '';
+            if (!contentType.includes('application/json')) {
+                const text = await res.text();
+                throw new Error(`Server returned ${res.status}: ${text.slice(0, 120)}`);
+            }
+            const data = await res.json();
+            if (data.url) {
+                // Resolve through API_BASE so images load in dev (different port) and production
+                const imgSrc = data.url.startsWith('/api/') ? `${API_BASE}${data.url}` : data.url;
+                editor.chain().focus().setImage({ src: imgSrc, alt: file.name }).run();
+            } else {
+                throw new Error(data.error || 'No URL returned');
+            }
+        } catch (err) {
+            console.error('[NotebookEditor] Image upload failed:', err.message);
+        }
+    }, [editor]);
+
+    // Handle image paste from clipboard
+    useEffect(() => {
+        if (!editor) return;
+        const el = editor.view.dom;
+
+        const handlePaste = (e) => {
+            const items = Array.from(e.clipboardData?.items || []);
+            const imageItem = items.find(i => i.type.startsWith('image/'));
+            if (!imageItem) return;
+            e.preventDefault();
+            const file = imageItem.getAsFile();
+            if (file) handleImageUpload(file);
+        };
+
+        const handleDrop = (e) => {
+            const files = Array.from(e.dataTransfer?.files || []);
+            const imageFiles = files.filter(f => f.type.startsWith('image/'));
+            if (imageFiles.length === 0) return;
+            e.preventDefault();
+            imageFiles.forEach(f => handleImageUpload(f));
+        };
+
+        el.addEventListener('paste', handlePaste);
+        el.addEventListener('drop', handleDrop);
+        return () => {
+            el.removeEventListener('paste', handlePaste);
+            el.removeEventListener('drop', handleDrop);
+        };
+    }, [editor, handleImageUpload]);
+
+    // Focus Ask AI input
+    useEffect(() => {
+        if (showAskInput && askInputRef.current) askInputRef.current.focus();
     }, [showAskInput]);
 
-    // Expose insert function via ref
+    // Expose imperative methods
     useImperativeHandle(ref, () => ({
-        insertContent: (text) => {
-            if (!editor) return;
-            editor.chain().focus().insertContent(text).run();
-        },
-        setContent: (html) => {
-            if (!editor) return;
-            editor.commands.setContent(html || '', false);
-        },
-        /**
-         * Insert markdown content — converts to TipTap nodes via the Markdown extension.
-         * This is used to insert Studio-generated content.
-         */
-        insertMarkdown: (md) => {
-            if (!editor) return;
-            // The tiptap-markdown extension can parse markdown if we set it as content
-            // We'll get the current content, append the new markdown-converted content
-            editor.chain().focus().insertContent(md).run();
-        },
-        /**
-         * Replace all editor content with markdown content.
-         */
-        setMarkdownContent: (md) => {
-            if (!editor) return;
-            editor.commands.setContent(md || '', false);
-        },
+        insertContent: (text) => editor?.chain().focus().insertContent(text).run(),
+        setContent: (html) => editor?.commands.setContent(html || '', false),
+        insertMarkdown: (md) => editor?.chain().focus().insertContent(md).run(),
+        setMarkdownContent: (md) => editor?.commands.setContent(md || '', false),
         getEditor: () => editor,
     }), [editor]);
 
@@ -237,13 +425,56 @@ const NotebookEditor = forwardRef(function NotebookEditorInner({ content, onChan
 
     return (
         <div className="flex flex-col h-full relative" style={{ background: 'var(--bg-primary)' }}>
-            {/* ── Generating Overlay ── */}
+            {/* Invisible image file input */}
+            <input
+                ref={imageInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={e => { const f = e.target.files?.[0]; if (f) handleImageUpload(f); e.target.value = ''; }}
+            />
+
+            {/* DragHandle — floating block reorder; heading-aware section drag */}
+            <DragHandle
+                editor={editor}
+                onNodeChange={({ node }) => {
+                    setDragNodeType(node?.type?.name === 'heading' ? node.attrs.level : null);
+                }}
+            >
+                <div
+                    className="flex items-center justify-center rounded cursor-grab transition-all"
+                    style={{
+                        background: dragNodeType ? 'rgba(99,102,241,0.12)' : 'transparent',
+                        border: dragNodeType ? '1px solid rgba(99,102,241,0.3)' : '1px solid transparent',
+                        color: dragNodeType ? '#818cf8' : 'var(--text-tertiary)',
+                        padding: dragNodeType ? '1px 4px' : '2px',
+                        borderRadius: '5px',
+                        minWidth: '20px',
+                        height: '20px',
+                    }}
+                    title={dragNodeType
+                        ? `Drag to move entire H${dragNodeType} section (all content until next H${dragNodeType})`
+                        : 'Drag to reorder block'
+                    }
+                >
+                    {dragNodeType ? (
+                        /* Section indicator: shows H1/H2/H3 level */
+                        <span style={{ fontSize: '9px', fontWeight: 700, letterSpacing: '-0.02em', lineHeight: 1, userSelect: 'none' }}>
+                            H{dragNodeType}≡
+                        </span>
+                    ) : (
+                        <GripVertical className="w-3.5 h-3.5" strokeWidth={2} />
+                    )}
+                </div>
+            </DragHandle>
+
+            {/* Generating Overlay */}
             {generating && (
                 <div className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none" style={{ background: 'rgba(var(--bg-primary-rgb, 255,255,255), 0.6)', backdropFilter: 'blur(2px)' }}>
                     <div className="flex flex-col items-center gap-3 pointer-events-auto px-6 py-5 rounded-2xl shadow-2xl border" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)' }}>
                         <div className="relative">
                             <div className="absolute inset-0 rounded-full animate-ping" style={{ background: 'var(--accent-primary)', opacity: 0.15 }} />
-                            <div className="relative w-12 h-12 rounded-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.15))' }}>
+                            <div className="relative w-12 h-12 rounded-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.1), rgba(139,92,246,0.15))' }}>
                                 <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--accent-primary)' }} />
                             </div>
                         </div>
@@ -251,9 +482,7 @@ const NotebookEditor = forwardRef(function NotebookEditorInner({ content, onChan
                             <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
                                 Generating {generating.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ')}
                             </p>
-                            <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                Content will appear in the document...
-                            </p>
+                            <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>Content will appear in the document...</p>
                         </div>
                         <div className="flex gap-1">
                             {[0, 1, 2].map(i => (
@@ -266,13 +495,16 @@ const NotebookEditor = forwardRef(function NotebookEditorInner({ content, onChan
 
             {/* ── Top Toolbar ── */}
             <div className="shrink-0 flex items-center gap-0.5 px-3 py-1.5 border-b flex-wrap" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
-                {/* Text formatting */}
+                {/* Text Formatting */}
                 <ToolbarBtn onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')} icon={Bold} title="Bold" />
                 <ToolbarBtn onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive('italic')} icon={Italic} title="Italic" />
                 <ToolbarBtn onClick={() => editor.chain().focus().toggleUnderline().run()} active={editor.isActive('underline')} icon={UnderlineIcon} title="Underline" />
                 <ToolbarBtn onClick={() => editor.chain().focus().toggleStrike().run()} active={editor.isActive('strike')} icon={Strikethrough} title="Strikethrough" />
                 <ToolbarBtn onClick={() => editor.chain().focus().toggleHighlight().run()} active={editor.isActive('highlight')} icon={Highlighter} title="Highlight" />
                 <ToolbarBtn onClick={() => editor.chain().focus().toggleCode().run()} active={editor.isActive('code')} icon={Code} title="Inline Code" />
+
+                {/* Color Picker */}
+                <ColorPicker editor={editor} />
 
                 <div className="w-px h-5 mx-1" style={{ background: 'var(--border-subtle)' }} />
 
@@ -286,12 +518,31 @@ const NotebookEditor = forwardRef(function NotebookEditorInner({ content, onChan
                 {/* Lists */}
                 <ToolbarBtn onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')} icon={List} title="Bullet List" />
                 <ToolbarBtn onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive('orderedList')} icon={ListOrdered} title="Numbered List" />
+                <ToolbarBtn onClick={() => editor.chain().focus().toggleTaskList().run()} active={editor.isActive('taskList')} icon={CheckSquare} title="Task List / Checklist" />
                 <ToolbarBtn onClick={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive('blockquote')} icon={Quote} title="Quote" />
 
                 <div className="w-px h-5 mx-1" style={{ background: 'var(--border-subtle)' }} />
 
                 {/* Table */}
                 <TableDropdown editor={editor} />
+
+                <div className="w-px h-5 mx-1" style={{ background: 'var(--border-subtle)' }} />
+
+                {/* Image */}
+                <ToolbarBtn
+                    onClick={() => imageInputRef.current?.click()}
+                    active={false}
+                    icon={ImageIcon}
+                    title="Insert Image (upload to storage)"
+                />
+
+                {/* Math */}
+                <ToolbarBtn
+                    onClick={insertMath}
+                    active={editor.isActive('math')}
+                    icon={Sigma}
+                    title="Insert Math Formula ($formula$)"
+                />
 
                 <div className="w-px h-5 mx-1" style={{ background: 'var(--border-subtle)' }} />
 
@@ -302,7 +553,7 @@ const NotebookEditor = forwardRef(function NotebookEditorInner({ content, onChan
 
                 <div className="w-px h-5 mx-1" style={{ background: 'var(--border-subtle)' }} />
 
-                {/* Undo/Redo */}
+                {/* Undo / Redo */}
                 <ToolbarBtn onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} icon={Undo} title="Undo" />
                 <ToolbarBtn onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} icon={Redo} title="Redo" />
 
@@ -320,36 +571,30 @@ const NotebookEditor = forwardRef(function NotebookEditorInner({ content, onChan
                         icon={aiFilling ? Loader2 : Wand2}
                         title="AI Fill — Replace {{parameters}} using sources"
                         disabled={aiFilling}
-                        className={aiFilling ? 'animate-pulse' : ''}
                     />
                 )}
 
-                {/* Spacer + word count + save indicator */}
                 <div className="flex-1" />
                 <span className="text-[10px] mr-2" style={{ color: 'var(--text-tertiary)' }}>{wordCount} words</span>
                 {saving && <span className="text-[10px] animate-pulse" style={{ color: 'var(--accent-primary)' }}>Saving...</span>}
             </div>
 
-            {/* ── Official TipTap BubbleMenu — AI Actions on text selection ── */}
+            {/* Math / Tips hint banner */}
+            <MathHint />
+
+            {/* BubbleMenu — AI actions on text selection */}
             <BubbleMenu
                 editor={editor}
                 tippyOptions={{
                     placement: 'top',
                     animation: 'shift-toward-subtle',
                     duration: 150,
-                    onHidden: () => {
-                        setShowAskInput(false);
-                        setAskQuery('');
-                    }
+                    onHidden: () => { setShowAskInput(false); setAskQuery(''); }
                 }}
             >
                 <div
                     className="flex items-center px-1.5 py-1 rounded-xl shadow-xl border backdrop-blur-md transition-all duration-200"
-                    style={{
-                        background: 'var(--bg-primary)',
-                        borderColor: 'var(--border-default)',
-                        gap: showAskInput ? '6px' : '2px',
-                    }}
+                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', gap: showAskInput ? '6px' : '2px' }}
                 >
                     {!showAskInput ? (
                         <>
@@ -367,10 +612,7 @@ const NotebookEditor = forwardRef(function NotebookEditorInner({ content, onChan
                             })}
                             <div className="w-px h-4 mx-0.5" style={{ background: 'var(--border-subtle)' }} />
                             <button
-                                onMouseDown={e => { 
-                                    e.preventDefault(); 
-                                    setShowAskInput(true); 
-                                }}
+                                onMouseDown={e => { e.preventDefault(); setShowAskInput(true); }}
                                 className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-all hover:bg-[var(--bg-tertiary)]"
                                 style={{ color: 'var(--accent-primary)' }}
                             >
@@ -387,43 +629,30 @@ const NotebookEditor = forwardRef(function NotebookEditorInner({ content, onChan
                                 value={askQuery}
                                 onChange={e => setAskQuery(e.target.value)}
                                 onKeyDown={e => {
-                                    if (e.key === 'Enter' && askQuery.trim()) {
-                                        e.preventDefault();
-                                        handleAIAction('ask', askQuery.trim());
-                                    } else if (e.key === 'Escape') {
-                                        e.preventDefault();
-                                        setShowAskInput(false);
-                                        setAskQuery('');
-                                    }
+                                    if (e.key === 'Enter' && askQuery.trim()) { e.preventDefault(); handleAIAction('ask', askQuery.trim()); }
+                                    else if (e.key === 'Escape') { e.preventDefault(); setShowAskInput(false); setAskQuery(''); }
                                 }}
                                 className="bg-transparent border-none outline-none text-[11px] w-[200px] font-medium placeholder-[var(--text-tertiary)] text-[var(--text-primary)]"
                             />
                             <button
-                                onMouseDown={e => {
-                                    e.preventDefault();
-                                    if (askQuery.trim()) handleAIAction('ask', askQuery.trim());
-                                }}
+                                onMouseDown={e => { e.preventDefault(); if (askQuery.trim()) handleAIAction('ask', askQuery.trim()); }}
                                 className="px-2 py-1 rounded-lg text-[10px] font-bold bg-[var(--accent-primary)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
                                 disabled={!askQuery.trim()}
                             >
                                 Send
                             </button>
                             <button
-                                onMouseDown={e => {
-                                    e.preventDefault();
-                                    setShowAskInput(false);
-                                    setAskQuery('');
-                                }}
+                                onMouseDown={e => { e.preventDefault(); setShowAskInput(false); setAskQuery(''); }}
                                 className="px-1.5 py-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
                             >
-                                &times;
+                                ×
                             </button>
                         </div>
                     )}
                 </div>
             </BubbleMenu>
 
-            {/* ── Editor Content ── */}
+            {/* Editor Content */}
             <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ background: 'var(--bg-primary)' }}>
                 <div className="max-w-[800px] mx-auto px-8 py-6">
                     <EditorContent editor={editor} className="notebook-editor" />
@@ -432,5 +661,43 @@ const NotebookEditor = forwardRef(function NotebookEditorInner({ content, onChan
         </div>
     );
 });
+
+/* ── Math hint banner — dismissible ─────────────────────────── */
+function MathHint() {
+    const [visible, setVisible] = useState(false);
+    const [dismissed, setDismissed] = useState(() => {
+        try { return localStorage.getItem('nb_math_hint_dismissed') === '1'; } catch { return false; }
+    });
+
+    useEffect(() => {
+        if (!dismissed) {
+            const t = setTimeout(() => setVisible(true), 800);
+            return () => clearTimeout(t);
+        }
+    }, [dismissed]);
+
+    if (!visible || dismissed) return null;
+
+    return (
+        <div
+            className="shrink-0 flex items-center justify-between px-4 py-1.5 text-[11px] border-b"
+            style={{ background: 'linear-gradient(90deg, rgba(99,102,241,0.06), transparent)', borderColor: 'var(--border-subtle)', color: 'var(--text-tertiary)' }}
+        >
+            <span>
+                💡 <strong className="text-[var(--text-secondary)]">Tips:</strong>{' '}
+                <code className="bg-[var(--bg-tertiary)] px-1 py-0.5 rounded text-[10px]">$formula$</code> math ·{' '}
+                <code className="bg-[var(--bg-tertiary)] px-1 py-0.5 rounded text-[10px]">:emoji:</code> shortcodes ·{' '}
+                <code className="bg-[var(--bg-tertiary)] px-1 py-0.5 rounded text-[10px]">☑</code> task lists ·{' '}
+                hover block for drag handle ⠿
+            </span>
+            <button
+                onClick={() => { setDismissed(true); setVisible(false); try { localStorage.setItem('nb_math_hint_dismissed', '1'); } catch {} }}
+                className="ml-3 text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors"
+            >
+                ×
+            </button>
+        </div>
+    );
+}
 
 export default NotebookEditor;

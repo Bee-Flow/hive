@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import MarkdownRenderer from './MarkdownRenderer';
-import { MessageSquarePlus, Bold, Italic, ArrowUp, Copy, Check, Download, FileText } from 'lucide-react';
+import { MessageSquarePlus, Bold, Italic, ArrowUp, Copy, Check, Download, FileText, BookOpen } from 'lucide-react';
 
-const WorkspacePanel = ({ content, onChange, onSave, onSelectionChange, onAskAI, onClose }) => {
+const WorkspacePanel = ({ content, onChange, onSave, onSelectionChange, onAskAI, onClose, onOpenInNotebook }) => {
     const [localContent, setLocalContent] = useState(content || '');
     const [viewMode, setViewMode] = useState('preview'); // 'edit' or 'preview'
     const [isDirty, setIsDirty] = useState(false);
@@ -348,6 +348,15 @@ const WorkspacePanel = ({ content, onChange, onSave, onSelectionChange, onAskAI,
                             >
                                 <FileText className="w-3.5 h-3.5" />
                             </button>
+                            {onOpenInNotebook && (
+                                <button
+                                    onClick={() => onOpenInNotebook(localContent)}
+                                    className="p-1.5 rounded-lg hover:bg-[var(--bg-primary)] text-[var(--text-secondary)] hover:text-[var(--accent-primary)] transition-colors"
+                                    title="Open in new Notebook"
+                                >
+                                    <BookOpen className="w-3.5 h-3.5" />
+                                </button>
+                            )}
                         </div>
                     )}
                     {onClose && (

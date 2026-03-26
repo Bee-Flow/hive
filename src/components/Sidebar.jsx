@@ -29,7 +29,7 @@ const readExpanded = (k, fallback) => {
 const writeExpanded = (k, v) => { try { localStorage.setItem(storageKey(k), v ? '1' : '0'); } catch { } };
 
 /* ─── Inline label creator (with color wheel) ─── */
-const CreateLabelInline = ({ onCreateLabel }) => {
+const CreateLabelInline = ({ onCreateLabel, t }) => {
     const [isCreating, setIsCreating] = useState(false);
     const [name, setName] = useState('');
     const [color, setColor] = useState('#6366f1');
@@ -65,7 +65,7 @@ const CreateLabelInline = ({ onCreateLabel }) => {
                 onClick={(e) => { e.stopPropagation(); setIsCreating(true); }}
                 className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] hover:bg-[var(--bg-secondary)] rounded-md transition-colors text-left text-[var(--text-tertiary)]"
             >
-                <Plus className="w-3 h-3" /> {t('sidebar.new_label')}
+                <Plus className="w-3 h-3" /> {t ? t('sidebar.new_label') : 'New label'}
             </button>
         );
     }
@@ -97,7 +97,7 @@ const CreateLabelInline = ({ onCreateLabel }) => {
                     disabled={!name.trim()}
                     className="text-[11px] px-2 py-0.5 rounded-md bg-[var(--accent-primary)] text-white font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
                 >
-                    {t('common.add')}
+                    {t ? t('common.add') : 'Add'}
                 </button>
             </div>
         </div>
@@ -105,7 +105,7 @@ const CreateLabelInline = ({ onCreateLabel }) => {
 };
 
 /* ─── Inline label editor ─── */
-const EditLabelInline = ({ label, onSave, onCancel }) => {
+const EditLabelInline = ({ label, onSave, onCancel, t }) => {
     const [name, setName] = useState(label.name);
     const [color, setColor] = useState(label.color);
     const inputRef = useRef(null);
@@ -144,7 +144,7 @@ const EditLabelInline = ({ label, onSave, onCancel }) => {
                     className="flex-1 text-[12px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded px-2 py-1 outline-none focus:border-[var(--accent-primary)] text-[var(--text-primary)] min-w-0"
                 />
                 <button onClick={handleSave} className="text-[11px] px-2 py-0.5 rounded-md bg-[var(--accent-primary)] text-white font-medium hover:opacity-90">
-                    {t('common.save')}
+                    {t ? t('common.save') : 'Save'}
                 </button>
                 <button onClick={onCancel} className="text-[11px] p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
                     <X className="w-3.5 h-3.5" />
@@ -378,7 +378,7 @@ const Sidebar = ({
                                 <div className="max-h-40 overflow-y-auto">
                                     {conversationLabels.map(label => {
                                         if (editingLabelId === label.id) {
-                                            return <EditLabelInline key={label.id} label={label} onSave={(id, updates) => { onEditLabel?.(id, updates); setEditingLabelId(null); }} onCancel={() => setEditingLabelId(null)} />;
+                                            return <EditLabelInline key={label.id} label={label} onSave={(id, updates) => { onEditLabel?.(id, updates); setEditingLabelId(null); }} onCancel={() => setEditingLabelId(null)} t={t} />;
                                         }
                                         const convLabels = (() => { try { return JSON.parse(conv.labels_json || '[]'); } catch { return []; } })();
                                         const has = convLabels.includes(label.id);
@@ -414,7 +414,7 @@ const Sidebar = ({
                                     )}
                                 </div>
                                 {/* Create new label inline */}
-                                <CreateLabelInline onCreateLabel={onCreateLabel} />
+                                <CreateLabelInline onCreateLabel={onCreateLabel} t={t} />
                                 {/* Move to project */}
                                 {projects.length > 0 && (
                                     <>

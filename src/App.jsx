@@ -97,6 +97,8 @@ function pageFromPath(pathname) {
     if (pathname === '/app/org-settings' || pathname.startsWith('/app/org-settings/')) return 'orgSettings';
     // Legacy bare /org-settings
     if (pathname === '/org-settings' || pathname.startsWith('/org-settings/')) return 'orgSettings';
+    // /app/notebooks/:id → notebooks page (must come before generic /app/*)
+    if (pathname.startsWith('/app/notebooks')) return 'notebooks';
     // /app/a/:shortId or /app/agent/:id → agents page
     if (pathname.startsWith('/app/a/') || pathname.startsWith('/app/agent/')) return 'agents';
     // /app/d/:convId → direct chat
@@ -146,6 +148,12 @@ function parseAgentUrl(pathname) {
 // Extract direct chat conversation ID from URL: /app/d/:shortConvId (legacy: /d/:shortConvId)
 function parseDirectChatUrl(pathname) {
     const match = pathname.match(/^\/(?:app\/)?d\/([a-zA-Z0-9_-]+)/);
+    return match ? match[1] : null;
+}
+
+// Extract notebook ID from URL: /app/notebooks/:id
+function parseNotebookUrl(pathname) {
+    const match = pathname.match(/^\/app\/notebooks\/([a-zA-Z0-9_-]+)/);
     return match ? match[1] : null;
 }
 
@@ -228,6 +236,7 @@ function App() {
     const [currentPage, setCurrentPage] = useState(() => pageFromPath(window.location.pathname));
     const [adminPath, setAdminPath] = useState(() => parseAdminPath(window.location.pathname));
     const [orgSettingsPath, setOrgSettingsPath] = useState(() => parseOrgSettingsPath(window.location.pathname));
+    const [initialNotebookId, setInitialNotebookId] = useState(() => parseNotebookUrl(window.location.pathname));
     const [user, setUser] = useState(null);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [showLogin, setShowLogin] = useState(false);
@@ -310,6 +319,7 @@ function App() {
             setCurrentPage(pageFromPath(window.location.pathname));
             setAdminPath(parseAdminPath(window.location.pathname));
             setOrgSettingsPath(parseOrgSettingsPath(window.location.pathname));
+            setInitialNotebookId(parseNotebookUrl(window.location.pathname));
         };
         window.addEventListener('popstate', handlePopState);
         return () => window.removeEventListener('popstate', handlePopState);
@@ -417,6 +427,15 @@ function App() {
             setOrgSettingsPath(parseOrgSettingsPath(path));
             setShowProfileMenu(false);
             window.history.pushState({ page: 'orgSettings' }, '', path);
+            return;
+        }
+        // Support 'notebooks/123' format to open a specific notebook
+        if (page.startsWith('notebooks/')) {
+            const notebookId = page.slice('notebooks/'.length);
+            setInitialNotebookId(notebookId);
+            setCurrentPage('notebooks');
+            setShowProfileMenu(false);
+            window.history.pushState({ page: 'notebooks', notebookId }, '', `/app/notebooks/${notebookId}`);
             return;
         }
         setCurrentPage(page);
@@ -651,7 +670,15 @@ function App() {
         }
         if (currentPage === 'notebooks') {
             if (user?.featureFlags?.templates === false) return navigateToPage('agents');
-            return <NotebooksPage user={user} onBack={() => navigateToPage('agents')} />;
+            return <NotebooksPage
+                user={user}
+                onBack={() => navigateToPage('agents')}
+                initialNotebookId={initialNotebookId}
+                onNotebookChange={(id) => {
+                    const path = id ? `/app/notebooks/${id}` : '/app/notebooks';
+                    window.history.replaceState({ page: 'notebooks', notebookId: id }, '', path);
+                }}
+            />;
         }
         if (currentPage === 'e2eTesting') {
             if (user?.featureFlags?.e2e_testing === false) return navigateToPage('agents');
