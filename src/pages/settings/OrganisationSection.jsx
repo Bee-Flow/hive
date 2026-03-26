@@ -91,7 +91,7 @@ const GoogleMapsRow = () => {
 
 /* ── OrganisationSection ─────────────────────────────────────────────────── */
 // activeSection is now controlled entirely by the parent sidebar.
-// Possible values: 'license' | 'auth' | 'privacy' | 'branding' | 'legal' | 'users' | 'integrations'
+// Possible values: 'license' | 'auth' | 'privacy' | 'info' | 'users' | 'integrations'
 const OrganisationSection = ({ user, activeSection = 'license' }) => {
     const [orgState, setOrgState] = useState({ hasChanges: false, saving: false, message: null, handleSave: null });
 

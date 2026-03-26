@@ -130,8 +130,11 @@ const InputArea = ({
         try { const v = localStorage.getItem('webSearchEnabled'); return v === null ? true : v === 'true'; } catch { return true; }
     });
     const [orgDisableSearchOnUpload, setOrgDisableSearchOnUpload] = useState(false);
+    const [searchProviderConfig, setSearchProviderConfig] = useState('agent-search');
     const [hasFirefliesKey, setHasFirefliesKey] = useState(false);
     const [orgEnabledIntegrations, setOrgEnabledIntegrations] = useState(null);
+    const [hasGoogleKey, setHasGoogleKey] = useState(false);
+    const [hasElevenLabsKey, setHasElevenLabsKey] = useState(false);
     const [hasYouTrackConfig, setHasYouTrackConfig] = useState(false);
     const [hasGammaKey, setHasGammaKey] = useState(false);
     const [hasWhatsApp, setHasWhatsApp] = useState(false);
@@ -221,7 +224,10 @@ const InputArea = ({
                     setIsMicrosoftUser(!!data.isMicrosoftUser);
                     if (data.enabledApps) setEnabledApps(data.enabledApps);
                     if (data.orgEnabledIntegrations !== undefined) setOrgEnabledIntegrations(data.orgEnabledIntegrations);
+                    if (data.hasGoogleKey !== undefined) setHasGoogleKey(data.hasGoogleKey);
+                    if (data.hasElevenLabsKey !== undefined) setHasElevenLabsKey(data.hasElevenLabsKey);
                     if (data.disableSearchOnUpload) setOrgDisableSearchOnUpload(true);
+                    if (data.searchProvider) setSearchProviderConfig(data.searchProvider);
                 }
             })
             .catch(() => { });
@@ -724,10 +730,10 @@ const InputArea = ({
                                 {/* Multimedia Creation — grouped dropdown (gated by org settings) */}
                                 {(() => {
                                     const orgOn = (id) => !orgEnabledIntegrations || orgEnabledIntegrations.includes(id);
-                                    const showImageGen = orgOn('image-gen');
-                                    const showMusicGen = orgOn('music-gen');
-                                    const showElevenLabs = orgOn('elevenlabs');
-                                    const showVideoGen = orgOn('video-gen');
+                                    const showImageGen = orgOn('image-gen') && hasGoogleKey;
+                                    const showMusicGen = orgOn('music-gen') && hasGoogleKey;
+                                    const showElevenLabs = orgOn('elevenlabs') && hasElevenLabsKey;
+                                    const showVideoGen = orgOn('video-gen') && hasGoogleKey;
                                     if (!showImageGen && !showMusicGen && !showElevenLabs && !showVideoGen) return null;
                                     return (
                                         <div className="relative">
@@ -822,7 +828,7 @@ const InputArea = ({
                                     );
                                 })()}
                                 {/* Web Search Toggle (gated by org settings for agent-search) */}
-                                {(!orgEnabledIntegrations || orgEnabledIntegrations.includes('agent-search')) && (
+                                {searchProviderConfig !== 'disabled' && (!orgEnabledIntegrations || orgEnabledIntegrations.includes('agent-search')) && (
                                 <button
                                     onClick={() => {
                                         if (orgDisableSearchOnUpload && attachments.length > 0) return;

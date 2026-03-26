@@ -71,8 +71,8 @@ export default function TemplatesPage({ user, onBack }) {
         selectedAgent: null,
         currentConversation: null,
         onConversationCreated: useCallback(() => {}, []),
-        getWorkspacePayload: useCallback(() => ({}), []),
-        onWorkspaceUpdate: useCallback(() => {}, []),
+        getNotebookPayload: useCallback(() => ({}), []),
+        onNotebookUpdate: useCallback(() => {}, []),
         directMode: useMemo(() => ({
             enabled: true,
             modelTier: selectedChatTier,

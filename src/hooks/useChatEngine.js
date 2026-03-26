@@ -11,8 +11,8 @@ import { API_BASE, generateMessageId, authFetch } from '../utils/helpers';
  * @param {Object|null} opts.selectedAgent - Currently selected agent
  * @param {Object|null} opts.currentConversation - Current conversation object
  * @param {Function} opts.onConversationCreated - Called when stream creates/updates a conversation
- * @param {Function} opts.getWorkspacePayload - Returns { workspaceContent, workspaceSelection } if workspace enabled
- * @param {Function} opts.onWorkspaceUpdate - Called with new workspace content from stream
+ * @param {Function} opts.getNotebookPayload - Returns { workspaceContent, workspaceSelection } if workspace enabled
+ * @param {Function} opts.onNotebookUpdate - Called with new workspace content from stream
  * @param {Object} opts.directMode - { enabled: boolean, modelTier: string }
  * @param {Function} opts.onDirectConversationCreated - Called with { conversationId, title } for direct chats
  */
@@ -20,8 +20,8 @@ export default function useChatEngine({
     selectedAgent,
     currentConversation,
     onConversationCreated,
-    getWorkspacePayload,
-    onWorkspaceUpdate,
+    getNotebookPayload,
+    onNotebookUpdate,
     directMode,
     onDirectConversationCreated,
     activeProject,
@@ -356,7 +356,7 @@ export default function useChatEngine({
                 break;
 
             case 'workspace_update':
-                onWorkspaceUpdate?.(data.content);
+                onNotebookUpdate?.(data.content);
                 break;
 
             case 'notebook_doc_update':
@@ -400,7 +400,7 @@ export default function useChatEngine({
                     }));
                 }
                 if (data.workspaceContent !== undefined) {
-                    onWorkspaceUpdate?.(data.workspaceContent);
+                    onNotebookUpdate?.(data.workspaceContent);
                 }
                 break;
 
@@ -661,7 +661,7 @@ export default function useChatEngine({
                 break;
             }
         }
-    }, [onConversationCreated, onWorkspaceUpdate]);
+    }, [onConversationCreated, onNotebookUpdate]);
 
     // --- Core send ---
 
@@ -721,7 +721,7 @@ export default function useChatEngine({
                     modelTier: directMode.modelTier || 'fast',
                     attachments,
                     history,
-                    ...getWorkspacePayload?.(),
+                    ...getNotebookPayload?.(),
                     ...(directMode.systemPrompt ? { systemPrompt: directMode.systemPrompt } : {}),
                     imageGenSettings: (() => {
                         try {
@@ -750,7 +750,7 @@ export default function useChatEngine({
                 };
             } else {
                 // Agent chat mode — post to /agents/:id/chat/stream
-                const wsPayload = getWorkspacePayload?.() || {};
+                const wsPayload = getNotebookPayload?.() || {};
                 url = `${API_BASE}/agents/${selectedAgent.id}/chat/stream`;
                 payload = {
                     message: text,
@@ -830,7 +830,7 @@ export default function useChatEngine({
                 setIsLoading(false);
             }
         }
-    }, [selectedAgent, isLoading, abortController, currentConversation, getWorkspacePayload, handleSSEEvent, directMode, messages, onDirectConversationCreated]);
+    }, [selectedAgent, isLoading, abortController, currentConversation, getNotebookPayload, handleSSEEvent, directMode, messages, onDirectConversationCreated]);
 
     const stopGenerating = useCallback(() => {
         if (abortController) abortController.abort();

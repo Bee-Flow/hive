@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
-import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, CheckSquare, BarChart3, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, FlaskConical } from 'lucide-react';
+import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, CheckSquare, BarChart3, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, FlaskConical, PenLine } from 'lucide-react';
 import { API_BASE } from '../utils/helpers';
 import NotificationCenter from './NotificationCenter';
 import NavLink from './NavLink';
@@ -499,6 +499,7 @@ const Sidebar = ({
             {/* ── Nav rows ── */}
             <nav aria-label="Main navigation" data-testid="main-navigation" className={`px-2 pt-4 flex-shrink-0 flex flex-col gap-2 ${isOpen ? '' : 'items-center'}`}>
                 {[
+                    { label: t('sidebar.new_chat') || 'New Chat', icon: PenLine, onClick: onNewChat, active: false },
                     { label: t('sidebar.direct_chat'), icon: MessageSquare, onClick: onDirectChat, active: directChatMode && !selectedAgent },
                     { label: t('sidebar.agent_store'), icon: Store, onClick: onOpenMarketplace, active: currentPage === 'marketplace' },
                     { label: t('sidebar.search'), icon: Search, onClick: onOpenSearch, active: false },

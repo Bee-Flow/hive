@@ -6,6 +6,7 @@ const OpenAIApiKeyCard = ({ onMessage }) => {
     const [hasKey, setHasKey] = useState(false);
     const [saving, setSaving] = useState(false);
     const [showKey, setShowKey] = useState(false);
+    const [confirmDelete, setConfirmDelete] = useState(false);
 
     useEffect(() => {
         fetchKeyStatus();
@@ -44,6 +45,22 @@ const OpenAIApiKeyCard = ({ onMessage }) => {
             onMessage?.({ type: 'error', text: 'Failed to save API key' });
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleDelete = async () => {
+        try {
+            const res = await authFetch(`${API_BASE}/ai/config/key/openai_api_key`, { method: 'DELETE' });
+            if (res.ok) {
+                setHasKey(false);
+                setApiKey('');
+                setConfirmDelete(false);
+                onMessage?.({ type: 'success', text: 'OpenAI API key removed' });
+            } else {
+                onMessage?.({ type: 'error', text: 'Failed to delete API key' });
+            }
+        } catch (e) {
+            onMessage?.({ type: 'error', text: 'Failed to delete API key' });
         }
     };
 
@@ -91,6 +108,33 @@ const OpenAIApiKeyCard = ({ onMessage }) => {
                 >
                     {saving ? '...' : 'Save'}
                 </button>
+                {hasKey && !confirmDelete && (
+                    <button
+                        onClick={() => setConfirmDelete(true)}
+                        className="px-3 py-2.5 rounded-lg text-sm transition-all hover:bg-red-500/20"
+                        style={{ color: 'var(--text-muted)' }}
+                        title="Delete API key"
+                    >
+                        🗑️
+                    </button>
+                )}
+                {confirmDelete && (
+                    <>
+                        <button
+                            onClick={handleDelete}
+                            className="px-3 py-2.5 rounded-lg text-sm font-medium transition-all bg-red-500/20 text-red-400 hover:bg-red-500/30"
+                        >
+                            Confirm
+                        </button>
+                        <button
+                            onClick={() => setConfirmDelete(false)}
+                            className="px-3 py-2.5 rounded-lg text-sm transition-all"
+                            style={{ color: 'var(--text-muted)' }}
+                        >
+                            ✕
+                        </button>
+                    </>
+                )}
             </div>
             <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
                 Get your API key from <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener noreferrer" className="underline hover:text-[var(--accent-primary)]">platform.openai.com</a>

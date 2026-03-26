@@ -1,4 +1,4 @@
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 
 import MarkdownRenderer from "../../MarkdownRenderer";
 import KnowledgePanel from "../../KnowledgePanel";
@@ -158,6 +158,10 @@ const AgentDesigner = ({
   // Prompt designer
   const { sendPromptDesignerMessage, applyGeneratedPrompt } =
     usePromptDesigner(state);
+
+  // Thinking section toggle state for prompt designer
+  const [expandedThinking, setExpandedThinking] = useState({});
+  const toggleThinking = (idx) => setExpandedThinking(prev => ({ ...prev, [idx]: !prev[idx] }));
 
   // Capabilities
   const { checkCapability, toggleCapability } = useCapabilities(state);
@@ -748,178 +752,271 @@ const AgentDesigner = ({
       {/* System Prompt Designer Modal */}
       {showPromptDesigner && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div className="bg-[var(--bg-primary)] rounded-2xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col border border-white/10">
+          <div style={{
+            background: 'var(--bg-card)',
+            border: '1px solid var(--border-default)',
+            borderRadius: '16px',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+            width: '820px',
+            maxWidth: '90vw',
+            height: '70vh',
+            maxHeight: '85vh',
+            display: 'flex',
+            flexDirection: 'column',
+          }}>
             {/* Header */}
-            <div className="px-6 py-4 border-b border-white/10 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br from-purple-500 to-blue-500">
-                  <svg
-                    className="w-5 h-5 text-white"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z"
-                    />
-                  </svg>
-                </div>
-                <div>
-                  <h3 className="font-semibold text-primary">
-                    System Prompt Designer
-                  </h3>
-                  <p className="text-xs text-muted">
-                    AI-powered prompt creation
-                  </p>
-                </div>
+            <div style={{
+              padding: '16px 24px',
+              borderBottom: '1px solid var(--border-subtle)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
+                  AI Assist
+                </h3>
               </div>
-              <button
-                onClick={() => setShowPromptDesigner(false)}
-                className="p-2 text-muted hover:text-primary rounded-lg hover:bg-white/5 transition-colors"
-              >
-                <svg
-                  className="w-5 h-5"
-                  fill="none"
-                  stroke="currentColor"
-                  viewBox="0 0 24 24"
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                <button
+                  onClick={() => {
+                    setPromptDesignerMessages([{
+                      role: 'assistant',
+                      content: systemPrompt
+                        ? `I'll improve your existing prompt. Just click send or tell me what to change.`
+                        : `What should this agent do? I'll generate a prompt for you.`,
+                      thinking: '',
+                    }]);
+                    setPromptDesignerInput('');
+                  }}
+                  style={{
+                    padding: '6px 10px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--border-default)',
+                    background: 'transparent',
+                    color: 'var(--text-muted)',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '4px',
+                  }}
+                  title="Reset conversation"
                 >
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d="M6 18L18 6M6 6l12 12"
-                  />
-                </svg>
-              </button>
+                  ↻ Reset
+                </button>
+                <button
+                  onClick={() => setShowPromptDesigner(false)}
+                  style={{
+                    padding: '6px',
+                    borderRadius: '8px',
+                    border: 'none',
+                    background: 'transparent',
+                    color: 'var(--text-muted)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    fontSize: '18px',
+                  }}
+                >
+                  ×
+                </button>
+              </div>
             </div>
 
             {/* Messages */}
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
+            <div style={{
+              flex: 1,
+              overflowY: 'auto',
+              padding: '16px 20px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '12px',
+            }} className="custom-scrollbar">
               {promptDesignerMessages.map((msg, i) => (
-                <div
-                  key={i}
-                  className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
-                >
-                  <div
-                    className={`max-w-[85%] rounded-2xl px-4 py-3 ${
-                      msg.role === "user"
-                        ? "bg-gradient-to-r from-purple-500 to-blue-500 text-white rounded-br-md"
-                        : "bg-white/5 text-primary rounded-bl-md border border-white/10"
-                    }`}
-                  >
-                    <div className="text-sm prose prose-invert max-w-none">
+                <div key={i} style={{
+                  display: 'flex',
+                  justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
+                }}>
+                  <div style={{
+                    maxWidth: '90%',
+                    borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
+                    padding: '12px 16px',
+                    ...(msg.role === 'user'
+                      ? {
+                          background: 'var(--bg-tertiary)',
+                          border: '1px solid var(--border-default)',
+                          color: 'var(--text-primary)',
+                        }
+                      : {
+                          background: 'var(--bg-secondary)',
+                          border: '1px solid var(--border-subtle)',
+                          color: 'var(--text-primary)',
+                        }
+                    ),
+                  }}>
+                    {/* Thinking section (collapsible) */}
+                    {msg.role === 'assistant' && msg.thinking && (
+                      <div style={{ marginBottom: '8px' }}>
+                        <button
+                          onClick={() => toggleThinking(i)}
+                          style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '4px 8px',
+                            borderRadius: '6px',
+                            border: '1px solid var(--border-subtle)',
+                            background: 'var(--bg-tertiary)',
+                            color: 'var(--text-muted)',
+                            fontSize: '11px',
+                            cursor: 'pointer',
+                            width: '100%',
+                          }}
+                        >
+                          <span style={{
+                            transform: expandedThinking[i] ? 'rotate(90deg)' : 'rotate(0deg)',
+                            transition: 'transform 0.15s',
+                            display: 'inline-block',
+                          }}>▸</span>
+                          <span>💭 Thought process</span>
+                          <span style={{ opacity: 0.5, marginLeft: 'auto' }}>
+                            {msg.thinking.length > 100 ? `${Math.ceil(msg.thinking.length / 100)} blocks` : 'brief'}
+                          </span>
+                        </button>
+                        {expandedThinking[i] && (
+                          <div style={{
+                            marginTop: '6px',
+                            padding: '10px 12px',
+                            borderRadius: '8px',
+                            background: 'var(--bg-tertiary)',
+                            border: '1px solid var(--border-subtle)',
+                            fontSize: '12px',
+                            lineHeight: '1.5',
+                            color: 'var(--text-muted)',
+                            maxHeight: '200px',
+                            overflowY: 'auto',
+                            whiteSpace: 'pre-wrap',
+                          }} className="custom-scrollbar">
+                            {msg.thinking}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                    <div style={{ fontSize: '14px' }} className="prose prose-invert max-w-none">
                       <MarkdownRenderer content={msg.content} />
                     </div>
                     {/* Apply button for assistant messages with code blocks */}
-                    {msg.role === "assistant" &&
-                      msg.content.includes("```") && (
-                        <button
-                          onClick={() => applyGeneratedPrompt(msg.content)}
-                          className="mt-3 w-full py-2.5 px-4 rounded-xl text-sm font-semibold bg-gradient-to-r from-emerald-500 to-green-500 hover:from-emerald-400 hover:to-green-400 text-white shadow-lg shadow-emerald-500/30 transition-all flex items-center justify-center gap-2"
-                        >
-                          <svg
-                            className="w-4 h-4"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M5 13l4 4L19 7"
-                            />
-                          </svg>
-                          ✨ Apply This Prompt
-                        </button>
-                      )}
+                    {msg.role === 'assistant' && msg.content && msg.content.includes('```') && (
+                      <button
+                        onClick={() => applyGeneratedPrompt(msg.content)}
+                        style={{
+                          margin: '10px 0 0',
+                          width: '100%',
+                          padding: '10px 16px',
+                          borderRadius: '10px',
+                          border: 'none',
+                          fontSize: '13px',
+                          fontWeight: 600,
+                          background: 'var(--accent-primary)',
+                          color: '#fff',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: '6px',
+                          transition: 'opacity 0.15s',
+                        }}
+                        onMouseOver={(e) => e.currentTarget.style.opacity = '0.85'}
+                        onMouseOut={(e) => e.currentTarget.style.opacity = '1'}
+                      >
+                        ✓ Apply This Prompt
+                      </button>
+                    )}
                   </div>
                 </div>
               ))}
-              {promptDesignerLoading && (
-                <div className="flex justify-start">
-                  <div className="bg-white/5 rounded-2xl rounded-bl-md px-4 py-3 border border-white/10">
-                    <div className="flex items-center gap-2 text-muted">
-                      <div className="flex gap-1">
-                        <span className="w-2 h-2 rounded-full bg-purple-400 animate-bounce"></span>
-                        <span
-                          className="w-2 h-2 rounded-full bg-purple-400 animate-bounce"
-                          style={{ animationDelay: "0.1s" }}
-                        ></span>
-                        <span
-                          className="w-2 h-2 rounded-full bg-purple-400 animate-bounce"
-                          style={{ animationDelay: "0.2s" }}
-                        ></span>
-                      </div>
-                      <span className="text-sm">Designing your prompt...</span>
-                    </div>
+              {/* Loading / streaming indicator */}
+              {promptDesignerLoading && !promptDesignerMessages.some(m => m.role === 'assistant' && (m.content || m.thinking)) && (
+                <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
+                  <div style={{
+                    padding: '12px 16px',
+                    borderRadius: '14px 14px 14px 4px',
+                    background: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-subtle)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    color: 'var(--text-muted)',
+                    fontSize: '13px',
+                  }}>
+                    <span className="flex gap-1">
+                      <span className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: 'var(--accent-primary)' }}></span>
+                      <span className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: 'var(--accent-primary)', animationDelay: '0.1s' }}></span>
+                      <span className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: 'var(--accent-primary)', animationDelay: '0.2s' }}></span>
+                    </span>
+                    Thinking...
                   </div>
                 </div>
               )}
             </div>
 
             {/* Input */}
-            <div className="p-5 border-t border-white/10 bg-white/[0.02]">
-              <div className="flex gap-3">
+            <div style={{
+              padding: '16px 20px',
+              borderTop: '1px solid var(--border-subtle)',
+              background: 'var(--bg-secondary)',
+              borderRadius: '0 0 16px 16px',
+            }}>
+              <div style={{ display: 'flex', gap: '10px' }}>
                 <input
                   type="text"
                   value={promptDesignerInput}
                   onChange={(e) => setPromptDesignerInput(e.target.value)}
                   onKeyDown={(e) => {
-                    if (e.key === "Enter" && !promptDesignerLoading) {
+                    if (e.key === 'Enter' && !promptDesignerLoading) {
                       sendPromptDesignerMessage();
                     }
                   }}
                   placeholder="Describe what your agent should do..."
-                  className="flex-1 px-4 py-3 rounded-xl bg-white/5 border border-white/10 focus:border-purple-500/50 focus:ring-2 focus:ring-purple-500/20 outline-none text-primary placeholder:text-muted transition-all"
                   disabled={promptDesignerLoading}
+                  style={{
+                    flex: 1,
+                    padding: '10px 14px',
+                    borderRadius: '10px',
+                    border: '1px solid var(--border-default)',
+                    background: 'var(--bg-primary)',
+                    color: 'var(--text-primary)',
+                    fontSize: '13px',
+                    outline: 'none',
+                    transition: 'border-color 0.15s',
+                  }}
+                  onFocus={(e) => e.target.style.borderColor = 'var(--accent-primary)'}
+                  onBlur={(e) => e.target.style.borderColor = 'var(--border-default)'}
                 />
                 <button
                   onClick={sendPromptDesignerMessage}
-                  disabled={
-                    promptDesignerLoading || !promptDesignerInput.trim()
-                  }
-                  className="px-5 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-blue-600 hover:from-purple-500 hover:to-blue-500 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold shadow-lg shadow-purple-500/30 transition-all flex items-center gap-2"
-                >
-                  <span className="hidden sm:inline">Send</span>
-                  <svg
-                    className="w-5 h-5"
-                    fill="none"
-                    stroke="currentColor"
-                    viewBox="0 0 24 24"
-                  >
-                    <path
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                      strokeWidth={2}
-                      d="M14 5l7 7m0 0l-7 7m7-7H3"
-                    />
-                  </svg>
-                </button>
-              </div>
-              <div className="flex items-center justify-between mt-3 text-xs text-muted">
-                <span className="opacity-70">
-                  💡 Tip: Be specific about what your agent should and shouldn't
-                  do
-                </span>
-                <button
-                  onClick={() => {
-                    setPromptDesignerMessages([
-                      {
-                        role: "assistant",
-                        content: systemPrompt
-                          ? `I'll improve your existing prompt. Just click send or tell me what to change.`
-                          : `What should this agent do? I'll generate a prompt for you.`,
-                      },
-                    ]);
-                    setPromptDesignerInput("");
+                  disabled={promptDesignerLoading || !promptDesignerInput.trim()}
+                  style={{
+                    padding: '10px 18px',
+                    borderRadius: '10px',
+                    border: 'none',
+                    background: 'var(--accent-primary)',
+                    color: '#fff',
+                    fontWeight: 600,
+                    fontSize: '13px',
+                    cursor: promptDesignerLoading || !promptDesignerInput.trim() ? 'not-allowed' : 'pointer',
+                    opacity: promptDesignerLoading || !promptDesignerInput.trim() ? 0.5 : 1,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    transition: 'opacity 0.15s',
                   }}
-                  className="text-purple-400 hover:text-purple-300 transition-colors font-medium"
                 >
-                  🔄 Reset
+                  Send
+                  <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
+                  </svg>
                 </button>
               </div>
             </div>

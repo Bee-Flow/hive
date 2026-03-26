@@ -4,7 +4,7 @@ import { API_BASE, authFetch } from '../../../utils/helpers';
 import { MISTRAL_MODEL_META, getModelMeta, CAT_COLORS } from './modelMeta';
 import EmbeddingsConfig from './EmbeddingsConfig';
 import OCRConfig from './OCRConfig';
-import AllowedModelsConfig from './AllowedModelsConfig';
+
 import DirectChatConfig from './DirectChatConfig';
 import ModelCostsConfig from './ModelCostsConfig';
 import MistralApiKeyCard from './ProviderCards/MistralCard';
@@ -49,7 +49,7 @@ const AIConfigPanel = () => {
     }, []);
 
     useEffect(() => {
-        if ((activeTab === 'models' || activeTab === 'allowedModels' || activeTab === 'chatModels') && providers.length > 0) {
+        if ((activeTab === 'models' || activeTab === 'chatModels') && providers.length > 0) {
             fetchAllModels();
         }
     }, [activeTab, providers]);
@@ -229,7 +229,7 @@ const AIConfigPanel = () => {
     const navItems = [
         { id: 'providers', labelKey: 'admin.ai_api_keys', icon: '🔑' },
         { id: 'models', labelKey: 'admin.ai_models', icon: '🧠' },
-        { id: 'allowedModels', labelKey: 'admin.ai_agent_models', icon: '🛡️' },
+
         { id: 'chatModels', labelKey: 'admin.ai_chat_models', icon: '🗨️' },
         { id: 'directChat', labelKey: 'admin.ai_direct_chat', icon: '💬' },
         { id: 'modelCosts', labelKey: 'admin.ai_model_costs', icon: '💰' },
@@ -369,10 +369,7 @@ const AIConfigPanel = () => {
                     <OCRConfig />
                 )}
 
-                {/* Agent Models Tab */}
-                {activeTab === 'allowedModels' && (
-                    <AllowedModelsConfig providers={providers} allModels={allModels} fetchAllModels={fetchAllModels} />
-                )}
+
 
                 {/* Providers Tab */}
                 {activeTab === 'providers' && (

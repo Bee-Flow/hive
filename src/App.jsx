@@ -241,6 +241,7 @@ function App() {
     const [isAuthenticated, setIsAuthenticated] = useState(false);
     const [showLogin, setShowLogin] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const [deploymentMode, setDeploymentMode] = useState('cloud');
     const [showProfileMenu, setShowProfileMenu] = useState(false);
     const [showAgentDesigner, setShowAgentDesigner] = useState(false);
     const [showSettings, setShowSettings] = useState(false);
@@ -264,10 +265,25 @@ function App() {
     useEffect(() => {
         const checkAuth = async () => {
             try {
+                // Fetch deployment mode from setup-status (available without auth)
+                try {
+                    const setupRes = await authFetch(`${API_BASE}/auth/setup-status`);
+                    if (setupRes.ok) {
+                        const setupData = await setupRes.json();
+                        if (setupData.deploymentMode) {
+                            setDeploymentMode(setupData.deploymentMode);
+                        }
+                    }
+                } catch (_) { /* ignore — defaults to 'cloud' */ }
+
                 const res = await authFetch(`${API_BASE}/auth/user`);
                 if (res.ok) {
                     const data = await res.json();
                     if (data.authenticated && data.user) {
+                        // Update deployment mode from authenticated response too
+                        if (data.featureFlags?.deploymentMode) {
+                            setDeploymentMode(data.featureFlags.deploymentMode);
+                        }
                         // Check for SSO encryption setup needs (only if encryption feature is enabled)
                         if (data.encryptionEnabled !== false) {
                             if (data.needsEncryptionSetup) {
@@ -507,6 +523,11 @@ function App() {
 
     // Show homepage / public routes if not authenticated
     if (!isAuthenticated) {
+        // Private cloud mode: skip product website, go straight to login
+        if (deploymentMode === 'private-cloud') {
+            return <LoginPage onLogin={handleLogin} onDemoLogin={handleLogin} />;
+        }
+        // Cloud mode: show product website and marketing pages
         const homeProps = { onNavigate: navigateToPage, onLoginClick: () => setShowLogin(true) };
         if (showLogin) return <LoginPage onLogin={handleLogin} onDemoLogin={handleLogin} />;
         if (currentPage === 'features') return <FeaturesPage {...homeProps} />;

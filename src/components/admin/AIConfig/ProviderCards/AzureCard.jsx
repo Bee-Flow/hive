@@ -11,6 +11,8 @@ const AzureConfigCard = ({ onMessage }) => {
     const [savedModels, setSavedModels] = useState('');
     const [saving, setSaving] = useState(false);
     const [showKey, setShowKey] = useState(false);
+    const [confirmDeleteKey, setConfirmDeleteKey] = useState(false);
+    const [confirmDeleteEndpoint, setConfirmDeleteEndpoint] = useState(false);
 
     useEffect(() => {
         fetchStatus();
@@ -63,6 +65,38 @@ const AzureConfigCard = ({ onMessage }) => {
             onMessage?.({ type: 'error', text: 'Failed to save config' });
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleDeleteKey = async () => {
+        try {
+            const res = await authFetch(`${API_BASE}/ai/config/key/azure_api_key`, { method: 'DELETE' });
+            if (res.ok) {
+                setHasKey(false);
+                setApiKey('');
+                setConfirmDeleteKey(false);
+                onMessage?.({ type: 'success', text: 'Azure API key removed' });
+            } else {
+                onMessage?.({ type: 'error', text: 'Failed to delete Azure API key' });
+            }
+        } catch (e) {
+            onMessage?.({ type: 'error', text: 'Failed to delete Azure API key' });
+        }
+    };
+
+    const handleDeleteEndpoint = async () => {
+        try {
+            const res = await authFetch(`${API_BASE}/ai/config/setting/azure_endpoint`, { method: 'DELETE' });
+            if (res.ok) {
+                setHasEndpoint(false);
+                setEndpoint('');
+                setConfirmDeleteEndpoint(false);
+                onMessage?.({ type: 'success', text: 'Azure endpoint removed' });
+            } else {
+                onMessage?.({ type: 'error', text: 'Failed to delete Azure endpoint' });
+            }
+        } catch (e) {
+            onMessage?.({ type: 'error', text: 'Failed to delete Azure endpoint' });
         }
     };
 
@@ -150,17 +184,43 @@ const AzureConfigCard = ({ onMessage }) => {
 
                 {/* Help + Save */}
                 <div className="flex items-center justify-between">
-                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        Get your endpoint and key from <a href="https://portal.azure.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-[var(--accent-primary)]">portal.azure.com</a> → Azure OpenAI
-                    </p>
-                    <button
-                        onClick={handleSave}
-                        disabled={saving || (!endpoint.trim() && !apiKey.trim() && models === savedModels)}
-                        className="px-5 py-2.5 rounded-lg font-medium text-white text-sm transition-all disabled:opacity-50"
-                        style={{ background: 'var(--accent-primary)' }}
-                    >
-                        {saving ? '...' : 'Save'}
-                    </button>
+                    <div className="flex gap-2 flex-wrap">
+                        <p className="text-xs self-center" style={{ color: 'var(--text-muted)' }}>
+                            Get from <a href="https://portal.azure.com" target="_blank" rel="noopener noreferrer" className="underline hover:text-[var(--accent-primary)]">portal.azure.com</a>
+                        </p>
+                    </div>
+                    <div className="flex gap-2 items-center">
+                        {hasEndpoint && !confirmDeleteEndpoint && (
+                            <button onClick={() => setConfirmDeleteEndpoint(true)} className="px-3 py-2 rounded-lg text-xs transition-all hover:bg-red-500/20" style={{ color: 'var(--text-muted)' }} title="Remove endpoint">
+                                🗑️ Endpoint
+                            </button>
+                        )}
+                        {confirmDeleteEndpoint && (
+                            <>
+                                <button onClick={handleDeleteEndpoint} className="px-3 py-2 rounded-lg text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30">Confirm</button>
+                                <button onClick={() => setConfirmDeleteEndpoint(false)} className="px-2 py-2 rounded-lg text-xs" style={{ color: 'var(--text-muted)' }}>✕</button>
+                            </>
+                        )}
+                        {hasKey && !confirmDeleteKey && (
+                            <button onClick={() => setConfirmDeleteKey(true)} className="px-3 py-2 rounded-lg text-xs transition-all hover:bg-red-500/20" style={{ color: 'var(--text-muted)' }} title="Remove API key">
+                                🗑️ Key
+                            </button>
+                        )}
+                        {confirmDeleteKey && (
+                            <>
+                                <button onClick={handleDeleteKey} className="px-3 py-2 rounded-lg text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30">Confirm</button>
+                                <button onClick={() => setConfirmDeleteKey(false)} className="px-2 py-2 rounded-lg text-xs" style={{ color: 'var(--text-muted)' }}>✕</button>
+                            </>
+                        )}
+                        <button
+                            onClick={handleSave}
+                            disabled={saving || (!endpoint.trim() && !apiKey.trim() && models === savedModels)}
+                            className="px-5 py-2.5 rounded-lg font-medium text-white text-sm transition-all disabled:opacity-50"
+                            style={{ background: 'var(--accent-primary)' }}
+                        >
+                            {saving ? '...' : 'Save'}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

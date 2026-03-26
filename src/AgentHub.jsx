@@ -9,7 +9,7 @@ import InputArea from './components/InputArea';
 import WelcomeScreen from './components/WelcomeScreen';
 import MessageItem from './components/chat/MessageItem';
 import MemoryPanel from './components/MemoryPanel';
-import WorkspacePanel from './components/WorkspacePanel';
+import WorkspaceNotebook from './components/WorkspaceNotebook';
 import DirectChatWelcome from './components/DirectChatWelcome';
 import ProjectModal from './components/ProjectModal';
 import useChatEngine from './hooks/useChatEngine';
@@ -48,10 +48,11 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
     const [conversations, setConversations] = useState([]);
     const [currentConversation, setCurrentConversation] = useState(null);
     const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
-    const [workspaceContent, setWorkspaceContent] = useState('');
-    const [workspaceLastFetchedId, setWorkspaceLastFetchedId] = useState(null);
-    const [workspaceSelection, setWorkspaceSelection] = useState('');
-    const [showWorkspace, setShowWorkspace] = useState(false);
+    const [notebookContent, setNotebookContent] = useState('');
+    const [notebookLastFetchedId, setNotebookLastFetchedId] = useState(null);
+    const [notebookSelection, setNotebookSelection] = useState('');
+    const [showNotebook, setShowNotebook] = useState(false);
+    const [notebookLinkedId, setNotebookLinkedId] = useState(null);
 
     // Direct Chat State
     const [directChatMode, setDirectChatMode] = useState(() => window.innerWidth < 768);
@@ -81,18 +82,18 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 loadConversations(selectedAgent.id);
             }
         }, [selectedAgent]),
-        getWorkspacePayload: useCallback(() => {
-            if (!workspaceContent) return {};
+        getNotebookPayload: useCallback(() => {
+            if (!showNotebook) return {};
             return {
-                workspaceContent: workspaceContent,
-                workspaceSelection: workspaceSelection
+                workspaceContent: notebookContent || ' ',
+                workspaceSelection: notebookSelection
             };
-        }, [workspaceContent, workspaceSelection]),
-        onWorkspaceUpdate: useCallback((content) => {
-            // On mobile, silently ignore workspace writes from AI
+        }, [notebookContent, notebookSelection, showNotebook]),
+        onNotebookUpdate: useCallback((content) => {
+            // On mobile, silently ignore notebook writes from AI
             if (window.innerWidth < 768) return;
-            setWorkspaceContent(content);
-            if (content) setShowWorkspace(true);
+            setNotebookContent(content);
+            if (content) setShowNotebook(true);
         }, []),
         directMode: directChatMode ? { enabled: true, modelTier: selectedTier } : undefined,
         activeProject,
@@ -315,19 +316,20 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                     if (detailData.model_tier) setSelectedTier(detailData.model_tier);
                                     updateDirectChatUrl(match.id);
 
-                                    // Fetch workspace content
+                                    // Fetch notebook content
                                     try {
                                         const wsRes = await authFetch(`${API_BASE}/ai/direct/conversations/${match.id}/workspace`);
                                         if (wsRes.ok) {
                                             const wsData = await wsRes.json();
                                             const convContent = wsData.content || '';
+                                            setNotebookLinkedId(wsData.notebookId || null);
                                             if (convContent.trim().length > 0) {
-                                                setWorkspaceContent(convContent);
-                                                setShowWorkspace(true);
+                                                setNotebookContent(convContent);
+                                                setShowNotebook(true);
                                             }
                                         }
                                     } catch (wsErr) {
-                                        console.error('Failed to fetch direct workspace from URL:', wsErr);
+                                        console.error('Failed to fetch direct notebook from URL:', wsErr);
                                     }
                                 }
                             }
@@ -385,9 +387,10 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
             setConversations([]);
             setMessages([]);
             setCurrentConversation(null);
-            setWorkspaceContent('');
-            setWorkspaceSelection('');
-            setShowWorkspace(false);
+            setNotebookContent('');
+            setNotebookSelection('');
+            setShowNotebook(false);
+            setNotebookLinkedId(null);
         }
     }, [selectedAgent, loadConversations]);
 
@@ -400,26 +403,27 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 setCurrentConversation(data);
                 updateAgentUrl(agentId, data.id);
 
-                // Fetch workspace content — always swap to match the selected conversation
+                // Fetch notebook content — always swap to match the selected conversation
                 if (agentId && data.id) {
                     try {
                         const wsRes = await authFetch(`${API_BASE}/agents/${agentId}/conversations/${data.id}/workspace`);
                         if (wsRes.ok) {
                             const wsData = await wsRes.json();
                             const convContent = wsData.content || '';
+                            setNotebookLinkedId(wsData.notebookId || null);
                             if (convContent.trim().length > 0) {
-                                setWorkspaceContent(convContent);
-                                setShowWorkspace(true);
+                                setNotebookContent(convContent);
+                                setShowNotebook(true);
                             } else {
-                                // New conversation has no workspace — hide and clear
-                                setWorkspaceContent('');
-                                setShowWorkspace(false);
+                                // New conversation has no notebook — hide and clear
+                                setNotebookContent('');
+                                setShowNotebook(false);
                             }
-                            setWorkspaceLastFetchedId(data.id);
+                            setNotebookLastFetchedId(data.id);
                         }
                     } catch (e) {
-                        console.error('Failed to fetch workspace', e);
-                        // Don't clear workspace on fetch error — keep existing content
+                        console.error('Failed to fetch notebook', e);
+                        // Don't clear notebook on fetch error — keep existing content
                     }
                 }
 
@@ -470,12 +474,13 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
         setShowMarketplace(false);
         setDirectChatMode(false);
 
-        // Auto-start new chat — reset workspace only when switching agents
+        // Auto-start new chat — reset notebook only when switching agents
         setCurrentConversation({ id: null, title: 'New Chat', messages: [] });
         setMessages([]);
-        setWorkspaceContent('');
-        setWorkspaceSelection('');
-        setShowWorkspace(false);
+        setNotebookContent('');
+        setNotebookSelection('');
+        setShowNotebook(false);
+        setNotebookLinkedId(null);
 
         // Auto-close sidebar on mobile
         if (isMobile) setSidebarOpen(false);
@@ -695,23 +700,24 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 if (data.model_tier) setSelectedTier(data.model_tier);
                 updateDirectChatUrl(conv.id);
 
-                // Fetch workspace content — always swap to match the selected conversation
+                // Fetch notebook content — always swap to match the selected conversation
                 try {
                     const wsRes = await authFetch(`${API_BASE}/ai/direct/conversations/${conv.id}/workspace`);
                     if (wsRes.ok) {
                         const wsData = await wsRes.json();
                         const convContent = wsData.content || '';
+                        setNotebookLinkedId(wsData.notebookId || null);
                         if (convContent.trim().length > 0) {
-                            setWorkspaceContent(convContent);
-                            setShowWorkspace(true);
+                            setNotebookContent(convContent);
+                            setShowNotebook(true);
                         } else {
-                            // New conversation has no workspace — hide and clear
-                            setWorkspaceContent('');
-                            setShowWorkspace(false);
+                            // New conversation has no notebook — hide and clear
+                            setNotebookContent('');
+                            setShowNotebook(false);
                         }
                     }
                 } catch (e) {
-                    console.error('Failed to fetch direct workspace', e);
+                    console.error('Failed to fetch direct notebook', e);
                 }
             }
         } catch (e) { console.error('Failed to load direct conversation:', e); }
@@ -732,17 +738,18 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
         if (directChatMode) {
             setCurrentDirectConversation(null);
             setMessages([]);
-            setWorkspaceContent('');
-            setWorkspaceSelection('');
-            setShowWorkspace(false);
+            setNotebookContent('');
+            setNotebookSelection('');
+            setShowNotebook(false);
+            setNotebookLinkedId(null);
             updateDirectChatUrl(null);
             return;
         }
         if (!selectedAgent) return;
         setCurrentConversation({ id: null, title: 'New Chat', messages: [] });
         setMessages([]);
-        // Keep workspace content alive across chats — don't reset
-        setWorkspaceSelection('');
+        // Keep notebook content alive across chats — don't reset
+        setNotebookSelection('');
         updateAgentUrl(selectedAgent.id, null);
     };
     const handleDeleteConversation = async (convId, agentId) => {
@@ -840,114 +847,60 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
         }
     };
 
-    const saveWorkspace = async (content) => {
-        setWorkspaceContent(content); // Optimistic update
+    const saveNotebook = async (content, nbId) => {
+        setNotebookContent(content); // Optimistic update
+
+        // If a new notebook ID was provided, persist it
+        const notebookIdToSave = nbId !== undefined ? nbId : notebookLinkedId;
 
         try {
             if (directChatMode && currentDirectConversation?.id) {
-                // Direct chat workspace save
+                // Direct chat notebook save
                 await authFetch(`${API_BASE}/ai/direct/conversations/${currentDirectConversation.id}/workspace`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ content })
+                    body: JSON.stringify({ content, notebookId: notebookIdToSave })
                 });
             } else if (selectedAgent && currentConversation?.id) {
-                // Agent chat workspace save
+                // Agent chat notebook save
                 await authFetch(`${API_BASE}/agents/${selectedAgent.id}/conversations/${currentConversation.id}/workspace`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ content })
+                    body: JSON.stringify({ content, notebookId: notebookIdToSave })
                 });
             }
         } catch (err) {
-            console.error('Failed to save workspace', err);
+            console.error('Failed to save notebook', err);
         }
     };
 
-    const handleOpenInNotebook = async (markdownContent) => {
+    const handleOpenInNotebook = async (markdownContent, existingNotebookId) => {
         try {
-            // 1. Create new notebook
-            const createRes = await authFetch(`${API_BASE}/api/notebooks`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: `Workspace – ${new Date().toLocaleDateString()}` }),
-            });
-            if (!createRes.ok) throw new Error('Failed to create notebook');
-            const { notebook } = await createRes.json();
+            let nbId = existingNotebookId;
 
-            // 2. Convert markdown to HTML for TipTap
-            const markdownToHtml = (md) => {
-                let html = md;
-                // Escape HTML special chars in code blocks first (protect them)
-                const codeBlocks = [];
-                html = html.replace(/```[\s\S]*?```/g, (match) => {
-                    const code = match.slice(3, -3).replace(/^\w+\n/, ''); // strip language tag
-                    const escaped = code.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-                    codeBlocks.push(`<pre><code>${escaped}</code></pre>`);
-                    return `%%CODE_BLOCK_${codeBlocks.length - 1}%%`;
+            // If no existing notebook, create one
+            if (!nbId) {
+                const createRes = await authFetch(`${API_BASE}/api/notebooks`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ name: `Chat Notebook – ${new Date().toLocaleDateString()}` }),
                 });
-                // Inline code
-                html = html.replace(/`([^`]+)`/g, (_, c) => `<code>${c.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</code>`);
-                // Headings
-                html = html.replace(/^######\s+(.+)$/gm, '<h6>$1</h6>');
-                html = html.replace(/^#####\s+(.+)$/gm, '<h5>$1</h5>');
-                html = html.replace(/^####\s+(.+)$/gm, '<h4>$1</h4>');
-                html = html.replace(/^###\s+(.+)$/gm, '<h3>$1</h3>');
-                html = html.replace(/^##\s+(.+)$/gm, '<h2>$1</h2>');
-                html = html.replace(/^#\s+(.+)$/gm, '<h1>$1</h1>');
-                // Bold & italic
-                html = html.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>');
-                html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-                html = html.replace(/__(.+?)__/g, '<strong>$1</strong>');
-                html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-                html = html.replace(/_(.+?)_/g, '<em>$1</em>');
-                // Horizontal rule
-                html = html.replace(/^---+$/gm, '<hr>');
-                // Unordered lists
-                html = html.replace(/((?:^[ \t]*[-*+] .+\n?)+)/gm, (block) => {
-                    const items = block.trim().split('\n').map(l => `<li>${l.replace(/^[ \t]*[-*+] /, '').trim()}</li>`).join('');
-                    return `<ul>${items}</ul>`;
-                });
-                // Ordered lists
-                html = html.replace(/((?:^[ \t]*\d+\. .+\n?)+)/gm, (block) => {
-                    const items = block.trim().split('\n').map(l => `<li>${l.replace(/^[ \t]*\d+\. /, '').trim()}</li>`).join('');
-                    return `<ol>${items}</ol>`;
-                });
-                // Tables
-                html = html.replace(/((?:^\|.+\|\n?)+)/gm, (block) => {
-                    const rows = block.trim().split('\n').filter(r => !/^[\s|:-]+$/.test(r));
-                    if (rows.length === 0) return block;
-                    const [header, ...body] = rows;
-                    const th = header.split('|').filter(Boolean).map(c => `<th>${c.trim()}</th>`).join('');
-                    const trs = body.map(r => `<tr>${r.split('|').filter(Boolean).map(c => `<td>${c.trim()}</td>`).join('')}</tr>`).join('');
-                    return `<table><thead><tr>${th}</tr></thead><tbody>${trs}</tbody></table>`;
-                });
-                // Paragraphs: wrap non-block lines
-                html = html.split('\n').map(line => {
-                    if (!line.trim()) return '';
-                    if (/^<(h[1-6]|ul|ol|li|table|pre|hr|blockquote)/.test(line)) return line;
-                    if (/%%CODE_BLOCK_/.test(line)) return line;
-                    return `<p>${line}</p>`;
-                }).join('');
-                // Restore code blocks
-                codeBlocks.forEach((block, i) => {
-                    html = html.replace(`%%CODE_BLOCK_${i}%%`, block);
-                });
-                return html;
-            };
+                if (!createRes.ok) throw new Error('Failed to create notebook');
+                const { notebook } = await createRes.json();
+                nbId = notebook.id;
+            }
 
-            const htmlContent = markdownToHtml(markdownContent);
-
-            await authFetch(`${API_BASE}/api/notebooks/${notebook.id}`, {
+            // Sync markdown content to the notebook's document field
+            await authFetch(`${API_BASE}/api/notebooks/${nbId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ documentContent: htmlContent }),
+                body: JSON.stringify({ documentContent: markdownContent }),
             });
 
-            // 3. Navigate instantly to the new notebook
-            if (onNavigate) onNavigate(`notebooks/${notebook.id}`);
+            // Navigate to the notebook
+            if (onNavigate) onNavigate(`notebooks/${nbId}`);
         } catch (err) {
-            console.error('[AgentHub] Failed to open workspace in notebook:', err);
+            console.error('[AgentHub] Failed to open in notebook:', err);
         }
     };
 
@@ -1087,23 +1040,13 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
-                                {messages.length > 0 && (
-                                    <button
-                                        onClick={handleNewChat}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--accent-primary)] hover:brightness-110 text-white text-xs font-bold transition-all active:scale-[0.97] shadow-sm"
-                                        title="New Chat"
-                                    >
-                                        <PenLine className="w-3.5 h-3.5" strokeWidth={2.5} />
-                                        New Chat
-                                    </button>
-                                )}
                                 {!isMobile && (
                                     <button
-                                        onClick={() => setShowWorkspace(prev => !prev)}
-                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors border text-xs font-medium ${showWorkspace ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] border-[var(--accent-primary)]/30' : 'bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-[var(--border-subtle)]'}`}
-                                        title={showWorkspace ? 'Close Workspace' : 'Open Workspace'}
+                                        onClick={() => setShowNotebook(prev => !prev)}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors border text-xs font-medium ${showNotebook ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] border-[var(--accent-primary)]/30' : 'bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-[var(--border-subtle)]'}`}
+                                        title={showNotebook ? 'Close Notebook' : 'Open Notebook'}
                                     >
-                                        📝 {showWorkspace ? 'Close' : 'Workspace'}
+                                        📓 {showNotebook ? 'Close' : 'Notebook'}
                                     </button>
                                 )}
                             </div>
@@ -1180,25 +1123,26 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                 )}
                             </div>
 
-                            {/* Workspace Pane */}
-                            {!isMobile && showWorkspace && (
+                            {/* Notebook Pane */}
+                            {!isMobile && showNotebook && (
                                 <div className="w-1/2 min-w-[400px] flex flex-col h-full animate-in slide-in-from-right duration-300">
-                                    <WorkspacePanel
-                                        content={workspaceContent}
-                                        onChange={setWorkspaceContent} // Local edit
-                                        onSave={saveWorkspace}        // Persist
-                                        onClose={() => setShowWorkspace(false)}
+                                    <WorkspaceNotebook
+                                        content={notebookContent}
+                                        onChange={setNotebookContent}
+                                        onSave={saveNotebook}
+                                        onClose={() => setShowNotebook(false)}
                                         onSelectionChange={(text) => {
-                                            console.log('[AgentHub] setWorkspaceSelection:', text);
-                                            setWorkspaceSelection(text);
+                                            setNotebookSelection(text);
                                         }}
                                         onAskAI={(prompt) => {
-                                            // Include selected text as visible quote in chat
-                                            const sel = workspaceSelection;
+                                            const sel = notebookSelection;
                                             const msg = sel ? `> **Selected text:**\n> ${sel.split('\n').join('\n> ')}\n\n${prompt}` : prompt;
                                             sendMessage(msg, []);
                                         }}
                                         onOpenInNotebook={handleOpenInNotebook}
+                                        conversationId={currentConversation?.id}
+                                        existingNotebookId={notebookLinkedId}
+                                        onNotebookIdChange={setNotebookLinkedId}
                                     />
                                 </div>
                             )}
@@ -1224,23 +1168,13 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                 <h1 className="font-semibold text-[var(--text-primary)] text-sm">Direct Chat</h1>
                             </div>
                             <div className="flex items-center gap-2">
-                                {messages.length > 0 && (
-                                    <button
-                                        onClick={handleNewChat}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[var(--accent-primary)] hover:brightness-110 text-white text-xs font-bold transition-all active:scale-[0.97] shadow-sm"
-                                        title="New Chat"
-                                    >
-                                        <PenLine className="w-3.5 h-3.5" strokeWidth={2.5} />
-                                        New Chat
-                                    </button>
-                                )}
                                 {!isMobile && (
                                     <button
-                                        onClick={() => setShowWorkspace(prev => !prev)}
-                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors border text-xs font-medium ${showWorkspace ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] border-[var(--accent-primary)]/30' : 'bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-[var(--border-subtle)]'}`}
-                                        title={showWorkspace ? 'Close Workspace' : 'Open Workspace'}
+                                        onClick={() => setShowNotebook(prev => !prev)}
+                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors border text-xs font-medium ${showNotebook ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] border-[var(--accent-primary)]/30' : 'bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-[var(--border-subtle)]'}`}
+                                        title={showNotebook ? 'Close Notebook' : 'Open Notebook'}
                                     >
-                                        📝 {showWorkspace ? 'Close' : 'Workspace'}
+                                        📓 {showNotebook ? 'Close' : 'Notebook'}
                                     </button>
                                 )}
                             </div>
@@ -1312,24 +1246,26 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                 )}
                             </div>
 
-                            {/* Workspace Pane */}
-                            {!isMobile && showWorkspace && (
+                            {/* Notebook Pane */}
+                            {!isMobile && showNotebook && (
                                 <div className="w-1/2 min-w-[400px] flex flex-col h-full animate-in slide-in-from-right duration-300">
-                                    <WorkspacePanel
-                                        content={workspaceContent}
-                                        onChange={setWorkspaceContent}
-                                        onSave={saveWorkspace}
-                                        onClose={() => setShowWorkspace(false)}
+                                    <WorkspaceNotebook
+                                        content={notebookContent}
+                                        onChange={setNotebookContent}
+                                        onSave={saveNotebook}
+                                        onClose={() => setShowNotebook(false)}
                                         onSelectionChange={(text) => {
-                                            console.log('[AgentHub] setWorkspaceSelection:', text);
-                                            setWorkspaceSelection(text);
+                                            setNotebookSelection(text);
                                         }}
                                         onAskAI={(prompt) => {
-                                            const sel = workspaceSelection;
+                                            const sel = notebookSelection;
                                             const msg = sel ? `> **Selected text:**\n> ${sel.split('\n').join('\n> ')}\n\n${prompt}` : prompt;
                                             sendMessage(msg, []);
                                         }}
                                         onOpenInNotebook={handleOpenInNotebook}
+                                        conversationId={currentDirectConversation?.id}
+                                        existingNotebookId={notebookLinkedId}
+                                        onNotebookIdChange={setNotebookLinkedId}
                                     />
                                 </div>
                             )}

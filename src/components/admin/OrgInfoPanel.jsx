@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Building2, Save, Upload, Palette, FileText, Check, Lock, KeyRound, AlertTriangle, CreditCard, BarChart3, Zap, MessageSquare, DollarSign, Users, Bot, Database, Shield } from 'lucide-react';
+import { Building2, Save, Upload, Palette, FileText, Check, Lock, KeyRound, AlertTriangle, CreditCard, BarChart3, Zap, MessageSquare, DollarSign, Users, Bot, Database, Shield, Info } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import GuardrailsPanel from './GuardrailsPanel';
 
@@ -68,8 +68,7 @@ const SECTIONS = [
     { id: 'license', label: 'License & Usage', icon: CreditCard, color: '#3b82f6' },
     { id: 'auth', label: 'Sign-in Method', icon: KeyRound, color: '#10b981' },
     { id: 'privacy', label: 'Privacy Shield', icon: Shield, color: '#ef4444' },
-    { id: 'branding', label: 'Branding', icon: Palette, color: '#8b5cf6' },
-    { id: 'legal', label: 'Legal & Invoicing', icon: FileText, color: '#f59e0b' },
+    { id: 'info', label: 'Organisation Info', icon: Info, color: '#8b5cf6' },
 ];
 
 // ── Usage bar component ──
@@ -593,80 +592,84 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                     </div>
                 )}
 
-                {/* ── Branding ── */}
-                {activeSection === 'branding' && (
-                    <div className="max-w-xl mx-auto space-y-5 animate-fadeIn">
-                        <div>
-                            <h2 className="text-lg font-bold text-[var(--text-primary)]">Branding</h2>
-                            <p className="text-sm text-[var(--text-muted)] mt-0.5">Logo, name, and public-facing details</p>
-                        </div>
-                        <Field label="Logo" hint="Displayed in the UI header and exports. PNG or SVG, max 500×200px.">
-                            <div className="flex items-center gap-4">
-                                {orgData.logo ? (
-                                    <img
-                                        src={orgData.logo.startsWith('/') ? `${API_BASE}${orgData.logo}` : orgData.logo}
-                                        alt="Logo"
-                                        className="w-20 h-20 object-contain rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-tertiary)] p-2"
-                                    />
-                                ) : (
-                                    <div className="w-20 h-20 rounded-xl border-2 border-dashed border-[var(--border-subtle)] flex items-center justify-center bg-[var(--bg-tertiary)]">
-                                        <Building2 className="w-8 h-8 text-[var(--text-muted)] opacity-40" />
-                                    </div>
-                                )}
-                                <div className="flex flex-col gap-2">
-                                    <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-[var(--accent-primary)] text-white hover:opacity-90 transition-opacity">
-                                        <Upload className="w-4 h-4" />
-                                        Upload Logo
-                                        <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" className="hidden" onChange={handleLogoUpload} />
-                                    </label>
-                                    {orgData.logo && (
-                                        <button onClick={handleLogoRemove} className="text-xs text-[var(--text-muted)] hover:text-red-500 transition-colors text-left">
-                                            Remove logo
-                                        </button>
-                                    )}
-                                </div>
+                {/* ── Organisation Info (Branding + Legal combined) ── */}
+                {activeSection === 'info' && (
+                    <div className="max-w-xl mx-auto space-y-8 animate-fadeIn">
+                        {/* ── Branding section ── */}
+                        <div className="space-y-5">
+                            <div>
+                                <h2 className="text-lg font-bold text-[var(--text-primary)]">Branding</h2>
+                                <p className="text-sm text-[var(--text-muted)] mt-0.5">Logo, name, and public-facing details</p>
                             </div>
-                        </Field>
-                        <Field label="Company Name">
-                            <input type="text" value={orgData.name} onChange={e => setOrgData(p => ({ ...p, name: e.target.value }))} className={inputClass} placeholder="Bee Flow B.V." />
-                        </Field>
-                        <Field label="Tagline" hint="Shown below the company name in headers and exports.">
-                            <input type="text" value={orgData.tagline} onChange={e => setOrgData(p => ({ ...p, tagline: e.target.value }))} className={inputClass} placeholder="Your Processes, Pollinated with Intelligence." />
-                        </Field>
-                        <Field label="Description">
-                            <input type="text" value={orgData.description} onChange={e => setOrgData(p => ({ ...p, description: e.target.value }))} className={inputClass} placeholder="Brief description of your organisation" />
-                        </Field>
-                        <div className="grid grid-cols-2 gap-4">
-                            <Field label="Email">
-                                <input type="email" value={orgData.email} onChange={e => setOrgData(p => ({ ...p, email: e.target.value }))} className={inputClass} placeholder="info@company.com" />
+                            <Field label="Logo" hint="Displayed in the UI header and exports. PNG or SVG, max 500×200px.">
+                                <div className="flex items-center gap-4">
+                                    {orgData.logo ? (
+                                        <img
+                                            src={orgData.logo.startsWith('/') ? `${API_BASE}${orgData.logo}` : orgData.logo}
+                                            alt="Logo"
+                                            className="w-20 h-20 object-contain rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-tertiary)] p-2"
+                                        />
+                                    ) : (
+                                        <div className="w-20 h-20 rounded-xl border-2 border-dashed border-[var(--border-subtle)] flex items-center justify-center bg-[var(--bg-tertiary)]">
+                                            <Building2 className="w-8 h-8 text-[var(--text-muted)] opacity-40" />
+                                        </div>
+                                    )}
+                                    <div className="flex flex-col gap-2">
+                                        <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-[var(--accent-primary)] text-white hover:opacity-90 transition-opacity">
+                                            <Upload className="w-4 h-4" />
+                                            Upload Logo
+                                            <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" className="hidden" onChange={handleLogoUpload} />
+                                        </label>
+                                        {orgData.logo && (
+                                            <button onClick={handleLogoRemove} className="text-xs text-[var(--text-muted)] hover:text-red-500 transition-colors text-left">
+                                                Remove logo
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
                             </Field>
-                            <Field label="Phone">
-                                <input type="tel" value={orgData.phone} onChange={e => setOrgData(p => ({ ...p, phone: e.target.value }))} className={inputClass} placeholder="+1 555 123 4567" />
+                            <Field label="Company Name">
+                                <input type="text" value={orgData.name} onChange={e => setOrgData(p => ({ ...p, name: e.target.value }))} className={inputClass} placeholder="Bee Flow B.V." />
+                            </Field>
+                            <Field label="Tagline" hint="Shown below the company name in headers and exports.">
+                                <input type="text" value={orgData.tagline} onChange={e => setOrgData(p => ({ ...p, tagline: e.target.value }))} className={inputClass} placeholder="Your Processes, Pollinated with Intelligence." />
+                            </Field>
+                            <Field label="Description">
+                                <input type="text" value={orgData.description} onChange={e => setOrgData(p => ({ ...p, description: e.target.value }))} className={inputClass} placeholder="Brief description of your organisation" />
+                            </Field>
+                            <div className="grid grid-cols-2 gap-4">
+                                <Field label="Email">
+                                    <input type="email" value={orgData.email} onChange={e => setOrgData(p => ({ ...p, email: e.target.value }))} className={inputClass} placeholder="info@company.com" />
+                                </Field>
+                                <Field label="Phone">
+                                    <input type="tel" value={orgData.phone} onChange={e => setOrgData(p => ({ ...p, phone: e.target.value }))} className={inputClass} placeholder="+1 555 123 4567" />
+                                </Field>
+                            </div>
+                            <Field label="Website">
+                                <input type="url" value={orgData.website} onChange={e => setOrgData(p => ({ ...p, website: e.target.value }))} className={inputClass} placeholder="https://beeflow.nl" />
                             </Field>
                         </div>
-                        <Field label="Website">
-                            <input type="url" value={orgData.website} onChange={e => setOrgData(p => ({ ...p, website: e.target.value }))} className={inputClass} placeholder="https://beeflow.nl" />
-                        </Field>
-                    </div>
-                )}
 
-                {/* ── Legal & Invoicing ── */}
-                {activeSection === 'legal' && (
-                    <div className="max-w-xl mx-auto space-y-5 animate-fadeIn">
-                        <div>
-                            <h2 className="text-lg font-bold text-[var(--text-primary)]">Legal & Invoicing</h2>
-                            <p className="text-sm text-[var(--text-muted)] mt-0.5">Address, registration, and compliance details</p>
-                        </div>
-                        <Field label="Address">
-                            <input type="text" value={orgData.address} onChange={e => setOrgData(p => ({ ...p, address: e.target.value }))} className={inputClass} placeholder="123 Main Street, City, Country" />
-                        </Field>
-                        <div className="grid grid-cols-2 gap-4">
-                            <Field label="Chamber of Commerce (KVK)">
-                                <input type="text" value={orgData.kvk} onChange={e => setOrgData(p => ({ ...p, kvk: e.target.value }))} className={inputClass} placeholder="97632430" />
+                        {/* ── Divider ── */}
+                        <div className="border-t border-[var(--border-subtle)]" />
+
+                        {/* ── Legal & Invoicing section ── */}
+                        <div className="space-y-5">
+                            <div>
+                                <h2 className="text-lg font-bold text-[var(--text-primary)]">Legal & Invoicing</h2>
+                                <p className="text-sm text-[var(--text-muted)] mt-0.5">Address, registration, and compliance details</p>
+                            </div>
+                            <Field label="Address">
+                                <input type="text" value={orgData.address} onChange={e => setOrgData(p => ({ ...p, address: e.target.value }))} className={inputClass} placeholder="123 Main Street, City, Country" />
                             </Field>
-                            <Field label="VAT Number">
-                                <input type="text" value={orgData.vat} onChange={e => setOrgData(p => ({ ...p, vat: e.target.value }))} className={inputClass} placeholder="NL123456789B01" />
-                            </Field>
+                            <div className="grid grid-cols-2 gap-4">
+                                <Field label="Chamber of Commerce (KVK)">
+                                    <input type="text" value={orgData.kvk} onChange={e => setOrgData(p => ({ ...p, kvk: e.target.value }))} className={inputClass} placeholder="97632430" />
+                                </Field>
+                                <Field label="VAT Number">
+                                    <input type="text" value={orgData.vat} onChange={e => setOrgData(p => ({ ...p, vat: e.target.value }))} className={inputClass} placeholder="NL123456789B01" />
+                                </Field>
+                            </div>
                         </div>
                     </div>
                 )}

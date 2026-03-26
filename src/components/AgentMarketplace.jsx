@@ -68,7 +68,7 @@ const AgentCard = React.memo(({ agentId, name, avatar, description, typeLabel, i
             {isOwner && onEdit && (
                 <button
                     onClick={(e) => { e.stopPropagation(); onEdit(); }}
-                    className="p-1.5 rounded-lg transition-colors hover:brightness-90"
+                    className="p-1.5 rounded-lg transition-opacity opacity-0 group-hover:opacity-100 hover:brightness-90"
                     style={{ background: 'var(--bg-tertiary)' }}
                     title="Edit agent"
                     data-testid={`agent-edit-${agentId}`}
@@ -106,7 +106,7 @@ const AgentCard = React.memo(({ agentId, name, avatar, description, typeLabel, i
             >
                 {avatar || getAgentInitials(name)}
             </div>
-            <div className="flex-1 min-w-0 pr-6">
+            <div className="flex-1 min-w-0 pr-16">
                 <h3 className="font-semibold text-[13px] truncate" style={{ color: 'var(--text-primary)' }}>{name}</h3>
                 <p className="text-xs mt-0.5 line-clamp-2 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                     {description || 'AI agent ready to assist.'}

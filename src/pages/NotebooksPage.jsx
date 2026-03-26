@@ -3,9 +3,8 @@ import {
     ArrowLeft, Plus, FileText, Trash2,
     BookOpen, Loader2, AlertCircle, CheckCircle2, Search,
     X, ChevronRight, Pencil, Download, HelpCircle,
-    ClipboardList, ListChecks, PanelLeft
+    ClipboardList, ListChecks, PanelLeft, History
 } from 'lucide-react';
-import html2pdf from 'html2pdf.js';
 import { API_BASE, authFetch } from '../utils/helpers';
 import useChatEngine from '../hooks/useChatEngine';
 import NotebookEditor from './notebooks/NotebookEditor';
@@ -13,6 +12,7 @@ import NotebookChat from './notebooks/NotebookChat';
 import NotebookStudio from './notebooks/NotebookStudio';
 import NotebookSources from './notebooks/NotebookSources';
 import NotebookTOC from './notebooks/NotebookTOC';
+import NotebookVersions from './notebooks/NotebookVersions';
 import CitationOverlay from './notebooks/CitationOverlay';
 import GenerationOverlay from './notebooks/GenerationOverlay';
 import { preprocessMermaidContent } from './notebooks/MermaidExtension';
@@ -28,6 +28,59 @@ function timeAgo(dateStr) {
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
     return d.toLocaleDateString();
+}
+
+/* ── Embed images as base64 for export (PDF/Word) ────────────── */
+async function embedImagesAsBase64(html) {
+    // Find all <img> tags and extract their src
+    const imgRegex = /<img([^>]*?)src=["']([^"']+)["']([^>]*?)>/gi;
+    const matches = [...html.matchAll(imgRegex)];
+
+    const replacements = await Promise.allSettled(
+        matches.map(async (match) => {
+            const [fullMatch, before, src, after] = match;
+            // Skip already-embedded base64 images
+            if (src.startsWith('data:')) return { fullMatch, newTag: fullMatch };
+
+            try {
+                // Resolve relative URLs
+                const resolvedUrl = src.startsWith('http') ? src : `${window.location.origin}${src}`;
+                const res = await fetch(resolvedUrl, { credentials: 'include' });
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                const blob = await res.blob();
+                const dataUrl = await new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result);
+                    reader.onerror = reject;
+                    reader.readAsDataURL(blob);
+                });
+                // Preserve width from data-width attribute or style
+                let widthStyle = '';
+                const widthMatch = (before + after).match(/data-width=["'](\d+)["']/);
+                const styleMatch = (before + after).match(/style=["']([^"']*?width[^"']*?)["']/);
+                if (widthMatch) {
+                    widthStyle = ` style="width:${widthMatch[1]}px;height:auto;max-width:100%"`;
+                } else if (styleMatch) {
+                    widthStyle = ` style="${styleMatch[1]}"`;
+                }
+                return {
+                    fullMatch,
+                    newTag: `<img src="${dataUrl}"${widthStyle} alt="" />`
+                };
+            } catch (err) {
+                console.warn('[Export] Failed to embed image:', src, err.message);
+                return { fullMatch, newTag: fullMatch }; // Keep original on failure
+            }
+        })
+    );
+
+    let result = html;
+    for (const r of replacements) {
+        if (r.status === 'fulfilled') {
+            result = result.replace(r.value.fullMatch, r.value.newTag);
+        }
+    }
+    return result;
 }
 
 /* ── Source type metadata ─────────────────────────────────────── */
@@ -141,6 +194,9 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     // Citation overlay
     const [citationSource, setCitationSource] = useState(null);
 
+    // Version history panel
+    const [versionsOpen, setVersionsOpen] = useState(false);
+
     // Studio generation state
     const [generating, setGenerating] = useState(null);
     const [aiFilling, setAiFilling] = useState(false);
@@ -161,8 +217,8 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
         selectedAgent: null,
         currentConversation: null,
         onConversationCreated: useCallback(() => {}, []),
-        getWorkspacePayload: useCallback(() => ({}), []),
-        onWorkspaceUpdate: useCallback(() => {}, []),
+        getNotebookPayload: useCallback(() => ({}), []),
+        onNotebookUpdate: useCallback(() => {}, []),
         directMode: useMemo(() => ({
             enabled: true,
             modelTier: selectedTier,
@@ -502,9 +558,12 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
         return lastAssistant?.content || '';
     }, [documentContent, lastGeneratedContent, chatMessages]);
 
+    const [exporting, setExporting] = useState(null); // 'pdf' | 'docx' | null
+
     const handleExport = useCallback(async (format) => {
         let content = getExportContent();
         if (!selected || !content) return;
+        setExporting(format);
         try {
             // Render mermaid diagrams to images for export
             const mermaidDivRegex = /<div[^>]*data-type="mermaid-diagram"[^>]*data-code="([^"]*?)"[^>]*>.*?<\/div>/gi;
@@ -523,100 +582,47 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                         if (pngDataUrl) {
                             content = content.replace(match[0], `<div style="text-align:center;margin:16px 0;"><img src="${pngDataUrl}" style="max-width:100%;border-radius:8px;" alt="Diagram" /></div>`);
                         } else {
-                            // Fallback: embed SVG directly
                             content = content.replace(match[0], `<div style="text-align:center;margin:16px 0;">${svg}</div>`);
                         }
                     }
                 } catch (err) {
                     console.error('[Notebooks] Mermaid export render failed:', err);
-                    // Leave as-is on failure
                 }
             }
 
-            if (format === 'pdf') {
-                const opt = {
-                    margin:       0.5,
-                    filename:     `${selected.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')}.pdf`,
-                    image:        { type: 'jpeg', quality: 0.98 },
-                    html2canvas:  { scale: 2, useCORS: true, logging: false },
-                    jsPDF:        { unit: 'in', format: 'letter', orientation: 'portrait' },
-                    pagebreak:    { mode: 'avoid-all' }
-                };
-                
-                // Wrap content in a styled parent so html2pdf can properly calculate page breaks
-                // Setting margin/padding to 0 for inner elements and a clean font
-                const wrappedContent = `<div style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; color: #111827; line-height: 1.6;">${content}</div>`;
-                
-                html2pdf().set(opt).from(wrappedContent).save();
-            } else if (format === 'docx') {
-                const header = `xmlns:v="urn:schemas-microsoft-com:vml"
-xmlns:o="urn:schemas-microsoft-com:office:office"
-xmlns:w="urn:schemas-microsoft-com:office:word"
-xmlns:m="http://schemas.microsoft.com/office/2004/12/omml"
-xmlns="http://www.w3.org/TR/REC-html40"`;
+            // Embed all images as base64 data URIs so they export with the document
+            content = await embedImagesAsBase64(content);
 
-                const preHtml = `<html ${header}>
-<head>
-<meta charset="utf-8">
-<title>${selected.name}</title>
-<!--[if gte mso 9]>
-<xml>
-  <w:WordDocument>
-    <w:View>Print</w:View>
-    <w:Zoom>100</w:Zoom>
-    <w:DoNotOptimizeForBrowser/>
-  </w:WordDocument>
-</xml>
-<![endif]-->
-<style>
-    @page {
-        size: 8.5in 11.0in;
-        margin: 1.0in 1.0in 1.0in 1.0in;
-    }
-    body {
-        font-family: 'Calibri', 'Arial', sans-serif;
-        font-size: 11pt;
-        line-height: 1.5;
-        padding: 0;
-        margin: 0;
-    }
-    p, h1, h2, h3, h4, h5, h6, ul, ol, li {
-        margin-top: 0;
-        margin-bottom: 10pt;
-        padding: 0;
-        max-width: none !important;
-        width: auto !important;
-    }
-    ul, ol { margin-left: 0.5in; }
-    table { border-collapse: collapse; width: 100%; border: 1px solid #ccc; }
-    th, td { border: 1px solid #ccc; padding: 4pt; }
-</style>
-</head>
-<body>
-    <div class="Section1">
-        ${content.replace(/class="[^"]*"/g, '').replace(/style="[^"]*"/g, '').replace(/<div[^>]*data-type="mermaid-diagram"[^>]*>.*?<\/div>/gi, '<p><em>[Diagram - see PDF export]</em></p>')}
-    </div>
-</body>
-</html>`;
+            // Call server-side export API
+            const res = await authFetch(`${API_BASE}/api/notebooks/${selected.id}/export/${format}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content, title: selected.name }),
+            });
 
-                const blob = new Blob(['\ufeff', preHtml], {
-                    type: 'application/msword'
-                });
-                
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `${selected.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')}.doc`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || `Export failed (${res.status})`);
             }
+
+            // Download the file
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const ext = format === 'pdf' ? 'pdf' : 'docx';
+            a.download = `${selected.name.replace(/[^a-zA-Z0-9.\-_ ]/g, '_')}.${ext}`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
         } catch (e) { 
             console.error('[Notebooks] Export failed:', e);
             setError(e.message); 
+        } finally {
+            setExporting(null);
         }
-    }, [selected, getExportContent]);
+    }, [selected, getExportContent, authFetch]);
 
     /* ── Create notebook ─────────────────────────────────────── */
     const handleCreate = async () => {
@@ -753,6 +759,13 @@ xmlns="http://www.w3.org/TR/REC-html40"`;
                         <button onClick={() => { setSelected(null); setSources([]); setChatMessages([]); setDocumentContent(''); }} className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors" title="Back to Notebooks">
                             <ArrowLeft className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
                         </button>
+                        <button
+                            onClick={() => setVersionsOpen(p => !p)}
+                            className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors"
+                            title="Version History"
+                        >
+                            <History className="w-5 h-5" style={{ color: versionsOpen ? 'var(--accent-primary)' : 'var(--text-secondary)' }} />
+                        </button>
                     </div>
                     <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2">
@@ -770,6 +783,7 @@ xmlns="http://www.w3.org/TR/REC-html40"`;
                         onGenerate={handleGenerate}
                         generating={generating}
                         onExport={handleExport}
+                        exporting={exporting}
                         hasContent={hasExportContent}
                         readySourceCount={readySources.length}
                         generationCount={generationHistory.length}
@@ -1034,6 +1048,22 @@ xmlns="http://www.w3.org/TR/REC-html40"`;
                 )}
             </div>
             <style>{`@keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+
+            {/* ═══ Version History Overlay ═══ */}
+            {versionsOpen && selected && (
+                <NotebookVersions
+                    notebookId={selected.id}
+                    currentContent={documentContent}
+                    onRestore={(content) => {
+                        if (editorRef.current?.setContent) {
+                            editorRef.current.setContent(content);
+                        }
+                        setDocumentContent(content);
+                        handleDocSave(content);
+                    }}
+                    onClose={() => setVersionsOpen(false)}
+                />
+            )}
         </div>
     );
 }

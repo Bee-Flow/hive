@@ -1,10 +1,10 @@
 import React from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
-import { Bot, Bug, Globe, Settings, Workflow, Users, Terminal, Shield } from 'lucide-react';
+import { Bot, Bug, Globe, Settings, Users, Terminal, Shield } from 'lucide-react';
 import AgentDesigner from './AgentDesigner';
 import SwarmManager from '../../pages/SwarmManager';
 import BrowserAgentManager from '../../pages/BrowserAgentManager';
-import MultiAgentConfig from '../../pages/MultiAgentConfig';
+
 import GroupChatManager from '../../pages/GroupChatManager';
 import TerminalAgentManager from '../../pages/TerminalAgentManager';
 import SecurityAgentManager from '../../pages/SecurityAgentManager';
@@ -21,13 +21,13 @@ const SECTIONS = [
     { id: 'sec-agents', labelKey: 'admin.agents_security', icon: Shield, color: '#ef4444' },
     { id: 'group', labelKey: 'admin.agents_group', icon: Users, color: '#3b82f6' },
     { id: 'system', labelKey: 'admin.agents_system', icon: Settings, color: '#8b5cf6' },
-    { id: 'pipeline', labelKey: 'admin.agents_pipeline', icon: Workflow, color: '#06b6d4' },
+
 ];
 
 const AgentConfigHub = ({ hasPermission = () => true, user, activeSection = '', onNavigate }) => {
     const { t } = useTranslation();
     // Map section IDs to agent type keys used in allowedAgentTypes
-    const SECTION_TO_TYPE = { chat: 'chat', swarm: 'swarm', browser: 'browser', terminal: 'terminal', 'sec-agents': 'security', group: 'roundtable', system: 'system', pipeline: 'pipeline' };
+    const SECTION_TO_TYPE = { chat: 'chat', swarm: 'swarm', browser: 'browser', terminal: 'terminal', 'sec-agents': 'security', group: 'roundtable', system: 'system' };
 
     const isSuperAdmin = user?.isAdmin || user?.role === 'admin' || (user?.permissions || []).includes('all');
     const allowedTypes = user?.allowedAgentTypes || [];
@@ -149,11 +149,7 @@ const AgentConfigHub = ({ hasPermission = () => true, user, activeSection = '', 
                         <AgentDesigner key="system-agents" onBack={null} systemMode={true} hasPermission={hasPermission} />
                     </div>
                 )}
-                {active === 'pipeline' && (
-                    <div style={{ position: 'absolute', inset: 0, overflow: 'auto', padding: '1.5rem' }}>
-                        <MultiAgentConfig embedded={true} />
-                    </div>
-                )}
+
             </div>
         </div>
     );

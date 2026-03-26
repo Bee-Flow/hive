@@ -958,7 +958,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
                                                 headers: { 'Content-Type': 'application/json' },
                                                 body: JSON.stringify({ searchProvider: val }),
                                             });
-                                            setMessage({ type: 'success', text: `Search provider set to ${val === 'bing' ? 'Azure Bing Search' : 'Self-hosted Agent Search'}` });
+                                            setMessage({ type: 'success', text: `Search provider set to ${val === 'disabled' ? 'Disabled' : val === 'bing' ? 'Azure Bing Search' : 'Self-hosted Agent Search'}` });
                                         } catch (e) {
                                             setMessage({ type: 'error', text: 'Failed to save search provider' });
                                         }
@@ -969,10 +969,11 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
                                 >
                                     <option value="agent-search">Self-hosted (Agent Search + Serper)</option>
                                     <option value="bing">Azure Bing Web Search</option>
+                                    <option value="disabled">Disabled</option>
                                 </select>
                             </div>
                             <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                                Choose which search provider powers web search for AI agents.
+                                Choose which search provider powers web search for AI agents. Select "Disabled" to turn off web search entirely.
                             </p>
                         </div>
 

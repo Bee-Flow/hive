@@ -121,7 +121,7 @@ function DropdownMenu({ group, onSelect, generating, disabled }) {
     );
 }
 
-export default function NotebookStudio({ onGenerate, generating, onExport, hasContent, readySourceCount, generationCount = 0, onHistoryClick }) {
+export default function NotebookStudio({ onGenerate, generating, onExport, exporting, hasContent, readySourceCount, generationCount = 0, onHistoryClick }) {
     const disabled = readySourceCount === 0;
 
     return (
@@ -140,20 +140,20 @@ export default function NotebookStudio({ onGenerate, generating, onExport, hasCo
             
             <div className="flex items-center gap-1 pl-2">
                 <button
-                    disabled={!hasContent}
+                    disabled={!hasContent || !!exporting}
                     onClick={() => onExport('pdf')}
                     className="p-1.5 rounded-lg hover:bg-black/5 text-[var(--text-secondary)] disabled:opacity-40 transition-colors"
                     title="Export PDF"
                 >
-                    <FileDown className="w-4 h-4 text-red-500" />
+                    {exporting === 'pdf' ? <Loader2 className="w-4 h-4 text-red-500 animate-spin" /> : <FileDown className="w-4 h-4 text-red-500" />}
                 </button>
                 <button
-                    disabled={!hasContent}
+                    disabled={!hasContent || !!exporting}
                     onClick={() => onExport('docx')}
                     className="p-1.5 rounded-lg hover:bg-black/5 text-[var(--text-secondary)] disabled:opacity-40 transition-colors"
                     title="Export Word"
                 >
-                    <Download className="w-4 h-4 text-blue-500" />
+                    {exporting === 'docx' ? <Loader2 className="w-4 h-4 text-blue-500 animate-spin" /> : <Download className="w-4 h-4 text-blue-500" />}
                 </button>
                 {generationCount > 0 && (
                     <button

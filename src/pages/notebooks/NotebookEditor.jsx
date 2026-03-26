@@ -16,8 +16,9 @@ import { DragHandle } from '@tiptap/extension-drag-handle-react';
 import Emoji, { gitHubEmojis } from '@tiptap/extension-emoji';
 import Color from '@tiptap/extension-color';
 import { TextStyle } from '@tiptap/extension-text-style';
+import FontFamily from '@tiptap/extension-font-family';
 import Typography from '@tiptap/extension-typography';
-import Image from '@tiptap/extension-image';
+import ResizableImage from './ResizableImage';
 import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { SectionDragExtension } from './SectionDragExtension';
@@ -32,7 +33,7 @@ import {
     AlignLeft, AlignCenter, AlignRight, Undo, Redo,
     Highlighter, Wand2, RefreshCw, Scissors, Expand, Code, Link as LinkIcon, FileUp,
     Loader2, Table2, Plus, Trash2, ChevronDown, Sigma, GripVertical,
-    CheckSquare, ImageIcon, Palette,
+    CheckSquare, ImageIcon, Palette, WrapText, Maximize2, Minimize2, Type,
 } from 'lucide-react';
 
 /* ── AI Actions for selection bubble menu ─────────────────────── */
@@ -110,6 +111,82 @@ function DropItem({ icon: Icon, label, onClick, danger }) {
             <Icon className="w-3.5 h-3.5" />
             {label}
         </button>
+    );
+}
+
+/* ── Font Family Picker ──────────────────────────────────────── */
+const FONT_FAMILIES = [
+    { label: 'Default',          value: null,               css: "'Inter', sans-serif" },
+    { label: 'Inter',            value: 'Inter',            css: "'Inter', sans-serif" },
+    { label: 'Georgia',          value: 'Georgia',          css: "Georgia, serif" },
+    { label: 'Merriweather',     value: 'Merriweather',     css: "'Merriweather', serif" },
+    { label: 'Playfair Display', value: 'Playfair Display', css: "'Playfair Display', serif" },
+    { label: 'Lora',             value: 'Lora',             css: "'Lora', serif" },
+    { label: 'Poppins',          value: 'Poppins',          css: "'Poppins', sans-serif" },
+    { label: 'Nunito',           value: 'Nunito',           css: "'Nunito', sans-serif" },
+    { label: 'Source Sans 3',    value: 'Source Sans 3',    css: "'Source Sans 3', sans-serif" },
+    { label: 'Roboto Mono',      value: 'Roboto Mono',      css: "'Roboto Mono', monospace" },
+    { label: 'Fira Code',        value: 'Fira Code',        css: "'Fira Code', monospace" },
+];
+
+function FontPicker({ editor }) {
+    const [open, setOpen] = useState(false);
+    const ref = useRef(null);
+    const currentFont = editor.getAttributes('textStyle').fontFamily || null;
+    const activeLabel = FONT_FAMILIES.find(f => f.value === currentFont)?.label || 'Font';
+
+    useEffect(() => {
+        const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+        if (open) document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [open]);
+
+    return (
+        <div className="relative" ref={ref}>
+            <button
+                onMouseDown={e => { e.preventDefault(); setOpen(o => !o); }}
+                className={`flex items-center gap-1 px-1.5 py-1 rounded-md transition-all duration-150 text-[11px] font-medium ${
+                    currentFont
+                        ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]'
+                        : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]'
+                }`}
+                title="Font Family"
+                style={{ maxWidth: '110px' }}
+            >
+                <Type className="w-3.5 h-3.5 shrink-0" strokeWidth={2} />
+                <span className="truncate">{activeLabel}</span>
+                <ChevronDown className="w-3 h-3 shrink-0 opacity-50" />
+            </button>
+            {open && (
+                <div
+                    className="absolute top-full left-0 mt-1 z-50 py-1 rounded-xl shadow-2xl border overflow-y-auto"
+                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', minWidth: '180px', maxHeight: '320px' }}
+                >
+                    {FONT_FAMILIES.map(font => (
+                        <button
+                            key={font.label}
+                            onMouseDown={e => {
+                                e.preventDefault();
+                                if (font.value) {
+                                    editor.chain().focus().setFontFamily(font.value).run();
+                                } else {
+                                    editor.chain().focus().unsetFontFamily().run();
+                                }
+                                setOpen(false);
+                            }}
+                            className={`flex items-center w-full px-3 py-1.5 text-[12px] transition-colors hover:bg-[var(--bg-tertiary)] ${
+                                (font.value === currentFont || (!font.value && !currentFont))
+                                    ? 'text-[var(--accent-primary)] font-semibold bg-[var(--accent-primary)]/5'
+                                    : 'text-[var(--text-secondary)]'
+                            }`}
+                            style={{ fontFamily: font.css }}
+                        >
+                            {font.label}
+                        </button>
+                    ))}
+                </div>
+            )}
+        </div>
     );
 }
 
@@ -226,6 +303,110 @@ function ToolbarBtn({ onClick, active, icon: Icon, title, disabled }) {
     );
 }
 
+/* ── More Formatting Dropdown ────────────────────────────────── */
+function MoreFormattingDropdown({ editor, insertMath, imageInputRef, onImportClick, onAIFill, aiFilling }) {
+    const [open, setOpen] = useState(false);
+    const ref = useRef(null);
+
+    useEffect(() => {
+        const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+        if (open) document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [open]);
+
+    const hasActiveSecondary = editor.isActive('strike') || editor.isActive('highlight')
+        || editor.isActive('code') || editor.isActive('blockquote')
+        || editor.isActive({ textAlign: 'center' }) || editor.isActive({ textAlign: 'right' });
+
+    return (
+        <div className="relative" ref={ref}>
+            <button
+                onMouseDown={e => { e.preventDefault(); setOpen(o => !o); }}
+                className={`flex items-center gap-0.5 p-1.5 rounded-md transition-all duration-150 ${
+                    hasActiveSecondary
+                        ? 'bg-[var(--accent-primary)]/15 text-[var(--accent-primary)]'
+                        : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]'
+                }`}
+                title="More formatting"
+            >
+                <ChevronDown className="w-3.5 h-3.5" strokeWidth={2} />
+            </button>
+            {open && (
+                <div
+                    className="absolute top-full left-0 mt-1 z-50 py-1.5 rounded-xl shadow-2xl border min-w-[200px]"
+                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)' }}
+                >
+                    {/* Section: Text */}
+                    <div className="px-3 pt-1 pb-0.5">
+                        <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Text</span>
+                    </div>
+                    <MoreItem icon={Strikethrough} label="Strikethrough" active={editor.isActive('strike')}
+                        onClick={() => { editor.chain().focus().toggleStrike().run(); }} />
+                    <MoreItem icon={Highlighter} label="Highlight" active={editor.isActive('highlight')}
+                        onClick={() => { editor.chain().focus().toggleHighlight().run(); }} />
+                    <MoreItem icon={Code} label="Inline Code" active={editor.isActive('code')}
+                        onClick={() => { editor.chain().focus().toggleCode().run(); }} />
+                    <MoreItem icon={Quote} label="Blockquote" active={editor.isActive('blockquote')}
+                        onClick={() => { editor.chain().focus().toggleBlockquote().run(); }} />
+                    <MoreItem icon={LinkIcon} label="Insert Link"
+                        onClick={() => {
+                            const url = window.prompt('URL');
+                            if (url) editor.chain().focus().setLink({ href: url }).run();
+                            setOpen(false);
+                        }} />
+
+                    <div className="h-px mx-2 my-1" style={{ background: 'var(--border-subtle)' }} />
+
+                    {/* Section: Align */}
+                    <div className="px-3 pt-1 pb-0.5">
+                        <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Alignment</span>
+                    </div>
+                    <MoreItem icon={AlignLeft} label="Align Left" active={editor.isActive({ textAlign: 'left' })}
+                        onClick={() => { editor.chain().focus().setTextAlign('left').run(); }} />
+                    <MoreItem icon={AlignCenter} label="Center" active={editor.isActive({ textAlign: 'center' })}
+                        onClick={() => { editor.chain().focus().setTextAlign('center').run(); }} />
+                    <MoreItem icon={AlignRight} label="Align Right" active={editor.isActive({ textAlign: 'right' })}
+                        onClick={() => { editor.chain().focus().setTextAlign('right').run(); }} />
+
+                    <div className="h-px mx-2 my-1" style={{ background: 'var(--border-subtle)' }} />
+
+                    {/* Section: Insert */}
+                    <div className="px-3 pt-1 pb-0.5">
+                        <span className="text-[9px] font-bold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Insert</span>
+                    </div>
+                    <MoreItem icon={ImageIcon} label="Upload Image"
+                        onClick={() => { imageInputRef.current?.click(); setOpen(false); }} />
+                    <MoreItem icon={Sigma} label="Math Formula" active={editor.isActive('math')}
+                        onClick={() => { insertMath(); setOpen(false); }} />
+                    {onImportClick && (
+                        <MoreItem icon={FileUp} label="Import File (PDF, DOCX)"
+                            onClick={() => { onImportClick(); setOpen(false); }} />
+                    )}
+                    {onAIFill && (
+                        <MoreItem icon={aiFilling ? Loader2 : Wand2} label="AI Fill {{params}}" disabled={aiFilling}
+                            onClick={() => { onAIFill(); setOpen(false); }} />
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function MoreItem({ icon: Icon, label, onClick, active, danger, disabled }) {
+    return (
+        <button
+            onMouseDown={e => { e.preventDefault(); if (!disabled) onClick?.(); }}
+            className={`flex items-center gap-2.5 w-full px-3 py-1.5 text-[11px] font-medium transition-colors ${
+                disabled ? 'opacity-40 cursor-not-allowed' : 'hover:bg-[var(--bg-tertiary)]'
+            } ${active ? 'text-[var(--accent-primary)] bg-[var(--accent-primary)]/5' : danger ? 'text-red-400' : 'text-[var(--text-secondary)]'}`}
+            disabled={disabled}
+        >
+            <Icon className="w-3.5 h-3.5" strokeWidth={2} />
+            {label}
+        </button>
+    );
+}
+
 /* ── Main Editor Component ───────────────────────────────────────────────────── */
 const NotebookEditor = forwardRef(function NotebookEditorInner(
     { content, onChange, onSave, onAIAction, onAIFill, saving, onImportClick, generating, aiFilling, onTocUpdate, notebookId },
@@ -278,12 +459,9 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
             // TextStyle must come before Color
             TextStyle,
             Color,
+            FontFamily,
             Typography,
-            Image.configure({
-                inline: false,
-                allowBase64: true,
-                HTMLAttributes: { class: 'notebook-image' },
-            }),
+            ResizableImage,
             TaskList,
             TaskItem.configure({ nested: true }),
 
@@ -305,12 +483,11 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
     const [dragNodeType, setDragNodeType] = useState(null);
 
 
-    // Resolve /api/ image URLs in saved HTML to full server URLs (needed for dev mode)
-    // and fix legacy %2F-encoded storage URLs
+    // Resolve relative /api/ image URLs → full API_BASE URLs when loading saved content
+    // Production (nginx): API_BASE='', no-op. Dev: prepends server.dev.beeflow.ai
     const resolveContentUrls = useCallback((html) => {
-        if (!html || !API_BASE) return html; // production: API_BASE is '', no transform needed
-        // Prepend API_BASE to relative /api/ image src attributes
-        return html.replace(/(<img\s[^>]*src=")(\/(api\/[^"]+))/gi, `$1${API_BASE}/$3`);
+        if (!html || !API_BASE) return html;
+        return html.replace(/(src=["'])(\/(api\/storage\/[^"']+))/gi, `$1${API_BASE}/$3`);
     }, []);
 
     // Sync content from props (e.g. when switching notebooks)
@@ -366,8 +543,10 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
             }
             const data = await res.json();
             if (data.url) {
-                // Resolve through API_BASE so images load in dev (different port) and production
-                const imgSrc = data.url.startsWith('/api/') ? `${API_BASE}${data.url}` : data.url;
+                // Prepend API_BASE so images resolve correctly:
+                // - Production (nginx): API_BASE='', stays relative → goes through proxy
+                // - Dev deployment: API_BASE='https://server.dev.beeflow.ai' → hits backend directly
+                const imgSrc = `${API_BASE}${data.url}`;
                 editor.chain().focus().setImage({ src: imgSrc, alt: file.name }).run();
             } else {
                 throw new Error(data.error || 'No URL returned');
@@ -494,85 +673,48 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
             )}
 
             {/* ── Top Toolbar ── */}
-            <div className="shrink-0 flex items-center gap-0.5 px-3 py-1.5 border-b flex-wrap" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
-                {/* Text Formatting */}
-                <ToolbarBtn onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')} icon={Bold} title="Bold" />
-                <ToolbarBtn onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive('italic')} icon={Italic} title="Italic" />
-                <ToolbarBtn onClick={() => editor.chain().focus().toggleUnderline().run()} active={editor.isActive('underline')} icon={UnderlineIcon} title="Underline" />
-                <ToolbarBtn onClick={() => editor.chain().focus().toggleStrike().run()} active={editor.isActive('strike')} icon={Strikethrough} title="Strikethrough" />
-                <ToolbarBtn onClick={() => editor.chain().focus().toggleHighlight().run()} active={editor.isActive('highlight')} icon={Highlighter} title="Highlight" />
-                <ToolbarBtn onClick={() => editor.chain().focus().toggleCode().run()} active={editor.isActive('code')} icon={Code} title="Inline Code" />
+            <div className="shrink-0 flex items-center gap-1.5 px-3 py-1.5 border-b" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
+                {/* ─ Text Style ─ */}
+                <div className="flex items-center gap-0.5 px-1 py-0.5 rounded-lg" style={{ background: 'var(--bg-tertiary)' }}>
+                    <ToolbarBtn onClick={() => editor.chain().focus().toggleBold().run()} active={editor.isActive('bold')} icon={Bold} title="Bold (Ctrl+B)" />
+                    <ToolbarBtn onClick={() => editor.chain().focus().toggleItalic().run()} active={editor.isActive('italic')} icon={Italic} title="Italic (Ctrl+I)" />
+                    <ToolbarBtn onClick={() => editor.chain().focus().toggleUnderline().run()} active={editor.isActive('underline')} icon={UnderlineIcon} title="Underline (Ctrl+U)" />
+                    <FontPicker editor={editor} />
+                    <ColorPicker editor={editor} />
+                </div>
 
-                {/* Color Picker */}
-                <ColorPicker editor={editor} />
+                {/* ─ Headings ─ */}
+                <div className="flex items-center gap-0.5 px-1 py-0.5 rounded-lg" style={{ background: 'var(--bg-tertiary)' }}>
+                    <ToolbarBtn onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} active={editor.isActive('heading', { level: 1 })} icon={Heading1} title="Heading 1" />
+                    <ToolbarBtn onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive('heading', { level: 2 })} icon={Heading2} title="Heading 2" />
+                    <ToolbarBtn onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} active={editor.isActive('heading', { level: 3 })} icon={Heading3} title="Heading 3" />
+                </div>
 
-                <div className="w-px h-5 mx-1" style={{ background: 'var(--border-subtle)' }} />
+                {/* ─ Lists ─ */}
+                <div className="flex items-center gap-0.5 px-1 py-0.5 rounded-lg" style={{ background: 'var(--bg-tertiary)' }}>
+                    <ToolbarBtn onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')} icon={List} title="Bullet List" />
+                    <ToolbarBtn onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive('orderedList')} icon={ListOrdered} title="Numbered List" />
+                    <ToolbarBtn onClick={() => editor.chain().focus().toggleTaskList().run()} active={editor.isActive('taskList')} icon={CheckSquare} title="Task List" />
+                </div>
 
-                {/* Headings */}
-                <ToolbarBtn onClick={() => editor.chain().focus().toggleHeading({ level: 1 }).run()} active={editor.isActive('heading', { level: 1 })} icon={Heading1} title="Heading 1" />
-                <ToolbarBtn onClick={() => editor.chain().focus().toggleHeading({ level: 2 }).run()} active={editor.isActive('heading', { level: 2 })} icon={Heading2} title="Heading 2" />
-                <ToolbarBtn onClick={() => editor.chain().focus().toggleHeading({ level: 3 }).run()} active={editor.isActive('heading', { level: 3 })} icon={Heading3} title="Heading 3" />
-
-                <div className="w-px h-5 mx-1" style={{ background: 'var(--border-subtle)' }} />
-
-                {/* Lists */}
-                <ToolbarBtn onClick={() => editor.chain().focus().toggleBulletList().run()} active={editor.isActive('bulletList')} icon={List} title="Bullet List" />
-                <ToolbarBtn onClick={() => editor.chain().focus().toggleOrderedList().run()} active={editor.isActive('orderedList')} icon={ListOrdered} title="Numbered List" />
-                <ToolbarBtn onClick={() => editor.chain().focus().toggleTaskList().run()} active={editor.isActive('taskList')} icon={CheckSquare} title="Task List / Checklist" />
-                <ToolbarBtn onClick={() => editor.chain().focus().toggleBlockquote().run()} active={editor.isActive('blockquote')} icon={Quote} title="Quote" />
-
-                <div className="w-px h-5 mx-1" style={{ background: 'var(--border-subtle)' }} />
-
-                {/* Table */}
-                <TableDropdown editor={editor} />
-
-                <div className="w-px h-5 mx-1" style={{ background: 'var(--border-subtle)' }} />
-
-                {/* Image */}
-                <ToolbarBtn
-                    onClick={() => imageInputRef.current?.click()}
-                    active={false}
-                    icon={ImageIcon}
-                    title="Insert Image (upload to storage)"
-                />
-
-                {/* Math */}
-                <ToolbarBtn
-                    onClick={insertMath}
-                    active={editor.isActive('math')}
-                    icon={Sigma}
-                    title="Insert Math Formula ($formula$)"
-                />
-
-                <div className="w-px h-5 mx-1" style={{ background: 'var(--border-subtle)' }} />
-
-                {/* Alignment */}
-                <ToolbarBtn onClick={() => editor.chain().focus().setTextAlign('left').run()} active={editor.isActive({ textAlign: 'left' })} icon={AlignLeft} title="Align Left" />
-                <ToolbarBtn onClick={() => editor.chain().focus().setTextAlign('center').run()} active={editor.isActive({ textAlign: 'center' })} icon={AlignCenter} title="Center" />
-                <ToolbarBtn onClick={() => editor.chain().focus().setTextAlign('right').run()} active={editor.isActive({ textAlign: 'right' })} icon={AlignRight} title="Align Right" />
-
-                <div className="w-px h-5 mx-1" style={{ background: 'var(--border-subtle)' }} />
-
-                {/* Undo / Redo */}
-                <ToolbarBtn onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} icon={Undo} title="Undo" />
-                <ToolbarBtn onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} icon={Redo} title="Redo" />
-
-                <div className="w-px h-5 mx-1" style={{ background: 'var(--border-subtle)' }} />
-
-                {/* Import */}
-                {onImportClick && (
-                    <ToolbarBtn onClick={onImportClick} icon={FileUp} title="Import Text Database (PDF, DOCX, TXT)" />
-                )}
-
-                {/* AI Fill */}
-                {onAIFill && (
-                    <ToolbarBtn
-                        onClick={onAIFill}
-                        icon={aiFilling ? Loader2 : Wand2}
-                        title="AI Fill — Replace {{parameters}} using sources"
-                        disabled={aiFilling}
+                {/* ─ Insert ─ */}
+                <div className="flex items-center gap-0.5 px-1 py-0.5 rounded-lg" style={{ background: 'var(--bg-tertiary)' }}>
+                    <TableDropdown editor={editor} />
+                    <MoreFormattingDropdown
+                        editor={editor}
+                        insertMath={insertMath}
+                        imageInputRef={imageInputRef}
+                        onImportClick={onImportClick}
+                        onAIFill={onAIFill}
+                        aiFilling={aiFilling}
                     />
-                )}
+                </div>
+
+                {/* ─ History ─ */}
+                <div className="flex items-center gap-0.5 px-1 py-0.5 rounded-lg" style={{ background: 'var(--bg-tertiary)' }}>
+                    <ToolbarBtn onClick={() => editor.chain().focus().undo().run()} disabled={!editor.can().undo()} icon={Undo} title="Undo" />
+                    <ToolbarBtn onClick={() => editor.chain().focus().redo().run()} disabled={!editor.can().redo()} icon={Redo} title="Redo" />
+                </div>
 
                 <div className="flex-1" />
                 <span className="text-[10px] mr-2" style={{ color: 'var(--text-tertiary)' }}>{wordCount} words</span>
@@ -582,7 +724,7 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
             {/* Math / Tips hint banner */}
             <MathHint />
 
-            {/* BubbleMenu — AI actions on text selection */}
+            {/* BubbleMenu — AI actions on text selection (only for non-image nodes) */}
             <BubbleMenu
                 editor={editor}
                 tippyOptions={{
@@ -590,6 +732,11 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
                     animation: 'shift-toward-subtle',
                     duration: 150,
                     onHidden: () => { setShowAskInput(false); setAskQuery(''); }
+                }}
+                shouldShow={({ editor }) => {
+                    // Don't show AI bubble menu when an image is selected
+                    if (editor.isActive('resizableImage')) return false;
+                    return editor.view.state.selection.content().size > 0;
                 }}
             >
                 <div
@@ -649,6 +796,85 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
                             </button>
                         </div>
                     )}
+                </div>
+            </BubbleMenu>
+
+            {/* Image Bubble Menu — alignment, size, wrap, delete */}
+            <BubbleMenu
+                editor={editor}
+                tippyOptions={{
+                    placement: 'top',
+                    animation: 'shift-toward-subtle',
+                    duration: 150,
+                }}
+                shouldShow={({ editor }) => editor.isActive('resizableImage')}
+            >
+                <div
+                    className="flex items-center gap-0.5 px-1.5 py-1 rounded-xl shadow-xl border backdrop-blur-md"
+                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)' }}
+                >
+                    {/* Alignment */}
+                    {['left', 'center', 'right'].map(align => {
+                        const Icon = align === 'left' ? AlignLeft : align === 'center' ? AlignCenter : AlignRight;
+                        const attrs = editor.getAttributes('resizableImage');
+                        const isActive = (attrs.alignment || 'center') === align;
+                        return (
+                            <button
+                                key={align}
+                                onMouseDown={e => { e.preventDefault(); editor.chain().focus().updateAttributes('resizableImage', { alignment: align }).run(); }}
+                                className={`p-1.5 rounded-lg transition-all ${isActive ? 'bg-[var(--accent-primary)] text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}
+                                title={`Align ${align}`}
+                            >
+                                <Icon className="w-3.5 h-3.5" />
+                            </button>
+                        );
+                    })}
+
+                    <div className="w-px h-4 mx-0.5" style={{ background: 'var(--border-subtle)' }} />
+
+                    {/* Text Wrap toggle */}
+                    {(() => {
+                        const attrs = editor.getAttributes('resizableImage');
+                        const isWrapped = attrs.textWrap === true;
+                        return (
+                            <button
+                                onMouseDown={e => { e.preventDefault(); editor.chain().focus().updateAttributes('resizableImage', { textWrap: !isWrapped }).run(); }}
+                                className={`p-1.5 rounded-lg transition-all ${isWrapped ? 'bg-[var(--accent-primary)] text-white' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}
+                                title={isWrapped ? 'Remove text wrap' : 'Wrap text around image'}
+                            >
+                                <WrapText className="w-3.5 h-3.5" />
+                            </button>
+                        );
+                    })()}
+
+                    <div className="w-px h-4 mx-0.5" style={{ background: 'var(--border-subtle)' }} />
+
+                    {/* Size presets */}
+                    {[25, 50, 75, 100].map(pct => {
+                        const editorWidth = editor?.view?.dom?.clientWidth - 40 || 760;
+                        const targetWidth = pct === 100 ? null : Math.round((editorWidth * pct) / 100);
+                        return (
+                            <button
+                                key={pct}
+                                onMouseDown={e => { e.preventDefault(); editor.chain().focus().updateAttributes('resizableImage', { width: targetWidth }).run(); }}
+                                className="px-1.5 py-1 rounded-lg text-[10px] font-semibold transition-all text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]"
+                                title={`Set to ${pct}% width`}
+                            >
+                                {pct}%
+                            </button>
+                        );
+                    })}
+
+                    <div className="w-px h-4 mx-0.5" style={{ background: 'var(--border-subtle)' }} />
+
+                    {/* Delete */}
+                    <button
+                        onMouseDown={e => { e.preventDefault(); editor.chain().focus().deleteSelection().run(); }}
+                        className="p-1.5 rounded-lg transition-all text-red-400 hover:bg-red-500/10"
+                        title="Delete image"
+                    >
+                        <Trash2 className="w-3.5 h-3.5" />
+                    </button>
                 </div>
             </BubbleMenu>
 

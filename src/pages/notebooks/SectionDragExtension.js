@@ -9,8 +9,9 @@
  *
  * Strategy:
  *   We hook into ProseMirror's transaction pipeline via `appendTransaction`.
- *   When TipTap's built-in DragHandle plugin creates a NodeSelection on a
- *   heading (which it does at dragstart), we intercept and patch
+ *   When TipTap's built-in DragHandle plugin starts a drag on a heading,
+ *   we detect it by resolving the selection position (works with any
+ *   selection type — NodeSelection, NodeRangeSelection, etc.) and patch
  *   `view.dragging.slice` to include the full section content.
  *   On `drop` we use a custom `handleDrop` to move the entire section
  *   as a single atomic operation.
@@ -20,13 +21,13 @@
  */
 
 import { Extension } from '@tiptap/core';
-import { Plugin, PluginKey, NodeSelection } from '@tiptap/pm/state';
+import { Plugin, PluginKey } from '@tiptap/pm/state';
 
 const SECTION_DRAG_KEY = new PluginKey('sectionDrag');
 
 /** Return the heading level of a ProseMirror node, or null if not a heading. */
 function headingLevel(node) {
-    if (node.type.name === 'heading') return node.attrs.level;
+    if (node && node.type.name === 'heading') return node.attrs.level;
     return null;
 }
 
@@ -71,6 +72,27 @@ function getSectionRange(doc, headingPos, level) {
     return { from: headingPos, to: sectionTo };
 }
 
+/**
+ * Resolve the top-level heading node from a selection's start position.
+ * Works regardless of selection type (NodeSelection, NodeRangeSelection, etc.)
+ *
+ * @returns {{ node, pos } | null}
+ */
+function resolveHeadingFromSelection(doc, selFrom) {
+    const $from = doc.resolve(selFrom);
+
+    if ($from.depth === 0) {
+        // Position is at doc level — the heading is nodeAfter
+        const node = $from.nodeAfter;
+        return node ? { node, pos: selFrom } : null;
+    }
+
+    // Position is inside a node — walk up to the top-level parent
+    const node = $from.node(1);
+    const pos = $from.before(1);
+    return node ? { node, pos } : null;
+}
+
 export const SectionDragExtension = Extension.create({
     name: 'sectionDrag',
 
@@ -85,40 +107,39 @@ export const SectionDragExtension = Extension.create({
                 key: SECTION_DRAG_KEY,
 
                 /**
-                 * appendTransaction — intercept the NodeSelection that
-                 * TipTap's DragHandle sets on a heading at dragstart.
+                 * appendTransaction — detect when the DragHandle starts
+                 * a drag on a heading. Uses position-based detection that
+                 * works with any selection type.
                  *
                  * We DON'T change the selection (no visual change) — we only
                  * patch view.dragging.slice so the drag carries the full section.
                  */
                 appendTransaction(transactions, oldState, newState) {
-                    const sel = newState.selection;
-
-                    // Only act on NodeSelection (set by DragHandle on dragstart)
-                    if (!(sel instanceof NodeSelection)) {
-                        return null;
-                    }
-
-                    const node = sel.node;
-                    const level = headingLevel(node);
-                    if (level === null) {
-                        return null; // Not a heading — leave it alone
-                    }
+                    const view = editor.view;
 
                     // Only act during a drag (view.dragging is set by DragHandle)
-                    const view = editor.view;
-                    if (!view.dragging) {
-                        return null;
-                    }
+                    if (!view.dragging) return null;
+
+                    // Already processed this drag — don't re-trigger
+                    if (sectionDrag) return null;
+
+                    // Resolve the top-level node at the selection start
+                    const resolved = resolveHeadingFromSelection(
+                        newState.doc,
+                        newState.selection.from
+                    );
+                    if (!resolved) return null;
+
+                    const { node: headingNode, pos: headingPos } = resolved;
+                    const level = headingLevel(headingNode);
+                    if (level === null) return null; // Not a heading — leave it alone
 
                     // Compute the section range
-                    const { from, to } = getSectionRange(newState.doc, sel.from, level);
+                    const { from, to } = getSectionRange(newState.doc, headingPos, level);
 
                     // If the section is just the heading itself, no expansion needed
-                    const headingEnd = sel.from + node.nodeSize;
-                    if (to <= headingEnd) {
-                        return null;
-                    }
+                    const headingEnd = headingPos + headingNode.nodeSize;
+                    if (to <= headingEnd) return null;
 
                     // Expand view.dragging.slice to the full section
                     const sectionSlice = newState.doc.slice(from, to);
@@ -128,7 +149,6 @@ export const SectionDragExtension = Extension.create({
                     sectionDrag = { from, to, slice: sectionSlice };
 
                     // Return null — don't change the visible selection.
-                    // The heading stays NodeSelected (no background change).
                     return null;
                 },
 

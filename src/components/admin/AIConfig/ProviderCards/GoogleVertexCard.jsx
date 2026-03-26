@@ -9,6 +9,8 @@ const GoogleVertexConfigCard = ({ onMessage }) => {
     const [hasKey, setHasKey] = useState(false);
     const [saving, setSaving] = useState(false);
     const [showKeyInput, setShowKeyInput] = useState(false);
+    const [confirmDeleteProject, setConfirmDeleteProject] = useState(false);
+    const [confirmDeleteKey, setConfirmDeleteKey] = useState(false);
 
     useEffect(() => {
         fetchStatus();
@@ -66,6 +68,38 @@ const GoogleVertexConfigCard = ({ onMessage }) => {
             onMessage?.({ type: 'error', text: 'Failed to save config' });
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleDeleteProject = async () => {
+        try {
+            const res = await authFetch(`${API_BASE}/ai/config/setting/google_vertex_project`, { method: 'DELETE' });
+            if (res.ok) {
+                setHasProject(false);
+                setProject('');
+                setConfirmDeleteProject(false);
+                onMessage?.({ type: 'success', text: 'Vertex AI project removed' });
+            } else {
+                onMessage?.({ type: 'error', text: 'Failed to delete project' });
+            }
+        } catch (e) {
+            onMessage?.({ type: 'error', text: 'Failed to delete project' });
+        }
+    };
+
+    const handleDeleteServiceKey = async () => {
+        try {
+            const res = await authFetch(`${API_BASE}/ai/config/key/google_vertex_service_account_key`, { method: 'DELETE' });
+            if (res.ok) {
+                setHasKey(false);
+                setServiceAccountKey('');
+                setConfirmDeleteKey(false);
+                onMessage?.({ type: 'success', text: 'Vertex AI service account key removed' });
+            } else {
+                onMessage?.({ type: 'error', text: 'Failed to delete service account key' });
+            }
+        } catch (e) {
+            onMessage?.({ type: 'error', text: 'Failed to delete service account key' });
         }
     };
 
@@ -138,8 +172,42 @@ const GoogleVertexConfigCard = ({ onMessage }) => {
                     </div>
                 )}
 
-                {/* Save button */}
-                <div className="flex justify-end">
+                {/* Save + Delete buttons */}
+                <div className="flex justify-between items-center">
+                    <div className="flex gap-2">
+                        {hasProject && !confirmDeleteProject && (
+                            <button
+                                onClick={() => setConfirmDeleteProject(true)}
+                                className="px-3 py-2 rounded-lg text-xs transition-all hover:bg-red-500/20"
+                                style={{ color: 'var(--text-muted)' }}
+                                title="Remove Vertex project"
+                            >
+                                🗑️ Project
+                            </button>
+                        )}
+                        {confirmDeleteProject && (
+                            <>
+                                <button onClick={handleDeleteProject} className="px-3 py-2 rounded-lg text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30">Confirm</button>
+                                <button onClick={() => setConfirmDeleteProject(false)} className="px-2 py-2 rounded-lg text-xs" style={{ color: 'var(--text-muted)' }}>✕</button>
+                            </>
+                        )}
+                        {hasKey && !confirmDeleteKey && (
+                            <button
+                                onClick={() => setConfirmDeleteKey(true)}
+                                className="px-3 py-2 rounded-lg text-xs transition-all hover:bg-red-500/20"
+                                style={{ color: 'var(--text-muted)' }}
+                                title="Remove service account key"
+                            >
+                                🗑️ Key
+                            </button>
+                        )}
+                        {confirmDeleteKey && (
+                            <>
+                                <button onClick={handleDeleteServiceKey} className="px-3 py-2 rounded-lg text-xs font-medium bg-red-500/20 text-red-400 hover:bg-red-500/30">Confirm</button>
+                                <button onClick={() => setConfirmDeleteKey(false)} className="px-2 py-2 rounded-lg text-xs" style={{ color: 'var(--text-muted)' }}>✕</button>
+                            </>
+                        )}
+                    </div>
                     <button
                         onClick={handleSave}
                         disabled={saving || (!project.trim() && !serviceAccountKey.trim())}

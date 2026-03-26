@@ -810,26 +810,169 @@ pre.hljs {
     padding-left: 1.5em;
 }
 
-/* ── Images ────────────────────────────────────────── */
-.notebook-editor .tiptap img.notebook-image,
-.notebook-editor .tiptap img {
-    max-width: 100%;
-    height: auto;
-    border-radius: 8px;
-    margin: 0.5em 0;
+/* ── Images (ResizableImage NodeView) ──────────────────────── */
+
+/* Wrapper — base (block, no wrap) */
+.notebook-editor .tiptap .resizable-image-wrapper {
     display: block;
-    border: 1px solid var(--border-subtle);
-    transition: box-shadow 0.15s ease;
+    margin: 0.5em 0;
+    transition: all 0.15s ease;
+    text-align: center;
 }
 
-.notebook-editor .tiptap img.notebook-image:hover,
-.notebook-editor .tiptap img:hover {
-    box-shadow: 0 0 0 2px var(--accent-primary);
+.notebook-editor .tiptap .resizable-image-wrapper[data-alignment="left"] {
+    text-align: left;
+}
+.notebook-editor .tiptap .resizable-image-wrapper[data-alignment="center"] {
+    text-align: center;
+}
+.notebook-editor .tiptap .resizable-image-wrapper[data-alignment="right"] {
+    text-align: right;
 }
 
-.notebook-editor .tiptap img.ProseMirror-selectednode {
-    outline: 2px solid var(--accent-primary);
+/* Text wrap (float) — overrides display to allow float */
+.notebook-editor .tiptap .resizable-image-wrapper[data-text-wrap="true"] {
+    display: block;
+    width: auto;
+}
+.notebook-editor .tiptap .resizable-image-wrapper[data-text-wrap="true"][data-alignment="left"] {
+    float: left;
+    margin-right: 1.5em;
+    margin-bottom: 0.5em;
+    margin-top: 0.25em;
+    clear: left;
+}
+.notebook-editor .tiptap .resizable-image-wrapper[data-text-wrap="true"][data-alignment="right"] {
+    float: right;
+    margin-left: 1.5em;
+    margin-bottom: 0.5em;
+    margin-top: 0.25em;
+    clear: right;
+}
+.notebook-editor .tiptap .resizable-image-wrapper[data-text-wrap="true"][data-alignment="center"] {
+    float: none;
+    clear: both;
+}
+
+/* Make the inner container inline-block so it respects text-align and floats correctly */
+.notebook-editor .tiptap .resizable-image-container {
+    display: inline-block;
+    position: relative;
+    max-width: 100%;
+}
+
+/* The image itself */
+.notebook-editor .tiptap .resizable-image-container img {
     border-radius: 8px;
+    border: 1px solid var(--border-subtle);
+    transition: box-shadow 0.15s ease, border-color 0.15s ease;
+    user-select: none;
+    -webkit-user-drag: none;
+}
+
+.notebook-editor .tiptap .resizable-image-wrapper:hover .resizable-image-container img {
+    border-color: var(--border-default);
+}
+
+/* Selected state */
+.notebook-editor .tiptap .resizable-image-wrapper.selected .resizable-image-container img {
+    outline: 2px solid var(--accent-primary);
+    outline-offset: 1px;
+    border-color: var(--accent-primary);
+    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.12);
+}
+
+/* Resizing state */
+.notebook-editor .tiptap .resizable-image-wrapper.resizing {
+    user-select: none;
+}
+.notebook-editor .tiptap .resizable-image-wrapper.resizing .resizable-image-container img {
+    outline: 2px solid var(--accent-primary);
+    cursor: nwse-resize;
+}
+
+/* ── Resize Handles ── */
+.notebook-editor .tiptap .resize-handle {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: var(--accent-primary);
+    border: 2px solid white;
+    border-radius: 50%;
+    z-index: 10;
+    cursor: nwse-resize;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+    transition: transform 0.1s ease, opacity 0.1s ease;
+    opacity: 0.9;
+}
+
+.notebook-editor .tiptap .resize-handle:hover {
+    transform: scale(1.3);
+    opacity: 1;
+}
+
+.notebook-editor .tiptap .resize-handle.top-left {
+    top: -5px; left: -5px;
+    cursor: nwse-resize;
+}
+.notebook-editor .tiptap .resize-handle.top-right {
+    top: -5px; right: -5px;
+    cursor: nesw-resize;
+}
+.notebook-editor .tiptap .resize-handle.bottom-left {
+    bottom: -5px; left: -5px;
+    cursor: nesw-resize;
+}
+.notebook-editor .tiptap .resize-handle.bottom-right {
+    bottom: -5px; right: -5px;
+    cursor: nwse-resize;
+}
+
+/* Edge handles (left/right midpoints) */
+.notebook-editor .tiptap .resize-handle.left-edge {
+    top: 50%; left: -5px;
+    transform: translateY(-50%);
+    cursor: ew-resize;
+    width: 8px;
+    height: 24px;
+    border-radius: 4px;
+}
+.notebook-editor .tiptap .resize-handle.right-edge {
+    top: 50%; right: -5px;
+    transform: translateY(-50%);
+    cursor: ew-resize;
+    width: 8px;
+    height: 24px;
+    border-radius: 4px;
+}
+.notebook-editor .tiptap .resize-handle.left-edge:hover,
+.notebook-editor .tiptap .resize-handle.right-edge:hover {
+    transform: translateY(-50%) scaleX(1.2);
+}
+
+/* Width indicator during resize */
+.notebook-editor .tiptap .resize-width-indicator {
+    position: absolute;
+    bottom: -28px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-primary);
+    border: 1px solid var(--border-default);
+    border-radius: 6px;
+    padding: 2px 8px;
+    font-size: 10px;
+    font-weight: 600;
+    color: var(--accent-primary);
+    white-space: nowrap;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+    z-index: 20;
+    pointer-events: none;
+}
+
+/* Override ProseMirror default selectednode outline for our custom images */
+.notebook-editor .tiptap .resizable-image-wrapper.ProseMirror-selectednode,
+.notebook-editor .tiptap .resizable-image-wrapper .ProseMirror-selectednode {
+    outline: none !important;
 }
 
 /* ── Section Drag Highlight (SectionDragExtension) ─── */

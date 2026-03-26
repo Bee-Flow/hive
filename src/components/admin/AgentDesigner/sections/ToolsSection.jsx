@@ -112,67 +112,7 @@ export const ToolsSection = ({
                                                         );
                                                     })()}
 
-                                                    {/* Sequential Thinking */}
-                                                    <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-transparent hover:border-[var(--border-subtle)] transition-colors">
-                                                        <div>
-                                                            <h4 className="text-sm font-medium text-primary">🧠 Sequential Thinking</h4>
-                                                            <p className="text-xs text-muted mt-0.5">Structured chain-of-thought reasoning tool for complex problems</p>
-                                                        </div>
-                                                        <label className="relative inline-flex items-center cursor-pointer">
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={sequentialThinkingEnabled}
-                                                                onChange={(e) => setSequentialThinkingEnabled(e.target.checked)}
-                                                                className="sr-only peer"
-                                                            />
-                                                            <div className="w-11 h-6 bg-[var(--bg-tertiary)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                                                        </label>
-                                                    </div>
 
-                                                    {/* Sequential Thinking Model (shown when ST is enabled) */}
-                                                    {sequentialThinkingEnabled && (
-                                                        <div className="ml-2 mt-2 p-4 rounded-xl bg-purple-500/5 border border-purple-500/15">
-                                                            <label className="text-xs font-medium text-purple-400 mb-2 block">
-                                                                Thinking Model
-                                                                <span className="ml-2 normal-case font-normal opacity-60 text-[10px]">Optional — uses a separate model for reasoning</span>
-                                                            </label>
-                                                            <ModelSelector
-                                                                models={availableModels}
-                                                                value={sequentialThinkingModel}
-                                                                onChange={setSequentialThinkingModel}
-                                                                defaultLabel="Same as agent model"
-                                                                compact
-                                                            />
-                                                            <p className="text-[10px] text-muted mt-1.5 opacity-60">When set, this model thinks first, then the main model responds using those insights.</p>
-                                                        </div>
-                                                    )}
-
-                                                    {/* Rendering Capabilities */}
-                                                    <div>
-                                                        <h3 className="text-xs font-medium text-muted mb-3 mt-6">Rendering Capabilities</h3>
-                                                        <div className="space-y-3">
-                                                            {Object.entries(CAPABILITIES).map(([key, cap]) => {
-                                                                const isEnabled = checkCapability(systemPrompt, key);
-                                                                return (
-                                                                    <div key={key} className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-transparent hover:border-[var(--border-subtle)] transition-colors">
-                                                                        <div>
-                                                                            <h4 className="text-sm font-medium text-primary">{cap.label}</h4>
-                                                                            <p className="text-xs text-muted mt-0.5">{cap.description}</p>
-                                                                        </div>
-                                                                        <label className="relative inline-flex items-center cursor-pointer">
-                                                                            <input
-                                                                                type="checkbox"
-                                                                                checked={isEnabled}
-                                                                                onChange={() => toggleCapability(key)}
-                                                                                className="sr-only peer"
-                                                                            />
-                                                                            <div className="w-11 h-6 bg-[var(--bg-tertiary)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                                                                        </label>
-                                                                    </div>
-                                                                );
-                                                            })}
-                                                        </div>
-                                                    </div>
                                                 </div>
   );
 };
