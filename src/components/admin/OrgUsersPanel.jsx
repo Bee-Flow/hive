@@ -727,6 +727,11 @@ const OrgUsersPanel = ({ user }) => {
                                                     {isSystem && (
                                                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-500 font-medium">System</span>
                                                     )}
+                                                    {group.source === 'azure' && (
+                                                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-[#0078D4]/15 text-[#0078D4] font-medium flex items-center gap-0.5">
+                                                            🪟 Azure AD
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 {editingGroup === group.id ? (
                                                     <div className="flex items-center gap-2 mt-1">
@@ -744,7 +749,12 @@ const OrgUsersPanel = ({ user }) => {
                                                         </button>
                                                     </div>
                                                 ) : (
-                                                    <p className="text-xs text-[var(--text-muted)] mt-0.5">{group.description || 'No description'}</p>
+                                                    <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                                                        {group.description || 'No description'}
+                                                        {group.source === 'azure' && group.lastSyncedAt && (
+                                                            <span className="ml-2 text-[10px] text-[var(--text-muted)] opacity-60">Last synced: {new Date(group.lastSyncedAt).toLocaleString()}</span>
+                                                        )}
+                                                    </p>
                                                 )}
                                             </div>
                                             <div className="flex items-center gap-2 shrink-0">
@@ -752,7 +762,7 @@ const OrgUsersPanel = ({ user }) => {
                                                     <Users className="w-3 h-3" />
                                                     {count} {count === 1 ? 'member' : 'members'}
                                                 </span>
-                                                {!isSystem && (
+                                                {!isSystem && group.source !== 'azure' && (
                                                     <>
                                                         <button
                                                             onClick={() => { setEditingGroup(group.id); setEditGroupDesc(group.description || ''); }}
@@ -769,6 +779,11 @@ const OrgUsersPanel = ({ user }) => {
                                                             <Trash2 className="w-3.5 h-3.5" />
                                                         </button>
                                                     </>
+                                                )}
+                                                {group.source === 'azure' && (
+                                                    <span className="text-[10px] text-[var(--text-muted)] italic" title="Managed by Azure AD — sync to update or remove">
+                                                        Managed
+                                                    </span>
                                                 )}
                                             </div>
                                         </div>
