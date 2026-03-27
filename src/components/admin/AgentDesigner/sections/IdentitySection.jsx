@@ -22,7 +22,6 @@ export const IdentitySection = ({
   chatFont, setChatFont, chatFontSize, setChatFontSize,
   chatLineHeight, setChatLineHeight, userBubbleColor, setUserBubbleColor,
   assistantBubbleColor, setAssistantBubbleColor, warningText, setWarningText,
-  setPromptDesignerMessages, setPromptDesignerInput, setShowPromptDesigner,
   categoryId, setCategoryId, agentCategories, setAgentCategories,
 }) => {
   const [showNewCategory, setShowNewCategory] = useLocalState(false);
@@ -49,33 +48,6 @@ export const IdentitySection = ({
                                                 <div className="space-y-6 animate-fadeIn">
                                                     <div className="flex items-center justify-between">
                                                         <h2 className="text-base font-semibold text-primary">Agent Identity</h2>
-                                                        <button
-                                                            type="button"
-                                                            onClick={async () => {
-                                                                if (!systemPrompt) {
-                                                                    alert('Please set a System Prompt first (below)');
-                                                                    return;
-                                                                }
-                                                                try {
-                                                                    const res = await authFetch(`${API_BASE}/agents/system/identity-improver/generate`, {
-                                                                        method: 'POST',
-                                                                        headers: { 'Content-Type': 'application/json' },
-                                                                        body: JSON.stringify({ currentName: name, currentDescription: description, systemPrompt })
-                                                                    });
-                                                                    const data = await res.json();
-                                                                    if (data.avatar) setAvatar(data.avatar);
-                                                                    if (data.name) setName(data.name);
-                                                                    if (data.description) setDescription(data.description);
-                                                                } catch (err) {
-                                                                    console.error('Failed to improve identity:', err);
-                                                                    alert('Failed to improve identity. Please try again.');
-                                                                }
-                                                            }}
-                                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
-                                                            title="Generate name and description from system prompt"
-                                                        >
-                                                            Improve Identity
-                                                        </button>
                                                     </div>
 
                                                     {/* Avatar Picker */}
@@ -309,29 +281,10 @@ export const IdentitySection = ({
                                                             </div>
 
                                                             <div>
-                                                                <div className="flex items-center justify-between mb-2">
-                                                                    <label className="text-xs font-medium text-muted">
-                                                                        System Prompt
-                                                                        <span className="ml-2 normal-case font-normal opacity-50 text-[10px]">Defines personality and rules</span>
-                                                                    </label>
-                                                                    <button
-                                                                        type="button"
-                                                                        onClick={() => {
-                                                                            // Always start fresh
-                                                                            setPromptDesignerMessages([{
-                                                                                role: 'assistant',
-                                                                                content: systemPrompt
-                                                                                    ? `I'll improve your existing prompt. Just click send or tell me what to change.`
-                                                                                    : `What should this agent do? I'll generate a prompt for you.`
-                                                                            }]);
-                                                                            setPromptDesignerInput('');
-                                                                            setShowPromptDesigner(true);
-                                                                        }}
-                                                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all border bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)]" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
-                                                                    >
-                                                                        AI Assist
-                                                                    </button>
-                                                                </div>
+                                                                <label className="text-xs font-medium text-muted mb-2 block">
+                                                                    System Prompt
+                                                                    <span className="ml-2 normal-case font-normal opacity-50 text-[10px]">Defines personality and rules</span>
+                                                                </label>
                                                                 <textarea
                                                                     value={systemPrompt}
                                                                     onChange={(e) => setSystemPrompt(e.target.value)}

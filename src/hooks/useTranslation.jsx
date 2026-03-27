@@ -21,6 +21,7 @@ const CACHE_PREFIX = 'beeflow_i18n_';
  * TranslationProvider — wrap your app with this to enable translations
  */
 export function TranslationProvider({ children }) {
+    const hasStoredLocale = useRef(!!localStorage.getItem(STORAGE_KEY));
     const [locale, setLocaleState] = useState(() => {
         return localStorage.getItem(STORAGE_KEY) || 'en';
     });
@@ -60,6 +61,24 @@ export function TranslationProvider({ children }) {
             // Keep EN_DEFAULTS as fallback — no need to set empty strings
         }
         setIsLoading(false);
+    }, []);
+
+    // On first load, if user has no stored locale, check for org default
+    useEffect(() => {
+        if (!hasStoredLocale.current) {
+            authFetch(`${API_BASE}/api/languages/user/locales`)
+                .then(r => r.json())
+                .then(data => {
+                    if (Array.isArray(data)) {
+                        const orgDefault = data.find(l => l.isOrgDefault);
+                        if (orgDefault && orgDefault.code !== 'en') {
+                            localStorage.setItem(STORAGE_KEY, orgDefault.code);
+                            setLocaleState(orgDefault.code);
+                        }
+                    }
+                })
+                .catch(() => {});
+        }
     }, []);
 
     useEffect(() => {

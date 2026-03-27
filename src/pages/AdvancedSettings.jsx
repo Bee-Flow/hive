@@ -2,45 +2,66 @@ import React, { useState, useEffect, useMemo } from 'react';
 import MemoryPanel from '../components/MemoryPanel';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { useTranslation } from '../hooks/useTranslation';
-import AccountSection from './settings/AccountSection';
 import StartupAgentSection from './settings/StartupAgentSection';
 import MemorySection from './settings/MemorySection';
 import IntegrationsSection from './settings/IntegrationsSection';
 import OrganisationSection from './settings/OrganisationSection';
-import { AvatarDisplay } from './settings/AccountSection';
 import { SECTIONS as ORG_SECTIONS } from '../components/admin/OrgInfoPanel';
-import { Users, Link2, BarChart2 } from 'lucide-react';
+import OrgAzureConfigPanel from '../components/admin/OrgAzureConfigPanel';
+import { Users, Link2, BarChart2, Cloud } from 'lucide-react';
 
-/* ── Org sub-items ────────────────────────────────────────────────────────── */
-const ORG_SUB_ITEMS = [
-    ...ORG_SECTIONS,                                            // license, auth, privacy, info
-    { id: 'org_usage', label: 'Usage & Monitoring', icon: BarChart2, color: '#f59e0b' },
-    { id: 'org_users', label: 'Users & Groups', icon: Users, color: '#3b82f6' },
-    { id: 'org_integrations', label: 'Integrations', icon: Link2, color: '#0ea5e9' },
+/* ── Org sub-items (use labelKey for i18n) ────────────────────────────────── */
+const BASE_ORG_SUB_ITEMS = [
+    ...ORG_SECTIONS,                                            // license, auth, privacy, info — already use labelKey
+    { id: 'org_usage', labelKey: 'settings.usage_monitoring', icon: BarChart2, color: '#f59e0b' },
+    { id: 'org_users', labelKey: 'settings.users_groups', icon: Users, color: '#3b82f6' },
+    { id: 'org_integrations', labelKey: 'settings.integrations', icon: Link2, color: '#0ea5e9' },
 ];
+const AZURE_SUB_ITEM = { id: 'org_azure', labelKey: 'settings.azure_config', icon: Cloud, color: '#0078D4' };
 
-/* ── Nav items ────────────────────────────────────────────────────────────── */
+export const AvatarDisplay = ({ user, size = 40, className = '' }) => {
+    const sizeStyle = { width: `${size}px`, height: `${size}px`, flexShrink: 0 };
+    if (user?.avatarType === 'emoji' && user?.avatar) {
+        return (
+            <div
+                className={`rounded-full flex items-center justify-center ${className}`}
+                style={{ ...sizeStyle, background: 'var(--bg-tertiary)', border: '1px solid var(--border-default)', fontSize: `${size * 0.5}px`, lineHeight: 1 }}
+            >
+                {user.avatar}
+            </div>
+        );
+    }
+    if (user?.avatarType === 'url' && user?.avatar) {
+        return <img src={user.avatar} alt="Avatar" className={`rounded-full object-cover ${className}`} style={sizeStyle} />;
+    }
+    return (
+        <div
+            className={`rounded-full flex items-center justify-center font-bold ${className}`}
+            style={{ ...sizeStyle, background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--border-default)', fontSize: `${Math.round(size * 0.38)}px` }}
+        >
+            {(user?.displayName || user?.username || 'U')[0].toUpperCase()}
+        </div>
+    );
+};
+
+/* ── Nav items (use labelKey for i18n) ────────────────────────────────────── */
 const NAV_ITEMS = [
     {
-        id: 'account', label: 'Account',
-        icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" /></svg>,
-    },
-    {
-        id: 'preferences', label: 'Preferences',
+        id: 'preferences', labelKey: 'settings.preferences',
         icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>,
     },
     {
-        id: 'memory', label: 'Memory',
+        id: 'memory', labelKey: 'settings.memory',
         icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>,
     },
     {
-        id: 'integrations', label: 'Connections',
+        id: 'integrations', labelKey: 'settings.connections',
         icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>,
     },
 ];
 
 const ORG_PARENT_ITEM = {
-    id: 'organisation', label: 'Organisation',
+    id: 'organisation', labelKey: 'settings.organisation',
     icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>,
 };
 
@@ -79,7 +100,7 @@ const NavItem = ({ id, label, icon, isActive, onClick, rightSlot }) => (
 );
 
 /* ── Org sub-menu item ───────────────────────────────────────────────────── */
-const OrgSubItem = ({ section, isActive, onClick }) => {
+const OrgSubItem = ({ section, label, isActive, onClick }) => {
     const Icon = section.icon;
     return (
         <button
@@ -99,7 +120,7 @@ const OrgSubItem = ({ section, isActive, onClick }) => {
                 className="text-[12px] truncate"
                 style={{ color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: isActive ? 500 : 400 }}
             >
-                {section.label}
+                {label}
             </span>
         </button>
     );
@@ -109,22 +130,39 @@ const OrgSubItem = ({ section, isActive, onClick }) => {
 const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
     const { t } = useTranslation();
     // activeTab can be a top-level id OR an org sub-item id (e.g. 'license', 'org_users')
-    const [activeTab, setActiveTab] = useState('account');
+    const [activeTab, setActiveTab] = useState('preferences');
     const [orgExpanded, setOrgExpanded] = useState(false);
 
     const perms = user?.permissions || [];
     const canSeeOrg = perms.includes('all') || perms.includes('org_admin') || perms.some(p => p.startsWith('admin_')) || user?.orgRole === 'admin' || user?.orgRole === 'org_admin';
 
     const canManageUsers = canSeeOrg;
+    const deploymentMode = user?.featureFlags?.deploymentMode || 'cloud';
+    const isPrivateCloud = deploymentMode === 'private-cloud';
+    const ei = user?.enabledIntegrations;
+    const hasOrgIntegrations = !ei || (Array.isArray(ei) && ei.length > 0);
     const orgSubItems = useMemo(() => {
-        return ORG_SUB_ITEMS.filter(s => {
+        const items = BASE_ORG_SUB_ITEMS.filter(s => {
             if (s.id === 'org_users') return canManageUsers;
-            if (s.id === 'org_integrations') return canSeeOrg;
-            return true; // info sections always shown (org panel itself gates display)
-        });
-    }, [canSeeOrg, canManageUsers]);
+            if (s.id === 'org_integrations') return canSeeOrg && hasOrgIntegrations;
+            // In private-cloud mode, license & auth are managed externally
+            if (isPrivateCloud && (s.id === 'license' || s.id === 'auth')) return false;
 
-    const isOrgSubTab = ORG_SUB_ITEMS.some(s => s.id === activeTab);
+            // Hide privacy shield in local host
+            const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+            if (isLocalhost && s.id === 'privacy') return false;
+
+            return true;
+        });
+        // Azure config only in private-cloud mode for org admins
+        if (isPrivateCloud && canSeeOrg) {
+            items.push(AZURE_SUB_ITEM);
+        }
+        return items;
+    }, [canSeeOrg, canManageUsers, isPrivateCloud, hasOrgIntegrations]);
+
+    const ALL_ORG_IDS = [...BASE_ORG_SUB_ITEMS.map(s => s.id), AZURE_SUB_ITEM.id];
+    const isOrgSubTab = ALL_ORG_IDS.includes(activeTab);
 
     // If user navigates to an org sub-tab, keep org expanded
     useEffect(() => {
@@ -182,14 +220,14 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
 
     // Map org sub-tab ids to the activeSection prop OrganisationSection expects
     const orgActiveSection = isOrgSubTab
-        ? (activeTab === 'org_users' ? 'users' : activeTab === 'org_integrations' ? 'integrations' : activeTab === 'org_usage' ? 'usage' : activeTab)
+        ? (activeTab === 'org_users' ? 'users' : activeTab === 'org_integrations' ? 'integrations' : activeTab === 'org_usage' ? 'usage' : activeTab === 'org_azure' ? 'azure' : activeTab)
         : 'license';
 
     const renderContent = () => {
+        if (activeTab === 'org_azure' && canSeeOrg) return <OrgAzureConfigPanel user={user} />;
         if (isOrgSubTab && canSeeOrg) return <OrganisationSection user={user} activeSection={orgActiveSection} />;
         switch (activeTab) {
-            case 'account': return <AccountSection user={user} onLogout={onLogout} />;
-            case 'preferences': return <StartupAgentSection defaultAgentMode={defaultAgentMode} setDefaultAgentMode={setDefaultAgentMode} defaultAgentId={defaultAgentId} setDefaultAgentId={setDefaultAgentId} agents={agents} />;
+            case 'preferences': return <StartupAgentSection defaultAgentMode={defaultAgentMode} setDefaultAgentMode={setDefaultAgentMode} defaultAgentId={defaultAgentId} setDefaultAgentId={setDefaultAgentId} agents={agents} onLogout={onLogout} user={user} />;
             case 'memory': return <MemorySection memoryStats={memoryStats} onOpenMemory={() => setShowMemoryPanel(true)} user={user} />;
             case 'integrations': return <IntegrationsSection statuses={statuses} onSaved={handleIntegrationSaved} enabledIntegrations={user?.enabledIntegrations} isOrgAdmin={canSeeOrg} user={user} />;
             case 'organisation': return canSeeOrg ? <OrganisationSection user={user} activeSection="license" /> : null;
@@ -202,7 +240,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
             // toggle expand; if collapsing from an org sub-tab go to first sub-item
             if (orgExpanded && isOrgSubTab) {
                 setOrgExpanded(false);
-                setActiveTab('account');
+                setActiveTab('preferences');
             } else {
                 const newExpanded = !orgExpanded;
                 setOrgExpanded(newExpanded);
@@ -223,7 +261,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
                 className="flex-shrink-0 flex items-center justify-between px-5"
                 style={{ height: '48px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-subtle)' }}
             >
-                <span className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>Settings</span>
+                <span className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>{t('settings.title')}</span>
                 <div className="flex items-center gap-2">
                     <button
                         onClick={handleClose}
@@ -231,7 +269,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
                         style={{ color: 'var(--text-muted)' }}
                         onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                        title="Close"
+                        title={t('common.close')}
                     >
                         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                             <path d="M18 6L6 18M6 6l12 12" />
@@ -250,7 +288,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
                 >
                     {/* User mini-card */}
                     <button
-                        onClick={() => setActiveTab('account')}
+                        onClick={() => setActiveTab('preferences')}
                         className="flex items-center gap-3 px-4 py-3.5 transition-colors text-left w-full flex-shrink-0"
                         onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.04)'}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
@@ -279,13 +317,14 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
                     {/* Nav */}
                     <div className="flex-1 overflow-y-auto px-2 py-2 space-y-px">
                         <p className="text-[9px] font-semibold uppercase tracking-widest px-3 pb-1 pt-1.5" style={{ color: 'var(--text-muted)' }}>
-                            Profile
+                            {t('settings.profile_section')}
                         </p>
 
                         {NAV_ITEMS.map(item => (
                             <NavItem
                                 key={item.id}
                                 {...item}
+                                label={t(item.labelKey)}
                                 isActive={activeTab === item.id && !isOrgSubTab}
                                 onClick={handleNavClick}
                             />
@@ -296,12 +335,12 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
                             <>
                                 <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '6px 8px' }} />
                                 <p className="text-[9px] font-semibold uppercase tracking-widest px-3 pb-1 pt-1" style={{ color: 'var(--text-muted)' }}>
-                                    Workspace
+                                    {t('settings.workspace_section')}
                                 </p>
                                 {/* Parent row */}
                                 <NavItem
                                     id="organisation"
-                                    label={ORG_PARENT_ITEM.label}
+                                    label={t(ORG_PARENT_ITEM.labelKey)}
                                     icon={ORG_PARENT_ITEM.icon}
                                     isActive={isOrgSubTab && !orgExpanded ? true : false}
                                     onClick={handleNavClick}
@@ -319,6 +358,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
                                                 )}
                                                 <OrgSubItem
                                                     section={s}
+                                                    label={t(s.labelKey)}
                                                     isActive={activeTab === s.id}
                                                     onClick={setActiveTab}
                                                 />
@@ -338,7 +378,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
 
                 {/* ── Content panel ── */}
                 <div className="flex-1 overflow-auto" style={{ background: 'var(--bg-primary)' }}>
-                    <div className={`mx-auto px-8 py-8 ${isOrgSubTab ? 'max-w-3xl' : 'max-w-[640px]'}`}>
+                    <div className={`mx-auto py-8 ${isOrgSubTab ? 'max-w-5xl px-8' : 'max-w-[640px] px-8'}`} style={activeTab === 'org_usage' ? { maxWidth: '100%', padding: '24px 32px 32px' } : undefined}>
                         {renderContent()}
                     </div>
                 </div>

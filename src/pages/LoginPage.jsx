@@ -24,6 +24,9 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
     const [isMicrosoftConfigured, setIsMicrosoftConfigured] = useState(false);
     const [isSetupComplete, setIsSetupComplete] = useState(true);
     const [isDemoEnabled, setIsDemoEnabled] = useState(true);
+    const [allowSignups, setAllowSignups] = useState(null);
+    const [allowPasswordLogin, setAllowPasswordLogin] = useState(null);
+    const [authSettingsLoaded, setAuthSettingsLoaded] = useState(false);
     const [confirmPassword, setConfirmPassword] = useState('');
     const [adminRecoveryKey, setAdminRecoveryKey] = useState(null);
 
@@ -68,7 +71,16 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                     if (!data.isSetupComplete) setSetupMode(true);
                     // Also track raw setup-complete flag for wizard
                     setIsSetupComplete(data.isSetupComplete);
+                    if (data.allowSignups === false) setAllowSignups(false);
+                    else setAllowSignups(true);
+                    if (data.allowPasswordLogin === false) setAllowPasswordLogin(false);
+                    else setAllowPasswordLogin(true);
+                } else {
+                    // If setup-status fails, show everything (safe fallback)
+                    setAllowSignups(true);
+                    setAllowPasswordLogin(true);
                 }
+                setAuthSettingsLoaded(true);
 
                 const orgRes = await authFetch(`${API_BASE}/auth/organizations/public`);
                 if (orgRes.ok) {
@@ -437,7 +449,11 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                     )}
 
                     {/* Content */}
-                    {signupMode ? (
+                    {!authSettingsLoaded ? (
+                        <div className="flex justify-center py-8">
+                            <div className="w-6 h-6 rounded-full border-2 border-[var(--border-default)] border-t-[var(--accent-primary)] animate-spin" />
+                        </div>
+                    ) : signupMode ? (
                         signupStep === 1 ? (
                             <SignupStepOrg
                                 signupData={signupData} setSignupData={setSignupData}
@@ -481,7 +497,10 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                             isOAuthConfigured={isOAuthConfigured}
                             isGoogleConfigured={isGoogleConfigured}
                             isMicrosoftConfigured={isMicrosoftConfigured}
-                            setSignupMode={setSignupMode} setError={setError}
+                            setSignupMode={allowSignups ? setSignupMode : null}
+                            setError={setError}
+                            allowSignups={allowSignups}
+                            allowPasswordLogin={allowPasswordLogin}
                             inputClass={inputClass} labelClass={labelClass}
                         />
                     )}

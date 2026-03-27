@@ -37,7 +37,11 @@ export const authFetch = async (url, options = {}) => {
 
     // If server returns 401 (user deleted / session invalid), force logout
     // Skip for auth endpoints that handle their own auth flow or are called during login
-    if (response.status === 401 && !url.includes('/auth/user') && !url.includes('/auth/my-permissions') && !url.includes('/auth/setup-status')) {
+    // Auto-reload on 401 ONLY for app-level API calls (user is logged in but session
+    // expired).  Skip all /auth/ routes (login page uses these before authentication)
+    // and /api/health (public, no session required) to avoid an infinite reload loop
+    // in private-cloud mode where LoginPage renders immediately while unauthenticated.
+    if (response.status === 401 && !url.includes('/auth/') && !url.includes('/api/health')) {
         window.location.reload();
         return response;
     }

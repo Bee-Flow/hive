@@ -65,29 +65,30 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
                         const isSelected = value === key;
                         const isConfigured = key === 'auto' || !!tierConfig.modelId;
 
+                        // Hide unconfigured tiers entirely
+                        if (!isConfigured) return null;
+
                         return (
                             <button
                                 key={key}
                                 onClick={() => { onChange(key); setOpen(false); }}
-                                disabled={!isConfigured}
                                 data-testid={`model-tier-${key}`}
                                 style={{
                                     display: 'flex', alignItems: 'center', gap: '10px',
                                     width: '100%', padding: '10px 12px',
                                     background: isSelected ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
-                                    border: 'none', cursor: isConfigured ? 'pointer' : 'default',
-                                    color: isConfigured ? 'var(--text-primary)' : 'var(--text-muted)',
+                                    border: 'none', cursor: 'pointer',
+                                    color: 'var(--text-primary)',
                                     textAlign: 'left', transition: 'background 0.1s',
-                                    opacity: isConfigured ? 1 : 0.4
                                 }}
-                                onMouseEnter={e => { if (isConfigured && !isSelected) e.target.style.background = 'var(--bg-tertiary)'; }}
+                                onMouseEnter={e => { if (!isSelected) e.target.style.background = 'var(--bg-tertiary)'; }}
                                 onMouseLeave={e => { if (!isSelected) e.target.style.background = 'transparent'; }}
                             >
                                 <span style={{ fontSize: '18px', width: '24px', textAlign: 'center' }}>{meta.icon}</span>
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{ fontSize: '13px', fontWeight: 600 }}>{meta.label}</div>
                                     <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
-                                        {isConfigured ? meta.desc : 'Not configured'}
+                                        {meta.desc}
                                     </div>
                                 </div>
                                 {isSelected && (

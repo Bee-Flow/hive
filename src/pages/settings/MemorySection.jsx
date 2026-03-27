@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE, authFetch } from '../../utils/helpers';
+import { useTranslation } from '../../hooks/useTranslation';
 
 // ── Email Writing Style ──────────────────────────────────────────────────────
 const EmailWritingStyle = () => {
+    const { t } = useTranslation();
     const [analyzing, setAnalyzing] = useState(false);
     const [profile, setProfile] = useState(null);
     const [editedProfile, setEditedProfile] = useState(null);
@@ -61,7 +63,7 @@ const EmailWritingStyle = () => {
 
     return (
         <div className="space-y-1.5">
-            <p className="text-[11px] font-semibold uppercase tracking-widest px-1 mb-2" style={{ color: 'var(--text-muted)' }}>Email Writing Style</p>
+            <p className="text-[11px] font-semibold uppercase tracking-widest px-1 mb-2" style={{ color: 'var(--text-muted)' }}>{t('settings.memory_email_title')}</p>
             <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
                 <div className="flex items-center gap-3 px-5 py-4" style={{ background: 'var(--bg-secondary)', borderBottom: profile ? '1px solid var(--border-subtle)' : 'none' }}>
                     <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(245,158,11,0.1)' }}>
@@ -71,22 +73,22 @@ const EmailWritingStyle = () => {
                         </svg>
                     </div>
                     <div className="flex-1">
-                        <p className="text-[13px] font-medium text-black">Email writing style</p>
+                        <p className="text-[13px] font-medium text-black">{t('settings.memory_email_title')}</p>
                         <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                            {profile ? 'AI matches your tone when writing emails' : 'Learn your writing style from sent emails'}
+                            {profile ? t('settings.memory_email_desc_active') : t('settings.memory_email_desc_inactive')}
                         </p>
                     </div>
-                    {profile && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: 'rgba(5,150,105,0.1)', color: '#059669' }}>Active</span>}
+                    {profile && <span className="text-[10px] px-1.5 py-0.5 rounded font-medium" style={{ background: 'rgba(5,150,105,0.1)', color: '#059669' }}>{t('settings.memory_email_active')}</span>}
                 </div>
                 {!profile ? (
                     <div className="px-5 py-4" style={{ background: 'var(--bg-secondary)' }}>
                         <p className="text-[12px] mb-3" style={{ color: 'var(--text-muted)' }}>
-                            Reads your last 30 sent emails to learn your tone, greetings, sign-offs, and writing patterns.
+                            {t('settings.memory_email_analyze_desc')}
                         </p>
                         <button onClick={analyze} disabled={analyzing}
                             className="flex items-center gap-2 px-4 py-2 rounded-lg text-[13px] font-medium text-white disabled:opacity-50 transition-opacity"
                             style={{ background: 'var(--accent-primary)' }}>
-                            {analyzing ? 'Analyzing emails…' : 'Learn my writing style'}
+                            {analyzing ? t('settings.memory_email_analyzing') : t('settings.memory_email_learn')}
                         </button>
                     </div>
                 ) : (
@@ -95,10 +97,10 @@ const EmailWritingStyle = () => {
                             className="w-full rounded-lg p-3 text-xs resize-y"
                             style={{ background: 'var(--bg-primary)', color: 'var(--text-secondary)', border: `1px solid ${hasChanges ? 'var(--accent-primary)' : 'var(--border-subtle)'}`, fontFamily: 'inherit', lineHeight: 1.6, outline: 'none', transition: 'border-color .15s' }} />
                         <div className="flex items-center gap-2 flex-wrap">
-                            {hasChanges && <button onClick={save} disabled={saving} className="px-4 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-50" style={{ background: 'var(--accent-primary)' }}>{saving ? 'Saving…' : 'Save changes'}</button>}
-                            {hasChanges && <button onClick={() => setEditedProfile(profile)} className="px-3 py-1.5 rounded-lg text-xs font-medium" style={{ color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}>Discard</button>}
-                            <button onClick={analyze} disabled={analyzing} className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border-default)' }}>{analyzing ? 'Analyzing…' : 'Re-analyze'}</button>
-                            <button onClick={clear} className="px-3 py-1.5 rounded-lg text-xs font-medium" style={{ color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}>Clear</button>
+                            {hasChanges && <button onClick={save} disabled={saving} className="px-4 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-50" style={{ background: 'var(--accent-primary)' }}>{saving ? t('settings.memory_email_saving') : t('settings.memory_email_save')}</button>}
+                            {hasChanges && <button onClick={() => setEditedProfile(profile)} className="px-3 py-1.5 rounded-lg text-xs font-medium" style={{ color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}>{t('settings.memory_email_discard')}</button>}
+                            <button onClick={analyze} disabled={analyzing} className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-50" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border-default)' }}>{analyzing ? t('settings.memory_email_analyzing_short') : t('settings.memory_email_reanalyze')}</button>
+                            <button onClick={clear} className="px-3 py-1.5 rounded-lg text-xs font-medium" style={{ color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}>{t('settings.memory_email_clear')}</button>
                         </div>
                     </div>
                 )}
@@ -110,6 +112,7 @@ const EmailWritingStyle = () => {
 
 // ── Memory Section ───────────────────────────────────────────────────────────
 const MemorySection = ({ memoryStats, onOpenMemory, user }) => {
+    const { t } = useTranslation();
     const count = memoryStats?.total || 0;
     const showWritingStyle = user?.provider === 'google';
 
@@ -117,7 +120,7 @@ const MemorySection = ({ memoryStats, onOpenMemory, user }) => {
         <div className="space-y-6">
             {/* Memory card */}
             <div className="space-y-1.5">
-                <p className="text-[11px] font-semibold uppercase tracking-widest px-1 mb-2" style={{ color: 'var(--text-muted)' }}>Memory</p>
+                <p className="text-[11px] font-semibold uppercase tracking-widest px-1 mb-2" style={{ color: 'var(--text-muted)' }}>{t('settings.memory_title')}</p>
                 <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
                     {/* Stat row */}
                     <div className="flex items-center gap-4 px-5 py-4" style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-subtle)' }}>
@@ -127,9 +130,9 @@ const MemorySection = ({ memoryStats, onOpenMemory, user }) => {
                             </svg>
                         </div>
                         <div className="flex-1">
-                            <p className="text-[13px] font-medium text-black">Stored memories</p>
+                            <p className="text-[13px] font-medium text-black">{t('settings.memory_stored')}</p>
                             <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                                Persisted facts about you, your projects, and preferences
+                                {t('settings.memory_desc')}
                             </p>
                         </div>
                         <span className="text-[22px] font-bold tabular-nums" style={{ color: 'var(--text-primary)' }}>{count}</span>
@@ -149,7 +152,7 @@ const MemorySection = ({ memoryStats, onOpenMemory, user }) => {
                     {count === 0 && (
                         <div className="px-5 py-3" style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-subtle)' }}>
                             <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
-                                No memories yet. As you chat, facts and preferences are automatically saved.
+                                {t('settings.memory_empty')}
                             </p>
                         </div>
                     )}
@@ -162,7 +165,7 @@ const MemorySection = ({ memoryStats, onOpenMemory, user }) => {
                         onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}
                         onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-secondary)'}
                     >
-                        <span className="text-[13px] flex-1 text-black">Manage memories</span>
+                        <span className="text-[13px] flex-1 text-black">{t('settings.memory_manage')}</span>
                         <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--text-muted)' }}>
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
@@ -172,10 +175,10 @@ const MemorySection = ({ memoryStats, onOpenMemory, user }) => {
 
             {/* About card */}
             <div className="space-y-1.5">
-                <p className="text-[11px] font-semibold uppercase tracking-widest px-1 mb-2" style={{ color: 'var(--text-muted)' }}>About</p>
+                <p className="text-[11px] font-semibold uppercase tracking-widest px-1 mb-2" style={{ color: 'var(--text-muted)' }}>{t('settings.memory_about_title')}</p>
                 <div className="rounded-xl px-5 py-4" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}>
                     <p className="text-[13px] leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                        Memories help the AI remember facts, preferences, and context from your conversations. They persist across sessions for a more personalised experience.
+                        {t('settings.memory_about_desc')}
                     </p>
                 </div>
             </div>

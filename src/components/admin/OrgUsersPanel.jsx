@@ -333,7 +333,7 @@ const OrgUsersPanel = ({ user }) => {
 
     // Count users with a specific role
     const getUsersWithRole = (roleId) => {
-        return users.filter(u => u.role === roleId && !u.isSystem).length;
+        return users.filter(u => u.orgRole === roleId && !u.isSystem).length;
     };
 
     if (loading) {

@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import useTranslation from '../../../hooks/useTranslation';
 import { Copy, Check, Bot, ChevronDown, Send, ThumbsUp, ThumbsDown, RefreshCw, Pencil, Download, FileText, MoreHorizontal } from 'lucide-react';
 import MarkdownRenderer from '../../MarkdownRenderer';
 import MapEmbedRenderer from '../../MapEmbedRenderer';
@@ -36,6 +37,7 @@ const MessageItem = ({
     modelTiers = {},
     isLastAssistant = false
 }) => {
+    const { t } = useTranslation();
     const [expandedBrainEntries, setExpandedBrainEntries] = useState({});
     const isUser = msg.role === 'user';
     const isTool = msg.role === 'tool';
@@ -280,12 +282,12 @@ const MessageItem = ({
                     <span className="text-xl">🛡️</span>
                     <div>
                         <div className="font-bold">
-                            {msg.willRedact ? 'Content Policy Violation' : 'Message Policy Violation'}
+                            {msg.willRedact ? t('chat.guardrail_content_violation') : t('chat.guardrail_message_violation')}
                         </div>
                         <div className="text-xs text-white/70 mt-0.5">
                             {msg.willRedact
-                                ? `Sensitive content will be redacted in ${msg.deleteIn || 5} seconds`
-                                : `This message will be deleted in ${msg.deleteIn || 5} seconds`
+                                ? t('chat.guardrail_will_redact', { seconds: msg.deleteIn || 5 })
+                                : t('chat.guardrail_will_delete', { seconds: msg.deleteIn || 5 })
                             }
                         </div>
                     </div>
@@ -919,18 +921,18 @@ const MessageItem = ({
                                                 </div>
                                                 {Object.entries(RETRY_TIERS).map(([key, meta]) => {
                                                     const isConfigured = key === 'auto' || !!modelTiers[key]?.modelId;
+                                                    if (!isConfigured) return null;
                                                     return (
                                                         <button
                                                             key={key}
-                                                            onClick={() => { if (isConfigured) { onRetry(idx, key); setShowRetryMenu(false); } }}
-                                                            disabled={!isConfigured}
-                                                            className="w-full text-left px-3 py-2.5 transition-colors flex items-center gap-2.5 hover:bg-[var(--bg-tertiary)] disabled:opacity-30 disabled:cursor-default"
+                                                            onClick={() => { onRetry(idx, key); setShowRetryMenu(false); }}
+                                                            className="w-full text-left px-3 py-2.5 transition-colors flex items-center gap-2.5 hover:bg-[var(--bg-tertiary)]"
                                                         >
                                                             <span className="text-lg w-6 text-center flex-shrink-0">{meta.icon}</span>
                                                             <div className="flex-1 min-w-0">
                                                                 <div className="text-[13px] font-semibold text-[var(--text-primary)]">{meta.label}</div>
                                                                 <div className="text-[11px] text-[var(--text-tertiary)]">
-                                                                    {isConfigured ? meta.desc : 'Not configured'}
+                                                                    {meta.desc}
                                                                 </div>
                                                             </div>
                                                         </button>

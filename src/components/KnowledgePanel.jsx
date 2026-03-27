@@ -424,26 +424,8 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
                     </div>
                 )}
 
-                {/* Tab Switcher */}
-                <div className="flex gap-1 p-0.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-subtle)] w-fit">
-                    {[{ id: 'kbs', label: '📚 Knowledge Bases' }, { id: 'legacy', label: '📝 Legacy Knowledge' }].map(tab => (
-                        <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                            className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all ${activeTab === tab.id
-                                ? 'bg-[var(--accent-primary)] text-white shadow-sm'
-                                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}>
-                            {tab.label}
-                            {tab.id === 'kbs' && kbs.length > 0 && (
-                                <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] bg-white/20">{kbs.length}</span>
-                            )}
-                            {tab.id === 'legacy' && items.length > 0 && (
-                                <span className="ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] bg-white/20">{items.length}</span>
-                            )}
-                        </button>
-                    ))}
-                </div>
-
-                {/* ════════════════ Multi-KB Tab ════════════════ */}
-                {activeTab === 'kbs' && (
+                {/* ════════════════ Knowledge Bases ════════════════ */}
+                {(
                     <div className="space-y-4">
                         {/* KB List */}
                         <div className="flex items-center justify-between">
@@ -556,7 +538,7 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
                                             title="Re-fetch URLs and re-embed all documents with current model">
                                             {reindexing ? '⏳ Re-indexing...' : '🔄 Re-index'}
                                         </button>
-                                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${useAzureKB ? 'bg-blue-500/10 text-blue-400' : 'bg-emerald-500/10 text-emerald-400'}`}>{useAzureKB ? '☁️ Azure OpenAI' : 'bge-m3'}</span>
+                
                                     </div>
                                 </div>
 
@@ -689,18 +671,11 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
                             </div>
                         )}
 
-                        {/* Info banner */}
-                        <div className="p-3 rounded-lg flex gap-2 text-xs" style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.12)' }}>
-                            <span className="flex-shrink-0">💡</span>
-                            <p style={{ color: 'var(--text-secondary)' }}>
-                                <strong style={{ color: 'var(--text-primary)' }}>Multi-KB:</strong> Link knowledge bases to this agent. Each KB uses <code className="text-[10px] px-1 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)' }}>{useAzureKB ? 'Azure OpenAI (text-embedding-3-small)' : 'bge-m3'}</code> embeddings with {useAzureKB ? 'cosine similarity reranking' : 'hybrid search + reranking'} for high-quality retrieval. {useAzureKB && <span style={{ color: 'rgb(59,130,246)' }}>☁️ Azure pipeline active</span>}
-                            </p>
-                        </div>
+
                     </div>
                 )}
 
-                {/* ════════════════ Legacy Tab ════════════════ */}
-                {activeTab === 'legacy' && (
+                {false && (/* Legacy tab removed */
                     <div className="space-y-4">
                         <div className="p-4 rounded-xl border bg-[var(--bg-tertiary)] border-[var(--border-default)]">
                             <h3 className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Add Knowledge</h3>

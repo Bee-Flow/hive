@@ -1,11 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { API_BASE, authFetch } from '../../../../utils/helpers';
 
 /**
  * All API operations for the AgentDesigner: fetch, save, delete, duplicate, publish.
  * Accepts the state object from useAgentState.
  */
-export default function useAgentApi(state, { systemMode, securityMode }) {
+export default function useAgentApi(state, { systemMode, securityMode, initialAgentId }) {
     const {
         setAgents, setLoading, setComponents, setAvailableModels,
         setAvailableCollections, setModelTiers, setIntegrationStatus,
@@ -28,6 +28,8 @@ export default function useAgentApi(state, { systemMode, securityMode }) {
         categoryId, setCategoryId, setAgentCategories,
     } = state;
 
+    const initialSelectionDoneRef = useRef(false);
+
     const fetchAgents = async () => {
         try {
             const endpoint = securityMode
@@ -36,6 +38,16 @@ export default function useAgentApi(state, { systemMode, securityMode }) {
             const res = await authFetch(endpoint);
             const data = await res.json();
             setAgents(data);
+
+            // Auto-select agent if initialAgentId is provided (once)
+            if (initialAgentId && !initialSelectionDoneRef.current) {
+                initialSelectionDoneRef.current = true;
+                const target = data.find(a => a.id === initialAgentId);
+                if (target) {
+                    // Defer to avoid state conflicts during initial mount
+                    setTimeout(() => selectAgent(target), 0);
+                }
+            }
         } catch (err) {
             console.error('Failed to fetch agents:', err);
         } finally {

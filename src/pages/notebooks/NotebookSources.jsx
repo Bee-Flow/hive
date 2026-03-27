@@ -179,8 +179,9 @@ function MeetingItem({ meeting, onSelect }) {
 /* ── Main component ─────────────────────────────────────────────── */
 export default function NotebookSources({
     sources, onFileUpload, onAddUrl, onAddText, onAddMeeting, onDeleteSource,
-    dragOver, setDragOver, totalWords, readyCount
+    dragOver, setDragOver, totalWords, readyCount, showMeetingNotes = true
 }) {
+    const visibleButtons = showMeetingNotes ? ADD_BUTTONS : ADD_BUTTONS.filter(b => b.key !== 'meeting');
     const [activePanel, setActivePanel] = useState(null); // null | 'file' | 'url' | 'text' | 'meeting'
     const [urlInput,    setUrlInput]    = useState('');
     const [textInput,   setTextInput]   = useState('');
@@ -373,8 +374,8 @@ export default function NotebookSources({
             </div>
 
             {/* ── Add source buttons ── */}
-            <div className="shrink-0 px-3 pt-2.5 pb-2 grid grid-cols-4 gap-1.5">
-                {ADD_BUTTONS.map(({ key, label, Icon, accent }) => {
+            <div className={`shrink-0 px-3 pt-2.5 pb-2 grid gap-1.5`} style={{ gridTemplateColumns: `repeat(${visibleButtons.length}, 1fr)` }}>
+                {visibleButtons.map(({ key, label, Icon, accent }) => {
                     const isActive = activePanel === key;
                     return (
                         <button

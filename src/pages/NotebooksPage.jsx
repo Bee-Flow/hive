@@ -821,6 +821,7 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                             setDragOver={setDragOver}
                             totalWords={totalWords}
                             readyCount={readySources.length}
+                            showMeetingNotes={user?.featureFlags?.meeting_notes !== false && (user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('meeting_notes')))}
                         />
                     </div>
                     )}

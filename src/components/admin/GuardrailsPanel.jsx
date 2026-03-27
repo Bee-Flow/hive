@@ -47,6 +47,13 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     const [orgAzurePiiEnabled, setOrgAzurePiiEnabled] = useState(false);
     const [activeModerationProvider, setActiveModerationProvider] = useState('llamaguard');
     const [hasAzureEndpoint, setHasAzureEndpoint] = useState(false);
+    const [hasEuModelsConfigured, setHasEuModelsConfigured] = useState(false);
+    const [hasWebSearchEnabled, setHasWebSearchEnabled] = useState(false);
+    // Org-level Content Safety + PII settings
+    const [orgSeverityThreshold, setOrgSeverityThreshold] = useState(2);
+    const [orgAzureCategories, setOrgAzureCategories] = useState(['Hate', 'Violence', 'Sexual', 'SelfHarm']);
+    const [orgPiiCategories, setOrgPiiCategories] = useState([]);
+    const [orgPiiConfidenceThreshold, setOrgPiiConfidenceThreshold] = useState(0.7);
 
     // PII Detection State
     const [piiEnabled, setPiiEnabled] = useState(false);
@@ -59,19 +66,19 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     const [piiMessage, setPiiMessage] = useState(null);
 
     const PII_CATEGORIES_LIST = [
-        { id: 'Person',                           label: 'Person Name',          group: 'Personal',   icon: '👤' },
-        { id: 'PhoneNumber',                      label: 'Phone Number',         group: 'Contact',    icon: '📱' },
-        { id: 'Email',                            label: 'Email Address',        group: 'Contact',    icon: '📧' },
-        { id: 'Address',                          label: 'Physical Address',     group: 'Contact',    icon: '🏠' },
-        { id: 'CreditCardNumber',                 label: 'Credit Card',          group: 'Financial',  icon: '💳' },
-        { id: 'BankAccountNumber',                label: 'Bank Account',         group: 'Financial',  icon: '🏦' },
-        { id: 'InternationalBankingAccountNumber',label: 'IBAN',                 group: 'Financial',  icon: '🌐' },
-        { id: 'USSocialSecurityNumber',           label: 'SSN (US)',             group: 'Identity',   icon: '🆔' },
-        { id: 'PassportNumber',                   label: 'Passport Number',      group: 'Identity',   icon: '🛂' },
-        { id: 'DriversLicenseNumber',             label: "Driver's License",    group: 'Identity',   icon: '🪪' },
-        { id: 'IPAddress',                        label: 'IP Address',           group: 'Digital',    icon: '🌐' },
-        { id: 'URL',                              label: 'URL',                  group: 'Digital',    icon: '🔗' },
-        { id: 'EUNationalIdentificationNumber',   label: 'EU National ID / BSN', group: 'EU',         icon: '🇪🇺' },
+        { id: 'Person',                           label: t('pii.person_name'),      group: 'Personal',   icon: '👤' },
+        { id: 'PhoneNumber',                      label: t('pii.phone_number'),     group: 'Contact',    icon: '📱' },
+        { id: 'Email',                            label: t('pii.email_address'),    group: 'Contact',    icon: '📧' },
+        { id: 'Address',                          label: t('pii.physical_address'), group: 'Contact',    icon: '🏠' },
+        { id: 'CreditCardNumber',                 label: t('pii.credit_card'),      group: 'Financial',  icon: '💳' },
+        { id: 'BankAccountNumber',                label: t('pii.bank_account'),     group: 'Financial',  icon: '🏦' },
+        { id: 'InternationalBankingAccountNumber',label: t('pii.iban'),             group: 'Financial',  icon: '🌐' },
+        { id: 'USSocialSecurityNumber',           label: t('pii.ssn'),             group: 'Identity',   icon: '🆔' },
+        { id: 'PassportNumber',                   label: t('pii.passport'),        group: 'Identity',   icon: '🛂' },
+        { id: 'DriversLicenseNumber',             label: t('pii.drivers_license'), group: 'Identity',   icon: '🪪' },
+        { id: 'IPAddress',                        label: t('pii.ip_address'),      group: 'Digital',    icon: '🌐' },
+        { id: 'URL',                              label: t('pii.url'),             group: 'Digital',    icon: '🔗' },
+        { id: 'EUNationalIdentificationNumber',   label: t('pii.eu_national_id'),  group: 'EU',         icon: '🇪🇺' },
     ];
 
     const MODERATION_CATEGORIES = [
@@ -92,10 +99,10 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     ];
 
     const AZURE_MODERATION_CATEGORIES = [
-        { id: 'Hate', label: 'Hate and Fairness', icon: '🚷' },
-        { id: 'Violence', label: 'Violence', icon: '⚔️' },
-        { id: 'Sexual', label: 'Sexual', icon: '🔞' },
-        { id: 'SelfHarm', label: 'Self-Harm', icon: '💔' },
+        { id: 'Hate', label: t('safety.hate'), icon: '🚷' },
+        { id: 'Violence', label: t('safety.violence'), icon: '⚔️' },
+        { id: 'Sexual', label: t('safety.sexual'), icon: '🔞' },
+        { id: 'SelfHarm', label: t('safety.self_harm'), icon: '💔' },
     ];
 
     // Navigation State (default to AI Moderation, or orgshield if orgShieldOnly)
@@ -124,6 +131,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 }
                 setActiveModerationProvider(data.moderationProvider || 'llamaguard');
                 setHasAzureEndpoint(data.hasAzureContentSafetyEndpoint || false);
+                setHasWebSearchEnabled(data.searchProvider && data.searchProvider !== 'disabled');
                 // PII Detection
                 setPiiEnabled(data.piiDetectionEnabled || false);
                 setPiiCategories(data.piiDetectionCategories?.length > 0
@@ -133,6 +141,14 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 setPiiScanInput(data.piiDetectionScope?.userInput !== false);
                 setPiiScanOutput(data.piiDetectionScope?.agentOutput === true);
                 setPiiAction(data.piiDetectionAction || 'block');
+            }
+
+            // Fetch EU Models to check configuration
+            const euRes = await authFetch(`${API_BASE}/ai/config/chat-models-eu`);
+            if (euRes.ok) {
+                const euModels = await euRes.json();
+                const isEuConfigured = Object.values(euModels).some(tier => tier && tier.modelId && tier.modelId.trim() !== '');
+                setHasEuModelsConfigured(isEuConfigured);
             }
 
             // Fetch orgs for privacy shield
@@ -169,6 +185,12 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 setOrgWebSearchGuard(data.webSearchGuardEnabled || false);
                 setOrgDisableSearchOnUpload(data.disableSearchOnUpload || false);
                 setOrgAzurePiiEnabled(data.azurePiiEnabled || false);
+                setOrgSeverityThreshold(data.azureSeverityThreshold ?? 2);
+                setOrgAzureCategories(data.azureEnabledCategories?.length > 0 ? data.azureEnabledCategories : ['Hate', 'Violence', 'Sexual', 'SelfHarm']);
+                const validIds = new Set(PII_CATEGORIES_LIST.map(c => c.id));
+                const loaded = (data.piiDetectionCategories || []).filter(id => validIds.has(id));
+                setOrgPiiCategories(loaded);
+                setOrgPiiConfidenceThreshold(data.piiDetectionConfidenceThreshold ?? 0.7);
             }
         } catch (e) {
             console.error('Failed to fetch org shield', e);
@@ -202,6 +224,10 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                     webSearchGuardEnabled: orgWebSearchGuard,
                     disableSearchOnUpload: orgDisableSearchOnUpload,
                     azurePiiEnabled: orgAzurePiiEnabled,
+                    azureSeverityThreshold: orgSeverityThreshold,
+                    azureEnabledCategories: orgAzureCategories,
+                    piiDetectionCategories: orgPiiCategories,
+                    piiDetectionConfidenceThreshold: orgPiiConfidenceThreshold,
                 })
             });
             if (res.ok) {
@@ -397,16 +423,6 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                         >
                             <span className="text-lg">🏢</span>
                             {t('admin.guard_tab_org')}
-                        </button>
-                        <button
-                            onClick={() => setActiveTab('pii')}
-                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all text-left ${activeTab === 'pii'
-                                ? 'bg-[var(--accent-primary)] text-white shadow-md'
-                                : 'text-[var(--text-secondary)] hover:bg-white/5 hover:text-[var(--text-primary)]'
-                                }`}
-                        >
-                            <span className="text-lg">🕵️</span>
-                            {t('admin.guard_tab_pii')}
                         </button>
                     </div>
                 </div>
@@ -739,7 +755,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                 {/* Org Selector */}
                                 {orgList.length > 1 && (
                                     <div className="mb-6">
-                                        <label className="text-xs font-medium text-muted mb-2 block">Organization</label>
+                                        <label className="text-xs font-medium text-muted mb-2 block">{t('admin.shield_org_label')}</label>
                                         <select
                                             value={selectedOrgId}
                                             onChange={e => handleOrgChange(e.target.value)}
@@ -754,14 +770,14 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                 )}
 
                                 {orgShieldLoading ? (
-                                    <div className="text-sm text-muted py-4 text-center">Loading shield config...</div>
+                                    <div className="text-sm text-muted py-4 text-center">{t('admin.shield_loading')}</div>
                                 ) : (
                                     <>
                                         {/* Enable Toggle */}
                                         <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10 mb-6">
                                             <div>
-                                                <span className="text-sm font-medium text-[var(--text-primary)] block">Enable Privacy Shield</span>
-                                                <span className="text-xs text-muted">Applies to all agents and direct chat in this org</span>
+                                                <span className="text-sm font-medium text-[var(--text-primary)] block">{t('admin.shield_enable')}</span>
+                                                <span className="text-xs text-muted">{t('admin.shield_enable_desc')}</span>
                                             </div>
                                             <label className="relative inline-flex items-center cursor-pointer">
                                                 <input type="checkbox" checked={orgShieldEnabled} onChange={e => setOrgShieldEnabled(e.target.checked)} className="sr-only peer" />
@@ -774,8 +790,8 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                 {/* AI Content Moderation Toggle */}
                                                 <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
                                                     <div>
-                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">AI Content Moderation</span>
-                                                        <span className="text-xs text-muted">Automatically check all messages for harmful content</span>
+                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">{t('admin.shield_moderation')}</span>
+                                                        <span className="text-xs text-muted">{t('admin.shield_moderation_desc')}</span>
                                                     </div>
                                                     <label className="relative inline-flex items-center cursor-pointer">
                                                         <input type="checkbox" checked={orgShieldModeration} onChange={e => setOrgShieldModeration(e.target.checked)} className="sr-only peer" />
@@ -784,91 +800,178 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                 </div>
 
                                                 {orgShieldModeration && (
-                                                    <div>
-                                                        <label className="text-xs font-medium text-muted mb-3 block">
-                                                            Blocked Categories {activeModerationProvider === 'azure' ? '(Azure AI Content Safety)' : '(Llama Guard)'}
-                                                        </label>
-                                                        <div className="grid grid-cols-2 gap-2 p-4 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
-                                                            {(activeModerationProvider === 'azure' ? AZURE_MODERATION_CATEGORIES : MODERATION_CATEGORIES).map(cat => (
-                                                                <label key={cat.id} className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer p-2 rounded hover:bg-white/5 transition-colors">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={orgShieldCategories.includes(cat.id)}
-                                                                        onChange={(e) => {
-                                                                            if (e.target.checked) {
-                                                                                setOrgShieldCategories([...orgShieldCategories, cat.id]);
-                                                                            } else {
-                                                                                setOrgShieldCategories(orgShieldCategories.filter(id => id !== cat.id));
-                                                                            }
-                                                                        }}
-                                                                        className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0"
-                                                                    />
-                                                                    <span>{cat.icon}</span>
-                                                                    <span>{cat.label}</span>
-                                                                </label>
-                                                            ))}
+                                                    <div className="space-y-4 animate-fadeIn">
+                                                        {/* Severity Threshold */}
+                                                        {activeModerationProvider === 'azure' && (
+                                                        <div className="p-4 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
+                                                            <div className="flex items-center justify-between mb-2">
+                                                                <label className="text-xs font-medium text-muted">{t('admin.shield_severity')}</label>
+                                                                <span className="text-xs font-mono px-2 py-0.5 rounded" style={{ background: 'var(--bg-primary)', color: 'var(--accent-primary)' }}>≥ {orgSeverityThreshold}</span>
+                                                            </div>
+                                                            <input
+                                                                type="range" min="0" max="6" step="1"
+                                                                value={orgSeverityThreshold}
+                                                                onChange={e => setOrgSeverityThreshold(parseInt(e.target.value))}
+                                                                className="w-full accent-[var(--accent-primary)]"
+                                                            />
+                                                            <div className="flex justify-between text-xs text-muted mt-1">
+                                                                <span>{t('admin.shield_severity_min')}</span>
+                                                                <span>{t('admin.shield_severity_max')}</span>
+                                                            </div>
+                                                            <p className="text-xs text-muted mt-1">{t('admin.shield_severity_help')}</p>
+                                                        </div>
+                                                        )}
+
+                                                        {/* Enabled Categories */}
+                                                        <div>
+                                                            <label className="text-xs font-medium text-muted mb-3 block">
+                                                                {activeModerationProvider === 'azure' ? t('admin.shield_categories_azure') : t('admin.shield_categories_llama')}
+                                                            </label>
+                                                            <div className="grid grid-cols-2 gap-2 p-4 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
+                                                                {(activeModerationProvider === 'azure' ? AZURE_MODERATION_CATEGORIES : MODERATION_CATEGORIES).map(cat => (
+                                                                    <label key={cat.id} className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer p-2 rounded hover:bg-white/5 transition-colors">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={orgShieldCategories.includes(cat.id)}
+                                                                            onChange={(e) => {
+                                                                                if (e.target.checked) {
+                                                                                    setOrgShieldCategories([...orgShieldCategories, cat.id]);
+                                                                                } else {
+                                                                                    setOrgShieldCategories(orgShieldCategories.filter(id => id !== cat.id));
+                                                                                }
+                                                                            }}
+                                                                            className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0"
+                                                                        />
+                                                                        <span>{cat.icon}</span>
+                                                                        <span>{cat.label}</span>
+                                                                    </label>
+                                                                ))}
+                                                            </div>
                                                         </div>
                                                     </div>
                                                 )}
 
                                                 {/* Azure PII Detection — only shown when Azure is configured */}
                                                 {hasAzureEndpoint && (
+                                                <>
                                                 <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
                                                     <div>
-                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">🔍 Azure PII Detection</span>
-                                                        <span className="text-xs text-muted">Use Azure AI Language to detect and block personally identifiable information</span>
+                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">🔍 {t('admin.shield_pii_title')}</span>
+                                                        <span className="text-xs text-muted">{t('admin.shield_pii_desc')}</span>
                                                     </div>
                                                     <label className="relative inline-flex items-center cursor-pointer">
                                                         <input type="checkbox" checked={orgAzurePiiEnabled} onChange={e => setOrgAzurePiiEnabled(e.target.checked)} className="sr-only peer" />
                                                         <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
                                                     </label>
                                                 </div>
+
+                                                {orgAzurePiiEnabled && (
+                                                    <div className="space-y-4 animate-fadeIn">
+                                                        {/* PII Confidence Threshold */}
+                                                        <div className="p-4 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
+                                                            <div className="flex items-center justify-between mb-2">
+                                                                <label className="text-xs font-medium text-muted">{t('admin.shield_pii_confidence')}</label>
+                                                                <span className="text-xs font-mono px-2 py-0.5 rounded" style={{ background: 'var(--bg-primary)', color: 'var(--accent-primary)' }}>{Math.round(orgPiiConfidenceThreshold * 100)}%</span>
+                                                            </div>
+                                                            <input
+                                                                type="range" min="0.1" max="1.0" step="0.05"
+                                                                value={orgPiiConfidenceThreshold}
+                                                                onChange={e => setOrgPiiConfidenceThreshold(parseFloat(e.target.value))}
+                                                                className="w-full accent-[var(--accent-primary)]"
+                                                            />
+                                                            <div className="flex justify-between text-xs text-muted mt-1">
+                                                                <span>{t('admin.shield_pii_detect_more')}</span>
+                                                                <span>{t('admin.shield_pii_detect_less')}</span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* PII Categories */}
+                                                        <div>
+                                                            <div className="flex items-center justify-between mb-3">
+                                                                <label className="text-xs font-medium text-muted">
+                                                                    {t('admin.shield_pii_categories')} ({orgPiiCategories.length}/{PII_CATEGORIES_LIST.length})
+                                                                </label>
+                                                                <div className="flex gap-2">
+                                                                    <button onClick={() => setOrgPiiCategories(PII_CATEGORIES_LIST.map(c => c.id))} className="text-xs px-2 py-1 rounded hover:bg-white/10 transition-colors font-medium" style={{ color: 'var(--accent-primary)' }}>{t('common.all')}</button>
+                                                                    <button onClick={() => setOrgPiiCategories([])} className="text-xs px-2 py-1 rounded hover:bg-white/10 transition-colors text-muted">{t('common.none')}</button>
+                                                                </div>
+                                                            </div>
+                                                            <div className="grid grid-cols-2 gap-2 p-4 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
+                                                                {PII_CATEGORIES_LIST.map(cat => (
+                                                                    <label key={cat.id} className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer p-2 rounded hover:bg-white/5 transition-colors">
+                                                                        <input
+                                                                            type="checkbox"
+                                                                            checked={orgPiiCategories.includes(cat.id)}
+                                                                            onChange={(e) => {
+                                                                                if (e.target.checked) {
+                                                                                    setOrgPiiCategories([...orgPiiCategories, cat.id]);
+                                                                                } else {
+                                                                                    setOrgPiiCategories(orgPiiCategories.filter(id => id !== cat.id));
+                                                                                }
+                                                                            }}
+                                                                            className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0"
+                                                                        />
+                                                                        <span>{cat.icon}</span>
+                                                                        <span>{cat.label}</span>
+                                                                    </label>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                                </>
                                                 )}
 
                                                 {/* EU-Only Models */}
+                                                {hasEuModelsConfigured && (
                                                 <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
                                                     <div>
-                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">🇪🇺 EU-Only Models</span>
-                                                        <span className="text-xs text-muted">Use EU-hosted models instead of regular tiers (configure in AI Config → Chat Models)</span>
+                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">🇪🇺 {t('admin.shield_eu_models')}</span>
+                                                        <span className="text-xs text-muted">{t('admin.shield_eu_desc')}</span>
                                                     </div>
                                                     <label className="relative inline-flex items-center cursor-pointer">
                                                         <input type="checkbox" checked={euModeEnabled} onChange={e => setEuModeEnabled(e.target.checked)} className="sr-only peer" />
                                                         <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
                                                     </label>
                                                 </div>
+                                                )}
 
-                                                {/* Web Search Guard */}
+                                                {/* Web Search Guard — only shown when web search is enabled */}
+                                                {hasWebSearchEnabled && (
                                                 <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
                                                     <div>
-                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">🔍 Web Search Guard</span>
-                                                        <span className="text-xs text-muted">Block sensitive queries from being sent to external web search</span>
+                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">🔍 {t('admin.shield_web_guard')}</span>
+                                                        <span className="text-xs text-muted">{t('admin.shield_web_guard_desc')}</span>
                                                     </div>
                                                     <label className="relative inline-flex items-center cursor-pointer">
                                                         <input type="checkbox" checked={orgWebSearchGuard} onChange={e => setOrgWebSearchGuard(e.target.checked)} className="sr-only peer" />
                                                         <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
                                                     </label>
                                                 </div>
+                                                )}
 
-                                                {/* Disable Web Search on File Upload */}
+                                                {/* Disable Web Search on File Upload — only shown when web search is enabled */}
+                                                {hasWebSearchEnabled && (
                                                 <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
                                                     <div>
-                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">📎 Disable Search on File Upload</span>
-                                                        <span className="text-xs text-muted">Prevent web searches when users upload files (protects sensitive document data)</span>
+                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">📎 {t('admin.shield_search_upload')}</span>
+                                                        <span className="text-xs text-muted">{t('admin.shield_search_upload_desc')}</span>
                                                     </div>
                                                     <label className="relative inline-flex items-center cursor-pointer">
                                                         <input type="checkbox" checked={orgDisableSearchOnUpload} onChange={e => setOrgDisableSearchOnUpload(e.target.checked)} className="sr-only peer" />
                                                         <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
                                                     </label>
                                                 </div>
+                                                )}
 
                                                 <div className="grid grid-cols-2 gap-6">
                                                     {/* Scope */}
                                                     <div>
-                                                        <label className="text-xs font-medium text-muted mb-3 block">Monitoring Scope</label>
+                                                        <label className="text-xs font-medium text-muted mb-3 block">{t('admin.shield_scope')}</label>
                                                         <div className="space-y-2">
                                                             {[
-                                                                { key: 'userInput', label: 'User Input' },
-                                                                { key: 'agentOutput', label: 'AI Output' },
+                                                                { key: 'userInput', label: t('admin.shield_scope_user') },
+                                                                { key: 'agentOutput', label: t('admin.shield_scope_ai') },
                                                             ].map(s => (
                                                                 <label key={s.key} className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer hover:text-primary transition-colors">
                                                                     <input
@@ -885,15 +988,15 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
 
                                                     {/* Action */}
                                                     <div>
-                                                        <label className="text-xs font-medium text-muted mb-3 block">Violation Action</label>
+                                                        <label className="text-xs font-medium text-muted mb-3 block">{t('admin.shield_action')}</label>
                                                         <div className="flex flex-col gap-3">
                                                             <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer hover:text-primary transition-colors">
                                                                 <input type="radio" name="orgAction" value="delete" checked={orgShieldAction === 'delete'} onChange={e => setOrgShieldAction(e.target.value)} className="w-4 h-4 border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0" />
-                                                                Delete message
+                                                                {t('admin.shield_action_delete')}
                                                             </label>
                                                             <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer hover:text-primary transition-colors">
                                                                 <input type="radio" name="orgAction" value="redact" checked={orgShieldAction === 'redact'} onChange={e => setOrgShieldAction(e.target.value)} className="w-4 h-4 border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0" />
-                                                                Redact information
+                                                                {t('admin.shield_action_redact')}
                                                             </label>
                                                         </div>
                                                     </div>
@@ -920,194 +1023,13 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                         <div className="p-4 rounded-lg flex gap-3" style={{ background: 'rgba(59, 130, 246, 0.08)', border: '1px solid rgba(59, 130, 246, 0.15)' }}>
                             <div className="shrink-0">🛡️</div>
                             <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                                <strong style={{ color: 'var(--text-primary)' }}>How it works:</strong> The privacy shield applies <strong>before</strong> agent-level guardrails.
-                                Agents can add extra rules on top, but cannot weaken the organisation shield. The strictest action (delete &gt; redact) always wins.
+                                <strong style={{ color: 'var(--text-primary)' }}>{t('admin.shield_how_it_works')}</strong> {t('admin.shield_how_it_works_desc')}
                             </p>
                         </div>
                     </div>
                 )}
 
-                {activeTab === 'pii' && (
-                    <div className="max-w-3xl mx-auto space-y-6 animate-fadeIn">
-                        <div>
-                            <h2 className="text-xl font-bold mb-1 text-primary">{t('admin.guard_pii_title')}</h2>
-                            <p className="text-sm text-muted">{t('admin.guard_pii_desc')}</p>
-                        </div>
 
-                        <div className="p-6 rounded-xl border space-y-6" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
-                            {/* Master enable */}
-                            <div className="flex items-center justify-between p-4 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
-                                <div>
-                                    <span className="text-sm font-semibold text-[var(--text-primary)] block">Enable PII Detection</span>
-                                    <span className="text-xs text-muted">Scan messages for personal data before sending to the AI</span>
-                                </div>
-                                <label className="relative inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" checked={piiEnabled} onChange={e => setPiiEnabled(e.target.checked)} className="sr-only peer" />
-                                    <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                                </label>
-                            </div>
-
-                            {piiEnabled && (
-                                <div className="space-y-6 animate-fadeIn">
-
-                                    {/* Action selector */}
-                                    <div>
-                                        <label className="text-xs font-semibold text-muted mb-3 block uppercase tracking-wide">When PII Is Detected</label>
-                                        <div className="grid grid-cols-2 gap-3">
-                                            {[
-                                                {
-                                                    key: 'block',
-                                                    icon: '🚫',
-                                                    label: 'Block Message',
-                                                    desc: 'Reject the message and ask user to remove PII before sending',
-                                                },
-                                                {
-                                                    key: 'tokenize',
-                                                    icon: '🔒',
-                                                    label: 'Tokenize & Redact',
-                                                    desc: 'Replace PII with safe tokens, let AI respond, then restore real values for user',
-                                                },
-                                            ].map(opt => (
-                                                <button
-                                                    key={opt.key}
-                                                    onClick={() => setPiiAction(opt.key)}
-                                                    className={`flex flex-col items-start gap-2 p-4 rounded-xl border text-left transition-all ${
-                                                        piiAction === opt.key
-                                                            ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/10 shadow-sm'
-                                                            : 'border-transparent bg-white/5 hover:border-white/10'
-                                                    }`}
-                                                >
-                                                    <div className="flex items-center gap-2">
-                                                        <span className="text-lg">{opt.icon}</span>
-                                                        <span className="text-sm font-semibold text-[var(--text-primary)]">{opt.label}</span>
-                                                        {piiAction === opt.key && <span className="ml-auto text-[var(--accent-primary)] text-xs font-bold">✓ Active</span>}
-                                                    </div>
-                                                    <p className="text-xs text-muted leading-relaxed">{opt.desc}</p>
-                                                </button>
-                                            ))}
-                                        </div>
-                                        {piiAction === 'tokenize' && (
-                                            <div className="mt-3 p-3 rounded-lg text-xs" style={{ background: 'var(--accent-primary)10', borderLeft: '3px solid var(--accent-primary)', paddingLeft: '12px' }}>
-                                                <span className="font-semibold" style={{ color: 'var(--accent-primary)' }}>How it works: </span>
-                                                <span className="text-muted">"My IBAN is NL38ABNA…" → sent as "My IBAN is [PII:iban:1]" → AI responds with [PII:iban:1] → you see the original IBAN</span>
-                                            </div>
-                                        )}
-                                    </div>
-
-                                    {/* Scanning scope */}
-                                    <div>
-                                        <label className="text-xs font-semibold text-muted mb-3 block uppercase tracking-wide">Scanning Scope</label>
-                                        <div className="flex gap-3">
-                                            {[
-                                                { key: 'input', label: 'User Input', desc: piiAction === 'tokenize' ? 'Tokenize PII in messages' : 'Block messages containing PII', val: piiScanInput, set: setPiiScanInput },
-                                                { key: 'output', label: 'AI Output', desc: 'Block AI responses containing PII', val: piiScanOutput, set: setPiiScanOutput },
-                                            ].map(s => (
-                                                <label key={s.key} className={`flex-1 flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${s.val ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)]/30' : 'bg-white/5 border-transparent hover:border-white/10'}`}>
-                                                    <input type="checkbox" checked={s.val} onChange={e => s.set(e.target.checked)} className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0" />
-                                                    <div>
-                                                        <div className="text-sm font-medium text-[var(--text-primary)]">{s.label}</div>
-                                                        <div className="text-xs text-muted">{s.desc}</div>
-                                                    </div>
-                                                </label>
-                                            ))}
-                                        </div>
-                                    </div>
-
-                                    {/* Confidence threshold */}
-                                    <div>
-                                        <div className="flex items-center justify-between mb-2">
-                                            <label className="text-xs font-semibold text-muted uppercase tracking-wide">Confidence Threshold</label>
-                                            <span className="text-sm font-bold" style={{ color: 'var(--accent-primary)' }}>{piiThreshold.toFixed(2)}</span>
-                                        </div>
-                                        <input
-                                            type="range" min="0.1" max="1.0" step="0.05"
-                                            value={piiThreshold}
-                                            onChange={e => setPiiThreshold(parseFloat(e.target.value))}
-                                            className="w-full h-2 rounded-full appearance-none cursor-pointer"
-                                            style={{ accentColor: 'var(--accent-primary)' }}
-                                        />
-                                        <div className="flex justify-between text-xs text-muted mt-1">
-                                            <span>Detect more (0.1)</span>
-                                            <span>Detect less (1.0)</span>
-                                        </div>
-                                    </div>
-
-                                    {/* Category toggles — grouped */}
-                                    <div>
-                                        <div className="flex items-center justify-between mb-3">
-                                            <label className="text-xs font-semibold text-muted uppercase tracking-wide">Detected Categories</label>
-                                            <div className="flex gap-2">
-                                                <button onClick={() => setPiiCategories(PII_CATEGORIES_LIST.map(c => c.id))} className="text-xs px-2 py-1 rounded hover:bg-white/10 transition-colors font-medium" style={{ color: 'var(--accent-primary)' }}>All</button>
-                                                <button onClick={() => setPiiCategories([])} className="text-xs px-2 py-1 rounded hover:bg-white/10 transition-colors text-muted">None</button>
-                                            </div>
-                                        </div>
-                                        {/* Grouped by category */}
-                                        {['Personal', 'Contact', 'Financial', 'Identity', 'Digital', 'EU'].map(group => {
-                                            const groupCats = PII_CATEGORIES_LIST.filter(c => c.group === group);
-                                            if (!groupCats.length) return null;
-                                            const allSelected = groupCats.every(c => piiCategories.includes(c.id));
-                                            return (
-                                                <div key={group} className="mb-4">
-                                                    <div className="flex items-center justify-between mb-2">
-                                                        <span className="text-xs font-medium text-muted">{group}</span>
-                                                        <button
-                                                            onClick={() => {
-                                                                const gIds = groupCats.map(c => c.id);
-                                                                if (allSelected) setPiiCategories(piiCategories.filter(id => !gIds.includes(id)));
-                                                                else setPiiCategories([...new Set([...piiCategories, ...gIds])]);
-                                                            }}
-                                                            className="text-xs text-muted hover:text-[var(--accent-primary)] transition-colors"
-                                                        >
-                                                            {allSelected ? 'Deselect all' : 'Select all'}
-                                                        </button>
-                                                    </div>
-                                                    <div className="grid grid-cols-2 gap-2">
-                                                        {groupCats.map(cat => (
-                                                            <label key={cat.id} className={`flex items-center gap-3 p-2.5 rounded-lg border cursor-pointer transition-all ${piiCategories.includes(cat.id) ? 'bg-[var(--accent-primary)]/10 border-[var(--accent-primary)]/30' : 'bg-white/5 border-transparent hover:border-white/10'}`}>
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={piiCategories.includes(cat.id)}
-                                                                    onChange={e => {
-                                                                        if (e.target.checked) setPiiCategories([...piiCategories, cat.id]);
-                                                                        else setPiiCategories(piiCategories.filter(id => id !== cat.id));
-                                                                    }}
-                                                                    className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0"
-                                                                />
-                                                                <span className="text-sm">{cat.icon}</span>
-                                                                <div>
-                                                                    <div className="text-sm font-medium text-[var(--text-primary)]">{cat.label}</div>
-                                                                </div>
-                                                            </label>
-                                                        ))}
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            )}
-
-                            <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/5">
-                                {piiMessage && <span className={`text-sm ${piiMessage.type === 'success' ? 'text-green-500' : 'text-red-500'}`}>{piiMessage.text}</span>}
-                                <button
-                                    onClick={handleSavePii}
-                                    disabled={piiSaving}
-                                    className="px-6 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50 shadow-lg transition-all hover:opacity-90"
-                                    style={{ background: 'var(--accent-primary)', color: 'white' }}
-                                >
-                                    {piiSaving ? t('admin.guard_saving') : t('admin.guard_save_all')}
-                                </button>
-                            </div>
-                        </div>
-
-                        <div className="p-4 rounded-lg flex gap-3" style={{ background: 'rgba(139, 92, 246, 0.08)', border: '1px solid rgba(139, 92, 246, 0.15)' }}>
-                            <div className="shrink-0">🔍</div>
-                            <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                                <strong style={{ color: 'var(--text-primary)' }}>How it works:</strong> When Azure AI Text Analytics is configured, it uses Microsoft's cloud API. Without Azure credentials, detection falls back automatically to a self-hosted CPU model (<code className="text-xs px-1 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)' }}>betterdataai/PII_DETECTION_MODEL</code>) running in the guard service.
-                            </p>
-                        </div>
-                    </div>
-                )}
             </div>
         </div>
     );

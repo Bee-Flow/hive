@@ -1,20 +1,10 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { getAgentInitials, getAgentColor } from '../utils/helpers';
-import { ChevronDown, ChevronUp, X, Search, Heart, EyeOff, Pencil, Plus } from 'lucide-react';
+import { ChevronDown, ChevronUp, X, Search, Heart, EyeOff, Pencil } from 'lucide-react';
 
 const STATIC_CATEGORIES_BEFORE = [
     { key: 'popular', label: 'Popular' },
     { key: 'lastused', label: 'Last Used' },
-    { key: 'agent', label: 'Agent' },
-];
-
-const SPECIAL_TYPE_CATEGORIES = [
-    { key: 'research', label: 'Research' },
-    { key: 'swarm', label: 'Swarm' },
-    { key: 'browser', label: 'Browsing' },
-    { key: 'terminal', label: 'Dev & Coding' },
-    { key: 'security', label: 'Security' },
-    { key: 'roundtable', label: 'Round Table' },
 ];
 
 const STATIC_CATEGORIES_AFTER = [
@@ -36,24 +26,18 @@ const SORT_OPTIONS = [
     { key: 'az', label: 'Alphabetical' },
 ];
 
-const STATIC_TYPE_MAP = {
-    research: 'Research',
-    swarm: 'Swarm',
-    browser: 'Browser',
-    terminal: 'Terminal',
-    security: 'Security',
-    roundtable: 'Round Table',
-    agent: 'Agent',
-};
+const STATIC_TYPE_MAP = {};
 
 const getAgentType = (a) => {
-    if (a._type) return a._type;
-    if (a.is_swarm) return 'swarm';
-    if (a.is_browser_agent) return 'browser';
-    if (a.is_terminal_agent) return 'terminal';
-    if (a.is_security_agent) return 'security';
     if (a.category_id) return `cat_${a.category_id}`;
     return 'agent';
+};
+
+// Filter to only normal org-created agents (no special types)
+const isNormalAgent = (a) => {
+    if (a.is_swarm || a.is_browser_agent || a.is_terminal_agent || a.is_security_agent) return false;
+    if (a._type === 'roundtable' || a._type === 'research') return false;
+    return true;
 };
 
 /* ── Agent Card ── */
@@ -137,10 +121,10 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
         try { return JSON.parse(localStorage.getItem('agent_marketplace_recents') || '[]'); } catch (_) { return []; }
     });
 
-    // Build category list dynamically: static before + dynamic org categories + special types + static after
+    // Build category list dynamically: static before + dynamic org categories + static after
     const CATEGORIES = useMemo(() => {
         const dynamicCats = categories.map(c => ({ key: `cat_${c.id}`, label: `${c.icon || ''} ${c.name}`.trim() }));
-        return [...STATIC_CATEGORIES_BEFORE, ...dynamicCats, ...SPECIAL_TYPE_CATEGORIES, ...STATIC_CATEGORIES_AFTER];
+        return [...STATIC_CATEGORIES_BEFORE, ...dynamicCats, ...STATIC_CATEGORIES_AFTER];
     }, [categories]);
 
     // Build a type map that includes dynamic categories
@@ -175,7 +159,7 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
     }, []);
 
     const filtered = useMemo(() => {
-        let list = agents;
+        let list = agents.filter(isNormalAgent);
         if (search.trim()) {
             const q = search.toLowerCase();
             list = list.filter(a => a.name.toLowerCase().includes(q) || (a.description || '').toLowerCase().includes(q));
@@ -248,27 +232,16 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
                     </div>
                     <div className="flex items-center gap-2">
                         {canManageAgents && onEditAgent && (
-                            <>
                                 <button
                                     onClick={() => onEditAgent()}
                                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all hover:bg-[var(--bg-tertiary)]"
                                     style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}
-                                    data-testid="marketplace-edit-agents"
+                                    data-testid="marketplace-agent-editor"
                                 >
                                     <Pencil className="w-3.5 h-3.5" />
-                                    Edit Agents
+                                    Agent Editor
                                 </button>
-                                <button
-                                    onClick={() => onEditAgent()}
-                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:brightness-110"
-                                    style={{ background: 'var(--accent-primary)' }}
-                                    data-testid="marketplace-create-agent"
-                                >
-                                    <Plus className="w-3.5 h-3.5" />
-                                    Create Agent
-                                </button>
-                            </>
-                        )}
+                            )}
                         <button onClick={onClose} className="p-2 rounded-lg transition-colors" style={{ color: 'var(--text-muted)' }}>
                             <X className="w-5 h-5" />
                         </button>

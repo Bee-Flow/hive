@@ -1,5 +1,8 @@
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import AvatarPicker from './AvatarPicker';
 import { useTranslation } from '../../hooks/useTranslation';
+import { Globe, Check, ChevronDown } from 'lucide-react';
+import { API_BASE, authFetch } from '../../utils/helpers';
 
 // ── macOS-style radio row ─────────────────────────────────────────────────────
 const RadioRow = ({ value, currentValue, onChange, label, description, last = false }) => {
@@ -34,12 +37,114 @@ const RadioRow = ({ value, currentValue, onChange, label, description, last = fa
     );
 };
 
-const StartupAgentSection = ({ defaultAgentMode, setDefaultAgentMode, defaultAgentId, setDefaultAgentId, agents }) => {
+// ── Language Settings ─────────────────────────────────────────────────────────
+const LanguageSettingsSection = () => {
+    const { locale, setLocale, t } = useTranslation();
+    const [locales, setLocales] = useState([]);
+    const [open, setOpen] = useState(false);
+    const ref = useRef(null);
+
+    useEffect(() => {
+        authFetch(`${API_BASE}/api/languages/user/locales`)
+            .then(r => r.json())
+            .then(data => { if (Array.isArray(data)) setLocales(data); })
+            .catch(() => {});
+    }, []);
+
+    // Close on outside click
+    useEffect(() => {
+        if (!open) return;
+        const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
+    }, [open]);
+
+    if (locales.length <= 1) return null;
+
+    const currentLocale = locales.find(l => l.code === locale) || { code: locale, name: locale };
+
+    return (
+        <div className="space-y-1.5 mt-6">
+            <p className="text-[11px] font-semibold uppercase tracking-widest px-1 mb-2" style={{ color: 'var(--text-muted)' }}>Language</p>
+            <div className="rounded-xl" style={{ border: '1px solid var(--border-subtle)' }}>
+                <div className="px-5 py-3.5" style={{ background: 'var(--bg-secondary)', borderRadius: '0.75rem' }}>
+                    <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(59,130,246,0.1)' }}>
+                            <Globe className="w-4 h-4" style={{ color: '#3b82f6' }} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                            <p className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>Interface Language</p>
+                            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Choose the language for the BeeFlow interface</p>
+                        </div>
+                        <div className="relative" ref={ref}>
+                            <button
+                                onClick={() => setOpen(v => !v)}
+                                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-[13px] transition-colors"
+                                style={{ background: 'var(--bg-primary)', borderColor: open ? 'var(--accent-primary)' : 'var(--border-default)', color: 'var(--text-primary)' }}
+                            >
+                                <span>{currentLocale.name}</span>
+                                <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} />
+                            </button>
+                            {open && (
+                                <div
+                                    className="absolute right-0 top-full mt-1 min-w-44 rounded-lg border shadow-xl py-1 z-50"
+                                    style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}
+                                >
+                                    {locales.map(l => (
+                                        <button
+                                            key={l.code}
+                                            onClick={() => { setLocale(l.code); setOpen(false); }}
+                                            className="w-full px-3 py-2 text-left text-[13px] flex items-center justify-between transition-colors"
+                                            style={{ color: locale === l.code ? 'var(--accent-primary)' : 'var(--text-primary)' }}
+                                            onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}
+                                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                        >
+                                            <span>{l.name}</span>
+                                            {locale === l.code && <Check className="w-4 h-4" />}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+const StartupAgentSection = ({ defaultAgentMode, setDefaultAgentMode, defaultAgentId, setDefaultAgentId, agents, onLogout, user }) => {
     const { t } = useTranslation();
     const showAgentSelect = defaultAgentMode === 'specific';
+    const [localUser, setLocalUser] = useState(user);
+    useEffect(() => { if (user) setLocalUser(user); }, [user]);
+
+    const handleAvatarSaved = (avatar, avatarType) => {
+        setLocalUser(prev => ({ ...prev, avatar, avatarType }));
+    };
 
     return (
         <div className="space-y-6">
+            {/* ── Profile card ── */}
+            {localUser && (
+                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
+                    <div className="flex items-center gap-5 px-5 py-5" style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-subtle)' }}>
+                        <AvatarPicker user={localUser} onSaved={handleAvatarSaved} />
+                        <div className="flex-1 min-w-0">
+                            <p className="text-[17px] font-semibold truncate text-black">
+                                {localUser.displayName || localUser.username || 'User'}
+                            </p>
+                            {localUser.email && (
+                                <p className="text-[13px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{localUser.email}</p>
+                            )}
+                            <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                                Click avatar to change photo or emoji
+                            </p>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <div className="space-y-1.5">
                 <p className="text-[11px] font-semibold uppercase tracking-widest px-1 mb-2" style={{ color: 'var(--text-muted)' }}>
                     Startup
@@ -102,6 +207,30 @@ const StartupAgentSection = ({ defaultAgentMode, setDefaultAgentMode, defaultAge
                     )}
                 </div>
             </div>
+
+            {/* Language Settings */}
+            <LanguageSettingsSection />
+
+            {/* Session Settings */}
+            {onLogout && (
+                <div className="space-y-1.5 mt-6">
+                    <p className="text-[11px] font-semibold uppercase tracking-widest px-1 mb-2" style={{ color: 'var(--text-muted)' }}>Session</p>
+                    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
+                        <button
+                            onClick={onLogout}
+                            className="w-full flex items-center px-5 py-3.5 text-left transition-colors gap-3"
+                            style={{ background: 'var(--bg-secondary)' }}
+                            onMouseEnter={e => e.currentTarget.style.background = 'rgba(220,38,38,0.05)'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'var(--bg-secondary)'}
+                        >
+                            <svg width="15" height="15" fill="none" stroke="#dc2626" viewBox="0 0 24 24" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
+                            </svg>
+                            <span className="text-[13px] font-medium" style={{ color: '#dc2626' }}>Sign out</span>
+                        </button>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };

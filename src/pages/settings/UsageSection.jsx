@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { API_BASE, authFetch } from '../../utils/helpers';
+import { useTranslation } from '../../hooks/useTranslation';
 import { Bot, MessageSquare, BookOpen, Search, Code, LayoutTemplate, Filter, X, Cpu, Users, ChevronDown, Activity, ArrowUpRight, ArrowDownLeft, BarChart3, Zap, DollarSign, TrendingUp, ChevronRight } from 'lucide-react';
 
 // ── Formatters ──────────────────────────────────────────────────────────────
@@ -40,23 +41,23 @@ const getColor = (i) => PALETTE[i % PALETTE.length];
 const Card = ({ children, style }) => (
     <div style={{
         background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)',
-        borderRadius: 14, overflow: 'hidden', ...style,
+        borderRadius: 12, overflow: 'hidden', ...style,
     }}>{children}</div>
 );
 
 const StatCard = ({ icon: Icon, label, value, sub, color }) => (
-    <Card style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
+    <Card style={{ padding: '14px 16px', display: 'flex', flexDirection: 'column', gap: 1 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginBottom: 4 }}>
             <div style={{
-                width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                width: 24, height: 24, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center',
                 background: `${color}15`,
             }}>
-                <Icon style={{ width: 15, height: 15, color }} />
+                <Icon style={{ width: 13, height: 13, color }} />
             </div>
-            <span style={{ fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>{label}</span>
+            <span style={{ fontSize: 10, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>{label}</span>
         </div>
-        <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>{value}</div>
-        {sub && <div style={{ marginTop: 4 }}>{sub}</div>}
+        <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>{value}</div>
+        {sub && <div style={{ marginTop: 2 }}>{sub}</div>}
     </Card>
 );
 
@@ -87,22 +88,22 @@ const InOutLabel = ({ input, output, inputCost, outputCost, showCost }) => (
     </div>
 );
 
-const Legend = () => (
+const Legend = ({ inputLabel, outputLabel }) => (
     <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
         <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--text-muted)', fontWeight: 500 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 2, background: '#3b82f6', display: 'inline-block' }} /> Input
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: '#3b82f6', display: 'inline-block' }} /> {inputLabel}
         </span>
         <span style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 10, color: 'var(--text-muted)', fontWeight: 500 }}>
-            <span style={{ width: 8, height: 8, borderRadius: 2, background: '#f59e0b', display: 'inline-block' }} /> Output
+            <span style={{ width: 8, height: 8, borderRadius: 2, background: '#f59e0b', display: 'inline-block' }} /> {outputLabel}
         </span>
     </div>
 );
 
 const SectionTitle = ({ children, icon: Icon, right }) => (
-    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-            {Icon && <Icon style={{ width: 15, height: 15, color: 'var(--accent-primary)', opacity: 0.7 }} />}
-            <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{children}</span>
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            {Icon && <Icon style={{ width: 14, height: 14, color: 'var(--accent-primary)', opacity: 0.7 }} />}
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{children}</span>
         </div>
         {right}
     </div>
@@ -113,7 +114,7 @@ const ListRow = ({ children, onClick, style: s }) => (
         onClick={onClick}
         style={{
             display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            padding: '11px 16px', background: 'var(--bg-primary)',
+            padding: '9px 14px', background: 'var(--bg-primary)',
             borderBottom: '1px solid var(--border-subtle)',
             cursor: onClick ? 'pointer' : 'default',
             transition: 'background 0.12s',
@@ -128,17 +129,17 @@ const ListRow = ({ children, onClick, style: s }) => (
 
 const Avatar = ({ name, color }) => (
     <div style={{
-        width: 30, height: 30, borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        flexShrink: 0, fontSize: 12, fontWeight: 700, color: '#fff',
+        width: 26, height: 26, borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        flexShrink: 0, fontSize: 11, fontWeight: 700, color: '#fff',
         background: `linear-gradient(135deg, ${color || 'var(--accent-primary)'}, ${color || 'var(--accent-primary)'}99)`,
     }}>
         {(name || '?')[0].toUpperCase()}
     </div>
 );
 
-const IconBadge = ({ icon: Icon, color, size = 30 }) => (
+const IconBadge = ({ icon: Icon, color, size = 26 }) => (
     <div style={{
-        width: size, height: size, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+        width: size, height: size, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center',
         flexShrink: 0, background: `${color}12`,
     }}>
         <Icon style={{ width: size * 0.5, height: size * 0.5, color }} />
@@ -146,10 +147,10 @@ const IconBadge = ({ icon: Icon, color, size = 30 }) => (
 );
 
 /* Sparkline */
-const TrendChart = ({ timeline }) => {
+const TrendChart = ({ timeline, title, avgLabel, noDataLabel }) => {
     if (!timeline?.length) return (
-        <div style={{ height: 60, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: 'var(--text-muted)', background: 'var(--bg-secondary)', borderRadius: 10 }}>
-            No usage data for this period
+        <div style={{ height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: 'var(--text-muted)', background: 'var(--bg-secondary)', borderRadius: 10 }}>
+            {noDataLabel}
         </div>
     );
     const maxTokens = Math.max(...timeline.map(t => t.total_tokens || 0), 10);
@@ -162,15 +163,15 @@ const TrendChart = ({ timeline }) => {
     const avgDay = (timeline.reduce((s, t) => s + (t.total_tokens || 0), 0) / timeline.length);
 
     return (
-        <Card style={{ padding: '16px 20px' }}>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
+        <Card style={{ padding: '12px 16px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <TrendingUp style={{ width: 14, height: 14, color: 'var(--accent-primary)', opacity: 0.7 }} />
-                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Token Consumption Trend</span>
+                    <TrendingUp style={{ width: 13, height: 13, color: 'var(--accent-primary)', opacity: 0.7 }} />
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</span>
                 </div>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>Avg {fNum(avgDay)} / day</span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>{avgLabel.replace('{value}', fNum(avgDay))}</span>
             </div>
-            <div style={{ height: 72, width: '100%', position: 'relative' }}>
+            <div style={{ height: 56, width: '100%', position: 'relative' }}>
                 <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
                     <defs>
                         <linearGradient id="trendFill" x1="0" y1="0" x2="0" y2="1">
@@ -220,6 +221,7 @@ const FilterPill = ({ label, icon: Icon, value, onChange, options, placeholder }
 /*  MAIN COMPONENT                                                           */
 /* ═══════════════════════════════════════════════════════════════════════════ */
 const UsageSection = () => {
+    const { t } = useTranslation();
     const [days, setDays] = useState(30);
     const [loading, setLoading] = useState(true);
     const [expandedAgent, setExpandedAgent] = useState(null);
@@ -295,19 +297,31 @@ const UsageSection = () => {
     const maxUserTokens = Math.max(...data.users.map(u => u.total_tokens || 0), 1);
     const maxModelTokens = Math.max(...data.models.map(m => m.total_tokens || 0), 1);
 
+    // Table header keys
+    const tableHeaders = [
+        { key: 'usage.user', align: 'left' },
+        { key: 'usage.model', align: 'left' },
+        { key: 'usage.in_tokens', align: 'right', color: '#3b82f6' },
+        { key: 'usage.out_tokens', align: 'right', color: '#f59e0b' },
+        { key: 'usage.total', align: 'right' },
+        { key: 'usage.in_cost', align: 'right', color: '#3b82f6' },
+        { key: 'usage.out_cost', align: 'right', color: '#f59e0b' },
+        { key: 'usage.total_cost', align: 'right' },
+    ];
+
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 20, paddingBottom: 24 }}>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingBottom: 24 }}>
 
             {/* ── Header ── */}
-            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                 <div>
-                    <h2 style={{ fontSize: 20, fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em' }}>Usage & Monitoring</h2>
-                    <p style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4, fontWeight: 400 }}>Track AI consumption across your organisation</p>
+                    <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em' }}>{t('usage.title')}</h2>
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, fontWeight: 400 }}>{t('usage.subtitle')}</p>
                 </div>
-                <div style={{ display: 'flex', padding: 3, borderRadius: 10, background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}>
+                <div style={{ display: 'flex', padding: 2, borderRadius: 8, background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}>
                     {[7, 30, 90].map(d => (
                         <button key={d} onClick={() => setDays(d)} style={{
-                            padding: '6px 14px', fontSize: 12, fontWeight: 600, borderRadius: 7, border: 'none', cursor: 'pointer',
+                            padding: '5px 12px', fontSize: 11, fontWeight: 600, borderRadius: 6, border: 'none', cursor: 'pointer',
                             background: d === days ? 'var(--bg-primary)' : 'transparent',
                             color: d === days ? 'var(--text-primary)' : 'var(--text-muted)',
                             boxShadow: d === days ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
@@ -319,82 +333,87 @@ const UsageSection = () => {
 
             {/* ── Filter Bar ── */}
             <div style={{
-                display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
-                padding: '8px 12px', borderRadius: 12,
+                display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+                padding: '6px 10px', borderRadius: 10,
                 background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)',
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 5, marginRight: 4 }}>
-                    <Filter style={{ width: 13, height: 13, color: 'var(--text-muted)' }} />
-                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Filters</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginRight: 2 }}>
+                    <Filter style={{ width: 12, height: 12, color: 'var(--text-muted)' }} />
+                    <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{t('usage.filters')}</span>
                 </div>
-                <FilterPill icon={Users} value={filterUser} onChange={setFilterUser} options={userOptions} placeholder="All Users" />
-                <FilterPill icon={Bot} value={filterAgent} onChange={setFilterAgent} options={agentOptions} placeholder="All Agents" />
-                <FilterPill icon={Cpu} value={filterModel} onChange={setFilterModel} options={modelOptions} placeholder="All Models" />
-                <FilterPill icon={Activity} value={filterSource} onChange={setFilterSource} options={sourceOptions} placeholder="All Sources" />
+                <FilterPill icon={Users} value={filterUser} onChange={setFilterUser} options={userOptions} placeholder={t('usage.all_users')} />
+                <FilterPill icon={Bot} value={filterAgent} onChange={setFilterAgent} options={agentOptions} placeholder={t('usage.all_agents')} />
+                <FilterPill icon={Cpu} value={filterModel} onChange={setFilterModel} options={modelOptions} placeholder={t('usage.all_models')} />
+                <FilterPill icon={Activity} value={filterSource} onChange={setFilterSource} options={sourceOptions} placeholder={t('usage.all_sources')} />
                 {hasFilters && (
                     <button onClick={clearFilters} style={{
-                        display: 'flex', alignItems: 'center', gap: 4, padding: '5px 10px',
-                        borderRadius: 8, border: 'none', background: 'var(--bg-tertiary)',
-                        fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer',
-                    }}><X style={{ width: 11, height: 11 }} /> Clear</button>
+                        display: 'flex', alignItems: 'center', gap: 4, padding: '4px 8px',
+                        borderRadius: 6, border: 'none', background: 'var(--bg-tertiary)',
+                        fontSize: 10, fontWeight: 600, color: 'var(--text-muted)', cursor: 'pointer',
+                    }}><X style={{ width: 10, height: 10 }} /> {t('usage.clear')}</button>
                 )}
             </div>
 
             {loading ? (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-                        {[1, 2, 3, 4].map(i => <div key={i} style={{ height: 100, borderRadius: 14, background: 'var(--bg-tertiary)', animation: 'pulse 1.5s ease-in-out infinite' }} />)}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+                        {[1, 2, 3, 4].map(i => <div key={i} style={{ height: 80, borderRadius: 12, background: 'var(--bg-tertiary)', animation: 'pulse 1.5s ease-in-out infinite' }} />)}
                     </div>
-                    <div style={{ height: 120, borderRadius: 14, background: 'var(--bg-tertiary)', animation: 'pulse 1.5s ease-in-out infinite' }} />
+                    <div style={{ height: 90, borderRadius: 12, background: 'var(--bg-tertiary)', animation: 'pulse 1.5s ease-in-out infinite' }} />
                 </div>
             ) : (
                 <>
                     {/* ── Summary Cards ── */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-                        <StatCard icon={Zap} label="AI Calls" color="#6366f1"
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
+                        <StatCard icon={Zap} label={t('usage.ai_calls')} color="#6366f1"
                             value={data.summary?.total_calls?.toLocaleString() || '0'} />
-                        <StatCard icon={BarChart3} label="Total Tokens" color="#3b82f6"
+                        <StatCard icon={BarChart3} label={t('usage.total_tokens')} color="#3b82f6"
                             value={fNum(data.summary?.total_tokens)}
                             sub={<InOutLabel input={data.summary?.total_prompt_tokens} output={data.summary?.total_completion_tokens}
                                 showCost inputCost={data.summary?.total_input_cost} outputCost={data.summary?.total_output_cost} />} />
-                        <StatCard icon={DollarSign} label="Est. Cost" color="#10b981"
+                        <StatCard icon={DollarSign} label={t('usage.est_cost')} color="#10b981"
                             value={fCur(data.summary?.total_estimated_cost)}
                             sub={
-                                <div style={{ display: 'flex', gap: 12, fontSize: 11 }}>
+                                <div style={{ display: 'flex', gap: 10, fontSize: 10 }}>
                                     <span style={{ color: '#3b82f6', fontWeight: 600 }}>In: {fCur(data.summary?.total_input_cost)}</span>
                                     <span style={{ color: '#f59e0b', fontWeight: 600 }}>Out: {fCur(data.summary?.total_output_cost)}</span>
                                 </div>
                             } />
-                        <StatCard icon={Users} label="Active Users" color="#f59e0b"
+                        <StatCard icon={Users} label={t('usage.active_users')} color="#f59e0b"
                             value={data.summary?.unique_users || data.users.length || 0} />
                     </div>
 
                     {/* ── Trend ── */}
-                    <TrendChart timeline={data.timeline} />
+                    <TrendChart
+                        timeline={data.timeline}
+                        title={t('usage.token_trend')}
+                        avgLabel={t('usage.avg_per_day')}
+                        noDataLabel={t('usage.no_data')}
+                    />
 
                     {/* ── Two Column: Users + Models ── */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
 
                         {/* Top Users */}
                         <div>
-                            <SectionTitle icon={Users} right={<Legend />}>Top Users</SectionTitle>
+                            <SectionTitle icon={Users} right={<Legend inputLabel={t('usage.input')} outputLabel={t('usage.output')} />}>{t('usage.top_users')}</SectionTitle>
                             <Card>
                                 {data.users.length === 0 ? (
-                                    <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>No active users</div>
+                                    <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>{t('usage.no_active_users')}</div>
                                 ) : data.users.slice(0, 8).map((u, i) => (
                                     <ListRow key={i} onClick={() => setFilterUser(u.user_id)}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
                                             <Avatar name={u.display_name} color={getColor(i)} />
                                             <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
-                                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                     {u.display_name}
                                                 </span>
-                                                <InOutBar input={u.prompt_tokens} output={u.completion_tokens} height={4} style={{ marginTop: 6, maxWidth: 120 }} />
+                                                <InOutBar input={u.prompt_tokens} output={u.completion_tokens} height={3} style={{ marginTop: 4, maxWidth: 100 }} />
                                             </div>
                                         </div>
-                                        <div style={{ textAlign: 'right', flexShrink: 0, paddingLeft: 12 }}>
-                                            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{fNum(u.total_tokens)}</div>
-                                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{fCur(u.estimated_cost)}</div>
+                                        <div style={{ textAlign: 'right', flexShrink: 0, paddingLeft: 10 }}>
+                                            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{fNum(u.total_tokens)}</div>
+                                            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>{fCur(u.estimated_cost)}</div>
                                         </div>
                                     </ListRow>
                                 ))}
@@ -403,26 +422,26 @@ const UsageSection = () => {
 
                         {/* By Model */}
                         <div>
-                            <SectionTitle icon={Cpu} right={<Legend />}>By Model</SectionTitle>
+                            <SectionTitle icon={Cpu} right={<Legend inputLabel={t('usage.input')} outputLabel={t('usage.output')} />}>{t('usage.by_model')}</SectionTitle>
                             <Card>
                                 {data.models.length === 0 ? (
-                                    <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>No model data</div>
+                                    <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>{t('usage.no_model_data')}</div>
                                 ) : data.models.slice(0, 8).map((m, i) => (
                                     <ListRow key={i} onClick={() => setFilterModel(m.model)}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 10, minWidth: 0, flex: 1 }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
                                             <IconBadge icon={Cpu} color={getColor(i)} />
                                             <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
-                                                <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
                                                     title={m.model}>
                                                     {shortModel(m.model)}
                                                 </span>
-                                                <InOutBar input={m.prompt_tokens} output={m.completion_tokens} height={4} style={{ marginTop: 6, maxWidth: 120 }} />
+                                                <InOutBar input={m.prompt_tokens} output={m.completion_tokens} height={3} style={{ marginTop: 4, maxWidth: 100 }} />
                                             </div>
                                         </div>
-                                        <div style={{ textAlign: 'right', flexShrink: 0, paddingLeft: 12 }}>
-                                            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{fNum(m.total_tokens)}</div>
-                                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{fCur(m.estimated_cost)} · {m.calls} calls</div>
-                                            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end', marginTop: 2, fontSize: 10 }}>
+                                        <div style={{ textAlign: 'right', flexShrink: 0, paddingLeft: 10 }}>
+                                            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{fNum(m.total_tokens)}</div>
+                                            <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>{fCur(m.estimated_cost)} · {m.calls} {t('usage.calls')}</div>
+                                            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', marginTop: 1, fontSize: 9 }}>
                                                 <span style={{ color: '#3b82f6', fontWeight: 500 }}>In: {fCur(m.input_cost)}</span>
                                                 <span style={{ color: '#f59e0b', fontWeight: 500 }}>Out: {fCur(m.output_cost)}</span>
                                             </div>
@@ -434,29 +453,29 @@ const UsageSection = () => {
                     </div>
 
                     {/* ── Two Column: Sources + Model × Agent ── */}
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
 
                         {/* By Source */}
                         <div>
-                            <SectionTitle icon={Activity}>By App Area</SectionTitle>
+                            <SectionTitle icon={Activity}>{t('usage.by_app_area')}</SectionTitle>
                             <Card>
                                 {data.sources.length === 0 ? (
-                                    <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>No usage recorded</div>
+                                    <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>{t('usage.no_usage_recorded')}</div>
                                 ) : data.sources.map((s, i) => {
                                     const d = getSourceDetails(s.source);
                                     const Icon = d.icon;
                                     return (
                                         <ListRow key={i} onClick={() => setFilterSource(s.source)}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
                                                 <IconBadge icon={Icon} color={d.color} />
                                                 <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0 }}>
-                                                    <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{d.label}</span>
-                                                    <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{s.calls} calls</span>
+                                                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{d.label}</span>
+                                                    <span style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>{s.calls} {t('usage.calls')}</span>
                                                 </div>
                                             </div>
-                                            <div style={{ textAlign: 'right', flexShrink: 0, paddingLeft: 12 }}>
-                                                <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{fNum(s.total_tokens)}</div>
-                                                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{fCur(s.estimated_cost)}</div>
+                                            <div style={{ textAlign: 'right', flexShrink: 0, paddingLeft: 10 }}>
+                                                <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{fNum(s.total_tokens)}</div>
+                                                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>{fCur(s.estimated_cost)}</div>
                                             </div>
                                         </ListRow>
                                     );
@@ -466,34 +485,34 @@ const UsageSection = () => {
 
                         {/* Model × Agent — grouped by agent, expandable */}
                         <div>
-                            <SectionTitle icon={Bot}>Models per Agent</SectionTitle>
+                            <SectionTitle icon={Bot}>{t('usage.models_per_agent')}</SectionTitle>
                             <Card>
                                 {agentModelGroups.length === 0 ? (
-                                    <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>No data</div>
+                                    <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>{t('usage.no_data_short')}</div>
                                 ) : agentModelGroups.slice(0, 8).map((group, gi) => {
                                     const isExpanded = expandedAgent === group.agent_name;
                                     return (
                                         <div key={gi}>
                                             <ListRow onClick={() => setExpandedAgent(isExpanded ? null : group.agent_name)}
                                                 style={{ borderBottom: isExpanded ? 'none' : undefined }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 10, flex: 1, minWidth: 0 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
                                                     <IconBadge icon={Bot} color={getColor(gi)} />
                                                     <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
-                                                        <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                             {group.agent_name}
                                                         </span>
-                                                        <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>
+                                                        <span style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
                                                             {group.models.length} model{group.models.length !== 1 ? 's' : ''}
                                                         </span>
                                                     </div>
                                                 </div>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
                                                     <div style={{ textAlign: 'right' }}>
-                                                        <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{fNum(group.total_tokens)}</div>
-                                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{fCur(group.estimated_cost)}</div>
+                                                        <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{fNum(group.total_tokens)}</div>
+                                                        <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{fCur(group.estimated_cost)}</div>
                                                     </div>
                                                     <ChevronRight style={{
-                                                        width: 14, height: 14, color: 'var(--text-muted)',
+                                                        width: 13, height: 13, color: 'var(--text-muted)',
                                                         transform: isExpanded ? 'rotate(90deg)' : 'none',
                                                         transition: 'transform 0.2s ease',
                                                     }} />
@@ -503,16 +522,16 @@ const UsageSection = () => {
                                             {isExpanded && group.models.map((m, mi) => (
                                                 <div key={mi} style={{
                                                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                                    padding: '8px 16px 8px 56px', background: 'var(--bg-secondary)',
+                                                    padding: '6px 14px 6px 48px', background: 'var(--bg-secondary)',
                                                     borderBottom: '1px solid var(--border-subtle)',
-                                                    fontSize: 12,
+                                                    fontSize: 11,
                                                 }}>
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                                        <Cpu style={{ width: 12, height: 12, color: getColor(mi + 3) }} />
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                                        <Cpu style={{ width: 11, height: 11, color: getColor(mi + 3) }} />
                                                         <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{shortModel(m.model)}</span>
                                                         <InOutLabel input={m.prompt_tokens} output={m.completion_tokens} showCost inputCost={m.input_cost} outputCost={m.output_cost} />
                                                     </div>
-                                                    <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+                                                    <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
                                                         <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{fNum(m.total_tokens)}</span>
                                                         <span style={{ color: 'var(--text-muted)' }}>{fCur(m.estimated_cost)}</span>
                                                     </div>
@@ -528,27 +547,27 @@ const UsageSection = () => {
                     {/* ── Model × User Table ── */}
                     {data.modelsByUser.length > 0 && (
                         <div>
-                            <SectionTitle icon={Users} right={<Legend />}>Model Usage by User</SectionTitle>
+                            <SectionTitle icon={Users} right={<Legend inputLabel={t('usage.input')} outputLabel={t('usage.output')} />}>{t('usage.model_usage_by_user')}</SectionTitle>
                             <Card>
                                 <div style={{
-                                    display: 'grid', gridTemplateColumns: '1.2fr 1fr repeat(6, 68px)',
-                                    padding: '10px 16px', background: 'var(--bg-tertiary)',
+                                    display: 'grid', gridTemplateColumns: '1.5fr 1fr repeat(3, 70px) repeat(3, 72px)',
+                                    padding: '8px 14px', background: 'var(--bg-tertiary)',
                                     borderBottom: '1px solid var(--border-subtle)',
                                     overflowX: 'auto',
                                 }}>
-                                    {['User', 'Model', 'In Tokens', 'Out Tokens', 'Total', 'In Cost', 'Out Cost', 'Total Cost'].map(h => (
-                                        <span key={h} style={{
-                                            fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em',
-                                            color: h.startsWith('In') ? '#3b82f6' : h.startsWith('Out') ? '#f59e0b' : 'var(--text-muted)',
-                                            textAlign: ['User', 'Model'].includes(h) ? 'left' : 'right',
+                                    {tableHeaders.map(h => (
+                                        <span key={h.key} style={{
+                                            fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em',
+                                            color: h.color || 'var(--text-muted)',
+                                            textAlign: h.align,
                                             whiteSpace: 'nowrap',
-                                        }}>{h}</span>
+                                        }}>{t(h.key)}</span>
                                     ))}
                                 </div>
                                 {data.modelsByUser.slice(0, 20).map((row, i) => (
                                     <div key={i} style={{
-                                        display: 'grid', gridTemplateColumns: '1.2fr 1fr repeat(6, 68px)',
-                                        padding: '10px 16px', alignItems: 'center',
+                                        display: 'grid', gridTemplateColumns: '1.5fr 1fr repeat(3, 70px) repeat(3, 72px)',
+                                        padding: '7px 14px', alignItems: 'center',
                                         background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-secondary)',
                                         borderBottom: '1px solid var(--border-subtle)',
                                         transition: 'background 0.1s',
@@ -557,27 +576,27 @@ const UsageSection = () => {
                                         onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-secondary)'}
                                     >
                                         <span style={{
-                                            fontSize: 12, fontWeight: 600, color: 'var(--text-primary)',
+                                            fontSize: 11, fontWeight: 600, color: 'var(--text-primary)',
                                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                                             cursor: 'pointer',
                                         }} onClick={() => setFilterUser(row.user_id)}>
                                             {row.display_name || row.user_id}
                                         </span>
                                         <span style={{
-                                            fontSize: 12, fontWeight: 600, color: getColor(i),
-                                            display: 'flex', alignItems: 'center', gap: 5,
+                                            fontSize: 11, fontWeight: 600, color: getColor(i),
+                                            display: 'flex', alignItems: 'center', gap: 4,
                                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                                             cursor: 'pointer',
                                         }} onClick={() => setFilterModel(row.model)}>
-                                            <Cpu style={{ width: 11, height: 11, flexShrink: 0 }} />
+                                            <Cpu style={{ width: 10, height: 10, flexShrink: 0 }} />
                                             {shortModel(row.model)}
                                         </span>
-                                        <span style={{ fontSize: 12, fontWeight: 600, color: '#3b82f6', textAlign: 'right' }}>{fNum(row.prompt_tokens)}</span>
-                                        <span style={{ fontSize: 12, fontWeight: 600, color: '#f59e0b', textAlign: 'right' }}>{fNum(row.completion_tokens)}</span>
-                                        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', textAlign: 'right' }}>{fNum(row.total_tokens)}</span>
-                                        <span style={{ fontSize: 12, fontWeight: 600, color: '#3b82f6', textAlign: 'right' }}>{fCur(row.input_cost)}</span>
-                                        <span style={{ fontSize: 12, fontWeight: 600, color: '#f59e0b', textAlign: 'right' }}>{fCur(row.output_cost)}</span>
-                                        <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', textAlign: 'right' }}>{fCur(row.estimated_cost)}</span>
+                                        <span style={{ fontSize: 11, fontWeight: 600, color: '#3b82f6', textAlign: 'right' }}>{fNum(row.prompt_tokens)}</span>
+                                        <span style={{ fontSize: 11, fontWeight: 600, color: '#f59e0b', textAlign: 'right' }}>{fNum(row.completion_tokens)}</span>
+                                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', textAlign: 'right' }}>{fNum(row.total_tokens)}</span>
+                                        <span style={{ fontSize: 11, fontWeight: 600, color: '#3b82f6', textAlign: 'right' }}>{fCur(row.input_cost)}</span>
+                                        <span style={{ fontSize: 11, fontWeight: 600, color: '#f59e0b', textAlign: 'right' }}>{fCur(row.output_cost)}</span>
+                                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', textAlign: 'right' }}>{fCur(row.estimated_cost)}</span>
                                     </div>
                                 ))}
                             </Card>

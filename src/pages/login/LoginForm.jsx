@@ -90,6 +90,7 @@ const LoginForm = ({
     handleDemoLogin, handleOAuthLogin, handleGoogleLogin, handleMicrosoftLogin,
     isDemoEnabled, isOAuthConfigured, isGoogleConfigured, isMicrosoftConfigured,
     setSignupMode, setError,
+    allowSignups = true, allowPasswordLogin = true,
     inputClass, labelClass
 }) => {
     const [preferredMethod, setPreferredMethod] = useState(null);
@@ -124,7 +125,15 @@ const LoginForm = ({
         (preferredMethod === 'google' && isGoogleConfigured) ||
         (preferredMethod === 'microsoft' && isMicrosoftConfigured) ||
         (preferredMethod === 'nextcloud' && isOAuthConfigured) ||
-        (preferredMethod === 'password');
+        (preferredMethod === 'password' && allowPasswordLogin);
+
+    // Are there any other methods beyond the preferred one?
+    const hasOtherMethods =
+        (preferredMethod !== 'password' && allowPasswordLogin) ||
+        (preferredMethod !== 'google' && isGoogleConfigured) ||
+        (preferredMethod !== 'microsoft' && isMicrosoftConfigured) ||
+        (preferredMethod !== 'nextcloud' && isOAuthConfigured) ||
+        isDemoEnabled;
 
     const showDedicated = !setupMode && preferredMethod && isPreferredAvailable && !showAllMethods;
 
@@ -132,7 +141,7 @@ const LoginForm = ({
     if (showDedicated) {
         return (
             <div className="space-y-4 animate-[fadeIn_0.3s_ease-out]">
-                {preferredMethod === 'password' && (
+                {preferredMethod === 'password' && allowPasswordLogin && (
                     <form onSubmit={handlePasswordLogin} className="space-y-5" aria-label="Login form">
                         <div>
                             <label htmlFor="username" className={labelClass}>Username</label>
@@ -172,20 +181,24 @@ const LoginForm = ({
                     </button>
                 )}
 
-                <div className="pt-2">
-                    <button
-                        onClick={() => setShowAllMethods(true)}
-                        className="w-full py-2.5 text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center gap-1.5 rounded-lg hover:bg-[var(--bg-tertiary)]"
-                    >
-                        <ChevronDown className="w-4 h-4" />
-                        Other login methods
-                    </button>
-                </div>
+                {hasOtherMethods && (
+                    <div className="pt-2">
+                        <button
+                            onClick={() => setShowAllMethods(true)}
+                            className="w-full py-2.5 text-sm text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors flex items-center justify-center gap-1.5 rounded-lg hover:bg-[var(--bg-tertiary)]"
+                        >
+                            <ChevronDown className="w-4 h-4" />
+                            Other login methods
+                        </button>
+                    </div>
+                )}
 
-                <button onClick={() => { setSignupMode(true); setError(''); }}
-                    className="w-full py-2.5 bg-[var(--bg-primary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-default)] rounded-xl font-medium transition-all flex items-center justify-center gap-2">
-                    <UserPlus className="w-4.5 h-4.5" /> Create Account
-                </button>
+                {allowSignups && setSignupMode && (
+                    <button onClick={() => { setSignupMode(true); setError(''); }}
+                        className="w-full py-2.5 bg-[var(--bg-primary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-default)] rounded-xl font-medium transition-all flex items-center justify-center gap-2">
+                        <UserPlus className="w-4.5 h-4.5" /> Create Account
+                    </button>
+                )}
             </div>
         );
     }
@@ -193,55 +206,57 @@ const LoginForm = ({
     // ── Full login form (default or "show all methods") ──
     return (
         <div className={showAllMethods ? 'animate-[fadeIn_0.3s_ease-out]' : ''}>
-            <form onSubmit={handlePasswordLogin} className="space-y-5" aria-label="Login form">
-                {!setupMode && (
-                    <div>
-                        <label htmlFor="username" className={labelClass}>Username</label>
-                        <div className="relative">
-                            <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-tertiary)]" />
-                            <input id="username" name="username" type="text" value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} placeholder="Enter your username" aria-label="Username" data-testid="username" autoComplete="username" required />
+            {(setupMode || allowPasswordLogin) && (
+                <form onSubmit={handlePasswordLogin} className="space-y-5" aria-label="Login form">
+                    {!setupMode && (
+                        <div>
+                            <label htmlFor="username" className={labelClass}>Username</label>
+                            <div className="relative">
+                                <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-tertiary)]" />
+                                <input id="username" name="username" type="text" value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} placeholder="Enter your username" aria-label="Username" data-testid="username" autoComplete="username" required />
+                            </div>
                         </div>
-                    </div>
-                )}
+                    )}
 
-                <PasswordInput
-                    id={setupMode ? 'root-password' : 'password'}
-                    value={password} onChange={(e) => setPassword(e.target.value)}
-                    inputClass={inputClass} labelClass={labelClass}
-                    label={setupMode ? 'Create Root Password' : 'Password'}
-                    placeholder={setupMode ? "Enter a strong password" : "Enter your password"}
-                    setupMode={setupMode}
-                    minLength={setupMode ? 8 : 1}
-                />
-
-                {setupMode && (
                     <PasswordInput
-                        id="confirm-password"
-                        value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                        id={setupMode ? 'root-password' : 'password'}
+                        value={password} onChange={(e) => setPassword(e.target.value)}
                         inputClass={inputClass} labelClass={labelClass}
-                        label="Confirm Password"
-                        placeholder="Re-enter password"
-                        minLength={8}
+                        label={setupMode ? 'Create Root Password' : 'Password'}
+                        placeholder={setupMode ? "Enter a strong password" : "Enter your password"}
+                        setupMode={setupMode}
+                        minLength={setupMode ? 8 : 1}
                     />
-                )}
 
-                <button type="submit" disabled={isLoading}
-                    aria-label={setupMode ? 'Initialize system' : 'Sign in to your account'}
-                    data-testid="login-submit-button"
-                    className={`w-full py-3 ${setupMode
-                        ? 'bg-green-600 hover:bg-green-700'
-                        : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-lg shadow-amber-500/20'
-                        } text-white rounded-xl font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-base mt-2`}>
-                    {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>
-                        {setupMode ? <Zap className="w-5 h-5" /> : <LogIn className="w-5 h-5" />}
-                        {setupMode ? 'Initialize System' : 'Sign In'}
-                    </>}
-                </button>
-            </form>
+                    {setupMode && (
+                        <PasswordInput
+                            id="confirm-password"
+                            value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                            inputClass={inputClass} labelClass={labelClass}
+                            label="Confirm Password"
+                            placeholder="Re-enter password"
+                            minLength={8}
+                        />
+                    )}
+
+                    <button type="submit" disabled={isLoading}
+                        aria-label={setupMode ? 'Initialize system' : 'Sign in to your account'}
+                        data-testid="login-submit-button"
+                        className={`w-full py-3 ${setupMode
+                            ? 'bg-green-600 hover:bg-green-700'
+                            : 'bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 shadow-lg shadow-amber-500/20'
+                            } text-white rounded-xl font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-base mt-2`}>
+                        {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <>
+                            {setupMode ? <Zap className="w-5 h-5" /> : <LogIn className="w-5 h-5" />}
+                            {setupMode ? 'Initialize System' : 'Sign In'}
+                        </>}
+                    </button>
+                </form>
+            )}
 
             {!setupMode && (
                 <>
-                    <Divider />
+                    {allowPasswordLogin && <Divider />}
 
                     <div className="space-y-3">
                         {isDemoEnabled && (
@@ -279,11 +294,13 @@ const LoginForm = ({
                             </button>
                         )}
 
-                        <button onClick={() => { setSignupMode(true); setError(''); }}
-                            data-testid="create-account-button"
-                            className="w-full py-2.5 bg-[var(--bg-primary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-default)] rounded-xl font-medium transition-all flex items-center justify-center gap-2">
-                            <UserPlus className="w-4.5 h-4.5" /> Create Account
-                        </button>
+                        {allowSignups && setSignupMode && (
+                            <button onClick={() => { setSignupMode(true); setError(''); }}
+                                data-testid="create-account-button"
+                                className="w-full py-2.5 bg-[var(--bg-primary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-default)] rounded-xl font-medium transition-all flex items-center justify-center gap-2">
+                                <UserPlus className="w-4.5 h-4.5" /> Create Account
+                            </button>
+                        )}
                     </div>
                 </>
             )}

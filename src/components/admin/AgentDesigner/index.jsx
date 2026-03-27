@@ -1,6 +1,5 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 
-import MarkdownRenderer from "../../MarkdownRenderer";
 import KnowledgePanel from "../../KnowledgePanel";
 import VersionHistory from "../../VersionHistory";
 import ModelSelector from "../../ModelSelector";
@@ -8,23 +7,24 @@ import ModelTierSelector from "../../ModelTierSelector";
 
 import { API_BASE, authFetch } from "../../../utils/helpers";
 import { CAPABILITIES } from "./constants";
+import { INTEGRATION_CATALOG } from "./integrations";
 
 // Extracted hooks
 import useAgentState from "./hooks/useAgentState";
 import useAgentApi from "./hooks/useAgentApi";
 import useAgentChat from "./hooks/useAgentChat";
-import usePromptDesigner from "./hooks/usePromptDesigner";
 import useCapabilities from "./hooks/useCapabilities";
 import { IdentitySection } from "./sections/IdentitySection";
 import { ToolsSection } from "./sections/ToolsSection";
 import { BehaviorSection } from "./sections/BehaviorSection";
-import { GuardrailsSection } from "./sections/GuardrailsSection";
+
 
 const AgentDesigner = ({
   onBack,
   systemMode = false,
   securityMode = false,
   hasPermission = () => true,
+  initialAgentId = null,
 }) => {
   // All state from hooks
   const state = useAgentState();
@@ -150,18 +150,10 @@ const AgentDesigner = ({
     duplicateAgent,
     togglePublish,
     toggleTool,
-  } = useAgentApi(state, { systemMode, securityMode });
+  } = useAgentApi(state, { systemMode, securityMode, initialAgentId });
 
   // Chat
   const { sendMessage, clearHistory } = useAgentChat(state);
-
-  // Prompt designer
-  const { sendPromptDesignerMessage, applyGeneratedPrompt } =
-    usePromptDesigner(state);
-
-  // Thinking section toggle state for prompt designer
-  const [expandedThinking, setExpandedThinking] = useState({});
-  const toggleThinking = (idx) => setExpandedThinking(prev => ({ ...prev, [idx]: !prev[idx] }));
 
   // Capabilities
   const { checkCapability, toggleCapability } = useCapabilities(state);
@@ -624,13 +616,26 @@ const AgentDesigner = ({
                       background: "var(--bg-primary)",
                     }}
                   >
-                    {[
-                      { id: "identity", label: "Identity" },
-                      { id: "knowledge", label: "Knowledge" },
-                      { id: "tools", label: "Integrations" },
-                      { id: "behavior", label: "Behavior" },
-                      { id: "guardrails", label: "Guardrails" },
-                    ].map((item) => (
+                    {(() => {
+                      const isIntegrationAvailable = (item) => {
+                        if (!integrationStatus) return false;
+                        const orgEnabled = integrationStatus.orgEnabledIntegrations;
+                        if (orgEnabled && !orgEnabled.includes(item.id)) return false;
+                        if (item.group === 'google') return !!integrationStatus.isGoogleUser;
+                        if (item.id === 'fireflies') return !!integrationStatus.hasFirefliesKey;
+                        if (item.id === 'youtrack') return !!integrationStatus.hasYouTrackConfig;
+                        if (item.id === 'gamma') return !!integrationStatus.hasGammaKey;
+                        if (item.id === 'n8n') return !!integrationStatus.hasN8nConfig;
+                        if (item.id === 'linkedin') return !!integrationStatus.hasLinkedInConfig || !!integrationStatus.linkedInConnected;
+                        return true;
+                      };
+                      const hasIntegrations = INTEGRATION_CATALOG.some(isIntegrationAvailable);
+                      return [
+                        { id: "identity", label: "Identity" },
+                        { id: "knowledge", label: "Knowledge" },
+                        ...(hasIntegrations ? [{ id: "tools", label: "Integrations" }] : []),
+                        { id: "behavior", label: "Behavior" },
+                      ].map((item) => (
                       <button
                         key={item.id}
                         onClick={() => setActiveSection(item.id)}
@@ -642,7 +647,8 @@ const AgentDesigner = ({
                       >
                         {item.label}
                       </button>
-                    ))}
+                    ));
+                    })()}
                   </div>
 
                   {/* Section Content */}
@@ -699,9 +705,7 @@ const AgentDesigner = ({
                       {activeSection === "behavior" && (
                         <BehaviorSection {...sharedProps} />
                       )}
-                      {activeSection === "guardrails" && (
-                        <GuardrailsSection {...sharedProps} />
-                      )}
+
                     </div>
                   </div>
                 </div>
@@ -748,281 +752,6 @@ const AgentDesigner = ({
           )}
         </div>
       </div>
-
-      {/* System Prompt Designer Modal */}
-      {showPromptDesigner && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-50 p-4">
-          <div style={{
-            background: 'var(--bg-card)',
-            border: '1px solid var(--border-default)',
-            borderRadius: '16px',
-            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-            width: '820px',
-            maxWidth: '90vw',
-            height: '70vh',
-            maxHeight: '85vh',
-            display: 'flex',
-            flexDirection: 'column',
-          }}>
-            {/* Header */}
-            <div style={{
-              padding: '16px 24px',
-              borderBottom: '1px solid var(--border-subtle)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <h3 style={{ margin: 0, fontSize: '15px', fontWeight: 600, color: 'var(--text-primary)' }}>
-                  AI Assist
-                </h3>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                <button
-                  onClick={() => {
-                    setPromptDesignerMessages([{
-                      role: 'assistant',
-                      content: systemPrompt
-                        ? `I'll improve your existing prompt. Just click send or tell me what to change.`
-                        : `What should this agent do? I'll generate a prompt for you.`,
-                      thinking: '',
-                    }]);
-                    setPromptDesignerInput('');
-                  }}
-                  style={{
-                    padding: '6px 10px',
-                    borderRadius: '8px',
-                    border: '1px solid var(--border-default)',
-                    background: 'transparent',
-                    color: 'var(--text-muted)',
-                    fontSize: '12px',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '4px',
-                  }}
-                  title="Reset conversation"
-                >
-                  ↻ Reset
-                </button>
-                <button
-                  onClick={() => setShowPromptDesigner(false)}
-                  style={{
-                    padding: '6px',
-                    borderRadius: '8px',
-                    border: 'none',
-                    background: 'transparent',
-                    color: 'var(--text-muted)',
-                    cursor: 'pointer',
-                    display: 'flex',
-                    alignItems: 'center',
-                    fontSize: '18px',
-                  }}
-                >
-                  ×
-                </button>
-              </div>
-            </div>
-
-            {/* Messages */}
-            <div style={{
-              flex: 1,
-              overflowY: 'auto',
-              padding: '16px 20px',
-              display: 'flex',
-              flexDirection: 'column',
-              gap: '12px',
-            }} className="custom-scrollbar">
-              {promptDesignerMessages.map((msg, i) => (
-                <div key={i} style={{
-                  display: 'flex',
-                  justifyContent: msg.role === 'user' ? 'flex-end' : 'flex-start',
-                }}>
-                  <div style={{
-                    maxWidth: '90%',
-                    borderRadius: msg.role === 'user' ? '14px 14px 4px 14px' : '14px 14px 14px 4px',
-                    padding: '12px 16px',
-                    ...(msg.role === 'user'
-                      ? {
-                          background: 'var(--bg-tertiary)',
-                          border: '1px solid var(--border-default)',
-                          color: 'var(--text-primary)',
-                        }
-                      : {
-                          background: 'var(--bg-secondary)',
-                          border: '1px solid var(--border-subtle)',
-                          color: 'var(--text-primary)',
-                        }
-                    ),
-                  }}>
-                    {/* Thinking section (collapsible) */}
-                    {msg.role === 'assistant' && msg.thinking && (
-                      <div style={{ marginBottom: '8px' }}>
-                        <button
-                          onClick={() => toggleThinking(i)}
-                          style={{
-                            display: 'flex',
-                            alignItems: 'center',
-                            gap: '6px',
-                            padding: '4px 8px',
-                            borderRadius: '6px',
-                            border: '1px solid var(--border-subtle)',
-                            background: 'var(--bg-tertiary)',
-                            color: 'var(--text-muted)',
-                            fontSize: '11px',
-                            cursor: 'pointer',
-                            width: '100%',
-                          }}
-                        >
-                          <span style={{
-                            transform: expandedThinking[i] ? 'rotate(90deg)' : 'rotate(0deg)',
-                            transition: 'transform 0.15s',
-                            display: 'inline-block',
-                          }}>▸</span>
-                          <span>💭 Thought process</span>
-                          <span style={{ opacity: 0.5, marginLeft: 'auto' }}>
-                            {msg.thinking.length > 100 ? `${Math.ceil(msg.thinking.length / 100)} blocks` : 'brief'}
-                          </span>
-                        </button>
-                        {expandedThinking[i] && (
-                          <div style={{
-                            marginTop: '6px',
-                            padding: '10px 12px',
-                            borderRadius: '8px',
-                            background: 'var(--bg-tertiary)',
-                            border: '1px solid var(--border-subtle)',
-                            fontSize: '12px',
-                            lineHeight: '1.5',
-                            color: 'var(--text-muted)',
-                            maxHeight: '200px',
-                            overflowY: 'auto',
-                            whiteSpace: 'pre-wrap',
-                          }} className="custom-scrollbar">
-                            {msg.thinking}
-                          </div>
-                        )}
-                      </div>
-                    )}
-                    <div style={{ fontSize: '14px' }} className="prose prose-invert max-w-none">
-                      <MarkdownRenderer content={msg.content} />
-                    </div>
-                    {/* Apply button for assistant messages with code blocks */}
-                    {msg.role === 'assistant' && msg.content && msg.content.includes('```') && (
-                      <button
-                        onClick={() => applyGeneratedPrompt(msg.content)}
-                        style={{
-                          margin: '10px 0 0',
-                          width: '100%',
-                          padding: '10px 16px',
-                          borderRadius: '10px',
-                          border: 'none',
-                          fontSize: '13px',
-                          fontWeight: 600,
-                          background: 'var(--accent-primary)',
-                          color: '#fff',
-                          cursor: 'pointer',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          gap: '6px',
-                          transition: 'opacity 0.15s',
-                        }}
-                        onMouseOver={(e) => e.currentTarget.style.opacity = '0.85'}
-                        onMouseOut={(e) => e.currentTarget.style.opacity = '1'}
-                      >
-                        ✓ Apply This Prompt
-                      </button>
-                    )}
-                  </div>
-                </div>
-              ))}
-              {/* Loading / streaming indicator */}
-              {promptDesignerLoading && !promptDesignerMessages.some(m => m.role === 'assistant' && (m.content || m.thinking)) && (
-                <div style={{ display: 'flex', justifyContent: 'flex-start' }}>
-                  <div style={{
-                    padding: '12px 16px',
-                    borderRadius: '14px 14px 14px 4px',
-                    background: 'var(--bg-secondary)',
-                    border: '1px solid var(--border-subtle)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    color: 'var(--text-muted)',
-                    fontSize: '13px',
-                  }}>
-                    <span className="flex gap-1">
-                      <span className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: 'var(--accent-primary)' }}></span>
-                      <span className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: 'var(--accent-primary)', animationDelay: '0.1s' }}></span>
-                      <span className="w-1.5 h-1.5 rounded-full animate-bounce" style={{ background: 'var(--accent-primary)', animationDelay: '0.2s' }}></span>
-                    </span>
-                    Thinking...
-                  </div>
-                </div>
-              )}
-            </div>
-
-            {/* Input */}
-            <div style={{
-              padding: '16px 20px',
-              borderTop: '1px solid var(--border-subtle)',
-              background: 'var(--bg-secondary)',
-              borderRadius: '0 0 16px 16px',
-            }}>
-              <div style={{ display: 'flex', gap: '10px' }}>
-                <input
-                  type="text"
-                  value={promptDesignerInput}
-                  onChange={(e) => setPromptDesignerInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && !promptDesignerLoading) {
-                      sendPromptDesignerMessage();
-                    }
-                  }}
-                  placeholder="Describe what your agent should do..."
-                  disabled={promptDesignerLoading}
-                  style={{
-                    flex: 1,
-                    padding: '10px 14px',
-                    borderRadius: '10px',
-                    border: '1px solid var(--border-default)',
-                    background: 'var(--bg-primary)',
-                    color: 'var(--text-primary)',
-                    fontSize: '13px',
-                    outline: 'none',
-                    transition: 'border-color 0.15s',
-                  }}
-                  onFocus={(e) => e.target.style.borderColor = 'var(--accent-primary)'}
-                  onBlur={(e) => e.target.style.borderColor = 'var(--border-default)'}
-                />
-                <button
-                  onClick={sendPromptDesignerMessage}
-                  disabled={promptDesignerLoading || !promptDesignerInput.trim()}
-                  style={{
-                    padding: '10px 18px',
-                    borderRadius: '10px',
-                    border: 'none',
-                    background: 'var(--accent-primary)',
-                    color: '#fff',
-                    fontWeight: 600,
-                    fontSize: '13px',
-                    cursor: promptDesignerLoading || !promptDesignerInput.trim() ? 'not-allowed' : 'pointer',
-                    opacity: promptDesignerLoading || !promptDesignerInput.trim() ? 0.5 : 1,
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    transition: 'opacity 0.15s',
-                  }}
-                >
-                  Send
-                  <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" />
-                  </svg>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

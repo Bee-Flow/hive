@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
 import { API_BASE, authFetch } from '../../utils/helpers';
-import { Loader2, ToggleLeft, ToggleRight, Check, Settings, Plus, Trash2, RefreshCw, Plug, ChevronDown, ExternalLink, Mail, Send, Layers, Search as SearchIcon, Cloud } from 'lucide-react';
+import { Loader2, ToggleLeft, ToggleRight, Check, Settings, Plus, Trash2, RefreshCw, Plug, ChevronDown, ExternalLink, Mail, Send, Layers, Search as SearchIcon, Cloud, BookOpen, FolderKanban } from 'lucide-react';
 import McpMarketplace from './McpMarketplace';
 
 const SECTIONS = [
@@ -123,6 +123,12 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
     const [mcpTestResult, setMcpTestResult] = useState(null);
     const [mcpShowAdd, setMcpShowAdd] = useState(false);
 
+    // Feature flags
+    const [notebooksEnabled, setNotebooksEnabled] = useState(true);
+    const [savingNotebooks, setSavingNotebooks] = useState(false);
+    const [projectsEnabled, setProjectsEnabled] = useState(true);
+    const [savingProjects, setSavingProjects] = useState(false);
+
     useEffect(() => {
         load();
     }, []);
@@ -173,6 +179,9 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
                 // Service Email
                 setHasServiceEmail(!!configData.hasServiceEmail);
                 if (configData.serviceEmailDisplayName) setServiceEmailDisplayName(configData.serviceEmailDisplayName);
+                // Feature flags
+                if (configData.notebooksEnabled !== undefined) setNotebooksEnabled(configData.notebooksEnabled);
+                if (configData.projectsEnabled !== undefined) setProjectsEnabled(configData.projectsEnabled);
             }
         } catch (e) { console.error(e); }
         try {
@@ -348,6 +357,99 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
             {active === 'platform' && (
             <div className="p-6">
             <div className="max-w-4xl mx-auto space-y-8">
+
+                {/* Feature Flags */}
+                <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
+                    <div className="px-6 py-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+                        <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Feature Flags</h3>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                            Enable or disable platform features globally. Changes take effect on next page load for all users.
+                        </p>
+                    </div>
+                    <div className="p-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                            {/* Notebooks Toggle */}
+                            <div
+                                className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
+                                style={{
+                                    background: notebooksEnabled ? 'rgba(16, 185, 129, 0.06)' : 'var(--bg-primary)',
+                                    border: `1px solid ${notebooksEnabled ? 'rgba(16, 185, 129, 0.2)' : 'var(--border-subtle)'}`,
+                                }}
+                            >
+                                <BookOpen className="w-5 h-5 shrink-0" style={{ color: notebooksEnabled ? '#10b981' : 'var(--text-muted)' }} />
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium" style={{ color: notebooksEnabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>Notebooks</div>
+                                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>AI-powered collaborative notebooks</div>
+                                </div>
+                                <button
+                                    onClick={async () => {
+                                        const newVal = !notebooksEnabled;
+                                        setSavingNotebooks(true);
+                                        try {
+                                            const res = await authFetch(`${API_BASE}/ai/config`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ notebooksEnabled: newVal }),
+                                            });
+                                            if (res.ok) {
+                                                setNotebooksEnabled(newVal);
+                                                setMessage({ type: 'success', text: newVal ? 'Notebooks enabled' : 'Notebooks disabled' });
+                                            }
+                                        } catch (e) {
+                                            setMessage({ type: 'error', text: 'Failed to update notebooks setting' });
+                                        }
+                                        setSavingNotebooks(false);
+                                        setTimeout(() => setMessage(null), 3000);
+                                    }}
+                                    disabled={savingNotebooks}
+                                    className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${notebooksEnabled ? 'bg-green-500' : 'bg-gray-600'}`}
+                                >
+                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${notebooksEnabled ? 'left-6' : 'left-1'}`} />
+                                </button>
+                            </div>
+                            {/* Projects Toggle */}
+                            <div
+                                className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
+                                style={{
+                                    background: projectsEnabled ? 'rgba(16, 185, 129, 0.06)' : 'var(--bg-primary)',
+                                    border: `1px solid ${projectsEnabled ? 'rgba(16, 185, 129, 0.2)' : 'var(--border-subtle)'}`,
+                                }}
+                            >
+                                <FolderKanban className="w-5 h-5 shrink-0" style={{ color: projectsEnabled ? '#10b981' : 'var(--text-muted)' }} />
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium" style={{ color: projectsEnabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>Projects</div>
+                                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Organize chats into shared project folders</div>
+                                </div>
+                                <button
+                                    onClick={async () => {
+                                        const newVal = !projectsEnabled;
+                                        setSavingProjects(true);
+                                        try {
+                                            const res = await authFetch(`${API_BASE}/ai/config`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ projectsEnabled: newVal }),
+                                            });
+                                            if (res.ok) {
+                                                setProjectsEnabled(newVal);
+                                                setMessage({ type: 'success', text: newVal ? 'Projects enabled' : 'Projects disabled' });
+                                            }
+                                        } catch (e) {
+                                            setMessage({ type: 'error', text: 'Failed to update projects setting' });
+                                        }
+                                        setSavingProjects(false);
+                                        setTimeout(() => setMessage(null), 3000);
+                                    }}
+                                    disabled={savingProjects}
+                                    className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${projectsEnabled ? 'bg-green-500' : 'bg-gray-600'}`}
+                                >
+                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${projectsEnabled ? 'left-6' : 'left-1'}`} />
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
 
                 {/* Global Defaults */}
                 <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>

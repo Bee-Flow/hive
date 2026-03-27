@@ -244,6 +244,7 @@ function App() {
     const [deploymentMode, setDeploymentMode] = useState('cloud');
     const [showProfileMenu, setShowProfileMenu] = useState(false);
     const [showAgentDesigner, setShowAgentDesigner] = useState(false);
+    const [initialDesignerAgentId, setInitialDesignerAgentId] = useState(null);
     const [showSettings, setShowSettings] = useState(false);
     const [encryptionState, setEncryptionState] = useState(null); // null | 'setup' | 'pin' | { recoveryKey: string }
     const [noOrganization, setNoOrganization] = useState(false);
@@ -416,7 +417,9 @@ function App() {
             setCurrentPage('searchEnginePage'); window.history.pushState({}, '', '/search-engine'); return;
         }
         // Agent Designer opens as overlay, not a page
-        if (page === 'agentDesigner') {
+        if (page === 'agentDesigner' || page.startsWith('agentDesigner:')) {
+            const agentId = page.includes(':') ? page.split(':')[1] : null;
+            setInitialDesignerAgentId(agentId);
             setShowAgentDesigner(true);
             return;
         }
@@ -690,7 +693,7 @@ function App() {
             return <TemplatesPage user={user} onBack={() => navigateToPage('agents')} />;
         }
         if (currentPage === 'notebooks') {
-            if (user?.featureFlags?.templates === false) return navigateToPage('agents');
+            if (user?.featureFlags?.notebooks === false) return navigateToPage('agents');
             return <NotebooksPage
                 user={user}
                 onBack={() => navigateToPage('agents')}
@@ -753,7 +756,7 @@ function App() {
                         className="relative w-[92vw] h-[90vh] max-w-[1400px] rounded-2xl overflow-hidden shadow-2xl border"
                         style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', animation: 'overlayContentIn .25s ease-out' }}
                     >
-                        <AgentDesigner onBack={null} hasPermission={() => true} />
+                        <AgentDesigner onBack={null} hasPermission={() => true} initialAgentId={initialDesignerAgentId} />
                     </div>
                 </div>
             )}

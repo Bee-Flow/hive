@@ -4,7 +4,7 @@ import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, Chev
 import { API_BASE } from '../utils/helpers';
 import NotificationCenter from './NotificationCenter';
 import NavLink from './NavLink';
-import LanguagePicker from './LanguagePicker';
+
 
 /* ─── Design tokens ─── */
 const ROW = 'w-full flex items-center gap-2.5 px-3 h-9 rounded-lg transition-all duration-150 text-left relative';
@@ -491,7 +491,7 @@ const Sidebar = ({
                         onClick={toggleSidebar}
                         className="p-2 hover:bg-[var(--bg-tertiary)] rounded-xl text-[var(--text-primary)] transition-all transform hover:scale-105"
                     >
-                        <span className="text-xl leading-none">🐝</span>
+                        <img src="/BeeFlow-logo-Icon-2026.svg" alt="Bee Flow" className="w-8 h-8 rounded-lg object-contain" />
                     </button>
                 )}
             </div>
@@ -543,7 +543,7 @@ const Sidebar = ({
             )}
 
             {/* ── Projects ── */}
-            {isOpen && projects.length > 0 && (
+            {isOpen && user?.featureFlags?.projects !== false && projects.length > 0 && (
                 <div className="flex-shrink-0 mt-1">
                     <div className={SECTION_HDR} onClick={toggleProjects}>
                         <span className={SECTION_LBL}>{t('sidebar.projects')}</span>
@@ -595,7 +595,7 @@ const Sidebar = ({
             )}
 
             {/* ── New Project (when no projects yet) ── */}
-            {isOpen && projects.length === 0 && (
+            {isOpen && user?.featureFlags?.projects !== false && projects.length === 0 && (
                 <div className="px-2 mt-1">
                     <button
                         onClick={() => onCreateProject?.()}
@@ -849,7 +849,6 @@ const Sidebar = ({
                             )}
                         </div>
                         <div className="border-t border-[var(--border-subtle)] p-1">
-                            <LanguagePicker />
                             <button onClick={onLogout} className={`${ROW} ${ROW_IDLE} group/so`} data-testid="sidebar-signout">
                                 <LogOut className="w-4 h-4 text-red-400 group-hover/so:text-red-500 transition-colors" strokeWidth={1.75} />
                                 <span className="text-[13px] text-[var(--text-tertiary)] group-hover/so:text-red-500 transition-colors">{t('sidebar.sign_out')}</span>

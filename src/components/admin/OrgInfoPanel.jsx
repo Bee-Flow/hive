@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Building2, Save, Upload, Palette, FileText, Check, Lock, KeyRound, AlertTriangle, CreditCard, BarChart3, Zap, MessageSquare, DollarSign, Users, Bot, Database, Shield, Info } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
+import { useTranslation } from '../../hooks/useTranslation';
 import GuardrailsPanel from './GuardrailsPanel';
 
 // Skeleton loader
@@ -24,8 +25,8 @@ const Skeleton = () => (
 const AUTH_METHODS = [
     {
         id: 'password',
-        name: 'Username & Password',
-        description: 'Users sign in with a username and password.',
+        nameKey: 'org.password_auth',
+        descKey: 'org.password_auth_desc',
         icon: (
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
@@ -36,8 +37,8 @@ const AUTH_METHODS = [
     },
     {
         id: 'google',
-        name: 'Sign in with Google',
-        description: 'Users sign in using their Google account.',
+        nameKey: 'org.google_auth',
+        descKey: 'org.google_auth_desc',
         icon: (
             <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
@@ -50,8 +51,8 @@ const AUTH_METHODS = [
     },
     {
         id: 'microsoft',
-        name: 'Sign in with Microsoft',
-        description: 'Users sign in using their Microsoft account.',
+        nameKey: 'org.microsoft_auth',
+        descKey: 'org.microsoft_auth_desc',
         icon: (
             <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <rect x="1" y="1" width="10" height="10" fill="#F25022" />
@@ -65,14 +66,14 @@ const AUTH_METHODS = [
 ];
 
 const SECTIONS = [
-    { id: 'license', label: 'License & Usage', icon: CreditCard, color: '#3b82f6' },
-    { id: 'auth', label: 'Sign-in Method', icon: KeyRound, color: '#10b981' },
-    { id: 'privacy', label: 'Privacy Shield', icon: Shield, color: '#ef4444' },
-    { id: 'info', label: 'Organisation Info', icon: Info, color: '#8b5cf6' },
+    { id: 'license', labelKey: 'settings.license_usage', icon: CreditCard, color: '#3b82f6' },
+    { id: 'auth', labelKey: 'settings.signin_method', icon: KeyRound, color: '#10b981' },
+    { id: 'privacy', labelKey: 'settings.privacy_shield', icon: Shield, color: '#ef4444' },
+    { id: 'info', labelKey: 'settings.org_info', icon: Info, color: '#8b5cf6' },
 ];
 
 // ── Usage bar component ──
-const UsageBar = ({ label, icon: Icon, used, limit, unit, color = '#8b5cf6' }) => {
+const UsageBar = ({ label, icon: Icon, used, limit, unit, color = '#8b5cf6', pctLabel }) => {
     const isUnlimited = limit === null || limit === undefined || limit === -1;
     const pct = isUnlimited ? 0 : limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
     const isWarning = pct >= 80 && pct < 95;
@@ -109,7 +110,7 @@ const UsageBar = ({ label, icon: Icon, used, limit, unit, color = '#8b5cf6' }) =
             {!isUnlimited && (
                 <div className="flex justify-end">
                     <span className={`text-[10px] font-medium ${isCritical ? 'text-red-500' : isWarning ? 'text-amber-500' : 'text-[var(--text-muted)]'}`}>
-                        {pct}% used
+                        {pctLabel || `${pct}% used`}
                     </span>
                 </div>
             )}
@@ -117,7 +118,107 @@ const UsageBar = ({ label, icon: Icon, used, limit, unit, color = '#8b5cf6' }) =
     );
 };
 
+// ── Org Default Language ───────────────────────────────────────────────────
+const OrgDefaultLanguage = () => {
+    const [locales, setLocales] = useState([]);
+    const [defaultLocale, setDefaultLocale] = useState('en');
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        setLoading(true);
+        authFetch(`${API_BASE}/api/languages/org/default`)
+            .then(r => r.json())
+            .then(data => {
+                if (data.defaultLocale) setDefaultLocale(data.defaultLocale);
+                if (Array.isArray(data.locales)) setLocales(data.locales);
+            })
+            .catch(() => {})
+            .finally(() => setLoading(false));
+    }, []);
+
+    const handleSave = async (code) => {
+        setDefaultLocale(code);
+        setSaving(true);
+        setSaved(false);
+        try {
+            const res = await authFetch(`${API_BASE}/api/languages/org/default`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ defaultLocale: code }),
+            });
+            if (res.ok) {
+                setSaved(true);
+                setTimeout(() => setSaved(false), 2000);
+            }
+        } catch (e) { console.error(e); }
+        setSaving(false);
+    };
+
+    if (loading || locales.length <= 1) return null;
+
+    return (
+        <div className="space-y-5">
+            <div>
+                <h2 className="text-lg font-bold text-[var(--text-primary)]">Default Language</h2>
+                <p className="text-sm text-[var(--text-muted)] mt-0.5">Set the default interface language for new users in your organisation</p>
+            </div>
+            <div className="p-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
+                <div className="flex items-start gap-3">
+                    <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
+                        style={{ background: 'rgba(59,130,246,0.1)' }}>
+                        <svg className="w-4.5 h-4.5" viewBox="0 0 24 24" fill="none" stroke="#3b82f6" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
+                            <circle cx="12" cy="12" r="10" />
+                            <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                        </svg>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <p className="text-[13px] font-medium text-[var(--text-primary)]">New User Language</p>
+                        <p className="text-[11px] text-[var(--text-muted)] mt-0.5 mb-3">
+                            When a new user signs in for the first time, the interface will be displayed in this language.
+                            Users can change their language at any time in their personal settings.
+                        </p>
+                        <div className="flex items-center gap-3">
+                            <select
+                                value={defaultLocale}
+                                onChange={e => handleSave(e.target.value)}
+                                disabled={saving}
+                                className="px-3 py-2 rounded-lg border text-[13px] outline-none focus:border-[var(--accent-primary)] transition-colors min-w-[200px]"
+                                style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                            >
+                                {locales.map(l => (
+                                    <option key={l.code} value={l.code}>{l.name}</option>
+                                ))}
+                            </select>
+                            {saved && (
+                                <span className="text-[11px] font-medium flex items-center gap-1" style={{ color: '#059669' }}>
+                                    <Check className="w-3.5 h-3.5" /> Saved
+                                </span>
+                            )}
+                            {saving && (
+                                <span className="text-[11px] text-[var(--text-muted)]">Saving…</span>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div className="p-3 rounded-lg text-[12px] flex items-start gap-2"
+                style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.15)', color: 'var(--text-secondary)' }}>
+                <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: '#3b82f6' }} />
+                <span>
+                    This setting only affects new users who haven't chosen a language yet. Existing users keep their current language preference.
+                    To add more languages to BeeFlow, go to the admin dashboard &gt; Languages section.
+                </span>
+            </div>
+        </div>
+    );
+};
+
 const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange }) => {
+    const { t } = useTranslation();
+    const deploymentMode = user?.featureFlags?.deploymentMode || 'cloud';
+    const isPrivateCloud = deploymentMode === 'private-cloud';
     const [organizations, setOrganizations] = useState([]);
     const [groups, setGroups] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -232,8 +333,8 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
 
     useEffect(() => {
         if (message) {
-            const t = setTimeout(() => setMessage(null), 3000);
-            return () => clearTimeout(t);
+            const timer = setTimeout(() => setMessage(null), 3000);
+            return () => clearTimeout(timer);
         }
     }, [message]);
 
@@ -307,8 +408,8 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
             <div className="flex items-center justify-center h-64">
                 <div className="text-center text-[var(--text-muted)]">
                     <Building2 className="w-12 h-12 mx-auto mb-3 opacity-30" />
-                    <p className="text-sm font-medium">No organisation found</p>
-                    <p className="text-xs mt-1">Ask your administrator to add you to an organisation.</p>
+                    <p className="text-sm font-medium">{t('org.no_org')}</p>
+                    <p className="text-xs mt-1">{t('org.no_org_desc')}</p>
                 </div>
             </div>
         );
@@ -336,8 +437,8 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                 {activeSection === 'license' && (
                     <div className="max-w-xl mx-auto space-y-6 animate-fadeIn">
                         <div>
-                            <h2 className="text-lg font-bold text-[var(--text-primary)]">License & Usage</h2>
-                            <p className="text-sm text-[var(--text-muted)] mt-0.5">Your current plan and usage for this billing period</p>
+                            <h2 className="text-lg font-bold text-[var(--text-primary)]">{t('org.license_usage')}</h2>
+                            <p className="text-sm text-[var(--text-muted)] mt-0.5">{t('org.license_subtitle')}</p>
                         </div>
 
                         {subLoading ? (
@@ -348,8 +449,8 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                         ) : !sub ? (
                             <div className="p-8 rounded-2xl border-2 border-dashed border-[var(--border-subtle)] text-center">
                                 <CreditCard className="w-10 h-10 mx-auto mb-3 text-[var(--text-muted)] opacity-40" />
-                                <p className="text-sm font-medium text-[var(--text-primary)]">No license assigned</p>
-                                <p className="text-xs text-[var(--text-muted)] mt-1">Contact your administrator to set up a plan for your organisation.</p>
+                                <p className="text-sm font-medium text-[var(--text-primary)]">{t('org.no_license')}</p>
+                                <p className="text-xs text-[var(--text-muted)] mt-1">{t('org.no_license_desc')}</p>
                             </div>
                         ) : (
                             <>
@@ -371,14 +472,14 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                                     </span>
                                                 </div>
                                                 <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                                                    Billing cycle started {sub.billing_cycle_start ? new Date(sub.billing_cycle_start).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A'}
+                                                    {t('org.billing_started').replace('{date}', sub.billing_cycle_start ? new Date(sub.billing_cycle_start).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' }) : 'N/A')}
                                                 </p>
                                             </div>
                                         </div>
                                         {limits.max_cost_per_month != null && limits.max_cost_per_month !== -1 && (
                                             <div className="text-right">
                                                 <div className="text-xl font-bold text-[var(--text-primary)]">€{Number(limits.max_cost_per_month).toFixed(2)}</div>
-                                                <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">cost cap / month</div>
+                                                <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">{t('org.cost_cap_month')}</div>
                                             </div>
                                         )}
                                     </div>
@@ -387,17 +488,17 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                     <div className="grid grid-cols-3 divide-x divide-[var(--border-subtle)] border-t border-[var(--border-subtle)]">
                                         <div className="p-4 text-center">
                                             <div className="text-lg font-bold text-[var(--text-primary)]">{usage.messages?.toLocaleString() || 0}</div>
-                                            <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">Messages</div>
+                                            <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">{t('org.messages')}</div>
                                         </div>
                                         <div className="p-4 text-center">
                                             <div className="text-lg font-bold text-[var(--text-primary)]">
                                                 {usage.tokens >= 1_000_000 ? `${(usage.tokens / 1_000_000).toFixed(1)}M` : usage.tokens >= 1_000 ? `${(usage.tokens / 1_000).toFixed(1)}K` : (usage.tokens || 0).toLocaleString()}
                                             </div>
-                                            <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">Tokens</div>
+                                            <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">{t('org.tokens')}</div>
                                         </div>
                                         <div className="p-4 text-center">
                                             <div className="text-lg font-bold text-[var(--text-primary)]">€{Number(usage.cost || 0).toFixed(2)}</div>
-                                            <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">Cost</div>
+                                            <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">{t('org.cost')}</div>
                                         </div>
                                     </div>
                                 </div>
@@ -406,18 +507,18 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                 <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5 space-y-4">
                                     <div className="flex items-center gap-2 mb-1">
                                         <BarChart3 className="w-4 h-4 text-[var(--text-muted)]" />
-                                        <h3 className="text-sm font-semibold text-[var(--text-primary)]">Usage this period</h3>
+                                        <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t('org.usage_this_period')}</h3>
                                     </div>
 
                                     <UsageBar
-                                        label="Messages"
+                                        label={t('org.messages')}
                                         icon={MessageSquare}
                                         used={usage.messages || 0}
                                         limit={limits.max_messages_per_month}
                                         color="#3b82f6"
                                     />
                                     <UsageBar
-                                        label="Cost"
+                                        label={t('org.cost')}
                                         icon={DollarSign}
                                         used={usage.cost || 0}
                                         limit={limits.max_cost_per_month}
@@ -425,7 +526,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                         color="#10b981"
                                     />
                                     <UsageBar
-                                        label="Tokens"
+                                        label={t('org.tokens')}
                                         icon={Zap}
                                         used={usage.tokens || 0}
                                         limit={limits.max_tokens_per_month}
@@ -435,13 +536,13 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
 
                                 {/* Plan limits grid */}
                                 <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
-                                    <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4">Plan limits</h3>
+                                    <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4">{t('org.plan_limits')}</h3>
                                     <div className="grid grid-cols-2 gap-3">
                                         {[
-                                            { label: 'Users', icon: Users, val: limits.max_users, color: '#6366f1' },
-                                            { label: 'Agents', icon: Bot, val: limits.max_agents, color: '#f59e0b' },
-                                            { label: 'Knowledge Sources', icon: Database, val: limits.max_knowledge_sources, color: '#10b981' },
-                                            { label: 'Messages / month', icon: MessageSquare, val: limits.max_messages_per_month, color: '#3b82f6' },
+                                            { label: t('org.users'), icon: Users, val: limits.max_users, color: '#6366f1' },
+                                            { label: t('org.agents'), icon: Bot, val: limits.max_agents, color: '#f59e0b' },
+                                            { label: t('org.knowledge_sources'), icon: Database, val: limits.max_knowledge_sources, color: '#10b981' },
+                                            { label: t('org.messages_per_month'), icon: MessageSquare, val: limits.max_messages_per_month, color: '#3b82f6' },
                                         ].map(item => {
                                             const Icon = item.icon;
                                             const isUnlimited = item.val === null || item.val === undefined || item.val === -1;
@@ -464,7 +565,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                     {/* Per-type limits */}
                                     {limits.max_messages_by_type && Object.keys(limits.max_messages_by_type).length > 0 && (
                                         <div className="mt-4 pt-4 border-t border-[var(--border-subtle)]">
-                                            <h4 className="text-xs font-medium text-[var(--text-muted)] mb-2">Message limits by type</h4>
+                                            <h4 className="text-xs font-medium text-[var(--text-muted)] mb-2">{t('org.message_limits_by_type')}</h4>
                                             <div className="flex flex-wrap gap-2">
                                                 {Object.entries(limits.max_messages_by_type).map(([type, val]) => (
                                                     <span key={type} className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border border-[var(--border-subtle)]">
@@ -481,7 +582,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                     {sub.notes && (
                                         <div className="mt-4 pt-4 border-t border-[var(--border-subtle)]">
                                             <p className="text-xs text-[var(--text-muted)]">
-                                                <span className="font-medium text-[var(--text-secondary)]">Notes: </span>
+                                                <span className="font-medium text-[var(--text-secondary)]">{t('org.notes')}: </span>
                                                 {sub.notes}
                                             </p>
                                         </div>
@@ -496,19 +597,17 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                 {activeSection === 'auth' && (
                     <div className="max-w-xl mx-auto space-y-5 animate-fadeIn">
                         <div>
-                            <h2 className="text-lg font-bold text-[var(--text-primary)]">Sign-in Method</h2>
-                            <p className="text-sm text-[var(--text-muted)] mt-0.5">Choose how users will sign into your organisation</p>
+                            <h2 className="text-lg font-bold text-[var(--text-primary)]">{t('org.signin_title')}</h2>
+                            <p className="text-sm text-[var(--text-muted)] mt-0.5">{t('org.signin_subtitle')}</p>
                         </div>
 
                         {isAuthLocked && (
                             <div className="flex gap-3 px-4 py-3 rounded-xl" style={{ background: 'rgba(245, 158, 11, 0.08)', border: '1px solid rgba(245, 158, 11, 0.15)' }}>
                                 <Lock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                                 <div>
-                                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Sign-in method is locked</p>
+                                    <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{t('org.signin_locked')}</p>
                                     <p className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                                        Your conversations are protected using a unique key derived from your sign-in method.
-                                        Changing how users log in would make existing conversations unreadable, so the
-                                        sign-in method cannot be changed after it has been set.
+                                        {t('org.signin_locked_desc')}
                                     </p>
                                 </div>
                             </div>
@@ -533,17 +632,17 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                         </div>
                                         <div className="flex-1 min-w-0">
                                             <div className="flex items-center gap-2">
-                                                <span className="text-sm font-semibold text-[var(--text-primary)]">{method.name}</span>
+                                                <span className="text-sm font-semibold text-[var(--text-primary)]">{t(method.nameKey)}</span>
                                                 {isSelected && isAuthLocked && (
                                                     <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full font-medium bg-green-500/15 text-green-500">
-                                                        <Lock className="w-2.5 h-2.5" />Active
+                                                        <Lock className="w-2.5 h-2.5" />{t('org.active')}
                                                     </span>
                                                 )}
                                                 {isSelected && !isAuthLocked && (
-                                                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-500/15 text-blue-500">Selected</span>
+                                                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-blue-500/15 text-blue-500">{t('org.selected')}</span>
                                                 )}
                                             </div>
-                                            <p className="text-xs text-[var(--text-muted)] mt-0.5">{method.description}</p>
+                                            <p className="text-xs text-[var(--text-muted)] mt-0.5">{t(method.descKey)}</p>
                                         </div>
                                         <div className="shrink-0">
                                             <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${isSelected ? 'border-[var(--accent-primary)]' : 'border-[var(--border-subtle)]'}`}>
@@ -559,9 +658,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                             <div className="flex gap-3 px-4 py-3 rounded-xl" style={{ background: 'rgba(59, 130, 246, 0.06)', border: '1px solid rgba(59, 130, 246, 0.12)' }}>
                                 <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" style={{ color: 'var(--text-muted)' }} />
                                 <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                                    <strong style={{ color: 'var(--text-primary)' }}>Choose carefully:</strong> Once saved, this
-                                    cannot be changed. Each user's data is protected with a unique key that is tied to
-                                    how they sign in. Switching later would make existing conversations unreadable.
+                                    <strong style={{ color: 'var(--text-primary)' }}>{t('org.choose_carefully')}</strong> {t('org.choose_carefully_desc')}
                                 </p>
                             </div>
                         )}
@@ -573,11 +670,10 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                     <div className="flex-1 min-w-0">
                                         <div className="flex items-center gap-2">
                                             <Users className="w-4 h-4 text-[var(--accent-primary)]" />
-                                            <span className="text-sm font-semibold text-[var(--text-primary)]">Auto-approve SSO users</span>
+                                            <span className="text-sm font-semibold text-[var(--text-primary)]">{t('org.auto_approve_sso')}</span>
                                         </div>
                                         <p className="text-xs text-[var(--text-muted)] mt-1 ml-6">
-                                            When enabled, users with a matching email domain will be automatically added with default permissions.
-                                            When disabled, they will be added as pending and require admin approval.
+                                            {t('org.auto_approve_desc')}
                                         </p>
                                     </div>
                                     <button
@@ -598,10 +694,10 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                         {/* ── Branding section ── */}
                         <div className="space-y-5">
                             <div>
-                                <h2 className="text-lg font-bold text-[var(--text-primary)]">Branding</h2>
-                                <p className="text-sm text-[var(--text-muted)] mt-0.5">Logo, name, and public-facing details</p>
+                                <h2 className="text-lg font-bold text-[var(--text-primary)]">{t('org.branding')}</h2>
+                                <p className="text-sm text-[var(--text-muted)] mt-0.5">{t('org.branding_subtitle')}</p>
                             </div>
-                            <Field label="Logo" hint="Displayed in the UI header and exports. PNG or SVG, max 500×200px.">
+                            <Field label={t('org.logo')} hint={t('org.logo_hint')}>
                                 <div className="flex items-center gap-4">
                                     {orgData.logo ? (
                                         <img
@@ -617,63 +713,72 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                     <div className="flex flex-col gap-2">
                                         <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium bg-[var(--accent-primary)] text-white hover:opacity-90 transition-opacity">
                                             <Upload className="w-4 h-4" />
-                                            Upload Logo
+                                            {t('org.upload_logo')}
                                             <input type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp" className="hidden" onChange={handleLogoUpload} />
                                         </label>
                                         {orgData.logo && (
                                             <button onClick={handleLogoRemove} className="text-xs text-[var(--text-muted)] hover:text-red-500 transition-colors text-left">
-                                                Remove logo
+                                                {t('org.remove_logo')}
                                             </button>
                                         )}
                                     </div>
                                 </div>
                             </Field>
-                            <Field label="Company Name">
+                            <Field label={t('org.company_name')}>
                                 <input type="text" value={orgData.name} onChange={e => setOrgData(p => ({ ...p, name: e.target.value }))} className={inputClass} placeholder="Bee Flow B.V." />
                             </Field>
-                            <Field label="Tagline" hint="Shown below the company name in headers and exports.">
+                            <Field label={t('org.tagline')} hint={t('org.tagline_hint')}>
                                 <input type="text" value={orgData.tagline} onChange={e => setOrgData(p => ({ ...p, tagline: e.target.value }))} className={inputClass} placeholder="Your Processes, Pollinated with Intelligence." />
                             </Field>
                             <Field label="Description">
                                 <input type="text" value={orgData.description} onChange={e => setOrgData(p => ({ ...p, description: e.target.value }))} className={inputClass} placeholder="Brief description of your organisation" />
                             </Field>
                             <div className="grid grid-cols-2 gap-4">
-                                <Field label="Email">
+                                <Field label={t('org.email')}>
                                     <input type="email" value={orgData.email} onChange={e => setOrgData(p => ({ ...p, email: e.target.value }))} className={inputClass} placeholder="info@company.com" />
                                 </Field>
-                                <Field label="Phone">
+                                <Field label={t('org.phone')}>
                                     <input type="tel" value={orgData.phone} onChange={e => setOrgData(p => ({ ...p, phone: e.target.value }))} className={inputClass} placeholder="+1 555 123 4567" />
                                 </Field>
                             </div>
-                            <Field label="Website">
+                            <Field label={t('org.website')}>
                                 <input type="url" value={orgData.website} onChange={e => setOrgData(p => ({ ...p, website: e.target.value }))} className={inputClass} placeholder="https://beeflow.nl" />
                             </Field>
                         </div>
 
+                        {!isPrivateCloud && (
+                            <>
+                                {/* ── Divider ── */}
+                                <div className="border-t border-[var(--border-subtle)]" />
+
+                                {/* ── Legal & Invoicing section ── */}
+                                <div className="space-y-5">
+                                    <div>
+                                        <h2 className="text-lg font-bold text-[var(--text-primary)]">{t('org.legal_invoicing')}</h2>
+                                        <p className="text-sm text-[var(--text-muted)] mt-0.5">{t('org.legal_subtitle')}</p>
+                                    </div>
+                                    <Field label={t('org.address')}>
+                                        <input type="text" value={orgData.address} onChange={e => setOrgData(p => ({ ...p, address: e.target.value }))} className={inputClass} placeholder="123 Main Street, City, Country" />
+                                    </Field>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <Field label={t('org.kvk')}>
+                                            <input type="text" value={orgData.kvk} onChange={e => setOrgData(p => ({ ...p, kvk: e.target.value }))} className={inputClass} placeholder="97632430" />
+                                        </Field>
+                                        <Field label={t('org.vat')}>
+                                            <input type="text" value={orgData.vat} onChange={e => setOrgData(p => ({ ...p, vat: e.target.value }))} className={inputClass} placeholder="NL123456789B01" />
+                                        </Field>
+                                    </div>
+                                </div>
+                            </>
+                        )}
+
                         {/* ── Divider ── */}
                         <div className="border-t border-[var(--border-subtle)]" />
 
-                        {/* ── Legal & Invoicing section ── */}
-                        <div className="space-y-5">
-                            <div>
-                                <h2 className="text-lg font-bold text-[var(--text-primary)]">Legal & Invoicing</h2>
-                                <p className="text-sm text-[var(--text-muted)] mt-0.5">Address, registration, and compliance details</p>
-                            </div>
-                            <Field label="Address">
-                                <input type="text" value={orgData.address} onChange={e => setOrgData(p => ({ ...p, address: e.target.value }))} className={inputClass} placeholder="123 Main Street, City, Country" />
-                            </Field>
-                            <div className="grid grid-cols-2 gap-4">
-                                <Field label="Chamber of Commerce (KVK)">
-                                    <input type="text" value={orgData.kvk} onChange={e => setOrgData(p => ({ ...p, kvk: e.target.value }))} className={inputClass} placeholder="97632430" />
-                                </Field>
-                                <Field label="VAT Number">
-                                    <input type="text" value={orgData.vat} onChange={e => setOrgData(p => ({ ...p, vat: e.target.value }))} className={inputClass} placeholder="NL123456789B01" />
-                                </Field>
-                            </div>
-                        </div>
+                        {/* ── Default Language for New Users ── */}
+                        <OrgDefaultLanguage />
                     </div>
                 )}
-
                 {/* ── Privacy Shield ── */}
                 {activeSection === 'privacy' && (
                     <div className="max-w-3xl mx-auto animate-fadeIn">

@@ -34,6 +34,9 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
 
     // Mobile detection
     const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+
+    // Feature flags
+    const notebooksEnabled = user?.featureFlags?.notebooks !== false;
     useEffect(() => {
         const mq = window.matchMedia('(max-width: 767px)');
         const handler = (e) => setIsMobile(e.matches);
@@ -1040,7 +1043,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                 </div>
                             </div>
                             <div className="flex items-center gap-2">
-                                {!isMobile && (
+                                {!isMobile && notebooksEnabled && (
                                     <button
                                         onClick={() => setShowNotebook(prev => !prev)}
                                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors border text-xs font-medium ${showNotebook ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] border-[var(--accent-primary)]/30' : 'bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-[var(--border-subtle)]'}`}
@@ -1124,7 +1127,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                             </div>
 
                             {/* Notebook Pane */}
-                            {!isMobile && showNotebook && (
+                            {!isMobile && notebooksEnabled && showNotebook && (
                                 <div className="w-1/2 min-w-[400px] flex flex-col h-full animate-in slide-in-from-right duration-300">
                                     <WorkspaceNotebook
                                         content={notebookContent}
@@ -1139,7 +1142,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                             const msg = sel ? `> **Selected text:**\n> ${sel.split('\n').join('\n> ')}\n\n${prompt}` : prompt;
                                             sendMessage(msg, []);
                                         }}
-                                        onOpenInNotebook={handleOpenInNotebook}
+                                        onOpenInNotebook={notebooksEnabled ? handleOpenInNotebook : undefined}
                                         conversationId={currentConversation?.id}
                                         existingNotebookId={notebookLinkedId}
                                         onNotebookIdChange={setNotebookLinkedId}
@@ -1168,7 +1171,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                 <h1 className="font-semibold text-[var(--text-primary)] text-sm">Direct Chat</h1>
                             </div>
                             <div className="flex items-center gap-2">
-                                {!isMobile && (
+                                {!isMobile && notebooksEnabled && (
                                     <button
                                         onClick={() => setShowNotebook(prev => !prev)}
                                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors border text-xs font-medium ${showNotebook ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] border-[var(--accent-primary)]/30' : 'bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-[var(--border-subtle)]'}`}
@@ -1247,7 +1250,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                             </div>
 
                             {/* Notebook Pane */}
-                            {!isMobile && showNotebook && (
+                            {!isMobile && notebooksEnabled && showNotebook && (
                                 <div className="w-1/2 min-w-[400px] flex flex-col h-full animate-in slide-in-from-right duration-300">
                                     <WorkspaceNotebook
                                         content={notebookContent}
@@ -1262,7 +1265,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                             const msg = sel ? `> **Selected text:**\n> ${sel.split('\n').join('\n> ')}\n\n${prompt}` : prompt;
                                             sendMessage(msg, []);
                                         }}
-                                        onOpenInNotebook={handleOpenInNotebook}
+                                        onOpenInNotebook={notebooksEnabled ? handleOpenInNotebook : undefined}
                                         conversationId={currentDirectConversation?.id}
                                         existingNotebookId={notebookLinkedId}
                                         onNotebookIdChange={setNotebookLinkedId}
@@ -1274,9 +1277,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 ) : (
                     /* No Agent Selected - Empty State */
                     <div className="flex-1 flex flex-col items-center justify-center p-8">
-                        <div className="w-24 h-24 rounded-2xl bg-gradient-to-br from-amber-400 to-amber-600 flex items-center justify-center mb-6 shadow-xl">
-                            <span className="text-5xl">🐝</span>
-                        </div>
+                        <img src="/BeeFlow-logo-Icon-2026.svg" alt="Bee Flow" className="w-24 h-24 rounded-2xl object-contain mb-6 shadow-xl" />
                         <h1 className="text-2xl font-bold text-[var(--text-primary)] mb-2">
                             Welcome to Bee Flow
                         </h1>
@@ -1306,7 +1307,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                             onSelect={handleSelectAgent}
                             onClose={() => setShowMarketplace(false)}
                             onUnpublish={handleUnpublishAgent}
-                            onEditAgent={() => { setShowMarketplace(false); onNavigate('agentDesigner'); }}
+                            onEditAgent={(agent) => { setShowMarketplace(false); onNavigate(agent ? `agentDesigner:${agent.id}` : 'agentDesigner'); }}
                             user={user}
                         />
                     </div>
