@@ -26,6 +26,10 @@ export default function OrgAzureConfigPanel({ user }) {
     const [ssoTenantId, setSsoTenantId] = useState('common');
     const [autoApproveSSO, setAutoApproveSSO] = useState(false);
 
+    // ── Azure AD Group Sync ──
+    const [groupSyncSettings, setGroupSyncSettings] = useState(null);
+    const [groupSyncStatus, setGroupSyncStatus] = useState(null);
+
     // ── Azure OpenAI ──
     const [azureEndpoint, setAzureEndpoint] = useState('');
     const [azureApiKey, setAzureApiKey] = useState('');
@@ -97,6 +101,9 @@ export default function OrgAzureConfigPanel({ user }) {
                 setHasSsoClientSecret(d.hasSsoClientSecret || false);
                 setSsoTenantId(d.ssoTenantId || 'common');
                 setAutoApproveSSO(d.autoApproveSSO || false);
+                // Group Sync
+                if (d.groupSyncSettings) setGroupSyncSettings(d.groupSyncSettings);
+                if (d.groupSyncStatus) setGroupSyncStatus(d.groupSyncStatus);
                 // Doc Processing
                 setUseAzureDocProcessing(d.useAzureDocProcessing || false);
                 setAzureDocEndpoint(d.azureDocEndpoint || '');
@@ -197,6 +204,11 @@ export default function OrgAzureConfigPanel({ user }) {
                 hasSsoClientSecret={hasSsoClientSecret}
                 ssoTenantId={ssoTenantId} setSsoTenantId={setSsoTenantId}
                 autoApproveSSO={autoApproveSSO} setAutoApproveSSO={setAutoApproveSSO}
+                orgId={orgId}
+                groupSyncSettings={groupSyncSettings}
+                groupSyncStatus={groupSyncStatus}
+                onSyncSettingsChange={setGroupSyncSettings}
+                onSyncStatusChange={setGroupSyncStatus}
                 {...sharedSaveProps}
             />
         ),
