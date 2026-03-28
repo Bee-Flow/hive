@@ -82,6 +82,9 @@ const OrgUsersPanel = ({ user }) => {
     // Expanded role details
     const [expandedRole, setExpandedRole] = useState(null);
 
+    // Expanded group members
+    const [expandedGroup, setExpandedGroup] = useState(null);
+
     // Invitation state
     const [showInviteForm, setShowInviteForm] = useState(false);
     const [inviteEmail, setInviteEmail] = useState('');
@@ -183,6 +186,21 @@ const OrgUsersPanel = ({ user }) => {
             }
         } catch (err) {
             console.error('Failed to update group:', err);
+        }
+    };
+
+    const handleUpdateGroupRole = async (groupId, newRole) => {
+        try {
+            const res = await authFetch(`${API_BASE}/auth/groups/${groupId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ orgRole: newRole }),
+            });
+            if (res.ok) {
+                await fetchData();
+            }
+        } catch (err) {
+            console.error('Failed to update group role:', err);
         }
     };
 
@@ -313,6 +331,13 @@ const OrgUsersPanel = ({ user }) => {
             const uGroups = Array.isArray(u.groups) ? u.groups : [];
             return uGroups.includes(groupId);
         }).length;
+    };
+
+    const getGroupMembers = (groupId) => {
+        return users.filter(u => {
+            const uGroups = Array.isArray(u.groups) ? u.groups : [];
+            return uGroups.includes(groupId);
+        });
     };
 
     const getRoleBadge = (role) => {
@@ -719,10 +744,11 @@ const OrgUsersPanel = ({ user }) => {
                                 const count = getGroupCount(group.id);
                                 const isSystem = group.id === 'admins' || group.id === 'users';
                                 return (
-                                    <div key={group.id} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 hover:border-[var(--border-subtle)] transition-all">
-                                        <div className="flex items-start justify-between gap-3">
+                                    <div key={group.id} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] transition-all" style={{ borderColor: expandedGroup === group.id ? 'var(--border-default)' : undefined }}>
+                                        <div className="flex items-start justify-between gap-3 p-4 cursor-pointer" onClick={() => setExpandedGroup(expandedGroup === group.id ? null : group.id)}>
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-2">
+                                                    {expandedGroup === group.id ? <ChevronDown className="w-3.5 h-3.5 text-[var(--text-muted)]" /> : <ChevronRight className="w-3.5 h-3.5 text-[var(--text-muted)]" />}
                                                     <span className="text-sm font-semibold text-[var(--text-primary)]">{group.name}</span>
                                                     {isSystem && (
                                                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-500/15 text-blue-500 font-medium">System</span>
@@ -733,51 +759,44 @@ const OrgUsersPanel = ({ user }) => {
                                                         </span>
                                                     )}
                                                 </div>
-                                                {editingGroup === group.id ? (
-                                                    <div className="flex items-center gap-2 mt-1">
-                                                        <input
-                                                            type="text"
-                                                            value={editGroupDesc}
-                                                            onChange={e => setEditGroupDesc(e.target.value)}
-                                                            className="flex-1 px-2 py-1 rounded border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs outline-none"
-                                                        />
-                                                        <button onClick={() => handleUpdateGroupDesc(group.id)} className="p-1 text-green-500 hover:bg-green-500/10 rounded">
-                                                            <Check className="w-3.5 h-3.5" />
-                                                        </button>
-                                                        <button onClick={() => setEditingGroup(null)} className="p-1 text-[var(--text-muted)] hover:bg-[var(--bg-tertiary)] rounded">
-                                                            <X className="w-3.5 h-3.5" />
-                                                        </button>
-                                                    </div>
-                                                ) : (
-                                                    <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                                                        {group.description || 'No description'}
-                                                        {group.source === 'azure' && group.lastSyncedAt && (
-                                                            <span className="ml-2 text-[10px] text-[var(--text-muted)] opacity-60">Last synced: {new Date(group.lastSyncedAt).toLocaleString()}</span>
-                                                        )}
-                                                    </p>
-                                                )}
+                                                <p className="text-xs text-[var(--text-muted)] mt-0.5">
+                                                    {group.description || 'No description'}
+                                                    {group.orgRole && (() => {
+                                                        const role = ORG_ROLES.find(r => r.id === group.orgRole);
+                                                        return role ? (
+                                                            <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded text-white font-medium" style={{ background: role.color }}>
+                                                                {role.name}
+                                                            </span>
+                                                        ) : null;
+                                                    })()}
+                                                    {group.source === 'azure' && group.lastSyncedAt && (
+                                                        <span className="ml-2 text-[10px] text-[var(--text-muted)] opacity-60">Last synced: {new Date(group.lastSyncedAt).toLocaleString()}</span>
+                                                    )}
+                                                </p>
                                             </div>
                                             <div className="flex items-center gap-2 shrink-0">
                                                 <span className="text-xs text-[var(--text-muted)] flex items-center gap-1">
                                                     <Users className="w-3 h-3" />
                                                     {count} {count === 1 ? 'member' : 'members'}
                                                 </span>
-                                                {!isSystem && group.source !== 'azure' && (
+                                                {!isSystem && (
                                                     <>
                                                         <button
-                                                            onClick={() => { setEditingGroup(group.id); setEditGroupDesc(group.description || ''); }}
+                                                            onClick={(e) => { e.stopPropagation(); setExpandedGroup(group.id); setEditingGroup(group.id); setEditGroupDesc(group.description || ''); }}
                                                             className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
-                                                            title="Edit description"
+                                                            title="Edit group settings"
                                                         >
                                                             <Edit2 className="w-3.5 h-3.5" />
                                                         </button>
-                                                        <button
-                                                            onClick={() => handleDeleteGroup(group.id)}
-                                                            className="p-1.5 rounded-lg hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-500 transition-colors"
-                                                            title="Delete group"
-                                                        >
-                                                            <Trash2 className="w-3.5 h-3.5" />
-                                                        </button>
+                                                        {group.source !== 'azure' && (
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); handleDeleteGroup(group.id); }}
+                                                                className="p-1.5 rounded-lg hover:bg-red-500/10 text-[var(--text-muted)] hover:text-red-500 transition-colors"
+                                                                title="Delete group"
+                                                            >
+                                                                <Trash2 className="w-3.5 h-3.5" />
+                                                            </button>
+                                                        )}
                                                     </>
                                                 )}
                                                 {group.source === 'azure' && (
@@ -787,6 +806,105 @@ const OrgUsersPanel = ({ user }) => {
                                                 )}
                                             </div>
                                         </div>
+                                        {/* Expanded member list */}
+                                        {expandedGroup === group.id && (
+                                            <div className="border-t border-[var(--border-subtle)] px-4 py-3 space-y-4">
+                                                {/* Group settings */}
+                                                <div className="space-y-3">
+                                                    <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)]">
+                                                        {t('admin.org_group_settings', 'Group Settings')}
+                                                    </p>
+
+                                                    {/* Description */}
+                                                    <div className="flex items-start gap-2">
+                                                        <label className="text-xs text-[var(--text-secondary)] w-24 pt-1.5 shrink-0">Description</label>
+                                                        {editingGroup === group.id ? (
+                                                            <div className="flex items-center gap-2 flex-1">
+                                                                <input
+                                                                    type="text"
+                                                                    value={editGroupDesc}
+                                                                    onChange={e => setEditGroupDesc(e.target.value)}
+                                                                    className="flex-1 px-2.5 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs outline-none focus:border-blue-500"
+                                                                    placeholder="Add a description..."
+                                                                    onKeyDown={e => e.key === 'Enter' && handleUpdateGroupDesc(group.id)}
+                                                                    autoFocus
+                                                                />
+                                                                <button onClick={() => handleUpdateGroupDesc(group.id)} className="p-1 text-green-500 hover:bg-green-500/10 rounded">
+                                                                    <Check className="w-3.5 h-3.5" />
+                                                                </button>
+                                                                <button onClick={() => setEditingGroup(null)} className="p-1 text-[var(--text-muted)] hover:bg-[var(--bg-tertiary)] rounded">
+                                                                    <X className="w-3.5 h-3.5" />
+                                                                </button>
+                                                            </div>
+                                                        ) : (
+                                                            <p className="text-xs text-[var(--text-muted)] pt-1.5 flex-1 cursor-pointer hover:text-[var(--text-primary)] transition-colors"
+                                                                onClick={(e) => { e.stopPropagation(); setEditingGroup(group.id); setEditGroupDesc(group.description || ''); }}>
+                                                                {group.description || <span className="italic opacity-60">Click to add description...</span>}
+                                                            </p>
+                                                        )}
+                                                    </div>
+
+                                                    {/* Role selector */}
+                                                    <div className="flex items-center gap-2">
+                                                        <label className="text-xs text-[var(--text-secondary)] w-24 shrink-0">Group Role</label>
+                                                        <select
+                                                            value={group.orgRole || ''}
+                                                            onChange={e => handleUpdateGroupRole(group.id, e.target.value)}
+                                                            className="flex-1 px-2.5 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs outline-none focus:border-blue-500 cursor-pointer"
+                                                        >
+                                                            <option value="">User (default)</option>
+                                                            {ORG_ROLES.map(r => (
+                                                                <option key={r.id} value={r.id}>{r.name}</option>
+                                                            ))}
+                                                        </select>
+                                                        {group.orgRole && (
+                                                            <span className="text-[10px] text-[var(--text-muted)]">
+                                                                All members inherit this role
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+
+                                                {/* Members list */}
+                                                {(() => {
+                                                    const members = getGroupMembers(group.id);
+                                                    if (members.length === 0) {
+                                                        return (
+                                                            <p className="text-xs text-[var(--text-muted)] text-center py-2">
+                                                                {t('admin.org_group_no_members', 'No members in this group')}
+                                                            </p>
+                                                        );
+                                                    }
+                                                    return (
+                                                        <div className="space-y-1.5">
+                                                            <p className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-muted)] mb-2">
+                                                                {t('admin.org_group_members', 'Members')} ({members.length})
+                                                            </p>
+                                                            {members.map(m => (
+                                                                <div key={m.id} className="flex items-center gap-3 px-3 py-2 rounded-lg bg-[var(--bg-primary)]">
+                                                                    <div className="w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold text-white shrink-0"
+                                                                        style={{ background: `hsl(${(m.displayName || m.username || '').charCodeAt(0) * 37 % 360}, 55%, 50%)` }}>
+                                                                        {(m.displayName || m.username || '?').charAt(0).toUpperCase()}
+                                                                    </div>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <p className="text-xs font-medium text-[var(--text-primary)] truncate">{m.displayName || m.username}</p>
+                                                                        {m.email && (
+                                                                            <p className="text-[10px] text-[var(--text-muted)] truncate flex items-center gap-1">
+                                                                                <Mail className="w-2.5 h-2.5" />
+                                                                                {m.email}
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                    <div className="shrink-0">
+                                                                        {getRoleBadge(group.orgRole || m.role || m.orgRole)}
+                                                                    </div>
+                                                                </div>
+                                                            ))}
+                                                        </div>
+                                                    );
+                                                })()}
+                                            </div>
+                                        )}
                                     </div>
                                 );
                             })}

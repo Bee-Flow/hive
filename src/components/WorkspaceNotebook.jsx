@@ -65,6 +65,7 @@ export default function WorkspaceNotebook({
     conversationId,
     existingNotebookId,
     onNotebookIdChange,
+    user,
 }) {
     const editorRef = useRef(null);
     const [copied, setCopied] = useState(false);
@@ -302,13 +303,14 @@ export default function WorkspaceNotebook({
                 <div className="flex items-center gap-0.5">
 
                     {/* Export dropdown */}
+                    {user?.featureFlags?.export !== false && (
                     <div className="relative" ref={exportMenuRef}>
                         <button
                             onClick={() => setExportMenuOpen(p => !p)}
                             disabled={!!exporting}
                             className="p-1.5 rounded-lg transition-colors hover:bg-[var(--bg-tertiary)] flex items-center gap-0.5"
                             style={{ color: exporting ? 'var(--accent-primary)' : 'var(--text-tertiary)' }}
-                            title="Export document"
+                            title={t('notebooks.export_title')}
                         >
                             {exporting
                                 ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -327,7 +329,7 @@ export default function WorkspaceNotebook({
                                     style={{ color: 'var(--text-primary)' }}
                                 >
                                     <FileDown className="w-3.5 h-3.5 text-red-500" />
-                                    Export as PDF
+                                    {t('notebooks.export_pdf')}
                                 </button>
                                 <button
                                     onClick={() => handleExport('docx')}
@@ -335,32 +337,37 @@ export default function WorkspaceNotebook({
                                     style={{ color: 'var(--text-primary)' }}
                                 >
                                     <FileText className="w-3.5 h-3.5 text-blue-500" />
-                                    Export as Word
+                                    {t('notebooks.export_word')}
                                 </button>
                             </div>
                         )}
                     </div>
+                    )}
 
                     {/* Open in full Notebook */}
+                    {user?.featureFlags?.openInNotebook !== false && (
                     <button
                         onClick={handleOpenNotebook}
                         className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-colors hover:bg-[var(--bg-tertiary)]"
                         style={{ color: 'var(--accent-primary)' }}
-                        title="Open as full Notebook"
+                        title={t('notebooks.open_in_notebook_title')}
                     >
                         <ExternalLink className="w-3 h-3" />
-                        Open in Notebook
+                        {t('notebooks.open_in_notebook')}
                     </button>
+                    )}
 
                     {/* Divider */}
-                    <div className="w-px h-4 mx-1" style={{ background: 'var(--border-subtle)' }} />
+                    {(user?.featureFlags?.export !== false || user?.featureFlags?.openInNotebook !== false) && (
+                        <div className="w-px h-4 mx-1" style={{ background: 'var(--border-subtle)' }} />
+                    )}
 
                     {/* Close */}
                     <button
                         onClick={onClose}
                         className="p-1.5 rounded-lg transition-colors hover:bg-[var(--bg-tertiary)]"
                         style={{ color: 'var(--text-tertiary)' }}
-                        title="Close Notebook"
+                        title={t('notebooks.close')}
                     >
                         <X className="w-4 h-4" />
                     </button>
@@ -377,6 +384,7 @@ export default function WorkspaceNotebook({
                     onAIAction={handleAIAction}
                     saving={saving}
                     notebookId={notebookId || 'workspace'}
+                    askAiEnabled={user?.featureFlags?.askAi !== false}
                 />
             </div>
         </div>

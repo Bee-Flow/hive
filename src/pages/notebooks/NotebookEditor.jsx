@@ -23,6 +23,7 @@ import TaskList from '@tiptap/extension-task-list';
 import TaskItem from '@tiptap/extension-task-item';
 import { SectionDragExtension } from './SectionDragExtension';
 import { API_BASE } from '../../utils/helpers';
+import useTranslation from '../../hooks/useTranslation';
 
 // KaTeX CSS for math formula rendering
 import 'katex/dist/katex.min.css';
@@ -37,10 +38,10 @@ import {
 } from 'lucide-react';
 
 /* ── AI Actions for selection bubble menu ─────────────────────── */
-const AI_ACTIONS = [
-    { key: 'rewrite', icon: RefreshCw, label: 'Rewrite' },
-    { key: 'shorten', icon: Scissors, label: 'Shorten' },
-    { key: 'expand', icon: Expand, label: 'Expand' },
+const getAIActions = (t) => [
+    { key: 'rewrite', icon: RefreshCw, label: t('notebooks.ai_action_rewrite') },
+    { key: 'shorten', icon: Scissors, label: t('notebooks.ai_action_shorten') },
+    { key: 'expand', icon: Expand, label: t('notebooks.ai_action_expand') },
 ];
 
 /* ── Table Dropdown Button ───────────────────────────────────── */
@@ -382,8 +383,8 @@ function MoreFormattingDropdown({ editor, insertMath, imageInputRef, onImportCli
                         <MoreItem icon={FileUp} label="Import File (PDF, DOCX)"
                             onClick={() => { onImportClick(); setOpen(false); }} />
                     )}
-                    {onAIFill && (
-                        <MoreItem icon={aiFilling ? Loader2 : Wand2} label="AI Fill {{params}}" disabled={aiFilling}
+                    {onAIFill && askAiEnabled && (
+                        <MoreItem icon={aiFilling ? Loader2 : Wand2} label={t("notebooks.ai_fill")} disabled={aiFilling}
                             onClick={() => { onAIFill(); setOpen(false); }} />
                     )}
                 </div>
@@ -409,7 +410,7 @@ function MoreItem({ icon: Icon, label, onClick, active, danger, disabled }) {
 
 /* ── Main Editor Component ───────────────────────────────────────────────────── */
 const NotebookEditor = forwardRef(function NotebookEditorInner(
-    { content, onChange, onSave, onAIAction, onAIFill, saving, onImportClick, generating, aiFilling, onTocUpdate, notebookId },
+    { content, onChange, onSave, onAIAction, onAIFill, saving, onImportClick, generating, aiFilling, onTocUpdate, notebookId, askAiEnabled = true },
     ref
 ) {
     const saveTimerRef = useRef(null);
@@ -417,11 +418,16 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
     const [showAskInput, setShowAskInput] = useState(false);
     const [askQuery, setAskQuery] = useState('');
     const askInputRef = useRef(null);
+    // Position of the floating ask-input portal (captured from selection rect)
+    const [askAnchor, setAskAnchor] = useState(null);
+    // Frozen selected text + range used when the ask input is open
+    const frozenSelectionRef = useRef(null);
     const imageInputRef = useRef(null);
     // Always-fresh ref so the image upload closure never captures a stale notebookId
     const notebookIdRef = useRef(notebookId);
     useEffect(() => { notebookIdRef.current = notebookId; }, [notebookId]);
 
+    const { t } = useTranslation();
     const editor = useEditor({
         extensions: [
             StarterKit.configure({
@@ -429,7 +435,7 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
                 codeBlock: { HTMLAttributes: { class: 'notebook-code-block' } },
             }),
             Placeholder.configure({
-                placeholder: 'Start writing… Type $formula$ for math, :emoji: for emoji, or use the toolbar.',
+                placeholder: t('notebooks.placeholder'),
             }),
             Underline,
             TextAlign.configure({ types: ['heading', 'paragraph'] }),
@@ -586,9 +592,26 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
         };
     }, [editor, handleImageUpload]);
 
-    // Focus Ask AI input
+    // Focus Ask AI input whenever the portal appears
     useEffect(() => {
-        if (showAskInput && askInputRef.current) askInputRef.current.focus();
+        if (showAskInput && askInputRef.current) {
+            // tiny delay so the portal has painted before we focus
+            requestAnimationFrame(() => askInputRef.current?.focus());
+        }
+    }, [showAskInput]);
+
+    // Close ask input on outside click
+    useEffect(() => {
+        if (!showAskInput) return;
+        const handler = (e) => {
+            if (askInputRef.current && !askInputRef.current.closest('[data-ask-portal]')?.contains(e.target)) {
+                setShowAskInput(false);
+                setAskQuery('');
+                frozenSelectionRef.current = null;
+            }
+        };
+        document.addEventListener('mousedown', handler);
+        return () => document.removeEventListener('mousedown', handler);
     }, [showAskInput]);
 
     // Expose imperative methods
@@ -717,87 +740,139 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
                 </div>
 
                 <div className="flex-1" />
-                <span className="text-[10px] mr-2" style={{ color: 'var(--text-tertiary)' }}>{wordCount} words</span>
-                {saving && <span className="text-[10px] animate-pulse" style={{ color: 'var(--accent-primary)' }}>Saving...</span>}
+                <span className="text-[10px] mr-2" style={{ color: 'var(--text-tertiary)' }}>{wordCount} {t('notebooks.words')}</span>
+                {saving && <span className="text-[10px] animate-pulse" style={{ color: 'var(--accent-primary)' }}>{t('notebooks.saving')}</span>}
             </div>
 
             {/* Math / Tips hint banner */}
             <MathHint />
 
-            {/* BubbleMenu — AI actions on text selection (only for non-image nodes) */}
+            {/* BubbleMenu — AI quick-actions on text selection (no input here) */}
             <BubbleMenu
                 editor={editor}
                 tippyOptions={{
                     placement: 'top',
                     animation: 'shift-toward-subtle',
                     duration: 150,
-                    onHidden: () => { setShowAskInput(false); setAskQuery(''); }
+                    onHidden: () => { /* portal handles its own lifecycle */ }
                 }}
                 shouldShow={({ editor }) => {
-                    // Don't show AI bubble menu when an image is selected
+                    // Hide the action-button bar while the ask portal is open
+                    if (showAskInput) return false;
                     if (editor.isActive('resizableImage')) return false;
                     return editor.view.state.selection.content().size > 0;
                 }}
             >
-                <div
-                    className="flex items-center px-1.5 py-1 rounded-xl shadow-xl border backdrop-blur-md transition-all duration-200"
-                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', gap: showAskInput ? '6px' : '2px' }}
-                >
-                    {!showAskInput ? (
+                    <div
+                        className="flex items-center px-1.5 py-1 rounded-xl shadow-xl border backdrop-blur-md transition-all duration-200"
+                        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', gap: '2px' }}
+                    >
+                        {getAIActions(t).map(action => {
+                            const Icon = action.icon;
+                            return (
+                            <button key={action.key}
+                                onMouseDown={e => { e.preventDefault(); handleAIAction(action.key); }}
+                                className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-all hover:bg-[var(--bg-tertiary)]"
+                                style={{ color: 'var(--text-secondary)' }}
+                            >
+                                <Icon className="w-3 h-3" /> {action.label}
+                            </button>
+                        );
+                    })}
+                    {askAiEnabled && (
                         <>
-                            {AI_ACTIONS.map(action => {
-                                const Icon = action.icon;
-                                return (
-                                    <button key={action.key}
-                                        onMouseDown={e => { e.preventDefault(); handleAIAction(action.key); }}
-                                        className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-all hover:bg-[var(--bg-tertiary)]"
-                                        style={{ color: 'var(--text-secondary)' }}
-                                    >
-                                        <Icon className="w-3 h-3" /> {action.label}
-                                    </button>
-                                );
-                            })}
                             <div className="w-px h-4 mx-0.5" style={{ background: 'var(--border-subtle)' }} />
                             <button
-                                onMouseDown={e => { e.preventDefault(); setShowAskInput(true); }}
+                                onMouseDown={e => {
+                                    e.preventDefault();
+                                    // Capture the selection range + screen position NOW,
+                                    // before the BubbleMenu unmounts and selection may clear.
+                                    const { from, to } = editor.state.selection;
+                                    const selectedText = editor.state.doc.textBetween(from, to, ' ');
+                                    frozenSelectionRef.current = { from, to, selectedText };
+
+                                    // Get screen coordinates of the selection for portal placement
+                                    const coords = editor.view.coordsAtPos(from);
+                                    setAskAnchor({ top: coords.top - 52, left: coords.left });
+                                    setShowAskInput(true);
+                                }}
                                 className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-all hover:bg-[var(--bg-tertiary)]"
                                 style={{ color: 'var(--accent-primary)' }}
                             >
-                                <Wand2 className="w-3 h-3" /> Ask AI
+                                <Wand2 className="w-3 h-3" /> {t('notebooks.ask_ai')}
                             </button>
                         </>
-                    ) : (
-                        <div className="flex items-center gap-2 pl-2">
-                            <Wand2 className="w-3 h-3" style={{ color: 'var(--accent-primary)' }} />
-                            <input
-                                ref={askInputRef}
-                                type="text"
-                                placeholder="Ask AI about this text..."
-                                value={askQuery}
-                                onChange={e => setAskQuery(e.target.value)}
-                                onKeyDown={e => {
-                                    if (e.key === 'Enter' && askQuery.trim()) { e.preventDefault(); handleAIAction('ask', askQuery.trim()); }
-                                    else if (e.key === 'Escape') { e.preventDefault(); setShowAskInput(false); setAskQuery(''); }
-                                }}
-                                className="bg-transparent border-none outline-none text-[11px] w-[200px] font-medium placeholder-[var(--text-tertiary)] text-[var(--text-primary)]"
-                            />
-                            <button
-                                onMouseDown={e => { e.preventDefault(); if (askQuery.trim()) handleAIAction('ask', askQuery.trim()); }}
-                                className="px-2 py-1 rounded-lg text-[10px] font-bold bg-[var(--accent-primary)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
-                                disabled={!askQuery.trim()}
-                            >
-                                Send
-                            </button>
-                            <button
-                                onMouseDown={e => { e.preventDefault(); setShowAskInput(false); setAskQuery(''); }}
-                                className="px-1.5 py-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-                            >
-                                ×
-                            </button>
-                        </div>
                     )}
                 </div>
             </BubbleMenu>
+
+            {/* ── Ask AI floating portal — rendered outside the BubbleMenu so
+                   it never loses focus due to TipTap re-render cycles ── */}
+            {showAskInput && askAnchor && (
+                <div
+                    data-ask-portal
+                    className="fixed z-[9999] flex items-center gap-2 px-3 py-1.5 rounded-xl shadow-2xl border backdrop-blur-md"
+                    style={{
+                        top: askAnchor.top,
+                        left: askAnchor.left,
+                        background: 'var(--bg-primary)',
+                        borderColor: 'var(--border-default)',
+                    }}
+                    onMouseDown={e => e.stopPropagation()}
+                >
+                    <Wand2 className="w-3 h-3 shrink-0" style={{ color: 'var(--accent-primary)' }} />
+                    <input
+                        ref={askInputRef}
+                        type="text"
+                        placeholder={t('notebooks.ask_ai_placeholder')}
+                        value={askQuery}
+                        onChange={e => setAskQuery(e.target.value)}
+                        onKeyDown={e => {
+                            e.stopPropagation();
+                            if (e.key === 'Enter' && askQuery.trim()) {
+                                e.preventDefault();
+                                const frozen = frozenSelectionRef.current;
+                                if (frozen) onAIAction?.('ask', frozen.selectedText, { from: frozen.from, to: frozen.to }, askQuery.trim());
+                                setShowAskInput(false);
+                                setAskQuery('');
+                                frozenSelectionRef.current = null;
+                            } else if (e.key === 'Escape') {
+                                e.preventDefault();
+                                setShowAskInput(false);
+                                setAskQuery('');
+                                frozenSelectionRef.current = null;
+                            }
+                        }}
+                        className="bg-transparent border-none outline-none text-[11px] w-[200px] font-medium placeholder-[var(--text-tertiary)] text-[var(--text-primary)]"
+                    />
+                    <button
+                        onMouseDown={e => {
+                            e.preventDefault();
+                            if (!askQuery.trim()) return;
+                            const frozen = frozenSelectionRef.current;
+                            if (frozen) onAIAction?.('ask', frozen.selectedText, { from: frozen.from, to: frozen.to }, askQuery.trim());
+                            setShowAskInput(false);
+                            setAskQuery('');
+                            frozenSelectionRef.current = null;
+                        }}
+                        className="px-2 py-1 rounded-lg text-[10px] font-bold bg-[var(--accent-primary)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+                        disabled={!askQuery.trim()}
+                    >
+                        Send
+                    </button>
+                    <button
+                        onMouseDown={e => {
+                            e.preventDefault();
+                            setShowAskInput(false);
+                            setAskQuery('');
+                            frozenSelectionRef.current = null;
+                        }}
+                        className="px-1.5 py-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+                    >
+                        ×
+                    </button>
+                </div>
+            )}
 
             {/* Image Bubble Menu — alignment, size, wrap, delete */}
             <BubbleMenu
@@ -890,6 +965,7 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
 
 /* ── Math hint banner — dismissible ─────────────────────────── */
 function MathHint() {
+    const { t } = useTranslation();
     const [visible, setVisible] = useState(false);
     const [dismissed, setDismissed] = useState(() => {
         try { return localStorage.getItem('nb_math_hint_dismissed') === '1'; } catch { return false; }
@@ -910,11 +986,11 @@ function MathHint() {
             style={{ background: 'linear-gradient(90deg, rgba(99,102,241,0.06), transparent)', borderColor: 'var(--border-subtle)', color: 'var(--text-tertiary)' }}
         >
             <span>
-                💡 <strong className="text-[var(--text-secondary)]">Tips:</strong>{' '}
-                <code className="bg-[var(--bg-tertiary)] px-1 py-0.5 rounded text-[10px]">$formula$</code> math ·{' '}
-                <code className="bg-[var(--bg-tertiary)] px-1 py-0.5 rounded text-[10px]">:emoji:</code> shortcodes ·{' '}
-                <code className="bg-[var(--bg-tertiary)] px-1 py-0.5 rounded text-[10px]">☑</code> task lists ·{' '}
-                hover block for drag handle ⠿
+                💡 <strong className="text-[var(--text-secondary)]">{t('notebooks.tips')}</strong>{' '}
+                <code className="bg-[var(--bg-tertiary)] px-1 py-0.5 rounded text-[10px]">$formula$</code> {t('notebooks.tips_math')} ·{' '}
+                <code className="bg-[var(--bg-tertiary)] px-1 py-0.5 rounded text-[10px]">:emoji:</code> {t('notebooks.tips_emoji')} ·{' '}
+                <code className="bg-[var(--bg-tertiary)] px-1 py-0.5 rounded text-[10px]">☑</code> {t('notebooks.tips_tasks')} ·{' '}
+                {t('notebooks.tips_drag')} ⠿
             </span>
             <button
                 onClick={() => { setDismissed(true); setVisible(false); try { localStorage.setItem('nb_math_hint_dismissed', '1'); } catch {} }}

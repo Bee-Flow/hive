@@ -820,7 +820,7 @@ const Sidebar = ({
                                     <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
                                 </NavLink>
                             )}
-                            {!isMobile && user?.featureFlags?.notebooks !== false && (
+                            {!isMobile && user?.featureFlags?.notebooks !== false && user?.featureFlags?.notebooksMenu !== false && (
                                 <NavLink
                                     href="/notebooks"
                                     onClick={() => setShowProfileMenu(false)}

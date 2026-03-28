@@ -242,6 +242,7 @@ function App() {
     const [showLogin, setShowLogin] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
     const [deploymentMode, setDeploymentMode] = useState('cloud');
+    const [serverAvailable, setServerAvailable] = useState(null); // null=unknown, true=ok, false=down
     const [showProfileMenu, setShowProfileMenu] = useState(false);
     const [showAgentDesigner, setShowAgentDesigner] = useState(false);
     const [initialDesignerAgentId, setInitialDesignerAgentId] = useState(null);
@@ -274,8 +275,16 @@ function App() {
                         if (setupData.deploymentMode) {
                             setDeploymentMode(setupData.deploymentMode);
                         }
+                        setServerAvailable(true);
+                    } else {
+                        setServerAvailable(true); // server responded, even if not OK
                     }
-                } catch (_) { /* ignore — defaults to 'cloud' */ }
+                } catch (_) {
+                    // Network error — server is unreachable
+                    setServerAvailable(false);
+                    setIsLoading(false);
+                    return;
+                }
 
                 const res = await authFetch(`${API_BASE}/auth/user`);
                 if (res.ok) {
@@ -524,10 +533,76 @@ function App() {
         );
     }
 
+    // Server is unreachable — show a clear error instead of the product website
+    if (serverAvailable === false) {
+        return (
+            <div style={{
+                height: '100vh',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                background: 'var(--bg-primary)',
+                padding: '24px',
+            }}>
+                <div style={{
+                    maxWidth: 420,
+                    width: '100%',
+                    textAlign: 'center',
+                    background: 'var(--bg-secondary)',
+                    border: '1px solid var(--border-subtle)',
+                    borderRadius: 24,
+                    padding: '40px 32px',
+                    boxShadow: '0 20px 60px rgba(0,0,0,0.15)',
+                    position: 'relative',
+                    overflow: 'hidden',
+                }}>
+                    <div style={{
+                        position: 'absolute', top: 0, left: '10%', right: '10%',
+                        height: 1,
+                        background: 'linear-gradient(90deg, transparent, var(--border-default), transparent)',
+                    }} />
+                    <div style={{
+                        width: 64, height: 64, borderRadius: 18, margin: '0 auto 20px',
+                        background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 30,
+                    }}>🐝</div>
+                    <div style={{
+                        width: 52, height: 52, borderRadius: 14, margin: '0 auto 16px',
+                        background: 'rgba(239, 68, 68, 0.1)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    }}>
+                        <svg width="26" height="26" fill="none" stroke="#ef4444" strokeWidth="1.5" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
+                        </svg>
+                    </div>
+                    <h2 style={{ margin: '0 0 10px', fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>
+                        Server Unavailable
+                    </h2>
+                    <p style={{ margin: '0 0 28px', fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.65 }}>
+                        Could not connect to the Bee Flow server. Please make sure the server is running and try again.
+                    </p>
+                    <button
+                        onClick={() => window.location.reload()}
+                        style={{
+                            width: '100%', padding: '11px 0', borderRadius: 12,
+                            background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+                            color: '#fff', fontWeight: 600, fontSize: 14,
+                            border: 'none', cursor: 'pointer',
+                            boxShadow: '0 4px 12px rgba(245,158,11,0.3)',
+                        }}
+                    >
+                        Retry Connection
+                    </button>
+                </div>
+            </div>
+        );
+    }
+
     // Show homepage / public routes if not authenticated
     if (!isAuthenticated) {
-        // Private cloud mode: skip product website, go straight to login
-        if (deploymentMode === 'private-cloud') {
+        // Private cloud mode OR local server (non-cloud): skip product website, go straight to login
+        if (deploymentMode === 'private-cloud' || deploymentMode !== 'cloud') {
             return <LoginPage onLogin={handleLogin} onDemoLogin={handleLogin} />;
         }
         // Cloud mode: show product website and marketing pages

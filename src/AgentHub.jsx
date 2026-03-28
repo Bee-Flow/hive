@@ -1143,6 +1143,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                             sendMessage(msg, []);
                                         }}
                                         onOpenInNotebook={notebooksEnabled ? handleOpenInNotebook : undefined}
+                                        user={user}
                                         conversationId={currentConversation?.id}
                                         existingNotebookId={notebookLinkedId}
                                         onNotebookIdChange={setNotebookLinkedId}
@@ -1260,12 +1261,13 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                         onSelectionChange={(text) => {
                                             setNotebookSelection(text);
                                         }}
-                                        onAskAI={(prompt) => {
+                                        onAskAI={user?.featureFlags?.askAi !== false ? (prompt) => {
                                             const sel = notebookSelection;
                                             const msg = sel ? `> **Selected text:**\n> ${sel.split('\n').join('\n> ')}\n\n${prompt}` : prompt;
                                             sendMessage(msg, []);
-                                        }}
+                                        } : undefined}
                                         onOpenInNotebook={notebooksEnabled ? handleOpenInNotebook : undefined}
+                                        user={user}
                                         conversationId={currentDirectConversation?.id}
                                         existingNotebookId={notebookLinkedId}
                                         onNotebookIdChange={setNotebookLinkedId}

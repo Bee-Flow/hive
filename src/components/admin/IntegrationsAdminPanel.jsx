@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
 import { API_BASE, authFetch } from '../../utils/helpers';
-import { Loader2, ToggleLeft, ToggleRight, Check, Settings, Plus, Trash2, RefreshCw, Plug, ChevronDown, ExternalLink, Mail, Send, Layers, Search as SearchIcon, Cloud, BookOpen, FolderKanban } from 'lucide-react';
+import { Loader2, ToggleLeft, ToggleRight, Check, Settings, Plus, Trash2, RefreshCw, Plug, ChevronDown, ExternalLink, Mail, Send, Layers, Search as SearchIcon, Cloud, BookOpen, FolderKanban, Sparkles, FileDown, Maximize2, LayoutList } from 'lucide-react';
 import McpMarketplace from './McpMarketplace';
 
 const SECTIONS = [
@@ -128,6 +128,14 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
     const [savingNotebooks, setSavingNotebooks] = useState(false);
     const [projectsEnabled, setProjectsEnabled] = useState(true);
     const [savingProjects, setSavingProjects] = useState(false);
+    const [askAiEnabled, setAskAiEnabled] = useState(true);
+    const [savingAskAi, setSavingAskAi] = useState(false);
+    const [exportEnabled, setExportEnabled] = useState(true);
+    const [savingExport, setSavingExport] = useState(false);
+    const [openInNotebookEnabled, setOpenInNotebookEnabled] = useState(true);
+    const [savingOpenInNotebook, setSavingOpenInNotebook] = useState(false);
+    const [notebooksMenuEnabled, setNotebooksMenuEnabled] = useState(true);
+    const [savingNotebooksMenu, setSavingNotebooksMenu] = useState(false);
 
     useEffect(() => {
         load();
@@ -182,6 +190,10 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
                 // Feature flags
                 if (configData.notebooksEnabled !== undefined) setNotebooksEnabled(configData.notebooksEnabled);
                 if (configData.projectsEnabled !== undefined) setProjectsEnabled(configData.projectsEnabled);
+                if (configData.askAiEnabled !== undefined) setAskAiEnabled(configData.askAiEnabled);
+                if (configData.exportEnabled !== undefined) setExportEnabled(configData.exportEnabled);
+                if (configData.openInNotebookEnabled !== undefined) setOpenInNotebookEnabled(configData.openInNotebookEnabled);
+                if (configData.notebooksMenuEnabled !== undefined) setNotebooksMenuEnabled(configData.notebooksMenuEnabled);
             }
         } catch (e) { console.error(e); }
         try {
@@ -444,6 +456,166 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
                                     className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${projectsEnabled ? 'bg-green-500' : 'bg-gray-600'}`}
                                 >
                                     <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${projectsEnabled ? 'left-6' : 'left-1'}`} />
+                                </button>
+                            </div>
+
+                            {/* Ask AI Toggle */}
+                            <div
+                                className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
+                                style={{
+                                    background: askAiEnabled ? 'rgba(16, 185, 129, 0.06)' : 'var(--bg-primary)',
+                                    border: `1px solid ${askAiEnabled ? 'rgba(16, 185, 129, 0.2)' : 'var(--border-subtle)'}`,
+                                }}
+                            >
+                                <Sparkles className="w-5 h-5 shrink-0" style={{ color: askAiEnabled ? '#10b981' : 'var(--text-muted)' }} />
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium" style={{ color: askAiEnabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>Ask AI</div>
+                                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Enable AI assistance in notebooks</div>
+                                </div>
+                                <button
+                                    onClick={async () => {
+                                        const newVal = !askAiEnabled;
+                                        setSavingAskAi(true);
+                                        try {
+                                            const res = await authFetch(`${API_BASE}/ai/config`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ askAiEnabled: newVal }),
+                                            });
+                                            if (res.ok) {
+                                                setAskAiEnabled(newVal);
+                                                setMessage({ type: 'success', text: newVal ? 'Ask AI enabled' : 'Ask AI disabled' });
+                                            }
+                                        } catch (e) {
+                                            setMessage({ type: 'error', text: 'Failed to update Ask AI setting' });
+                                        }
+                                        setSavingAskAi(false);
+                                        setTimeout(() => setMessage(null), 3000);
+                                    }}
+                                    disabled={savingAskAi}
+                                    className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${askAiEnabled ? 'bg-green-500' : 'bg-gray-600'}`}
+                                >
+                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${askAiEnabled ? 'left-6' : 'left-1'}`} />
+                                </button>
+                            </div>
+
+                            {/* Export Toggle */}
+                            <div
+                                className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
+                                style={{
+                                    background: exportEnabled ? 'rgba(16, 185, 129, 0.06)' : 'var(--bg-primary)',
+                                    border: `1px solid ${exportEnabled ? 'rgba(16, 185, 129, 0.2)' : 'var(--border-subtle)'}`,
+                                }}
+                            >
+                                <FileDown className="w-5 h-5 shrink-0" style={{ color: exportEnabled ? '#10b981' : 'var(--text-muted)' }} />
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium" style={{ color: exportEnabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>Export</div>
+                                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Enable exporting notebooks to Word/PDF</div>
+                                </div>
+                                <button
+                                    onClick={async () => {
+                                        const newVal = !exportEnabled;
+                                        setSavingExport(true);
+                                        try {
+                                            const res = await authFetch(`${API_BASE}/ai/config`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ exportEnabled: newVal }),
+                                            });
+                                            if (res.ok) {
+                                                setExportEnabled(newVal);
+                                                setMessage({ type: 'success', text: newVal ? 'Export enabled' : 'Export disabled' });
+                                            }
+                                        } catch (e) {
+                                            setMessage({ type: 'error', text: 'Failed to update export setting' });
+                                        }
+                                        setSavingExport(false);
+                                        setTimeout(() => setMessage(null), 3000);
+                                    }}
+                                    disabled={savingExport}
+                                    className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${exportEnabled ? 'bg-green-500' : 'bg-gray-600'}`}
+                                >
+                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${exportEnabled ? 'left-6' : 'left-1'}`} />
+                                </button>
+                            </div>
+
+                            {/* Open in Notebook Toggle */}
+                            <div
+                                className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
+                                style={{
+                                    background: openInNotebookEnabled ? 'rgba(16, 185, 129, 0.06)' : 'var(--bg-primary)',
+                                    border: `1px solid ${openInNotebookEnabled ? 'rgba(16, 185, 129, 0.2)' : 'var(--border-subtle)'}`,
+                                }}
+                            >
+                                <Maximize2 className="w-5 h-5 shrink-0" style={{ color: openInNotebookEnabled ? '#10b981' : 'var(--text-muted)' }} />
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium" style={{ color: openInNotebookEnabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>Open in Notebook</div>
+                                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Allow opening chats as full notebooks</div>
+                                </div>
+                                <button
+                                    onClick={async () => {
+                                        const newVal = !openInNotebookEnabled;
+                                        setSavingOpenInNotebook(true);
+                                        try {
+                                            const res = await authFetch(`${API_BASE}/ai/config`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ openInNotebookEnabled: newVal }),
+                                            });
+                                            if (res.ok) {
+                                                setOpenInNotebookEnabled(newVal);
+                                                setMessage({ type: 'success', text: newVal ? 'Open in Notebook enabled' : 'Open in Notebook disabled' });
+                                            }
+                                        } catch (e) {
+                                            setMessage({ type: 'error', text: 'Failed to update open in notebook setting' });
+                                        }
+                                        setSavingOpenInNotebook(false);
+                                        setTimeout(() => setMessage(null), 3000);
+                                    }}
+                                    disabled={savingOpenInNotebook}
+                                    className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${openInNotebookEnabled ? 'bg-green-500' : 'bg-gray-600'}`}
+                                >
+                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${openInNotebookEnabled ? 'left-6' : 'left-1'}`} />
+                                </button>
+                            </div>
+
+                            {/* Notebooks Menu Toggle */}
+                            <div
+                                className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
+                                style={{
+                                    background: notebooksMenuEnabled ? 'rgba(16, 185, 129, 0.06)' : 'var(--bg-primary)',
+                                    border: `1px solid ${notebooksMenuEnabled ? 'rgba(16, 185, 129, 0.2)' : 'var(--border-subtle)'}`,
+                                }}
+                            >
+                                <LayoutList className="w-5 h-5 shrink-0" style={{ color: notebooksMenuEnabled ? '#10b981' : 'var(--text-muted)' }} />
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium" style={{ color: notebooksMenuEnabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>Notebooks Menu</div>
+                                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Show 'Notebooks' in the sidebar menu</div>
+                                </div>
+                                <button
+                                    onClick={async () => {
+                                        const newVal = !notebooksMenuEnabled;
+                                        setSavingNotebooksMenu(true);
+                                        try {
+                                            const res = await authFetch(`${API_BASE}/ai/config`, {
+                                                method: 'POST',
+                                                headers: { 'Content-Type': 'application/json' },
+                                                body: JSON.stringify({ notebooksMenuEnabled: newVal }),
+                                            });
+                                            if (res.ok) {
+                                                setNotebooksMenuEnabled(newVal);
+                                                setMessage({ type: 'success', text: newVal ? 'Notebooks menu enabled' : 'Notebooks menu disabled' });
+                                            }
+                                        } catch (e) {
+                                            setMessage({ type: 'error', text: 'Failed to update notebooks menu setting' });
+                                        }
+                                        setSavingNotebooksMenu(false);
+                                        setTimeout(() => setMessage(null), 3000);
+                                    }}
+                                    disabled={savingNotebooksMenu}
+                                    className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${notebooksMenuEnabled ? 'bg-green-500' : 'bg-gray-600'}`}
+                                >
+                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${notebooksMenuEnabled ? 'left-6' : 'left-1'}`} />
                                 </button>
                             </div>
                         </div>

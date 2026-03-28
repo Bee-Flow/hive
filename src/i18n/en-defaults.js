@@ -55,7 +55,7 @@ const EN_DEFAULTS = {
     "admin.guard_mod_provider": "Moderation Provider",
     "admin.guard_mod_llama_desc": "Self-hosted • No data leaves your servers • 14 categories",
     "admin.guard_mod_azure_desc": "Cloud-based • Microsoft Azure • 4 categories with severity levels",
-    
+
     "admin.guard_regex_title": "Regular Expressions",
     "admin.guard_regex_desc": "Manage regular expression patterns and rule collections.",
 
@@ -752,6 +752,18 @@ const EN_DEFAULTS = {
     "knowledge.no_documents": "No documents uploaded",
     "knowledge.drag_drop": "Drag and drop files here",
     "knowledge.supported_formats": "Supported formats: PDF, TXT, MD, DOCX",
+    "notebooks.ask_ai": "Ask AI",
+    "notebooks.ask_ai_placeholder": "Ask AI about this text...",
+    "notebooks.ai_action_rewrite": "Rewrite",
+    "notebooks.ai_action_shorten": "Shorten",
+    "notebooks.ai_action_expand": "Expand",
+    "notebooks.export_pdf": "Export as PDF",
+    "notebooks.export_word": "Export as Word",
+    "notebooks.export_title": "Export document",
+    "notebooks.open_in_notebook": "Open in Notebook",
+    "notebooks.open_in_notebook_title": "Open as full Notebook",
+    "notebooks.close": "Close Notebook",
+    "notebooks.words": "Words",
     "notebooks.title": "Notebooks",
     "notebooks.new_notebook": "New Notebook",
     "notebooks.sources": "Sources",
