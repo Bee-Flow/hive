@@ -243,7 +243,7 @@ const AgentDesigner = ({
               <div className="p-8 text-center text-muted text-sm flex flex-col items-center">
                 <span className="text-2xl mb-2">🤖</span>
                 <p className="mb-3">No agents found</p>
-                {!systemMode && hasPermission("create_agent") && (
+                {!systemMode && hasPermission("manage_agents") && (
                   <button
                     onClick={createNewAgent}
                     className="text-xs font-medium px-3 py-1.5 rounded-lg border bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] transition-all"
@@ -290,9 +290,9 @@ const AgentDesigner = ({
                     >
                       {agent.name}
                     </span>
-                    {!systemMode && hasPermission("delete_agent") && (
+                    {!systemMode && hasPermission("manage_agents") && (
                       <div className="flex items-center gap-0.5 flex-shrink-0">
-                        {hasPermission("create_agent") && (
+                        {hasPermission("manage_agents") && (
                           <button
                             onClick={(e) => {
                               e.stopPropagation();

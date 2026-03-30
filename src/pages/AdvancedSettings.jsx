@@ -298,17 +298,24 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
                             <p className="text-[13px] font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
                                 {user?.displayName || user?.username || 'User'}
                             </p>
-                            {user?.role && (
-                                <span
-                                    className="text-[10px] px-1.5 py-0.5 rounded font-medium"
-                                    style={{
-                                        background: user.role === 'admin' ? 'rgba(5,150,105,0.1)' : 'var(--bg-tertiary)',
-                                        color: user.role === 'admin' ? '#059669' : 'var(--text-muted)',
-                                    }}
-                                >
-                                    {user.role}
-                                </span>
-                            )}
+                            {(() => {
+                                const effectiveRole = user?.orgRole || user?.role;
+                                if (!effectiveRole) return null;
+                                const ROLE_LABELS = { admin: 'Admin', org_admin: 'Organisation Admin', agent_admin: 'Agent Admin', agent_editor: 'Agent Editor', user: 'User', member: 'Member' };
+                                const label = ROLE_LABELS[effectiveRole] || effectiveRole.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+                                const isAdmin = ['admin', 'org_admin'].includes(effectiveRole);
+                                return (
+                                    <span
+                                        className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                        style={{
+                                            background: isAdmin ? 'rgba(5,150,105,0.1)' : 'var(--bg-tertiary)',
+                                            color: isAdmin ? '#059669' : 'var(--text-muted)',
+                                        }}
+                                    >
+                                        {label}
+                                    </span>
+                                );
+                            })()}
                         </div>
                     </button>
 

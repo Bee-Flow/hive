@@ -70,6 +70,24 @@ const MessageItem = ({
     const contentRef = useRef(null);
     const [includeConversation, setIncludeConversation] = useState(false);
 
+    // ── Fully deleted / PII-redacted user messages → compact indicator ──
+    // Covers: real-time deletion (isDeleted from setTimeout), history-load
+    // (content persisted as '[Message removed - policy violation]'), and
+    // active guardrail countdown (isGuardrailViolation with deleteIn).
+    const isRemovedMessage = msg.isDeleted ||
+        (isUser && typeof msg.content === 'string' && msg.content === '[Message removed - policy violation]');
+
+    if (isRemovedMessage && isUser) {
+        return (
+            <div className="flex justify-end mb-2">
+                <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] text-xs text-[var(--text-muted)] italic select-none">
+                    <span>🛡️</span>
+                    <span>{t('chat.message_removed') || 'Message removed'}</span>
+                </div>
+            </div>
+        );
+    }
+
     // Resolve server-relative URLs (e.g. /api/storage/file/...) to full server URL
     const resolveUrl = (url) => {
         if (!url) return url;

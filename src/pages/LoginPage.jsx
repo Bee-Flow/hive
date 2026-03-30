@@ -1,9 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import { AlertCircle } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { opaqueLogin } from '../lib/opaque';
 import InitSetupWizard from '../components/InitSetupWizard';
+
+// Detect if we're running inside an iframe (embedded in Nextcloud, etc.)
+const isEmbedded = (() => {
+    try { return window.self !== window.top; } catch (e) { return true; }
+})();
 
 import LoginForm from './login/LoginForm';
 import SignupStepOrg from './login/SignupStepOrg';
@@ -326,16 +331,76 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
     // the frontend nginx proxy) so the session cookie is properly set.
     const oauthBase = serverUrl || API_BASE;
 
+    // Open OAuth in a popup when embedded in an iframe (Google/Microsoft block
+    // their consent screens from loading inside iframes).
+    // We use `noopener` to fully sever the iframe→popup relationship so that
+    // Google/Microsoft can't detect the cross-origin iframe context.
+    // Since `noopener` breaks window.opener (no postMessage), we poll
+    // /auth/user to detect when login completes.
+    const pollTimerRef = useRef(null);
+
+    const openOAuthPopup = useCallback((url) => {
+        const w = 520, h = 650;
+        const left = window.screenX + (window.outerWidth - w) / 2;
+        const top = window.screenY + (window.outerHeight - h) / 2;
+        // noopener severs the opener chain — Google won't see the iframe context
+        const popup = window.open(url, 'beeflow_oauth',
+            `width=${w},height=${h},left=${left},top=${top},noopener,noreferrer`);
+
+        // Poll for auth completion since we can't use postMessage with noopener
+        if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        pollTimerRef.current = setInterval(async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/auth/user`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.authenticated && data.user) {
+                        clearInterval(pollTimerRef.current);
+                        pollTimerRef.current = null;
+                        onLogin(data.user);
+                    }
+                }
+            } catch (_) { /* server unreachable, keep polling */ }
+        }, 1500);
+
+        // Stop polling after 5 minutes (safety net)
+        setTimeout(() => {
+            if (pollTimerRef.current) {
+                clearInterval(pollTimerRef.current);
+                pollTimerRef.current = null;
+            }
+        }, 5 * 60 * 1000);
+    }, [onLogin]);
+
+    // Clean up polling on unmount
+    useEffect(() => {
+        return () => {
+            if (pollTimerRef.current) clearInterval(pollTimerRef.current);
+        };
+    }, []);
+
     const handleOAuthLogin = () => {
-        window.location.href = `${oauthBase}/auth/login/nextcloud`;
+        if (isEmbedded) {
+            openOAuthPopup(`${oauthBase}/auth/login/nextcloud?popup=1`);
+        } else {
+            window.location.href = `${oauthBase}/auth/login/nextcloud`;
+        }
     };
 
     const handleGoogleLogin = () => {
-        window.location.href = `${oauthBase}/auth/login/google`;
+        if (isEmbedded) {
+            openOAuthPopup(`${oauthBase}/auth/login/google?popup=1`);
+        } else {
+            window.location.href = `${oauthBase}/auth/login/google`;
+        }
     };
 
     const handleMicrosoftLogin = () => {
-        window.location.href = `${oauthBase}/auth/login/microsoft`;
+        if (isEmbedded) {
+            openOAuthPopup(`${oauthBase}/auth/login/microsoft?popup=1`);
+        } else {
+            window.location.href = `${oauthBase}/auth/login/microsoft`;
+        }
     };
 
     const resetSignup = () => {
