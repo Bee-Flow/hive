@@ -145,8 +145,8 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
         const items = BASE_ORG_SUB_ITEMS.filter(s => {
             if (s.id === 'org_users') return canManageUsers;
             if (s.id === 'org_integrations') return canSeeOrg && hasOrgIntegrations;
-            // In private-cloud mode, license & auth are managed externally
-            if (isPrivateCloud && (s.id === 'license' || s.id === 'auth')) return false;
+            // In private-cloud mode, license is managed externally
+            if (isPrivateCloud && s.id === 'license') return false;
 
             // Hide privacy shield in local host
             const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
