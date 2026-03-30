@@ -4,6 +4,7 @@ import { API_BASE, authFetch } from '../../../utils/helpers';
 import { MISTRAL_MODEL_META, getModelMeta, CAT_COLORS } from './modelMeta';
 import EmbeddingsConfig from './EmbeddingsConfig';
 import OCRConfig from './OCRConfig';
+import RerankerConfig from './RerankerConfig';
 
 import DirectChatConfig from './DirectChatConfig';
 import ModelCostsConfig from './ModelCostsConfig';
@@ -382,6 +383,7 @@ const AIConfigPanel = () => {
                         <GoogleVertexConfigCard onMessage={setMessage} />
                         <AzureConfigCard onMessage={setMessage} />
                         <MiniMaxApiKeyCard onMessage={setMessage} />
+                        <RerankerConfig onMessage={setMessage} />
                     </>
                 )}
 
