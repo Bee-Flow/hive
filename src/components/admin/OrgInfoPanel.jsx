@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Building2, Save, Upload, Palette, FileText, Check, Lock, KeyRound, AlertTriangle, CreditCard, BarChart3, Zap, MessageSquare, DollarSign, Users, Bot, Database, Shield, Info } from 'lucide-react';
+import { Building2, Save, Upload, Palette, FileText, Check, Lock, KeyRound, AlertTriangle, CreditCard, BarChart3, Zap, MessageSquare, DollarSign, Users, Bot, Database, Shield, Info, Globe, X, Plus } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 import GuardrailsPanel from './GuardrailsPanel';
@@ -71,6 +71,108 @@ const SECTIONS = [
     { id: 'privacy', labelKey: 'settings.privacy_shield', icon: Shield, color: '#ef4444' },
     { id: 'info', labelKey: 'settings.org_info', icon: Info, color: '#8b5cf6' },
 ];
+
+// ── Allowed Domains editor (tag-input) ──
+const AllowedDomainsEditor = ({ domains = [], onChange, t }) => {
+    const [inputValue, setInputValue] = useState('');
+    const [error, setError] = useState('');
+    const inputRef = useRef(null);
+
+    const domainRegex = /^[a-zA-Z0-9]([a-zA-Z0-9-]*[a-zA-Z0-9])?(\.[a-zA-Z]{2,})+$/;
+
+    const addDomain = () => {
+        const domain = inputValue.trim().toLowerCase();
+        if (!domain) return;
+
+        if (!domainRegex.test(domain)) {
+            setError(`Invalid domain format: "${domain}"`);
+            return;
+        }
+        if (domains.includes(domain)) {
+            setError(`Domain "${domain}" is already added`);
+            return;
+        }
+
+        setError('');
+        onChange([...domains, domain]);
+        setInputValue('');
+        inputRef.current?.focus();
+    };
+
+    const removeDomain = (domainToRemove) => {
+        onChange(domains.filter(d => d !== domainToRemove));
+    };
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            addDomain();
+        }
+        if (e.key === 'Backspace' && !inputValue && domains.length > 0) {
+            removeDomain(domains[domains.length - 1]);
+        }
+    };
+
+    return (
+        <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 space-y-3">
+            <div className="flex items-center gap-2">
+                <Globe className="w-4 h-4 text-[var(--accent-primary)]" />
+                <span className="text-sm font-semibold text-[var(--text-primary)]">
+                    {t('org.allowed_domains') || 'Allowed Domains'}
+                </span>
+            </div>
+            <p className="text-xs text-[var(--text-muted)] ml-6">
+                {t('org.allowed_domains_desc') || 'Email domains that are allowed to join this organisation via SSO. Users with matching email domains will be automatically linked to this organisation.'}
+            </p>
+
+            {/* Domain tags */}
+            <div
+                className="flex flex-wrap gap-2 min-h-[38px] rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-input)] px-3 py-2 cursor-text transition-colors focus-within:border-[var(--accent-primary)]"
+                onClick={() => inputRef.current?.focus()}
+            >
+                {domains.map(domain => (
+                    <span
+                        key={domain}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium bg-[var(--accent-primary)] text-white"
+                    >
+                        {domain}
+                        <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); removeDomain(domain); }}
+                            className="ml-0.5 hover:bg-white/20 rounded-full p-0.5 transition-colors"
+                        >
+                            <X className="w-3 h-3" />
+                        </button>
+                    </span>
+                ))}
+                <div className="flex items-center gap-1 flex-1 min-w-[120px]">
+                    <input
+                        ref={inputRef}
+                        type="text"
+                        value={inputValue}
+                        onChange={(e) => { setInputValue(e.target.value); setError(''); }}
+                        onKeyDown={handleKeyDown}
+                        placeholder={domains.length === 0 ? 'company.com' : 'Add domain...'}
+                        className="flex-1 bg-transparent text-sm text-[var(--text-primary)] placeholder:text-[var(--text-muted)] outline-none min-w-0"
+                    />
+                    {inputValue && (
+                        <button
+                            type="button"
+                            onClick={addDomain}
+                            className="p-1 rounded-md hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--accent-primary)] transition-colors"
+                        >
+                            <Plus className="w-4 h-4" />
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            {error && (
+                <p className="text-xs text-red-400 ml-6">{error}</p>
+            )}
+        </div>
+    );
+};
 
 // ── Usage bar component ──
 const UsageBar = ({ label, icon: Icon, used, limit, unit, color = '#8b5cf6', pctLabel }) => {
@@ -285,6 +387,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                     allowSignup: !!myOrg.allowSignup,
                     authMethod: myOrg.authMethod || null,
                     autoApproveSSO: !!myOrg.autoApproveSSO,
+                    allowedDomains: Array.isArray(myOrg.allowedDomains) ? myOrg.allowedDomains : [],
                 };
                 setOrgData(data);
                 originalDataRef.current = JSON.stringify(data);
@@ -684,6 +787,15 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                     </button>
                                 </div>
                             </div>
+                        )}
+
+                        {/* Allowed Domains (private-cloud only) */}
+                        {isPrivateCloud && (
+                            <AllowedDomainsEditor
+                                domains={orgData.allowedDomains || []}
+                                onChange={(domains) => setOrgData(p => ({ ...p, allowedDomains: domains }))}
+                                t={t}
+                            />
                         )}
                     </div>
                 )}
