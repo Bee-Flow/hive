@@ -346,10 +346,10 @@ export default function useChatEngine({
                 if (data.sources) {
                     setMessages(prev => prev.map(m => {
                         if (m.id !== assistantMsgId) return m;
-                        // Merge with existing sources, deduplicate by title
+                        // Merge with existing sources, deduplicate by content (not title — allows multiple chunks from same doc)
                         const existing = m.kbSources || [];
-                        const existingTitles = new Set(existing.map(s => s.title));
-                        const newSources = data.sources.filter(s => !existingTitles.has(s.title));
+                        const existingContentKeys = new Set(existing.map(s => (s.content || '').slice(0, 100)));
+                        const newSources = data.sources.filter(s => !existingContentKeys.has((s.content || '').slice(0, 100)));
                         return { ...m, kbSources: [...existing, ...newSources] };
                     }));
                 }
