@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { API_BASE, generateMessageId, authFetch } from '../utils/helpers';
+import useTranslation from './useTranslation';
 
 /**
  * Custom hook that encapsulates the chat messaging engine.
@@ -32,6 +33,11 @@ export default function useChatEngine({
     const [isLoading, setIsLoading] = useState(false);
     const [abortController, setAbortController] = useState(null);
     const [submittedFormIds, setSubmittedFormIds] = useState(new Set());
+
+    // i18n access for SSE event handlers
+    const { t } = useTranslation();
+    const tRef = useRef(t);
+    useEffect(() => { tRef.current = t; }, [t]);
 
     // Cleanup abort controller on unmount
     useEffect(() => {
@@ -422,6 +428,18 @@ export default function useChatEngine({
                         m.id === userMsgId ? { ...m, content: '[Message removed - policy violation]', isGuardrailViolation: false, isDeleted: true } : m
                     ));
                 }, secs * 1000);
+                break;
+            }
+
+            case 'guardrail_blocked': {
+                // Compose translated canned response using i18n keys
+                const title = tRef.current('chat.guardrail_blocked_title', { violation: data.violation || 'Policy Violation' });
+                const body = tRef.current('chat.guardrail_blocked_body');
+                const translatedResponse = `${title}\n\n${body}`;
+                contentRef.current = translatedResponse;
+                setMessages(prev => prev.map(m =>
+                    m.id === activeIdRef.current ? { ...m, content: translatedResponse } : m
+                ));
                 break;
             }
 

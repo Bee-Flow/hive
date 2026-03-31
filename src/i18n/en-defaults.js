@@ -281,6 +281,8 @@ const EN_DEFAULTS = {
     "chat.guardrail_will_redact": "Sensitive content will be redacted in {seconds} seconds",
     "chat.guardrail_will_delete": "This message will be deleted in {seconds} seconds",
     "chat.message_removed": "Message removed by security policy",
+    "chat.guardrail_blocked_title": "Your message was flagged as **\"{violation}\"**.",
+    "chat.guardrail_blocked_body": "This message was blocked by our security policy and cannot be processed. Would you like to rephrase your question?",
     "common.save": "Save",
     "common.cancel": "Cancel",
     "common.delete": "Delete",
