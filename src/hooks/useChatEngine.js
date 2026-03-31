@@ -404,14 +404,11 @@ export default function useChatEngine({
                 }
                 break;
 
-            case 'error': {
-                const errorMsg = typeof data.error === 'string' ? data.error
-                    : data.error?.message || JSON.stringify(data.error) || 'Unknown error';
+            case 'error':
                 setMessages(prev => prev.map(m =>
-                    m.id === assistantMsgId ? { ...m, content: errorMsg, isStreaming: false, isError: true } : m
+                    m.id === assistantMsgId ? { ...m, content: data.error, isStreaming: false, isError: true } : m
                 ));
                 break;
-            }
 
             case 'guardrail_violation': {
                 const secs = data.autoDeleteSeconds || 5;
@@ -421,13 +418,9 @@ export default function useChatEngine({
                     m.id === userMsgId ? { ...m, isGuardrailViolation: true, deleteIn: secs, violationCategories: categoryText } : m
                 ));
                 setTimeout(() => {
-                    setMessages(prev => prev
-                        .map(m =>
-                            m.id === userMsgId ? { ...m, content: '[Message removed - policy violation]', isGuardrailViolation: false, isDeleted: true } : m
-                        )
-                        // Remove orphan empty assistant message left when guardrail blocked before AI responded
-                        .filter(m => !(m.id === assistantMsgId && !m.content))
-                    );
+                    setMessages(prev => prev.map(m =>
+                        m.id === userMsgId ? { ...m, content: '[Message removed - policy violation]', isGuardrailViolation: false, isDeleted: true } : m
+                    ));
                 }, secs * 1000);
                 break;
             }
