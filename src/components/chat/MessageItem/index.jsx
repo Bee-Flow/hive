@@ -70,24 +70,6 @@ const MessageItem = ({
     const contentRef = useRef(null);
     const [includeConversation, setIncludeConversation] = useState(false);
 
-    // ── Fully deleted / PII-redacted user messages → compact indicator ──
-    // Covers: real-time deletion (isDeleted from setTimeout), history-load
-    // (content persisted as '[Message removed - policy violation]'), and
-    // active guardrail countdown (isGuardrailViolation with deleteIn).
-    const isRemovedMessage = msg.isDeleted ||
-        (isUser && typeof msg.content === 'string' && msg.content === '[Message removed - policy violation]');
-
-    if (isRemovedMessage && isUser) {
-        return (
-            <div className="flex justify-end mb-2">
-                <div className="flex items-center gap-2 px-4 py-2 rounded-2xl bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] text-xs text-[var(--text-muted)] italic select-none">
-                    <span>🛡️</span>
-                    <span>{t('chat.message_removed') || 'Message removed'}</span>
-                </div>
-            </div>
-        );
-    }
-
     // Resolve server-relative URLs (e.g. /api/storage/file/...) to full server URL
     const resolveUrl = (url) => {
         if (!url) return url;
@@ -114,6 +96,47 @@ const MessageItem = ({
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
     }, [showCopyMenu]);
+
+    // Get render functions from ToolOutput — must be called before any early
+    // return because ToolOutput uses useState internally, and calling a
+    // component-as-function shares its hooks with this component.
+    const { renderToolOutput, renderToolCall } = ToolOutput({ msg });
+
+    // ── Fully deleted / PII-redacted user messages → compact indicator ──
+    // Covers: real-time deletion (isDeleted from setTimeout), history-load
+    // (content persisted as '[Message removed - policy violation]'), and
+    // active guardrail countdown (isGuardrailViolation with deleteIn).
+    // NOTE: This early return MUST be placed after all hooks (useState/useEffect)
+    // to satisfy React's rules of hooks.
+    const isRemovedMessage = msg.isDeleted ||
+        (isUser && typeof msg.content === 'string' && msg.content === '[Message removed - policy violation]');
+
+    if (isRemovedMessage && isUser) {
+        return (
+            <div className="flex justify-end mb-2 animate-fade-in">
+                <div
+                    className="flex items-center gap-2.5 px-4 py-2.5 rounded-2xl select-none"
+                    style={{
+                        background: 'linear-gradient(135deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%)',
+                        border: '1px dashed var(--border-subtle)',
+                        opacity: 0.7,
+                    }}
+                >
+                    <div
+                        className="flex items-center justify-center w-6 h-6 rounded-full"
+                        style={{ background: 'var(--bg-tertiary)', flexShrink: 0 }}
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--text-muted)' }}>
+                            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+                        </svg>
+                    </div>
+                    <span className="text-xs" style={{ color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                        {t('chat.message_removed') || 'Message removed by security policy'}
+                    </span>
+                </div>
+            </div>
+        );
+    }
 
     const submitFeedback = async (rating, comment = '', withConversation = false) => {
         try {
@@ -275,7 +298,7 @@ const MessageItem = ({
     const allowCopy = !selectedAgent?.config || selectedAgent.config.allowCopy !== false;
 
     // Get render functions from ToolOutput
-    const { renderToolOutput, renderToolCall } = ToolOutput({ msg });
+    // (ToolOutput hooks moved above early return — see top of component)
 
     const hasSheets = !!(msg.sheetsResults || msg.sheetsDrafts || msg.sheetsReports);
 
