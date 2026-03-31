@@ -81,14 +81,16 @@ const AgentCard = React.memo(({ agentId, name, avatar, description, typeLabel, i
 
         <div className="flex items-start gap-3">
             <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0"
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 overflow-hidden"
                 style={{
-                    background: avatar ? 'transparent' : getAgentColor(name),
+                    background: avatar && !(avatar.startsWith('data:') || avatar.startsWith('http')) ? 'transparent' : (!avatar ? getAgentColor(name) : 'transparent'),
                     color: avatar ? undefined : 'white',
-                    fontSize: avatar ? '1.2rem' : undefined,
+                    fontSize: avatar && !(avatar.startsWith('data:') || avatar.startsWith('http')) ? '1.2rem' : undefined,
                 }}
             >
-                {avatar || getAgentInitials(name)}
+                {avatar && (avatar.startsWith('data:') || avatar.startsWith('http'))
+                    ? <img src={avatar} alt="" className="w-full h-full object-cover" />
+                    : (avatar || getAgentInitials(name))}
             </div>
             <div className="flex-1 min-w-0 pr-16">
                 <h3 className="font-semibold text-[13px] truncate" style={{ color: 'var(--text-primary)' }}>{name}</h3>
