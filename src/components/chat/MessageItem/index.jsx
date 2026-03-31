@@ -41,6 +41,8 @@ const MessageItem = ({
     const [expandedBrainEntries, setExpandedBrainEntries] = useState({});
     const isUser = msg.role === 'user';
     const isTool = msg.role === 'tool';
+    // Defensive: ensure content is always a renderable string (prevents React error #300 if an object leaks in)
+    const safeContent = typeof msg.content === 'string' ? msg.content : (msg.content != null ? String(msg.content) : '');
     const [copied, setCopied] = useState(false);
     const [copiedMd, setCopiedMd] = useState(false);
     const [showSwarmLogs, setShowSwarmLogs] = useState(false);
@@ -423,45 +425,45 @@ const MessageItem = ({
                         </div>
                     )}
                     {isTool ? renderToolOutput() : (
-                        msg.isError && msg.content ? (
-                            <div className={`flex items-start gap-3 p-3 rounded-xl border ${msg.content.includes('limit') || msg.content.includes('subscription') || msg.content.includes('suspended') || msg.content.includes('cancelled')
+                        msg.isError && safeContent ? (
+                            <div className={`flex items-start gap-3 p-3 rounded-xl border ${safeContent.includes('limit') || safeContent.includes('subscription') || safeContent.includes('suspended') || safeContent.includes('cancelled')
                                 ? 'bg-orange-100 dark:bg-amber-900/30 border-orange-400 dark:border-amber-500/50'
                                 : 'bg-red-100 dark:bg-red-900/30 border-red-400 dark:border-red-500/50'
                                 }`}>
-                                <span className="text-lg flex-shrink-0 mt-0.5">{msg.content.includes('limit') || msg.content.includes('subscription') ? '⚠️' : '❌'}</span>
+                                <span className="text-lg flex-shrink-0 mt-0.5">{safeContent.includes('limit') || safeContent.includes('subscription') ? '⚠️' : '❌'}</span>
                                 <div>
-                                    <div className={`font-semibold text-sm mb-0.5 ${msg.content.includes('limit') || msg.content.includes('subscription') || msg.content.includes('suspended') || msg.content.includes('cancelled')
+                                    <div className={`font-semibold text-sm mb-0.5 ${safeContent.includes('limit') || safeContent.includes('subscription') || safeContent.includes('suspended') || safeContent.includes('cancelled')
                                         ? 'text-orange-800 dark:text-amber-200' : 'text-red-800 dark:text-red-200'
                                         }`}>
-                                        {msg.content.includes('suspended')
+                                        {safeContent.includes('suspended')
                                             ? 'Subscription Suspended'
-                                            : msg.content.includes('cancelled')
+                                            : safeContent.includes('cancelled')
                                                 ? 'Subscription Cancelled'
-                                                : msg.content.includes('Chat') && msg.content.includes('type')
+                                                : safeContent.includes('Chat') && safeContent.includes('type')
                                                     ? 'Chat Agent Limit Reached'
-                                                    : msg.content.includes('Browser') && msg.content.includes('type')
+                                                    : safeContent.includes('Browser') && safeContent.includes('type')
                                                         ? 'Browser Agent Limit Reached'
-                                                        : msg.content.includes('Terminal') && msg.content.includes('type')
+                                                        : safeContent.includes('Terminal') && safeContent.includes('type')
                                                             ? 'Terminal Agent Limit Reached'
-                                                            : msg.content.includes('Swarm') && msg.content.includes('type')
+                                                            : safeContent.includes('Swarm') && safeContent.includes('type')
                                                                 ? 'Swarm Limit Reached'
-                                                                : msg.content.includes('message limit')
+                                                                : safeContent.includes('message limit')
                                                                     ? 'Monthly Message Limit Reached'
-                                                                    : msg.content.includes('token limit')
+                                                                    : safeContent.includes('token limit')
                                                                         ? 'Monthly Token Limit Reached'
-                                                                        : msg.content.includes('cost limit')
+                                                                        : safeContent.includes('cost limit')
                                                                             ? 'Monthly Cost Limit Reached'
-                                                                            : (msg.content.includes('limit') || msg.content.includes('subscription'))
+                                                                            : (safeContent.includes('limit') || safeContent.includes('subscription'))
                                                                                 ? 'Subscription Limit Reached'
                                                                                 : 'Something went wrong'}
                                     </div>
-                                    <div className={`text-xs ${msg.content.includes('limit') || msg.content.includes('subscription')
+                                    <div className={`text-xs ${safeContent.includes('limit') || safeContent.includes('subscription')
                                         ? 'text-orange-700 dark:text-amber-300/90' : 'text-red-700 dark:text-red-300/90'
-                                        }`}>{msg.content}</div>
+                                        }`}>{safeContent}</div>
                                 </div>
                             </div>
-                        ) : msg.content ? (
-                            <MarkdownRenderer content={msg.images?.length > 0 ? msg.content.replace(/!\[[^\]]*\]\([^)]*\)/g, '').trim() : msg.content} isLoading={msg.isStreaming} />
+                        ) : safeContent ? (
+                            <MarkdownRenderer content={msg.images?.length > 0 ? safeContent.replace(/!\[[^\]]*\]\([^)]*\)/g, '').trim() : safeContent} isLoading={msg.isStreaming} />
                         ) : msg.isStreaming && !msg.thinking ? (
                             <div className="flex items-center gap-3 py-1 animate-pulse">
                                 <div className="flex gap-1.5">
@@ -974,7 +976,7 @@ const MessageItem = ({
                         </div>
                         {/* Timestamp — right side */}
                         <div className="text-[10px] text-[var(--text-tertiary)] flex items-center gap-1">
-                            {msg.isError && <span className={`font-medium flex items-center gap-1 ${msg.content?.includes('limit') || msg.content?.includes('subscription') || msg.content?.includes('suspended') || msg.content?.includes('cancelled') ? 'text-amber-500' : 'text-red-500'}`}><span className={`w-1.5 h-1.5 rounded-full ${msg.content?.includes('limit') || msg.content?.includes('subscription') ? 'bg-amber-500' : 'bg-red-500'}`}></span> {msg.content?.includes('limit') || msg.content?.includes('subscription') || msg.content?.includes('suspended') || msg.content?.includes('cancelled') ? 'Usage limit reached' : 'Failed to send'}</span>}
+                            {msg.isError && <span className={`font-medium flex items-center gap-1 ${safeContent.includes('limit') || safeContent.includes('subscription') || safeContent.includes('suspended') || safeContent.includes('cancelled') ? 'text-amber-500' : 'text-red-500'}`}><span className={`w-1.5 h-1.5 rounded-full ${safeContent.includes('limit') || safeContent.includes('subscription') ? 'bg-amber-500' : 'bg-red-500'}`}></span> {safeContent.includes('limit') || safeContent.includes('subscription') || safeContent.includes('suspended') || safeContent.includes('cancelled') ? 'Usage limit reached' : 'Failed to send'}</span>}
                             {msg.timestamp && (
                                 <span className="opacity-70">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                             )}
