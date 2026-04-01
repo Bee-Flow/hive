@@ -104,11 +104,9 @@ const LiveAppRenderer = ({ code, language = 'html', title = 'App Preview' }) => 
 </html>`;
     }, [code, language]);
 
-    // Create a blob URL for the iframe
-    const blobUrl = useMemo(() => {
-        const blob = new Blob([iframeContent], { type: 'text/html' });
-        return URL.createObjectURL(blob);
-    }, [iframeContent]);
+    // Use srcDoc instead of a blob: URL — blob: URLs are blocked by the
+    // CSP's default-src 'self' fallback (frame-src is not explicitly set).
+    // srcDoc inlines HTML directly into the iframe and is exempt from frame-src.
 
     // Publish app to marketplace
     const handlePublish = async () => {
@@ -161,10 +159,10 @@ const LiveAppRenderer = ({ code, language = 'html', title = 'App Preview' }) => 
                     ) : (
                         <div className="relative">
                             <iframe
-                                src={blobUrl}
+                                srcDoc={iframeContent}
                                 className="w-full border-0"
                                 style={{ minHeight: '600px', height: 'auto', background: 'white' }}
-                                sandbox="allow-scripts allow-forms allow-popups"
+                                sandbox="allow-scripts allow-forms allow-popups allow-same-origin"
                                 title={title}
                             />
                             {/* Floating controls */}
@@ -271,10 +269,10 @@ const LiveAppRenderer = ({ code, language = 'html', title = 'App Preview' }) => 
                                 </pre>
                             ) : (
                                 <iframe
-                                    src={blobUrl}
+                                    srcDoc={iframeContent}
                                     className="w-full h-full border-0"
                                     style={{ background: 'white' }}
-                                    sandbox="allow-scripts allow-forms allow-popups"
+                                    sandbox="allow-scripts allow-forms allow-popups allow-same-origin"
                                     title={title}
                                 />
                             )}
@@ -361,4 +359,3 @@ const LiveAppRenderer = ({ code, language = 'html', title = 'App Preview' }) => 
 };
 
 export default LiveAppRenderer;
-

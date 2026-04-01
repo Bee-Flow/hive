@@ -700,12 +700,13 @@ const MarkdownRenderer = ({ content, className = '', onFormSubmit, formId, isFor
                             language === 'html-live' ||
                             language === 'javascript-app';
 
-                        // Check if it's a full HTML document or substantial HTML
+                        // Only auto-render plain `html` blocks as a live app when the content
+                        // is a complete, interactive document (has a document root AND JavaScript).
+                        // This prevents plain HTML/CSS styling examples from being rendered
+                        // as broken live previews.
                         const looksLikeApp = !inline && (
-                            codeString.includes('<!DOCTYPE') ||
-                            codeString.includes('<html') ||
-                            (codeString.includes('<body') && codeString.includes('<script')) ||
-                            (codeString.includes('<style') && codeString.includes('<div'))
+                            (codeString.includes('<!DOCTYPE') || codeString.includes('<html')) &&
+                            codeString.includes('<script')  // Must have JS to be worth live-rendering
                         );
 
                         if (!inline && (isApp || (language === 'html' && looksLikeApp))) {
