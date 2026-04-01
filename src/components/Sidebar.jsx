@@ -622,20 +622,23 @@ const Sidebar = ({
                         <div className="px-1.5 pb-1">
                             {favoriteAgents.length > 0 ? favoriteAgents.map(agent => {
                                 const sel = selectedAgent?.id === agent.id;
+                                const initials = agent._type === 'roundtable' ? '🗣️' : (agent.name?.[0]?.toUpperCase() || '?');
+                                const hasImageAvatar = agent.avatar && (agent.avatar.startsWith('data:') || agent.avatar.startsWith('http'));
                                 return (
                                     <button
                                         key={agent.id}
                                         onClick={() => onSelectAgent(agent)}
-                                        className={`${ROW} group/a ${ROW_IDLE}`}
+                                        className={`group/a w-full flex items-center gap-3 px-2 py-1.5 rounded-xl transition-all duration-150 text-left relative ${sel ? 'bg-[var(--accent-primary)]/8' : 'hover:bg-[var(--item-hover-bg)]'}`}
                                         data-testid={`agent-row-${agent.id}`}
                                     >
-                                        {sel && <div className={ACCENT_BAR} />}
-                                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg font-semibold flex-shrink-0 transition-transform overflow-hidden ${sel ? 'scale-110' : ''}`}>
-                                            {agent.avatar && (agent.avatar.startsWith('data:') || agent.avatar.startsWith('http')) ? (
-                                                <img src={agent.avatar} alt="" className="w-full h-full object-cover" />
-                                            ) : (agent.avatar || (agent._type === 'roundtable' ? '🗣️' : agent.name?.[0]?.toUpperCase()))}
+                                        {sel && <div className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full bg-[var(--accent-primary)]" />}
+                                        {/* Avatar */}
+                                        <div className={`w-8 h-8 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center text-[13px] font-bold ring-1 transition-all duration-150 ${sel ? 'ring-[var(--accent-primary)]/40 shadow-sm shadow-[var(--accent-primary)]/20' : 'ring-black/8 shadow-sm'} ${!hasImageAvatar ? 'bg-gradient-to-br from-[var(--accent-primary)]/15 to-[var(--accent-primary)]/30 text-[var(--accent-primary)]' : 'bg-[var(--bg-tertiary)]'}`}>
+                                            {hasImageAvatar ? (
+                                                <img src={agent.avatar} alt="" className="w-full h-full object-contain" />
+                                            ) : (agent.avatar || initials)}
                                         </div>
-                                        <span className={`text-[13px] truncate flex-1 ${sel ? TEXT_ACTIVE : TEXT_IDLE}`}>
+                                        <span className={`text-[13px] truncate flex-1 leading-snug ${sel ? 'font-semibold text-black' : 'text-black'}`}>
                                             {agent.name}
                                         </span>
                                         <button
