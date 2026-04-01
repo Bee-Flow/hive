@@ -1,6 +1,7 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import NotebookEditor from '../pages/notebooks/NotebookEditor';
 import { API_BASE, authFetch } from '../utils/helpers';
+import { useTranslation } from '../hooks/useTranslation';
 import {
     X, ExternalLink, Copy, Download, FileDown,
     Check, Loader2, ChevronDown, FileText,
@@ -68,6 +69,7 @@ export default function WorkspaceNotebook({
     user,
 }) {
     const editorRef = useRef(null);
+    const { t } = useTranslation();
     const [copied, setCopied] = useState(false);
     const [saving, setSaving] = useState(false);
     const saveTimerRef = useRef(null);
