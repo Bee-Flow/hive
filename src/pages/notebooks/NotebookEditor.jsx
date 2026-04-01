@@ -305,7 +305,7 @@ function ToolbarBtn({ onClick, active, icon: Icon, title, disabled }) {
 }
 
 /* ── More Formatting Dropdown ────────────────────────────────── */
-function MoreFormattingDropdown({ editor, insertMath, imageInputRef, onImportClick, onAIFill, aiFilling }) {
+function MoreFormattingDropdown({ editor, insertMath, imageInputRef, onImportClick, onAIFill, aiFilling, askAiEnabled, t }) {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
 
@@ -384,7 +384,7 @@ function MoreFormattingDropdown({ editor, insertMath, imageInputRef, onImportCli
                             onClick={() => { onImportClick(); setOpen(false); }} />
                     )}
                     {onAIFill && askAiEnabled && (
-                        <MoreItem icon={aiFilling ? Loader2 : Wand2} label={t("notebooks.ai_fill")} disabled={aiFilling}
+                        <MoreItem icon={aiFilling ? Loader2 : Wand2} label={t('notebooks.ai_fill')} disabled={aiFilling}
                             onClick={() => { onAIFill(); setOpen(false); }} />
                     )}
                 </div>
@@ -437,6 +437,10 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
             Placeholder.configure({
                 placeholder: t('notebooks.placeholder'),
             }),
+            // NOTE: Underline and Link are NOT part of StarterKit v3 — they must
+            // be listed explicitly. The "duplicate extension" tiptap warning is caused
+            // by tiptap-markdown internally registering its own Link extension. This
+            // is a cosmetic warning only and does not affect functionality.
             Underline,
             TextAlign.configure({ types: ['heading', 'paragraph'] }),
             Highlight.configure({ multicolor: true }),
@@ -730,6 +734,8 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
                         onImportClick={onImportClick}
                         onAIFill={onAIFill}
                         aiFilling={aiFilling}
+                        askAiEnabled={askAiEnabled}
+                        t={t}
                     />
                 </div>
 
