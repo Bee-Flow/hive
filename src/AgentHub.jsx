@@ -770,6 +770,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
         try {
             await authFetch(`${API_BASE}/ai/direct/conversations/${convId}`, { method: 'DELETE' });
             setDirectConversations(prev => prev.filter(c => c.id !== convId));
+            setAllAgentConversations(prev => prev.filter(c => c.id !== convId));
             if (currentDirectConversation?.id === convId) {
                 setCurrentDirectConversation(null);
                 setMessages([]);
@@ -798,8 +799,17 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
     const handleDeleteConversation = async (convId, agentId) => {
         try {
             agentId = agentId || selectedAgent?.id;
-            await authFetch(`${API_BASE}/agents/${agentId}/conversations/${convId}`, { method: 'DELETE' });
+            if (!agentId) {
+                console.error('Delete failed: no agentId available');
+                return;
+            }
+            const res = await authFetch(`${API_BASE}/agents/${agentId}/conversations/${convId}`, { method: 'DELETE' });
+            if (!res.ok) {
+                console.error('Delete failed with status:', res.status);
+                return;
+            }
             setConversations(prev => prev.filter(c => c.id !== convId));
+            setAllAgentConversations(prev => prev.filter(c => c.id !== convId));
             if (currentConversation?.id === convId) {
                 handleNewChat();
             }

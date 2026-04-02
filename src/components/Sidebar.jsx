@@ -232,8 +232,13 @@ const ConvRow = ({
             <span className={`text-[14px] truncate flex-1 leading-snug ${active ? TEXT_ACTIVE : TEXT_IDLE}`}>
                 <span className="block truncate">{conv.title || t('sidebar.untitled_chat')}</span>
                 {agentBadge && (
-                    <span className="block text-[10px] truncate mt-0.5" style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
-                        {agentBadge}
+                    <span className="flex items-center gap-1 text-[10px] truncate mt-0.5" style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+                        {agentBadge.avatarUrl ? (
+                            <img src={agentBadge.avatarUrl} alt="" className="w-3.5 h-3.5 rounded flex-shrink-0 object-cover" />
+                        ) : (
+                            <span className="flex-shrink-0">{agentBadge.icon}</span>
+                        )}
+                        <span className="truncate">{agentBadge.name}</span>
                     </span>
                 )}
             </span>
@@ -344,7 +349,7 @@ const ConvRow = ({
                             {/* Delete */}
                             <div className="mx-1 my-1 border-t border-[var(--border-subtle)]" />
                             <button
-                                onClick={(e) => { e.stopPropagation(); deleteConv(conv.id); setShowMenu(false); }}
+                                onClick={(e) => { e.stopPropagation(); deleteConv(conv); setShowMenu(false); }}
                                 className="w-full flex items-center gap-2 px-2.5 py-1.5 text-[12px] hover:bg-red-50 rounded-md transition-colors text-left text-red-500"
                                 data-testid={`conv-delete-${conv.id}`}
                             >
@@ -492,7 +497,18 @@ const Sidebar = ({
         }
         return directChatMode ? onSelectDirectConversation(c) : onSelectConversation(c);
     };
-    const deleteConv = (id) => directChatMode ? onDeleteDirectConversation?.(id) : onDeleteConversation(id);
+    const deleteConv = (conv) => {
+        if (isAllChats) {
+            // In all-chats mode, route to the correct handler based on source
+            if (conv._source === 'direct') {
+                onDeleteDirectConversation?.(conv.id);
+            } else {
+                onDeleteConversation(conv.id, conv.agent_id);
+            }
+            return;
+        }
+        return directChatMode ? onDeleteDirectConversation?.(conv.id) : onDeleteConversation(conv.id, conv.agent_id);
+    };
 
 
 
@@ -721,7 +737,7 @@ const Sidebar = ({
                                     {group.label}
                                 </h3>
                                 <div className="space-y-px">
-                                    {group.items.map(c => <ConvRow key={c.id} conv={c} t={t} active={convIsActive(c)} selectConv={selectConv} deleteConv={deleteConv} conversationLabels={conversationLabels} projects={projects} onRenameConversation={onRenameConversation} onPinConversation={onPinConversation} onLabelConversation={onLabelConversation} onDeleteLabel={onDeleteLabel} onEditLabel={onEditLabel} onCreateLabel={onCreateLabel} onMoveToProject={onMoveToProject} agentBadge={isAllChats ? (c._source === 'direct' ? '💬 Direct Chat' : (() => { const a = agents.find(x => x.id === c.agent_id); return a ? `${a.avatar || '🤖'} ${a.name}` : '🤖 Agent'; })()) : null} />)}
+                                    {group.items.map(c => <ConvRow key={c.id} conv={c} t={t} active={convIsActive(c)} selectConv={selectConv} deleteConv={deleteConv} conversationLabels={conversationLabels} projects={projects} onRenameConversation={onRenameConversation} onPinConversation={onPinConversation} onLabelConversation={onLabelConversation} onDeleteLabel={onDeleteLabel} onEditLabel={onEditLabel} onCreateLabel={onCreateLabel} onMoveToProject={onMoveToProject} agentBadge={isAllChats ? (c._source === 'direct' ? { icon: '💬', name: 'Direct Chat' } : (() => { const a = agents.find(x => x.id === c.agent_id); if (!a) return { icon: '🤖', name: c.agent_name || 'Agent' }; const hasImgAvatar = a.avatar && (a.avatar.startsWith('data:') || a.avatar.startsWith('http')); return hasImgAvatar ? { avatarUrl: a.avatar, name: a.name } : { icon: a.avatar || '🤖', name: a.name }; })()) : null} />)}
                                 </div>
                             </div>
                         ))
