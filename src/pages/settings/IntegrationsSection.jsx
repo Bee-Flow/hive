@@ -97,6 +97,7 @@ const DisconnectButton = ({ onDisconnect, disconnecting }) => (
 const FirefliesIntegration = ({ hasFirefliesKey, onSaved, last }) => {
     const [key, setKey] = useState('');
     const [saving, setSaving] = useState(false);
+    const [disconnecting, setDisconnecting] = useState(false);
     const save = async () => {
         if (!key.trim()) return;
         setSaving(true);
@@ -108,6 +109,17 @@ const FirefliesIntegration = ({ hasFirefliesKey, onSaved, last }) => {
             if (res.ok) { onSaved(); setKey(''); }
         } catch (e) { console.error(e); }
         setSaving(false);
+    };
+    const handleDisconnect = async () => {
+        setDisconnecting(true);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ firefliesApiKey: '' }),
+            });
+            if (res.ok) onSaved();
+        } catch (e) { console.error(e); }
+        setDisconnecting(false);
     };
     return (
         <IntegrationRow
@@ -122,6 +134,7 @@ const FirefliesIntegration = ({ hasFirefliesKey, onSaved, last }) => {
                 value={key} onChange={e => setKey(e.target.value)} onSave={save} saving={saving}
                 hint={<>Get your key from <a href="https://app.fireflies.ai/integrations/custom/fireflies" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }} className="underline">app.fireflies.ai</a></>}
             />
+            {hasFirefliesKey && <DisconnectButton onDisconnect={handleDisconnect} disconnecting={disconnecting} />}
         </IntegrationRow>
     );
 };
@@ -131,6 +144,7 @@ const YouTrackIntegration = ({ hasYouTrackConfig, onSaved, last }) => {
     const [url, setUrl] = useState('');
     const [token, setToken] = useState('');
     const [saving, setSaving] = useState(false);
+    const [disconnecting, setDisconnecting] = useState(false);
     const save = async () => {
         if (!url.trim() && !token.trim()) return;
         setSaving(true);
@@ -145,6 +159,17 @@ const YouTrackIntegration = ({ hasYouTrackConfig, onSaved, last }) => {
             if (res.ok) { onSaved(); setUrl(''); setToken(''); }
         } catch (e) { console.error(e); }
         setSaving(false);
+    };
+    const handleDisconnect = async () => {
+        setDisconnecting(true);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ youtrackUrl: '', youtrackToken: '' }),
+            });
+            if (res.ok) { onSaved(); setUrl(''); setToken(''); }
+        } catch (e) { console.error(e); }
+        setDisconnecting(false);
     };
     return (
         <IntegrationRow
@@ -164,6 +189,7 @@ const YouTrackIntegration = ({ hasYouTrackConfig, onSaved, last }) => {
                     value={token} onChange={e => setToken(e.target.value)} onSave={save} saving={saving}
                     hint={<>Token from <a href="https://www.jetbrains.com/help/youtrack/server/manage-permanent-token.html" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }} className="underline">YouTrack → Profile → Authentication</a></>}
                 />
+                {hasYouTrackConfig && <DisconnectButton onDisconnect={handleDisconnect} disconnecting={disconnecting} />}
             </div>
         </IntegrationRow>
     );
@@ -173,6 +199,7 @@ const YouTrackIntegration = ({ hasYouTrackConfig, onSaved, last }) => {
 const GammaIntegration = ({ hasGammaKey, onSaved, last }) => {
     const [key, setKey] = useState('');
     const [saving, setSaving] = useState(false);
+    const [disconnecting, setDisconnecting] = useState(false);
     const save = async () => {
         if (!key.trim()) return;
         setSaving(true);
@@ -184,6 +211,17 @@ const GammaIntegration = ({ hasGammaKey, onSaved, last }) => {
             if (res.ok) { onSaved(); setKey(''); }
         } catch (e) { console.error(e); }
         setSaving(false);
+    };
+    const handleDisconnect = async () => {
+        setDisconnecting(true);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ gammaApiKey: '' }),
+            });
+            if (res.ok) onSaved();
+        } catch (e) { console.error(e); }
+        setDisconnecting(false);
     };
     return (
         <IntegrationRow
@@ -198,6 +236,7 @@ const GammaIntegration = ({ hasGammaKey, onSaved, last }) => {
                 value={key} onChange={e => setKey(e.target.value)} onSave={save} saving={saving}
                 hint={<>Get key from <a href="https://gamma.app/settings" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }} className="underline">gamma.app/settings</a> → API Tokens</>}
             />
+            {hasGammaKey && <DisconnectButton onDisconnect={handleDisconnect} disconnecting={disconnecting} />}
         </IntegrationRow>
     );
 };
