@@ -75,6 +75,10 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
     // Conversation Labels State
     const [conversationLabels, setConversationLabels] = useState([]);
 
+    // Chat History Mode — "per-agent" (default) or "all-chats" (unified timeline)
+    const [chatHistoryMode, setChatHistoryMode] = useState(() => localStorage.getItem('chatHistoryMode') || 'per-agent');
+    const [allAgentConversations, setAllAgentConversations] = useState([]);
+
     // Chat engine hook — owns messages, isLoading, sendMessage, stopGenerating
     const { messages, setMessages, isLoading, sendMessage, stopGenerating, retryMessage, editAndRegenerate, submittedFormIds, setSubmittedFormIds } = useChatEngine({
         selectedAgent,
@@ -441,7 +445,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 // Filter out tool messages and empty messages - only show user and assistant with content
                 parsedMessages = parsedMessages.filter(m =>
                     m.role !== 'tool' &&
-                    ((m.content && typeof m.content === 'string' && m.content.trim().length > 0) || (m.images && m.images.length > 0) || (m.audioFiles && m.audioFiles.length > 0) || (m.videoFiles && m.videoFiles.length > 0) || m.sheetsResults || m.sheetsDrafts || m.sheetsReports || m.emailDrafts || m.calendarDrafts || m.contactsDrafts)
+                    ((m.content && typeof m.content === 'string' && m.content.trim().length > 0) || (m.images && m.images.length > 0) || (m.audioFiles && m.audioFiles.length > 0) || (m.videoFiles && m.videoFiles.length > 0) || m.sheetsResults || m.sheetsDrafts || m.sheetsReports || m.emailDrafts || m.calendarDrafts || m.contactsDrafts || (m.attachments && m.attachments.length > 0))
                 );
 
                 // Strip streaming-only progress fields — these are only relevant during live chat
@@ -514,6 +518,41 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
             if (res.ok) setConversationLabels(await res.json());
         } catch (e) { console.error('Failed to load labels:', e); }
     };
+
+    // Load ALL conversations across all agents (for "All Chats" mode)
+    const loadAllConversations = useCallback(async () => {
+        try {
+            const [agentRes, directRes] = await Promise.all([
+                authFetch(`${API_BASE}/agents/conversations/all`),
+                authFetch(`${API_BASE}/ai/direct/conversations`),
+            ]);
+            let all = [];
+            if (agentRes.ok) {
+                const agentConvs = await agentRes.json();
+                all = [...agentConvs.map(c => ({ ...c, _source: 'agent' }))];
+            }
+            if (directRes.ok) {
+                const directConvs = await directRes.json();
+                all = [...all, ...directConvs.map(c => ({ ...c, _source: 'direct' }))];
+            }
+            all.sort((a, b) => new Date(b.updated_at || b.created_at) - new Date(a.updated_at || a.created_at));
+            setAllAgentConversations(all);
+        } catch (e) { console.error('Failed to load all conversations:', e); }
+    }, []);
+
+    // Load all conversations when mode is 'all-chats'
+    useEffect(() => {
+        if (chatHistoryMode === 'all-chats') loadAllConversations();
+    }, [chatHistoryMode, loadAllConversations]);
+
+    // Listen for mode changes from Settings panel
+    useEffect(() => {
+        const handler = (e) => {
+            setChatHistoryMode(e.detail);
+        };
+        window.addEventListener('chatHistoryModeChanged', handler);
+        return () => window.removeEventListener('chatHistoryModeChanged', handler);
+    }, []);
 
     const loadModelTiers = async () => {
         try {
@@ -980,6 +1019,33 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 onCreateLabel={handleCreateLabel}
                 onDeleteLabel={handleDeleteLabel}
                 onEditLabel={handleEditLabel}
+                chatHistoryMode={chatHistoryMode}
+                allAgentConversations={allAgentConversations}
+                onSelectAllChatsConversation={(conv) => {
+                    if (conv._source === 'direct') {
+                        // Switch to direct chat mode and open the conversation
+                        if (!directChatMode) {
+                            setDirectChatMode(true);
+                            setSelectedAgent(null);
+                            loadModelTiers();
+                            localStorage.setItem('lastUsedMode', 'direct-chat');
+                        }
+                        handleSelectDirectConversation(conv);
+                    } else {
+                        // Switch to the agent and open the conversation
+                        const agent = agents.find(a => a.id === conv.agent_id);
+                        if (agent && (!selectedAgent || selectedAgent.id !== agent.id)) {
+                            setSelectedAgent(agent);
+                            setDirectChatMode(false);
+                            localStorage.setItem('lastUsedAgentId', agent.id);
+                            localStorage.setItem('lastUsedMode', 'agent');
+                        } else if (!agent) {
+                            setDirectChatMode(false);
+                        }
+                        selectConversation(conv.agent_id, conv.id);
+                    }
+                    if (isMobile) setSidebarOpen(false);
+                }}
             />
 
             {/* Main Content Area */}

@@ -37,6 +37,9 @@ const RadioRow = ({ value, currentValue, onChange, label, description, last = fa
     );
 };
 
+// Re-use RadioRow for Chat History section
+const ChatHistoryRadioRow = RadioRow;
+
 // ── Language Settings ─────────────────────────────────────────────────────────
 const LanguageSettingsSection = () => {
     const { locale, setLocale, t } = useTranslation();
@@ -118,6 +121,15 @@ const StartupAgentSection = ({ defaultAgentMode, setDefaultAgentMode, defaultAge
     const showAgentSelect = defaultAgentMode === 'specific';
     const [localUser, setLocalUser] = useState(user);
     useEffect(() => { if (user) setLocalUser(user); }, [user]);
+
+    // Chat History display mode
+    const [chatHistoryMode, setChatHistoryModeRaw] = useState(() => localStorage.getItem('chatHistoryMode') || 'per-agent');
+    const setChatHistoryMode = (v) => {
+        setChatHistoryModeRaw(v);
+        localStorage.setItem('chatHistoryMode', v);
+        // Dispatch event so Sidebar picks it up instantly
+        window.dispatchEvent(new CustomEvent('chatHistoryModeChanged', { detail: v }));
+    };
 
     const handleAvatarSaved = (avatar, avatarType) => {
         setLocalUser(prev => ({ ...prev, avatar, avatarType }));
@@ -210,6 +222,41 @@ const StartupAgentSection = ({ defaultAgentMode, setDefaultAgentMode, defaultAge
 
             {/* Language Settings */}
             <LanguageSettingsSection />
+
+            {/* Chat History Display Mode */}
+            <div className="space-y-1.5 mt-6">
+                <p className="text-[11px] font-semibold uppercase tracking-widest px-1 mb-2" style={{ color: 'var(--text-muted)' }}>
+                    {t('settings.chat_history')}
+                </p>
+                <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
+                    <div className="flex items-center gap-3 px-5 py-4" style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-subtle)' }}>
+                        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(99,102,241,0.10)' }}>
+                            <svg style={{ color: '#6366f1', width: '15px', height: '15px' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10" />
+                            </svg>
+                        </div>
+                        <div>
+                            <p className="text-[13px] font-medium text-black">{t('settings.chat_history')}</p>
+                            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{t('settings.chat_history_desc')}</p>
+                        </div>
+                    </div>
+                    <ChatHistoryRadioRow
+                        value="per-agent"
+                        currentValue={chatHistoryMode}
+                        onChange={(e) => setChatHistoryMode(e.target.value)}
+                        label={t('settings.chat_history_per_agent')}
+                        description={t('settings.chat_history_per_agent_desc')}
+                    />
+                    <ChatHistoryRadioRow
+                        value="all-chats"
+                        currentValue={chatHistoryMode}
+                        onChange={(e) => setChatHistoryMode(e.target.value)}
+                        label={t('settings.chat_history_all_chats')}
+                        description={t('settings.chat_history_all_chats_desc')}
+                        last
+                    />
+                </div>
+            </div>
 
             {/* Session Settings */}
             {onLogout && (

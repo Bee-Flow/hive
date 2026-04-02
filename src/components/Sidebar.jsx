@@ -161,6 +161,7 @@ const ConvRow = ({
     conversationLabels, projects,
     onRenameConversation, onPinConversation, onLabelConversation,
     onDeleteLabel, onEditLabel, onCreateLabel, onMoveToProject,
+    agentBadge,
 }) => {
     const [showMenu, setShowMenu] = useState(false);
     const [isRenaming, setIsRenaming] = useState(false);
@@ -229,7 +230,12 @@ const ConvRow = ({
             {/* Label dots */}
             {(() => { try { const ls = JSON.parse(conv.labels_json || '[]'); return ls.length > 0 ? <div className="flex gap-0.5 flex-shrink-0">{ls.map(lid => { const l = (conversationLabels || []).find(x => x.id === lid); return l ? <div key={lid} className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: l.color }} title={l.name} /> : null; })}</div> : null; } catch { return null; } })()}
             <span className={`text-[14px] truncate flex-1 leading-snug ${active ? TEXT_ACTIVE : TEXT_IDLE}`}>
-                {conv.title || t('sidebar.untitled_chat')}
+                <span className="block truncate">{conv.title || t('sidebar.untitled_chat')}</span>
+                {agentBadge && (
+                    <span className="block text-[10px] truncate mt-0.5" style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+                        {agentBadge}
+                    </span>
+                )}
             </span>
             {/* Three-dot menu */}
             <div className="relative" ref={menuRef}>
@@ -380,6 +386,9 @@ const Sidebar = ({
     onCreateLabel,
     onDeleteLabel,
     onEditLabel,
+    chatHistoryMode = 'per-agent',
+    allAgentConversations = [],
+    onSelectAllChatsConversation,
 }) => {
     const { t } = useTranslation();
     // We'll use the 'isOpen' prop as 'sidebarOpen' (expanded state)
@@ -410,6 +419,15 @@ const Sidebar = ({
     const typeOf = (a) => a.is_swarm ? 'Swarm' : a.is_browser_agent ? 'Web' : a.is_terminal_agent ? 'Dev' : a.is_security_agent ? 'Security' : 'Chat';
 
     const allConvs = (() => {
+        // "All Chats" mode — unified timeline from all agents + direct
+        if (chatHistoryMode === 'all-chats') {
+            let convs = allAgentConversations;
+            if (activeProject) {
+                return convs.filter(c => c.project_id === activeProject.id);
+            }
+            return convs.filter(c => !c.project_id);
+        }
+        // Default: per-agent mode
         let convs;
         if (directChatMode) convs = directConversations;
         else if (!groupedConversations) convs = [];
@@ -459,8 +477,21 @@ const Sidebar = ({
     const previewConvs = allConvs.slice(0, 3);
     const hasMore = allConvs.length > 3;
 
-    const convIsActive = (c) => directChatMode ? currentDirectConversation?.id === c.id : currentConversation?.id === c.id;
-    const selectConv = (c) => directChatMode ? onSelectDirectConversation(c) : onSelectConversation(c);
+    const isAllChats = chatHistoryMode === 'all-chats';
+    const convIsActive = (c) => {
+        if (isAllChats) {
+            // In all-chats mode, check both agent and direct conversations
+            return currentDirectConversation?.id === c.id || currentConversation?.id === c.id;
+        }
+        return directChatMode ? currentDirectConversation?.id === c.id : currentConversation?.id === c.id;
+    };
+    const selectConv = (c) => {
+        if (isAllChats && onSelectAllChatsConversation) {
+            onSelectAllChatsConversation(c);
+            return;
+        }
+        return directChatMode ? onSelectDirectConversation(c) : onSelectConversation(c);
+    };
     const deleteConv = (id) => directChatMode ? onDeleteDirectConversation?.(id) : onDeleteConversation(id);
 
 
@@ -690,7 +721,7 @@ const Sidebar = ({
                                     {group.label}
                                 </h3>
                                 <div className="space-y-px">
-                                    {group.items.map(c => <ConvRow key={c.id} conv={c} t={t} active={convIsActive(c)} selectConv={selectConv} deleteConv={deleteConv} conversationLabels={conversationLabels} projects={projects} onRenameConversation={onRenameConversation} onPinConversation={onPinConversation} onLabelConversation={onLabelConversation} onDeleteLabel={onDeleteLabel} onEditLabel={onEditLabel} onCreateLabel={onCreateLabel} onMoveToProject={onMoveToProject} />)}
+                                    {group.items.map(c => <ConvRow key={c.id} conv={c} t={t} active={convIsActive(c)} selectConv={selectConv} deleteConv={deleteConv} conversationLabels={conversationLabels} projects={projects} onRenameConversation={onRenameConversation} onPinConversation={onPinConversation} onLabelConversation={onLabelConversation} onDeleteLabel={onDeleteLabel} onEditLabel={onEditLabel} onCreateLabel={onCreateLabel} onMoveToProject={onMoveToProject} agentBadge={isAllChats ? (c._source === 'direct' ? '💬 Direct Chat' : (() => { const a = agents.find(x => x.id === c.agent_id); return a ? `${a.avatar || '🤖'} ${a.name}` : '🤖 Agent'; })()) : null} />)}
                                 </div>
                             </div>
                         ))
