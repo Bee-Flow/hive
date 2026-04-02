@@ -37,6 +37,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
 
     // Feature flags
     const notebooksEnabled = user?.featureFlags?.notebooks !== false;
+    const projectsEnabled = user?.featureFlags?.projects !== false;
     useEffect(() => {
         const mq = window.matchMedia('(max-width: 767px)');
         const handler = (e) => setIsMobile(e.matches);
@@ -529,8 +530,8 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
         } catch (e) { console.error('Failed to load projects:', e); }
     };
 
-    // Load projects on mount
-    useEffect(() => { loadProjects(); }, []);
+    // Load projects on mount (only if the feature is enabled for this user)
+    useEffect(() => { if (projectsEnabled) loadProjects(); }, [projectsEnabled]);
 
     const handleMoveToProject = async (conv, targetProject) => {
         try {

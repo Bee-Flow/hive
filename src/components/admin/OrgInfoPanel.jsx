@@ -410,10 +410,12 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                 const data = await res.json();
                 setSubscription(data);
             } else {
+                // 403 = user not in org or no subscription assigned — expected, handle silently
                 setSubscription(null);
             }
         } catch (err) {
-            console.error('Failed to fetch subscription:', err);
+            // Network error — not a 403, log it
+            console.warn('[OrgInfoPanel] Failed to fetch subscription:', err);
             setSubscription(null);
         } finally {
             setSubLoading(false);
