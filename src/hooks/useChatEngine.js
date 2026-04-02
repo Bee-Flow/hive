@@ -683,7 +683,7 @@ export default function useChatEngine({
 
     // --- Core send ---
 
-    const sendMessage = useCallback(async (text, attachments = [], isHidden = false) => {
+    const sendMessage = useCallback(async (text, attachments = [], isHidden = false, historyOverride = null) => {
         const isDirectMode = directMode?.enabled;
         if (!isDirectMode && !selectedAgent) return;
         if (isLoading) return;
@@ -728,8 +728,9 @@ export default function useChatEngine({
             if (isDirectMode) {
                 // Direct chat mode — post to custom endpoint or /ai/chat/direct/stream
                 url = directMode.customEndpoint ? `${API_BASE}${directMode.customEndpoint}` : `${API_BASE}/ai/chat/direct/stream`;
-                // Build history from current messages (exclude current user message)
-                const history = messages.filter(m => (m.role === 'user' || m.role === 'assistant') && m.content?.trim()).map(m => ({
+                // Build history: use historyOverride when provided (edit/retry), otherwise use stale-safe messages
+                const sourceMessages = historyOverride || messages;
+                const history = sourceMessages.filter(m => (m.role === 'user' || m.role === 'assistant') && m.content?.trim()).map(m => ({
                     role: m.role,
                     content: m.content
                 }));
@@ -780,6 +781,13 @@ export default function useChatEngine({
                     ...wsPayload,
                     ...(activeProject?.id ? { projectId: activeProject.id } : {}),
                     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+                    // When editing/retrying, send truncated history so server doesn't use full DB history
+                    ...(historyOverride ? {
+                        history: historyOverride.filter(m => (m.role === 'user' || m.role === 'assistant') && m.content?.trim()).map(m => ({
+                            role: m.role,
+                            content: m.content
+                        }))
+                    } : {}),
                 };
             }
 
@@ -888,16 +896,15 @@ export default function useChatEngine({
             const userIdx = prev.indexOf(userMsg);
             const truncated = prev.slice(0, userIdx);
 
-            // Use setTimeout to call sendMessage after this state update
+            // Pass truncated history directly to avoid stale closure issues
             setTimeout(() => {
-                // Temporarily override tier if specified
                 if (overrideTier && directMode?.enabled) {
                     const originalTier = directMode.modelTier;
                     directMode.modelTier = overrideTier;
-                    sendMessage(userMsg.content, userMsg.attachments || []);
+                    sendMessage(userMsg.content, userMsg.attachments || [], false, truncated);
                     directMode.modelTier = originalTier;
                 } else {
-                    sendMessage(userMsg.content, userMsg.attachments || []);
+                    sendMessage(userMsg.content, userMsg.attachments || [], false, truncated);
                 }
             }, 50);
 
@@ -924,9 +931,9 @@ export default function useChatEngine({
             const userIdx = prev.indexOf(userMsg);
             const truncated = prev.slice(0, userIdx);
 
-            // Re-send with new content
+            // Pass truncated history directly to avoid stale closure issues
             setTimeout(() => {
-                sendMessage(newContent.trim(), userMsg.attachments || []);
+                sendMessage(newContent.trim(), userMsg.attachments || [], false, truncated);
             }, 50);
 
             return truncated;
