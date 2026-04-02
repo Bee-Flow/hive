@@ -72,7 +72,7 @@ export default function AgentSidebar({
                                 <div className="flex items-center justify-between mb-1">
                                     <div className="flex items-center gap-2">
                                         <span className="text-lg">{agent.icon || emptyIcon}</span>
-                                        <span className={`font-medium text-sm truncate ${selected?.id === agent.id && !isCreating ? 'text-[var(--accent-primary)]' : 'text-[var(--text-primary)]'}`}>
+                                        <span className={`font-medium text-sm truncate ${selected?.id === agent.id && !isCreating ? 'text-[var(--accent-primary)]' : 'text-[var(--text-primary)]'}`} title={agent.name}>
                                             {agent.name}
                                         </span>
                                     </div>

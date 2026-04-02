@@ -596,9 +596,12 @@ const Sidebar = ({
                 </div>
             )}
 
+            {/* ── Scrollable middle region (Projects + My Agents + Chats) ── */}
+            <div className={`flex-1 min-h-0 flex flex-col overflow-y-auto custom-scrollbar ${isOpen ? '' : ''}`}>
+
             {/* ── Projects ── */}
             {isOpen && user?.featureFlags?.projects !== false && projects.length > 0 && (
-                <div className="flex-shrink-0 mt-1">
+                <div className="mt-1">
                     <div className={SECTION_HDR} onClick={toggleProjects}>
                         <span className={SECTION_LBL}>{t('sidebar.projects')}</span>
                         <div className="flex items-center gap-1">
@@ -666,7 +669,7 @@ const Sidebar = ({
 
             {/* ── My Agents ── */}
             {isOpen && (
-                <div className="flex-shrink-0">
+                <div>
                     <div className={SECTION_HDR} onClick={toggleAgents}>
                         <span className={SECTION_LBL}>{t('sidebar.my_agents')}</span>
                         <ChevronDown className={`w-3.5 h-3.5 text-[var(--text-tertiary)] transition-transform duration-200 ${agentsOpen ? '' : '-rotate-90'}`} />
@@ -692,7 +695,7 @@ const Sidebar = ({
                                                 <img src={agent.avatar} alt="" className="w-full h-full object-contain" />
                                             ) : (agent.avatar || initials)}
                                         </div>
-                                        <span className={`text-[13px] truncate flex-1 leading-snug ${sel ? 'font-semibold text-black' : 'text-black'}`}>
+                                        <span className={`text-[13px] truncate flex-1 leading-snug ${sel ? 'font-semibold text-black' : 'text-black'}`} title={agent.name}>
                                             {agent.name}
                                         </span>
                                         <button
@@ -716,7 +719,7 @@ const Sidebar = ({
             )}
 
             {/* ── Recent Chats ── */}
-            <div className={`flex-1 min-h-0 flex flex-col overflow-hidden ${isOpen ? '' : 'hidden'}`}>
+            <div className={`flex flex-col ${isOpen ? '' : 'hidden'}`}>
                 <div className="flex items-center justify-between px-3 h-9 select-none">
                     <span className={SECTION_LBL}>{t('sidebar.chats')}</span>
                     {allConvs.length > 0 && (
@@ -724,7 +727,7 @@ const Sidebar = ({
                     )}
                 </div>
 
-                <div className="flex-1 overflow-y-auto custom-scrollbar px-1.5 pb-1">
+                <div className="px-1.5 pb-1">
                     {isOpen ? (allConvs.length === 0 ? (
                         <p className="px-3 py-2 text-[12px] text-[var(--text-tertiary)]">
                             {selectedAgent || directChatMode ? t('sidebar.no_chats_yet') : t('sidebar.select_agent_to_begin')}
@@ -744,6 +747,8 @@ const Sidebar = ({
                     )) : null}
                 </div>
             </div>
+
+            </div>{/* ── End scrollable middle region ── */}
 
             {/* ── Account footer ── */}
             <div className={`flex-shrink-0 mt-auto border-t border-[var(--border-subtle)] relative ${isOpen ? '' : 'flex justify-center flex-shrink-0'}`} ref={profileRef}>

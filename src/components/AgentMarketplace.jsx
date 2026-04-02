@@ -93,7 +93,7 @@ const AgentCard = React.memo(({ agentId, name, avatar, description, typeLabel, i
                     : (avatar || getAgentInitials(name))}
             </div>
             <div className="flex-1 min-w-0 pr-16">
-                <h3 className="font-semibold text-[13px] truncate" style={{ color: 'var(--text-primary)' }}>{name}</h3>
+                <h3 className="font-semibold text-[13px] truncate" style={{ color: 'var(--text-primary)' }} title={name}>{name}</h3>
                 <p className="text-xs mt-0.5 line-clamp-2 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                     {description || 'AI agent ready to assist.'}
                 </p>
