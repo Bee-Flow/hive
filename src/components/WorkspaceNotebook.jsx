@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
 import NotebookEditor from '../pages/notebooks/NotebookEditor';
+import { preprocessMermaidContent } from '../pages/notebooks/MermaidExtension';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { useTranslation } from '../hooks/useTranslation';
 import {
@@ -85,8 +86,8 @@ export default function WorkspaceNotebook({
         }
     }, [existingNotebookId]);
 
-    // Stable initial content
-    const [initialContent] = useState(() => content || '');
+    // Stable initial content (preprocessed for mermaid diagrams)
+    const [initialContent] = useState(() => preprocessMermaidContent(content || '') || '');
     const prevContentRef = useRef(content);
 
     // Export state
@@ -136,7 +137,8 @@ export default function WorkspaceNotebook({
         prevContentRef.current = content;
         const editor = editorRef.current?.getEditor?.();
         if (!editor) return;
-        editor.commands.setContent(content || '', false);
+        const processed = preprocessMermaidContent(content || '');
+        editor.commands.setContent(processed, false);
     }, [content]);
 
     // Extract markdown helper
@@ -204,11 +206,17 @@ export default function WorkspaceNotebook({
         try {
             let htmlContent = getHTML();
 
-            // Render mermaid diagrams
+            // Render mermaid diagrams (data-code is base64 or HTML-entity encoded)
             const mermaidRegex = /<div[^>]*data-type="mermaid-diagram"[^>]*data-code="([^"]*?)"[^>]*>.*?<\/div>/gi;
             const mermaidMatches = [...htmlContent.matchAll(mermaidRegex)];
             for (const match of mermaidMatches) {
-                const code = match[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+                // decodeFromAttr handles both base64 (new) and HTML-entity (legacy) formats
+                let code;
+                try {
+                    code = decodeURIComponent(escape(atob(match[1])));
+                } catch {
+                    code = match[1].replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"');
+                }
                 try {
                     const svg = await renderMermaidToSVG(code);
                     if (svg) {

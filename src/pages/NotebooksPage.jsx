@@ -15,6 +15,7 @@ import NotebookTOC from './notebooks/NotebookTOC';
 import NotebookVersions from './notebooks/NotebookVersions';
 import CitationOverlay from './notebooks/CitationOverlay';
 import GenerationOverlay from './notebooks/GenerationOverlay';
+import SendForSigningModal from './notebooks/SendForSigningModal';
 import { preprocessMermaidContent } from './notebooks/MermaidExtension';
 import { renderMermaidToSVG, svgToPngDataUrl } from './notebooks/MermaidBlock';
 
@@ -146,6 +147,11 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     const [renamingId, setRenamingId] = useState(null);
     const [renameValue, setRenameValue] = useState('');
     const [dragOver, setDragOver] = useState(false);
+
+    // SignRequest modal state
+    const [signModalOpen, setSignModalOpen] = useState(false);
+    const [signSending, setSignSending] = useState(false);
+    const [signRequestConfigured, setSignRequestConfigured] = useState(false);
 
     // Layout states
     const [leftPanelOpen, setLeftPanelOpen] = useState(true);
@@ -280,6 +286,14 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
             .catch(() => {});
     }, []);
 
+    /* ── Check SignRequest config ────────────────────────────── */
+    useEffect(() => {
+        authFetch(`${API_BASE}/ai/user-settings`)
+            .then(r => r.ok ? r.json() : {})
+            .then(data => setSignRequestConfigured(!!data.hasSignRequestConfig))
+            .catch(() => {});
+    }, []);
+
     /* ── Fetch notebooks ─────────────────────────────────────── */
     const didAutoSelect = useRef(false);
 
@@ -307,7 +321,9 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
             const data = await api(`/${nb.id}`);
             setSelected(data.notebook);
             setSources(data.sources || []);
-            setDocumentContent(data.notebook?.documentContent || '');
+            // Preprocess mermaid code blocks so they render as diagrams
+            const rawContent = data.notebook?.documentContent || '';
+            setDocumentContent(preprocessMermaidContent(rawContent));
             setChatMessages([]);
             setLastGeneratedContent('');
             onNotebookChange?.(nb.id);
@@ -570,11 +586,16 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
             const mermaidMatches = [...content.matchAll(mermaidDivRegex)];
             
             for (const match of mermaidMatches) {
-                const mermaidCode = match[1]
-                    .replace(/&amp;/g, '&')
-                    .replace(/&lt;/g, '<')
-                    .replace(/&gt;/g, '>')
-                    .replace(/&quot;/g, '"');
+                let mermaidCode;
+                try {
+                    mermaidCode = decodeURIComponent(escape(atob(match[1])));
+                } catch {
+                    mermaidCode = match[1]
+                        .replace(/&amp;/g, '&')
+                        .replace(/&lt;/g, '<')
+                        .replace(/&gt;/g, '>')
+                        .replace(/&quot;/g, '"');
+                }
                 try {
                     const svg = await renderMermaidToSVG(mermaidCode);
                     if (svg) {
@@ -621,6 +642,37 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
             setError(e.message); 
         } finally {
             setExporting(null);
+        }
+    }, [selected, getExportContent, authFetch]);
+
+    /* ── Send for Signing (SignRequest) ──────────────────────── */
+    const handleSendForSigning = useCallback(async ({ signers, subject, message }) => {
+        let content = getExportContent();
+        if (!selected || !content) return null;
+        setSignSending(true);
+        try {
+            // Embed images for export
+            content = await embedImagesAsBase64(content);
+
+            const res = await authFetch(`${API_BASE}/api/notebooks/${selected.id}/export/signrequest`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content, title: selected.name, signers, subject, message }),
+            });
+
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || `SignRequest failed (${res.status})`);
+            }
+
+            const data = await res.json();
+            return data;
+        } catch (e) {
+            console.error('[Notebooks] SignRequest failed:', e);
+            setError(e.message);
+            return null;
+        } finally {
+            setSignSending(false);
         }
     }, [selected, getExportContent, authFetch]);
 
@@ -792,6 +844,8 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                                 setActiveGeneration(generationHistory[generationHistory.length - 1]);
                             }
                         }}
+                        signRequestConfigured={signRequestConfigured}
+                        onSignRequest={() => setSignModalOpen(true)}
                     />
                 </div>
 
@@ -930,6 +984,15 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                             }
                         }
                     }}
+                />
+
+                {/* SignRequest Modal */}
+                <SendForSigningModal
+                    open={signModalOpen}
+                    onClose={() => setSignModalOpen(false)}
+                    onSend={handleSendForSigning}
+                    sending={signSending}
+                    notebookTitle={selected?.name}
                 />
             </div>
         );

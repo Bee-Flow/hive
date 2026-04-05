@@ -1,48 +1,212 @@
 /**
- * MermaidBlock — A React component for rendering Mermaid diagrams inside TipTap code blocks.
- * Shows the rendered diagram with a toggle to view/edit the raw code.
- * Supports SVG export for PDF/Word.
+ * MermaidBlock — Premium React component for rendering Mermaid diagrams.
+ * 
+ * Features:
+ * - Rich indigo-violet theme with deep customization
+ * - SVG post-processing: drop-shadows, rounded corners, glow effects
+ * - Glassmorphism container with animated loading skeleton
+ * - Fullscreen modal for large diagrams
+ * - Smooth fade-in animation on render
+ * - SVG export for PDF/Word
  */
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import mermaid from 'mermaid';
-import { Code, Eye, Maximize2, X, Download, Copy, Check } from 'lucide-react';
+import { Code, Eye, Maximize2, Minimize2, X, Download, Copy, Check, Loader2 } from 'lucide-react';
 
 let blockCounter = 0;
 
+/* ── Premium Theme Configuration ──────────────────────── */
 const MERMAID_CONFIG = {
     startOnLoad: false,
-    theme: 'dark',
+    theme: 'base',
     themeVariables: {
-        darkMode: true,
-        background: '#1e1e2e',
-        primaryColor: '#818cf8',
-        primaryTextColor: '#e2e8f0',
+        darkMode: false,
+        background: '#ffffff',
+
+        // Core palette — deep indigo-violet
+        primaryColor: '#eef2ff',
+        primaryTextColor: '#312e81',
         primaryBorderColor: '#6366f1',
-        secondaryColor: '#a78bfa',
-        secondaryTextColor: '#e2e8f0',
-        secondaryBorderColor: '#7c3aed',
-        tertiaryColor: '#2a2a3e',
-        tertiaryTextColor: '#e2e8f0',
-        tertiaryBorderColor: '#3a3a4e',
-        lineColor: '#94a3b8',
-        textColor: '#e2e8f0',
-        mainBkg: '#2a2a3e',
+
+        secondaryColor: '#f5f3ff',
+        secondaryTextColor: '#3b0764',
+        secondaryBorderColor: '#a78bfa',
+
+        tertiaryColor: '#f0fdf4',
+        tertiaryTextColor: '#14532d',
+        tertiaryBorderColor: '#86efac',
+
+        // Edges & labels
+        lineColor: '#6366f1',
+        textColor: '#1e293b',
+        edgeLabelBackground: '#ffffff',
+
+        // Flowchart nodes
+        mainBkg: '#eef2ff',
         nodeBorder: '#6366f1',
-        clusterBkg: '#1e1e2e',
-        clusterBorder: '#3a3a4e',
-        titleColor: '#e2e8f0',
-        edgeLabelBackground: '#1e1e2e',
-        nodeTextColor: '#e2e8f0',
+        nodeTextColor: '#312e81',
+
+        // Clusters / subgraphs
+        clusterBkg: '#faf5ff',
+        clusterBorder: '#c4b5fd',
+
+        // Title
+        titleColor: '#312e81',
+
+        // Sequence diagram
+        actorTextColor: '#312e81',
+        actorBorder: '#6366f1',
+        actorBkg: '#eef2ff',
+        signalColor: '#4338ca',
+        labelBoxBkgColor: '#eef2ff',
+
+        // Notes
+        noteBkgColor: '#fffbeb',
+        noteTextColor: '#78350f',
+        noteBorderColor: '#f59e0b',
+
+        // Misc
+        fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+        fontSize: '15px',
     },
-    fontFamily: 'Inter, system-ui, sans-serif',
-    fontSize: 14,
-    flowchart: { htmlLabels: true, curve: 'basis', padding: 15 },
+    fontFamily: 'Inter, system-ui, -apple-system, sans-serif',
+    fontSize: 15,
+    flowchart: {
+        htmlLabels: true,
+        curve: 'basis',
+        padding: 18,
+        nodeSpacing: 50,
+        rankSpacing: 60,
+        diagramPadding: 16,
+    },
+    sequence: {
+        diagramMarginX: 20,
+        diagramMarginY: 16,
+        actorMargin: 60,
+        messageMargin: 40,
+        boxMargin: 8,
+        boxTextMargin: 6,
+        noteMargin: 12,
+        mirrorActors: false,
+    },
     mindmap: { padding: 20 },
+    gantt: { fontSize: 13 },
 };
+
+/* ── SVG Post-Processing ──────────────────────────────── */
+function postProcessSVG(svgElement) {
+    if (!svgElement) return;
+
+    // Style: max-width responsive
+    svgElement.style.maxWidth = '100%';
+    svgElement.style.height = 'auto';
+
+    // Add drop-shadow filter definition to SVG
+    let defs = svgElement.querySelector('defs');
+    if (!defs) {
+        defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        svgElement.prepend(defs);
+    }
+
+    // Premium drop-shadow filter
+    if (!defs.querySelector('#premium-shadow')) {
+        const filter = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+        filter.setAttribute('id', 'premium-shadow');
+        filter.setAttribute('x', '-10%');
+        filter.setAttribute('y', '-10%');
+        filter.setAttribute('width', '130%');
+        filter.setAttribute('height', '140%');
+        filter.innerHTML = `
+            <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="rgba(99, 102, 241, 0.15)" flood-opacity="1"/>
+        `;
+        defs.appendChild(filter);
+    }
+
+    // Subtle glow filter for highlighted elements
+    if (!defs.querySelector('#node-glow')) {
+        const glow = document.createElementNS('http://www.w3.org/2000/svg', 'filter');
+        glow.setAttribute('id', 'node-glow');
+        glow.setAttribute('x', '-20%');
+        glow.setAttribute('y', '-20%');
+        glow.setAttribute('width', '150%');
+        glow.setAttribute('height', '150%');
+        glow.innerHTML = `
+            <feGaussianBlur stdDeviation="2" result="blur"/>
+            <feMerge>
+                <feMergeNode in="blur"/>
+                <feMergeNode in="SourceGraphic"/>
+            </feMerge>
+        `;
+        defs.appendChild(glow);
+    }
+
+    // Apply shadows and rounded corners to nodes
+    const nodeRects = svgElement.querySelectorAll('.node rect, .node polygon, .node circle, .node ellipse');
+    nodeRects.forEach(el => {
+        el.style.filter = 'url(#premium-shadow)';
+        if (el.tagName === 'rect') {
+            // Soft rounded corners
+            if (!el.getAttribute('rx') || parseFloat(el.getAttribute('rx')) < 6) {
+                el.setAttribute('rx', '8');
+                el.setAttribute('ry', '8');
+            }
+        }
+    });
+
+    // Style cluster/subgraph backgrounds
+    const clusterRects = svgElement.querySelectorAll('.cluster rect');
+    clusterRects.forEach(el => {
+        el.setAttribute('rx', '12');
+        el.setAttribute('ry', '12');
+        el.style.filter = 'url(#premium-shadow)';
+    });
+
+    // Thicker, smoother edge lines
+    const edges = svgElement.querySelectorAll('.edge-pattern, .flowchart-link, path.path');
+    edges.forEach(el => {
+        const currentStrokeWidth = el.getAttribute('stroke-width');
+        if (!currentStrokeWidth || parseFloat(currentStrokeWidth) < 1.8) {
+            el.setAttribute('stroke-width', '1.8');
+        }
+    });
+
+    // Better arrowhead markers
+    const markers = svgElement.querySelectorAll('marker polygon, marker path');
+    markers.forEach(el => {
+        if (!el.style.fill || el.style.fill === '#333') {
+            el.style.fill = '#6366f1';
+        }
+    });
+
+    // Enhance edge labels
+    const edgeLabels = svgElement.querySelectorAll('.edgeLabel rect, .labelBkg');
+    edgeLabels.forEach(el => {
+        el.setAttribute('rx', '6');
+        el.setAttribute('ry', '6');
+    });
+
+    // Actor styling for sequence diagrams
+    const actors = svgElement.querySelectorAll('.actor');
+    actors.forEach(el => {
+        if (el.tagName === 'rect') {
+            el.setAttribute('rx', '10');
+            el.setAttribute('ry', '10');
+            el.style.filter = 'url(#premium-shadow)';
+        }
+    });
+
+    // Note styling for sequence diagrams
+    const notes = svgElement.querySelectorAll('.note rect');
+    notes.forEach(el => {
+        el.setAttribute('rx', '8');
+        el.setAttribute('ry', '8');
+    });
+}
+
+/* ── Export helpers ────────────────────────────────────── */
 
 /**
  * Render mermaid code to SVG string (for export).
- * Returns the SVG string or null on failure.
  */
 export async function renderMermaidToSVG(code) {
     try {
@@ -71,7 +235,7 @@ export function svgToPngDataUrl(svgString, width = 1200) {
             canvas.width = width;
             canvas.height = img.height * scale;
             const ctx = canvas.getContext('2d');
-            ctx.fillStyle = '#1e1e2e';
+            ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
             URL.revokeObjectURL(url);
@@ -87,13 +251,17 @@ export function svgToPngDataUrl(svgString, width = 1200) {
     });
 }
 
+/* ── Main Component ───────────────────────────────────── */
+
 export default function MermaidBlock({ code, onCodeChange, editable = true }) {
     const [showCode, setShowCode] = useState(false);
     const [error, setError] = useState(null);
     const [ready, setReady] = useState(false);
     const [hovered, setHovered] = useState(false);
     const [copied, setCopied] = useState(false);
+    const [fullscreen, setFullscreen] = useState(false);
     const containerRef = useRef(null);
+    const fullscreenContainerRef = useRef(null);
     const idRef = useRef(`mermaid-block-${Date.now()}-${blockCounter++}`);
     const textareaRef = useRef(null);
 
@@ -109,22 +277,19 @@ export default function MermaidBlock({ code, onCodeChange, editable = true }) {
 
         const renderDiagram = async () => {
             try {
-                // Need a fresh unique ID each render
                 const renderId = `${id}-${Date.now()}`;
                 const { svg } = await mermaid.render(renderId, code.trim());
                 if (containerRef.current) {
                     containerRef.current.innerHTML = svg;
                     const svgEl = containerRef.current.querySelector('svg');
                     if (svgEl) {
-                        svgEl.style.maxWidth = '100%';
-                        svgEl.style.height = 'auto';
+                        postProcessSVG(svgEl);
                     }
                     setReady(true);
                 }
             } catch (err) {
                 console.error('[MermaidBlock] Render error:', err);
                 setError(err.message || 'Failed to render diagram');
-                // Clean up error elements
                 const errorEl = document.getElementById('d' + id);
                 if (errorEl) errorEl.remove();
             }
@@ -138,6 +303,46 @@ export default function MermaidBlock({ code, onCodeChange, editable = true }) {
             }
         };
     }, [code, showCode]);
+
+    // Render fullscreen version
+    useEffect(() => {
+        if (!fullscreen || !fullscreenContainerRef.current || !code?.trim()) return;
+
+        mermaid.initialize({ ...MERMAID_CONFIG, fontSize: 18 });
+
+        const renderFullscreen = async () => {
+            try {
+                const renderId = `mermaid-fs-${Date.now()}-${blockCounter++}`;
+                const { svg } = await mermaid.render(renderId, code.trim());
+                if (fullscreenContainerRef.current) {
+                    fullscreenContainerRef.current.innerHTML = svg;
+                    const svgEl = fullscreenContainerRef.current.querySelector('svg');
+                    if (svgEl) {
+                        postProcessSVG(svgEl);
+                        svgEl.style.maxHeight = '85vh';
+                    }
+                }
+            } catch (err) {
+                console.error('[MermaidBlock] Fullscreen render error:', err);
+            }
+        };
+
+        renderFullscreen();
+
+        return () => {
+            if (fullscreenContainerRef.current) {
+                fullscreenContainerRef.current.innerHTML = '';
+            }
+        };
+    }, [fullscreen, code]);
+
+    // Close fullscreen on Escape
+    useEffect(() => {
+        if (!fullscreen) return;
+        const handleKey = (e) => { if (e.key === 'Escape') setFullscreen(false); };
+        window.addEventListener('keydown', handleKey);
+        return () => window.removeEventListener('keydown', handleKey);
+    }, [fullscreen]);
 
     const handleCopy = useCallback(() => {
         navigator.clipboard.writeText(code || '');
@@ -158,153 +363,177 @@ export default function MermaidBlock({ code, onCodeChange, editable = true }) {
         URL.revokeObjectURL(url);
     }, []);
 
-    return (
-        <div
-            className="notebook-mermaid-block"
+    /* ── Toolbar button helper ── */
+    const ToolbarBtn = ({ onClick, title, active, children }) => (
+        <button
+            onClick={onClick}
+            title={title}
+            className="mermaid-toolbar-btn"
             style={{
-                margin: '12px 0',
-                borderRadius: '12px',
-                border: '1px solid var(--border-subtle, #2a2a3e)',
-                background: 'var(--bg-tertiary, #1e1e2e)',
-                overflow: 'hidden',
+                display: 'flex', alignItems: 'center', gap: '4px',
+                padding: '4px 10px', borderRadius: '20px',
+                background: active
+                    ? 'rgba(99, 102, 241, 0.18)'
+                    : 'rgba(255, 255, 255, 0.6)',
+                border: `1px solid ${active ? 'rgba(99, 102, 241, 0.3)' : 'rgba(0, 0, 0, 0.06)'}`,
+                color: active ? '#4f46e5' : '#64748b',
+                cursor: 'pointer', fontSize: '11px', fontWeight: 600,
+                transition: 'all 0.2s ease',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
             }}
-            onMouseEnter={() => setHovered(true)}
-            onMouseLeave={() => setHovered(false)}
-            contentEditable={false}
         >
-            {/* ── Header toolbar ── */}
+            {children}
+        </button>
+    );
+
+    return (
+        <>
             <div
-                style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                    padding: '6px 10px',
-                    borderBottom: '1px solid rgba(255,255,255,0.06)',
-                    background: 'rgba(255,255,255,0.03)',
-                }}
+                className="notebook-mermaid-block"
+                onMouseEnter={() => setHovered(true)}
+                onMouseLeave={() => setHovered(false)}
+                contentEditable={false}
             >
-                <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--text-muted, #888)', flex: 1, display: 'flex', alignItems: 'center', gap: '5px' }}>
-                    📊 Mermaid Diagram
-                </span>
+                {/* ── Glassmorphism Header ── */}
+                <div className="mermaid-block-header">
+                    <span className="mermaid-block-title">
+                        <span className="mermaid-block-icon">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M3 3v18h18" /><path d="M18 17V9" /><path d="M13 17V5" /><path d="M8 17v-3" />
+                            </svg>
+                        </span>
+                        Diagram
+                    </span>
 
-                <button
-                    onClick={() => setShowCode(!showCode)}
-                    title={showCode ? 'Show diagram' : 'Show code'}
-                    style={{
-                        display: 'flex', alignItems: 'center', gap: '4px',
-                        padding: '3px 8px', borderRadius: '6px',
-                        background: showCode ? 'rgba(99, 102, 241, 0.15)' : 'rgba(255,255,255,0.06)',
-                        border: 'none',
-                        color: showCode ? '#818cf8' : 'var(--text-muted, #888)',
-                        cursor: 'pointer', fontSize: '10px', fontWeight: 600,
-                        transition: 'all 0.15s',
-                    }}
-                >
-                    {showCode ? <><Eye size={11} /> Diagram</> : <><Code size={11} /> Code</>}
-                </button>
+                    <div className="mermaid-toolbar">
+                        <ToolbarBtn onClick={() => setShowCode(!showCode)} title={showCode ? 'Show diagram' : 'Show code'} active={showCode}>
+                            {showCode ? <><Eye size={12} /> Preview</> : <><Code size={12} /> Code</>}
+                        </ToolbarBtn>
 
-                <button
-                    onClick={handleCopy}
-                    title="Copy code"
-                    style={{
-                        display: 'flex', alignItems: 'center', gap: '4px',
-                        padding: '3px 8px', borderRadius: '6px',
-                        background: 'rgba(255,255,255,0.06)',
-                        border: 'none',
-                        color: copied ? '#22c55e' : 'var(--text-muted, #888)',
-                        cursor: 'pointer', fontSize: '10px', fontWeight: 600,
-                        transition: 'all 0.15s',
-                    }}
-                >
-                    {copied ? <><Check size={11} /> Copied</> : <><Copy size={11} /> Copy</>}
-                </button>
+                        <ToolbarBtn onClick={handleCopy} title="Copy code" active={copied}>
+                            {copied ? <><Check size={12} /> Copied</> : <><Copy size={12} /></>}
+                        </ToolbarBtn>
 
-                {!showCode && (
-                    <button
-                        onClick={handleDownloadSVG}
-                        title="Download SVG"
-                        style={{
-                            display: 'flex', alignItems: 'center', gap: '4px',
-                            padding: '3px 8px', borderRadius: '6px',
-                            background: 'rgba(255,255,255,0.06)',
-                            border: 'none',
-                            color: 'var(--text-muted, #888)',
-                            cursor: 'pointer', fontSize: '10px', fontWeight: 600,
-                            transition: 'all 0.15s',
-                        }}
-                    >
-                        <Download size={11} /> SVG
-                    </button>
+                        {!showCode && (
+                            <>
+                                <ToolbarBtn onClick={handleDownloadSVG} title="Download SVG">
+                                    <Download size={12} />
+                                </ToolbarBtn>
+                                <ToolbarBtn onClick={() => setFullscreen(true)} title="Fullscreen">
+                                    <Maximize2 size={12} />
+                                </ToolbarBtn>
+                            </>
+                        )}
+                    </div>
+                </div>
+
+                {/* ── Code Editor ── */}
+                {showCode ? (
+                    <div style={{ padding: '14px 16px' }}>
+                        <textarea
+                            ref={textareaRef}
+                            value={code || ''}
+                            onChange={e => onCodeChange?.(e.target.value)}
+                            readOnly={!editable}
+                            spellCheck={false}
+                            className="mermaid-code-editor"
+                        />
+                    </div>
+                ) : (
+                    /* ── Diagram Render Area ── */
+                    <div className="mermaid-diagram-area">
+                        {error ? (
+                            <div className="mermaid-error">
+                                <div style={{ fontWeight: 600, marginBottom: '4px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                    <span style={{ fontSize: '14px' }}>⚠️</span> Diagram Error
+                                </div>
+                                <div style={{ opacity: 0.8, fontFamily: "'Fira Code', monospace", fontSize: '11px', whiteSpace: 'pre-wrap', lineHeight: '1.5' }}>
+                                    {error}
+                                </div>
+                                <button onClick={() => setShowCode(true)} className="mermaid-error-btn">
+                                    Edit Code
+                                </button>
+                            </div>
+                        ) : (
+                            <>
+                                {/* Loading skeleton */}
+                                {!ready && (
+                                    <div className="mermaid-skeleton">
+                                        <Loader2 size={20} className="mermaid-skeleton-spinner" style={{ animation: 'spin 1s linear infinite', color: '#a5b4fc' }} />
+                                        <span style={{ fontSize: '12px', color: '#94a3b8', marginTop: '8px' }}>Rendering diagram…</span>
+                                    </div>
+                                )}
+                                <div
+                                    ref={containerRef}
+                                    className="mermaid-svg-container"
+                                    style={{
+                                        opacity: ready ? 1 : 0,
+                                        transform: ready ? 'translateY(0)' : 'translateY(4px)',
+                                        transition: 'opacity 0.4s ease, transform 0.4s ease',
+                                    }}
+                                />
+                            </>
+                        )}
+                    </div>
                 )}
             </div>
 
-            {/* ── Code view ── */}
-            {showCode ? (
-                <div style={{ padding: '12px 16px' }}>
-                    <textarea
-                        ref={textareaRef}
-                        value={code || ''}
-                        onChange={e => onCodeChange?.(e.target.value)}
-                        readOnly={!editable}
-                        spellCheck={false}
-                        style={{
-                            width: '100%',
-                            minHeight: '120px',
-                            background: 'rgba(0,0,0,0.2)',
-                            border: '1px solid rgba(255,255,255,0.08)',
-                            borderRadius: '8px',
-                            padding: '10px 12px',
-                            color: '#e2e8f0',
-                            fontFamily: "'Fira Code', 'Monaco', monospace",
-                            fontSize: '12px',
-                            lineHeight: '1.5',
-                            resize: 'vertical',
-                            outline: 'none',
-                        }}
-                    />
-                </div>
-            ) : (
-                /* ── Diagram view ── */
-                <div style={{ padding: '16px', textAlign: 'center' }}>
-                    {error ? (
-                        <div style={{
-                            padding: '12px 16px',
-                            borderRadius: '8px',
-                            background: 'rgba(239, 68, 68, 0.1)',
-                            border: '1px solid rgba(239, 68, 68, 0.3)',
-                            color: '#f87171',
-                            fontSize: '12px',
-                            textAlign: 'left',
-                        }}>
-                            <div style={{ fontWeight: 600, marginBottom: '4px' }}>⚠️ Diagram Error</div>
-                            <div style={{ opacity: 0.8, fontFamily: 'monospace', fontSize: '11px', whiteSpace: 'pre-wrap' }}>{error}</div>
-                            <button
-                                onClick={() => setShowCode(true)}
-                                style={{
-                                    marginTop: '8px', padding: '4px 12px', borderRadius: '6px',
-                                    background: 'rgba(99, 102, 241, 0.15)', border: '1px solid rgba(99, 102, 241, 0.3)',
-                                    color: '#818cf8', cursor: 'pointer', fontSize: '11px', fontWeight: 600,
-                                }}
-                            >
-                                Edit Code
-                            </button>
+            {/* ── Fullscreen Modal ── */}
+            {fullscreen && (
+                <div className="mermaid-fullscreen-overlay" onClick={() => setFullscreen(false)}>
+                    <div className="mermaid-fullscreen-modal" onClick={e => e.stopPropagation()}>
+                        <div className="mermaid-fullscreen-header">
+                            <span className="mermaid-block-title" style={{ color: '#f8fafc' }}>
+                                <span className="mermaid-block-icon" style={{ background: 'rgba(99,102,241,0.3)', color: '#a5b4fc' }}>
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M3 3v18h18" /><path d="M18 17V9" /><path d="M13 17V5" /><path d="M8 17v-3" />
+                                    </svg>
+                                </span>
+                                Diagram — Fullscreen
+                            </span>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                                <button
+                                    onClick={handleDownloadSVG}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: '5px',
+                                        padding: '6px 14px', borderRadius: '20px',
+                                        background: 'rgba(255,255,255,0.08)',
+                                        border: '1px solid rgba(255,255,255,0.12)',
+                                        color: '#cbd5e1', cursor: 'pointer', fontSize: '12px', fontWeight: 500,
+                                    }}
+                                >
+                                    <Download size={13} /> SVG
+                                </button>
+                                <button
+                                    onClick={() => setFullscreen(false)}
+                                    style={{
+                                        display: 'flex', alignItems: 'center',
+                                        padding: '6px 8px', borderRadius: '10px',
+                                        background: 'rgba(255,255,255,0.08)',
+                                        border: '1px solid rgba(255,255,255,0.12)',
+                                        color: '#cbd5e1', cursor: 'pointer',
+                                    }}
+                                >
+                                    <X size={16} />
+                                </button>
+                            </div>
                         </div>
-                    ) : (
-                        <div
-                            ref={containerRef}
-                            style={{
-                                width: '100%',
-                                minHeight: '80px',
-                                display: 'flex',
-                                justifyContent: 'center',
-                                alignItems: 'center',
-                                opacity: ready ? 1 : 0.3,
-                                transition: 'opacity 0.3s ease',
-                            }}
-                        />
-                    )}
+                        <div className="mermaid-fullscreen-content">
+                            <div
+                                ref={fullscreenContainerRef}
+                                style={{
+                                    width: '100%',
+                                    display: 'flex',
+                                    justifyContent: 'center',
+                                    alignItems: 'center',
+                                    minHeight: '300px',
+                                }}
+                            />
+                        </div>
+                    </div>
                 </div>
             )}
-        </div>
+        </>
     );
 }

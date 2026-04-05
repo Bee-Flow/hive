@@ -28,6 +28,7 @@ export default function useChatEngine({
     activeProject,
     onNotebookDocUpdate,
     onNotebookSourceAdded,
+    onNotebookThemeUpdate,
 }) {
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -38,6 +39,17 @@ export default function useChatEngine({
     const { t } = useTranslation();
     const tRef = useRef(t);
     useEffect(() => { tRef.current = t; }, [t]);
+
+    // Stable refs so SSE handlers always call the latest callback
+    // (avoids stale closure when parent re-renders change the callback identity)
+    const onNotebookDocUpdateRef = useRef(onNotebookDocUpdate);
+    useEffect(() => { onNotebookDocUpdateRef.current = onNotebookDocUpdate; }, [onNotebookDocUpdate]);
+
+    const onNotebookSourceAddedRef = useRef(onNotebookSourceAdded);
+    useEffect(() => { onNotebookSourceAddedRef.current = onNotebookSourceAdded; }, [onNotebookSourceAdded]);
+
+    const onNotebookThemeUpdateRef = useRef(onNotebookThemeUpdate);
+    useEffect(() => { onNotebookThemeUpdateRef.current = onNotebookThemeUpdate; }, [onNotebookThemeUpdate]);
 
     // Cleanup abort controller on unmount
     useEffect(() => {
@@ -366,11 +378,38 @@ export default function useChatEngine({
                 break;
 
             case 'notebook_doc_update':
-                onNotebookDocUpdate?.(data.content, data.title);
+                onNotebookDocUpdateRef.current?.(data.content, data.title);
+                break;
+
+            // Slides-specific aliases (same callbacks as notebook)
+            case 'slides_deck_update':
+                onNotebookDocUpdateRef.current?.(data.slides, data.title);
+                break;
+
+            case 'slides_theme_update':
+                onNotebookThemeUpdateRef.current?.(data.theme);
                 break;
 
             case 'notebook_source_added':
-                onNotebookSourceAdded?.(data.source);
+                onNotebookSourceAddedRef.current?.(data.source);
+                break;
+
+            case 'slides_source_added':
+                onNotebookSourceAddedRef.current?.(data.source);
+                break;
+
+            // Sheet-specific aliases (same callbacks as notebook/slides)
+            case 'sheet_update':
+                onNotebookDocUpdateRef.current?.(data.cells, data.sheetIndex);
+                break;
+
+            case 'sheet_source_added':
+                onNotebookSourceAddedRef.current?.(data.source);
+                break;
+
+            // Proposal-specific aliases
+            case 'proposal_blocks_update':
+                onNotebookDocUpdateRef.current?.(data.blocks);
                 break;
 
             case 'done':

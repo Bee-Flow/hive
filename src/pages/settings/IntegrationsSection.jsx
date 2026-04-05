@@ -195,6 +195,62 @@ const YouTrackIntegration = ({ hasYouTrackConfig, onSaved, last }) => {
     );
 };
 
+// ── SignRequest ───────────────────────────────────────────────────────────────
+const SignRequestIntegration = ({ hasSignRequestConfig, onSaved, last }) => {
+    const [subdomain, setSubdomain] = useState('');
+    const [token, setToken] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [disconnecting, setDisconnecting] = useState(false);
+    const save = async () => {
+        if (!subdomain.trim() && !token.trim()) return;
+        setSaving(true);
+        try {
+            const body = {};
+            if (subdomain.trim()) body.signrequestSubdomain = subdomain.trim();
+            if (token.trim()) body.signrequestToken = token;
+            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (res.ok) { onSaved(); setSubdomain(''); setToken(''); }
+        } catch (e) { console.error(e); }
+        setSaving(false);
+    };
+    const handleDisconnect = async () => {
+        setDisconnecting(true);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ signrequestSubdomain: '', signrequestToken: '' }),
+            });
+            if (res.ok) { onSaved(); setSubdomain(''); setToken(''); }
+        } catch (e) { console.error(e); }
+        setDisconnecting(false);
+    };
+    return (
+        <IntegrationRow
+            last={last}
+            connected={hasSignRequestConfig}
+            name="SignRequest"
+            description={hasSignRequestConfig ? 'Send documents for e-signature from Notebooks' : 'Connect to send documents for e-signature'}
+            icon={<svg viewBox="0 0 24 24" fill="none" style={{ width: '20px', height: '20px' }}><rect x="2" y="2" width="20" height="20" rx="4" fill="url(#sr_g)" /><path d="M7 14.5c0-1 .8-2 2.5-2 1.5 0 2.2.7 3 1.2.8.5 1.5 1.3 3 1.3 1.5 0 2.5-1 2.5-2" stroke="white" strokeWidth="1.8" strokeLinecap="round" fill="none" /><path d="M8 8h8M8 11h5" stroke="white" strokeWidth="1.5" strokeLinecap="round" /><defs><linearGradient id="sr_g" x1="2" y1="2" x2="22" y2="22" gradientUnits="userSpaceOnUse"><stop stopColor="#22c55e" /><stop offset="1" stopColor="#16a34a" /></linearGradient></defs></svg>}
+        >
+            <div className="space-y-2">
+                <input type="text" value={subdomain} onChange={e => setSubdomain(e.target.value)}
+                    placeholder={hasSignRequestConfig ? '••••••••••••••••' : 'your-team (team subdomain)'}
+                    className="w-full px-3 py-2 rounded-lg border outline-none text-[13px] focus:border-[var(--accent-primary)] transition-colors"
+                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }} />
+                <ApiKeyField
+                    placeholder={hasSignRequestConfig ? '••••••••••••••••' : 'API Token'}
+                    value={token} onChange={e => setToken(e.target.value)} onSave={save} saving={saving}
+                    hint={<>Get your token from <a href="https://signrequest.com/api/v1/api-docs/" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }} className="underline">SignRequest → API Settings</a>. Use your sandbox team subdomain for testing.</>}
+                />
+                {hasSignRequestConfig && <DisconnectButton onDisconnect={handleDisconnect} disconnecting={disconnecting} />}
+            </div>
+        </IntegrationRow>
+    );
+};
+
 // ── Gamma ─────────────────────────────────────────────────────────────────────
 const GammaIntegration = ({ hasGammaKey, onSaved, last }) => {
     const [key, setKey] = useState('');
@@ -483,13 +539,14 @@ const IntegrationsSection = ({ statuses, onSaved, enabledIntegrations, isOrgAdmi
 
     const showFireflies = isEnabled('fireflies');
     const showYouTrack = isEnabled('youtrack');
+    const showSignRequest = isEnabled('signrequest');
     const showGamma = isEnabled('gamma');
     const showLinkedIn = isEnabled('linkedin');
     const showGitHub = isEnabled('github');
     const showWhatsApp = isEnabled('whatsapp');
     const showMcp = !enabledIntegrations || enabledIntegrations.some(id => id.startsWith('mcp:'));
 
-    const productivityItems = [showFireflies, showYouTrack, showGamma].filter(Boolean).length;
+    const productivityItems = [showFireflies, showYouTrack, showSignRequest, showGamma].filter(Boolean).length;
     const socialItems = [showLinkedIn, showWhatsApp].filter(Boolean).length;
     const devItems = [showGitHub].filter(Boolean).length;
 
@@ -500,8 +557,9 @@ const IntegrationsSection = ({ statuses, onSaved, enabledIntegrations, isOrgAdmi
                 <div className="space-y-1.5">
                     <GroupLabel>Productivity</GroupLabel>
                     <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
-                        {showFireflies && <FirefliesIntegration hasFirefliesKey={statuses.hasFirefliesKey} onSaved={() => onSaved('fireflies')} last={!showYouTrack && !showGamma} />}
-                        {showYouTrack && <YouTrackIntegration hasYouTrackConfig={statuses.hasYouTrackConfig} onSaved={() => onSaved('youtrack')} last={!showGamma} />}
+                        {showFireflies && <FirefliesIntegration hasFirefliesKey={statuses.hasFirefliesKey} onSaved={() => onSaved('fireflies')} last={!showYouTrack && !showSignRequest && !showGamma} />}
+                        {showYouTrack && <YouTrackIntegration hasYouTrackConfig={statuses.hasYouTrackConfig} onSaved={() => onSaved('youtrack')} last={!showSignRequest && !showGamma} />}
+                        {showSignRequest && <SignRequestIntegration hasSignRequestConfig={statuses.hasSignRequestConfig} onSaved={() => onSaved('signrequest')} last={!showGamma} />}
                         {showGamma && <GammaIntegration hasGammaKey={statuses.hasGammaKey} onSaved={() => onSaved('gamma')} last />}
                     </div>
                 </div>

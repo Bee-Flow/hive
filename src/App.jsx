@@ -12,6 +12,9 @@ import MonitoringDashboard from './pages/monitoring/MonitoringDashboard';
 import MeetingNotesPage from './pages/MeetingNotesPage';
 import TemplatesPage from './pages/TemplatesPage';
 import NotebooksPage from './pages/NotebooksPage';
+import SlidesPage from './pages/SlidesPage';
+import SheetsPage from './pages/SheetsPage';
+import ProposalsPage from './pages/proposals/ProposalsPage';
 import E2ETestingPage from './pages/e2e-testing';
 import AgentDesigner from './components/admin/AgentDesigner';
 import LoginPage from './pages/LoginPage';
@@ -59,6 +62,9 @@ const PAGE_ROUTES = {
     meetingNotes: '/app/meeting-notes',
     templates: '/app/templates',
     notebooks: '/app/notebooks',
+    slides: '/app/slides',
+    sheets: '/app/sheets',
+    proposals: '/app/proposals',
     e2eTesting: '/app/e2e-testing',
 };
 
@@ -99,6 +105,12 @@ function pageFromPath(pathname) {
     if (pathname === '/org-settings' || pathname.startsWith('/org-settings/')) return 'orgSettings';
     // /app/notebooks/:id → notebooks page (must come before generic /app/*)
     if (pathname.startsWith('/app/notebooks')) return 'notebooks';
+    // /app/slides → slides page
+    if (pathname.startsWith('/app/slides')) return 'slides';
+    // /app/sheets → sheets page
+    if (pathname.startsWith('/app/sheets')) return 'sheets';
+    // /app/proposals → proposals page
+    if (pathname.startsWith('/app/proposals')) return 'proposals';
     // /app/a/:shortId or /app/agent/:id → agents page
     if (pathname.startsWith('/app/a/') || pathname.startsWith('/app/agent/')) return 'agents';
     // /app/d/:convId → direct chat
@@ -776,6 +788,36 @@ function App() {
                 onNotebookChange={(id) => {
                     const path = id ? `/app/notebooks/${id}` : '/app/notebooks';
                     window.history.replaceState({ page: 'notebooks', notebookId: id }, '', path);
+                }}
+            />;
+        }
+        if (currentPage === 'sheets') {
+            if (user?.featureFlags?.sheets === false) return navigateToPage('agents');
+            // Beta feature gate — only show if user has 'sheets' beta feature (admins bypass)
+            const hasSheetsAccess = user?.isAdmin || (user?.permissions || []).includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('sheets'));
+            if (!hasSheetsAccess) return navigateToPage('agents');
+            return <SheetsPage
+                user={user}
+                onBack={() => navigateToPage('agents')}
+            />;
+        }
+        if (currentPage === 'slides') {
+            if (user?.featureFlags?.slides === false) return navigateToPage('agents');
+            // Beta feature gate — only show if user has 'slides' beta feature (admins bypass)
+            const hasSlidesAccess = user?.isAdmin || (user?.permissions || []).includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('slides'));
+            if (!hasSlidesAccess) return navigateToPage('agents');
+            return <SlidesPage
+                user={user}
+                onBack={() => navigateToPage('agents')}
+            />;
+        }
+        if (currentPage === 'proposals') {
+            if (user?.featureFlags?.notebooks === false) return navigateToPage('agents');
+            return <ProposalsPage
+                user={user}
+                onProposalChange={(id) => {
+                    const path = id ? `/app/proposals/${id}` : '/app/proposals';
+                    window.history.replaceState({ page: 'proposals' }, '', path);
                 }}
             />;
         }

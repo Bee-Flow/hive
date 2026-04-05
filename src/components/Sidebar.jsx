@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
-import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, CheckSquare, BarChart3, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, FlaskConical, PenLine } from 'lucide-react';
+import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, CheckSquare, BarChart3, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, FlaskConical, PenLine, Presentation, Table, ScrollText } from 'lucide-react';
 import { API_BASE } from '../utils/helpers';
 import NotificationCenter from './NotificationCenter';
 import NavLink from './NavLink';
@@ -893,6 +893,47 @@ const Sidebar = ({
                                     {currentPage === 'notebooks' && <div className={ACCENT_BAR} />}
                                     <FileText className={`w-4 h-4 ${currentPage === 'notebooks' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
                                     <span className={`text-[13px] ${currentPage === 'notebooks' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.notebooks')}</span>
+                                </NavLink>
+                            )}
+                            {!isMobile && user?.featureFlags?.notebooks !== false && (
+                                <NavLink
+                                    href="/proposals"
+                                    onClick={() => setShowProfileMenu(false)}
+                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('proposals'); }}
+                                    className={`${ROW} ${currentPage === 'proposals' ? ROW_ACTIVE : ROW_IDLE}`}
+                                    style={{ textDecoration: 'none', color: 'inherit' }}
+                                >
+                                    {currentPage === 'proposals' && <div className={ACCENT_BAR} />}
+                                    <ScrollText className={`w-4 h-4 ${currentPage === 'proposals' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
+                                    <span className={`text-[13px] ${currentPage === 'proposals' ? TEXT_ACTIVE : TEXT_IDLE}`}>Offertes</span>
+                                </NavLink>
+                            )}
+                            {!isMobile && user?.featureFlags?.slides !== false && (user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('slides'))) && (
+                                <NavLink
+                                    href="/slides"
+                                    onClick={() => setShowProfileMenu(false)}
+                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('slides'); }}
+                                    className={`${ROW} ${currentPage === 'slides' ? ROW_ACTIVE : ROW_IDLE}`}
+                                    style={{ textDecoration: 'none', color: 'inherit' }}
+                                >
+                                    {currentPage === 'slides' && <div className={ACCENT_BAR} />}
+                                    <Presentation className={`w-4 h-4 ${currentPage === 'slides' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
+                                    <span className={`text-[13px] ${currentPage === 'slides' ? TEXT_ACTIVE : TEXT_IDLE}`}>Slides</span>
+                                    <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
+                                </NavLink>
+                            )}
+                            {!isMobile && user?.featureFlags?.sheets !== false && (user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('sheets'))) && (
+                                <NavLink
+                                    href="/sheets"
+                                    onClick={() => setShowProfileMenu(false)}
+                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('sheets'); }}
+                                    className={`${ROW} ${currentPage === 'sheets' ? ROW_ACTIVE : ROW_IDLE}`}
+                                    style={{ textDecoration: 'none', color: 'inherit' }}
+                                >
+                                    {currentPage === 'sheets' && <div className={ACCENT_BAR} />}
+                                    <Table className={`w-4 h-4 ${currentPage === 'sheets' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
+                                    <span className={`text-[13px] ${currentPage === 'sheets' ? TEXT_ACTIVE : TEXT_IDLE}`}>Sheets</span>
+                                    <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
                                 </NavLink>
                             )}
                             {!isMobile && user?.featureFlags?.e2e_testing !== false && (user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('e2e_testing'))) && (

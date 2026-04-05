@@ -564,10 +564,53 @@ pre.hljs {
     }
 }
 
+/* ── Notebook Pages Layout (tiptap-pagination-plus) ─── */
+.notebook-pages-area {
+    background: var(--notebook-desk-bg, #e5e7eb) !important;
+}
+
+.notebook-pages-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 24px 0;
+    min-height: 100%;
+}
+
+/* Each page rendered by pagination-plus */
+.notebook-pages-container .ProseMirror {
+    background: var(--bg-primary, #fff);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
+    border-radius: 2px;
+}
+
+/* Page break gap styling */
+.notebook-pages-container .page-break {
+    background: var(--notebook-page-gap-bg, #e5e7eb) !important;
+    border: none !important;
+    position: relative;
+}
+
+/* Dark mode adaptations */
+[data-theme="dark"] .notebook-pages-area {
+    --notebook-desk-bg: #1a1a2e;
+    --notebook-page-gap-bg: #1a1a2e;
+}
+
+[data-theme="dark"] .notebook-pages-container .ProseMirror {
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2), 0 4px 16px rgba(0,0,0,0.15);
+}
+
+/* Light mode */
+[data-theme="light"] .notebook-pages-area {
+    --notebook-desk-bg: #e5e7eb;
+    --notebook-page-gap-bg: #e5e7eb;
+}
+
 /* ── Notebook TipTap Editor Styles ─────────────────── */
 .notebook-editor .tiptap {
-    line-height: 1.55;
-    font-size: 0.95rem;
+    line-height: 1.45;
+    font-size: 0.9rem;
     color: var(--text-primary);
     outline: none;
 }
@@ -577,24 +620,24 @@ pre.hljs {
 }
 
 .notebook-editor .tiptap h1 {
-    font-size: 1.75em;
+    font-size: 1.6em;
     font-weight: 700;
-    margin: 0.8em 0 0.3em;
-    line-height: 1.25;
+    margin: 0.6em 0 0.2em;
+    line-height: 1.2;
 }
 
 .notebook-editor .tiptap h2 {
-    font-size: 1.35em;
+    font-size: 1.25em;
     font-weight: 650;
-    margin: 0.7em 0 0.25em;
-    line-height: 1.3;
+    margin: 0.5em 0 0.15em;
+    line-height: 1.25;
 }
 
 .notebook-editor .tiptap h3 {
-    font-size: 1.15em;
+    font-size: 1.1em;
     font-weight: 600;
-    margin: 0.6em 0 0.2em;
-    line-height: 1.35;
+    margin: 0.4em 0 0.1em;
+    line-height: 1.3;
 }
 
 .notebook-editor .tiptap a,
@@ -614,20 +657,20 @@ pre.hljs {
 .notebook-editor .tiptap hr {
     border: none;
     border-top: 1px solid var(--border-default);
-    margin: 1em 0;
+    margin: 0.75em 0;
 }
 
 .notebook-editor .tiptap blockquote {
     border-left: 3px solid var(--accent-primary);
     padding-left: 0.75em;
-    margin: 0.5em 0;
+    margin: 0.35em 0;
     color: var(--text-secondary);
 }
 
 .notebook-editor .tiptap ul,
 .notebook-editor .tiptap ol {
     padding-left: 1.25em;
-    margin: 0.3em 0;
+    margin: 0.15em 0;
 }
 
 .notebook-editor .tiptap li {
@@ -989,4 +1032,270 @@ pre.hljs {
 }
 
 /* ── Text Color: TipTap applies color as style="color:#xxx" inline.
-   No CSS overrides needed — inline styles take natural precedence. */
+   No CSS overrides needed — inline styles take natural precedence. */
+
+/* ── Mermaid Diagram Block — Premium Styling ──────────── */
+
+/* Container */
+.notebook-mermaid-block {
+    margin: 20px 0;
+    border-radius: 16px;
+    border: 1px solid rgba(99, 102, 241, 0.15);
+    background: linear-gradient(145deg,
+        rgba(99, 102, 241, 0.04) 0%,
+        rgba(139, 92, 246, 0.03) 40%,
+        rgba(59, 130, 246, 0.02) 100%);
+    overflow: hidden;
+    box-shadow:
+        0 1px 3px rgba(99, 102, 241, 0.06),
+        0 4px 16px rgba(99, 102, 241, 0.04);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.notebook-mermaid-block:hover {
+    border-color: rgba(99, 102, 241, 0.28);
+    box-shadow:
+        0 2px 8px rgba(99, 102, 241, 0.08),
+        0 8px 32px rgba(99, 102, 241, 0.06);
+    transform: translateY(-1px);
+}
+
+/* Glassmorphism Header */
+.mermaid-block-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 14px;
+    border-bottom: 1px solid rgba(99, 102, 241, 0.08);
+    background: linear-gradient(135deg,
+        rgba(99, 102, 241, 0.06) 0%,
+        rgba(139, 92, 246, 0.04) 50%,
+        rgba(255, 255, 255, 0.02) 100%);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+}
+
+.mermaid-block-title {
+    font-size: 12px;
+    font-weight: 650;
+    color: #6366f1;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    letter-spacing: 0.01em;
+}
+
+.mermaid-block-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 7px;
+    background: rgba(99, 102, 241, 0.12);
+    color: #6366f1;
+}
+
+.mermaid-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.mermaid-toolbar-btn {
+    font-family: Inter, system-ui, sans-serif !important;
+}
+.mermaid-toolbar-btn:hover {
+    background: rgba(99, 102, 241, 0.12) !important;
+    border-color: rgba(99, 102, 241, 0.2) !important;
+    color: #4f46e5 !important;
+}
+
+/* Diagram Render Area */
+.mermaid-diagram-area {
+    padding: 24px 20px;
+    text-align: center;
+    background: #ffffff;
+    min-height: 100px;
+    position: relative;
+}
+
+.mermaid-svg-container {
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+/* SVG node enhancements — applied globally */
+.notebook-mermaid-block svg {
+    max-width: 100%;
+    height: auto;
+}
+
+.notebook-mermaid-block .node text,
+.notebook-mermaid-block .actor text,
+.notebook-mermaid-block .noteText {
+    font-family: Inter, system-ui, sans-serif !important;
+}
+
+.notebook-mermaid-block .edgeLabel text {
+    font-family: Inter, system-ui, sans-serif !important;
+    font-size: 13px !important;
+}
+
+/* Loading Skeleton */
+.mermaid-skeleton {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 40px 20px;
+    gap: 4px;
+}
+
+.mermaid-skeleton-spinner {
+    color: #a5b4fc;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Code Editor */
+.mermaid-code-editor {
+    width: 100%;
+    min-height: 140px;
+    background: #0f172a;
+    border: 1px solid rgba(99, 102, 241, 0.15);
+    border-radius: 10px;
+    padding: 14px 16px;
+    color: #e2e8f0;
+    font-family: 'Fira Code', 'JetBrains Mono', 'Monaco', monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    resize: vertical;
+    outline: none;
+    tab-size: 2;
+    transition: border-color 0.2s;
+}
+
+.mermaid-code-editor:focus {
+    border-color: rgba(99, 102, 241, 0.4);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.08);
+}
+
+/* Error State */
+.mermaid-error {
+    padding: 14px 18px;
+    border-radius: 10px;
+    background: rgba(239, 68, 68, 0.06);
+    border: 1px solid rgba(239, 68, 68, 0.15);
+    color: #dc2626;
+    font-size: 12px;
+    text-align: left;
+}
+
+.mermaid-error-btn {
+    margin-top: 10px;
+    padding: 6px 16px;
+    border-radius: 20px;
+    background: rgba(99, 102, 241, 0.1);
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    color: #4f46e5;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 600;
+    transition: all 0.2s;
+}
+.mermaid-error-btn:hover {
+    background: rgba(99, 102, 241, 0.18);
+}
+
+/* ── Fullscreen Modal ── */
+.mermaid-fullscreen-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+    animation: mermaidFadeIn 0.2s ease;
+}
+
+.mermaid-fullscreen-modal {
+    background: #0f172a;
+    border-radius: 20px;
+    border: 1px solid rgba(99, 102, 241, 0.2);
+    box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
+    width: 95vw;
+    max-width: 1400px;
+    max-height: 95vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: mermaidSlideUp 0.3s ease;
+}
+
+.mermaid-fullscreen-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 20px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.mermaid-fullscreen-content {
+    flex: 1;
+    overflow: auto;
+    padding: 32px;
+    background: #ffffff;
+    border-radius: 0 0 19px 19px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+@keyframes mermaidFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes mermaidSlideUp {
+    from { opacity: 0; transform: translateY(20px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+/* ── Light Mode Overrides ── */
+[data-theme="light"] .notebook-mermaid-block {
+    border-color: rgba(99, 102, 241, 0.12);
+    background: linear-gradient(145deg,
+        rgba(99, 102, 241, 0.03) 0%,
+        rgba(139, 92, 246, 0.02) 40%,
+        rgba(59, 130, 246, 0.015) 100%);
+    box-shadow:
+        0 1px 3px rgba(0, 0, 0, 0.04),
+        0 4px 16px rgba(99, 102, 241, 0.03);
+}
+
+[data-theme="light"] .notebook-mermaid-block:hover {
+    border-color: rgba(99, 102, 241, 0.22);
+    box-shadow:
+        0 2px 8px rgba(0, 0, 0, 0.05),
+        0 8px 32px rgba(99, 102, 241, 0.05);
+}
+
+[data-theme="light"] .mermaid-block-header {
+    border-bottom-color: rgba(99, 102, 241, 0.06);
+    background: linear-gradient(135deg,
+        rgba(99, 102, 241, 0.04) 0%,
+        rgba(139, 92, 246, 0.02) 50%,
+        rgba(255, 255, 255, 0.5) 100%);
+}
+
+

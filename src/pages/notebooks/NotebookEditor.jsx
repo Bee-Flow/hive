@@ -8,8 +8,9 @@ import TextAlign from '@tiptap/extension-text-align';
 import Highlight from '@tiptap/extension-highlight';
 import Link from '@tiptap/extension-link';
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table';
+import { PaginationPlus, PAGE_SIZES } from 'tiptap-pagination-plus';
 import { Markdown } from 'tiptap-markdown';
-import MermaidExtension from './MermaidExtension';
+import MermaidExtension, { preprocessMermaidContent } from './MermaidExtension';
 import Mathematics from '@tiptap/extension-mathematics';
 import { TableOfContents } from '@tiptap/extension-table-of-contents';
 import { DragHandle } from '@tiptap/extension-drag-handle-react';
@@ -477,6 +478,18 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
 
             // ── Section-aware drag (heading grabs entire section) ────
             SectionDragExtension,
+
+            // ── Page pagination (Letter-format page view) ────────────
+            PaginationPlus.configure({
+                ...PAGE_SIZES.LETTER,
+                pageGap: 16,
+                pageBreakBackground: 'var(--notebook-page-gap-bg, #e5e7eb)',
+                pageGapBorderSize: 0,
+                footerLeft: '',
+                footerRight: '<span style="font-size:9px;color:#94a3b8;font-family:Inter,system-ui,sans-serif;">Page {page}</span>',
+                headerLeft: '',
+                headerRight: '',
+            }),
         ],
         content: content || '',
         onUpdate: ({ editor }) => {
@@ -505,7 +518,9 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
         if (!editor) return;
         const currentHTML = editor.getHTML();
         if (content !== currentHTML && content !== undefined) {
-            editor.commands.setContent(resolveContentUrls(content) || '', false);
+            const resolved = resolveContentUrls(content) || '';
+            const processed = preprocessMermaidContent(resolved);
+            editor.commands.setContent(processed, false);
         }
     }, [content, editor, resolveContentUrls]);
 
@@ -621,9 +636,9 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
     // Expose imperative methods
     useImperativeHandle(ref, () => ({
         insertContent: (text) => editor?.chain().focus().insertContent(text).run(),
-        setContent: (html) => editor?.commands.setContent(html || '', false),
+        setContent: (html) => editor?.commands.setContent(preprocessMermaidContent(html) || '', false),
         insertMarkdown: (md) => editor?.chain().focus().insertContent(md).run(),
-        setMarkdownContent: (md) => editor?.commands.setContent(md || '', false),
+        setMarkdownContent: (md) => editor?.commands.setContent(preprocessMermaidContent(md) || '', false),
         getEditor: () => editor,
     }), [editor]);
 
@@ -960,8 +975,8 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
             </BubbleMenu>
 
             {/* Editor Content */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar" style={{ background: 'var(--bg-primary)' }}>
-                <div className="max-w-[800px] mx-auto px-8 py-6">
+            <div className="flex-1 overflow-y-auto custom-scrollbar notebook-pages-area">
+                <div className="notebook-pages-container">
                     <EditorContent editor={editor} className="notebook-editor" />
                 </div>
             </div>

@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
     FileText, HelpCircle, ClipboardList, ListChecks, 
     Layers, Search, FileQuestion, Activity, Mic, 
-    Download, FileDown, Loader2, ChevronDown, Table2
+    Download, FileDown, Loader2, ChevronDown, Table2, PenTool
 } from 'lucide-react';
 
 const STUDIO_GROUPS = [
@@ -121,7 +121,7 @@ function DropdownMenu({ group, onSelect, generating, disabled }) {
     );
 }
 
-export default function NotebookStudio({ onGenerate, generating, onExport, exporting, hasContent, readySourceCount, generationCount = 0, onHistoryClick }) {
+export default function NotebookStudio({ onGenerate, generating, onExport, exporting, hasContent, readySourceCount, generationCount = 0, onHistoryClick, onSignRequest, signRequestConfigured }) {
     const disabled = readySourceCount === 0;
 
     return (
@@ -155,6 +155,16 @@ export default function NotebookStudio({ onGenerate, generating, onExport, expor
                 >
                     {exporting === 'docx' ? <Loader2 className="w-4 h-4 text-blue-500 animate-spin" /> : <Download className="w-4 h-4 text-blue-500" />}
                 </button>
+                {signRequestConfigured && (
+                    <button
+                        disabled={!hasContent || !!exporting}
+                        onClick={onSignRequest}
+                        className="p-1.5 rounded-lg hover:bg-black/5 text-[var(--text-secondary)] disabled:opacity-40 transition-colors"
+                        title="Send for Signing (SignRequest)"
+                    >
+                        <PenTool className="w-4 h-4 text-green-500" />
+                    </button>
+                )}
                 {generationCount > 0 && (
                     <button
                         onClick={onHistoryClick}
