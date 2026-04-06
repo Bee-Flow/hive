@@ -501,6 +501,33 @@ const PlansView = () => {
                                 </div>
                             )}
 
+                            {/* Stripe sync status */}
+                            {plan.price > 0 && (
+                                <div style={{ marginBottom: '12px' }}>
+                                    {plan.stripe_price_id ? (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '11px', color: '#22c55e' }}>
+                                            <CreditCard style={{ width: 12, height: 12 }} />
+                                            <span style={{ fontWeight: '600' }}>Stripe synced</span>
+                                            {plan.is_public && <span style={{ fontSize: '10px', padding: '1px 6px', background: 'rgba(59,130,246,0.1)', color: '#3b82f6', borderRadius: '4px', fontWeight: '600' }}>Public</span>}
+                                        </div>
+                                    ) : (
+                                        <button
+                                            onClick={async () => {
+                                                try {
+                                                    const res = await authFetch(`${API_BASE}/api/subscriptions/plans/${plan.id}/sync-stripe`, { method: 'POST' });
+                                                    const data = await res.json();
+                                                    if (res.ok) loadPlans();
+                                                    else alert(data.error || 'Sync failed');
+                                                } catch { alert('Stripe sync failed'); }
+                                            }}
+                                            style={{ ...btnSecondary, fontSize: '11px', padding: '4px 10px', gap: '4px', color: '#635bff', borderColor: 'rgba(99,91,255,0.3)' }}
+                                        >
+                                            <CreditCard style={{ width: 11, height: 11 }} /> Sync to Stripe
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
                             <div style={{ display: 'flex', gap: '8px', borderTop: '1px solid var(--border-default)', paddingTop: '12px' }}>
                                 <button onClick={() => setEditing(plan)} style={{ ...btnSecondary, flex: 1, justifyContent: 'center' }}>
                                     <Pencil style={{ width: 13, height: 13 }} /> {t('admin.sub_edit', 'Edit')}

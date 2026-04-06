@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Building2, Save, Upload, Palette, FileText, Check, Lock, KeyRound, AlertTriangle, CreditCard, BarChart3, Zap, MessageSquare, DollarSign, Users, Bot, Database, Shield, Info, Globe, X, Plus } from 'lucide-react';
+import { Building2, Save, Upload, Palette, FileText, Check, Lock, KeyRound, AlertTriangle, CreditCard, BarChart3, Zap, MessageSquare, DollarSign, Users, Bot, Database, Shield, Info, Globe, X, Plus, ExternalLink, Loader2, ArrowRight } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 import GuardrailsPanel from './GuardrailsPanel';
@@ -330,6 +330,10 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
     const [hasChanges, setHasChanges] = useState(false);
     const [subscription, setSubscription] = useState(null);
     const [subLoading, setSubLoading] = useState(false);
+    const [availablePlans, setAvailablePlans] = useState([]);
+    const [stripeEnabled, setStripeEnabled] = useState(false);
+    const [checkoutLoading, setCheckoutLoading] = useState(null);
+    const [portalLoading, setPortalLoading] = useState(false);
     const originalDataRef = useRef(null);
 
     const fetchData = useCallback(async () => {
@@ -424,11 +428,91 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
+    // Fetch available Stripe plans and status
+    const fetchStripePlans = useCallback(async () => {
+        try {
+            const [statusRes, plansRes] = await Promise.all([
+                authFetch(`${API_BASE}/api/stripe/status`),
+                authFetch(`${API_BASE}/api/stripe/plans`),
+            ]);
+            if (statusRes.ok) {
+                const statusData = await statusRes.json();
+                setStripeEnabled(statusData.enabled);
+            }
+            if (plansRes.ok) {
+                const plansData = await plansRes.json();
+                setAvailablePlans(plansData);
+            }
+        } catch (err) {
+            console.warn('[OrgInfoPanel] Failed to fetch Stripe plans:', err);
+        }
+    }, []);
+
     useEffect(() => {
         if (orgData?.id) {
             fetchSubscription(orgData.id);
         }
-    }, [orgData?.id, fetchSubscription]);
+        fetchStripePlans();
+    }, [orgData?.id, fetchSubscription, fetchStripePlans]);
+
+    // Handle Stripe checkout return URLs
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('checkout') === 'success') {
+            setMessage({ type: 'success', text: '🎉 Subscription activated! Your plan is now active.' });
+            // Clean URL
+            window.history.replaceState({}, '', window.location.pathname);
+            // Refresh subscription data after a short delay for webhook processing
+            setTimeout(() => {
+                if (orgData?.id) fetchSubscription(orgData.id);
+            }, 2000);
+        } else if (params.get('checkout') === 'cancelled') {
+            setMessage({ type: 'error', text: 'Checkout was cancelled. No changes were made.' });
+            window.history.replaceState({}, '', window.location.pathname);
+        }
+    }, []);
+
+    const handleCheckout = async (planId) => {
+        setCheckoutLoading(planId);
+        try {
+            const res = await authFetch(`${API_BASE}/api/stripe/checkout`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ planId, origin: window.location.origin }),
+            });
+            const data = await res.json();
+            if (res.ok && data.url) {
+                window.location.href = data.url;
+            } else {
+                setMessage({ type: 'error', text: data.error || 'Failed to start checkout' });
+            }
+        } catch {
+            setMessage({ type: 'error', text: 'Failed to connect to payment service' });
+        } finally {
+            setCheckoutLoading(null);
+        }
+    };
+
+    const handleManageBilling = async () => {
+        setPortalLoading(true);
+        try {
+            const res = await authFetch(`${API_BASE}/api/stripe/portal`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ origin: window.location.origin }),
+            });
+            const data = await res.json();
+            if (res.ok && data.url) {
+                window.location.href = data.url;
+            } else {
+                setMessage({ type: 'error', text: data.error || 'Failed to open billing portal' });
+            }
+        } catch {
+            setMessage({ type: 'error', text: 'Failed to connect to billing portal' });
+        } finally {
+            setPortalLoading(false);
+        }
+    };
 
     useEffect(() => {
         if (orgData && originalDataRef.current) {
@@ -552,10 +636,69 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                 <div className="h-40 rounded-2xl bg-[var(--bg-tertiary)]" />
                             </div>
                         ) : !sub ? (
-                            <div className="p-8 rounded-2xl border-2 border-dashed border-[var(--border-subtle)] text-center">
-                                <CreditCard className="w-10 h-10 mx-auto mb-3 text-[var(--text-muted)] opacity-40" />
-                                <p className="text-sm font-medium text-[var(--text-primary)]">{t('org.no_license')}</p>
-                                <p className="text-xs text-[var(--text-muted)] mt-1">{t('org.no_license_desc')}</p>
+                            <div className="space-y-5">
+                                <div className="p-6 rounded-2xl border-2 border-dashed border-[var(--border-subtle)] text-center">
+                                    <CreditCard className="w-10 h-10 mx-auto mb-3 text-[var(--text-muted)] opacity-40" />
+                                    <p className="text-sm font-medium text-[var(--text-primary)]">{t('org.no_license')}</p>
+                                    <p className="text-xs text-[var(--text-muted)] mt-1">{t('org.no_license_desc')}</p>
+                                </div>
+
+                                {/* Available plans from Stripe */}
+                                {stripeEnabled && availablePlans.length > 0 && (
+                                    <div>
+                                        <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3 flex items-center gap-2">
+                                            <Zap className="w-4 h-4" style={{ color: '#8b5cf6' }} />
+                                            {t('org.choose_plan', 'Choose a Plan')}
+                                        </h3>
+                                        <div className="grid gap-3">
+                                            {availablePlans.map(plan => {
+                                                const currencySymbol = (plan.currency || 'eur').toUpperCase() === 'EUR' ? '€' : (plan.currency || 'eur').toUpperCase() === 'GBP' ? '£' : '$';
+                                                return (
+                                                    <div key={plan.id} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 hover:border-[var(--accent-primary)] transition-colors">
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center gap-2 mb-1">
+                                                                    <h4 className="text-sm font-bold text-[var(--text-primary)]">{plan.name}</h4>
+                                                                    {plan.trial_days > 0 && (
+                                                                        <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-green-500/15 text-green-500">
+                                                                            {plan.trial_days}d free trial
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                {plan.description && <p className="text-[11px] text-[var(--text-muted)] mb-2">{plan.description}</p>}
+                                                                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-[var(--text-muted)]">
+                                                                    {plan.max_messages_per_month && plan.max_messages_per_month !== -1 && <span>{plan.max_messages_per_month.toLocaleString()} msg/mo</span>}
+                                                                    {plan.max_users && plan.max_users !== -1 && <span>{plan.max_users} users</span>}
+                                                                    {plan.max_agents && plan.max_agents !== -1 && <span>{plan.max_agents} agents</span>}
+                                                                    {plan.max_knowledge_sources && plan.max_knowledge_sources !== -1 && <span>{plan.max_knowledge_sources} KB sources</span>}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-3 ml-4">
+                                                                <div className="text-right">
+                                                                    <div className="text-lg font-bold text-[var(--text-primary)]">{currencySymbol}{plan.price.toFixed(2)}</div>
+                                                                    <div className="text-[9px] text-[var(--text-muted)] uppercase tracking-wider">/ {plan.billing_interval || 'month'}</div>
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => handleCheckout(plan.id)}
+                                                                    disabled={checkoutLoading === plan.id || !plan.has_stripe_price}
+                                                                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50"
+                                                                    style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }}
+                                                                >
+                                                                    {checkoutLoading === plan.id ? (
+                                                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                    ) : (
+                                                                        <ArrowRight className="w-3.5 h-3.5" />
+                                                                    )}
+                                                                    {t('org.subscribe', 'Subscribe')}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         ) : (
                             <>
@@ -581,6 +724,18 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                                 </p>
                                             </div>
                                         </div>
+                                        {/* Manage Billing button */}
+                                        {sub.stripe_customer_id && (
+                                            <button
+                                                onClick={handleManageBilling}
+                                                disabled={portalLoading}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all hover:opacity-80"
+                                                style={{ borderColor: 'rgba(99,91,255,0.3)', color: '#635bff', background: 'rgba(99,91,255,0.05)' }}
+                                            >
+                                                {portalLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
+                                                {t('org.manage_billing', 'Manage Billing')}
+                                            </button>
+                                        )}
                                         {limits.max_cost_per_month != null && limits.max_cost_per_month !== -1 && (
                                             <div className="text-right">
                                                 <div className="text-xl font-bold text-[var(--text-primary)]">€{Number(limits.max_cost_per_month).toFixed(2)}</div>
