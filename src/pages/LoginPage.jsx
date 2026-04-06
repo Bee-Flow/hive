@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Globe } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { opaqueLogin } from '../lib/opaque';
 import InitSetupWizard from '../components/InitSetupWizard';
@@ -17,7 +17,8 @@ import SignupStepPrivacy from './login/SignupStepPrivacy';
 import SignupStepAccount from './login/SignupStepAccount';
 
 const LoginPage = ({ onLogin, onDemoLogin }) => {
-    const { t } = useTranslation();
+    const { t, locale, setLocale } = useTranslation();
+    const [availableLocales, setAvailableLocales] = useState([]);
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [isLoading, setIsLoading] = useState(false);
@@ -82,6 +83,7 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                     if (data.allowPasswordLogin === false) setAllowPasswordLogin(false);
                     else setAllowPasswordLogin(true);
                     if (data.deploymentMode) setDeploymentMode(data.deploymentMode);
+                    if (data.availableLocales) setAvailableLocales(data.availableLocales);
                 } else {
                     // If setup-status fails, show everything (safe fallback)
                     setAllowSignups(true);
@@ -428,6 +430,7 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
         if (setupMode) return t('login.create_admin_password');
         if (!signupMode) return t('login.sign_in_continue');
         if (signupStep === 1) return t('login.setup_org');
+        if (signupData.signupType === 'consumer' && signupStep === 4) return t('login.setup_personal_account');
         if (signupStep === 2) return t('login.how_team_signin');
         if (signupStep === 3) return t('login.protect_org');
         return t('login.complete_account');
@@ -485,6 +488,27 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                     {/* Top highlight line for glass effect */}
                     <div className="absolute top-0 left-8 right-8 h-px bg-gradient-to-r from-transparent via-[var(--border-default)] to-transparent" />
 
+                    {/* Language picker */}
+                    {availableLocales.length > 1 && (
+                        <div className="absolute top-4 right-4 z-10">
+                            <div className="relative inline-flex items-center gap-1.5 pl-2.5 pr-1 py-1.5 rounded-lg bg-[var(--bg-primary)] border border-[var(--border-subtle)] hover:border-[var(--border-default)] transition-colors cursor-pointer">
+                                <Globe className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                                <select
+                                    value={locale}
+                                    onChange={(e) => setLocale(e.target.value)}
+                                    className="appearance-none bg-transparent text-xs font-medium text-[var(--text-secondary)] cursor-pointer pr-4 outline-none"
+                                    style={{ minWidth: '2rem' }}
+                                >
+                                    {availableLocales.map(l => (
+                                        <option key={l.code} value={l.code} style={{ background: 'var(--bg-secondary)' }}>
+                                            {l.code.toUpperCase()}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+                        </div>
+                    )}
+
                     {/* Header */}
                     <div className="text-center mb-8">
                         <div className="w-36 h-36 mx-auto mb-5 rounded-full overflow-hidden shadow-xl ring-4 ring-[var(--border-subtle)]">
@@ -501,11 +525,17 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                     </div>
 
                     {/* Step indicator */}
-                    {signupMode && signupData.signupType === 'new' && (
+                    {signupMode && (
                         <div className="flex justify-center gap-2 mb-6">
-                            {[1, 2, 3, 4].map(i => (
-                                <div key={i} className={`w-8 h-1 rounded-full transition-all ${signupStep >= i ? 'bg-[var(--accent-primary)]' : 'bg-[var(--border-default)]'}`} />
-                            ))}
+                            {signupData.signupType === 'new' ? (
+                                [1, 2, 3, 4].map(i => (
+                                    <div key={i} className={`w-8 h-1 rounded-full transition-all ${signupStep >= i ? 'bg-[var(--accent-primary)]' : 'bg-[var(--border-default)]'}`} />
+                                ))
+                            ) : (
+                                [1, 4].map((step, idx) => (
+                                    <div key={step} className={`w-12 h-1 rounded-full transition-all ${signupStep >= step ? 'bg-[var(--accent-primary)]' : 'bg-[var(--border-default)]'}`} />
+                                ))
+                            )}
                         </div>
                     )}
 

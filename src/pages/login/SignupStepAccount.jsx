@@ -1,12 +1,15 @@
 import React from 'react';
 import { User, Lock, Mail, Loader2, UserPlus, Building, ArrowLeft } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
+import { useTranslation } from '../../hooks/useTranslation';
 
 const SignupStepAccount = ({
     signupData, setSignupData, signupOrgs, handleSignup,
     isLoading, setIsLoading, setSignupStep, setError,
     inputClass, inputClassSimple, labelClass
 }) => {
+    const { t } = useTranslation();
+
     // OAuth flow — redirect to provider
     if (signupData.authMethod !== 'password' && signupData.signupType === 'new') {
         const providerName = signupData.authMethod === 'google' ? 'Google' : 'Microsoft';
@@ -55,12 +58,12 @@ const SignupStepAccount = ({
                     <Building className="w-5 h-5 text-[var(--accent-primary)]" />
                     <div>
                         <span className="text-sm font-medium block" style={{ color: 'var(--text-primary)' }}>{signupData.newOrgName}</span>
-                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>New organization</span>
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{t('signup.new_org')}</span>
                     </div>
                 </div>
 
                 <p className="text-sm text-[var(--text-secondary)] text-center">
-                    Sign in with {providerName} to complete your account setup. Your name and email will be imported automatically.
+                    {t('signup.sign_in_with_provider', { provider: providerName })}
                 </p>
 
                 <button type="button" disabled={isLoading} onClick={handleOAuthSignup}
@@ -82,47 +85,69 @@ const SignupStepAccount = ({
                                     <rect x="13" y="13" width="10" height="10" fill="#FFB900" />
                                 </svg>
                             )}
-                            Continue with {providerName}
+                            {t('signup.continue_with_provider', { provider: providerName })}
                         </>
                     )}
                 </button>
 
                 <button type="button" onClick={() => { setSignupStep(3); setError(''); }}
                     className="w-full py-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm">
-                    <ArrowLeft className="w-4 h-4" /> Back
+                    <ArrowLeft className="w-4 h-4" /> {t('signup.back')}
                 </button>
             </div>
         );
     }
 
     // Password flow — username/password form
+    const isConsumer = signupData.signupType === 'consumer';
+
+    // Context indicator — show org name or personal account
+    const contextIcon = isConsumer
+        ? <User className="w-5 h-5 text-[var(--accent-primary)]" />
+        : <Building className="w-5 h-5 text-[var(--accent-primary)]" />;
+
+    const contextTitle = isConsumer
+        ? t('signup.personal_account')
+        : signupData.signupType === 'new'
+            ? signupData.newOrgName
+            : signupOrgs.find(o => o.id === signupData.organizationId)?.name || 'Organization';
+
+    const contextSubtitle = isConsumer
+        ? t('signup.personal_account_desc')
+        : signupData.signupType === 'new'
+            ? t('signup.new_org')
+            : t('signup.joining_existing');
+
+    // Back navigation — consumer and existing go to step 1, new org goes to step 3
+    const backStep = (isConsumer || signupData.signupType === 'existing') ? 1 : 3;
+
     return (
         <form onSubmit={handleSignup} className="space-y-4">
             <div className="p-3 rounded-lg border flex items-center gap-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}>
-                <Building className="w-5 h-5 text-[var(--accent-primary)]" />
+                {contextIcon}
                 <div>
                     <span className="text-sm font-medium block" style={{ color: 'var(--text-primary)' }}>
-                        {signupData.signupType === 'new' ? signupData.newOrgName : signupOrgs.find(o => o.id === signupData.organizationId)?.name || 'Organization'}
+                        {contextTitle}
                     </span>
                     <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        {signupData.signupType === 'new' ? 'New organization' : 'Joining existing organization'}
+                        {contextSubtitle}
                     </span>
                 </div>
             </div>
 
             <div className="grid grid-cols-2 gap-3">
                 <div>
-                    <label className={labelClass}>First Name</label>
+                    <label className={labelClass}>{t('signup.first_name')}</label>
                     <input type="text" value={signupData.firstName} onChange={e => setSignupData(p => ({ ...p, firstName: e.target.value }))} className={inputClassSimple} placeholder="John" />
                 </div>
                 <div>
-                    <label className={labelClass}>Last Name</label>
+                    <label className={labelClass}>{t('signup.last_name')}</label>
                     <input type="text" value={signupData.lastName} onChange={e => setSignupData(p => ({ ...p, lastName: e.target.value }))} className={inputClassSimple} placeholder="Doe" />
                 </div>
             </div>
 
             <div>
-                <label className={labelClass}>Username *</label>
+                <label className={labelClass}>{t('signup.username')} *</label>
                 <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-tertiary)]" />
                     <input type="text" value={signupData.username} onChange={e => setSignupData(p => ({ ...p, username: e.target.value }))} className={inputClass} placeholder="johndoe" required />
@@ -130,7 +155,7 @@ const SignupStepAccount = ({
             </div>
 
             <div>
-                <label className={labelClass}>Email</label>
+                <label className={labelClass}>{t('signup.email')}</label>
                 <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-tertiary)]" />
                     <input type="email" value={signupData.email} onChange={e => setSignupData(p => ({ ...p, email: e.target.value }))} className={inputClass} placeholder="john@company.com" />
@@ -138,7 +163,7 @@ const SignupStepAccount = ({
             </div>
 
             <div>
-                <label className={labelClass}>Password *</label>
+                <label className={labelClass}>{t('signup.password')} *</label>
                 <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-tertiary)]" />
                     <input type="password" value={signupData.password} onChange={e => setSignupData(p => ({ ...p, password: e.target.value }))} className={inputClass} placeholder="••••••••" required minLength={4} />
@@ -146,7 +171,7 @@ const SignupStepAccount = ({
             </div>
 
             <div>
-                <label className={labelClass}>Confirm Password *</label>
+                <label className={labelClass}>{t('signup.confirm_password')} *</label>
                 <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-tertiary)]" />
                     <input type="password" value={signupData.confirmPassword} onChange={e => setSignupData(p => ({ ...p, confirmPassword: e.target.value }))} className={inputClass} placeholder="••••••••" required minLength={4} />
@@ -155,12 +180,12 @@ const SignupStepAccount = ({
 
             <button type="submit" disabled={isLoading}
                 className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-base shadow-lg mt-2">
-                {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><UserPlus className="w-5 h-5" /> Create Account</>}
+                {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><UserPlus className="w-5 h-5" /> {t('signup.create_account_btn')}</>}
             </button>
 
-            <button type="button" onClick={() => { setSignupStep(signupData.signupType === 'existing' ? 1 : 3); setError(''); }}
+            <button type="button" onClick={() => { setSignupStep(backStep); setError(''); }}
                 className="w-full py-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm">
-                <ArrowLeft className="w-4 h-4" /> Back
+                <ArrowLeft className="w-4 h-4" /> {t('signup.back')}
             </button>
         </form>
     );

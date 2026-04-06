@@ -1,16 +1,19 @@
 import React from 'react';
 import { ShieldCheck, ShieldAlert, ShieldOff, Globe, ArrowLeft, ArrowRight } from 'lucide-react';
+import { useTranslation } from '../../hooks/useTranslation';
 
 const SignupStepPrivacy = ({ signupData, setSignupData, handleSignupNext, setSignupStep, setError }) => {
+    const { t } = useTranslation();
+
     const levels = [{
-        id: 'off', name: 'No Protection', icon: ShieldOff, color: '#64748b',
-        description: 'No content filtering. You can enable protection later in organisation settings.'
+        id: 'off', name: t('signup.privacy_off'), icon: ShieldOff, color: '#64748b',
+        description: t('signup.privacy_off_desc')
     }, {
-        id: 'basic', name: 'Basic Protection', icon: ShieldCheck, color: '#10b981',
-        description: 'AI-powered moderation filters harmful content categories (hate speech, violence, self-harm, etc.)'
+        id: 'basic', name: t('signup.privacy_basic'), icon: ShieldCheck, color: '#10b981',
+        description: t('signup.privacy_basic_desc')
     }, {
-        id: 'strict', name: 'Strict Protection', icon: ShieldAlert, color: '#ef4444',
-        description: 'AI moderation plus PII filtering. Blocks personal data like names, emails, phone numbers, and addresses.'
+        id: 'strict', name: t('signup.privacy_strict'), icon: ShieldAlert, color: '#ef4444',
+        description: t('signup.privacy_strict_desc')
     }];
 
     return (
@@ -47,8 +50,8 @@ const SignupStepPrivacy = ({ signupData, setSignupData, handleSignupNext, setSig
                             <Globe className="w-4 h-4 text-blue-500" />
                         </div>
                         <div>
-                            <span className="text-sm font-medium text-[var(--text-primary)]">EU-only models</span>
-                            <p className="text-xs text-[var(--text-muted)]">Restrict AI to EU-hosted models only</p>
+                            <span className="text-sm font-medium text-[var(--text-primary)]">{t('signup.eu_only_models')}</span>
+                            <p className="text-xs text-[var(--text-muted)]">{t('signup.eu_only_models_desc')}</p>
                         </div>
                     </div>
                     <button type="button" onClick={() => setSignupData(p => ({ ...p, euModeEnabled: !p.euModeEnabled }))}
@@ -58,15 +61,15 @@ const SignupStepPrivacy = ({ signupData, setSignupData, handleSignupNext, setSig
                 </div>
             )}
 
-            <p className="text-xs text-[var(--text-muted)] text-center mt-1">You can fine-tune these settings later in Organisation Settings → Privacy Shield.</p>
+            <p className="text-xs text-[var(--text-muted)] text-center mt-1">{t('signup.privacy_tune_later')}</p>
 
             <button type="button" onClick={handleSignupNext}
                 className="w-full py-3 bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-base shadow-lg mt-2">
-                Continue <ArrowRight className="w-5 h-5" />
+                {t('signup.continue')} <ArrowRight className="w-5 h-5" />
             </button>
             <button type="button" onClick={() => { setSignupStep(2); setError(''); }}
                 className="w-full py-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm">
-                <ArrowLeft className="w-4 h-4" /> Back
+                <ArrowLeft className="w-4 h-4" /> {t('signup.back')}
             </button>
         </div>
     );

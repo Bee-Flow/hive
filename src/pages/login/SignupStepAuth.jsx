@@ -1,11 +1,14 @@
 import React from 'react';
 import { AlertCircle, ArrowLeft, ArrowRight } from 'lucide-react';
+import { useTranslation } from '../../hooks/useTranslation';
 
 const SignupStepAuth = ({ signupData, setSignupData, handleSignupNext, setSignupStep, setError }) => {
+    const { t } = useTranslation();
+
     const methods = [{
         id: 'password',
-        name: 'Username & Password',
-        description: 'Users sign in with a username and password.',
+        name: t('org.password_auth'),
+        description: t('org.password_auth_desc'),
         icon: (
             <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
@@ -15,8 +18,8 @@ const SignupStepAuth = ({ signupData, setSignupData, handleSignupNext, setSignup
         color: '#6366f1',
     }, {
         id: 'google',
-        name: 'Sign in with Google',
-        description: 'Users sign in using their Google account.',
+        name: t('org.google_auth'),
+        description: t('org.google_auth_desc'),
         icon: (
             <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
@@ -28,8 +31,8 @@ const SignupStepAuth = ({ signupData, setSignupData, handleSignupNext, setSignup
         color: '#4285F4',
     }, {
         id: 'microsoft',
-        name: 'Sign in with Microsoft',
-        description: 'Users sign in using their Microsoft account.',
+        name: t('org.microsoft_auth'),
+        description: t('org.microsoft_auth_desc'),
         icon: (
             <svg className="w-5 h-5" viewBox="0 0 24 24">
                 <rect x="1" y="1" width="10" height="10" fill="#F25022" />
@@ -69,16 +72,16 @@ const SignupStepAuth = ({ signupData, setSignupData, handleSignupNext, setSignup
 
             <div className="flex items-start gap-2 p-3 rounded-lg border border-amber-500/30 bg-amber-500/5 text-xs text-amber-600">
                 <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                <span><strong>Choose carefully:</strong> Once saved, this cannot be changed. Each user's data is protected with a unique key that is tied to how they sign in.</span>
+                <span><strong>{t('signup.choose_auth_carefully')}</strong> {t('signup.choose_auth_carefully_desc')}</span>
             </div>
 
             <button type="button" onClick={handleSignupNext}
                 className="w-full py-3 bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-base shadow-lg mt-2">
-                Continue <ArrowRight className="w-5 h-5" />
+                {t('signup.continue')} <ArrowRight className="w-5 h-5" />
             </button>
             <button type="button" onClick={() => { setSignupStep(1); setError(''); }}
                 className="w-full py-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm">
-                <ArrowLeft className="w-4 h-4" /> Back
+                <ArrowLeft className="w-4 h-4" /> {t('signup.back')}
             </button>
         </div>
     );
