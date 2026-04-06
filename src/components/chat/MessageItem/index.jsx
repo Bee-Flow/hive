@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import ReactDOM from 'react-dom';
 import useTranslation from '../../../hooks/useTranslation';
 import { Copy, Check, Bot, ChevronDown, Send, ThumbsUp, ThumbsDown, RefreshCw, Pencil, Download, FileText, MoreHorizontal } from 'lucide-react';
 import MarkdownRenderer from '../../MarkdownRenderer';
@@ -56,10 +57,12 @@ const MessageItem = ({
     const [feedbackComment, setFeedbackComment] = useState('');
     const [feedbackSubmitted, setFeedbackSubmitted] = useState(false);
     const [showRetryMenu, setShowRetryMenu] = useState(false);
+    const [retryMenuPos, setRetryMenuPos] = useState({ top: 0, left: 0 });
     const [showCopyMenu, setShowCopyMenu] = useState(false);
     const [isEditing, setIsEditing] = useState(false);
     const [editContent, setEditContent] = useState('');
     const retryMenuRef = useRef(null);
+    const retryBtnRef = useRef(null);
     const copyMenuRef = useRef(null);
     const contentRef = useRef(null);
     const [includeConversation, setIncludeConversation] = useState(false);
@@ -75,11 +78,31 @@ const MessageItem = ({
     useEffect(() => {
         if (!showRetryMenu) return;
         const handler = (e) => {
-            if (retryMenuRef.current && !retryMenuRef.current.contains(e.target)) setShowRetryMenu(false);
+            if (retryMenuRef.current && !retryMenuRef.current.contains(e.target) &&
+                retryBtnRef.current && !retryBtnRef.current.contains(e.target)) {
+                setShowRetryMenu(false);
+            }
         };
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
     }, [showRetryMenu]);
+
+    // Compute fixed position for the portal-based retry menu
+    const handleToggleRetryMenu = () => {
+        if (!showRetryMenu && retryBtnRef.current) {
+            const rect = retryBtnRef.current.getBoundingClientRect();
+            const MENU_HEIGHT = 280;
+            const spaceAbove = rect.top;
+            if (spaceAbove >= MENU_HEIGHT) {
+                // Open upward
+                setRetryMenuPos({ top: rect.top - MENU_HEIGHT, left: rect.left });
+            } else {
+                // Open downward
+                setRetryMenuPos({ top: rect.bottom + 8, left: rect.left });
+            }
+        }
+        setShowRetryMenu(prev => !prev);
+    };
 
     // Click-outside handler for copy/export menu
     useEffect(() => {
@@ -920,7 +943,8 @@ const MessageItem = ({
                                             <RefreshCw className="w-3.5 h-3.5" />
                                         </button>
                                         <button
-                                            onClick={() => setShowRetryMenu(!showRetryMenu)}
+                                            ref={retryBtnRef}
+                                            onClick={handleToggleRetryMenu}
                                             className="p-0.5 rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] transition-colors -ml-1"
                                             title="Retry with different model"
                                         >
@@ -935,8 +959,21 @@ const MessageItem = ({
                                             writer: { icon: '✍️', label: 'Write', desc: 'Long-form content' },
                                             pro: { icon: '✨', label: 'Deep Thinking', desc: 'Advanced reasoning' }
                                         };
-                                        return (
-                                            <div className="absolute bottom-full left-0 mb-2 rounded-xl shadow-2xl overflow-hidden z-[100] animate-fade-in" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)', minWidth: '220px', boxShadow: '0 8px 32px rgba(0,0,0,0.3)' }}>
+                                        return ReactDOM.createPortal(
+                                            <div
+                                                ref={retryMenuRef}
+                                                className="rounded-xl shadow-2xl z-[9999] animate-fade-in"
+                                                style={{
+                                                    position: 'fixed',
+                                                    top: retryMenuPos.top,
+                                                    left: retryMenuPos.left,
+                                                    background: 'var(--bg-secondary)',
+                                                    border: '1px solid var(--border-default)',
+                                                    minWidth: '220px',
+                                                    boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
+                                                    overflow: 'hidden',
+                                                }}
+                                            >
                                                 <div className="px-3 py-2 border-b border-[var(--border-subtle)]">
                                                     <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-tertiary)]">Retry with model</span>
                                                 </div>
@@ -959,7 +996,8 @@ const MessageItem = ({
                                                         </button>
                                                     );
                                                 })}
-                                            </div>
+                                            </div>,
+                                            document.body
                                         );
                                     })()}
                                 </div>

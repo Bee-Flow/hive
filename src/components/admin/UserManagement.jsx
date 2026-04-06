@@ -3,12 +3,7 @@ import { useTranslation } from '../../hooks/useTranslation';
 import { Users, UserPlus, Shield, Trash2, Edit2, Key, Loader2, Tag, Image, Smile, Building, ChevronDown } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 
-const ORG_ROLES = [
-    { id: 'org_admin', label: 'Organisation Admin', description: 'Full control: users, settings, agents', color: '#8b5cf6' },
-    { id: 'agent_admin', label: 'Agent Admin', description: 'Create and edit all agents', color: '#3b82f6' },
-    { id: 'agent_editor', label: 'Agent Editor', description: 'Edit published agents only', color: '#10b981' },
-    { id: 'member', label: 'Member', description: 'Basic access, no editing', color: '#6b7280' },
-];
+import { ORG_ROLES } from '../../config/orgRoles';
 
 const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, user: currentUser }) => {
     const { t } = useTranslation();

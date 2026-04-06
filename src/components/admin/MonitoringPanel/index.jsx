@@ -1,17 +1,12 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { useTranslation } from '../../../hooks/useTranslation';
 import {
-    Activity, Cpu, Zap, Clock, Wrench, BarChart3, RefreshCw,
-    TrendingUp, Users, DollarSign, ChevronRight, Globe, Bot,
-    ArrowUp, ArrowDown, Minus, Layers, MessageSquare, ThumbsUp, ThumbsDown
+    Activity, BarChart3, RefreshCw, DollarSign, Bot,
+    ChevronRight, MessageSquare, ThumbsUp, Clock, Calendar
 } from 'lucide-react';
-import { fmt, fmtCost, fmtDuration, fmtTime, COLORS, AGENT_COLORS, getAgentStyle, MODEL_COLORS } from './shared';
+import { COLORS, fmt, fmtCost } from './shared';
 import { OverviewPage } from './OverviewPage';
-import { ModelsPage } from './ModelsPage';
-import { AgentsPage } from './AgentsPage';
-import { UsersPage } from './UsersPage';
-import { ConversationsPage } from './ConversationsPage';
-import { CostsPage } from './CostsPage';
+import { UsageExplorerPage } from './UsageExplorerPage';
 import { FeedbackPage } from './FeedbackPage';
 import { ActivityPage } from './ActivityPage';
 import { DetailDrawer } from './DetailDrawer';
@@ -19,16 +14,22 @@ import { DetailDrawer } from './DetailDrawer';
 const API = (import.meta.env.VITE_API_URL || '') + '/api/usage';
 const AI_API = (import.meta.env.VITE_API_URL || '') + '/ai';
 const FEEDBACK_API = (import.meta.env.VITE_API_URL || '') + '/api/feedback';
+const OPTS = { credentials: 'include' };
 
 const RANGES = [
-    { id: 'today', labelKey: 'admin.mon_today', icon: '☀️' },
-    { id: '7d', labelKey: 'admin.mon_7d', icon: '📅' },
-    { id: '30d', labelKey: 'admin.mon_30d', icon: '📆' },
-    { id: 'all', labelKey: 'admin.mon_all_time', icon: '♾️' },
+    { id: 'today', labelKey: 'admin.mon_today' },
+    { id: '7d', labelKey: 'admin.mon_7d' },
+    { id: '30d', labelKey: 'admin.mon_30d' },
+    { id: 'all', labelKey: 'admin.mon_all_time' },
+    { id: 'custom', label: 'Custom' },
 ];
 
-function rangeToFilter(rangeId) {
+function rangeToFilter(rangeId, customStart, customEnd) {
     if (rangeId === 'all') return {};
+    if (rangeId === 'custom') {
+        if (!customStart || !customEnd) return {};
+        return { startDate: new Date(customStart).toISOString(), endDate: new Date(customEnd).toISOString() };
+    }
     const now = new Date();
     let start;
     if (rangeId === 'today') {
@@ -41,16 +42,63 @@ function rangeToFilter(rangeId) {
     return { startDate: start.toISOString(), endDate: now.toISOString() };
 }
 
+// Previous period: same duration ending where current starts
+function prevPeriodFilter(rangeId, customStart, customEnd) {
+    if (rangeId === 'all') return null;
+    const now = new Date();
+    let start, end;
+    if (rangeId === 'custom') {
+        if (!customStart || !customEnd) return null;
+        const s = new Date(customStart), e = new Date(customEnd);
+        const dur = e.getTime() - s.getTime();
+        if (dur <= 0) return null;
+        end = s;
+        start = new Date(s.getTime() - dur);
+    } else if (rangeId === 'today') {
+        end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        start = new Date(end.getTime() - 86400000);
+    } else if (rangeId === '7d') {
+        end = new Date(now.getTime() - 7 * 86400000);
+        start = new Date(end.getTime() - 7 * 86400000);
+    } else {
+        end = new Date(now.getTime() - 30 * 86400000);
+        start = new Date(end.getTime() - 30 * 86400000);
+    }
+    return { startDate: start.toISOString(), endDate: end.toISOString() };
+}
+
+// Decide chart interval based on the date span
+function autoInterval(rangeId, customStart, customEnd) {
+    if (rangeId === 'today') return 'hour';
+    if (rangeId === 'custom' && customStart && customEnd) {
+        const diffMs = new Date(customEnd) - new Date(customStart);
+        if (diffMs <= 86400000) return 'hour'; // ≤ 1 day
+        return 'day';
+    }
+    return 'day';
+}
+
+// Format a datetime-local string from a Date
+function toLocalInput(date) {
+    const d = new Date(date);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 const PAGES = [
-    { id: 'overview', labelKey: 'admin.mon_overview', icon: BarChart3, description: 'Dashboard summary' },
-    { id: 'models', labelKey: 'admin.mon_models', icon: Cpu, description: 'Token usage per model' },
-    { id: 'agents', labelKey: 'admin.mon_agents', icon: Bot, description: 'Agent performance' },
-    { id: 'users', labelKey: 'admin.mon_users', icon: Users, description: 'Per-user breakdown' },
-    { id: 'conversations', labelKey: 'admin.mon_conversations', icon: MessageSquare, description: 'Per-conversation costs' },
-    { id: 'costs', labelKey: 'admin.mon_costs', icon: DollarSign, description: 'Cost estimation' },
+    { id: 'overview', labelKey: 'admin.mon_overview', icon: BarChart3, description: 'Dashboard & cost overview' },
+    { id: 'usage', labelKey: 'admin.mon_usage_explorer', icon: Activity, description: 'Explore models, agents, users & conversations' },
     { id: 'feedback', labelKey: 'admin.mon_feedback', icon: ThumbsUp, description: 'User feedback on AI responses' },
-    { id: 'activity', labelKey: 'admin.mon_activity', icon: Clock, description: 'Recent calls' },
+    { id: 'activity', labelKey: 'admin.mon_activity', icon: Clock, description: 'Recent API call log' },
 ];
+
+async function fetchJson(url) {
+    try {
+        const r = await fetch(url, OPTS);
+        if (!r.ok) return null;
+        return await r.json();
+    } catch { return null; }
+}
 
 export default function MonitoringPanel({ activeSection = '', onNavigate }) {
     const { t } = useTranslation();
@@ -58,7 +106,16 @@ export default function MonitoringPanel({ activeSection = '', onNavigate }) {
     const VALID_IDS = PAGES.map(p => p.id);
     const page = VALID_IDS.includes(activeSection) ? activeSection : 'overview';
     const [range, setRange] = useState('7d');
+    const [customStart, setCustomStart] = useState(() => {
+        const d = new Date(); d.setDate(d.getDate() - 7); d.setHours(0, 0, 0, 0); return toLocalInput(d);
+    });
+    const [customEnd, setCustomEnd] = useState(() => toLocalInput(new Date()));
+    const [loading, setLoading] = useState(true);
+    const [detailDrawer, setDetailDrawer] = useState(null);
+
+    // ── Data stores ──
     const [summary, setSummary] = useState(null);
+    const [prevSummary, setPrevSummary] = useState(null);
     const [byModel, setByModel] = useState([]);
     const [byAgent, setByAgent] = useState([]);
     const [byUser, setByUser] = useState([]);
@@ -67,77 +124,82 @@ export default function MonitoringPanel({ activeSection = '', onNavigate }) {
     const [tools, setTools] = useState([]);
     const [recent, setRecent] = useState([]);
     const [modelCosts, setModelCosts] = useState({});
-    const [loading, setLoading] = useState(true);
+    const [byConversation, setByConversation] = useState([]);
     const [filterSources, setFilterSources] = useState([]);
     const [filterModels, setFilterModels] = useState([]);
-    const [activityFilters, setActivityFilters] = useState({ source: '', model: '', search: '' });
-    const [organizations, setOrganizations] = useState([]);
-    const [selectedOrgId, setSelectedOrgId] = useState('');
-    const [detailDrawer, setDetailDrawer] = useState(null);
-    const [byConversation, setByConversation] = useState([]);
     const [feedback, setFeedback] = useState([]);
     const [feedbackSummary, setFeedbackSummary] = useState({ total: 0, thumbs_up: 0, thumbs_down: 0, with_comments: 0 });
-    const [feedbackFilters, setFeedbackFilters] = useState({ rating: '', source: '' });
-
-    // Fetch orgs list once
-    useEffect(() => {
-        fetch(`${API}/organizations`, { credentials: 'include' })
-            .then(r => r.ok ? r.json() : [])
-            .then(d => setOrganizations(Array.isArray(d) ? d : []))
-            .catch(() => { });
-    }, []);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
-        const filters = rangeToFilter(range);
-        if (selectedOrgId) filters.orgId = selectedOrgId;
+        const filters = rangeToFilter(range, customStart, customEnd);
         const qs = new URLSearchParams(filters).toString();
         const q = qs ? '?' + qs : '';
+        const interval = autoInterval(range, customStart, customEnd);
+
         try {
-            const [s, m, a, u, t, tl, ct, r, mc, fs, fm, bc] = await Promise.all([
-                fetch(`${API}/summary${q}`).then(r => r.json()),
-                fetch(`${API}/by-model${q}`).then(r => r.json()),
-                fetch(`${API}/by-agent${q}`).then(r => r.json()),
-                fetch(`${API}/by-user${q}`).then(r => r.json()),
-                fetch(`${API}/tools${q}`).then(r => r.json()),
-                fetch(`${API}/timeline${q}&interval=${range === 'today' ? 'hour' : 'day'}`).then(r => r.json()),
-                fetch(`${API}/cost-timeline${q}&interval=${range === 'today' ? 'hour' : 'day'}`).then(r => r.json()).catch(() => []),
-                fetch(`${API}/recent?limit=100${selectedOrgId ? '&orgId=' + selectedOrgId : ''}`).then(r => r.json()),
-                fetch(`${AI_API}/model-costs`, { credentials: 'include' }).then(r => r.ok ? r.json() : {}).catch(() => ({})),
-                fetch(`${API}/filters/sources`).then(r => r.json()).catch(() => []),
-                fetch(`${API}/filters/models`).then(r => r.json()).catch(() => []),
-                fetch(`${API}/by-conversation${q}`).then(r => r.json()).catch(() => []),
+            // Core data (always needed)
+            const [s, m, a, u, tl, ct, mc, t, r, fs, fm, bc] = await Promise.all([
+                fetchJson(`${API}/summary${q}`),
+                fetchJson(`${API}/by-model${q}`),
+                fetchJson(`${API}/by-agent${q}`),
+                fetchJson(`${API}/by-user${q}`),
+                fetchJson(`${API}/timeline${q}&interval=${interval}`),
+                fetchJson(`${API}/cost-timeline${q}&interval=${interval}`),
+                fetchJson(`${AI_API}/model-costs`),
+                fetchJson(`${API}/tools${q}`),
+                fetchJson(`${API}/recent?limit=100`),
+                fetchJson(`${API}/filters/sources`),
+                fetchJson(`${API}/filters/models`),
+                fetchJson(`${API}/by-conversation${q}`),
             ]);
-            setSummary(s); setByModel(Array.isArray(m) ? m : []); setByAgent(Array.isArray(a) ? a : []); setByUser(Array.isArray(u) ? u : []);
-            setTools(Array.isArray(t) ? t : []); setTimeline(Array.isArray(tl) ? tl : []); setCostTimeline(Array.isArray(ct) ? ct : []);
-            setRecent(Array.isArray(r) ? r : []); setModelCosts(mc && typeof mc === 'object' ? mc : {});
-            setFilterSources(Array.isArray(fs) ? fs : []); setFilterModels(Array.isArray(fm) ? fm : []);
+
+            setSummary(s || { total_calls: 0, total_tokens: 0, total_estimated_cost: 0, avg_duration_ms: 0 });
+            setByModel(Array.isArray(m) ? m : []);
+            setByAgent(Array.isArray(a) ? a : []);
+            setByUser(Array.isArray(u) ? u : []);
+            setTimeline(Array.isArray(tl) ? tl : []);
+            setCostTimeline(Array.isArray(ct) ? ct : []);
+            setModelCosts(mc && typeof mc === 'object' ? mc : {});
+            setTools(Array.isArray(t) ? t : []);
+            setRecent(Array.isArray(r) ? r : []);
+            setFilterSources(Array.isArray(fs) ? fs : []);
+            setFilterModels(Array.isArray(fm) ? fm : []);
             setByConversation(Array.isArray(bc) ? bc : []);
 
-            // Fetch feedback data
+            // Previous period for delta comparison
+            const prevFilter = prevPeriodFilter(range, customStart, customEnd);
+            if (prevFilter) {
+                const prevQs = new URLSearchParams(prevFilter).toString();
+                const ps = await fetchJson(`${API}/summary?${prevQs}`);
+                setPrevSummary(ps);
+            } else {
+                setPrevSummary(null);
+            }
+
+            // Feedback
             try {
-                const fbQs = new URLSearchParams(filters).toString();
-                const fbQ = fbQs ? '?' + fbQs : '';
-                const [fbData, fbSummary] = await Promise.all([
-                    fetch(`${FEEDBACK_API}${fbQ}`, { credentials: 'include' }).then(r => r.ok ? r.json() : []).catch(() => []),
-                    fetch(`${FEEDBACK_API}/summary${fbQ}`, { credentials: 'include' }).then(r => r.ok ? r.json() : {}).catch(() => ({})),
+                const fbQs = qs ? '?' + qs : '';
+                const [fbData, fbSum] = await Promise.all([
+                    fetchJson(`${FEEDBACK_API}${fbQs}`),
+                    fetchJson(`${FEEDBACK_API}/summary${fbQs}`),
                 ]);
-                setFeedback(fbData);
-                setFeedbackSummary(fbSummary);
-            } catch (e) { console.error('[Monitoring] feedback fetch error:', e); }
+                setFeedback(Array.isArray(fbData) ? fbData : []);
+                setFeedbackSummary(fbSum || { total: 0, thumbs_up: 0, thumbs_down: 0, with_comments: 0 });
+            } catch { /* ignore */ }
         } catch (e) {
             console.error('[Monitoring] fetch error:', e);
         }
         setLoading(false);
-    }, [range, selectedOrgId]);
+    }, [range, customStart, customEnd]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
     useEffect(() => {
-        const iv = setInterval(fetchData, 30000);
+        const iv = setInterval(fetchData, 60000); // reduced from 30s to 60s
         return () => clearInterval(iv);
     }, [fetchData]);
 
-    // Computed cost
+    // Computed costs per model
     const totalCost = useMemo(() => byModel.reduce((sum, m) => {
         const c = modelCosts[m.model];
         if (!c) return sum;
@@ -157,9 +219,19 @@ export default function MonitoringPanel({ activeSection = '', onNavigate }) {
         return map;
     }, [byModel, modelCosts]);
 
-    const browserCalls = useMemo(() => byAgent.filter(a => a.agent_type === 'browser'), [byAgent]);
-    const browserTotalTokens = useMemo(() => browserCalls.reduce((s, a) => s + (a.total_tokens || 0), 0), [browserCalls]);
-    const browserTotalCalls = useMemo(() => browserCalls.reduce((s, a) => s + (a.calls || 0), 0), [browserCalls]);
+    // Deltas
+    const deltas = useMemo(() => {
+        if (!prevSummary || !summary) return {};
+        const calc = (curr, prev) => prev > 0 ? ((curr - prev) / prev) * 100 : null;
+        return {
+            calls: calc(summary.total_calls || 0, prevSummary.total_calls || 0),
+            tokens: calc(summary.total_tokens || 0, prevSummary.total_tokens || 0),
+            cost: calc(summary.total_estimated_cost || 0, prevSummary.total_estimated_cost || 0),
+            latency: calc(summary.avg_duration_ms || 0, prevSummary.avg_duration_ms || 0),
+        };
+    }, [summary, prevSummary]);
+
+    const deltaLabel = range === 'today' ? 'vs yesterday' : range === '7d' ? 'vs prev 7d' : range === '30d' ? 'vs prev 30d' : range === 'custom' ? 'vs prev period' : '';
 
     return (
         <div style={styles.container}>
@@ -195,22 +267,6 @@ export default function MonitoringPanel({ activeSection = '', onNavigate }) {
                         </button>
                     ))}
                 </nav>
-
-                {/* Quick Stats in sidebar */}
-                <div style={styles.sidebarStats}>
-                    <div style={styles.sidebarStatItem}>
-                        <span style={{ color: 'var(--text-muted, #888)', fontSize: '11px' }}>Calls</span>
-                        <span style={{ color: 'var(--text-primary, #fff)', fontSize: '16px', fontWeight: 700 }}>{fmt(summary?.total_calls || 0)}</span>
-                    </div>
-                    <div style={styles.sidebarStatItem}>
-                        <span style={{ color: 'var(--text-muted, #888)', fontSize: '11px' }}>Tokens</span>
-                        <span style={{ color: COLORS.green, fontSize: '16px', fontWeight: 700 }}>{fmt(summary?.total_tokens || 0)}</span>
-                    </div>
-                    <div style={styles.sidebarStatItem}>
-                        <span style={{ color: 'var(--text-muted, #888)', fontSize: '11px' }}>Est. Cost</span>
-                        <span style={{ color: COLORS.amber, fontSize: '16px', fontWeight: 700 }}>{fmtCost(totalCost)}</span>
-                    </div>
-                </div>
             </div>
 
             {/* ── Main Content ── */}
@@ -225,26 +281,7 @@ export default function MonitoringPanel({ activeSection = '', onNavigate }) {
                             {PAGES.find(p => p.id === page)?.description}
                         </p>
                     </div>
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        {/* Org filter (super admin) */}
-                        {organizations.length > 0 && (
-                            <select
-                                value={selectedOrgId}
-                                onChange={e => setSelectedOrgId(e.target.value)}
-                                style={{
-                                    padding: '6px 10px', borderRadius: '8px', fontSize: '12px', fontWeight: 500,
-                                    background: selectedOrgId ? COLORS.primary + '18' : 'var(--bg-tertiary, rgba(255,255,255,0.04))',
-                                    color: selectedOrgId ? COLORS.primary : 'var(--text-primary, #fff)',
-                                    border: `1px solid ${selectedOrgId ? COLORS.primary + '40' : 'var(--border-default, rgba(255,255,255,0.08))'}`,
-                                    outline: 'none', cursor: 'pointer', minWidth: '140px',
-                                }}
-                            >
-                                <option value="">All Organizations</option>
-                                {organizations.filter(o => o.id !== '__unassigned').map(o => (
-                                    <option key={o.id} value={o.id}>{o.name} ({fmt(o.total_calls)} calls)</option>
-                                ))}
-                            </select>
-                        )}
+                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
                         <div style={styles.rangeGroup}>
                             {RANGES.map(r => (
                                 <button
@@ -253,12 +290,39 @@ export default function MonitoringPanel({ activeSection = '', onNavigate }) {
                                     style={{
                                         ...styles.rangeBtn,
                                         ...(range === r.id ? styles.rangeBtnActive : {}),
+                                        ...(r.id === 'custom' ? { display: 'flex', alignItems: 'center', gap: '5px' } : {}),
                                     }}
                                 >
-                                    {t(r.labelKey)}
+                                    {r.id === 'custom' && <Calendar style={{ width: 12, height: 12 }} />}
+                                    {r.labelKey ? t(r.labelKey) : r.label}
                                 </button>
                             ))}
                         </div>
+                        {range === 'custom' && (
+                            <div style={styles.datePickerRow}>
+                                <div style={styles.datePickerField}>
+                                    <span style={styles.datePickerLabel}>From</span>
+                                    <input
+                                        type="datetime-local"
+                                        value={customStart}
+                                        onChange={e => setCustomStart(e.target.value)}
+                                        max={customEnd}
+                                        style={styles.dateInput}
+                                    />
+                                </div>
+                                <span style={{ color: 'var(--text-muted, #666)', fontSize: '12px', padding: '0 2px' }}>→</span>
+                                <div style={styles.datePickerField}>
+                                    <span style={styles.datePickerLabel}>To</span>
+                                    <input
+                                        type="datetime-local"
+                                        value={customEnd}
+                                        onChange={e => setCustomEnd(e.target.value)}
+                                        min={customStart}
+                                        style={styles.dateInput}
+                                    />
+                                </div>
+                            </div>
+                        )}
                         <button onClick={fetchData} style={styles.refreshBtn} title="Refresh">
                             <RefreshCw style={{ width: 15, height: 15, animation: loading ? 'spin 1s linear infinite' : 'none' }} />
                         </button>
@@ -269,40 +333,31 @@ export default function MonitoringPanel({ activeSection = '', onNavigate }) {
                 <div style={styles.content}>
                     {page === 'overview' && (
                         <OverviewPage
-                            summary={summary} byModel={byModel} byAgent={byAgent}
-                            timeline={timeline} costTimeline={costTimeline} tools={tools} totalCost={totalCost}
-                            costPerModel={costPerModel} modelCosts={modelCosts}
-                            range={range} browserTotalCalls={browserTotalCalls}
-                            browserTotalTokens={browserTotalTokens}
+                            summary={summary} prevSummary={prevSummary} deltas={deltas} deltaLabel={deltaLabel}
+                            byModel={byModel} byAgent={byAgent} timeline={timeline}
+                            costTimeline={costTimeline} tools={tools} totalCost={totalCost}
+                            costPerModel={costPerModel} modelCosts={modelCosts} range={range}
+                            onSelectModel={m => setDetailDrawer({ type: 'model', data: m })}
+                            onSelectAgent={a => setDetailDrawer({ type: 'agent', data: a })}
+                            onNavigate={onNavigate}
+                        />
+                    )}
+                    {page === 'usage' && (
+                        <UsageExplorerPage
+                            byModel={byModel} byAgent={byAgent} byUser={byUser}
+                            byConversation={byConversation} costPerModel={costPerModel}
+                            modelCosts={modelCosts}
                             onSelectModel={m => setDetailDrawer({ type: 'model', data: m })}
                             onSelectAgent={a => setDetailDrawer({ type: 'agent', data: a })}
                         />
                     )}
-                    {page === 'models' && (
-                        <ModelsPage byModel={byModel} costPerModel={costPerModel} modelCosts={modelCosts}
-                            onSelect={m => setDetailDrawer({ type: 'model', data: m })} />
-                    )}
-                    {page === 'agents' && (
-                        <AgentsPage byAgent={byAgent} modelCosts={modelCosts} costPerModel={costPerModel}
-                            onSelect={a => setDetailDrawer({ type: 'agent', data: a })} />
-                    )}
-                    {page === 'users' && (
-                        <UsersPage byUser={byUser} />
-                    )}
-                    {page === 'conversations' && (
-                        <ConversationsPage conversations={byConversation} />
-                    )}
-                    {page === 'costs' && (
-                        <CostsPage byModel={byModel} costPerModel={costPerModel} modelCosts={modelCosts} totalCost={totalCost} costTimeline={costTimeline} range={range} onNavigate={onNavigate} />
-                    )}
                     {page === 'feedback' && (
-                        <FeedbackPage feedback={feedback} summary={feedbackSummary}
-                            filters={feedbackFilters} setFilters={setFeedbackFilters} />
+                        <FeedbackPage feedback={feedback} summary={feedbackSummary} />
                     )}
                     {page === 'activity' && (
-                        <ActivityPage recent={recent} modelCosts={modelCosts}
+                        <ActivityPage
+                            recent={recent} modelCosts={modelCosts}
                             filterSources={filterSources} filterModels={filterModels}
-                            activityFilters={activityFilters} setActivityFilters={setActivityFilters}
                         />
                     )}
                 </div>
@@ -318,10 +373,10 @@ export default function MonitoringPanel({ activeSection = '', onNavigate }) {
                 @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
                 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
                 @keyframes slideIn { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+                @keyframes pulse { 0%, 100% { opacity: 0.4; } 50% { opacity: 0.15; } }
             `}</style>
         </div>
     );
-
 }
 
 const styles = {
@@ -330,7 +385,7 @@ const styles = {
         background: 'var(--bg-primary, #0f0f1a)',
     },
     sidebar: {
-        width: '220px', flexShrink: 0,
+        width: '200px', flexShrink: 0,
         background: 'var(--bg-secondary, #1a1a2e)',
         borderRight: '1px solid var(--border-default, rgba(255,255,255,0.08))',
         display: 'flex', flexDirection: 'column',
@@ -358,14 +413,6 @@ const styles = {
     },
     navItemActive: {
         background: 'var(--accent-primary, #6366f1)' + '12',
-    },
-    sidebarStats: {
-        padding: '12px 18px', margin: '0 8px',
-        borderTop: '1px solid var(--border-default, rgba(255,255,255,0.06))',
-        display: 'flex', flexDirection: 'column', gap: '8px',
-    },
-    sidebarStatItem: {
-        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
     },
     main: {
         flex: 1, display: 'flex', flexDirection: 'column',
@@ -397,6 +444,30 @@ const styles = {
     },
     rangeBtnActive: {
         background: COLORS.primary, color: '#fff', fontWeight: 700,
+    },
+    datePickerRow: {
+        display: 'flex', alignItems: 'center', gap: '6px',
+        padding: '4px 10px', borderRadius: '10px',
+        background: 'var(--bg-secondary, #1a1a2e)',
+        border: '1px solid var(--border-default, rgba(255,255,255,0.1))',
+        animation: 'fadeIn 0.2s ease',
+    },
+    datePickerField: {
+        display: 'flex', flexDirection: 'column', gap: '1px',
+    },
+    datePickerLabel: {
+        fontSize: '9px', fontWeight: 700, textTransform: 'uppercase',
+        letterSpacing: '0.05em', color: 'var(--text-muted, #666)',
+        lineHeight: 1,
+    },
+    dateInput: {
+        background: 'var(--bg-primary, #0f0f1a)',
+        border: '1px solid var(--border-default, rgba(255,255,255,0.1))',
+        borderRadius: '6px', padding: '4px 8px',
+        fontSize: '12px', fontWeight: 500, fontFamily: 'inherit',
+        color: 'var(--text-primary, #fff)',
+        outline: 'none', cursor: 'pointer',
+        colorScheme: 'dark',
     },
     refreshBtn: {
         display: 'flex', alignItems: 'center', justifyContent: 'center',

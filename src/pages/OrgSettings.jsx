@@ -1,23 +1,62 @@
 import React from 'react';
-import { ArrowLeft } from 'lucide-react';
+import { ArrowLeft, ShieldOff } from 'lucide-react';
 import AgentDesigner from '../components/admin/AgentDesigner';
 import OrgUsersPanel from '../components/admin/OrgUsersPanel';
 import OrgInfoPanel from '../components/admin/OrgInfoPanel';
+import { AGENT_MANAGEMENT_ROLES, USER_MANAGEMENT_ROLES } from '../config/orgRoles';
 
 const OrgSettings = ({ user, onBack, orgSettingsPath = {}, onNavigate }) => {
+    // Permission helper — derives from the actual user permission set
+    const hasPermission = (perm) => {
+        const perms = user?.permissions || [];
+        return perms.includes('all') || perms.includes(perm);
+    };
+
+    const isSuperAdmin = user?.isAdmin || user?.role === 'admin' || hasPermission('all');
+    const orgRole = user?.orgRole || '';
+
+    // Gate: user must be an org admin, agent admin, agent editor, or super admin
+    const canAccessOrgSettings = isSuperAdmin || orgRole === 'org_admin'
+        || hasPermission('org_admin') || hasPermission('manage_users') || hasPermission('manage_agents');
+
+    // Tab-level permissions
+    const canManageAgents = isSuperAdmin || AGENT_MANAGEMENT_ROLES.includes(orgRole)
+        || hasPermission('manage_agents');
+    const canManageUsers = isSuperAdmin || USER_MANAGEMENT_ROLES.includes(orgRole)
+        || hasPermission('manage_users');
+
     const tabs = [
-        { id: 'organisation', label: 'Organisation' },
-        { id: 'agents', label: 'Agents' },
-        { id: 'users', label: 'Users' },
+        { id: 'organisation', label: 'Organisation', allowed: canAccessOrgSettings },
+        { id: 'agents', label: 'Agents', allowed: canManageAgents },
+        { id: 'users', label: 'Users', allowed: canManageUsers },
     ];
 
-    const activeTab = tabs.some(t => t.id === orgSettingsPath.seg1) ? orgSettingsPath.seg1 : 'organisation';
+    const allowedTabs = tabs.filter(t => t.allowed);
+    const activeTab = allowedTabs.some(t => t.id === orgSettingsPath.seg1)
+        ? orgSettingsPath.seg1
+        : (allowedTabs[0]?.id || 'organisation');
 
     const handleTabClick = (tabId) => {
         if (onNavigate) {
             onNavigate(`org-settings/${tabId}`);
         }
     };
+
+    // Full access denied gate
+    if (!canAccessOrgSettings) {
+        return (
+            <div className="h-full flex items-center justify-center" style={{ background: 'var(--bg-primary)' }}>
+                <div className="text-center p-8 rounded-2xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
+                    <div className="w-16 h-16 mx-auto mb-4 rounded-full flex items-center justify-center" style={{ background: 'rgba(239, 68, 68, 0.1)' }}>
+                        <ShieldOff className="w-8 h-8" style={{ color: 'rgb(239, 68, 68)' }} />
+                    </div>
+                    <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Access Denied</h2>
+                    <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>You don't have permission to access organisation settings.</p>
+                    {onBack && <button onClick={onBack} className="px-4 py-2 rounded-lg font-medium text-white" style={{ background: 'var(--accent-primary)' }}>Go Back</button>}
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div className="h-full flex flex-col" style={{ background: 'var(--bg-primary)' }}>
@@ -39,7 +78,7 @@ const OrgSettings = ({ user, onBack, orgSettingsPath = {}, onNavigate }) => {
                 </div>
 
                 <div className="flex gap-1 p-1 rounded-lg" style={{ background: 'var(--bg-tertiary)' }}>
-                    {tabs.map((tab) => (
+                    {allowedTabs.map((tab) => (
                         <button
                             key={tab.id}
                             onClick={() => handleTabClick(tab.id)}
@@ -68,7 +107,7 @@ const OrgSettings = ({ user, onBack, orgSettingsPath = {}, onNavigate }) => {
                     </div>
                 ) : activeTab === 'agents' ? (
                     <div className="absolute inset-0">
-                        <AgentDesigner onBack={null} hasPermission={() => true} />
+                        <AgentDesigner onBack={null} hasPermission={hasPermission} />
                     </div>
                 ) : null}
             </div>

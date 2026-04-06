@@ -619,7 +619,10 @@ function App() {
                         className="relative w-[92vw] h-[90vh] max-w-[1400px] rounded-2xl overflow-hidden shadow-2xl border"
                         style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', animation: 'overlayContentIn .25s ease-out' }}
                     >
-                        <AgentDesigner onBack={null} hasPermission={() => true} initialAgentId={initialDesignerAgentId} />
+                        <AgentDesigner onBack={null} hasPermission={(perm) => {
+                            const perms = user?.permissions || [];
+                            return perms.includes('all') || perms.includes(perm);
+                        }} initialAgentId={initialDesignerAgentId} />
                     </div>
                 </div>
             )}

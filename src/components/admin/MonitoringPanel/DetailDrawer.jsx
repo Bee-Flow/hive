@@ -31,9 +31,6 @@ import {
   AGENT_COLORS,
   getAgentStyle,
   MODEL_COLORS,
-} from "./shared";
-import {
-  CostTimelineChart,
   MetricCard,
   Card,
   Empty,

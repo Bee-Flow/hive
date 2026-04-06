@@ -1,148 +1,213 @@
-import React, { useMemo, useState } from 'react';
-import MarkdownRenderer from '../../MarkdownRenderer';
+import React, { useState, useMemo } from 'react';
 import {
-    Activity, Cpu, Zap, Clock, Wrench, BarChart3, RefreshCw,
-    TrendingUp, Users, DollarSign, ChevronRight, Globe, Bot,
-    ArrowUp, ArrowDown, Minus, Layers, MessageSquare, ThumbsUp, ThumbsDown
+    Clock, Search, ChevronRight, Cpu, Bot, User, Filter, Activity
 } from 'lucide-react';
-import { fmt, fmtCost, fmtDuration, fmtTime, COLORS, AGENT_COLORS, getAgentStyle, MODEL_COLORS } from './shared';
-import { CostTimelineChart, MetricCard, Card, Empty, ModelRow, AgentRow } from './shared';
+import {
+    fmt, fmtCost, fmtDuration, fmtTime, shortModel, COLORS, MODEL_COLORS,
+    Card, Empty, InOutLabel, getSourceDetails
+} from './shared';
 
+const PAGE_SIZE = 25;
 
-export function ActivityPage({ recent, modelCosts, filterSources, filterModels, activityFilters, setActivityFilters }) {
+export function ActivityPage({ recent, modelCosts, filterSources, filterModels }) {
+    const [search, setSearch] = useState('');
+    const [filterSource, setFilterSource] = useState('');
+    const [filterModel, setFilterModel] = useState('');
+    const [pageNum, setPageNum] = useState(0);
+    const [expanded, setExpanded] = useState(null);
+
     const filtered = useMemo(() => {
-        return recent.filter(r => {
-            if (activityFilters.source && r.source !== activityFilters.source) return false;
-            if (activityFilters.model && r.model !== activityFilters.model) return false;
-            if (activityFilters.search) {
-                const term = activityFilters.search.toLowerCase();
-                if (!(r.agent_name || '').toLowerCase().includes(term) &&
-                    !(r.user_id || '').toLowerCase().includes(term) &&
-                    !(r.model || '').toLowerCase().includes(term)) return false;
-            }
-            return true;
-        });
-    }, [recent, activityFilters]);
+        let data = recent;
+        if (filterSource) data = data.filter(r => r.source === filterSource);
+        if (filterModel) data = data.filter(r => r.model === filterModel);
+        if (search) {
+            const q = search.toLowerCase();
+            data = data.filter(r =>
+                r.source?.toLowerCase().includes(q) ||
+                r.model?.toLowerCase().includes(q) ||
+                r.agent_name?.toLowerCase().includes(q) ||
+                r.type?.toLowerCase().includes(q)
+            );
+        }
+        return data;
+    }, [recent, filterSource, filterModel, search]);
 
-    const pillStyle = (active) => ({
-        padding: '5px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: active ? 700 : 500,
-        border: 'none', cursor: 'pointer', transition: 'all 0.15s',
-        background: active ? COLORS.primary + '25' : 'var(--bg-tertiary, rgba(255,255,255,0.04))',
-        color: active ? COLORS.primary : 'var(--text-muted, #888)',
-    });
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    const paged = filtered.slice(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE);
+
+    const sourceOptions = useMemo(() => {
+        const set = new Set(recent.map(r => r.source).filter(Boolean));
+        return Array.from(set).sort();
+    }, [recent]);
+
+    const modelOptions = useMemo(() => {
+        const set = new Set(recent.map(r => r.model).filter(Boolean));
+        return Array.from(set).sort();
+    }, [recent]);
 
     return (
         <div style={{ animation: 'fadeIn 0.3s ease' }}>
-            {/* Filters */}
-            <div style={{
-                display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '16px',
-                padding: '14px 16px', borderRadius: '12px',
-                background: 'var(--bg-secondary, #1a1a2e)',
-                border: '1px solid var(--border-default, rgba(255,255,255,0.08))',
-                alignItems: 'center',
-            }}>
-                {/* Source pills */}
-                <button onClick={() => setActivityFilters(f => ({ ...f, source: '' }))} style={pillStyle(!activityFilters.source)}>All</button>
-                {filterSources.map(s => (
-                    <button key={s} onClick={() => setActivityFilters(f => ({ ...f, source: f.source === s ? '' : s }))} style={pillStyle(activityFilters.source === s)}>
-                        {s}
-                    </button>
-                ))}
+            <Card>
+                {/* Filter row */}
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    {/* Search */}
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 10px',
+                        borderRadius: '8px', background: 'var(--bg-primary, #0f0f1a)',
+                        border: '1px solid var(--border-default, rgba(255,255,255,0.08))', flex: '0 1 200px',
+                    }}>
+                        <Search style={{ width: 12, height: 12, color: 'var(--text-muted, #888)' }} />
+                        <input
+                            value={search}
+                            onChange={e => { setSearch(e.target.value); setPageNum(0); }}
+                            placeholder="Search calls..."
+                            style={{
+                                background: 'transparent', border: 'none', outline: 'none', fontSize: '12px',
+                                color: 'var(--text-primary, #fff)', width: '100%',
+                            }}
+                        />
+                    </div>
 
-                <div style={{ width: '1px', height: '20px', background: 'var(--border-default, rgba(255,255,255,0.1))', margin: '0 4px' }} />
+                    {/* Source filter */}
+                    <div style={filterSelectWrapper}>
+                        <Activity style={{ width: 12, height: 12, color: 'var(--text-muted, #888)' }} />
+                        <select
+                            value={filterSource}
+                            onChange={e => { setFilterSource(e.target.value); setPageNum(0); }}
+                            style={filterSelectStyle}
+                        >
+                            <option value="">All Sources</option>
+                            {sourceOptions.map(s => <option key={s} value={s}>{getSourceDetails(s).label}</option>)}
+                        </select>
+                    </div>
 
-                {/* Model dropdown */}
-                <select
-                    value={activityFilters.model}
-                    onChange={e => setActivityFilters(f => ({ ...f, model: e.target.value }))}
-                    style={{
-                        padding: '5px 10px', borderRadius: '8px', fontSize: '11px',
-                        background: 'var(--bg-tertiary, #222)', color: 'var(--text-primary, #fff)',
-                        border: '1px solid var(--border-default, rgba(255,255,255,0.1))',
-                        outline: 'none', cursor: 'pointer',
-                    }}
-                >
-                    <option value="">All Models</option>
-                    {filterModels.map(m => <option key={m} value={m}>{m}</option>)}
-                </select>
+                    {/* Model filter */}
+                    <div style={filterSelectWrapper}>
+                        <Cpu style={{ width: 12, height: 12, color: 'var(--text-muted, #888)' }} />
+                        <select
+                            value={filterModel}
+                            onChange={e => { setFilterModel(e.target.value); setPageNum(0); }}
+                            style={filterSelectStyle}
+                        >
+                            <option value="">All Models</option>
+                            {modelOptions.map(m => <option key={m} value={m}>{shortModel(m)}</option>)}
+                        </select>
+                    </div>
 
-                {/* Search */}
-                <input
-                    type="text"
-                    placeholder="Search agent, user, model..."
-                    value={activityFilters.search}
-                    onChange={e => setActivityFilters(f => ({ ...f, search: e.target.value }))}
-                    style={{
-                        padding: '5px 12px', borderRadius: '8px', fontSize: '11px',
-                        background: 'var(--bg-tertiary, #222)', color: 'var(--text-primary, #fff)',
-                        border: '1px solid var(--border-default, rgba(255,255,255,0.1))',
-                        outline: 'none', minWidth: '180px',
-                    }}
-                />
+                    <div style={{ flex: 1 }} />
+                    <span style={{ fontSize: '11px', color: 'var(--text-muted, #888)' }}>
+                        {filtered.length} call{filtered.length !== 1 ? 's' : ''}
+                    </span>
+                </div>
 
-                <span style={{ fontSize: '10px', color: 'var(--text-muted, #666)', marginLeft: 'auto' }}>
-                    {filtered.length} of {recent.length} calls
-                </span>
-            </div>
+                {/* Table Header */}
+                <div style={{
+                    display: 'grid',
+                    gridTemplateColumns: '110px 1fr 1fr 70px 80px 90px 70px 24px',
+                    gap: '8px', padding: '8px 8px', marginBottom: '2px',
+                    fontSize: '10px', fontWeight: 700, textTransform: 'uppercase',
+                    letterSpacing: '0.05em', color: 'var(--text-muted, #666)',
+                }}>
+                    <span>Time</span>
+                    <span>Source / Agent</span>
+                    <span>Model</span>
+                    <span style={{ textAlign: 'right' }}>Tokens</span>
+                    <span style={{ textAlign: 'right' }}>Latency</span>
+                    <span style={{ textAlign: 'right' }}>Cost</span>
+                    <span style={{ textAlign: 'right' }}>Type</span>
+                    <span></span>
+                </div>
 
-            <Card title="Recent API Calls" icon={Clock}>
-                {filtered.length === 0 ? (
-                    <Empty text="No activity matches your filters" />
-                ) : (
-                    <div style={{ maxHeight: '600px', overflow: 'auto' }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
-                            <thead>
-                                <tr style={{ borderBottom: '2px solid var(--border-default, rgba(255,255,255,0.1))' }}>
-                                    {['Time', 'Source', 'Agent', 'Type', 'Model', 'Input', 'Output', 'Total', 'Latency', 'Cost'].map(h => (
-                                        <th key={h} style={{
-                                            padding: '10px 8px', textAlign: 'left',
-                                            color: 'var(--text-muted, #888)', fontWeight: 600,
-                                            fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.06em',
-                                            position: 'sticky', top: 0,
-                                            background: 'var(--bg-secondary, #1a1a2e)',
-                                        }}>{h}</th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {filtered.map((r, i) => {
-                                    const agStyle = getAgentStyle(r.agent_type);
-                                    const c = modelCosts[r.model];
-                                    const cost = c ? ((r.prompt_tokens || 0) / 1e6) * (c.input || 0) + ((r.completion_tokens || 0) / 1e6) * (c.output || 0) : null;
-                                    return (
-                                        <tr key={i} style={{ borderBottom: '1px solid var(--border-default, rgba(255,255,255,0.04))' }}>
-                                            <td style={{ padding: '8px', color: 'var(--text-muted, #888)', whiteSpace: 'nowrap', fontSize: '11px' }}>
-                                                {fmtTime(r.timestamp)}
-                                            </td>
-                                            <td style={{ padding: '8px' }}>
-                                                <span style={{
-                                                    padding: '2px 7px', borderRadius: '4px', fontSize: '10px', fontWeight: 600,
-                                                    background: 'var(--bg-tertiary, rgba(255,255,255,0.04))', color: 'var(--text-muted, #aaa)',
-                                                }}>{r.source || '—'}</span>
-                                            </td>
-                                            <td style={{ padding: '8px', color: 'var(--text-primary, #fff)', fontWeight: 500, maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '11px' }}>
-                                                {r.agent_name || '—'}
-                                            </td>
-                                            <td style={{ padding: '8px' }}>
-                                                <span style={{
-                                                    padding: '2px 7px', borderRadius: '4px',
-                                                    fontSize: '10px', fontWeight: 600,
-                                                    background: agStyle.bg, color: agStyle.text,
-                                                }}>{r.agent_type || 'chat'}</span>
-                                            </td>
-                                            <td style={{ padding: '8px', color: 'var(--text-secondary, #aaa)', maxWidth: '120px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: '11px' }}>
-                                                {r.model || '—'}
-                                            </td>
-                                            <td style={{ padding: '8px', color: COLORS.blue, fontWeight: 500, fontSize: '11px' }}>{fmt(r.prompt_tokens)}</td>
-                                            <td style={{ padding: '8px', color: COLORS.amber, fontWeight: 500, fontSize: '11px' }}>{fmt(r.completion_tokens)}</td>
-                                            <td style={{ padding: '8px', color: COLORS.green, fontWeight: 600, fontSize: '11px' }}>{fmt(r.total_tokens)}</td>
-                                            <td style={{ padding: '8px', color: 'var(--text-muted, #888)', fontSize: '11px' }}>{fmtDuration(r.duration_ms)}</td>
-                                            <td style={{ padding: '8px', color: COLORS.amber, fontWeight: 500, fontSize: '11px' }}>{cost != null ? fmtCost(cost) : '—'}</td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
+                {/* Rows */}
+                {paged.length === 0 ? <Empty text="No API calls found" /> : paged.map((r, i) => {
+                    const isExpanded = expanded === (r.id || i);
+                    const src = getSourceDetails(r.source);
+
+                    return (
+                        <div key={r.id || i}>
+                            <div
+                                onClick={() => setExpanded(isExpanded ? null : (r.id || i))}
+                                style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: '110px 1fr 1fr 70px 80px 90px 70px 24px',
+                                    gap: '8px', padding: '8px 8px', alignItems: 'center',
+                                    borderRadius: '6px',
+                                    background: i % 2 === 0 ? 'transparent' : 'var(--bg-tertiary, rgba(255,255,255,0.02))',
+                                    cursor: 'pointer', transition: 'background 0.12s',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-tertiary, rgba(255,255,255,0.05))'}
+                                onMouseLeave={e => e.currentTarget.style.background = i % 2 === 0 ? 'transparent' : 'var(--bg-tertiary, rgba(255,255,255,0.02))'}
+                            >
+                                <span style={{ fontSize: '11px', color: 'var(--text-muted, #888)' }}>
+                                    {fmtTime(r.created_at)}
+                                </span>
+                                <div style={{ overflow: 'hidden' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '5px' }}>
+                                        <src.icon style={{ width: 12, height: 12, color: src.color, flexShrink: 0 }} />
+                                        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary, #fff)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {r.agent_name || src.label}
+                                        </span>
+                                    </div>
+                                </div>
+                                <span style={{ fontSize: '11px', fontWeight: 600, color: COLORS.primary, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {shortModel(r.model)}
+                                </span>
+                                <span style={{ fontSize: '12px', fontWeight: 600, color: COLORS.green, textAlign: 'right' }}>
+                                    {fmt(r.total_tokens)}
+                                </span>
+                                <span style={{ fontSize: '11px', color: 'var(--text-muted, #888)', textAlign: 'right' }}>
+                                    {fmtDuration(r.duration_ms)}
+                                </span>
+                                <span style={{ fontSize: '12px', fontWeight: 600, color: COLORS.amber, textAlign: 'right' }}>
+                                    {fmtCost(r.estimated_cost || 0)}
+                                </span>
+                                <span style={{
+                                    fontSize: '10px', fontWeight: 600, textAlign: 'right',
+                                    padding: '2px 6px', borderRadius: '4px',
+                                    background: r.type === 'chat' ? COLORS.primary + '15' : COLORS.amber + '15',
+                                    color: r.type === 'chat' ? COLORS.primary : COLORS.amber,
+                                }}>
+                                    {r.type || '—'}
+                                </span>
+                                <ChevronRight style={{
+                                    width: 13, height: 13, color: 'var(--text-muted, #888)',
+                                    transform: isExpanded ? 'rotate(90deg)' : 'none',
+                                    transition: 'transform 0.2s',
+                                }} />
+                            </div>
+
+                            {/* Expanded detail */}
+                            {isExpanded && (
+                                <div style={{
+                                    padding: '8px 16px 12px 32px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr',
+                                    gap: '10px', background: 'var(--bg-tertiary, rgba(255,255,255,0.02))',
+                                    borderRadius: '0 0 8px 8px', marginBottom: '4px',
+                                    fontSize: '11px',
+                                }}>
+                                    <DetailItem label="Prompt Tokens" value={fmt(r.prompt_tokens)} color={COLORS.blue} />
+                                    <DetailItem label="Completion Tokens" value={fmt(r.completion_tokens)} color={COLORS.amber} />
+                                    <DetailItem label="Total Tokens" value={fmt(r.total_tokens)} color={COLORS.green} />
+                                    <DetailItem label="Input Cost" value={fmtCost(r.input_cost || 0)} color={COLORS.blue} />
+                                    <DetailItem label="Output Cost" value={fmtCost(r.output_cost || 0)} color={COLORS.amber} />
+                                    <DetailItem label="Total Cost" value={fmtCost(r.estimated_cost || 0)} color={COLORS.green} />
+                                    <DetailItem label="Source" value={src.label} />
+                                    <DetailItem label="Model" value={r.model || 'Unknown'} />
+                                    {r.conversation_id && <DetailItem label="Conversation" value={r.conversation_id.slice(0, 12) + '…'} />}
+                                    {r.user_id && <DetailItem label="User" value={r.display_name || r.user_id} />}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', marginTop: '14px', alignItems: 'center' }}>
+                        <button onClick={() => setPageNum(p => Math.max(0, p - 1))} disabled={pageNum === 0} style={paginationBtn}>←</button>
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted, #888)', padding: '0 8px' }}>
+                            {pageNum + 1} / {totalPages}
+                        </span>
+                        <button onClick={() => setPageNum(p => Math.min(totalPages - 1, p + 1))} disabled={pageNum >= totalPages - 1} style={paginationBtn}>→</button>
                     </div>
                 )}
             </Card>
@@ -150,3 +215,30 @@ export function ActivityPage({ recent, modelCosts, filterSources, filterModels, 
     );
 }
 
+function DetailItem({ label, value, color }) {
+    return (
+        <div>
+            <div style={{ fontSize: '10px', fontWeight: 600, color: 'var(--text-muted, #888)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: '2px' }}>{label}</div>
+            <div style={{ fontSize: '12px', fontWeight: 600, color: color || 'var(--text-primary, #fff)', wordBreak: 'break-all' }}>{value}</div>
+        </div>
+    );
+}
+
+const filterSelectWrapper = {
+    display: 'flex', alignItems: 'center', gap: '5px', padding: '5px 10px',
+    borderRadius: '8px', background: 'var(--bg-primary, #0f0f1a)',
+    border: '1px solid var(--border-default, rgba(255,255,255,0.08))',
+};
+
+const filterSelectStyle = {
+    background: 'transparent', border: 'none', outline: 'none',
+    fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary, #aaa)',
+    cursor: 'pointer', appearance: 'none', WebkitAppearance: 'none',
+};
+
+const paginationBtn = {
+    padding: '5px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: 600,
+    border: '1px solid var(--border-default, rgba(255,255,255,0.1))',
+    background: 'var(--bg-secondary, #1a1a2e)', color: 'var(--text-secondary, #aaa)',
+    cursor: 'pointer',
+};

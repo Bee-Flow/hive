@@ -2,38 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { Users, UserPlus, Shield, Trash2, Edit2, Check, X, Plus, ChevronDown, ChevronRight, Mail, Clock, Send, Link2, AlertCircle } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
-const ORG_ROLES = [
-    {
-        id: 'org_admin', name: 'Organisation Admin',
-        description: 'Full organisation control — manage users, groups, permissions, Privacy Shield settings, and all agent capabilities.',
-        color: '#8b5cf6',
-        permissions: [
-            { label: 'Manage Users', desc: 'Add, remove, and assign roles to organisation members' },
-            { label: 'Edit Organisation Settings', desc: 'Change branding, legal details, and configuration' },
-            { label: 'Privacy Shield', desc: 'Configure data redaction and compliance rules' },
-            { label: 'All Agent Permissions', desc: 'Create, edit, and publish all agents' },
-        ],
-    },
-    {
-        id: 'agent_admin', name: 'Agent Admin',
-        description: 'Create and manage all agents — both published and in-progress drafts.',
-        color: '#f59e0b',
-        permissions: [
-            { label: 'Create Agents', desc: 'Build new agents from scratch or templates' },
-            { label: 'Edit Published Agents', desc: 'Modify agents that are live and available to users' },
-            { label: 'Edit Unpublished Agents', desc: 'Work on draft agents before publishing' },
-        ],
-    },
-    {
-        id: 'agent_editor', name: 'Agent Editor',
-        description: 'Create agents and edit published ones, but cannot modify unpublished drafts from others.',
-        color: '#10b981',
-        permissions: [
-            { label: 'Create Agents', desc: 'Build new agents from scratch or templates' },
-            { label: 'Edit Published Agents', desc: 'Modify agents that are live and available to users' },
-        ],
-    },
-];
+import { ORG_ROLES } from '../../config/orgRoles';
 
 // Skeleton loader
 const TableSkeleton = () => (

@@ -1,183 +1,360 @@
-import React, { useMemo, useState } from 'react';
-import MarkdownRenderer from '../../MarkdownRenderer';
+import React, { useState, useMemo } from 'react';
 import {
-    Activity, Cpu, Zap, Clock, Wrench, BarChart3, RefreshCw,
-    TrendingUp, Users, DollarSign, ChevronRight, Globe, Bot,
-    ArrowUp, ArrowDown, Minus, Layers, MessageSquare, ThumbsUp, ThumbsDown
+    ThumbsUp, ThumbsDown, MessageCircle, ChevronRight, Search, Cpu,
+    User, Bot, MessageSquare, Clock, ExternalLink
 } from 'lucide-react';
-import { fmt, fmtCost, fmtDuration, fmtTime, COLORS, AGENT_COLORS, getAgentStyle, MODEL_COLORS } from './shared';
-import { CostTimelineChart, MetricCard, Card, Empty, ModelRow, AgentRow } from './shared';
+import {
+    COLORS, fmtTime, shortModel, MetricCard, Card, Empty
+} from './shared';
+import MarkdownRenderer from '../../MarkdownRenderer';
 
+const PAGE_SIZE = 10;
 
-export function FeedbackPage({ feedback, summary, filters, setFilters }) {
-    const positivePct = summary?.total > 0 ? Math.round((summary.thumbs_up / summary.total) * 100) : 0;
-    const [expandedId, setExpandedId] = useState(null);
+function parseSnapshot(raw) {
+    if (!raw) return null;
+    try {
+        const data = typeof raw === 'string' ? JSON.parse(raw) : raw;
+        return Array.isArray(data) ? data : null;
+    } catch { return null; }
+}
 
-    const parseSnapshot = (raw) => {
-        if (!raw) return null;
-        try { return typeof raw === 'string' ? JSON.parse(raw) : raw; } catch { return null; }
-    };
+export function FeedbackPage({ feedback, summary }) {
+    const [filter, setFilter] = useState('all'); // all | positive | negative | comments | with_convo
+    const [pageNum, setPageNum] = useState(0);
+    const [expanded, setExpanded] = useState(null);
+    const [search, setSearch] = useState('');
 
     const filtered = useMemo(() => {
-        let list = feedback || [];
-        if (filters?.rating) list = list.filter(f => f.rating === filters.rating);
-        if (filters?.source) list = list.filter(f => f.source === filters.source);
-        return list;
-    }, [feedback, filters]);
+        let data = feedback;
+        if (filter === 'positive') data = data.filter(f => f.rating === 'up');
+        if (filter === 'negative') data = data.filter(f => f.rating === 'down');
+        if (filter === 'comments') data = data.filter(f => f.comment);
+        if (filter === 'with_convo') data = data.filter(f => f.conversation_snapshot);
+        if (search) {
+            const q = search.toLowerCase();
+            data = data.filter(f =>
+                f.comment?.toLowerCase().includes(q) ||
+                f.agent_id?.toLowerCase().includes(q) ||
+                f.user_id?.toLowerCase().includes(q) ||
+                f.source?.toLowerCase().includes(q) ||
+                f.conversation_id?.toLowerCase().includes(q)
+            );
+        }
+        return data;
+    }, [feedback, filter, search]);
 
-    const pillStyle = (active) => ({
-        padding: '5px 12px', borderRadius: '20px', fontSize: '11px', fontWeight: active ? 700 : 500,
-        border: '1px solid', cursor: 'pointer', transition: 'all 0.15s',
-        background: active ? COLORS.primary + '18' : 'transparent',
-        color: active ? COLORS.primary : 'var(--text-muted, #888)',
-        borderColor: active ? COLORS.primary + '40' : 'var(--border-default, rgba(255,255,255,0.08))',
-    });
+    const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+    const paged = filtered.slice(pageNum * PAGE_SIZE, (pageNum + 1) * PAGE_SIZE);
+
+    const posCount = summary?.thumbs_up || 0;
+    const negCount = summary?.thumbs_down || 0;
+    const total = summary?.total || 0;
+    const posRate = total > 0 ? ((posCount / total) * 100).toFixed(0) : '—';
+
+    // Count items with conversation snapshots
+    const withConvoCount = useMemo(() =>
+        feedback.filter(f => f.conversation_snapshot).length
+    , [feedback]);
 
     return (
         <div style={{ animation: 'fadeIn 0.3s ease' }}>
-            {/* Summary Cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: '14px', marginBottom: '1.5rem' }}>
-                <MetricCard icon={MessageSquare} label="Total Feedback" value={summary?.total || 0} color={COLORS.primary} />
-                <MetricCard icon={ThumbsUp} label="Thumbs Up" value={summary?.thumbs_up || 0} color={COLORS.green} />
-                <MetricCard icon={ThumbsDown} label="Thumbs Down" value={summary?.thumbs_down || 0} color={COLORS.rose} />
-                <MetricCard icon={TrendingUp} label="Positive %" value={`${positivePct}%`} color={COLORS.amber} />
+            {/* KPI Cards */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', marginBottom: '1.25rem' }}>
+                <MetricCard icon={ThumbsUp} label="Positive" color={COLORS.green}
+                    value={posCount} subtitle={`${posRate}% approval`} />
+                <MetricCard icon={ThumbsDown} label="Negative" color={COLORS.rose}
+                    value={negCount} />
+                <MetricCard icon={MessageCircle} label="With Comments" color={COLORS.purple}
+                    value={summary?.with_comments || 0} />
+                <MetricCard icon={MessageSquare} label="With Conversation" color={COLORS.blue}
+                    value={withConvoCount} subtitle="Shared context" />
             </div>
 
-            {/* Filters */}
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                <button onClick={() => setFilters(f => ({ ...f, rating: '' }))} style={pillStyle(!filters?.rating)}>All</button>
-                <button onClick={() => setFilters(f => ({ ...f, rating: 'up' }))} style={pillStyle(filters?.rating === 'up')}>👍 Up</button>
-                <button onClick={() => setFilters(f => ({ ...f, rating: 'down' }))} style={pillStyle(filters?.rating === 'down')}>👎 Down</button>
-                <span style={{ width: '1px', background: 'var(--border-default, rgba(255,255,255,0.08))', margin: '0 4px' }} />
-                <button onClick={() => setFilters(f => ({ ...f, source: '' }))} style={pillStyle(!filters?.source)}>All Sources</button>
-                <button onClick={() => setFilters(f => ({ ...f, source: 'agent' }))} style={pillStyle(filters?.source === 'agent')}>🤖 Agent</button>
-                <button onClick={() => setFilters(f => ({ ...f, source: 'direct' }))} style={pillStyle(filters?.source === 'direct')}>💬 Direct</button>
-            </div>
+            {/* Filter & Search */}
+            <Card>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    {[
+                        { id: 'all', label: 'All' },
+                        { id: 'positive', label: '👍 Positive' },
+                        { id: 'negative', label: '👎 Negative' },
+                        { id: 'comments', label: '💬 Comments' },
+                        { id: 'with_convo', label: '🗨️ With Conversation' },
+                    ].map(f => (
+                        <button
+                            key={f.id}
+                            onClick={() => { setFilter(f.id); setPageNum(0); }}
+                            style={{
+                                padding: '5px 12px', borderRadius: '8px', fontSize: '12px', fontWeight: 600,
+                                border: 'none', cursor: 'pointer', transition: 'all 0.15s',
+                                background: filter === f.id ? COLORS.primary + '20' : 'var(--bg-tertiary, rgba(255,255,255,0.04))',
+                                color: filter === f.id ? COLORS.primary : 'var(--text-secondary, #aaa)',
+                            }}
+                        >{f.label}</button>
+                    ))}
+                    <div style={{ flex: 1 }} />
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: '6px', padding: '5px 10px',
+                        borderRadius: '8px', background: 'var(--bg-primary, #0f0f1a)',
+                        border: '1px solid var(--border-default, rgba(255,255,255,0.08))',
+                    }}>
+                        <Search style={{ width: 12, height: 12, color: 'var(--text-muted, #888)' }} />
+                        <input
+                            value={search} onChange={e => { setSearch(e.target.value); setPageNum(0); }}
+                            placeholder="Search feedback..."
+                            style={{
+                                background: 'transparent', border: 'none', outline: 'none', fontSize: '12px',
+                                color: 'var(--text-primary, #fff)', width: '140px',
+                            }}
+                        />
+                    </div>
+                </div>
 
-            <Card title={`Feedback Entries (${filtered.length})`} icon={MessageSquare}>
-                {filtered.length === 0 ? <Empty text="No feedback yet — users can rate AI responses with thumbs up/down" /> : (
-                    <div>
-                        {/* Table header */}
-                        <div style={{
-                            display: 'grid', gridTemplateColumns: '100px 50px 1fr 100px 100px 70px 36px',
-                            gap: '8px', padding: '8px 12px', marginBottom: '4px',
-                            fontSize: '11px', fontWeight: 600, textTransform: 'uppercase',
-                            letterSpacing: '0.05em', color: 'var(--text-muted, #666)',
-                        }}>
-                            <span>Time</span>
-                            <span>Rating</span>
-                            <span>Comment</span>
-                            <span>User</span>
-                            <span>Organization</span>
-                            <span>Source</span>
-                            <span>Chat</span>
-                        </div>
-                        {filtered.map((f, i) => {
-                            const snapshot = parseSnapshot(f.conversation_snapshot);
-                            const hasSnapshot = snapshot && snapshot.length > 0;
-                            const isExpanded = expandedId === f.id;
-                            return (
-                                <div key={f.id || i}>
-                                    <div
-                                        onClick={() => hasSnapshot && setExpandedId(isExpanded ? null : f.id)}
-                                        style={{
-                                            display: 'grid', gridTemplateColumns: '100px 50px 1fr 100px 100px 70px 36px',
-                                            gap: '8px', padding: '10px 12px', borderRadius: '10px',
-                                            background: i % 2 === 0 ? 'transparent' : 'var(--bg-tertiary, rgba(255,255,255,0.02))',
-                                            alignItems: 'center', animation: `slideIn ${0.1 + i * 0.02}s ease`,
-                                            cursor: hasSnapshot ? 'pointer' : 'default',
-                                        }}
-                                    >
-                                        <span style={{ fontSize: '12px', color: 'var(--text-muted, #888)' }}>
-                                            {fmtTime(f.created_at)}
+                {/* Feedback List */}
+                {paged.length === 0 ? <Empty text="No feedback entries" /> : paged.map((item, i) => {
+                    const isExpanded = expanded === item.id;
+                    const snapshot = parseSnapshot(item.conversation_snapshot);
+                    const hasConvo = !!snapshot && snapshot.length > 0;
+                    const isUp = item.rating === 'up';
+
+                    return (
+                        <div key={item.id || i} style={{ borderBottom: '1px solid var(--border-default, rgba(255,255,255,0.05))' }}>
+                            <div
+                                onClick={() => setExpanded(isExpanded ? null : item.id)}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: '10px', padding: '10px 2px',
+                                    cursor: 'pointer', transition: 'background 0.12s',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-tertiary, rgba(255,255,255,0.03))'}
+                                onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                            >
+                                {/* Rating icon */}
+                                <span style={{
+                                    fontSize: '18px', width: '28px', textAlign: 'center', flexShrink: 0,
+                                }}>{isUp ? '👍' : '👎'}</span>
+
+                                {/* Main info */}
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                        <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary, #fff)' }}>
+                                            {item.user_id || 'Anonymous'}
                                         </span>
-                                        <span style={{ fontSize: '18px' }}>
-                                            {f.rating === 'up' ? '👍' : '👎'}
-                                        </span>
-                                        <span style={{
-                                            fontSize: '12px', color: f.comment ? 'var(--text-primary, #fff)' : 'var(--text-muted, #666)',
-                                            fontStyle: f.comment ? 'normal' : 'italic',
-                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                        }}>
-                                            {f.comment || 'No comment'}
-                                        </span>
-                                        <span style={{
-                                            fontSize: '12px', color: 'var(--text-secondary, #aaa)',
-                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                        }}>
-                                            {f.user_id || 'Anonymous'}
-                                        </span>
-                                        <span style={{
-                                            fontSize: '11px', color: 'var(--text-secondary, #aaa)',
-                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                        }}>
-                                            {f.organization_id || '—'}
-                                        </span>
-                                        <span style={{
-                                            fontSize: '11px', fontWeight: 600,
-                                            padding: '2px 8px', borderRadius: '8px',
-                                            background: f.source === 'agent' ? '#6366f115' : '#06b6d415',
-                                            color: f.source === 'agent' ? '#818cf8' : '#06b6d4',
-                                            textAlign: 'center',
-                                        }}>
-                                            {f.source === 'agent' ? '🤖 Agent' : '💬 Direct'}
-                                        </span>
-                                        <span style={{ fontSize: '13px', textAlign: 'center', opacity: hasSnapshot ? 1 : 0.25 }}
-                                            title={hasSnapshot ? 'Click to view conversation' : 'No conversation attached'}>
-                                            {hasSnapshot ? (isExpanded ? '▼' : '▶') : '—'}
-                                        </span>
+                                        {item.source && (
+                                            <span style={{
+                                                padding: '1px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 600,
+                                                background: 'var(--bg-tertiary, rgba(255,255,255,0.04))',
+                                                color: 'var(--text-muted, #888)',
+                                            }}>{item.source}</span>
+                                        )}
+                                        {item.agent_id && (
+                                            <span style={{
+                                                display: 'flex', alignItems: 'center', gap: '3px',
+                                                padding: '1px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 600,
+                                                background: COLORS.primary + '15', color: COLORS.primary,
+                                            }}>
+                                                <Bot style={{ width: 9, height: 9 }} />
+                                                {item.agent_id.length > 20 ? item.agent_id.slice(0, 20) + '…' : item.agent_id}
+                                            </span>
+                                        )}
+                                        {hasConvo && (
+                                            <span style={{
+                                                display: 'flex', alignItems: 'center', gap: '3px',
+                                                padding: '1px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 600,
+                                                background: COLORS.blue + '15', color: COLORS.blue,
+                                            }}>
+                                                <MessageSquare style={{ width: 9, height: 9 }} />
+                                                {snapshot.length} msgs
+                                            </span>
+                                        )}
                                     </div>
-                                    {isExpanded && hasSnapshot && (
+                                    {item.comment && (
                                         <div style={{
-                                            margin: '4px 12px 12px', padding: '16px',
-                                            borderRadius: '12px', border: '1px solid var(--border-default, rgba(255,255,255,0.08))',
-                                            background: 'var(--bg-secondary, #1a1a2e)',
-                                            maxHeight: '400px', overflowY: 'auto',
+                                            fontSize: '12px', color: 'var(--text-secondary, #aaa)', marginTop: '3px',
+                                            overflow: 'hidden', textOverflow: 'ellipsis',
+                                            whiteSpace: isExpanded ? 'pre-wrap' : 'nowrap',
+                                            maxWidth: isExpanded ? 'none' : '500px',
                                         }}>
-                                            <div style={{ fontSize: '11px', fontWeight: 700, color: 'var(--text-muted, #888)', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                                                Shared Conversation ({snapshot.length} messages)
-                                            </div>
-                                            {snapshot.map((m, mi) => (
-                                                <div key={mi} style={{
-                                                    display: 'flex', flexDirection: 'column',
-                                                    alignItems: m.role === 'user' ? 'flex-end' : 'flex-start',
-                                                    marginBottom: '8px',
-                                                }}>
-                                                    <div style={{
-                                                        fontSize: '10px', fontWeight: 600, marginBottom: '2px',
-                                                        color: m.role === 'user' ? COLORS.primary : COLORS.green,
-                                                        textTransform: 'uppercase', letterSpacing: '0.04em',
-                                                    }}>
-                                                        {m.role === 'user' ? '👤 User' : '🤖 Assistant'}
-                                                        {m.timestamp && <span style={{ fontWeight: 400, marginLeft: '6px', color: 'var(--text-muted, #666)' }}>
-                                                            {new Date(m.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                                        </span>}
-                                                    </div>
-                                                    <div style={{
-                                                        padding: '8px 12px', borderRadius: '10px',
-                                                        maxWidth: '85%', fontSize: '12px', lineHeight: '1.5',
-                                                        color: 'var(--text-primary, #fff)',
-                                                        background: m.role === 'user'
-                                                            ? COLORS.primary + '15'
-                                                            : 'var(--bg-tertiary, rgba(255,255,255,0.04))',
-                                                        border: '1px solid ' + (m.role === 'user'
-                                                            ? COLORS.primary + '25'
-                                                            : 'var(--border-default, rgba(255,255,255,0.06))'),
-                                                        whiteSpace: m.role === 'user' ? 'pre-wrap' : 'normal',
-                                                        wordBreak: 'break-word',
-                                                    }}>
-                                                        {m.role === 'assistant'
-                                                            ? <MarkdownRenderer content={m.content?.length > 3000 ? m.content.slice(0, 3000) + '\n\n*...truncated...*' : m.content || ''} />
-                                                            : (m.content?.length > 1500 ? m.content.slice(0, 1500) + '...' : m.content)
-                                                        }
-                                                    </div>
-                                                </div>
-                                            ))}
+                                            "{item.comment}"
                                         </div>
                                     )}
                                 </div>
-                            );
-                        })}
+
+                                <span style={{ fontSize: '11px', color: 'var(--text-muted, #888)', flexShrink: 0 }}>
+                                    {fmtTime(item.created_at)}
+                                </span>
+                                <ChevronRight style={{
+                                    width: 14, height: 14, color: 'var(--text-muted, #888)',
+                                    transform: isExpanded ? 'rotate(90deg)' : 'none',
+                                    transition: 'transform 0.2s', flexShrink: 0,
+                                }} />
+                            </div>
+
+                            {/* Expanded: conversation replay */}
+                            {isExpanded && (
+                                <div style={{
+                                    padding: '10px 12px 16px 40px',
+                                    background: 'var(--bg-tertiary, rgba(255,255,255,0.02))',
+                                    borderRadius: '0 0 8px 8px',
+                                    animation: 'fadeIn 0.2s ease',
+                                }}>
+                                    {/* Meta row */}
+                                    <div style={{
+                                        display: 'flex', gap: '12px', marginBottom: '12px', flexWrap: 'wrap',
+                                        fontSize: '11px', color: 'var(--text-muted, #888)'
+                                    }}>
+                                        {item.conversation_id && (
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                <ExternalLink style={{ width: 10, height: 10 }} />
+                                                Conv: {item.conversation_id.slice(0, 16)}…
+                                            </span>
+                                        )}
+                                        {item.message_id && (
+                                            <span>Msg: {item.message_id.slice(0, 16)}…</span>
+                                        )}
+                                        {item.organization_id && (
+                                            <span>Org: {item.organization_id.slice(0, 16)}…</span>
+                                        )}
+                                    </div>
+
+                                    {/* Comment */}
+                                    {item.comment && (
+                                        <div style={{
+                                            marginBottom: '12px', padding: '10px 14px', borderRadius: '10px',
+                                            background: isUp ? COLORS.green + '10' : COLORS.rose + '10',
+                                            border: `1px solid ${isUp ? COLORS.green : COLORS.rose}25`,
+                                        }}>
+                                            <div style={{
+                                                fontSize: '10px', fontWeight: 700, textTransform: 'uppercase',
+                                                letterSpacing: '0.04em', marginBottom: '4px',
+                                                color: isUp ? COLORS.green : COLORS.rose,
+                                            }}>User Feedback</div>
+                                            <div style={{
+                                                fontSize: '13px', color: 'var(--text-primary, #fff)',
+                                                whiteSpace: 'pre-wrap', lineHeight: 1.5,
+                                            }}>{item.comment}</div>
+                                        </div>
+                                    )}
+
+                                    {/* Conversation Snapshot */}
+                                    {hasConvo ? (
+                                        <div>
+                                            <div style={{
+                                                fontSize: '10px', fontWeight: 700, textTransform: 'uppercase',
+                                                letterSpacing: '0.04em', marginBottom: '8px',
+                                                color: COLORS.blue, display: 'flex', alignItems: 'center', gap: '5px',
+                                            }}>
+                                                <MessageSquare style={{ width: 11, height: 11 }} />
+                                                Conversation ({snapshot.length} messages)
+                                            </div>
+                                            <div style={{
+                                                maxHeight: '400px', overflowY: 'auto',
+                                                display: 'flex', flexDirection: 'column', gap: '6px',
+                                                padding: '2px',
+                                            }}>
+                                                {snapshot.map((msg, mi) => {
+                                                    const isUserMsg = msg.role === 'user';
+                                                    const content = typeof msg.content === 'string'
+                                                        ? msg.content
+                                                        : JSON.stringify(msg.content);
+                                                    // Skip empty system/tool messages
+                                                    if (!content || content.trim().length === 0) return null;
+                                                    // Truncate very long messages
+                                                    const truncated = content.length > 800
+                                                        ? content.slice(0, 800) + '…'
+                                                        : content;
+
+                                                    return (
+                                                        <div key={mi} style={{
+                                                            display: 'flex',
+                                                            justifyContent: isUserMsg ? 'flex-end' : 'flex-start',
+                                                        }}>
+                                                            <div style={{
+                                                                maxWidth: '85%',
+                                                                padding: '8px 12px', borderRadius: '12px',
+                                                                background: isUserMsg
+                                                                    ? 'var(--bg-secondary, #1a1a2e)'
+                                                                    : 'var(--bg-primary, #0f0f1a)',
+                                                                border: `1px solid ${isUserMsg
+                                                                    ? 'var(--border-default, rgba(255,255,255,0.08))'
+                                                                    : COLORS.primary + '20'
+                                                                }`,
+                                                            }}>
+                                                                <div style={{
+                                                                    display: 'flex', alignItems: 'center', gap: '5px',
+                                                                    marginBottom: '4px',
+                                                                }}>
+                                                                    {isUserMsg
+                                                                        ? <User style={{ width: 10, height: 10, color: 'var(--text-muted, #888)' }} />
+                                                                        : <Bot style={{ width: 10, height: 10, color: COLORS.primary }} />
+                                                                    }
+                                                                    <span style={{
+                                                                        fontSize: '10px', fontWeight: 600,
+                                                                        color: isUserMsg ? 'var(--text-muted, #888)' : COLORS.primary,
+                                                                    }}>
+                                                                        {isUserMsg ? 'User' : 'AI'}
+                                                                    </span>
+                                                                    {msg.timestamp && (
+                                                                        <span style={{
+                                                                            fontSize: '9px', color: 'var(--text-muted, #666)',
+                                                                            marginLeft: 'auto',
+                                                                        }}>
+                                                                            {fmtTime(msg.timestamp)}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                                <div style={{
+                                                                    fontSize: '13px',
+                                                                    color: 'var(--text-primary, #fff)',
+                                                                    wordBreak: 'break-word',
+                                                                    lineHeight: 1.6,
+                                                                }} className="prose prose-sm dark:prose-invert max-w-none">
+                                                                    {isUserMsg
+                                                                        ? <span style={{ whiteSpace: 'pre-wrap' }}>{truncated}</span>
+                                                                        : <MarkdownRenderer content={truncated} />
+                                                                    }
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    ) : (
+                                        <div style={{
+                                            padding: '16px', borderRadius: '10px', textAlign: 'center',
+                                            background: 'var(--bg-primary, #0f0f1a)',
+                                            border: '1px dashed var(--border-default, rgba(255,255,255,0.08))',
+                                        }}>
+                                            <MessageSquare style={{ width: 20, height: 20, color: 'var(--text-muted, #555)', margin: '0 auto 6px' }} />
+                                            <div style={{ fontSize: '12px', color: 'var(--text-muted, #666)' }}>
+                                                No conversation shared
+                                            </div>
+                                            <div style={{ fontSize: '10px', color: 'var(--text-muted, #555)', marginTop: '2px' }}>
+                                                User did not include conversation context with this feedback
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    );
+                })}
+
+                {/* Pagination */}
+                {totalPages > 1 && (
+                    <div style={{ display: 'flex', justifyContent: 'center', gap: '6px', marginTop: '14px', alignItems: 'center' }}>
+                        <button
+                            onClick={() => setPageNum(p => Math.max(0, p - 1))}
+                            disabled={pageNum === 0}
+                            style={paginationBtn}
+                        >←</button>
+                        <span style={{ fontSize: '12px', color: 'var(--text-muted, #888)', padding: '0 8px' }}>
+                            {pageNum + 1} / {totalPages}
+                        </span>
+                        <button
+                            onClick={() => setPageNum(p => Math.min(totalPages - 1, p + 1))}
+                            disabled={pageNum >= totalPages - 1}
+                            style={paginationBtn}
+                        >→</button>
                     </div>
                 )}
             </Card>
@@ -185,3 +362,9 @@ export function FeedbackPage({ feedback, summary, filters, setFilters }) {
     );
 }
 
+const paginationBtn = {
+    padding: '5px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: 600,
+    border: '1px solid var(--border-default, rgba(255,255,255,0.1))',
+    background: 'var(--bg-secondary, #1a1a2e)', color: 'var(--text-secondary, #aaa)',
+    cursor: 'pointer',
+};

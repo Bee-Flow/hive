@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Package, Building2, Plus, Pencil, Trash2, Save, X, Star, AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Shield, Infinity } from 'lucide-react';
+import { Package, Building2, Plus, Pencil, Trash2, Save, X, Star, AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Shield, Infinity, ScrollText, Euro, Eye, EyeOff, CreditCard, Settings, ExternalLink, Loader2 } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 const FEATURE_OPTIONS = [
@@ -14,7 +14,9 @@ const FEATURE_OPTIONS = [
 
 const SECTIONS = [
     { id: 'plans', label: 'Plans', icon: Package, color: '#8b5cf6' },
-    { id: 'organizations', label: 'Organizations', icon: Building2, color: '#3b82f6' },
+    { id: 'organizations', label: 'Orgs', icon: Building2, color: '#3b82f6' },
+    { id: 'settings', label: 'Stripe', icon: CreditCard, color: '#635bff' },
+    { id: 'audit', label: 'Audit', icon: ScrollText, color: '#f59e0b' },
 ];
 
 const LIMIT_FIELDS = [
@@ -267,6 +269,12 @@ const PlanEditor = ({ plan, onSave, onCancel }) => {
         allowed_features: plan?.allowed_features || [],
         allowed_models: plan?.allowed_models || [],
         is_default: plan?.is_default || false,
+        price: plan?.price ?? null,
+        currency: plan?.currency || 'EUR',
+        billing_interval: plan?.billing_interval || 'monthly',
+        trial_days: plan?.trial_days ?? 0,
+        sort_order: plan?.sort_order ?? 0,
+        is_public: plan?.is_public || false,
     });
 
     const update = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
@@ -310,14 +318,58 @@ const PlanEditor = ({ plan, onSave, onCancel }) => {
                 </h4>
                 <FeatureCheckboxes selected={form.allowed_features} onChange={v => update('allowed_features', v)} />
 
-                {/* Default toggle */}
-                <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '16px', padding: '10px 12px', borderRadius: '8px', background: 'var(--bg-tertiary)', cursor: 'pointer' }}>
-                    <input type="checkbox" checked={form.is_default} onChange={e => update('is_default', e.target.checked)} style={{ accentColor: '#f59e0b' }} />
-                    <span style={{ fontSize: '13px', color: 'var(--text-primary)' }}>
-                        <Star style={{ width: 14, height: 14, color: '#f59e0b', display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
-                        Default plan for new organizations
-                    </span>
-                </label>
+                {/* Pricing & Billing */}
+                <h4 style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)', margin: '16px 0 12px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <Euro style={{ width: 14, height: 14, color: '#3b82f6' }} /> Pricing & Billing
+                    <span style={{ fontSize: '11px', fontWeight: '400', color: 'var(--text-muted)' }}>— for Stripe integration</span>
+                </h4>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0 16px' }}>
+                    <div style={{ marginBottom: '12px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>Price</label>
+                        <input type="number" step="0.01" min="0" value={form.price ?? ''} placeholder="0.00 (free)" onChange={e => update('price', e.target.value === '' ? null : parseFloat(e.target.value))} style={input} />
+                    </div>
+                    <div style={{ marginBottom: '12px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>Currency</label>
+                        <select value={form.currency} onChange={e => update('currency', e.target.value)} style={{ ...input, cursor: 'pointer' }}>
+                            <option value="EUR">EUR (€)</option>
+                            <option value="USD">USD ($)</option>
+                            <option value="GBP">GBP (£)</option>
+                        </select>
+                    </div>
+                    <div style={{ marginBottom: '12px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>Billing Interval</label>
+                        <select value={form.billing_interval} onChange={e => update('billing_interval', e.target.value)} style={{ ...input, cursor: 'pointer' }}>
+                            <option value="monthly">Monthly</option>
+                            <option value="yearly">Yearly</option>
+                        </select>
+                    </div>
+                    <div style={{ marginBottom: '12px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>Trial Days</label>
+                        <input type="number" min="0" value={form.trial_days || ''} placeholder="0" onChange={e => update('trial_days', e.target.value === '' ? 0 : parseInt(e.target.value))} style={input} />
+                    </div>
+                    <div style={{ marginBottom: '12px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>Sort Order</label>
+                        <input type="number" min="0" value={form.sort_order || ''} placeholder="0" onChange={e => update('sort_order', e.target.value === '' ? 0 : parseInt(e.target.value))} style={input} />
+                    </div>
+                </div>
+
+                {/* Toggles */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '12px' }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', borderRadius: '8px', background: 'var(--bg-tertiary)', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={form.is_default} onChange={e => update('is_default', e.target.checked)} style={{ accentColor: '#f59e0b' }} />
+                        <span style={{ fontSize: '13px', color: 'var(--text-primary)' }}>
+                            <Star style={{ width: 14, height: 14, color: '#f59e0b', display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />
+                            Default plan for new organizations
+                        </span>
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', borderRadius: '8px', background: 'var(--bg-tertiary)', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={form.is_public} onChange={e => update('is_public', e.target.checked)} style={{ accentColor: '#3b82f6' }} />
+                        <span style={{ fontSize: '13px', color: 'var(--text-primary)' }}>
+                            {form.is_public ? <Eye style={{ width: 14, height: 14, color: '#3b82f6', display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} /> : <EyeOff style={{ width: 14, height: 14, color: 'var(--text-muted)', display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />}
+                            Visible on public pricing page
+                        </span>
+                    </label>
+                </div>
 
                 {/* Actions */}
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '20px' }}>
@@ -415,7 +467,16 @@ const PlansView = () => {
                                 </div>
                             )}
                             <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', margin: '0 0 4px' }}>{plan.name}</h3>
-                            {plan.description && <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '0 0 16px' }}>{plan.description}</p>}
+                            {plan.description && <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '0 0 8px' }}>{plan.description}</p>}
+                            {plan.price !== null && plan.price !== undefined ? (
+                                <div style={{ fontSize: '20px', fontWeight: '800', color: 'var(--accent-primary)', margin: '0 0 12px' }}>
+                                    {plan.currency === 'EUR' ? '€' : plan.currency === 'GBP' ? '£' : '$'}{plan.price.toFixed(2)}
+                                    <span style={{ fontSize: '12px', fontWeight: '400', color: 'var(--text-muted)' }}> / {plan.billing_interval || 'month'}</span>
+                                    {plan.trial_days > 0 && <span style={{ fontSize: '10px', fontWeight: '600', color: '#22c55e', marginLeft: '8px' }}>{plan.trial_days}d trial</span>}
+                                </div>
+                            ) : (
+                                <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-muted)', margin: '0 0 12px' }}>Free / Internal</div>
+                            )}
 
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 16px', fontSize: '12px', marginBottom: '16px' }}>
                                 <div><span style={{ color: 'var(--text-muted)' }}>Messages:</span> <span style={{ color: 'var(--text-primary)', fontWeight: '600' }}>{formatLimit(plan.max_messages_per_month)}</span></div>
@@ -806,6 +867,427 @@ const QuickAssign = ({ org, plans, onSave, onCancel }) => {
 
 
 // ═══════════════════════════════════════════
+//  Audit Log View
+// ═══════════════════════════════════════════
+const AuditView = () => {
+    const [logs, setLogs] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [filter, setFilter] = useState('');
+
+    const loadLogs = useCallback(async () => {
+        try {
+            const res = await authFetch(`${API_BASE}/api/subscriptions/audit?limit=100`);
+            const data = await res.json();
+            if (res.ok) setLogs(Array.isArray(data) ? data : []);
+        } catch (e) { console.error('Failed to load audit log:', e); }
+        finally { setLoading(false); }
+    }, []);
+
+    useEffect(() => { loadLogs(); }, [loadLogs]);
+
+    const actionColors = {
+        create_plan: '#22c55e', update_plan: '#3b82f6', delete_plan: '#ef4444',
+        assign_subscription: '#8b5cf6', update_subscription: '#3b82f6', remove_subscription: '#ef4444',
+    };
+
+    const filtered = filter ? logs.filter(l => l.action?.includes(filter) || l.target_id?.includes(filter) || l.changed_by?.includes(filter)) : logs;
+
+    if (loading) return <div style={{ display: 'flex', justifyContent: 'center', padding: '60px', color: 'var(--text-muted)' }}>Loading audit log...</div>;
+
+    return (
+        <div style={{ padding: '24px', height: '100%', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <div>
+                    <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)', margin: 0 }}>Subscription Audit Log</h2>
+                    <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '4px 0 0' }}>Track all subscription plan and organization changes</p>
+                </div>
+                <input
+                    type="text" value={filter} onChange={e => setFilter(e.target.value)}
+                    placeholder="Filter by action, target, user..."
+                    style={{ ...input, width: '260px' }}
+                />
+            </div>
+
+            {filtered.length === 0 ? (
+                <div style={{ ...card, textAlign: 'center', padding: '60px 20px' }}>
+                    <ScrollText style={{ width: 40, height: 40, color: 'var(--text-muted)', margin: '0 auto 12px' }} />
+                    <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>No audit log entries yet.</p>
+                </div>
+            ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                    {filtered.map(log => (
+                        <div key={log.id} style={{ ...card, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
+                            <div style={{
+                                width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
+                                background: actionColors[log.action] || 'var(--text-muted)',
+                            }} />
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '2px' }}>
+                                    <span style={{ fontSize: '12px', fontWeight: '700', color: 'var(--text-primary)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
+                                        {(log.action || '').replace(/_/g, ' ')}
+                                    </span>
+                                    <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontFamily: 'monospace' }}>{log.target_type}:{log.target_id?.slice(0, 12)}</span>
+                                </div>
+                                <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                    by <strong>{log.changed_by || 'system'}</strong> • {new Date(log.created_at).toLocaleString()}
+                                </div>
+                            </div>
+                            {log.new_values && (
+                                <div style={{ fontSize: '10px', color: 'var(--text-muted)', maxWidth: '300px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                    {typeof log.new_values === 'object' ? Object.entries(log.new_values).slice(0, 3).map(([k, v]) => `${k}: ${v}`).join(', ') : String(log.new_values)}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                </div>
+            )}
+        </div>
+    );
+};
+
+
+// ═══════════════════════════════════════════
+//  Stripe Settings View
+// ═══════════════════════════════════════════
+const StripeSettingsView = () => {
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [message, setMessage] = useState(null);
+    const [config, setConfig] = useState({
+        hasStripeSecretKey: false,
+        hasStripeWebhookSecret: false,
+        stripePublishableKey: '',
+        stripeEnabled: false,
+        stripeTaxEnabled: false,
+        stripeTaxCountry: 'NL',
+    });
+    const [secretKey, setSecretKey] = useState('');
+    const [webhookSecret, setWebhookSecret] = useState('');
+    const [publishableKey, setPublishableKey] = useState('');
+
+    const loadConfig = useCallback(async () => {
+        try {
+            const res = await authFetch(`${API_BASE}/ai/config`);
+            if (res.ok) {
+                const data = await res.json();
+                setConfig({
+                    hasStripeSecretKey: !!data.hasStripeSecretKey,
+                    hasStripeWebhookSecret: !!data.hasStripeWebhookSecret,
+                    stripePublishableKey: data.stripePublishableKey || '',
+                    stripeEnabled: !!data.stripeEnabled,
+                    stripeTaxEnabled: !!data.stripeTaxEnabled,
+                    stripeTaxCountry: data.stripeTaxCountry || 'NL',
+                });
+                setPublishableKey(data.stripePublishableKey || '');
+            }
+        } catch (e) { console.error('Failed to load Stripe config:', e); }
+        finally { setLoading(false); }
+    }, []);
+
+    useEffect(() => { loadConfig(); }, [loadConfig]);
+
+    const showMessage = (type, text) => {
+        setMessage({ type, text });
+        setTimeout(() => setMessage(null), 3000);
+    };
+
+    const saveField = async (payload) => {
+        setSaving(true);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/config`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            if (res.ok) {
+                showMessage('success', 'Saved');
+                await loadConfig();
+            } else {
+                showMessage('error', 'Failed to save');
+            }
+        } catch (e) {
+            showMessage('error', 'Failed to save');
+        }
+        setSaving(false);
+    };
+
+    const deleteKey = async (keyName) => {
+        setSaving(true);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/config/key/${keyName}`, { method: 'DELETE' });
+            if (res.ok) {
+                showMessage('success', 'Key removed');
+                await loadConfig();
+            }
+        } catch (e) { showMessage('error', 'Failed to remove key'); }
+        setSaving(false);
+    };
+
+    const statusDot = (configured) => (
+        <div style={{
+            width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
+            background: configured ? '#22c55e' : '#ef4444',
+            boxShadow: configured ? '0 0 6px rgba(34,197,94,0.4)' : '0 0 6px rgba(239,68,68,0.3)',
+        }} />
+    );
+
+    if (loading) return <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', padding: '60px', color: 'var(--text-muted)' }}><Loader2 style={{ width: 20, height: 20, animation: 'spin 1s linear infinite' }} /> Loading Stripe settings...</div>;
+
+    return (
+        <div style={{ padding: '24px', height: '100%', overflowY: 'auto' }}>
+            {/* Header */}
+            <div style={{ marginBottom: '24px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '4px' }}>
+                    <div style={{ width: '36px', height: '36px', borderRadius: '10px', background: 'linear-gradient(135deg, #635bff, #7c3aed)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <CreditCard style={{ width: 20, height: 20, color: 'white' }} />
+                    </div>
+                    <div>
+                        <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)', margin: 0 }}>Stripe Payment Integration</h2>
+                        <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: 0 }}>Connect Stripe to enable subscription billing for your plans</p>
+                    </div>
+                </div>
+            </div>
+
+            {/* Toast */}
+            {message && (
+                <div style={{
+                    marginBottom: '16px', padding: '10px 16px', borderRadius: '10px', fontSize: '13px', fontWeight: '500',
+                    background: message.type === 'success' ? 'rgba(34,197,94,0.1)' : 'rgba(239,68,68,0.1)',
+                    color: message.type === 'success' ? '#22c55e' : '#ef4444',
+                    border: `1px solid ${message.type === 'success' ? 'rgba(34,197,94,0.2)' : 'rgba(239,68,68,0.2)'}`,
+                }}>
+                    {message.type === 'success' ? <CheckCircle style={{ width: 14, height: 14, display: 'inline', verticalAlign: 'middle', marginRight: 6 }} /> : <AlertTriangle style={{ width: 14, height: 14, display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />}
+                    {message.text}
+                </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', maxWidth: '640px' }}>
+
+                {/* Connection Status */}
+                <div style={{ ...card, borderColor: config.stripeEnabled ? 'rgba(34,197,94,0.3)' : 'var(--border-default)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+                        <h3 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Settings style={{ width: 16, height: 16, color: '#635bff' }} />
+                            Connection Status
+                        </h3>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                            <span style={{ fontSize: '11px', fontWeight: '600', color: config.stripeEnabled ? '#22c55e' : 'var(--text-muted)' }}>
+                                {config.stripeEnabled ? 'ENABLED' : 'DISABLED'}
+                            </span>
+                            <button
+                                onClick={() => saveField({ stripeEnabled: !config.stripeEnabled })}
+                                disabled={saving || (!config.hasStripeSecretKey && !config.stripeEnabled)}
+                                style={{
+                                    width: '44px', height: '24px', borderRadius: '12px', border: 'none', cursor: 'pointer',
+                                    background: config.stripeEnabled ? '#22c55e' : 'var(--bg-tertiary)',
+                                    transition: 'background 0.2s ease', position: 'relative',
+                                    opacity: (!config.hasStripeSecretKey && !config.stripeEnabled) ? 0.4 : 1,
+                                }}
+                            >
+                                <div style={{
+                                    width: '18px', height: '18px', borderRadius: '50%', background: 'white',
+                                    position: 'absolute', top: '3px',
+                                    left: config.stripeEnabled ? '23px' : '3px',
+                                    transition: 'left 0.2s ease',
+                                }} />
+                            </button>
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                            {statusDot(config.hasStripeSecretKey)}
+                            <span style={{ color: 'var(--text-secondary)' }}>Secret Key</span>
+                            <span style={{ color: config.hasStripeSecretKey ? '#22c55e' : '#ef4444', fontWeight: '600' }}>{config.hasStripeSecretKey ? 'Configured' : 'Not configured'}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                            {statusDot(!!config.stripePublishableKey)}
+                            <span style={{ color: 'var(--text-secondary)' }}>Publishable Key</span>
+                            <span style={{ color: config.stripePublishableKey ? '#22c55e' : '#ef4444', fontWeight: '600' }}>{config.stripePublishableKey ? 'Configured' : 'Not configured'}</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px' }}>
+                            {statusDot(config.hasStripeWebhookSecret)}
+                            <span style={{ color: 'var(--text-secondary)' }}>Webhook Secret</span>
+                            <span style={{ color: config.hasStripeWebhookSecret ? '#22c55e' : '#ef4444', fontWeight: '600' }}>{config.hasStripeWebhookSecret ? 'Configured' : 'Not configured'}</span>
+                        </div>
+                    </div>
+                </div>
+
+                {/* API Keys */}
+                <div style={card}>
+                    <h3 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)', margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Shield style={{ width: 16, height: 16, color: '#635bff' }} />
+                        API Keys
+                    </h3>
+                    <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '0 0 16px' }}>
+                        Get your keys from the <a href="https://dashboard.stripe.com/apikeys" target="_blank" rel="noopener noreferrer" style={{ color: '#635bff', textDecoration: 'none', fontWeight: '600' }}>Stripe Dashboard <ExternalLink style={{ width: 10, height: 10, display: 'inline', verticalAlign: 'middle' }} /></a>
+                    </p>
+
+                    {/* Secret Key */}
+                    <div style={{ marginBottom: '14px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
+                            Secret Key {config.hasStripeSecretKey && <span style={{ color: '#22c55e', fontSize: '10px' }}>✓ saved</span>}
+                        </label>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <input
+                                type="password"
+                                value={secretKey}
+                                onChange={e => setSecretKey(e.target.value)}
+                                placeholder={config.hasStripeSecretKey ? '••••••••••••••••••' : 'sk_live_... or sk_test_...'}
+                                style={{ ...input, flex: 1, fontFamily: 'monospace', fontSize: '12px' }}
+                            />
+                            {secretKey ? (
+                                <button onClick={() => { saveField({ stripeSecretKey: secretKey }); setSecretKey(''); }} disabled={saving} style={{ ...btnPrimary, padding: '8px 14px' }}>
+                                    <Save style={{ width: 13, height: 13 }} /> Save
+                                </button>
+                            ) : config.hasStripeSecretKey ? (
+                                <button onClick={() => deleteKey('stripe_secret_key')} disabled={saving} style={{ ...btnDanger, padding: '8px 14px' }}>
+                                    <Trash2 style={{ width: 13, height: 13 }} />
+                                </button>
+                            ) : null}
+                        </div>
+                    </div>
+
+                    {/* Publishable Key */}
+                    <div style={{ marginBottom: '14px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
+                            Publishable Key {config.stripePublishableKey && <span style={{ color: '#22c55e', fontSize: '10px' }}>✓ saved</span>}
+                        </label>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <input
+                                type="text"
+                                value={publishableKey}
+                                onChange={e => setPublishableKey(e.target.value)}
+                                placeholder="pk_live_... or pk_test_..."
+                                style={{ ...input, flex: 1, fontFamily: 'monospace', fontSize: '12px' }}
+                            />
+                            {publishableKey !== config.stripePublishableKey && (
+                                <button onClick={() => saveField({ stripePublishableKey: publishableKey })} disabled={saving} style={{ ...btnPrimary, padding: '8px 14px' }}>
+                                    <Save style={{ width: 13, height: 13 }} /> Save
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Webhook Secret */}
+                    <div>
+                        <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
+                            Webhook Signing Secret {config.hasStripeWebhookSecret && <span style={{ color: '#22c55e', fontSize: '10px' }}>✓ saved</span>}
+                        </label>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <input
+                                type="password"
+                                value={webhookSecret}
+                                onChange={e => setWebhookSecret(e.target.value)}
+                                placeholder={config.hasStripeWebhookSecret ? '••••••••••••••••••' : 'whsec_...'}
+                                style={{ ...input, flex: 1, fontFamily: 'monospace', fontSize: '12px' }}
+                            />
+                            {webhookSecret ? (
+                                <button onClick={() => { saveField({ stripeWebhookSecret: webhookSecret }); setWebhookSecret(''); }} disabled={saving} style={{ ...btnPrimary, padding: '8px 14px' }}>
+                                    <Save style={{ width: 13, height: 13 }} /> Save
+                                </button>
+                            ) : config.hasStripeWebhookSecret ? (
+                                <button onClick={() => deleteKey('stripe_webhook_secret')} disabled={saving} style={{ ...btnDanger, padding: '8px 14px' }}>
+                                    <Trash2 style={{ width: 13, height: 13 }} />
+                                </button>
+                            ) : null}
+                        </div>
+                    </div>
+                </div>
+
+                {/* Tax & Region */}
+                <div style={card}>
+                    <h3 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)', margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <Euro style={{ width: 16, height: 16, color: '#22c55e' }} />
+                        Tax & Region (EU Compliance)
+                    </h3>
+                    <p style={{ fontSize: '11px', color: 'var(--text-muted)', margin: '0 0 16px' }}>
+                        Configure Stripe Tax for automatic VAT calculation. <a href="https://stripe.com/tax" target="_blank" rel="noopener noreferrer" style={{ color: '#635bff', textDecoration: 'none', fontWeight: '600' }}>Learn more <ExternalLink style={{ width: 10, height: 10, display: 'inline', verticalAlign: 'middle' }} /></a>
+                    </p>
+
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px', borderRadius: '10px', background: 'var(--bg-tertiary)', marginBottom: '12px' }}>
+                        <div>
+                            <div style={{ fontSize: '13px', fontWeight: '600', color: 'var(--text-primary)' }}>Enable Stripe Tax</div>
+                            <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>Automatically calculate and collect VAT on subscriptions</div>
+                        </div>
+                        <button
+                            onClick={() => saveField({ stripeTaxEnabled: !config.stripeTaxEnabled })}
+                            disabled={saving}
+                            style={{
+                                width: '44px', height: '24px', borderRadius: '12px', border: 'none', cursor: 'pointer',
+                                background: config.stripeTaxEnabled ? '#22c55e' : 'var(--bg-secondary)',
+                                transition: 'background 0.2s ease', position: 'relative',
+                            }}
+                        >
+                            <div style={{
+                                width: '18px', height: '18px', borderRadius: '50%', background: 'white',
+                                position: 'absolute', top: '3px',
+                                left: config.stripeTaxEnabled ? '23px' : '3px',
+                                transition: 'left 0.2s ease',
+                            }} />
+                        </button>
+                    </div>
+
+                    <div style={{ marginBottom: '4px' }}>
+                        <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>Tax Nexus Country</label>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <select
+                                value={config.stripeTaxCountry}
+                                onChange={e => saveField({ stripeTaxCountry: e.target.value })}
+                                disabled={saving}
+                                style={{ ...input, cursor: 'pointer', maxWidth: '200px' }}
+                            >
+                                <option value="NL">🇳🇱 Netherlands</option>
+                                <option value="DE">🇩🇪 Germany</option>
+                                <option value="BE">🇧🇪 Belgium</option>
+                                <option value="FR">🇫🇷 France</option>
+                                <option value="IE">🇮🇪 Ireland</option>
+                                <option value="ES">🇪🇸 Spain</option>
+                                <option value="IT">🇮🇹 Italy</option>
+                                <option value="AT">🇦🇹 Austria</option>
+                                <option value="SE">🇸🇪 Sweden</option>
+                                <option value="FI">🇫🇮 Finland</option>
+                            </select>
+                        </div>
+                        <p style={{ fontSize: '10px', color: 'var(--text-muted)', margin: '6px 0 0' }}>
+                            The country where your business is registered for VAT purposes.
+                        </p>
+                    </div>
+                </div>
+
+                {/* Webhook Setup Guide */}
+                <div style={{ ...card, background: 'rgba(99,91,255,0.04)', borderColor: 'rgba(99,91,255,0.15)' }}>
+                    <h3 style={{ fontSize: '14px', fontWeight: '700', color: 'var(--text-primary)', margin: '0 0 12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        📋 Setup Checklist
+                    </h3>
+                    <ol style={{ margin: 0, padding: '0 0 0 20px', fontSize: '12px', color: 'var(--text-secondary)', lineHeight: '2' }}>
+                        <li style={{ color: config.hasStripeSecretKey ? '#22c55e' : undefined }}>
+                            {config.hasStripeSecretKey ? '✅' : '⬜'} Add your <strong>Secret Key</strong> and <strong>Publishable Key</strong> from Stripe Dashboard → API keys
+                        </li>
+                        <li style={{ color: config.hasStripeWebhookSecret ? '#22c55e' : undefined }}>
+                            {config.hasStripeWebhookSecret ? '✅' : '⬜'} Create a <strong>Webhook endpoint</strong> in Stripe Dashboard → Webhooks pointing to:<br />
+                            <code style={{ fontSize: '11px', padding: '2px 6px', borderRadius: '4px', background: 'var(--bg-tertiary)', color: '#635bff' }}>
+                                {window.location.origin}/api/stripe/webhook
+                            </code>
+                        </li>
+                        <li>
+                            {config.hasStripeWebhookSecret ? '✅' : '⬜'} Subscribe to events: <code style={{ fontSize: '10px', background: 'var(--bg-tertiary)', padding: '1px 4px', borderRadius: '3px' }}>checkout.session.completed</code>, <code style={{ fontSize: '10px', background: 'var(--bg-tertiary)', padding: '1px 4px', borderRadius: '3px' }}>customer.subscription.updated</code>, <code style={{ fontSize: '10px', background: 'var(--bg-tertiary)', padding: '1px 4px', borderRadius: '3px' }}>customer.subscription.deleted</code>, <code style={{ fontSize: '10px', background: 'var(--bg-tertiary)', padding: '1px 4px', borderRadius: '3px' }}>invoice.payment_failed</code>
+                        </li>
+                        <li style={{ color: config.stripeEnabled ? '#22c55e' : undefined }}>
+                            {config.stripeEnabled ? '✅' : '⬜'} <strong>Enable</strong> Stripe payments using the toggle above
+                        </li>
+                        <li>
+                            ⬜ Set a <strong>price</strong> on your subscription plans in the Plans tab
+                        </li>
+                    </ol>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
+
+// ═══════════════════════════════════════════
 //  Main SubscriptionsPanel
 // ═══════════════════════════════════════════
 const SubscriptionsPanel = () => {
@@ -859,6 +1341,16 @@ const SubscriptionsPanel = () => {
                 {active === 'organizations' && (
                     <div style={{ position: 'absolute', inset: 0, overflowY: 'auto' }}>
                         <OrgsView />
+                    </div>
+                )}
+                {active === 'audit' && (
+                    <div style={{ position: 'absolute', inset: 0, overflowY: 'auto' }}>
+                        <AuditView />
+                    </div>
+                )}
+                {active === 'settings' && (
+                    <div style={{ position: 'absolute', inset: 0, overflowY: 'auto' }}>
+                        <StripeSettingsView />
                     </div>
                 )}
             </div>

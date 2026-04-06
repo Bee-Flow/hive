@@ -201,6 +201,7 @@ const EN_DEFAULTS = {
     "admin.integ_mcp": "MCP",
 
     "admin.mon_overview": "Overview",
+    "admin.mon_usage_explorer": "Usage Explorer",
     "admin.mon_models": "Models",
     "admin.mon_agents": "Agents",
     "admin.mon_users": "Users",
