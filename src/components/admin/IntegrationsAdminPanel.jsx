@@ -5,11 +5,12 @@ import { Loader2, ToggleLeft, ToggleRight, Check, Settings, Plus, Trash2, Refres
 import McpMarketplace from './McpMarketplace';
 
 const SECTIONS = [
-    { id: 'platform', labelKey: 'admin.integ_platform', icon: Layers, color: '#6366f1' },
+    { id: 'features', labelKey: 'admin.integ_features', icon: Layers, color: '#10b981' },
+    { id: 'integrations', labelKey: 'admin.integ_integrations', icon: Settings, color: '#6366f1' },
     { id: 'email', labelKey: 'admin.integ_email', icon: Mail, color: '#ea4335' },
-    { id: 'services', labelKey: 'admin.integ_services', icon: ExternalLink, color: '#0A66C2' },
     { id: 'search', labelKey: 'admin.integ_search', icon: SearchIcon, color: '#10b981' },
     { id: 'transcription', labelKey: 'admin.integ_transcription', icon: Cloud, color: '#8b5cf6' },
+    { id: 'services', labelKey: 'admin.integ_services', icon: ExternalLink, color: '#0A66C2' },
     { id: 'mcp', labelKey: 'admin.integ_mcp', icon: Plug, color: '#f59e0b' },
 ];
 
@@ -40,9 +41,9 @@ const ALL_INTEGRATIONS = [
     { id: 'github', label: 'GitHub', description: 'Repository management, view code', category: 'Third-Party' },
 ];
 
-export default function IntegrationsAdminPanel({ activeSection: activeProp = 'platform', onNavigate }) {
+export default function IntegrationsAdminPanel({ activeSection: activeProp = 'features', onNavigate }) {
     const { t } = useTranslation();
-    const active = SECTIONS.map(s => s.id).includes(activeProp) ? activeProp : 'platform';
+    const active = SECTIONS.map(s => s.id).includes(activeProp) ? activeProp : 'features';
     const handleSectionClick = (id) => {
         if (onNavigate) onNavigate(`admin/integrations/${id}`);
     };
@@ -366,7 +367,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
                 </div>
             )}
 
-            {active === 'platform' && (
+            {active === 'features' && (
             <div className="p-6">
             <div className="max-w-4xl mx-auto space-y-8">
 
@@ -622,6 +623,13 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'pl
                     </div>
                 </div>
 
+            </div>
+            </div>
+            )}
+
+            {active === 'integrations' && (
+            <div className="p-6">
+            <div className="max-w-4xl mx-auto space-y-8">
 
                 {/* Global Defaults */}
                 <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>

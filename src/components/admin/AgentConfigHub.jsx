@@ -1,13 +1,7 @@
 import React from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
-import { Bot, Bug, Globe, Settings, Users, Terminal, Shield } from 'lucide-react';
+import { Bot, Settings } from 'lucide-react';
 import AgentDesigner from './AgentDesigner';
-import SwarmManager from '../../pages/SwarmManager';
-import BrowserAgentManager from '../../pages/BrowserAgentManager';
-
-import GroupChatManager from '../../pages/GroupChatManager';
-import TerminalAgentManager from '../../pages/TerminalAgentManager';
-import SecurityAgentManager from '../../pages/SecurityAgentManager';
 
 /**
  * AgentConfigHub — Unified agent configuration page
@@ -15,19 +9,12 @@ import SecurityAgentManager from '../../pages/SecurityAgentManager';
  */
 const SECTIONS = [
     { id: 'chat', labelKey: 'admin.agents_chat', icon: Bot, color: '#6366f1' },
-    { id: 'swarm', labelKey: 'admin.agents_swarm', icon: Bug, color: '#f59e0b' },
-    { id: 'browser', labelKey: 'admin.agents_browser', icon: Globe, color: '#10b981' },
-    { id: 'terminal', labelKey: 'admin.agents_terminal', icon: Terminal, color: '#22c55e' },
-    { id: 'sec-agents', labelKey: 'admin.agents_security', icon: Shield, color: '#ef4444' },
-    { id: 'group', labelKey: 'admin.agents_group', icon: Users, color: '#3b82f6' },
     { id: 'system', labelKey: 'admin.agents_system', icon: Settings, color: '#8b5cf6' },
-
 ];
 
 const AgentConfigHub = ({ hasPermission = () => true, user, activeSection = '', onNavigate }) => {
     const { t } = useTranslation();
-    // Map section IDs to agent type keys used in allowedAgentTypes
-    const SECTION_TO_TYPE = { chat: 'chat', swarm: 'swarm', browser: 'browser', terminal: 'terminal', 'sec-agents': 'security', group: 'roundtable', system: 'system' };
+    const SECTION_TO_TYPE = { chat: 'chat', system: 'system' };
 
     const isSuperAdmin = user?.isAdmin || user?.role === 'admin' || (user?.permissions || []).includes('all');
     const allowedTypes = user?.allowedAgentTypes || [];
@@ -117,31 +104,6 @@ const AgentConfigHub = ({ hasPermission = () => true, user, activeSection = '', 
                 {active === 'chat' && (
                     <div style={{ position: 'absolute', inset: 0 }}>
                         <AgentDesigner onBack={null} hasPermission={hasPermission} />
-                    </div>
-                )}
-                {active === 'swarm' && (
-                    <div style={{ position: 'absolute', inset: 0 }}>
-                        <SwarmManager onBack={null} />
-                    </div>
-                )}
-                {active === 'browser' && (
-                    <div style={{ position: 'absolute', inset: 0 }}>
-                        <BrowserAgentManager onBack={null} />
-                    </div>
-                )}
-                {active === 'terminal' && (
-                    <div style={{ position: 'absolute', inset: 0 }}>
-                        <TerminalAgentManager onBack={null} />
-                    </div>
-                )}
-                {active === 'sec-agents' && (
-                    <div style={{ position: 'absolute', inset: 0 }}>
-                        <AgentDesigner key="security-agents" onBack={null} securityMode={true} hasPermission={hasPermission} />
-                    </div>
-                )}
-                {active === 'group' && (
-                    <div style={{ position: 'absolute', inset: 0 }}>
-                        <GroupChatManager onBack={null} />
                     </div>
                 )}
                 {active === 'system' && (

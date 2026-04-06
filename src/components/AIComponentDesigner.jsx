@@ -97,13 +97,7 @@ const AIComponentDesigner = ({ onComponentCreated, onClose }) => {
     const [expandedSteps, setExpandedSteps] = useState(new Set()); // tracks which steps have their details expanded
     const [changeRequestInput, setChangeRequestInput] = useState('');
     const [showChangeInput, setShowChangeInput] = useState(false);
-    const [multiAgentPhase, setMultiAgentPhase] = useState(0); // 0=not started, 0.5=clarify form, 1=credentials form, 2=building
-    const [credentialFields, setCredentialFields] = useState([]); // fields from needs_input
-    const [credentialValues, setCredentialValues] = useState({}); // user-entered credential values
-    const [credentialInstructions, setCredentialInstructions] = useState(''); // instructions markdown
-    const [clarificationQuestions, setClarificationQuestions] = useState([]); // questions from clarify agent
-    const [clarificationValues, setClarificationValues] = useState({}); // user answers
-    const originalRequestRef = useRef(''); // store original request for Phase 2
+
 
     const messagesEndRef = useRef(null);
     const inputRef = useRef(null);
@@ -264,25 +258,7 @@ const AIComponentDesigner = ({ onComponentCreated, onClose }) => {
                                             : `🔄 ${p.phase} phase retry: ${p.reason}`
                                     };
                                 }
-                                else if (p.type === 'needs_clarification') {
-                                    steps.push({ type: 'clarify', text: `❓ ${p.questions?.length || 0} clarification question(s)`, done: true });
-                                    if (p.questions?.length) {
-                                        setClarificationQuestions(p.questions);
-                                        const defaults = {};
-                                        p.questions.forEach(q => { defaults[q.name] = q.default || ''; });
-                                        setClarificationValues(defaults);
-                                    }
-                                }
-                                else if (p.type === 'needs_input') {
-                                    steps.push({ type: 'credentials', text: `🔑 Credentials required (${p.authMethod})`, done: true });
-                                    if (p.message) setCredentialInstructions(p.message);
-                                    if (p.fields?.length) {
-                                        setCredentialFields(p.fields);
-                                        const defaults = {};
-                                        p.fields.forEach(f => { defaults[f.name || f.label] = f.default || ''; });
-                                        setCredentialValues(defaults);
-                                    }
-                                }
+
                                 // — Done —
                                 else if (p.type === 'done') {
                                     steps.push({ type: 'done', text: `🎉 ${p.success !== false ? 'Complete' : 'Finished with errors'}: ${p.componentId} (${(p.totalElapsed / 1000).toFixed(1)}s)`, done: true, isError: p.success === false });
@@ -316,43 +292,8 @@ const AIComponentDesigner = ({ onComponentCreated, onClose }) => {
         setProgressSteps([{ type: 'thinking', text: 'Starting...', done: false }]);
 
         try {
-            // Decide endpoint: first visible message → multi-agent Phase 1, follow-ups → legacy chat-stream
-            const isFirstMessage = multiAgentPhase === 0 && !isHidden;
-            const isCredentialChat = multiAgentPhase === 1 && !isHidden;
-            const endpoint = isFirstMessage
-                ? `${API_BASE}/ai/multi-agent/start`
-                : isCredentialChat
-                    ? `${API_BASE}/ai/multi-agent/credential-chat`
-                    : `${API_BASE}/ai/chat-stream`;
+            const endpoint = `${API_BASE}/ai/chat-stream`;
             const body = { message: userMessage };
-
-            if (isFirstMessage) {
-                originalRequestRef.current = userMessage;
-                setProgressSteps([{ type: 'pipeline', text: '🐝 Swarm: Researching & building component...', done: false }]);
-            }
-
-            if (isCredentialChat) {
-                // Simple JSON chat, not SSE
-                try {
-                    const res = await authFetch(endpoint, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(body)
-                    });
-                    const data = await res.json();
-                    if (data.error) {
-                        setMessages(prev => [...prev, { role: 'assistant', content: data.error, isError: true }]);
-                    } else {
-                        setMessages(prev => [...prev, { role: 'assistant', content: data.answer }]);
-                    }
-                } catch (err) {
-                    setMessages(prev => [...prev, { role: 'assistant', content: `Error: ${err.message}`, isError: true }]);
-                } finally {
-                    setIsLoading(false);
-                    setProgressSteps([]);
-                }
-                return;
-            }
 
             const res = await authFetch(endpoint, {
                 method: 'POST',
@@ -379,53 +320,20 @@ const AIComponentDesigner = ({ onComponentCreated, onClose }) => {
                     role: 'assistant', content: finalData.error, isError: true,
                     errorDetails: { message: finalData.error, raw: null }
                 }]);
-            } else if (isFirstMessage && finalData.phase === 0 && finalData.needsClarification) {
-                // Swarm needs clarification — show question form
-                setMultiAgentPhase(0.5);
-            } else if (isFirstMessage && finalData.phase === 2 && finalData.needsCredentials) {
-                // Swarm needs credentials — store instructions for the form panel
-                setMultiAgentPhase(1);
-                if (finalData.message) setCredentialInstructions(finalData.message);
-            } else if (finalData.phase === 'complete' || !isFirstMessage) {
-                // Swarm complete or legacy response — process component
-                if (finalData.phase === 'complete') {
-                    setMultiAgentPhase(2);
-                    // Swarm already deployed the component to disk — show success and skip "Create Component"
-                    const compId = finalData.componentId || finalData.component?.id;
-                    const compName = finalData.component?.name || compId;
-                    if (finalData.success && compId) {
+            } else {
+                if (finalData.toolCalls?.length > 0) {
+                    setCurrentToolCalls(finalData.toolCalls);
+                    const visible = finalData.toolCalls.filter(t => t.name !== 'configure_outputs_interaction');
+                    if (visible.length > 0) {
                         setMessages(prev => [...prev, {
-                            role: 'assistant',
-                            content: `✅ **Component "${compName}" deployed successfully!**\n\nThe component has been built, tested, and is ready to use in your workflows.`
-                        }]);
-                        if (finalData.component) {
-                            setPendingComponent(finalData.component);
-                            setPreviewTab('overview');
-                        }
-                        onComponentCreated?.(compId);
-                    } else {
-                        setMessages(prev => [...prev, {
-                            role: 'assistant',
-                            content: finalData.message || `⚠️ Component build completed but with issues. You can try again.`,
-                            isError: !finalData.success
+                            role: 'system',
+                            content: `Used ${visible.length} tool(s): ${visible.map(t => t.name.replace(/_/g, ' ')).join(', ')}`,
+                            isToolInfo: true, toolCalls: visible
                         }]);
                     }
-                } else {
-                    // Legacy single-agent response
-                    if (finalData.toolCalls?.length > 0) {
-                        setCurrentToolCalls(finalData.toolCalls);
-                        const visible = finalData.toolCalls.filter(t => t.name !== 'configure_outputs_interaction');
-                        if (visible.length > 0) {
-                            setMessages(prev => [...prev, {
-                                role: 'system',
-                                content: `Used ${visible.length} tool(s): ${visible.map(t => t.name.replace(/_/g, ' ')).join(', ')}`,
-                                isToolInfo: true, toolCalls: visible
-                            }]);
-                        }
-                    }
-                    setMessages(prev => [...prev, { role: 'assistant', content: finalData.message, toolCalls: finalData.toolCalls }]);
-                    if (finalData.component) { setPendingComponent(finalData.component); setPreviewTab('overview'); }
                 }
+                setMessages(prev => [...prev, { role: 'assistant', content: finalData.message, toolCalls: finalData.toolCalls }]);
+                if (finalData.component) { setPendingComponent(finalData.component); setPreviewTab('overview'); }
             }
         } catch (error) {
             setMessages(prev => [...prev, {
@@ -477,126 +385,7 @@ const AIComponentDesigner = ({ onComponentCreated, onClose }) => {
     const handleOutputsSelected = (o) => sendMessage(`I have configured the outputs. The schema is: ${JSON.stringify(o, null, 2)}\n\nPlease use the 'update_component_outputs' tool to save this configuration.`, true);
     const handleFormSubmit = async (d) => {
         if (!d?.text) return;
-        // If in clarification phase (0.5), send answers to clarify endpoint
-        if (multiAgentPhase === 0.5) {
-            let answers = {};
-            try { answers = JSON.parse(d.text); } catch { return; }
-
-            setMessages(prev => [...prev, { role: 'user', content: '✅ Preferences confirmed', isHidden: true }]);
-            setIsLoading(true);
-            setProgressSteps(prev => [...prev, { type: 'pipeline', text: '🐝 Swarm: Researching & building component...', done: false }]);
-            setClarificationQuestions([]);
-
-            try {
-                const res = await authFetch(`${API_BASE}/ai/multi-agent/clarify`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ answers })
-                });
-
-                if (!res.ok) {
-                    const rawText = await res.text();
-                    let errMsg;
-                    try { const dd = JSON.parse(rawText); errMsg = dd.error; } catch { }
-                    errMsg = errMsg || `Server error ${res.status}`;
-                    setMessages(prev => [...prev, { role: 'assistant', content: errMsg, isError: true, errorDetails: { message: errMsg } }]);
-                    return;
-                }
-
-                const finalData = await readSSEStream(res);
-
-                if (finalData.error) {
-                    setMessages(prev => [...prev, { role: 'assistant', content: finalData.error, isError: true, errorDetails: { message: finalData.error } }]);
-                } else if (finalData.phase === 2 && finalData.needsCredentials) {
-                    setMultiAgentPhase(1);
-                    if (finalData.message) setCredentialInstructions(finalData.message);
-                } else {
-                    if (finalData.phase === 'complete') setMultiAgentPhase(2);
-                    if (finalData.toolCalls?.length > 0) {
-                        setCurrentToolCalls(finalData.toolCalls);
-                        const visible = finalData.toolCalls.filter(t => t.name !== 'configure_outputs_interaction');
-                        if (visible.length > 0) {
-                            setMessages(prev => [...prev, {
-                                role: 'system',
-                                content: `Used ${visible.length} tool(s): ${visible.map(t => t.name.replace(/_/g, ' ')).join(', ')}`,
-                                isToolInfo: true, toolCalls: visible
-                            }]);
-                        }
-                    }
-                    setMessages(prev => [...prev, { role: 'assistant', content: finalData.message, toolCalls: finalData.toolCalls }]);
-                    if (finalData.component) { setPendingComponent(finalData.component); setPreviewTab('overview'); }
-                }
-            } catch (error) {
-                setMessages(prev => [...prev, { role: 'assistant', content: `Pipeline failed: ${error.message}`, isError: true, errorDetails: { message: error.message } }]);
-            } finally {
-                setIsLoading(false);
-                setProgressSteps([]);
-            }
-            return;
-        }
-        // If in multi-agent Phase 1, send credentials to Phase 2 builder
-        if (multiAgentPhase === 1) {
-            // Parse credentials from form submission text
-            let credentials = {};
-            try {
-                // Form submits as JSON text like: {"apiKey": "xxx", ...}
-                credentials = JSON.parse(d.text);
-            } catch {
-                // Fallback: send as hidden message to legacy agent
-                sendMessage(d.text, true);
-                return;
-            }
-
-            setMessages(prev => [...prev, { role: 'user', content: '✅ Credentials provided', isHidden: true }]);
-            setIsLoading(true);
-            setProgressSteps(prev => [...prev, { type: 'pipeline', text: 'Phase 2: 🔨 Building component...', done: false }]);
-            setMultiAgentPhase(2);
-
-            try {
-                const res = await authFetch(`${API_BASE}/ai/multi-agent/build`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ credentials })
-                });
-
-                if (!res.ok) {
-                    const rawText = await res.text();
-                    let errMsg;
-                    try { const dd = JSON.parse(rawText); errMsg = dd.error; } catch { }
-                    errMsg = errMsg || `Server error ${res.status}`;
-                    setMessages(prev => [...prev, { role: 'assistant', content: errMsg, isError: true, errorDetails: { message: errMsg } }]);
-                    return;
-                }
-
-                const finalData = await readSSEStream(res);
-
-                if (finalData.error) {
-                    setMessages(prev => [...prev, { role: 'assistant', content: finalData.error, isError: true, errorDetails: { message: finalData.error } }]);
-                } else {
-                    if (finalData.toolCalls?.length > 0) {
-                        setCurrentToolCalls(finalData.toolCalls);
-                        const visible = finalData.toolCalls.filter(t => t.name !== 'configure_outputs_interaction');
-                        if (visible.length > 0) {
-                            setMessages(prev => [...prev, {
-                                role: 'system',
-                                content: `Used ${visible.length} tool(s): ${visible.map(t => t.name.replace(/_/g, ' ')).join(', ')}`,
-                                isToolInfo: true, toolCalls: visible
-                            }]);
-                        }
-                    }
-                    setMessages(prev => [...prev, { role: 'assistant', content: finalData.message, toolCalls: finalData.toolCalls }]);
-                    if (finalData.component) { setPendingComponent(finalData.component); setPreviewTab('overview'); }
-                }
-            } catch (error) {
-                setMessages(prev => [...prev, { role: 'assistant', content: `Build failed: ${error.message}`, isError: true, errorDetails: { message: error.message } }]);
-            } finally {
-                setIsLoading(false);
-                setProgressSteps([]);
-            }
-        } else {
-            // Fallback: legacy single-agent form submit
-            sendMessage(d.text, true);
-        }
+        sendMessage(d.text, true);
     };
 
     const handleClearChat = async () => {
@@ -604,8 +393,6 @@ const AIComponentDesigner = ({ onComponentCreated, onClose }) => {
             await authFetch(`${API_BASE}/ai/clear`, { method: 'POST' });
             setMessages([]); setPendingComponent(null); setShowTemplates(true);
             setShowChangeInput(false); setChangeRequestInput('');
-            setMultiAgentPhase(0); originalRequestRef.current = '';
-            setClarificationQuestions([]); setClarificationValues({});
         } catch (e) { console.error('Failed to clear chat:', e); }
     };
 
@@ -715,7 +502,7 @@ const AIComponentDesigner = ({ onComponentCreated, onClose }) => {
                 groups[groups.length - 1].steps.push(step);
             } else {
                 // Steps before any phase (initial pipeline start)
-                if (!groups.length || groups[0]?.phase) groups.unshift({ phase: 0, name: '🐝 Swarm Pipeline', steps: [step], done: false });
+                if (!groups.length || groups[0]?.phase) groups.unshift({ phase: 0, name: '🐝 Pipeline', steps: [step], done: false });
                 else groups[0].steps.push(step);
             }
         }
@@ -875,7 +662,7 @@ const AIComponentDesigner = ({ onComponentCreated, onClose }) => {
             </div>
 
             {/* Messages Area — shrink when credential form is filling the space */}
-            <div className={`${((multiAgentPhase === 0.5 && clarificationQuestions.length > 0) || (multiAgentPhase === 1 && credentialFields.length > 0)) ? 'flex-none' : 'flex-1'} overflow-auto px-5 py-4`} style={{ ...S.messageArea, ...(((multiAgentPhase === 0.5 && clarificationQuestions.length > 0) || (multiAgentPhase === 1 && credentialFields.length > 0)) ? { maxHeight: '80px' } : {}) }}>
+            <div className="flex-1 overflow-auto px-5 py-4" style={S.messageArea}>
                 {/* Welcome & Templates */}
                 {showTemplates && !hasUserMessages && (
                     <div className="max-w-xl mx-auto mb-8" style={{ animation: 'fadeSlideIn 0.4s ease-out' }}>
@@ -1075,202 +862,7 @@ const AIComponentDesigner = ({ onComponentCreated, onClose }) => {
                 </div>
             )}
 
-            {/* Clarification Form — shown during Phase 0.5 (fills available space) */}
-            {multiAgentPhase === 0.5 && clarificationQuestions.length > 0 && (
-                <div style={{
-                    borderTop: '1px solid var(--border-default)',
-                    background: 'var(--bg-secondary)',
-                    display: 'flex', flexDirection: 'column',
-                    flex: 1, minHeight: 0
-                }}>
-                    {/* Scrollable questions */}
-                    <div style={{ overflowY: 'auto', padding: '14px 20px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '14px' }}>
-                            <span style={{ fontSize: '15px' }}>❓</span>
-                            <span style={{ fontSize: '13px', fontWeight: 600, color: 'var(--text-primary)' }}>A few quick questions to tailor your component</span>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', marginBottom: '12px' }}>
-                            {clarificationQuestions.map((q, i) => (
-                                <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                    <label style={{ fontSize: '12px', fontWeight: 500, color: 'var(--text-secondary)' }}>
-                                        {q.label}
-                                    </label>
-                                    {q.type === 'select' && q.options ? (
-                                        <select
-                                            value={clarificationValues[q.name] || q.default || ''}
-                                            onChange={(e) => setClarificationValues(prev => ({ ...prev, [q.name]: e.target.value }))}
-                                            style={{
-                                                padding: '8px 10px', borderRadius: '8px', fontSize: '12px',
-                                                background: 'var(--bg-primary)', border: '1px solid var(--border-default)',
-                                                color: 'var(--text-primary)', outline: 'none', cursor: 'pointer'
-                                            }}
-                                        >
-                                            <option value="">Select...</option>
-                                            {q.options.map((opt, j) => (
-                                                <option key={j} value={opt}>{opt}</option>
-                                            ))}
-                                        </select>
-                                    ) : q.type === 'boolean' ? (
-                                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '12px', color: 'var(--text-primary)' }}>
-                                            <input
-                                                type="checkbox"
-                                                checked={clarificationValues[q.name] === 'yes' || clarificationValues[q.name] === true}
-                                                onChange={(e) => setClarificationValues(prev => ({ ...prev, [q.name]: e.target.checked ? 'yes' : 'no' }))}
-                                                style={{ accentColor: 'var(--accent-primary)' }}
-                                            />
-                                            Yes
-                                        </label>
-                                    ) : (
-                                        <input
-                                            type="text"
-                                            value={clarificationValues[q.name] || ''}
-                                            onChange={(e) => setClarificationValues(prev => ({ ...prev, [q.name]: e.target.value }))}
-                                            placeholder={q.placeholder || `Enter ${q.label}...`}
-                                            style={{
-                                                padding: '8px 10px', borderRadius: '8px', fontSize: '12px',
-                                                background: 'var(--bg-primary)', border: '1px solid var(--border-default)',
-                                                color: 'var(--text-primary)', outline: 'none'
-                                            }}
-                                        />
-                                    )}
-                                </div>
-                            ))}
-                        </div>
-                    </div>
 
-                    {/* Sticky action buttons */}
-                    <div style={{
-                        padding: '10px 20px', display: 'flex', gap: '8px',
-                        borderTop: '1px solid var(--border-subtle)',
-                        background: 'var(--bg-secondary)', flexShrink: 0
-                    }}>
-                        <button
-                            onClick={() => {
-                                const answers = { ...clarificationValues };
-                                // Fill defaults for unanswered select fields
-                                clarificationQuestions.forEach(q => {
-                                    if (!answers[q.name] && q.default) answers[q.name] = q.default;
-                                });
-                                handleFormSubmit({ text: JSON.stringify(answers) });
-                            }}
-                            disabled={isLoading}
-                            style={{
-                                flex: 1, padding: '10px 16px', borderRadius: '8px',
-                                fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                                background: 'linear-gradient(135deg, var(--accent-primary), #818cf8)',
-                                color: '#fff', border: 'none',
-                                transition: 'all 0.2s'
-                            }}
-                        >
-                            Continue
-                        </button>
-                        <button
-                            onClick={() => handleFormSubmit({ text: '{}' })}
-                            disabled={isLoading}
-                            style={{
-                                padding: '10px 16px', borderRadius: '8px',
-                                fontSize: '12px', fontWeight: 500, cursor: 'pointer',
-                                background: 'var(--bg-tertiary)', color: 'var(--text-muted)',
-                                border: '1px solid var(--border-default)', transition: 'all 0.2s'
-                            }}
-                        >
-                            Skip
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* Credential Form — shown during Phase 1 (fills available space) */}
-            {multiAgentPhase === 1 && credentialFields.length > 0 && (
-                <div style={{
-                    borderTop: '1px solid var(--border-default)',
-                    background: 'var(--bg-secondary)',
-                    display: 'flex', flexDirection: 'column',
-                    flex: 1, minHeight: 0
-                }}>
-                    {/* Single scrollable area for instructions + fields */}
-                    <div style={{ overflowY: 'auto', padding: '14px 20px' }}>
-                        {/* Instructions */}
-                        {credentialInstructions && (
-                            <div style={{
-                                fontSize: '12px', lineHeight: '1.6', color: 'var(--text-secondary)',
-                                marginBottom: '14px', paddingBottom: '12px',
-                                borderBottom: '1px solid var(--border-subtle)'
-                            }} className="compact-chat">
-                                <MarkdownRenderer content={credentialInstructions} />
-                            </div>
-                        )}
-
-                        {/* Form fields */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '10px' }}>
-                            <span style={{ fontSize: '13px' }}>🔑</span>
-                            <span style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-primary)' }}>Enter your credentials</span>
-                        </div>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '12px' }}>
-                            {credentialFields.map((field, i) => {
-                                const key = field.name || field.label;
-                                return (
-                                    <div key={i} style={{ display: 'flex', flexDirection: 'column', gap: '3px' }}>
-                                        <label style={{ fontSize: '11px', fontWeight: 500, color: 'var(--text-secondary)' }}>
-                                            {field.label || field.name}
-                                            {field.required && <span style={{ color: 'var(--error, #ef4444)', marginLeft: '2px' }}>*</span>}
-                                        </label>
-                                        <input
-                                            type={field.type === 'password' || key.toLowerCase().includes('secret') || key.toLowerCase().includes('token') || key.toLowerCase().includes('key') ? 'password' : 'text'}
-                                            value={credentialValues[key] || ''}
-                                            onChange={(e) => setCredentialValues(prev => ({ ...prev, [key]: e.target.value }))}
-                                            placeholder={field.hint || field.description || `Enter ${field.label || field.name}...`}
-                                            style={{
-                                                padding: '8px 10px', borderRadius: '8px', fontSize: '12px',
-                                                background: 'var(--bg-primary)', border: '1px solid var(--border-default)',
-                                                color: 'var(--text-primary)', outline: 'none'
-                                            }}
-                                        />
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-
-                    {/* Sticky action buttons */}
-                    <div style={{
-                        padding: '10px 20px', display: 'flex', gap: '8px',
-                        borderTop: '1px solid var(--border-subtle)',
-                        background: 'var(--bg-secondary)', flexShrink: 0
-                    }}>
-                        <button
-                            onClick={() => {
-                                const filled = {};
-                                Object.entries(credentialValues).forEach(([k, v]) => { if (v?.trim()) filled[k] = v.trim(); });
-                                handleFormSubmit({ text: JSON.stringify(filled) });
-                            }}
-                            disabled={isLoading || !Object.values(credentialValues).some(v => v?.trim())}
-                            style={{
-                                flex: 1, padding: '10px 16px', borderRadius: '8px',
-                                fontSize: '13px', fontWeight: 600, cursor: 'pointer',
-                                background: 'linear-gradient(135deg, var(--accent-primary), #818cf8)',
-                                color: '#fff', border: 'none',
-                                opacity: Object.values(credentialValues).some(v => v?.trim()) ? 1 : 0.4,
-                                transition: 'all 0.2s'
-                            }}
-                        >
-                            Submit Credentials & Build
-                        </button>
-                        <button
-                            onClick={() => handleFormSubmit({ text: '{}' })}
-                            disabled={isLoading}
-                            style={{
-                                padding: '10px 16px', borderRadius: '8px',
-                                fontSize: '12px', fontWeight: 500, cursor: 'pointer',
-                                background: 'var(--bg-tertiary)', color: 'var(--text-muted)',
-                                border: '1px solid var(--border-default)', transition: 'all 0.2s'
-                            }}
-                        >
-                            Skip
-                        </button>
-                    </div>
-                </div>
-            )}
 
             {/* Input Area */}
             <div style={S.inputArea}>
@@ -1291,11 +883,9 @@ const AIComponentDesigner = ({ onComponentCreated, onClose }) => {
                         <input ref={inputRef} type="text" value={input}
                             onChange={(e) => setInput(e.target.value)} disabled={isLoading}
                             placeholder={
-                                multiAgentPhase === 1
-                                    ? 'Ask about getting these credentials, or fill in the form above...'
-                                    : hasUserMessages
-                                        ? 'Ask for changes or describe another component...'
-                                        : 'Describe the component you want to create...'
+                                hasUserMessages
+                                    ? 'Ask for changes or describe another component...'
+                                    : 'Describe the component you want to create...'
                             }
                             className="flex-1 bg-transparent border-none outline-none px-3 py-2 text-[13px]"
                             style={{ color: 'var(--text-primary)' }} />

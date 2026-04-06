@@ -2,7 +2,7 @@ import React from 'react';
 import { Plus, Trash2, Copy } from 'lucide-react';
 
 /**
- * Reusable agent list sidebar used in Browser, Terminal, Swarm, and GroupChat managers.
+ * Reusable agent list sidebar used in agent management interfaces.
  *
  * @param {string}   title          - Sidebar header title, e.g. "Browser Agents"
  * @param {object[]} agents         - Array of agent objects with { id, name, icon, description, enabled }

@@ -156,7 +156,7 @@ export const invalidateAllowedModelsCache = () => {
 };
 
 // Filter models to only visible ones (respecting whitelist + manual hides + per-agent-type restrictions)
-// agentType is optional: 'chat' | 'browser' | 'terminal' | 'swarm'
+// agentType is optional: 'chat'
 // allowedConfig is optional: pre-fetched allowedModelsByAgentType object (avoids async)
 export const filterVisibleModels = (models, agentType = null, allowedConfig = null) => {
     const hiddenModels = JSON.parse(localStorage.getItem('hiddenModels') || '{}');

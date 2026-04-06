@@ -5,14 +5,10 @@ import { useTranslation } from '../../hooks/useTranslation';
 const FEATURE_OPTIONS = [
     { id: 'chat', label: 'Chat' },
     { id: 'agents', label: 'Agents' },
-    { id: 'swarms', label: 'Swarms' },
-    { id: 'browser_agents', label: 'Browser Agents' },
-    { id: 'terminal_agents', label: 'Terminal Agents' },
     { id: 'knowledge_base', label: 'Knowledge Base' },
     { id: 'embed_chat', label: 'Embed Chat' },
     { id: 'direct_chat', label: 'Direct Chat' },
     { id: 'workspace', label: 'Workspace' },
-    { id: 'group_chats', label: 'Group Chats' },
     { id: 'encryption', label: 'Encryption (PIN)' },
 ];
 
@@ -32,9 +28,6 @@ const LIMIT_FIELDS = [
 
 const AGENT_TYPES = [
     { key: 'chat', label: 'Chat Agents', color: '#3b82f6' },
-    { key: 'browser', label: 'Browser Agents', color: '#8b5cf6' },
-    { key: 'terminal', label: 'Terminal Agents', color: '#22c55e' },
-    { key: 'swarm', label: 'Swarm Agents', color: '#f59e0b' },
 ];
 
 // ── Style helpers ──

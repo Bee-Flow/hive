@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
-import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, CheckSquare, BarChart3, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, FlaskConical, PenLine, Presentation, Table, ScrollText } from 'lucide-react';
+import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, PenLine } from 'lucide-react';
 import { API_BASE } from '../utils/helpers';
 import NotificationCenter from './NotificationCenter';
 import NavLink from './NavLink';
@@ -421,7 +421,7 @@ const Sidebar = ({
 
     /* ─── Data ─── */
     const favoriteAgents = agents.filter(a => favorites.includes(a.id));
-    const typeOf = (a) => a.is_swarm ? 'Swarm' : a.is_browser_agent ? 'Web' : a.is_terminal_agent ? 'Dev' : a.is_security_agent ? 'Security' : 'Chat';
+    const typeOf = () => 'Chat';
 
     const allConvs = (() => {
         // "All Chats" mode — unified timeline from all agents + direct
@@ -679,7 +679,7 @@ const Sidebar = ({
                         <div className="px-1.5 pb-1">
                             {favoriteAgents.length > 0 ? favoriteAgents.map(agent => {
                                 const sel = selectedAgent?.id === agent.id;
-                                const initials = agent._type === 'roundtable' ? '🗣️' : (agent.name?.[0]?.toUpperCase() || '?');
+                                const initials = (agent.name?.[0]?.toUpperCase() || '?');
                                 const hasImageAvatar = agent.avatar && (agent.avatar.startsWith('data:') || agent.avatar.startsWith('http'));
                                 return (
                                     <button
@@ -810,34 +810,7 @@ const Sidebar = ({
                                     <span className={`text-[13px] ${currentPage === 'admin' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.admin_dashboard')}</span>
                                 </NavLink>
                             )}
-                            {!isMobile && user?.featureFlags?.tasks !== false && (user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('tasks'))) && (
-                                <NavLink
-                                    href="/tasks"
-                                    onClick={() => setShowProfileMenu(false)}
-                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('tasks'); }}
-                                    className={`${ROW} ${currentPage === 'tasks' ? ROW_ACTIVE : ROW_IDLE}`}
-                                    style={{ textDecoration: 'none', color: 'inherit' }}
-                                >
-                                    {currentPage === 'tasks' && <div className={ACCENT_BAR} />}
-                                    <CheckSquare className={`w-4 h-4 ${currentPage === 'tasks' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'tasks' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.tasks')}</span>
-                                    <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
-                                </NavLink>
-                            )}
-                            {!isMobile && user?.featureFlags?.monitoring !== false && (user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('monitoring'))) && (
-                                <NavLink
-                                    href="/monitoring"
-                                    onClick={() => setShowProfileMenu(false)}
-                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('monitoring'); }}
-                                    className={`${ROW} ${currentPage === 'monitoring' ? ROW_ACTIVE : ROW_IDLE}`}
-                                    style={{ textDecoration: 'none', color: 'inherit' }}
-                                >
-                                    {currentPage === 'monitoring' && <div className={ACCENT_BAR} />}
-                                    <BarChart3 className={`w-4 h-4 ${currentPage === 'monitoring' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'monitoring' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.monitoring')}</span>
-                                    <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
-                                </NavLink>
-                            )}
+
                             {!isMobile && (user?.isAdmin || user?.permissions?.includes('all') || user?.permissions?.includes('org_admin') || user?.permissions?.some?.(p => p.startsWith?.('admin_')) || user?.orgRole === 'admin' || user?.orgRole === 'org_admin') && (
                                 <NavLink
                                     href="/agents"
@@ -895,61 +868,7 @@ const Sidebar = ({
                                     <span className={`text-[13px] ${currentPage === 'notebooks' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.notebooks')}</span>
                                 </NavLink>
                             )}
-                            {!isMobile && user?.featureFlags?.notebooks !== false && (
-                                <NavLink
-                                    href="/proposals"
-                                    onClick={() => setShowProfileMenu(false)}
-                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('proposals'); }}
-                                    className={`${ROW} ${currentPage === 'proposals' ? ROW_ACTIVE : ROW_IDLE}`}
-                                    style={{ textDecoration: 'none', color: 'inherit' }}
-                                >
-                                    {currentPage === 'proposals' && <div className={ACCENT_BAR} />}
-                                    <ScrollText className={`w-4 h-4 ${currentPage === 'proposals' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'proposals' ? TEXT_ACTIVE : TEXT_IDLE}`}>Offertes</span>
-                                </NavLink>
-                            )}
-                            {!isMobile && user?.featureFlags?.slides !== false && (user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('slides'))) && (
-                                <NavLink
-                                    href="/slides"
-                                    onClick={() => setShowProfileMenu(false)}
-                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('slides'); }}
-                                    className={`${ROW} ${currentPage === 'slides' ? ROW_ACTIVE : ROW_IDLE}`}
-                                    style={{ textDecoration: 'none', color: 'inherit' }}
-                                >
-                                    {currentPage === 'slides' && <div className={ACCENT_BAR} />}
-                                    <Presentation className={`w-4 h-4 ${currentPage === 'slides' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'slides' ? TEXT_ACTIVE : TEXT_IDLE}`}>Slides</span>
-                                    <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
-                                </NavLink>
-                            )}
-                            {!isMobile && user?.featureFlags?.sheets !== false && (user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('sheets'))) && (
-                                <NavLink
-                                    href="/sheets"
-                                    onClick={() => setShowProfileMenu(false)}
-                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('sheets'); }}
-                                    className={`${ROW} ${currentPage === 'sheets' ? ROW_ACTIVE : ROW_IDLE}`}
-                                    style={{ textDecoration: 'none', color: 'inherit' }}
-                                >
-                                    {currentPage === 'sheets' && <div className={ACCENT_BAR} />}
-                                    <Table className={`w-4 h-4 ${currentPage === 'sheets' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'sheets' ? TEXT_ACTIVE : TEXT_IDLE}`}>Sheets</span>
-                                    <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
-                                </NavLink>
-                            )}
-                            {!isMobile && user?.featureFlags?.e2e_testing !== false && (user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('e2e_testing'))) && (
-                                <NavLink
-                                    href="/app/e2e-testing"
-                                    onClick={() => setShowProfileMenu(false)}
-                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('e2eTesting'); }}
-                                    className={`${ROW} ${currentPage === 'e2eTesting' ? ROW_ACTIVE : ROW_IDLE}`}
-                                    style={{ textDecoration: 'none', color: 'inherit' }}
-                                >
-                                    {currentPage === 'e2eTesting' && <div className={ACCENT_BAR} />}
-                                    <FlaskConical className={`w-4 h-4 ${currentPage === 'e2eTesting' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'e2eTesting' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.e2e_testing')}</span>
-                                    <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
-                                </NavLink>
-                            )}
+
                         </div>
                         <div className="border-t border-[var(--border-subtle)] p-1">
                             <button onClick={onLogout} className={`${ROW} ${ROW_IDLE} group/so`} data-testid="sidebar-signout">

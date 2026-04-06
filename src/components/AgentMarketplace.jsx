@@ -35,8 +35,7 @@ const getAgentType = (a) => {
 
 // Filter to only normal org-created agents (no special types)
 const isNormalAgent = (a) => {
-    if (a.is_swarm || a.is_browser_agent || a.is_terminal_agent || a.is_security_agent) return false;
-    if (a._type === 'roundtable' || a._type === 'research') return false;
+    if (a._type === 'research') return false;
     return true;
 };
 
@@ -119,7 +118,7 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
     const [activeJobs, setActiveJobs] = useState([]);
     const [sortBy, setSortBy] = useState('top');
     const [usageByAgent, setUsageByAgent] = useState({});
-    const [recents] = useState(() => {
+    const [recents, setRecents] = useState(() => {
         try { return JSON.parse(localStorage.getItem('agent_marketplace_recents') || '[]'); } catch (_) { return []; }
     });
 
@@ -138,7 +137,7 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
 
     // Fetch popularity data from monitoring API
     useEffect(() => {
-        fetch(`${API}/by-agent`)
+        fetch(`${API}/agents`)
             .then(r => r.ok ? r.json() : [])
             .then(data => {
                 const map = {};
@@ -151,7 +150,9 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
     const handleSelect = useCallback((agent) => {
         try {
             const r = JSON.parse(localStorage.getItem('agent_marketplace_recents') || '[]');
-            localStorage.setItem('agent_marketplace_recents', JSON.stringify([agent.id, ...r.filter(id => id !== agent.id)].slice(0, 8)));
+            const updated = [agent.id, ...r.filter(id => id !== agent.id)].slice(0, 8);
+            localStorage.setItem('agent_marketplace_recents', JSON.stringify(updated));
+            setRecents(updated);
         } catch (_) { }
         onSelect(agent);
     }, [onSelect]);

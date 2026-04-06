@@ -185,7 +185,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
 
     useEffect(() => {
         const lastMsg = messages[messages.length - 1];
-        const isStreaming = lastMsg?.isStreaming || (lastMsg?.swarmActivity && lastMsg?.swarmActivity?.status !== 'complete');
+        const isStreaming = lastMsg?.isStreaming;
 
         // Force-scroll when user just sent a message
         if (shouldForceScrollRef.current) {
@@ -213,35 +213,12 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
 
 
 
-    // Reusable function to (re-)fetch published agents + group chats
+    // Reusable function to (re-)fetch published agents
     const refreshAgents = useCallback(async () => {
         try {
             const res = await authFetch(`${API_BASE}/agents/published?t=${Date.now()}`, { cache: 'no-store' });
             if (res.ok) {
-                let data = await res.json();
-
-                // Also load group chats and merge them in (if roundtable is allowed)
-                const userAllowedTypes = user?.allowedAgentTypes || [];
-                const isSuperAdmin = user?.isAdmin || user?.role === 'admin' || (user?.permissions || []).includes('all');
-                const skipRoundtable = !isSuperAdmin && userAllowedTypes.length > 0 && !userAllowedTypes.includes('roundtable');
-                if (!skipRoundtable) {
-                    try {
-                        const gcRes = await authFetch(`${API_BASE}/group-chats`);
-                        if (gcRes.ok) {
-                            const groupChats = await gcRes.json();
-                            const asAgents = groupChats.map(gc => ({
-                                id: gc.id,
-                                name: gc.name,
-                                description: gc.description || 'Group conversation with multiple agents',
-                                avatar: gc.avatar || '👥',
-                                _type: 'roundtable',
-                                participantIds: gc.participantIds,
-                                config: gc.config
-                            }));
-                            data = [...data, ...asAgents];
-                        }
-                    } catch (e) { console.warn('Failed to load group chats', e); }
-                }
+                const data = await res.json();
 
                 setAgents(data);
 
@@ -450,7 +427,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
 
                 // Strip streaming-only progress fields — these are only relevant during live chat
                 parsedMessages = parsedMessages.map(m => {
-                    const { swarmActivity, browserActivity, terminalActivity, toolCall, isStreaming, ...clean } = m;
+                    const { toolCall, isStreaming, ...clean } = m;
                     // Strip raw tool-call JSON blocks from content (e.g. { "action": "generate_image", ... })
                     if (clean.content && typeof clean.content === 'string' && clean.role === 'assistant') {
                         clean.content = clean.content.replace(/\{\s*"action":\s*"[^"]*"\s*,\s*"action_input":\s*"[^"]*"(?:\s*\}\s*,\s*"thought":\s*"[^"]*"\s*\}|\s*\})/g, '').trim();

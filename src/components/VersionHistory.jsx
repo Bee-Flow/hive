@@ -6,7 +6,7 @@ import { Clock, RotateCcw, ChevronDown, ChevronRight, Trash2, Eye } from 'lucide
  * Version History panel — reusable across all agent editors.
  * Shows a timeline of previous versions with restore capability.
  *
- * @param {string} agentId - The agent/swarm/browser/terminal agent ID
+ * @param {string} agentId - The agent ID
  * @param {function} onRestore - Called after a successful restore; parent should reload agent data
  */
 export default function VersionHistory({ agentId, onRestore }) {
@@ -139,16 +139,11 @@ export default function VersionHistory({ agentId, onRestore }) {
             ? (() => { try { return JSON.parse(s.config); } catch { return {}; } })()
             : (s.config || {});
 
-        // Phases (swarm)
+        // Phases (legacy, kept for historical snapshot rendering)
         const phases = typeof s.phases === 'string'
             ? (() => { try { return JSON.parse(s.phases); } catch { return []; } })()
             : (s.phases || []);
 
-        // Terminal agent specifics
-        const terminalFields = [];
-        if (s.working_directory) terminalFields.push({ label: 'Working Dir', value: s.working_directory });
-        if (s.shell) terminalFields.push({ label: 'Shell', value: s.shell });
-        if (s.timeout) terminalFields.push({ label: 'Timeout', value: `${s.timeout}s` });
 
         const configKeys = Object.keys(config);
 
@@ -173,13 +168,7 @@ export default function VersionHistory({ agentId, onRestore }) {
                     </div>
                 )}
 
-                {/* Terminal fields */}
-                {terminalFields.map(f => (
-                    <div key={f.label}>
-                        <span className="text-[var(--text-tertiary)] font-medium">{f.label}:</span>
-                        <span className="ml-2 text-[var(--text-secondary)] font-mono">{f.value}</span>
-                    </div>
-                ))}
+
 
                 {/* System Prompt */}
                 {sysPrompt && (
@@ -230,7 +219,7 @@ export default function VersionHistory({ agentId, onRestore }) {
                     </div>
                 )}
 
-                {/* Phases (Swarm) */}
+                {/* Phases (legacy snapshots) */}
                 {phases.length > 0 && (
                     <div>
                         <span className="text-[var(--text-tertiary)] font-medium">Phases ({phases.length}):</span>
@@ -280,12 +269,7 @@ export default function VersionHistory({ agentId, onRestore }) {
                                                         {agent.hiveMindAccess && (
                                                             <span className="px-1 py-0.5 rounded bg-amber-500/10 text-amber-400">hive: {agent.hiveMindAccess}</span>
                                                         )}
-                                                        {agent.browserAgentId && (
-                                                            <span className="px-1 py-0.5 rounded bg-green-500/10 text-green-400">🌐 browser</span>
-                                                        )}
-                                                        {agent.terminalAgentId && (
-                                                            <span className="px-1 py-0.5 rounded bg-green-500/10 text-green-400">💻 terminal</span>
-                                                        )}
+
                                                     </div>
                                                     {agent.tools && agent.tools.length > 0 && (
                                                         <div className="flex flex-wrap gap-1 text-[9px]">

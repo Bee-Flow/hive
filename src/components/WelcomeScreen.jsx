@@ -11,29 +11,15 @@ const WelcomeScreen = ({ agent, onSendMessage, children }) => {
 
     return (
         <div className="flex flex-col items-center justify-center max-w-3xl mx-auto p-8 text-center animate-fade-in w-full">
-            {agent?._type === 'roundtable' ? (
-                <div className="flex items-center justify-center gap-[-8px] mb-4">
-                    {(agent.participantIds || []).slice(0, 5).map((_, idx) => (
-                        <div key={idx} className="w-12 h-12 rounded-full bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-secondary)] flex items-center justify-center text-white shadow-lg ring-3 ring-[var(--bg-primary)]" style={{ marginLeft: idx > 0 ? '-12px' : 0, zIndex: 10 - idx }}>
-                            {agent.avatar && (agent.avatar.startsWith('data:') || agent.avatar.startsWith('http')) ? (
-                                <img src={agent.avatar} alt="" className="w-full h-full object-cover rounded-full" />
-                            ) : (
-                                <span className="text-xl font-bold">{agent.avatar || '👥'}</span>
-                            )}
-                        </div>
-                    ))}
-                </div>
-            ) : (
-                <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 overflow-hidden">
-                    {agent?.avatar && (agent.avatar.startsWith('data:') || agent.avatar.startsWith('http')) ? (
-                        <img src={agent.avatar} alt="" className="w-full h-full object-cover" />
-                    ) : agent?.avatar ? (
-                        <span className="text-3xl filter drop-shadow-md">{agent.avatar}</span>
-                    ) : (
-                        <span className="text-2xl font-bold">{agent?.name?.[0]?.toUpperCase()}</span>
-                    )}
-                </div>
-            )}
+            <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 overflow-hidden">
+                {agent?.avatar && (agent.avatar.startsWith('data:') || agent.avatar.startsWith('http')) ? (
+                    <img src={agent.avatar} alt="" className="w-full h-full object-cover" />
+                ) : agent?.avatar ? (
+                    <span className="text-3xl filter drop-shadow-md">{agent.avatar}</span>
+                ) : (
+                    <span className="text-2xl font-bold">{agent?.name?.[0]?.toUpperCase()}</span>
+                )}
+            </div>
 
             <h1 className="text-2xl font-bold text-[var(--text-primary)] mb-2 tracking-tight">
                 {agent?.name}

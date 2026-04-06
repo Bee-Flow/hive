@@ -4,49 +4,22 @@ import ComponentBuilder from './components/admin/ComponentBuilder';
 import AdminDashboard from './pages/AdminDashboard';
 import AdvancedSettings from './pages/AdvancedSettings';
 import OrgSettings from './pages/OrgSettings';
-import ReportsDashboard from './pages/ReportsDashboard';
-import GroupChatConfig from './pages/GroupChatConfig';
-import TerminalAgentManager from './pages/TerminalAgentManager';
-import TasksPage from './pages/TasksPage';
-import MonitoringDashboard from './pages/monitoring/MonitoringDashboard';
+
 import MeetingNotesPage from './pages/MeetingNotesPage';
 import TemplatesPage from './pages/TemplatesPage';
 import NotebooksPage from './pages/NotebooksPage';
-import SlidesPage from './pages/SlidesPage';
-import SheetsPage from './pages/SheetsPage';
-import ProposalsPage from './pages/proposals/ProposalsPage';
-import E2ETestingPage from './pages/e2e-testing';
+
 import AgentDesigner from './components/admin/AgentDesigner';
 import LoginPage from './pages/LoginPage';
 import EncryptionSetup from './pages/EncryptionSetup';
 import EmbedChat from './pages/EmbedChat';
-import HomePage, { FeaturesPage, HowItWorksPage, SecurityPage, IntegrationsPage, AboutPage, PrivacyPage, TermsPage, ContactPage, DeepResearchPage, NotebooksFeaturePage, MeetingNotesFeaturePage, McpMarketplacePage, AgentDesignerPage, KnowledgeBasesPage, TaskAutomationPage, SearchEnginePage } from './pages/home/HomePage';
-import CareersPage from './pages/home/CareersPage';
+
 import { LogOut, User, Shield, Settings, ChevronDown } from 'lucide-react';
 
 import { API_BASE, authFetch } from './utils/helpers';
 
 // ── Route mapping ──────────────────────────────────────────────
 const PAGE_ROUTES = {
-    // ── Public homepage routes ──
-    home: '/',
-    features: '/features',
-    howItWorks: '/how-it-works',
-    security: '/security',
-    integrations: '/integrations',
-    about: '/about',
-    privacy: '/privacy',
-    terms: '/terms',
-    contact: '/contact',
-    careers: '/careers',
-    deepResearch: '/deep-research',
-    aiNotebooks: '/ai-notebooks',
-    meetingNotesPage: '/meeting-notes',
-    mcpMarketplace: '/mcp-marketplace',
-    agentDesignerPage: '/agent-designer',
-    knowledgeBasesPage: '/knowledge-bases',
-    taskAutomationPage: '/task-automation',
-    searchEnginePage: '/search-engine',
     // ── App routes (all under /app/) ──
     agents: '/app',
     admin: '/app/admin',
@@ -55,17 +28,10 @@ const PAGE_ROUTES = {
     agentDesigner: '/app/agent-designer',
     reports: '/app/reports',
     components: '/app/components',
-    groupChats: '/app/group-chats',
-    terminalAgents: '/app/terminal-agents',
-    tasks: '/app/tasks',
-    monitoring: '/app/monitoring',
     meetingNotes: '/app/meeting-notes',
     templates: '/app/templates',
     notebooks: '/app/notebooks',
-    slides: '/app/slides',
-    sheets: '/app/sheets',
-    proposals: '/app/proposals',
-    e2eTesting: '/app/e2e-testing',
+
 };
 
 // Reverse lookup: path → page key
@@ -74,25 +40,8 @@ const PATH_TO_PAGE = Object.fromEntries(
 );
 
 function pageFromPath(pathname) {
-    // Homepage / public marketing routes
-    if (pathname === '/') return 'home';
-    if (pathname === '/features') return 'features';
-    if (pathname === '/how-it-works') return 'howItWorks';
-    if (pathname === '/security') return 'security';
-    if (pathname === '/integrations') return 'integrations';
-    if (pathname === '/about') return 'about';
-    if (pathname === '/privacy') return 'privacy';
-    if (pathname === '/terms') return 'terms';
-    if (pathname === '/contact') return 'contact';
-    if (pathname === '/careers') return 'careers';
-    if (pathname === '/deep-research') return 'deepResearch';
-    if (pathname === '/ai-notebooks') return 'aiNotebooks';
-    if (pathname === '/meeting-notes') return 'meetingNotesPage';
-    if (pathname === '/mcp-marketplace') return 'mcpMarketplace';
-    if (pathname === '/agent-designer') return 'agentDesignerPage';
-    if (pathname === '/knowledge-bases') return 'knowledgeBasesPage';
-    if (pathname === '/task-automation') return 'taskAutomationPage';
-    if (pathname === '/search-engine') return 'searchEnginePage';
+    // Root → agents (redirect to /app)
+    if (pathname === '/') return 'agents';
     // Exact match for app routes
     if (PATH_TO_PAGE[pathname]) return PATH_TO_PAGE[pathname];
     // /app/admin or /app/admin/* → admin page
@@ -105,12 +54,7 @@ function pageFromPath(pathname) {
     if (pathname === '/org-settings' || pathname.startsWith('/org-settings/')) return 'orgSettings';
     // /app/notebooks/:id → notebooks page (must come before generic /app/*)
     if (pathname.startsWith('/app/notebooks')) return 'notebooks';
-    // /app/slides → slides page
-    if (pathname.startsWith('/app/slides')) return 'slides';
-    // /app/sheets → sheets page
-    if (pathname.startsWith('/app/sheets')) return 'sheets';
-    // /app/proposals → proposals page
-    if (pathname.startsWith('/app/proposals')) return 'proposals';
+
     // /app/a/:shortId or /app/agent/:id → agents page
     if (pathname.startsWith('/app/a/') || pathname.startsWith('/app/agent/')) return 'agents';
     // /app/d/:convId → direct chat
@@ -124,7 +68,7 @@ function pageFromPath(pathname) {
     const params = new URLSearchParams(window.location.search);
     const legacyPage = params.get('page');
     if (legacyPage && PAGE_ROUTES[legacyPage]) return legacyPage;
-    // Default
+    // Default — redirect everything to app
     return 'agents';
 }
 
@@ -177,72 +121,7 @@ function AppRoot() {
     }
     return <App />;
 }
-// Android APK download banner
-const AndroidBanner = () => {
-    const [visible, setVisible] = useState(() => {
-        if (typeof window === 'undefined') return false;
-        const ua = navigator.userAgent || '';
-        const isAndroid = /Android/i.test(ua) && /Mobile/i.test(ua);
-        const dismissed = localStorage.getItem('apk_banner_dismissed');
-        return isAndroid && !dismissed;
-    });
 
-    if (!visible) return null;
-
-    const dismiss = () => {
-        localStorage.setItem('apk_banner_dismissed', Date.now().toString());
-        setVisible(false);
-    };
-
-    return (
-        <div style={{
-            background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
-            color: '#fff',
-            padding: '10px 16px',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            fontSize: '13px',
-            fontWeight: 500,
-            zIndex: 9999,
-            animation: 'bannerSlideIn .3s ease-out',
-        }}>
-            <span style={{ fontSize: '20px', flexShrink: 0 }}>🐝</span>
-            <span style={{ flex: 1 }}>Get the Bee Flow app for a better experience</span>
-            <a
-                href="/download"
-                style={{
-                    background: 'rgba(255,255,255,0.2)',
-                    color: '#fff',
-                    padding: '6px 14px',
-                    borderRadius: '8px',
-                    fontWeight: 600,
-                    fontSize: '12px',
-                    textDecoration: 'none',
-                    whiteSpace: 'nowrap',
-                    border: '1px solid rgba(255,255,255,0.3)',
-                }}
-            >
-                Download APK
-            </a>
-            <button
-                onClick={dismiss}
-                style={{
-                    background: 'none',
-                    border: 'none',
-                    color: 'rgba(255,255,255,0.7)',
-                    cursor: 'pointer',
-                    padding: '4px',
-                    fontSize: '18px',
-                    lineHeight: 1,
-                }}
-                aria-label="Dismiss"
-            >
-                ×
-            </button>
-        </div>
-    );
-};
 
 function App() {
     const [currentPage, setCurrentPage] = useState(() => pageFromPath(window.location.pathname));
@@ -251,7 +130,7 @@ function App() {
     const [initialNotebookId, setInitialNotebookId] = useState(() => parseNotebookUrl(window.location.pathname));
     const [user, setUser] = useState(null);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
-    const [showLogin, setShowLogin] = useState(false);
+
     const [isLoading, setIsLoading] = useState(true);
     const [deploymentMode, setDeploymentMode] = useState('cloud');
     const [serverAvailable, setServerAvailable] = useState(null); // null=unknown, true=ok, false=down
@@ -379,63 +258,11 @@ function App() {
     }, []);
 
     const navigateToPage = useCallback((page) => {
-        // Homepage sub-routes (public, works even when not authenticated)
+        // Root / home → redirect to /app
         if (page === '/' || page === 'home') {
-            setShowLogin(false);
-            setCurrentPage('home');
-            window.history.pushState({}, '', '/');
+            setCurrentPage('agents');
+            window.history.pushState({}, '', '/app');
             return;
-        }
-        if (['/features','features'].includes(page)) {
-            setCurrentPage('features'); window.history.pushState({}, '', '/features'); return;
-        }
-        if (['/how-it-works','howItWorks'].includes(page)) {
-            setCurrentPage('howItWorks'); window.history.pushState({}, '', '/how-it-works'); return;
-        }
-        if (['/security','security'].includes(page)) {
-            setCurrentPage('security'); window.history.pushState({}, '', '/security'); return;
-        }
-        if (['/integrations','integrations'].includes(page)) {
-            setCurrentPage('integrations'); window.history.pushState({}, '', '/integrations'); return;
-        }
-        if (['/about','about'].includes(page)) {
-            setCurrentPage('about'); window.history.pushState({}, '', '/about'); return;
-        }
-        if (['/privacy','privacy'].includes(page)) {
-            setCurrentPage('privacy'); window.history.pushState({}, '', '/privacy'); return;
-        }
-        if (['/terms','terms'].includes(page)) {
-            setCurrentPage('terms'); window.history.pushState({}, '', '/terms'); return;
-        }
-        if (['/contact','contact'].includes(page)) {
-            setCurrentPage('contact'); window.history.pushState({}, '', '/contact'); return;
-        }
-        if (['/careers','careers'].includes(page)) {
-            setCurrentPage('careers'); window.history.pushState({}, '', '/careers'); return;
-        }
-        if (['/deep-research','deepResearch'].includes(page)) {
-            setCurrentPage('deepResearch'); window.history.pushState({}, '', '/deep-research'); return;
-        }
-        if (['/ai-notebooks','aiNotebooks'].includes(page)) {
-            setCurrentPage('aiNotebooks'); window.history.pushState({}, '', '/ai-notebooks'); return;
-        }
-        if (['/meeting-notes','meetingNotesPage'].includes(page)) {
-            setCurrentPage('meetingNotesPage'); window.history.pushState({}, '', '/meeting-notes'); return;
-        }
-        if (['/mcp-marketplace','mcpMarketplace'].includes(page)) {
-            setCurrentPage('mcpMarketplace'); window.history.pushState({}, '', '/mcp-marketplace'); return;
-        }
-        if (['/agent-designer','agentDesignerPage'].includes(page)) {
-            setCurrentPage('agentDesignerPage'); window.history.pushState({}, '', '/agent-designer'); return;
-        }
-        if (['/knowledge-bases','knowledgeBasesPage'].includes(page)) {
-            setCurrentPage('knowledgeBasesPage'); window.history.pushState({}, '', '/knowledge-bases'); return;
-        }
-        if (['/task-automation','taskAutomationPage'].includes(page)) {
-            setCurrentPage('taskAutomationPage'); window.history.pushState({}, '', '/task-automation'); return;
-        }
-        if (['/search-engine','searchEnginePage'].includes(page)) {
-            setCurrentPage('searchEnginePage'); window.history.pushState({}, '', '/search-engine'); return;
         }
         // Agent Designer opens as overlay, not a page
         if (page === 'agentDesigner' || page.startsWith('agentDesigner:')) {
@@ -611,33 +438,9 @@ function App() {
         );
     }
 
-    // Show homepage / public routes if not authenticated
+    // Not authenticated → show login page directly
     if (!isAuthenticated) {
-        // Private cloud mode OR local server (non-cloud): skip product website, go straight to login
-        if (deploymentMode === 'private-cloud' || deploymentMode !== 'cloud') {
-            return <LoginPage onLogin={handleLogin} onDemoLogin={handleLogin} />;
-        }
-        // Cloud mode: show product website and marketing pages
-        const homeProps = { onNavigate: navigateToPage, onLoginClick: () => setShowLogin(true) };
-        if (showLogin) return <LoginPage onLogin={handleLogin} onDemoLogin={handleLogin} />;
-        if (currentPage === 'features') return <FeaturesPage {...homeProps} />;
-        if (currentPage === 'howItWorks') return <HowItWorksPage {...homeProps} />;
-        if (currentPage === 'security') return <SecurityPage {...homeProps} />;
-        if (currentPage === 'integrations') return <IntegrationsPage {...homeProps} />;
-        if (currentPage === 'about') return <AboutPage {...homeProps} />;
-        if (currentPage === 'privacy') return <PrivacyPage {...homeProps} />;
-        if (currentPage === 'terms') return <TermsPage {...homeProps} />;
-        if (currentPage === 'contact') return <ContactPage {...homeProps} />;
-        if (currentPage === 'careers') return <CareersPage {...homeProps} />;
-        if (currentPage === 'deepResearch') return <DeepResearchPage {...homeProps} />;
-        if (currentPage === 'aiNotebooks') return <NotebooksFeaturePage {...homeProps} />;
-        if (currentPage === 'meetingNotesPage') return <MeetingNotesFeaturePage {...homeProps} />;
-        if (currentPage === 'mcpMarketplace') return <McpMarketplacePage {...homeProps} />;
-        if (currentPage === 'agentDesignerPage') return <AgentDesignerPage {...homeProps} />;
-        if (currentPage === 'knowledgeBasesPage') return <KnowledgeBasesPage {...homeProps} />;
-        if (currentPage === 'taskAutomationPage') return <TaskAutomationPage {...homeProps} />;
-        if (currentPage === 'searchEnginePage') return <SearchEnginePage {...homeProps} />;
-        return <HomePage {...homeProps} />;
+        return <LoginPage onLogin={handleLogin} onDemoLogin={handleLogin} />;
     }
 
     // Show encryption setup/unlock gate for SSO users
@@ -735,15 +538,6 @@ function App() {
     }
 
     const renderContent = () => {
-        // If an authenticated user somehow hits a homepage route, redirect to app
-        if (['home', 'features', 'howItWorks', 'security', 'integrations', 'careers',
-             'about', 'privacy', 'terms', 'contact', 'deepResearch', 'aiNotebooks',
-             'meetingNotesPage', 'mcpMarketplace', 'agentDesignerPage', 'knowledgeBasesPage',
-             'taskAutomationPage', 'searchEnginePage'].includes(currentPage)) {
-            // Use setTimeout to avoid updating state during render
-            setTimeout(() => navigateToPage('agents'), 0);
-            return null;
-        }
         if (currentPage === 'admin') {
             return <AdminDashboard user={user} onBack={() => navigateToPage('agents')} adminPath={adminPath} onNavigate={navigateToPage} />;
         }
@@ -751,26 +545,12 @@ function App() {
             return <OrgSettings user={user} onBack={() => navigateToPage('agents')} orgSettingsPath={orgSettingsPath} onNavigate={navigateToPage} />;
         }
 
-        if (currentPage === 'reports') {
-            return <ReportsDashboard onBack={() => navigateToPage('settings')} />;
-        }
+
         if (currentPage === 'components') {
             return <ComponentBuilder onBack={() => navigateToPage('agents')} />;
         }
-        if (currentPage === 'groupChats') {
-            return <GroupChatConfig onBack={() => navigateToPage('settings')} onSaved={() => navigateToPage('agents')} />;
-        }
-        if (currentPage === 'terminalAgents') {
-            return <TerminalAgentManager onBack={() => navigateToPage('settings')} />;
-        }
-        if (currentPage === 'tasks') {
-            if (user?.featureFlags?.tasks === false) return navigateToPage('agents');
-            return <TasksPage user={user} onBack={() => navigateToPage('agents')} onNavigate={navigateToPage} />;
-        }
-        if (currentPage === 'monitoring') {
-            if (user?.featureFlags?.monitoring === false) return navigateToPage('agents');
-            return <MonitoringDashboard onBack={() => navigateToPage('agents')} user={user} />;
-        }
+
+
         if (currentPage === 'meetingNotes') {
             if (user?.featureFlags?.meeting_notes === false) return navigateToPage('agents');
             return <MeetingNotesPage user={user} onBack={() => navigateToPage('agents')} />;
@@ -791,47 +571,13 @@ function App() {
                 }}
             />;
         }
-        if (currentPage === 'sheets') {
-            if (user?.featureFlags?.sheets === false) return navigateToPage('agents');
-            // Beta feature gate — only show if user has 'sheets' beta feature (admins bypass)
-            const hasSheetsAccess = user?.isAdmin || (user?.permissions || []).includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('sheets'));
-            if (!hasSheetsAccess) return navigateToPage('agents');
-            return <SheetsPage
-                user={user}
-                onBack={() => navigateToPage('agents')}
-            />;
-        }
-        if (currentPage === 'slides') {
-            if (user?.featureFlags?.slides === false) return navigateToPage('agents');
-            // Beta feature gate — only show if user has 'slides' beta feature (admins bypass)
-            const hasSlidesAccess = user?.isAdmin || (user?.permissions || []).includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('slides'));
-            if (!hasSlidesAccess) return navigateToPage('agents');
-            return <SlidesPage
-                user={user}
-                onBack={() => navigateToPage('agents')}
-            />;
-        }
-        if (currentPage === 'proposals') {
-            if (user?.featureFlags?.notebooks === false) return navigateToPage('agents');
-            return <ProposalsPage
-                user={user}
-                onProposalChange={(id) => {
-                    const path = id ? `/app/proposals/${id}` : '/app/proposals';
-                    window.history.replaceState({ page: 'proposals' }, '', path);
-                }}
-            />;
-        }
-        if (currentPage === 'e2eTesting') {
-            if (user?.featureFlags?.e2e_testing === false) return navigateToPage('agents');
-            return <E2ETestingPage user={user} onBack={() => navigateToPage('agents')} />;
-        }
+
         return <AgentHub onNavigate={navigateToPage} user={user} initialAgentId={initialUrlRef.current.agentId} initialConversationId={initialUrlRef.current.conversationId} initialDirectConvId={initialDirectConvRef.current} onLogout={handleLogout} currentPage={currentPage} />;
     };
 
     return (
         <div className="h-screen flex flex-col">
-            {/* Android APK download banner */}
-            <AndroidBanner />
+
             {/* Content */}
             <div className="flex-1 overflow-hidden">
                 {renderContent()}

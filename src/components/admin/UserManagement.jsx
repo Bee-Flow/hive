@@ -1116,10 +1116,6 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                                 <div className="grid grid-cols-2 gap-2 max-h-40 overflow-auto p-2 rounded border" style={{ borderColor: 'var(--border-subtle)' }}>
                                     {[
                                         { id: 'chat', name: 'Chat Agents' },
-                                        { id: 'swarm', name: 'Swarm Agents' },
-                                        { id: 'browser', name: 'Browser Agents' },
-                                        { id: 'terminal', name: 'Terminal Agents' },
-                                        { id: 'roundtable', name: 'Roundtable Agents' }
                                     ].map(t => (
                                         <label key={t.id} className="flex items-center gap-2 cursor-pointer p-1 hover:bg-[var(--bg-tertiary)] rounded">
                                             <input type="checkbox" checked={(groupData.allowedAgentTypes || []).includes(t.id)} onChange={e => setGroupData(prev => ({ ...prev, allowedAgentTypes: e.target.checked ? [...(prev.allowedAgentTypes || []), t.id] : (prev.allowedAgentTypes || []).filter(x => x !== t.id) }))} className="accent-[var(--accent-primary)]" />

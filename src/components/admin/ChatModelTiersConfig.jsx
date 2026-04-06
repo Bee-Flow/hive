@@ -45,7 +45,7 @@ const isReasoningCapable = (modelId) => {
     return false;
 };
 
-// Detect Claude models specifically (they use budget_tokens, not reasoning_effort)
+// Detect Claude models specifically (they use adaptive thinking with effort levels)
 const isClaudeReasoning = (modelId) => {
     if (!modelId) return false;
     return /^claude-(opus|sonnet|haiku)-4/.test(modelId);
@@ -540,60 +540,49 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                         </div>
                         {isReasoningCapable(tierConfig.modelId) && (
                             <>
-                                {isClaudeReasoning(tierConfig.modelId) ? (
+                                <div className="flex-1">
+                                    <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>🧠 {isClaudeReasoning(tierConfig.modelId) ? 'Thinking Effort' : 'Reasoning Effort'}</label>
+                                    <select
+                                        value={tierConfig.reasoningEffort || (isClaudeReasoning(tierConfig.modelId) ? 'medium' : 'none')}
+                                        onChange={e => updateFn(tier.key, 'reasoningEffort', e.target.value)}
+                                        className="w-full px-3 py-2 rounded-lg border outline-none focus:border-[var(--accent-primary)] text-sm"
+                                        style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                                    >
+                                        <option value="none">None (disabled)</option>
+                                        <option value="low">Low — quick tasks</option>
+                                        <option value="medium">Medium — balanced (default)</option>
+                                        <option value="high">High — complex reasoning</option>
+                                        {isClaudeReasoning(tierConfig.modelId) ? (
+                                            <option value="xhigh">Max — deepest thinking</option>
+                                        ) : (
+                                            <option value="xhigh">xHigh — deepest reasoning</option>
+                                        )}
+                                    </select>
+                                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                                        {isClaudeReasoning(tierConfig.modelId)
+                                            ? 'Adaptive thinking — Claude decides how deep to reason. Default: Medium.'
+                                            : 'Controls how much the model reasons before responding.'}
+                                    </p>
+                                </div>
+                                {!isClaudeReasoning(tierConfig.modelId) && (
                                     <div className="flex-1">
-                                        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>🧠 Thinking Budget</label>
-                                        <input
-                                            type="number"
-                                            value={tierConfig.budgetTokens !== undefined ? tierConfig.budgetTokens : 10000}
-                                            onChange={e => updateFn(tier.key, 'budgetTokens', parseInt(e.target.value) || 10000)}
-                                            min={1024} max={128000} step={1024}
-                                            className="w-full px-3 py-2 rounded-lg border outline-none focus:border-[var(--accent-primary)] text-sm"
-                                            style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
-                                        />
+                                        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>📝 Reasoning Summary</label>
+                                        <div
+                                            className="flex items-center gap-3 px-3 py-2 rounded-lg border cursor-pointer"
+                                            style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}
+                                            onClick={() => updateFn(tier.key, 'reasoningSummary', !tierConfig.reasoningSummary)}
+                                        >
+                                            <div className={`w-9 h-5 rounded-full relative transition-colors ${tierConfig.reasoningSummary ? 'bg-green-500' : 'bg-gray-600'}`}>
+                                                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${tierConfig.reasoningSummary ? 'translate-x-4' : 'translate-x-0.5'}`} />
+                                            </div>
+                                            <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                                                {tierConfig.reasoningSummary ? 'Enabled' : 'Disabled'}
+                                            </span>
+                                        </div>
                                         <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                                            Token budget for Claude's internal reasoning. Higher = deeper thinking. Set to 0 to disable.
+                                            Show a summary of the model's reasoning process.
                                         </p>
                                     </div>
-                                ) : (
-                                    <>
-                                        <div className="flex-1">
-                                            <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>🧠 Reasoning Effort</label>
-                                            <select
-                                                value={tierConfig.reasoningEffort || 'none'}
-                                                onChange={e => updateFn(tier.key, 'reasoningEffort', e.target.value)}
-                                                className="w-full px-3 py-2 rounded-lg border outline-none focus:border-[var(--accent-primary)] text-sm"
-                                                style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
-                                            >
-                                                <option value="none">None (fastest)</option>
-                                                <option value="low">Low</option>
-                                                <option value="medium">Medium</option>
-                                                <option value="high">High</option>
-                                                <option value="xhigh">xHigh (deepest)</option>
-                                            </select>
-                                            <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                                                Controls how much the model reasons before responding.
-                                            </p>
-                                        </div>
-                                        <div className="flex-1">
-                                            <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>📝 Reasoning Summary</label>
-                                            <div
-                                                className="flex items-center gap-3 px-3 py-2 rounded-lg border cursor-pointer"
-                                                style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}
-                                                onClick={() => updateFn(tier.key, 'reasoningSummary', !tierConfig.reasoningSummary)}
-                                            >
-                                                <div className={`w-9 h-5 rounded-full relative transition-colors ${tierConfig.reasoningSummary ? 'bg-green-500' : 'bg-gray-600'}`}>
-                                                    <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${tierConfig.reasoningSummary ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                                                </div>
-                                                <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                                                    {tierConfig.reasoningSummary ? 'Enabled' : 'Disabled'}
-                                                </span>
-                                            </div>
-                                            <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                                                Show a summary of the model's reasoning process.
-                                            </p>
-                                        </div>
-                                    </>
                                 )}
                             </>
                         )}

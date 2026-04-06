@@ -23,8 +23,7 @@ const AgentEditorUI = ({
     hasKnowledge = true,
     agentId,
     API_BASE,
-    // Optional configuration for Swarm-specific fields
-    showSwarmFields = false,
+
     // Organization & group sharing
     organizations = [],
     groups = [],
@@ -114,7 +113,7 @@ const AgentEditorUI = ({
                                         placeholder="My Agent"
                                     />
                                 </div>
-                                <div className={showSwarmFields ? 'grid grid-cols-2 gap-4' : ''}>
+                                <div>
                                     <div>
                                         <label className="text-xs mb-1 block text-[var(--text-muted)]">Model</label>
                                         <div className="grid grid-cols-4 gap-2">
@@ -144,24 +143,12 @@ const AgentEditorUI = ({
                                             })}
                                         </div>
                                     </div>
-                                    {showSwarmFields && (
-                                        <div>
-                                            <label className="text-xs mb-1 block text-[var(--text-muted)]">Role</label>
-                                            <input
-                                                type="text"
-                                                value={data.role || ''}
-                                                onChange={e => handleChange('role', e.target.value)}
-                                                className="w-full px-3 py-2 rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] text-[var(--text-primary)] text-sm outline-none"
-                                                placeholder="e.g. Researcher"
-                                            />
-                                        </div>
-                                    )}
+
                                 </div>
                             </div>
                         </div>
 
-                        {/* Category */}
-                        {!showSwarmFields && (
+                        <div>
                             <div>
                                 <label className="text-xs mb-1 block text-[var(--text-muted)]">Category</label>
                                 <div className="flex items-center gap-2">
@@ -228,7 +215,7 @@ const AgentEditorUI = ({
                                     </div>
                                 )}
                             </div>
-                        )}
+                        </div>
 
                         {/* Description */}
                         <div>
@@ -254,49 +241,9 @@ const AgentEditorUI = ({
                             />
                         </div>
 
-                        {/* Swarm Specific Parameters */}
-                        {showSwarmFields && (
-                            <div className="grid grid-cols-3 gap-4 p-4 rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)]">
-                                <div>
-                                    <label className="text-xs mb-1 block text-[var(--text-muted)]">Temperature (0.0 - 2.0)</label>
-                                    <input
-                                        type="number"
-                                        min="0"
-                                        max="2"
-                                        step="0.1"
-                                        value={data.temperature ?? 0.3}
-                                        onChange={e => handleChange('temperature', parseFloat(e.target.value))}
-                                        className="w-full px-3 py-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] text-[var(--text-primary)] text-sm"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs mb-1 block text-[var(--text-muted)]">Max Tokens</label>
-                                    <input
-                                        type="number"
-                                        step="100"
-                                        value={data.maxTokens ?? 2000}
-                                        onChange={e => handleChange('maxTokens', parseInt(e.target.value))}
-                                        className="w-full px-3 py-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] text-[var(--text-primary)] text-sm"
-                                    />
-                                </div>
-                                <div>
-                                    <label className="text-xs mb-1 block text-[var(--text-muted)]">🐝 Hive Mind</label>
-                                    <select
-                                        value={data.hiveMindAccess || 'readwrite'}
-                                        onChange={e => handleChange('hiveMindAccess', e.target.value)}
-                                        className="w-full px-3 py-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] text-[var(--text-primary)] text-sm outline-none"
-                                    >
-                                        <option value="readwrite">Read & Write</option>
-                                        <option value="read">Read Only</option>
-                                        <option value="write">Write Only</option>
-                                        <option value="none">None</option>
-                                    </select>
-                                </div>
-                            </div>
-                        )}
 
-                        {/* Starter Prompts (Standard Agents Only) */}
-                        {!showSwarmFields && (
+
+                        <div>
                             <div>
                                 <label className="text-xs mb-2 block text-[var(--text-muted)]">Starter Prompts</label>
                                 <div className="space-y-2">
@@ -332,10 +279,9 @@ const AgentEditorUI = ({
                                     </button>
                                 </div>
                             </div>
-                        )}
+                        </div>
 
-                        {/* Behavior Toggles (Standard Agents Only) */}
-                        {!showSwarmFields && (
+                        <div className="space-y-4">
                             <div className="space-y-4">
                                 <div className="grid grid-cols-2 gap-4">
                                     <div className="flex items-center justify-between p-3 rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)]">
@@ -431,10 +377,10 @@ const AgentEditorUI = ({
                                     </div>
                                 )}
                             </div>
-                        )}
+                        </div>
 
                         {/* Organization & Sharing */}
-                        {!showSwarmFields && organizations.length > 0 && (
+                        {organizations.length > 0 && (
                             <div className="p-4 rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] space-y-3">
                                 <div className="text-sm font-medium text-[var(--text-primary)] flex items-center gap-2">
                                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" /></svg>
@@ -492,7 +438,7 @@ const AgentEditorUI = ({
                         )}
 
                         {/* Version History (existing agents only) */}
-                        {agentId && !showSwarmFields && (
+                        {agentId && (
                             <VersionHistory agentId={agentId} onRestore={() => window.location.reload()} />
                         )}
                     </div>

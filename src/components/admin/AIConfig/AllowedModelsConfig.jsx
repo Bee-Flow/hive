@@ -3,9 +3,6 @@ import { API_BASE, authFetch } from '../../../utils/helpers';
 
 const AGENT_TYPES = [
     { key: 'chat', label: 'Chat Agents', icon: '💬', color: '#8b5cf6', desc: 'Standard conversational agents (AgentDesigner)' },
-    { key: 'browser', label: 'Browser Agents', icon: '🌐', color: '#06b6d4', desc: 'Web automation agents that control a browser' },
-    { key: 'terminal', label: 'Terminal Agents', icon: '💻', color: '#10b981', desc: 'Shell and Python execution agents' },
-    { key: 'swarm', label: 'Swarm Pipeline', icon: '🐝', color: '#f59e0b', desc: 'Multi-agent orchestration workers' },
 ];
 
 const AllowedModelsConfig = ({ providers, allModels, fetchAllModels }) => {

@@ -279,34 +279,8 @@ export default function useChatEngine({
                 break;
             }
 
-            case 'sheets_result':
-                setMessages(prev => prev.map(m =>
-                    m.id === assistantMsgId ? {
-                        ...m,
-                        sheetsResults: [...(m.sheetsResults || []), data]
-                    } : m
-                ));
-                break;
 
-            case 'sheets_draft': {
-                const draftKey = JSON.stringify({ spreadsheetId: data.spreadsheetId, range: data.range });
-                setMessages(prev => prev.map(m => {
-                    if (m.id !== assistantMsgId) return m;
-                    const existing = m.sheetsDrafts || [];
-                    if (existing.some(d => JSON.stringify({ spreadsheetId: d.spreadsheetId, range: d.range }) === draftKey)) return m;
-                    return { ...m, sheetsDrafts: [...existing, { ...data, status: 'pending' }] };
-                }));
-                break;
-            }
 
-            case 'sheets_report':
-                setMessages(prev => prev.map(m =>
-                    m.id === assistantMsgId ? {
-                        ...m,
-                        sheetsReports: [...(m.sheetsReports || []), data]
-                    } : m
-                ));
-                break;
 
             case 'map_embed':
                 setMessages(prev => prev.map(m =>
@@ -421,10 +395,7 @@ export default function useChatEngine({
                                 s.status === 'running' ? { ...s, status: 'done' } : s
                             );
                         }
-                        // Mark swarm activity as complete
-                        if (m.swarmActivity) {
-                            update.swarmActivity = { ...m.swarmActivity, status: 'complete' };
-                        }
+
                         return update;
                     }
                     return m;
@@ -432,18 +403,7 @@ export default function useChatEngine({
                 if (data.conversationId) {
                     onConversationCreated?.(data.conversationId);
                 }
-                if (data.message) {
-                    setMessages(prev => prev.map(m => {
-                        if (m.id === assistantMsgId && m.browserActivity?.browserAgents) {
-                            const updatedAgents = { ...m.browserActivity.browserAgents };
-                            for (const key of Object.keys(updatedAgents)) {
-                                updatedAgents[key] = { ...updatedAgents[key], status: 'complete' };
-                            }
-                            return { ...m, content: data.message, browserActivity: { ...m.browserActivity, browserAgents: updatedAgents } };
-                        }
-                        return m;
-                    }));
-                }
+
                 if (data.workspaceContent !== undefined) {
                     onNotebookUpdate?.(data.workspaceContent);
                 }
@@ -482,241 +442,7 @@ export default function useChatEngine({
                 break;
             }
 
-            // Swarm events
-            case 'phase':
-                setMessages(prev => prev.map(m => m.id === assistantMsgId ? {
-                    ...m, swarmActivity: {
-                        ...m.swarmActivity,
-                        type: 'swarm',
-                        // Use data.status if backend explicitly sends 'complete', otherwise use phase name
-                        status: data.status === 'complete' ? m.swarmActivity?.status : data.phase,
-                        phases: [...(m.swarmActivity?.phases || []), data.message],
-                        logs: [...(m.swarmActivity?.logs || []), { type: 'phase', phase: data.phase, timestamp: new Date().toISOString() }]
-                    }
-                } : m));
-                break;
 
-            case 'worker_start':
-                setMessages(prev => prev.map(m => m.id === assistantMsgId ? {
-                    ...m, swarmActivity: {
-                        ...m.swarmActivity,
-                        type: 'swarm',
-                        logs: [...(m.swarmActivity?.logs || []), {
-                            type: 'worker_start',
-                            worker: data.worker,
-                            instanceId: data.instanceId,
-                            role: data.role,
-                            phase: data.phase,
-                            instruction: data.instruction,
-                            timestamp: new Date().toISOString()
-                        }]
-                    }
-                } : m));
-                break;
-
-            case 'worker_tool':
-                setMessages(prev => prev.map(m => m.id === assistantMsgId ? {
-                    ...m, swarmActivity: {
-                        ...m.swarmActivity,
-                        logs: [...(m.swarmActivity?.logs || []), {
-                            type: 'tool_start',
-                            worker: data.worker,
-                            instanceId: data.instanceId,
-                            tool: data.tool,
-                            args: data.args,
-                            timestamp: new Date().toISOString()
-                        }]
-                    }
-                } : m));
-                break;
-
-            case 'worker_complete':
-                setMessages(prev => prev.map(m => m.id === assistantMsgId ? {
-                    ...m, swarmActivity: {
-                        ...m.swarmActivity,
-                        logs: [...(m.swarmActivity?.logs || []), {
-                            type: 'worker_complete',
-                            worker: data.worker,
-                            instanceId: data.instanceId,
-                            preview: data.result,
-                            timestamp: new Date().toISOString()
-                        }]
-                    }
-                } : m));
-                break;
-
-            case 'worker_error':
-                setMessages(prev => prev.map(m => m.id === assistantMsgId ? {
-                    ...m, swarmActivity: {
-                        ...m.swarmActivity,
-                        logs: [...(m.swarmActivity?.logs || []), {
-                            type: 'worker_error',
-                            worker: data.worker,
-                            instanceId: data.instanceId,
-                            preview: data.error,
-                            timestamp: new Date().toISOString()
-                        }]
-                    }
-                } : m));
-                break;
-
-            case 'brain_update':
-                setMessages(prev => prev.map(m => m.id === assistantMsgId ? {
-                    ...m, swarmActivity: {
-                        ...m.swarmActivity,
-                        brain: [...(m.swarmActivity?.brain || []), {
-                            phase: data.phase,
-                            worker: data.worker,
-                            content: data.content,
-                            totalEntries: data.totalEntries,
-                            timestamp: new Date().toISOString()
-                        }]
-                    }
-                } : m));
-                break;
-
-            // Browser agent events
-            case 'browser_action': {
-                const agentKey = data.instanceId || data.worker || 'default';
-                setMessages(prev => prev.map(m => {
-                    if (m.id !== assistantMsgId) return m;
-                    const existing = m.browserActivity?.browserAgents?.[agentKey] || {};
-                    return {
-                        ...m, browserActivity: {
-                            ...m.browserActivity,
-                            browserAgents: {
-                                ...(m.browserActivity?.browserAgents || {}),
-                                [agentKey]: {
-                                    ...existing,
-                                    worker: data.worker || agentKey,
-                                    type: 'browser',
-                                    status: data.action === 'done' ? 'complete' : 'running',
-                                    actions: [...(existing.actions || []), {
-                                        action: data.action,
-                                        params: data.params,
-                                        result: data.result,
-                                        screenshot: data.screenshot,
-                                        step: data.step,
-                                        maxSteps: data.maxSteps,
-                                        timestamp: new Date().toISOString()
-                                    }]
-                                }
-                            }
-                        }
-                    };
-                }));
-                break;
-            }
-
-            case 'browser_screenshot': {
-                const agentKey = data.instanceId || data.worker || 'default';
-                setMessages(prev => prev.map(m => {
-                    if (m.id !== assistantMsgId) return m;
-                    const existing = m.browserActivity?.browserAgents?.[agentKey] || {};
-                    return {
-                        ...m, browserActivity: {
-                            ...m.browserActivity,
-                            browserAgents: {
-                                ...(m.browserActivity?.browserAgents || {}),
-                                [agentKey]: {
-                                    ...existing,
-                                    worker: data.worker || agentKey,
-                                    screenshot: data.image,
-                                    screenshotTimestamp: new Date().toISOString()
-                                }
-                            }
-                        }
-                    };
-                }));
-                break;
-            }
-
-            // Terminal agent events
-            case 'terminal_status':
-                setMessages(prev => prev.map(m => m.id === assistantMsgId ? {
-                    ...m, terminalActivity: {
-                        ...m.terminalActivity,
-                        status: data.status,
-                        statusMessage: data.message
-                    }
-                } : m));
-                break;
-
-            case 'terminal_command':
-                setMessages(prev => prev.map(m => m.id === assistantMsgId ? {
-                    ...m, terminalActivity: {
-                        ...m.terminalActivity,
-                        commands: [...(m.terminalActivity?.commands || []), {
-                            tool: data.tool,
-                            args: data.args,
-                            timestamp: new Date().toISOString()
-                        }]
-                    }
-                } : m));
-                break;
-
-            case 'terminal_output':
-                if (!data.streaming) {
-                    setMessages(prev => prev.map(m => m.id === assistantMsgId ? {
-                        ...m, terminalActivity: {
-                            ...m.terminalActivity,
-                            outputs: [...(m.terminalActivity?.outputs || []), {
-                                tool: data.tool,
-                                content: data.content,
-                                success: data.success,
-                                type: data.type,
-                                timestamp: new Date().toISOString()
-                            }]
-                        }
-                    } : m));
-                }
-                break;
-
-            case 'terminal_file':
-                setMessages(prev => prev.map(m => m.id === assistantMsgId ? {
-                    ...m, terminalActivity: {
-                        ...m.terminalActivity,
-                        files: [...(m.terminalActivity?.files || []), {
-                            name: data.name,
-                            path: data.path,
-                            size: data.size,
-                            agentId: data.agentId,
-                            containerKey: data.containerKey
-                        }]
-                    }
-                } : m));
-                break;
-
-            case 'group_chat_agent_start': {
-                const isVeryFirstAgent = data.round === 1 && data.index === 0;
-                if (!isVeryFirstAgent) {
-                    setMessages(prev => prev.map(m =>
-                        m.id === activeIdRef.current ? { ...m, isStreaming: false } : m
-                    ));
-                    const newId = generateMessageId();
-                    activeIdRef.current = newId;
-                    contentRef.current = '';
-                    setMessages(prev => [...prev, {
-                        id: newId,
-                        role: 'assistant',
-                        content: '',
-                        isStreaming: true,
-                        respondingAgentId: data.agentId,
-                        respondingAgentName: data.agentName,
-                        respondingAgentAvatar: data.agentAvatar
-                    }]);
-                } else {
-                    setMessages(prev => prev.map(m =>
-                        m.id === activeIdRef.current ? {
-                            ...m,
-                            respondingAgentId: data.agentId,
-                            respondingAgentName: data.agentName,
-                            respondingAgentAvatar: data.agentAvatar
-                        } : m
-                    ));
-                }
-                break;
-            }
         }
     }, [onConversationCreated, onNotebookUpdate]);
 
@@ -757,7 +483,7 @@ export default function useChatEngine({
         };
         setMessages(prev => [...prev, placeholder]);
 
-        // Mutable refs for group chat active agent tracking
+        // Mutable refs for active agent tracking
         const activeIdRef = { current: assistantMsgId };
         const contentRef = { current: '' };
 

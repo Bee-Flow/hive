@@ -9,8 +9,7 @@ import AudioPlayerInline from './AudioPlayer';
 import ImageLightbox from './ImageLightbox';
 import ToolOutput from './ToolOutput';
 import { SequentialThinking } from './ThinkingSteps';
-import SwarmProgress from './SwarmProgress';
-import BrowserProgress from './BrowserProgress';
+
 import TerminalProgress from './TerminalProgress';
 import EmailDraftCard from './EmailDraftCard';
 import CalendarDraftCard from './CalendarDraftCard';
@@ -18,8 +17,7 @@ import LinkedInDraftCard from './LinkedInDraftCard';
 import WhatsAppDraftCard from './WhatsAppDraftCard';
 import ContactsDraftCard from './ContactsDraftCard';
 import KeepDraftCard from './KeepDraftCard';
-import { SheetsResultCard, SheetsDraftCard } from './SheetsResultCard';
-import { SheetsReportCard } from './SheetsReportView';
+
 
 const MessageItem = ({
     idx,
@@ -43,11 +41,7 @@ const MessageItem = ({
     const isTool = msg.role === 'tool';
     const [copied, setCopied] = useState(false);
     const [copiedMd, setCopiedMd] = useState(false);
-    const [showSwarmLogs, setShowSwarmLogs] = useState(false);
-    const [showBrain, setShowBrain] = useState(false);
-    const [showBrowserActions, setShowBrowserActions] = useState(false);
     const [lightboxImage, setLightboxImage] = useState(null);
-    const [selectedBrowserAgent, setSelectedBrowserAgent] = useState(null);
     const [expandedWorkers, setExpandedWorkers] = useState({});
     const [selectedPhase, setSelectedPhase] = useState(null);
     const [emailDraftStatuses, setEmailDraftStatuses] = useState({});
@@ -56,7 +50,7 @@ const MessageItem = ({
     const [whatsappDraftStatuses, setWhatsappDraftStatuses] = useState({});
     const [contactsDraftStatuses, setContactsDraftStatuses] = useState({});
     const [keepDraftStatuses, setKeepDraftStatuses] = useState({});
-    const [sheetsDraftStatuses, setSheetsDraftStatuses] = useState({});
+
     const [feedbackRating, setFeedbackRating] = useState(null);
     const [showFeedbackForm, setShowFeedbackForm] = useState(false);
     const [feedbackComment, setFeedbackComment] = useState('');
@@ -300,10 +294,10 @@ const MessageItem = ({
     // Get render functions from ToolOutput
     // (ToolOutput hooks moved above early return — see top of component)
 
-    const hasSheets = !!(msg.sheetsResults || msg.sheetsDrafts || msg.sheetsReports);
+
 
     return (
-        <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} group animate-fade-in w-full ${hasSheets ? '' : 'max-w-[900px] mx-auto'}`} data-msg-id={`msg-${msg.id || idx}`} data-testid={`message-${msg.id || idx}`}>
+        <div className={`flex flex-col ${isUser ? 'items-end' : 'items-start'} group animate-fade-in w-full max-w-[900px] mx-auto`} data-msg-id={`msg-${msg.id || idx}`} data-testid={`message-${msg.id || idx}`}>
 
             {/* Sender Info (Multi-agent support) */}
             {!isUser && !isTool && msg.respondingAgentName && (
@@ -358,7 +352,7 @@ const MessageItem = ({
                         ? 'max-w-[85%] bg-[#e8e8eb] text-black rounded-br-none'
                         : isTool
                             ? 'bg-[var(--bg-tertiary)] text-[var(--text-primary)] border border-[var(--border-subtle)] rounded-xl w-full max-w-full'
-                            : `${(msg.sheetsResults || msg.sheetsDrafts || msg.sheetsReports) ? 'max-w-full w-full' : 'max-w-3xl'} text-[var(--text-primary)] rounded-bl-none`
+                            : `max-w-3xl text-[var(--text-primary)] rounded-bl-none`
                     } 
                 ${msg.isGuardrailViolation ? 'opacity-60 scale-95' : ''} 
                 ${msg.isDeleted ? 'opacity-50 italic' : ''}`}>
@@ -393,25 +387,7 @@ const MessageItem = ({
 
                 {/* Content */}
                 <div ref={contentRef} className={`prose prose-sm dark:prose-invert max-w-none break-words ${!isUser ? '' : 'text-black prose-headings:text-black prose-a:text-black prose-strong:text-black prose-code:text-black/90 [&_a]:!text-black [&_a]:underline'}`}>
-                    {!isUser && msg.swarmActivity && (
-                        <SwarmProgress
-                            msg={msg}
-                            showSwarmLogs={showSwarmLogs} setShowSwarmLogs={setShowSwarmLogs}
-                            showBrain={showBrain} setShowBrain={setShowBrain}
-                            expandedBrainEntries={expandedBrainEntries} setExpandedBrainEntries={setExpandedBrainEntries}
-                            expandedWorkers={expandedWorkers} setExpandedWorkers={setExpandedWorkers}
-                            selectedPhase={selectedPhase} setSelectedPhase={setSelectedPhase}
-                        />
-                    )}
-                    {!isUser && msg.browserActivity && (
-                        <BrowserProgress
-                            msg={msg}
-                            showBrowserActions={showBrowserActions} setShowBrowserActions={setShowBrowserActions}
-                            selectedBrowserAgent={selectedBrowserAgent} setSelectedBrowserAgent={setSelectedBrowserAgent}
-                            setLightboxImage={setLightboxImage}
-                            selectedPhase={selectedPhase}
-                        />
-                    )}
+
                     {!isUser && msg.terminalActivity && (
                         <TerminalProgress msg={msg} allMessages={allMessages} />
                     )}
@@ -462,20 +438,14 @@ const MessageItem = ({
                                                 ? 'Subscription Cancelled'
                                                 : msg.content.includes('Chat') && msg.content.includes('type')
                                                     ? 'Chat Agent Limit Reached'
-                                                    : msg.content.includes('Browser') && msg.content.includes('type')
-                                                        ? 'Browser Agent Limit Reached'
-                                                        : msg.content.includes('Terminal') && msg.content.includes('type')
-                                                            ? 'Terminal Agent Limit Reached'
-                                                            : msg.content.includes('Swarm') && msg.content.includes('type')
-                                                                ? 'Swarm Limit Reached'
-                                                                : msg.content.includes('message limit')
-                                                                    ? 'Monthly Message Limit Reached'
-                                                                    : msg.content.includes('token limit')
-                                                                        ? 'Monthly Token Limit Reached'
-                                                                        : msg.content.includes('cost limit')
-                                                                            ? 'Monthly Cost Limit Reached'
-                                                                            : (msg.content.includes('limit') || msg.content.includes('subscription'))
-                                                                                ? 'Subscription Limit Reached'
+                                                    : msg.content.includes('message limit')
+                                                        ? 'Monthly Message Limit Reached'
+                                                        : msg.content.includes('token limit')
+                                                            ? 'Monthly Token Limit Reached'
+                                                            : msg.content.includes('cost limit')
+                                                                ? 'Monthly Cost Limit Reached'
+                                                                : (msg.content.includes('limit') || msg.content.includes('subscription'))
+                                                                    ? 'Subscription Limit Reached'
                                                                                 : 'Something went wrong'}
                                     </div>
                                     <div className={`text-xs ${msg.content.includes('limit') || msg.content.includes('subscription')
@@ -1093,36 +1063,7 @@ const MessageItem = ({
                 </div>
             )}
 
-            {/* Sheets cards — outside bubble, full-width side-by-side layout */}
-            {!isUser && (msg.sheetsResults || msg.sheetsDrafts || msg.sheetsReports) && (
-                <div className="w-full mt-2">
-                    {/* Side-by-side: spreadsheet left, report right */}
-                    {(msg.sheetsDrafts || msg.sheetsResults) && msg.sheetsReports ? (
-                        <div className="flex gap-3 w-full" style={{ flexWrap: 'nowrap' }}>
-                            {/* Spreadsheet data — left side */}
-                            <div className="flex-1 min-w-0" style={{ flex: '1 1 55%' }}>
-                                {msg.sheetsResults && <SheetsResultCard msg={msg} />}
-                                {msg.sheetsDrafts && (
-                                    <SheetsDraftCard msg={msg} sheetsDraftStatuses={sheetsDraftStatuses} setSheetsDraftStatuses={setSheetsDraftStatuses} />
-                                )}
-                            </div>
-                            {/* Report dashboard — right side */}
-                            <div className="flex-1 min-w-0" style={{ flex: '1 1 45%' }}>
-                                <SheetsReportCard msg={msg} />
-                            </div>
-                        </div>
-                    ) : (
-                        /* Only one type — full width */
-                        <>
-                            {msg.sheetsResults && <SheetsResultCard msg={msg} />}
-                            {msg.sheetsDrafts && (
-                                <SheetsDraftCard msg={msg} sheetsDraftStatuses={sheetsDraftStatuses} setSheetsDraftStatuses={setSheetsDraftStatuses} />
-                            )}
-                            {msg.sheetsReports && <SheetsReportCard msg={msg} />}
-                        </>
-                    )}
-                </div>
-            )}
+
 
             {/* Image Lightbox */}
             <ImageLightbox lightboxImage={lightboxImage} setLightboxImage={setLightboxImage} />

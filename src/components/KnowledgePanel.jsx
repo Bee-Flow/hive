@@ -14,8 +14,7 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
     const [selectedIds, setSelectedIds] = useState(new Set());
     const [deleting, setDeleting] = useState(false);
     const [urlStatus, setUrlStatus] = useState('');
-    const [swarmAgents, setSwarmAgents] = useState([]);
-    const [selectedSwarm, setSelectedSwarm] = useState('');
+
 
     // ── Multi-KB ────────────────────────────────────────────────────
     const [kbs, setKbs] = useState([]);
@@ -74,15 +73,7 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
         fetchAzureConfig();
     }, []);
 
-    useEffect(() => {
-        const fetchSwarms = async () => {
-            try {
-                const res = await authFetch(`${API_BASE}/swarms`);
-                if (res.ok) setSwarmAgents((await res.json()).filter(s => s.enabled));
-            } catch (err) { console.error('Failed to fetch swarms:', err); }
-        };
-        fetchSwarms();
-    }, []);
+
 
     // ── KB API calls ────────────────────────────────────────────────
     const fetchKBs = async () => {
@@ -323,7 +314,7 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
         try {
             const res = await authFetch(`${API_BASE}/agents/${agentId}/knowledge/url`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url: urlInput.trim(), mode: extractionMode, ...(selectedSwarm ? { swarmId: selectedSwarm } : {}) })
+                body: JSON.stringify({ url: urlInput.trim(), mode: extractionMode })
             });
             if (res.ok) { setUrlInput(''); setUrlStatus(''); fetchKnowledge(); }
             else { const err = await res.json(); setUrlStatus(''); alert('Error: ' + err.error); }
@@ -733,7 +724,7 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
                                     </button>
                                 )}
                             </div>
-                            {!selectedSwarm && (
+                            {(
                                 <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
                                     <label className="text-xs mb-2 block font-medium" style={{ color: 'var(--text-muted)' }}>Extraction Strategy</label>
                                     <div className="flex flex-wrap gap-4">

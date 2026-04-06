@@ -53,8 +53,6 @@ export const COLORS = {
 
 export const AGENT_COLORS = {
     chat: { bg: '#6366f115', text: '#818cf8', label: '💬 Chat' },
-    swarm: { bg: '#f59e0b15', text: '#fbbf24', label: '🐝 Swarm' },
-    browser: { bg: '#ec489915', text: '#f472b6', label: '🌐 Browser' },
     system: { bg: '#8b5cf615', text: '#a78bfa', label: '⚙️ System' },
 };
 

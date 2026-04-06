@@ -76,8 +76,5 @@ export function ThinkingStepsPanel({ steps }) {
 export function SequentialThinking({ msg }) {
     const steps = msg.thinkingSteps;
     if (!steps || steps.length === 0) return null;
-    // In swarm mode, only show steps without a worker (coordinator/direct agent steps)
-    const hasSwarm = msg.swarmActivity?.logs?.length > 0;
-    const filteredSteps = hasSwarm ? steps.filter(s => !s.worker) : steps;
-    return <ThinkingStepsPanel steps={filteredSteps} />;
+    return <ThinkingStepsPanel steps={steps} />;
 }

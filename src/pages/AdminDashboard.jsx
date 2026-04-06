@@ -25,7 +25,7 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
     // Tab definitions — each tab requires its page-level permission
     // 'agents' tab accepts admin_agents (catch-all) OR any granular admin_agents_* permission
     const tabs = [
-        { id: 'agents', label: t('admin.tab_agents'), perm: ['admin_agents', 'admin_agents_chat', 'admin_agents_swarm', 'admin_agents_browser', 'admin_agents_terminal', 'admin_agents_group', 'admin_agents_system'], superAdminOnly: false },
+        { id: 'agents', label: t('admin.tab_agents'), perm: ['admin_agents', 'admin_agents_chat', 'admin_agents_system'], superAdminOnly: false },
         { id: 'ai-config', label: t('admin.tab_ai_config'), perm: ['admin_ai_config'], superAdminOnly: true },
         { id: 'security', label: t('admin.tab_security'), perm: ['admin_security'], superAdminOnly: false },
         { id: 'integrations', label: t('admin.tab_integrations'), perm: ['admin_security'], superAdminOnly: true },
@@ -43,7 +43,7 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
     };
 
     // Support direct paths like /admin/chat → maps to agents tab with chat section
-    const AGENT_SECTION_IDS = ['chat', 'swarm', 'browser', 'terminal', 'sec-agents', 'group', 'system'];
+    const AGENT_SECTION_IDS = ['chat', 'system'];
     let requestedTab = adminPath.seg1 || 'agents';
     let agentSection = adminPath.seg2 || '';
 

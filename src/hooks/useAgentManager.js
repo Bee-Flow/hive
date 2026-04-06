@@ -3,11 +3,10 @@ import { API_BASE, authFetch } from '../utils/helpers';
 import { filterVisibleModels, fetchAllowedModelsByAgentType } from '../utils/modelMeta.js';
 
 /**
- * Custom hook that encapsulates the identical CRUD pattern shared by
- * BrowserAgentManager, TerminalAgentManager, SwarmManager, and GroupChatManager.
+ * Custom hook that encapsulates common agent CRUD patterns for manager pages.
  *
  * @param {string} endpoint    - API endpoint path, e.g. '/browser-agents' or '/terminal-agents'
- * @param {string} agentType   - Agent type for model filtering: 'browser' | 'terminal' | 'swarm' | 'chat'
+ * @param {string} agentType   - Agent type for model filtering: 'chat'
  * @param {object} defaultAgent - Default values when creating a new agent
  * @returns {object} All state and actions needed by the manager page
  */

@@ -89,54 +89,43 @@ export default function ChatModelsSection({ chatModelTiers, setChatModelTiers, a
                         {/* Reasoning options */}
                         {isReasoningCapable(tierConfig.modelId) && (
                             <>
-                                {isClaudeReasoning(tierConfig.modelId) ? (
+                                <div className="flex-1" style={{ minWidth: '140px' }}>
+                                    <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>🧠 {isClaudeReasoning(tierConfig.modelId) ? t('azure.thinking_budget') : t('azure.reasoning_effort')}</label>
+                                    <select
+                                        value={tierConfig.reasoningEffort || (isClaudeReasoning(tierConfig.modelId) ? 'medium' : 'none')}
+                                        onChange={e => updateTier(tier.key, 'reasoningEffort', e.target.value)}
+                                        className="w-full px-3 py-2 rounded-lg border outline-none text-sm"
+                                        style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                                    >
+                                        <option value="none">{t('azure.reasoning_none')}</option>
+                                        <option value="low">{t('azure.reasoning_low')}</option>
+                                        <option value="medium">{t('azure.reasoning_medium')}</option>
+                                        <option value="high">{t('azure.reasoning_high')}</option>
+                                        <option value="xhigh">{t('azure.reasoning_xhigh')}</option>
+                                    </select>
+                                    <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                                        {isClaudeReasoning(tierConfig.modelId)
+                                            ? 'Adaptive thinking — Claude decides how deep to reason. Default: Medium.'
+                                            : t('azure.reasoning_effort_help')}
+                                    </p>
+                                </div>
+                                {!isClaudeReasoning(tierConfig.modelId) && (
                                     <div className="flex-1" style={{ minWidth: '140px' }}>
-                                        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>🧠 {t('azure.thinking_budget')}</label>
-                                        <input
-                                            type="number"
-                                            value={tierConfig.budgetTokens !== undefined ? tierConfig.budgetTokens : 10000}
-                                            onChange={e => updateTier(tier.key, 'budgetTokens', parseInt(e.target.value) || 10000)}
-                                            min={1024} max={128000} step={1024}
-                                            className="w-full px-3 py-2 rounded-lg border outline-none text-sm"
-                                            style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
-                                        />
-                                        <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>{t('azure.thinking_budget_help')}</p>
-                                    </div>
-                                ) : (
-                                    <>
-                                        <div className="flex-1" style={{ minWidth: '140px' }}>
-                                            <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>🧠 {t('azure.reasoning_effort')}</label>
-                                            <select
-                                                value={tierConfig.reasoningEffort || 'none'}
-                                                onChange={e => updateTier(tier.key, 'reasoningEffort', e.target.value)}
-                                                className="w-full px-3 py-2 rounded-lg border outline-none text-sm"
-                                                style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
-                                            >
-                                                <option value="none">{t('azure.reasoning_none')}</option>
-                                                <option value="low">{t('azure.reasoning_low')}</option>
-                                                <option value="medium">{t('azure.reasoning_medium')}</option>
-                                                <option value="high">{t('azure.reasoning_high')}</option>
-                                                <option value="xhigh">{t('azure.reasoning_xhigh')}</option>
-                                            </select>
-                                            <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>{t('azure.reasoning_effort_help')}</p>
-                                        </div>
-                                        <div className="flex-1" style={{ minWidth: '140px' }}>
-                                            <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>📝 {t('azure.reasoning_summary')}</label>
-                                            <div
-                                                className="flex items-center gap-3 px-3 py-2 rounded-lg border cursor-pointer"
-                                                style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}
-                                                onClick={() => updateTier(tier.key, 'reasoningSummary', !tierConfig.reasoningSummary)}
-                                            >
-                                                <div className={`w-9 h-5 rounded-full relative transition-colors ${tierConfig.reasoningSummary ? 'bg-green-500' : 'bg-gray-600'}`}>
-                                                    <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${tierConfig.reasoningSummary ? 'translate-x-4' : 'translate-x-0.5'}`} />
-                                                </div>
-                                                <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                                                    {tierConfig.reasoningSummary ? t('azure.enabled') : t('azure.disabled')}
-                                                </span>
+                                        <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>📝 {t('azure.reasoning_summary')}</label>
+                                        <div
+                                            className="flex items-center gap-3 px-3 py-2 rounded-lg border cursor-pointer"
+                                            style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}
+                                            onClick={() => updateTier(tier.key, 'reasoningSummary', !tierConfig.reasoningSummary)}
+                                        >
+                                            <div className={`w-9 h-5 rounded-full relative transition-colors ${tierConfig.reasoningSummary ? 'bg-green-500' : 'bg-gray-600'}`}>
+                                                <div className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${tierConfig.reasoningSummary ? 'translate-x-4' : 'translate-x-0.5'}`} />
                                             </div>
-                                            <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>{t('azure.reasoning_summary_help')}</p>
+                                            <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
+                                                {tierConfig.reasoningSummary ? t('azure.enabled') : t('azure.disabled')}
+                                            </span>
                                         </div>
-                                    </>
+                                        <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>{t('azure.reasoning_summary_help')}</p>
+                                    </div>
                                 )}
                             </>
                         )}

@@ -270,100 +270,12 @@ const EmbedChat = ({ agentId }) => {
                                     }
                                     return m;
                                 }));
-                            } else if (currentEvent === 'phase') {
-                                // Swarm phase update
-                                setMessages(prev => prev.map(m => m.id === assistantMsgId ? {
-                                    ...m, swarmActivity: {
-                                        ...m.swarmActivity,
-                                        type: 'swarm',
-                                        status: data.status === 'complete' ? m.swarmActivity?.status : data.phase,
-                                        phases: [...(m.swarmActivity?.phases || []), data.message],
-                                        logs: [...(m.swarmActivity?.logs || []), { type: 'phase', phase: data.phase, timestamp: new Date().toISOString() }]
-                                    }
-                                } : m));
-                            } else if (currentEvent === 'worker_start') {
-                                setMessages(prev => prev.map(m => m.id === assistantMsgId ? {
-                                    ...m, swarmActivity: {
-                                        ...m.swarmActivity,
-                                        type: 'swarm',
-                                        logs: [...(m.swarmActivity?.logs || []), {
-                                            type: 'worker_start',
-                                            worker: data.worker,
-                                            instanceId: data.instanceId,
-                                            role: data.role,
-                                            phase: data.phase,
-                                            instruction: data.instruction,
-                                            timestamp: new Date().toISOString()
-                                        }]
-                                    }
-                                } : m));
-                            } else if (currentEvent === 'worker_tool') {
-                                setMessages(prev => prev.map(m => m.id === assistantMsgId ? {
-                                    ...m, swarmActivity: {
-                                        ...m.swarmActivity,
-                                        logs: [...(m.swarmActivity?.logs || []), {
-                                            type: 'tool_start',
-                                            worker: data.worker,
-                                            instanceId: data.instanceId,
-                                            tool: data.tool,
-                                            args: data.args,
-                                            timestamp: new Date().toISOString()
-                                        }]
-                                    }
-                                } : m));
-                            } else if (currentEvent === 'worker_complete') {
-                                setMessages(prev => prev.map(m => m.id === assistantMsgId ? {
-                                    ...m, swarmActivity: {
-                                        ...m.swarmActivity,
-                                        logs: [...(m.swarmActivity?.logs || []), {
-                                            type: 'worker_complete',
-                                            worker: data.worker,
-                                            instanceId: data.instanceId,
-                                            preview: data.result,
-                                            timestamp: new Date().toISOString()
-                                        }]
-                                    }
-                                } : m));
-                            } else if (currentEvent === 'worker_error') {
-                                setMessages(prev => prev.map(m => m.id === assistantMsgId ? {
-                                    ...m, swarmActivity: {
-                                        ...m.swarmActivity,
-                                        logs: [...(m.swarmActivity?.logs || []), {
-                                            type: 'worker_error',
-                                            worker: data.worker,
-                                            instanceId: data.instanceId,
-                                            preview: data.error,
-                                            timestamp: new Date().toISOString()
-                                        }]
-                                    }
-                                } : m));
-                            } else if (currentEvent === 'brain_update') {
-                                setMessages(prev => prev.map(m => m.id === assistantMsgId ? {
-                                    ...m, swarmActivity: {
-                                        ...m.swarmActivity,
-                                        brain: [...(m.swarmActivity?.brain || []), {
-                                            phase: data.phase,
-                                            worker: data.worker,
-                                            content: data.content,
-                                            totalEntries: data.totalEntries,
-                                            timestamp: new Date().toISOString()
-                                        }]
-                                    }
-                                } : m));
                             } else if (currentEvent === 'error') {
                                 setMessages(prev => prev.map(m =>
                                     m.id === assistantMsgId ? { ...m, content: data.error, isStreaming: false, isError: true } : m
                                 ));
                             } else if (currentEvent === 'done') {
-                                // Stream complete — mark swarm as finished
-                                setMessages(prev => prev.map(m => {
-                                    if (m.id !== assistantMsgId) return m;
-                                    const update = { ...m };
-                                    if (m.swarmActivity) {
-                                        update.swarmActivity = { ...m.swarmActivity, status: 'complete' };
-                                    }
-                                    return update;
-                                }));
+                                // Stream complete
                             }
                         } catch { }
                     }
