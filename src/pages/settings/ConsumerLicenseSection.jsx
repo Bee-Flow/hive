@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { CreditCard, MessageSquare, Zap, DollarSign, Bot, Database, BarChart3, ArrowUpRight } from 'lucide-react';
+import React, { useState, useEffect, useCallback } from 'react';
+import { CreditCard, MessageSquare, Zap, DollarSign, Bot, Database, BarChart3, ArrowUpRight, Check, Crown, Loader2, ExternalLink, Sparkles } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 
@@ -64,30 +64,108 @@ const Skeleton = () => (
     </div>
 );
 
+/* ── Currency helper ──────────────────────────────────────────────────── */
+const currencySymbol = (c) => ({ EUR: '€', USD: '$', GBP: '£' }[c?.toUpperCase()] || '€');
+
 /* ── Main Component ───────────────────────────────────────────────────── */
 const ConsumerLicenseSection = ({ user }) => {
     const { t } = useTranslation();
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [plans, setPlans] = useState([]);
+    const [stripeEnabled, setStripeEnabled] = useState(false);
+    const [checkoutLoading, setCheckoutLoading] = useState(null); // planId being loaded
+    const [portalLoading, setPortalLoading] = useState(false);
+    const [checkoutMessage, setCheckoutMessage] = useState(null); // success/cancel banner
 
+    // Check URL params for checkout result
     useEffect(() => {
-        const fetchUsage = async () => {
-            try {
-                setLoading(true);
-                const res = await authFetch(`${API_BASE}/api/subscriptions/consumer/usage`);
-                if (!res.ok) throw new Error('Failed to load usage data');
-                const json = await res.json();
-                setData(json);
-            } catch (e) {
-                console.error('[ConsumerLicense] fetch error:', e);
-                setError(e.message);
-            } finally {
-                setLoading(false);
-            }
-        };
-        fetchUsage();
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('checkout') === 'success') {
+            setCheckoutMessage({ type: 'success', text: 'Subscription activated! Your plan will be updated shortly.' });
+            // Clean URL
+            const url = new URL(window.location);
+            url.searchParams.delete('checkout');
+            url.searchParams.delete('session_id');
+            window.history.replaceState({}, '', url.toString());
+        } else if (params.get('checkout') === 'cancelled') {
+            setCheckoutMessage({ type: 'cancelled', text: 'Checkout was cancelled. You can try again anytime.' });
+            const url = new URL(window.location);
+            url.searchParams.delete('checkout');
+            window.history.replaceState({}, '', url.toString());
+        }
     }, []);
+
+    const fetchData = useCallback(async () => {
+        try {
+            setLoading(true);
+            const [usageRes, statusRes] = await Promise.all([
+                authFetch(`${API_BASE}/api/subscriptions/consumer/usage`),
+                authFetch(`${API_BASE}/api/stripe/status`),
+            ]);
+            if (usageRes.ok) setData(await usageRes.json());
+            else throw new Error('Failed to load usage data');
+
+            if (statusRes.ok) {
+                const status = await statusRes.json();
+                setStripeEnabled(status.enabled);
+                if (status.enabled) {
+                    const plansRes = await authFetch(`${API_BASE}/api/stripe/plans?type=consumer`);
+                    if (plansRes.ok) setPlans(await plansRes.json());
+                }
+            }
+        } catch (e) {
+            console.error('[ConsumerLicense] fetch error:', e);
+            setError(e.message);
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => { fetchData(); }, [fetchData]);
+
+    const handleCheckout = async (planId) => {
+        setCheckoutLoading(planId);
+        try {
+            const res = await authFetch(`${API_BASE}/api/stripe/checkout`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ planId, origin: window.location.origin }),
+            });
+            const result = await res.json();
+            if (res.ok && result.url) {
+                window.location.href = result.url;
+            } else {
+                alert(result.error || 'Failed to start checkout');
+            }
+        } catch (e) {
+            alert('Connection error. Please try again.');
+        } finally {
+            setCheckoutLoading(null);
+        }
+    };
+
+    const handlePortal = async () => {
+        setPortalLoading(true);
+        try {
+            const res = await authFetch(`${API_BASE}/api/stripe/portal`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ origin: window.location.origin }),
+            });
+            const result = await res.json();
+            if (res.ok && result.url) {
+                window.location.href = result.url;
+            } else {
+                alert(result.error || 'Failed to open billing portal');
+            }
+        } catch (e) {
+            alert('Connection error. Please try again.');
+        } finally {
+            setPortalLoading(false);
+        }
+    };
 
     if (loading) return <Skeleton />;
     if (error) return (
@@ -96,9 +174,11 @@ const ConsumerLicenseSection = ({ user }) => {
         </div>
     );
 
-    const { limits, usage, billing_period } = data || {};
+    const { limits, usage, billing_period, subscription } = data || {};
     const periodEnd = billing_period?.end ? new Date(billing_period.end) : null;
     const daysLeft = periodEnd ? Math.max(0, Math.ceil((periodEnd - new Date()) / (1000 * 60 * 60 * 24))) : null;
+    const hasActiveSub = subscription && ['active', 'trialing'].includes(subscription.status);
+    const hasBilling = subscription?.stripe_customer_id;
 
     return (
         <div className="space-y-6 animate-fadeIn">
@@ -113,23 +193,68 @@ const ConsumerLicenseSection = ({ user }) => {
                 </p>
             </div>
 
+            {/* Checkout result banner */}
+            {checkoutMessage && (
+                <div className={`rounded-xl p-4 flex items-center gap-3 ${
+                    checkoutMessage.type === 'success'
+                        ? 'bg-emerald-500/10 border border-emerald-500/30'
+                        : 'bg-amber-500/10 border border-amber-500/30'
+                }`}>
+                    {checkoutMessage.type === 'success' ? (
+                        <Check className="w-5 h-5 text-emerald-500 shrink-0" />
+                    ) : (
+                        <CreditCard className="w-5 h-5 text-amber-500 shrink-0" />
+                    )}
+                    <span className={`text-sm font-medium ${
+                        checkoutMessage.type === 'success' ? 'text-emerald-400' : 'text-amber-400'
+                    }`}>
+                        {checkoutMessage.text}
+                    </span>
+                    <button
+                        onClick={() => setCheckoutMessage(null)}
+                        className="ml-auto text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+                    >✕</button>
+                </div>
+            )}
+
             {/* Plan Card */}
             <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden">
                 <div className="p-5">
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }}>
-                                <CreditCard className="w-5 h-5 text-white" />
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{
+                                background: hasActiveSub ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #3b82f6, #8b5cf6)'
+                            }}>
+                                {hasActiveSub ? <Crown className="w-5 h-5 text-white" /> : <CreditCard className="w-5 h-5 text-white" />}
                             </div>
                             <div>
                                 <p className="text-sm font-semibold text-[var(--text-primary)]">
-                                    {limits?.plan_name === '__consumer_default__' ? 'Personal Plan' : (limits?.plan_name || 'Free Plan')}
+                                    {limits?.plan_name === '__consumer_default__' ? 'Free' : (limits?.plan_name || 'Free')}
+                                    {subscription?.payment_status === 'trialing' && (
+                                        <span className="ml-2 text-[10px] font-bold text-amber-500 bg-amber-500/10 px-2 py-0.5 rounded-full">TRIAL</span>
+                                    )}
                                 </p>
                                 <p className="text-xs text-[var(--text-muted)]">
                                     {daysLeft !== null ? `${daysLeft} days remaining in billing period` : 'Monthly billing'}
                                 </p>
                             </div>
                         </div>
+                        {/* Manage Billing button */}
+                        {hasBilling && (
+                            <button
+                                onClick={handlePortal}
+                                disabled={portalLoading}
+                                className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors"
+                                style={{
+                                    color: '#635bff',
+                                    borderColor: 'rgba(99,91,255,0.3)',
+                                    background: 'rgba(99,91,255,0.05)',
+                                }}
+                            >
+                                {portalLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
+                                Manage Billing
+                            </button>
+                        )}
                     </div>
                 </div>
 
@@ -161,28 +286,9 @@ const ConsumerLicenseSection = ({ user }) => {
                     <h3 className="text-sm font-semibold text-[var(--text-primary)]">Usage This Period</h3>
                 </div>
 
-                <UsageBar
-                    label="Messages"
-                    icon={MessageSquare}
-                    used={usage?.total_calls || 0}
-                    limit={limits?.max_messages_per_month}
-                    color="#3b82f6"
-                />
-                <UsageBar
-                    label="Cost"
-                    icon={DollarSign}
-                    used={usage?.total_estimated_cost || 0}
-                    limit={limits?.max_cost_per_month}
-                    unit="€"
-                    color="#10b981"
-                />
-                <UsageBar
-                    label="Tokens"
-                    icon={Zap}
-                    used={usage?.total_tokens || 0}
-                    limit={limits?.max_tokens_per_month}
-                    color="#8b5cf6"
-                />
+                <UsageBar label="Messages" icon={MessageSquare} used={usage?.total_calls || 0} limit={limits?.max_messages_per_month} color="#3b82f6" />
+                <UsageBar label="Cost" icon={DollarSign} used={usage?.total_estimated_cost || 0} limit={limits?.max_cost_per_month} unit="€" color="#10b981" />
+                <UsageBar label="Tokens" icon={Zap} used={usage?.total_tokens || 0} limit={limits?.max_tokens_per_month} color="#8b5cf6" />
             </div>
 
             {/* Plan Limits Grid */}
@@ -214,20 +320,129 @@ const ConsumerLicenseSection = ({ user }) => {
                 </div>
             </div>
 
-            {/* Upgrade CTA */}
-            <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
-                <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }}>
-                        <ArrowUpRight className="w-6 h-6 text-white" />
+            {/* ── Subscription Plans / Upgrade ──────────────────────────── */}
+            {stripeEnabled && plans.length > 0 && (
+                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
+                    <div className="flex items-center gap-2 mb-4">
+                        <Sparkles className="w-4 h-4 text-amber-500" />
+                        <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+                            {hasActiveSub ? 'Change Plan' : 'Upgrade Your Plan'}
+                        </h3>
                     </div>
-                    <div className="flex-1">
-                        <p className="text-sm font-semibold text-[var(--text-primary)]">Need more capacity?</p>
-                        <p className="text-xs text-[var(--text-muted)] mt-0.5">
-                            Create or join an organization to unlock higher limits, team collaboration, integrations, and more.
-                        </p>
+
+                    <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${Math.min(plans.length, 3)}, 1fr)` }}>
+                        {plans.map(plan => {
+                            const isCurrentPlan = hasActiveSub && subscription?.plan_id === plan.id;
+                            const sym = currencySymbol(plan.currency);
+                            return (
+                                <div
+                                    key={plan.id}
+                                    className="relative rounded-xl border overflow-hidden transition-all duration-200"
+                                    style={{
+                                        borderColor: isCurrentPlan ? '#10b981' : 'var(--border-subtle)',
+                                        background: isCurrentPlan ? 'rgba(16,185,129,0.03)' : 'var(--bg-secondary)',
+                                    }}
+                                >
+                                    {isCurrentPlan && (
+                                        <div className="absolute top-0 left-0 right-0 h-1 bg-emerald-500" />
+                                    )}
+                                    <div className="p-4">
+                                        <div className="flex items-center justify-between mb-2">
+                                            <h4 className="text-sm font-bold text-[var(--text-primary)]">{plan.name}</h4>
+                                            {isCurrentPlan && (
+                                                <span className="text-[9px] font-bold text-emerald-500 bg-emerald-500/10 px-2 py-0.5 rounded-full uppercase">
+                                                    Current
+                                                </span>
+                                            )}
+                                        </div>
+                                        {plan.description && (
+                                            <p className="text-[11px] text-[var(--text-muted)] mb-3 leading-relaxed">{plan.description}</p>
+                                        )}
+                                        <div className="flex items-baseline gap-1 mb-3">
+                                            <span className="text-2xl font-extrabold text-[var(--text-primary)]">
+                                                {sym}{Number(plan.price).toFixed(2)}
+                                            </span>
+                                            <span className="text-xs text-[var(--text-muted)]">
+                                                / {plan.billing_interval === 'yearly' ? 'year' : 'month'}
+                                            </span>
+                                        </div>
+                                        {plan.trial_days > 0 && (
+                                            <div className="text-[11px] font-semibold text-emerald-500 mb-3">
+                                                {plan.trial_days}-day free trial
+                                            </div>
+                                        )}
+
+                                        {/* Feature highlights */}
+                                        <div className="space-y-1.5 mb-4">
+                                            {plan.max_messages_per_month && (
+                                                <div className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+                                                    <Check className="w-3 h-3 text-emerald-500 shrink-0" />
+                                                    {plan.max_messages_per_month.toLocaleString()} messages/mo
+                                                </div>
+                                            )}
+                                            {plan.max_cost_per_month && (
+                                                <div className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+                                                    <Check className="w-3 h-3 text-emerald-500 shrink-0" />
+                                                    {sym}{plan.max_cost_per_month} cost budget
+                                                </div>
+                                            )}
+                                            {plan.max_agents && (
+                                                <div className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+                                                    <Check className="w-3 h-3 text-emerald-500 shrink-0" />
+                                                    {plan.max_agents} agents
+                                                </div>
+                                            )}
+                                            {plan.max_knowledge_sources && (
+                                                <div className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
+                                                    <Check className="w-3 h-3 text-emerald-500 shrink-0" />
+                                                    {plan.max_knowledge_sources} knowledge sources
+                                                </div>
+                                            )}
+                                        </div>
+
+                                        {isCurrentPlan ? (
+                                            <button
+                                                disabled
+                                                className="w-full py-2 rounded-lg text-xs font-semibold border"
+                                                style={{
+                                                    color: '#10b981',
+                                                    borderColor: 'rgba(16,185,129,0.3)',
+                                                    background: 'rgba(16,185,129,0.05)',
+                                                    cursor: 'default',
+                                                }}
+                                            >
+                                                <Check className="w-3.5 h-3.5 inline mr-1" /> Active Plan
+                                            </button>
+                                        ) : (
+                                            <button
+                                                onClick={() => handleCheckout(plan.id)}
+                                                disabled={!!checkoutLoading}
+                                                className="w-full py-2.5 rounded-lg text-xs font-bold text-white transition-all duration-200 flex items-center justify-center gap-1.5"
+                                                style={{
+                                                    background: checkoutLoading === plan.id ? '#6366f1' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                                    opacity: checkoutLoading && checkoutLoading !== plan.id ? 0.5 : 1,
+                                                    cursor: checkoutLoading ? 'wait' : 'pointer',
+                                                }}
+                                            >
+                                                {checkoutLoading === plan.id ? (
+                                                    <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Redirecting...</>
+                                                ) : (
+                                                    <><ArrowUpRight className="w-3.5 h-3.5" /> {hasActiveSub ? 'Switch Plan' : 'Subscribe'}</>
+                                                )}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                            );
+                        })}
                     </div>
+
+                    {/* Promo code hint */}
+                    <p className="text-[11px] text-[var(--text-muted)] text-center mt-4">
+                        Have a promo code? You can apply it during checkout.
+                    </p>
                 </div>
-            </div>
+            )}
         </div>
     );
 };
