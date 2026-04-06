@@ -23,7 +23,11 @@ const CACHE_PREFIX = 'beeflow_i18n_';
 export function TranslationProvider({ children }) {
     const hasStoredLocale = useRef(!!localStorage.getItem(STORAGE_KEY));
     const [locale, setLocaleState] = useState(() => {
-        return localStorage.getItem(STORAGE_KEY) || 'en';
+        const stored = localStorage.getItem(STORAGE_KEY);
+        if (stored) return stored;
+        // Auto-detect browser language (nl, nl-NL → nl)
+        const browserLang = (navigator.language || navigator.userLanguage || 'en').split('-')[0].toLowerCase();
+        return browserLang || 'en';
     });
     const [strings, setStrings] = useState(EN_DEFAULTS);
     const [isLoading, setIsLoading] = useState(false);
@@ -63,7 +67,33 @@ export function TranslationProvider({ children }) {
         setIsLoading(false);
     }, []);
 
-    // On first load, if user has no stored locale, check for org default
+    // Load strings via public endpoint for pre-auth (login page) when locale is non-English
+    const loadPublicStrings = useCallback(async (loc) => {
+        if (loc === 'en' || loadedLocaleRef.current === loc) return;
+        try {
+            const res = await fetch(`${API_BASE}/api/languages/public/strings/${loc}`);
+            if (res.ok) {
+                const data = await res.json();
+                setStrings({ ...EN_DEFAULTS, ...data });
+                loadedLocaleRef.current = loc;
+                localStorage.setItem(`${CACHE_PREFIX}${loc}`, JSON.stringify({ data, timestamp: Date.now() }));
+                return;
+            }
+        } catch { }
+        // Fall back to authenticated endpoint (will work post-login)
+        loadStrings(loc);
+    }, [loadStrings]);
+
+    // On first load: try public endpoint for detected browser locale,
+    // then check org default once authenticated
+    useEffect(() => {
+        if (!hasStoredLocale.current && locale !== 'en') {
+            // Browser detected a non-English locale — try loading via public endpoint
+            loadPublicStrings(locale);
+        }
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Post-auth: check for org default locale
     useEffect(() => {
         if (!hasStoredLocale.current) {
             authFetch(`${API_BASE}/api/languages/user/locales`)
