@@ -1,40 +1,59 @@
 import React from 'react';
-import { Building, MapPin, Phone, FileText, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Building, MapPin, Phone, FileText, ArrowLeft, ArrowRight, User } from 'lucide-react';
 
-const SignupStepOrg = ({ signupData, setSignupData, signupOrgs, handleSignupNext, resetSignup, inputClass, inputClassSimple, labelClass }) => {
+const SignupStepOrg = ({ signupData, setSignupData, signupOrgs, handleSignupNext, resetSignup, inputClass, inputClassSimple, labelClass, deploymentMode }) => {
+    const isCloud = deploymentMode === 'cloud';
+
     return (
         <form onSubmit={e => { e.preventDefault(); handleSignupNext(); }} className="space-y-4">
-            {/* New / Join existing toggle — only show when public orgs exist */}
-            {signupOrgs.length > 0 && (
-                <div style={{
-                    display: 'flex', gap: '4px', padding: '3px', borderRadius: '10px',
-                    background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', marginBottom: '4px',
-                }}>
-                    {[
-                        { id: 'new', label: 'New Organisation' },
-                        { id: 'existing', label: 'Join Existing' },
-                    ].map(opt => {
-                        const active = signupData.signupType === opt.id;
-                        return (
-                            <button key={opt.id} type="button"
-                                onClick={() => setSignupData(p => ({ ...p, signupType: opt.id }))}
-                                style={{
-                                    flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    padding: '8px 12px', borderRadius: '8px', fontSize: '13px',
-                                    fontWeight: active ? 600 : 500, border: 'none', cursor: 'pointer',
-                                    transition: 'all .15s ease',
-                                    background: active ? 'var(--accent-primary)' : 'transparent',
-                                    color: active ? '#fff' : 'var(--text-muted)',
-                                }}
-                            >
-                                {opt.label}
-                            </button>
-                        );
-                    })}
-                </div>
-            )}
+            {/* Toggle: New / Join Existing / Personal Account */}
+            <div style={{
+                display: 'flex', gap: '4px', padding: '3px', borderRadius: '10px',
+                background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', marginBottom: '4px',
+            }}>
+                {[
+                    { id: 'new', label: 'New Organisation' },
+                    ...(signupOrgs.length > 0 ? [{ id: 'existing', label: 'Join Existing' }] : []),
+                    ...(isCloud ? [{ id: 'consumer', label: 'Personal Account' }] : []),
+                ].map(opt => {
+                    const active = signupData.signupType === opt.id;
+                    return (
+                        <button key={opt.id} type="button"
+                            onClick={() => setSignupData(p => ({ ...p, signupType: opt.id }))}
+                            style={{
+                                flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                padding: '8px 12px', borderRadius: '8px', fontSize: '13px',
+                                fontWeight: active ? 600 : 500, border: 'none', cursor: 'pointer',
+                                transition: 'all .15s ease',
+                                background: active ? 'var(--accent-primary)' : 'transparent',
+                                color: active ? '#fff' : 'var(--text-muted)',
+                            }}
+                        >
+                            {opt.label}
+                        </button>
+                    );
+                })}
+            </div>
 
-            {signupData.signupType === 'new' ? (
+            {signupData.signupType === 'consumer' ? (
+                /* --- Personal / Consumer account --- */
+                <div className="space-y-3">
+                    <div className="p-4 rounded-xl" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)' }}>
+                        <div className="flex items-center gap-3 mb-2">
+                            <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, var(--accent-primary), #a855f7)' }}>
+                                <User className="w-5 h-5 text-white" />
+                            </div>
+                            <div>
+                                <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Personal Account</p>
+                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>No organization needed</p>
+                            </div>
+                        </div>
+                        <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                            Get started immediately with your own personal workspace. You can create or join an organization later at any time.
+                        </p>
+                    </div>
+                </div>
+            ) : signupData.signupType === 'new' ? (
                 <>
                     <div>
                         <label className={labelClass}>Company Name *</label>
@@ -121,3 +140,4 @@ const SignupStepOrg = ({ signupData, setSignupData, signupOrgs, handleSignupNext
 };
 
 export default SignupStepOrg;
+

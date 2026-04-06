@@ -465,7 +465,8 @@ function App() {
     }
 
     // Show no-organisation gate for SSO users without org membership
-    if (noOrganization) {
+    // Consumer accounts (org-less by design) bypass this gate
+    if (noOrganization && !user?.isConsumerAccount) {
         return (
             <div className="h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(160deg, var(--bg-primary) 0%, var(--bg-secondary) 50%, var(--bg-tertiary) 100%)' }}>
                 <div className="w-full max-w-md">

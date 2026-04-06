@@ -6,9 +6,11 @@ import StartupAgentSection from './settings/StartupAgentSection';
 import MemorySection from './settings/MemorySection';
 import IntegrationsSection from './settings/IntegrationsSection';
 import OrganisationSection from './settings/OrganisationSection';
+import ConsumerLicenseSection from './settings/ConsumerLicenseSection';
+import ConsumerPrivacySection from './settings/ConsumerPrivacySection';
 import { SECTIONS as ORG_SECTIONS } from '../components/admin/OrgInfoPanel';
 import OrgAzureConfigPanel from '../components/admin/OrgAzureConfigPanel';
-import { Users, Link2, BarChart2, Cloud } from 'lucide-react';
+import { Users, Link2, BarChart2, Cloud, CreditCard, Shield } from 'lucide-react';
 
 /* ── Org sub-items (use labelKey for i18n) ────────────────────────────────── */
 const BASE_ORG_SUB_ITEMS = [
@@ -139,6 +141,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
     const canManageUsers = canSeeOrg;
     const deploymentMode = user?.featureFlags?.deploymentMode || 'cloud';
     const isPrivateCloud = deploymentMode === 'private-cloud';
+    const isConsumerAccount = !!user?.isConsumerAccount;
     const ei = user?.enabledIntegrations;
     const hasOrgIntegrations = !ei || (Array.isArray(ei) && ei.length > 0);
     const orgSubItems = useMemo(() => {
@@ -226,10 +229,13 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
     const renderContent = () => {
         if (activeTab === 'org_azure' && canSeeOrg) return <OrgAzureConfigPanel user={user} />;
         if (isOrgSubTab && canSeeOrg) return <OrganisationSection user={user} activeSection={orgActiveSection} />;
+        // Consumer account tabs
+        if (activeTab === 'consumer_license' && isConsumerAccount) return <ConsumerLicenseSection user={user} />;
+        if (activeTab === 'consumer_privacy' && isConsumerAccount) return <ConsumerPrivacySection user={user} />;
         switch (activeTab) {
             case 'preferences': return <StartupAgentSection defaultAgentMode={defaultAgentMode} setDefaultAgentMode={setDefaultAgentMode} defaultAgentId={defaultAgentId} setDefaultAgentId={setDefaultAgentId} agents={agents} onLogout={onLogout} user={user} />;
             case 'memory': return <MemorySection memoryStats={memoryStats} onOpenMemory={() => setShowMemoryPanel(true)} user={user} />;
-            case 'integrations': return <IntegrationsSection statuses={statuses} onSaved={handleIntegrationSaved} enabledIntegrations={user?.enabledIntegrations} isOrgAdmin={canSeeOrg} user={user} />;
+            case 'integrations': return <IntegrationsSection statuses={statuses} onSaved={handleIntegrationSaved} enabledIntegrations={user?.enabledIntegrations} isOrgAdmin={canSeeOrg} user={user} showOrgIntegrations={isConsumerAccount} />;
             case 'organisation': return canSeeOrg ? <OrganisationSection user={user} activeSection="license" /> : null;
             default: return null;
         }
@@ -373,6 +379,30 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
                                         ))}
                                     </div>
                                 )}
+                            </>
+                        )}
+
+                        {/* Consumer Account section — for org-less cloud users */}
+                        {isConsumerAccount && !canSeeOrg && (
+                            <>
+                                <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '6px 8px' }} />
+                                <p className="text-[9px] font-semibold uppercase tracking-widest px-3 pb-1 pt-1" style={{ color: 'var(--text-muted)' }}>
+                                    {t('settings.account_section') || 'Account'}
+                                </p>
+                                <NavItem
+                                    id="consumer_license"
+                                    label={t('settings.license_usage') || 'License & Usage'}
+                                    icon={<CreditCard style={{ width: '15px', height: '15px' }} />}
+                                    isActive={activeTab === 'consumer_license'}
+                                    onClick={handleNavClick}
+                                />
+                                <NavItem
+                                    id="consumer_privacy"
+                                    label={t('settings.privacy_shield') || 'Privacy Shield'}
+                                    icon={<Shield style={{ width: '15px', height: '15px' }} />}
+                                    isActive={activeTab === 'consumer_privacy'}
+                                    onClick={handleNavClick}
+                                />
                             </>
                         )}
                     </div>

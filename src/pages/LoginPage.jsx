@@ -32,6 +32,7 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
     const [allowSignups, setAllowSignups] = useState(null);
     const [allowPasswordLogin, setAllowPasswordLogin] = useState(null);
     const [authSettingsLoaded, setAuthSettingsLoaded] = useState(false);
+    const [deploymentMode, setDeploymentMode] = useState('cloud');
     const [confirmPassword, setConfirmPassword] = useState('');
     const [adminRecoveryKey, setAdminRecoveryKey] = useState(null);
 
@@ -80,6 +81,7 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                     else setAllowSignups(true);
                     if (data.allowPasswordLogin === false) setAllowPasswordLogin(false);
                     else setAllowPasswordLogin(true);
+                    if (data.deploymentMode) setDeploymentMode(data.deploymentMode);
                 } else {
                     // If setup-status fails, show everything (safe fallback)
                     setAllowSignups(true);
@@ -222,7 +224,8 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                 setError('Please select an organization');
                 return;
             }
-            if (signupData.signupType === 'existing') {
+            // Consumer and existing org paths skip directly to account creation
+            if (signupData.signupType === 'consumer' || signupData.signupType === 'existing') {
                 setSignupStep(4);
                 return;
             }
@@ -282,9 +285,10 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                     privacyLevel: signupData.privacyLevel,
                     euModeEnabled: signupData.euModeEnabled
                 };
-            } else {
+            } else if (signupData.signupType === 'existing') {
                 body.organizationId = signupData.organizationId;
             }
+            // signupType === 'consumer' → no org fields sent
 
             // Attach invite token if present
             if (inviteToken) {
@@ -525,6 +529,7 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                                 signupOrgs={signupOrgs} handleSignupNext={handleSignupNext}
                                 resetSignup={resetSignup}
                                 inputClass={inputClass} inputClassSimple={inputClassSimple} labelClass={labelClass}
+                                deploymentMode={deploymentMode}
                             />
                         ) : signupStep === 2 ? (
                             <SignupStepAuth

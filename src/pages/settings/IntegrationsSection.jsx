@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
+import N8nSection from './N8nSection';
 
 // ── Shared UI helpers ─────────────────────────────────────────────────────────
 const ConnectedBadge = () => (
@@ -534,7 +535,7 @@ const McpCredentialsSection = ({ onSaved }) => {
 };
 
 // ── IntegrationsSection ───────────────────────────────────────────────────────
-const IntegrationsSection = ({ statuses, onSaved, enabledIntegrations, isOrgAdmin }) => {
+const IntegrationsSection = ({ statuses, onSaved, enabledIntegrations, isOrgAdmin, user, showOrgIntegrations = false }) => {
     const isEnabled = (id) => !enabledIntegrations || enabledIntegrations.includes(id);
 
     const showFireflies = isEnabled('fireflies');
@@ -583,6 +584,27 @@ const IntegrationsSection = ({ statuses, onSaved, enabledIntegrations, isOrgAdmi
                     <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
                         {showGitHub && <GitHubIntegration onSaved={() => onSaved('github')} last={!showMcp} />}
                         {showMcp && <McpCredentialsSection onSaved={() => onSaved('mcp')} />}
+                    </div>
+                </div>
+            )}
+
+            {/* Organisation Integrations — merged for consumer accounts */}
+            {showOrgIntegrations && (
+                <div className="space-y-1.5">
+                    <GroupLabel>Organisation Tools</GroupLabel>
+                    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
+                        <div style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                            <div className="flex items-center gap-3 px-5 py-3.5" style={{ background: 'var(--bg-secondary)' }}>
+                                <img src="/n8n-color.png" alt="n8n" style={{ width: '20px', height: '20px', objectFit: 'contain', flexShrink: 0 }} />
+                                <div className="flex-1">
+                                    <p className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>n8n</p>
+                                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Workflow automation with n8n webhooks</p>
+                                </div>
+                            </div>
+                            <div className="px-5 pb-4" style={{ background: 'var(--bg-secondary)' }}>
+                                <N8nSection />
+                            </div>
+                        </div>
                     </div>
                 </div>
             )}
