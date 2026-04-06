@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Package, Building2, Plus, Pencil, Trash2, Save, X, Star, AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Shield, Infinity, ScrollText, Euro, Eye, EyeOff, CreditCard, Settings, ExternalLink, Loader2 } from 'lucide-react';
+import { Package, Building2, Plus, Pencil, Trash2, Save, X, Star, AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Shield, Infinity, ScrollText, Euro, Eye, EyeOff, CreditCard, Settings, ExternalLink, Loader2, Tag, Percent, Users, ToggleLeft, ToggleRight, Clock, Hash } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 const FEATURE_OPTIONS = [
@@ -15,6 +15,7 @@ const FEATURE_OPTIONS = [
 const SECTIONS = [
     { id: 'plans', label: 'Plans', icon: Package, color: '#8b5cf6' },
     { id: 'organizations', label: 'Orgs', icon: Building2, color: '#3b82f6' },
+    { id: 'promos', label: 'Promos', icon: Tag, color: '#10b981' },
     { id: 'settings', label: 'Stripe', icon: CreditCard, color: '#635bff' },
     { id: 'audit', label: 'Audit', icon: ScrollText, color: '#f59e0b' },
 ];
@@ -275,6 +276,7 @@ const PlanEditor = ({ plan, onSave, onCancel }) => {
         trial_days: plan?.trial_days ?? 0,
         sort_order: plan?.sort_order ?? 0,
         is_public: plan?.is_public || false,
+        plan_type: plan?.plan_type || 'organization',
     });
 
     const update = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
@@ -287,6 +289,31 @@ const PlanEditor = ({ plan, onSave, onCancel }) => {
                         {plan ? 'Edit Plan' : 'New Plan'}
                     </h3>
                     <button onClick={onCancel} style={{ ...btnSecondary, padding: '4px 8px' }}><X style={{ width: 16, height: 16 }} /></button>
+                </div>
+
+                {/* Plan Type selector */}
+                <div style={{ marginBottom: '16px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '8px', display: 'block' }}>Plan Type</label>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                        {[{ value: 'organization', label: 'Organization', icon: Building2, color: '#3b82f6', desc: 'For teams & companies' },
+                          { value: 'consumer', label: 'Consumer', icon: Users, color: '#10b981', desc: 'For individuals' }].map(opt => (
+                            <button
+                                key={opt.value}
+                                type="button"
+                                onClick={() => update('plan_type', opt.value)}
+                                style={{
+                                    flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px',
+                                    padding: '12px', borderRadius: '10px', cursor: 'pointer', transition: 'all 0.15s',
+                                    border: form.plan_type === opt.value ? `2px solid ${opt.color}` : '2px solid var(--border-default)',
+                                    background: form.plan_type === opt.value ? `${opt.color}10` : 'var(--bg-tertiary)',
+                                }}
+                            >
+                                <opt.icon style={{ width: 18, height: 18, color: form.plan_type === opt.value ? opt.color : 'var(--text-muted)' }} />
+                                <span style={{ fontSize: '13px', fontWeight: '600', color: form.plan_type === opt.value ? opt.color : 'var(--text-primary)' }}>{opt.label}</span>
+                                <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>{opt.desc}</span>
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 {/* Name & Description */}
@@ -461,11 +488,23 @@ const PlansView = () => {
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '16px' }}>
                     {plans.map(plan => (
                         <div key={plan.id} style={{ ...card, position: 'relative', transition: 'border-color 0.15s', borderColor: plan.is_default ? 'rgba(245,158,11,0.4)' : undefined }}>
-                            {plan.is_default && (
-                                <div style={{ position: 'absolute', top: '12px', right: '12px', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', fontWeight: '700', color: '#f59e0b', background: 'rgba(245,158,11,0.1)', padding: '3px 8px', borderRadius: '6px' }}>
-                                    <Star style={{ width: 10, height: 10 }} /> DEFAULT
-                                </div>
-                            )}
+                            {/* Badges — top right */}
+                            <div style={{ position: 'absolute', top: '12px', right: '12px', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                                {plan.plan_type === 'consumer' ? (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', fontWeight: '700', color: '#10b981', background: 'rgba(16,185,129,0.1)', padding: '3px 8px', borderRadius: '6px' }}>
+                                        <Users style={{ width: 10, height: 10 }} /> CONSUMER
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', fontWeight: '700', color: '#3b82f6', background: 'rgba(59,130,246,0.1)', padding: '3px 8px', borderRadius: '6px' }}>
+                                        <Building2 style={{ width: 10, height: 10 }} /> ORG
+                                    </div>
+                                )}
+                                {plan.is_default && (
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', fontSize: '10px', fontWeight: '700', color: '#f59e0b', background: 'rgba(245,158,11,0.1)', padding: '3px 8px', borderRadius: '6px' }}>
+                                        <Star style={{ width: 10, height: 10 }} /> DEFAULT
+                                    </div>
+                                )}
+                            </div>
                             <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', margin: '0 0 4px' }}>{plan.name}</h3>
                             {plan.description && <p style={{ fontSize: '12px', color: 'var(--text-muted)', margin: '0 0 8px' }}>{plan.description}</p>}
                             {plan.price !== null && plan.price !== undefined ? (
@@ -542,6 +581,246 @@ const PlansView = () => {
             )}
 
             {editing && <PlanEditor plan={editing === 'new' ? null : editing} onSave={handleSave} onCancel={() => setEditing(null)} />}
+        </div>
+    );
+};
+
+
+// ═══════════════════════════════════════════
+//  Promo Codes View
+// ═══════════════════════════════════════════
+const PromoCodesView = () => {
+    const [codes, setCodes] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [showForm, setShowForm] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [error, setError] = useState('');
+    const [form, setForm] = useState({
+        code: '', discountType: 'percent', discountValue: '', currency: 'EUR',
+        duration: 'once', durationMonths: 3, maxRedemptions: '', expiresAt: '',
+        firstTimeOnly: false, minAmount: '', name: '',
+    });
+
+    const loadCodes = useCallback(async () => {
+        try {
+            const res = await authFetch(`${API_BASE}/api/stripe/promo-codes`);
+            if (res.ok) setCodes(await res.json());
+        } catch (e) { console.error('Failed to load promo codes:', e); }
+        finally { setLoading(false); }
+    }, []);
+
+    useEffect(() => { loadCodes(); }, [loadCodes]);
+
+    const handleCreate = async () => {
+        setError('');
+        if (!form.code.trim()) return setError('Promo code is required');
+        if (!form.discountValue || parseFloat(form.discountValue) <= 0) return setError('Discount value is required');
+        setSaving(true);
+        try {
+            const body = {
+                code: form.code.trim(),
+                discountType: form.discountType,
+                discountValue: form.discountType === 'percent'
+                    ? parseFloat(form.discountValue)
+                    : Math.round(parseFloat(form.discountValue) * 100), // convert to cents for fixed
+                currency: form.currency,
+                duration: form.duration,
+                durationMonths: form.duration === 'repeating' ? parseInt(form.durationMonths) || 3 : undefined,
+                maxRedemptions: form.maxRedemptions ? parseInt(form.maxRedemptions) : undefined,
+                expiresAt: form.expiresAt || undefined,
+                firstTimeOnly: form.firstTimeOnly,
+                minAmount: form.minAmount ? Math.round(parseFloat(form.minAmount) * 100) : undefined,
+                name: form.name || undefined,
+            };
+            const res = await authFetch(`${API_BASE}/api/stripe/promo-codes`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const data = await res.json();
+            if (!res.ok) return setError(data.error || 'Failed to create');
+            setShowForm(false);
+            setForm({ code: '', discountType: 'percent', discountValue: '', currency: 'EUR', duration: 'once', durationMonths: 3, maxRedemptions: '', expiresAt: '', firstTimeOnly: false, minAmount: '', name: '' });
+            loadCodes();
+        } catch (e) { setError(e.message); }
+        finally { setSaving(false); }
+    };
+
+    const toggleActive = async (codeItem) => {
+        const action = codeItem.active ? 'deactivate' : 'activate';
+        try {
+            await authFetch(`${API_BASE}/api/stripe/promo-codes/${codeItem.id}/${action}`, { method: 'PUT' });
+            loadCodes();
+        } catch (e) { console.error(`Failed to ${action} promo code:`, e); }
+    };
+
+    const update = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
+
+    if (loading) {
+        return <div style={{ display: 'flex', justifyContent: 'center', padding: '60px', color: 'var(--text-muted)' }}>Loading promo codes...</div>;
+    }
+
+    return (
+        <div style={{ padding: '24px', height: '100%', overflowY: 'auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+                <div>
+                    <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)', margin: 0 }}>Promotion Codes</h2>
+                    <p style={{ fontSize: '13px', color: 'var(--text-muted)', margin: '4px 0 0' }}>Create and manage discount codes for Stripe checkout</p>
+                </div>
+                <button onClick={() => setShowForm(!showForm)} style={showForm ? btnSecondary : btnPrimary}>
+                    {showForm ? <><X style={{ width: 16, height: 16 }} /> Cancel</> : <><Plus style={{ width: 16, height: 16 }} /> New Code</>}
+                </button>
+            </div>
+
+            {/* Create Form */}
+            {showForm && (
+                <div style={{ ...card, marginBottom: '20px', borderColor: 'rgba(16,185,129,0.3)' }}>
+                    <h4 style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', margin: '0 0 16px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        <Tag style={{ width: 16, height: 16, color: '#10b981' }} /> Create Promotion Code
+                    </h4>
+
+                    {error && (
+                        <div style={{ padding: '10px 14px', borderRadius: '8px', background: 'rgba(239,68,68,0.1)', color: '#ef4444', fontSize: '13px', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <AlertTriangle style={{ width: 14, height: 14 }} /> {error}
+                        </div>
+                    )}
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px 16px' }}>
+                        <div>
+                            <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>Promo Code *</label>
+                            <input value={form.code} onChange={e => update('code', e.target.value.toUpperCase().replace(/\s+/g, ''))} placeholder="e.g. LAUNCH20" style={{ ...input, fontFamily: 'monospace', fontWeight: '700', letterSpacing: '1px' }} />
+                        </div>
+                        <div>
+                            <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>Internal Name</label>
+                            <input value={form.name} onChange={e => update('name', e.target.value)} placeholder="e.g. Launch campaign 2026" style={input} />
+                        </div>
+
+                        <div>
+                            <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>Discount Type</label>
+                            <select value={form.discountType} onChange={e => update('discountType', e.target.value)} style={{ ...input, cursor: 'pointer' }}>
+                                <option value="percent">Percentage (%)</option>
+                                <option value="fixed">Fixed Amount</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
+                                {form.discountType === 'percent' ? 'Percentage Off (1-100)' : `Amount Off (${form.currency})`}
+                            </label>
+                            <input type="number" min="0" max={form.discountType === 'percent' ? 100 : undefined} step={form.discountType === 'percent' ? 1 : 0.01} value={form.discountValue} onChange={e => update('discountValue', e.target.value)} placeholder={form.discountType === 'percent' ? '20' : '5.00'} style={input} />
+                        </div>
+
+                        {form.discountType === 'fixed' && (
+                            <div>
+                                <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>Currency</label>
+                                <select value={form.currency} onChange={e => update('currency', e.target.value)} style={{ ...input, cursor: 'pointer' }}>
+                                    <option value="EUR">EUR (€)</option>
+                                    <option value="USD">USD ($)</option>
+                                    <option value="GBP">GBP (£)</option>
+                                </select>
+                            </div>
+                        )}
+
+                        <div>
+                            <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>Duration</label>
+                            <select value={form.duration} onChange={e => update('duration', e.target.value)} style={{ ...input, cursor: 'pointer' }}>
+                                <option value="once">Once (first invoice)</option>
+                                <option value="repeating">Repeating (N months)</option>
+                                <option value="forever">Forever</option>
+                            </select>
+                        </div>
+
+                        {form.duration === 'repeating' && (
+                            <div>
+                                <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>Duration (months)</label>
+                                <input type="number" min="1" max="36" value={form.durationMonths} onChange={e => update('durationMonths', parseInt(e.target.value) || 3)} style={input} />
+                            </div>
+                        )}
+
+                        <div>
+                            <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>Max Redemptions</label>
+                            <input type="number" min="1" value={form.maxRedemptions} onChange={e => update('maxRedemptions', e.target.value)} placeholder="Unlimited" style={input} />
+                        </div>
+                        <div>
+                            <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>Expires At</label>
+                            <input type="datetime-local" value={form.expiresAt} onChange={e => update('expiresAt', e.target.value)} style={input} />
+                        </div>
+                    </div>
+
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', borderRadius: '8px', background: 'var(--bg-tertiary)', cursor: 'pointer', marginTop: '12px' }}>
+                        <input type="checkbox" checked={form.firstTimeOnly} onChange={e => update('firstTimeOnly', e.target.checked)} style={{ accentColor: '#10b981' }} />
+                        <span style={{ fontSize: '13px', color: 'var(--text-primary)' }}>First-time customers only</span>
+                    </label>
+
+                    <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px', marginTop: '16px' }}>
+                        <button onClick={() => setShowForm(false)} style={btnSecondary}>Cancel</button>
+                        <button onClick={handleCreate} disabled={saving} style={{ ...btnPrimary, background: '#10b981', opacity: saving ? 0.7 : 1 }}>
+                            {saving ? <Loader2 style={{ width: 14, height: 14, animation: 'spin 1s linear infinite' }} /> : <Tag style={{ width: 14, height: 14 }} />}
+                            {saving ? 'Creating...' : 'Create Code'}
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* Codes List */}
+            {codes.length === 0 ? (
+                <div style={{ ...card, textAlign: 'center', padding: '60px 20px' }}>
+                    <Tag style={{ width: 40, height: 40, color: 'var(--text-muted)', margin: '0 auto 12px' }} />
+                    <p style={{ color: 'var(--text-muted)', fontSize: '14px' }}>No promotion codes yet. Create your first one above.</p>
+                </div>
+            ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {codes.map(c => (
+                        <div key={c.id} style={{ ...card, padding: '14px 18px', opacity: c.active ? 1 : 0.6, transition: 'opacity 0.2s' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flex: 1 }}>
+                                    <div style={{ background: c.active ? 'rgba(16,185,129,0.1)' : 'var(--bg-tertiary)', borderRadius: '8px', padding: '8px 14px', fontFamily: 'monospace', fontWeight: '700', fontSize: '15px', letterSpacing: '1.5px', color: c.active ? '#10b981' : 'var(--text-muted)' }}>
+                                        {c.code}
+                                    </div>
+                                    <div>
+                                        <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                            {c.discountType === 'percent' ? (
+                                                <><Percent style={{ width: 14, height: 14, color: '#8b5cf6' }} /> {c.discountValue}% off</>
+                                            ) : (
+                                                <><Euro style={{ width: 14, height: 14, color: '#8b5cf6' }} /> {(c.discountValue / 100).toFixed(2)} {c.currency?.toUpperCase()} off</>
+                                            )}
+                                            <span style={{ fontSize: '11px', color: 'var(--text-muted)', fontWeight: '400' }}>
+                                                · {c.duration === 'once' ? 'one-time' : c.duration === 'forever' ? 'forever' : `${c.durationMonths}mo`}
+                                            </span>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: 'var(--text-muted)', marginTop: '2px' }}>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                                <Hash style={{ width: 10, height: 10 }} /> {c.timesRedeemed || 0}{c.maxRedemptions ? `/${c.maxRedemptions}` : ''} used
+                                            </span>
+                                            {c.expiresAt && (
+                                                <span style={{ display: 'flex', alignItems: 'center', gap: '3px' }}>
+                                                    <Clock style={{ width: 10, height: 10 }} /> expires {new Date(c.expiresAt).toLocaleDateString()}
+                                                </span>
+                                            )}
+                                            {c.firstTimeOnly && <span style={{ color: '#f59e0b' }}>new customers only</span>}
+                                        </div>
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <span style={{
+                                        fontSize: '10px', fontWeight: '700', padding: '3px 8px', borderRadius: '6px',
+                                        background: c.active ? 'rgba(16,185,129,0.1)' : 'rgba(239,68,68,0.1)',
+                                        color: c.active ? '#10b981' : '#ef4444',
+                                    }}>
+                                        {c.active ? 'ACTIVE' : 'INACTIVE'}
+                                    </span>
+                                    <button
+                                        onClick={() => toggleActive(c)}
+                                        title={c.active ? 'Deactivate' : 'Re-activate'}
+                                        style={{ ...btnSecondary, padding: '6px 10px', gap: '4px', fontSize: '11px', color: c.active ? '#ef4444' : '#10b981', borderColor: c.active ? 'rgba(239,68,68,0.3)' : 'rgba(16,185,129,0.3)' }}
+                                    >
+                                        {c.active ? <ToggleRight style={{ width: 14, height: 14 }} /> : <ToggleLeft style={{ width: 14, height: 14 }} />}
+                                        {c.active ? 'Deactivate' : 'Activate'}
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            )}
         </div>
     );
 };
@@ -1368,6 +1647,11 @@ const SubscriptionsPanel = () => {
                 {active === 'organizations' && (
                     <div style={{ position: 'absolute', inset: 0, overflowY: 'auto' }}>
                         <OrgsView />
+                    </div>
+                )}
+                {active === 'promos' && (
+                    <div style={{ position: 'absolute', inset: 0, overflowY: 'auto' }}>
+                        <PromoCodesView />
                     </div>
                 )}
                 {active === 'audit' && (

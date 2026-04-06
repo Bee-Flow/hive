@@ -217,7 +217,7 @@ function App() {
                             betaFeatures = permsData.betaFeatures || [];
                         }
                         const canManageUsers = permissions.includes('all') || permissions.includes('manage_users');
-                        setUser({ ...data.user, permissions, groups: userGroups, organizations: userOrgs, allowedAgentTypes, betaFeatures, featureFlags: data.featureFlags || {}, enabledIntegrations: data.enabledIntegrations || null, canManageUsers: canManageUsers || data.user.isAdmin, encryptionEnabled: data.encryptionEnabled !== false });
+                        setUser({ ...data.user, permissions, groups: userGroups, organizations: userOrgs, allowedAgentTypes, betaFeatures, featureFlags: data.featureFlags || {}, enabledIntegrations: data.enabledIntegrations || null, canManageUsers: canManageUsers || data.user.isAdmin, encryptionEnabled: data.encryptionEnabled !== false, isConsumerAccount: !!data.isConsumerAccount });
                         setIsAuthenticated(true);
                     }
                 }
@@ -329,7 +329,7 @@ function App() {
                 betaFeatures = permsData.betaFeatures || [];
             }
             const canManageUsers = permissions.includes('all') || permissions.includes('manage_users');
-            setUser({ ...userData, permissions, groups: userGroups, organizations: userOrgs, allowedAgentTypes, betaFeatures, canManageUsers: canManageUsers || userData.isAdmin });
+            setUser({ ...userData, permissions, groups: userGroups, organizations: userOrgs, allowedAgentTypes, betaFeatures, canManageUsers: canManageUsers || userData.isAdmin, isConsumerAccount: !!userData.isConsumerAccount });
         } catch (err) {
             console.error('Failed to fetch permissions after login:', err);
             setUser(userData);
