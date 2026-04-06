@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import AvatarPicker from './AvatarPicker';
 import { useTranslation } from '../../hooks/useTranslation';
-import { Globe, Check, ChevronDown } from 'lucide-react';
+import { Globe, Check, ChevronDown, Shield } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 
 // ── macOS-style radio row ─────────────────────────────────────────────────────
@@ -116,6 +116,88 @@ const LanguageSettingsSection = () => {
     );
 };
 
+// ── EU-Only Models Toggle ─────────────────────────────────────────────────────
+const EUPrivacySection = () => {
+    const [euEnabled, setEuEnabled] = useState(false);
+    const [orgForced, setOrgForced] = useState(false);
+    const [hasEuModels, setHasEuModels] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const loaded = useRef(false);
+
+    useEffect(() => {
+        authFetch(`${API_BASE}/ai/user-settings`)
+            .then(r => r.json())
+            .then(data => {
+                setEuEnabled(!!data.userEuModeEnabled);
+                setOrgForced(!!data.orgEuModeForced);
+                setHasEuModels(!!data.hasEuModelsConfigured);
+                loaded.current = true;
+            })
+            .catch(() => {});
+    }, []);
+
+    const handleToggle = async () => {
+        const newVal = !euEnabled;
+        setEuEnabled(newVal);
+        setSaving(true);
+        try {
+            await authFetch(`${API_BASE}/ai/user-settings`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userEuModeEnabled: newVal }),
+            });
+        } catch (_) {
+            setEuEnabled(!newVal); // revert on failure
+        }
+        setSaving(false);
+    };
+
+    // Don't show if no EU models are configured by admin
+    if (!hasEuModels && !orgForced) return null;
+
+    return (
+        <div className="space-y-1.5 mt-6">
+            <p className="text-[11px] font-semibold uppercase tracking-widest px-1 mb-2" style={{ color: 'var(--text-muted)' }}>Privacy</p>
+            <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
+                <div className="flex items-center gap-3 px-5 py-4" style={{ background: 'var(--bg-secondary)', borderRadius: '0.75rem' }}>
+                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(59,130,246,0.1)' }}>
+                        <Shield className="w-4 h-4" style={{ color: '#3b82f6' }} />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <p className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>EU-Only Models</p>
+                        <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                            {orgForced
+                                ? 'Your organisation enforces EU-compliant AI models for all requests.'
+                                : 'Route all AI requests through EU-hosted models for data residency compliance.'}
+                        </p>
+                    </div>
+                    {orgForced ? (
+                        <span
+                            className="text-[10px] font-semibold px-2.5 py-1 rounded-full flex-shrink-0"
+                            style={{ background: 'rgba(5,150,105,0.1)', color: '#059669' }}
+                        >
+                            Enforced by org
+                        </span>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={handleToggle}
+                            disabled={saving}
+                            className="relative w-11 h-6 rounded-full transition-colors flex-shrink-0"
+                            style={{ background: euEnabled ? 'var(--accent-primary)' : 'var(--border-default)', opacity: saving ? 0.6 : 1 }}
+                        >
+                            <div
+                                className="absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform"
+                                style={{ transform: euEnabled ? 'translateX(20px)' : 'translateX(0)' }}
+                            />
+                        </button>
+                    )}
+                </div>
+            </div>
+        </div>
+    );
+};
+
 const StartupAgentSection = ({ defaultAgentMode, setDefaultAgentMode, defaultAgentId, setDefaultAgentId, agents, onLogout, user }) => {
     const { t } = useTranslation();
     const showAgentSelect = defaultAgentMode === 'specific';
@@ -222,6 +304,9 @@ const StartupAgentSection = ({ defaultAgentMode, setDefaultAgentMode, defaultAge
 
             {/* Language Settings */}
             <LanguageSettingsSection />
+
+            {/* EU-Only Models */}
+            <EUPrivacySection />
 
             {/* Chat History Display Mode */}
             <div className="space-y-1.5 mt-6">
