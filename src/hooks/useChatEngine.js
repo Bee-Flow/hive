@@ -497,7 +497,8 @@ export default function useChatEngine({
                 const sourceMessages = historyOverride || messages;
                 const history = sourceMessages.filter(m => (m.role === 'user' || m.role === 'assistant') && m.content?.trim()).map(m => ({
                     role: m.role,
-                    content: m.content
+                    content: m.content,
+                    ...(m.attachments && m.attachments.length > 0 ? { attachments: m.attachments.map(a => ({ name: a.name, type: a.type })) } : {})
                 }));
                 payload = {
                     message: text,
@@ -550,7 +551,8 @@ export default function useChatEngine({
                     ...(historyOverride ? {
                         history: historyOverride.filter(m => (m.role === 'user' || m.role === 'assistant') && m.content?.trim()).map(m => ({
                             role: m.role,
-                            content: m.content
+                            content: m.content,
+                            ...(m.attachments && m.attachments.length > 0 ? { attachments: m.attachments.map(a => ({ name: a.name, type: a.type })) } : {})
                         }))
                     } : {}),
                 };

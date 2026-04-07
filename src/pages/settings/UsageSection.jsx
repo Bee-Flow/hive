@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
-import { Bot, MessageSquare, BookOpen, Search, Code, LayoutTemplate, Filter, X, Cpu, Users, ChevronDown, Activity, ArrowUpRight, ArrowDownLeft, BarChart3, Zap, DollarSign, TrendingUp, ChevronRight } from 'lucide-react';
+import { Bot, MessageSquare, BookOpen, Search, Code, LayoutTemplate, Filter, X, Cpu, Users, ChevronDown, Activity, ArrowUpRight, ArrowDownLeft, BarChart3, Zap, DollarSign, TrendingUp, ChevronRight, Shield, AlertTriangle, Eye, Fingerprint, Clock } from 'lucide-react';
 
 // ── Formatters ──────────────────────────────────────────────────────────────
 const fNum = (n) => {
@@ -237,6 +237,9 @@ const UsageSection = () => {
         summary: null, timeline: [], users: [], sources: [],
         agents: [], models: [], modelsByAgent: [], modelsByUser: [],
     });
+    const [guardrails, setGuardrails] = useState({
+        summary: null, timeline: [], byUser: [], byCategory: [], recent: [],
+    });
 
     const buildQS = useCallback(() => {
         const params = new URLSearchParams({ days });
@@ -265,6 +268,16 @@ const UsageSection = () => {
                     models: await sa(results[5]),
                     modelsByAgent: await sa(results[6]),
                     modelsByUser: await sa(results[7]),
+                });
+                // Fetch guardrail data in parallel
+                const gEps = ['guardrails/summary', 'guardrails/timeline', 'guardrails/by-user', 'guardrails/by-category', 'guardrails/recent'];
+                const gResults = await Promise.all(gEps.map(ep => authFetch(`${API_BASE}/api/usage/${ep}?${qs}`)));
+                setGuardrails({
+                    summary: await sj(gResults[0], {}),
+                    timeline: await sa(gResults[1]),
+                    byUser: await sa(gResults[2]),
+                    byCategory: await sa(gResults[3]),
+                    recent: await sa(gResults[4]),
                 });
             } catch (err) { console.error("Failed to load usage", err); }
             setLoading(false);
@@ -602,6 +615,166 @@ const UsageSection = () => {
                             </Card>
                         </div>
                     )}
+
+                    {/* ════════════════════════════════════════════════════════ */}
+                    {/* SAFETY & GUARDRAILS SECTION                            */}
+                    {/* ════════════════════════════════════════════════════════ */}
+                    <div style={{ marginTop: 12, borderTop: '1px solid var(--border-subtle)', paddingTop: 20 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                            <div style={{ width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #ef444420, #f59e0b20)' }}>
+                                <Shield style={{ width: 15, height: 15, color: '#ef4444' }} />
+                            </div>
+                            <div>
+                                <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.01em' }}>Safety & Guardrails</h3>
+                                <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0, fontWeight: 400 }}>Content moderation, PII detection & regex guardrail events</p>
+                            </div>
+                        </div>
+
+                        {/* Summary Cards */}
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
+                            <StatCard icon={Shield} label="Total Violations" color="#ef4444"
+                                value={guardrails.summary?.total_events?.toLocaleString() || '0'}
+                                sub={<span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{guardrails.summary?.unique_users || 0} users</span>} />
+                            <StatCard icon={AlertTriangle} label="Moderation" color="#f59e0b"
+                                value={guardrails.summary?.moderation_count?.toLocaleString() || '0'}
+                                sub={<span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Content safety blocks</span>} />
+                            <StatCard icon={Fingerprint} label="PII Detections" color="#8b5cf6"
+                                value={guardrails.summary?.pii_count?.toLocaleString() || '0'}
+                                sub={<span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Personal data flagged</span>} />
+                            <StatCard icon={Eye} label="Regex Matches" color="#3b82f6"
+                                value={guardrails.summary?.regex_count?.toLocaleString() || '0'}
+                                sub={<span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Pattern-based blocks</span>} />
+                        </div>
+
+                        {/* Violation Timeline */}
+                        {guardrails.timeline.length > 0 && (
+                            <Card style={{ padding: '12px 16px', marginBottom: 14 }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
+                                    <TrendingUp style={{ width: 13, height: 13, color: '#ef4444', opacity: 0.7 }} />
+                                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>Violation Trend</span>
+                                    <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, fontSize: 10 }}>
+                                        <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><span style={{ width: 7, height: 7, borderRadius: 2, background: '#f59e0b', display: 'inline-block' }} /> Moderation</span>
+                                        <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><span style={{ width: 7, height: 7, borderRadius: 2, background: '#8b5cf6', display: 'inline-block' }} /> PII</span>
+                                        <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><span style={{ width: 7, height: 7, borderRadius: 2, background: '#3b82f6', display: 'inline-block' }} /> Regex</span>
+                                    </div>
+                                </div>
+                                {(() => {
+                                    const maxVal = Math.max(...guardrails.timeline.map(t => Number(t.total) || 0), 1);
+                                    return (
+                                        <div style={{ display: 'flex', alignItems: 'flex-end', gap: 2, height: 56 }}>
+                                            {guardrails.timeline.map((t, i) => {
+                                                const mod = Number(t.moderation) || 0;
+                                                const pii = Number(t.pii) || 0;
+                                                const reg = Number(t.regex) || 0;
+                                                const total = mod + pii + reg;
+                                                const h = (total / maxVal) * 100;
+                                                const modH = total > 0 ? (mod / total) * h : 0;
+                                                const piiH = total > 0 ? (pii / total) * h : 0;
+                                                const regH = total > 0 ? (reg / total) * h : 0;
+                                                return (
+                                                    <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%' }} title={`${t.period}: ${total} events`}>
+                                                        {regH > 0 && <div style={{ height: `${regH}%`, background: '#3b82f6', borderRadius: '2px 2px 0 0', minHeight: 2 }} />}
+                                                        {piiH > 0 && <div style={{ height: `${piiH}%`, background: '#8b5cf6', minHeight: 2 }} />}
+                                                        {modH > 0 && <div style={{ height: `${modH}%`, background: '#f59e0b', borderRadius: total === mod ? '2px 2px 0 0' : 0, minHeight: 2 }} />}
+                                                        {total === 0 && <div style={{ height: 2, background: 'var(--bg-tertiary)', borderRadius: 2 }} />}
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    );
+                                })()}
+                            </Card>
+                        )}
+
+                        {/* Two Column: By Category + By User */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+                            <div>
+                                <SectionTitle icon={AlertTriangle}>By Violation Category</SectionTitle>
+                                <Card>
+                                    {guardrails.byCategory.length === 0 ? (
+                                        <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>No violations recorded</div>
+                                    ) : guardrails.byCategory.slice(0, 10).map((c, i) => {
+                                        const typeColor = c.violation_type === 'moderation' ? '#f59e0b' : c.violation_type === 'pii' ? '#8b5cf6' : '#3b82f6';
+                                        return (
+                                            <ListRow key={i}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                                                    <div style={{ width: 26, height: 26, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${typeColor}12`, flexShrink: 0 }}>
+                                                        {c.violation_type === 'moderation' ? <AlertTriangle style={{ width: 13, height: 13, color: typeColor }} /> :
+                                                         c.violation_type === 'pii' ? <Fingerprint style={{ width: 13, height: 13, color: typeColor }} /> :
+                                                         <Eye style={{ width: 13, height: 13, color: typeColor }} />}
+                                                    </div>
+                                                    <div style={{ minWidth: 0, flex: 1 }}>
+                                                        <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{c.category}</div>
+                                                        <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>{c.violation_type}</div>
+                                                    </div>
+                                                </div>
+                                                <div style={{ fontSize: 14, fontWeight: 700, color: typeColor, flexShrink: 0 }}>{c.count}</div>
+                                            </ListRow>
+                                        );
+                                    })}
+                                </Card>
+                            </div>
+                            <div>
+                                <SectionTitle icon={Users}>Violations by User</SectionTitle>
+                                <Card>
+                                    {guardrails.byUser.length === 0 ? (
+                                        <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>No violations recorded</div>
+                                    ) : guardrails.byUser.slice(0, 8).map((u, i) => (
+                                        <ListRow key={i}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                                                <Avatar name={u.display_name} color={getColor(i + 5)} />
+                                                <div style={{ minWidth: 0, flex: 1 }}>
+                                                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.display_name}</div>
+                                                    <div style={{ display: 'flex', gap: 8, marginTop: 2, fontSize: 10 }}>
+                                                        {Number(u.moderation) > 0 && <span style={{ color: '#f59e0b', fontWeight: 600 }}>{u.moderation} mod</span>}
+                                                        {Number(u.pii) > 0 && <span style={{ color: '#8b5cf6', fontWeight: 600 }}>{u.pii} pii</span>}
+                                                        {Number(u.regex) > 0 && <span style={{ color: '#3b82f6', fontWeight: 600 }}>{u.regex} regex</span>}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <div style={{ fontSize: 14, fontWeight: 700, color: '#ef4444', flexShrink: 0 }}>{u.total}</div>
+                                        </ListRow>
+                                    ))}
+                                </Card>
+                            </div>
+                        </div>
+
+                        {/* Recent Events Table */}
+                        {guardrails.recent.length > 0 && (
+                            <div>
+                                <SectionTitle icon={Clock}>Recent Guardrail Events</SectionTitle>
+                                <Card>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 80px 1.2fr 65px 80px', padding: '8px 14px', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-subtle)' }}>
+                                        {['Time', 'User', 'Type', 'Categories', 'Dir', 'Action'].map(h => (
+                                            <span key={h} style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>{h}</span>
+                                        ))}
+                                    </div>
+                                    {guardrails.recent.slice(0, 20).map((ev, i) => {
+                                        const typeColor = ev.violation_type === 'moderation' ? '#f59e0b' : ev.violation_type === 'pii' ? '#8b5cf6' : '#3b82f6';
+                                        const actionColor = ev.action_taken === 'hard_block' || ev.action_taken === 'blocked' ? '#ef4444' : ev.action_taken === 'tokenized' ? '#8b5cf6' : ev.action_taken === 'redacted' ? '#3b82f6' : '#f59e0b';
+                                        return (
+                                            <div key={i} style={{
+                                                display: 'grid', gridTemplateColumns: '120px 1fr 80px 1.2fr 65px 80px',
+                                                padding: '6px 14px', alignItems: 'center',
+                                                background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-secondary)',
+                                                borderBottom: '1px solid var(--border-subtle)', fontSize: 11,
+                                            }}>
+                                                <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>{new Date(ev.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                                <span style={{ fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.display_name || ev.user_id || 'Unknown'}</span>
+                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                                    <span style={{ width: 6, height: 6, borderRadius: 99, background: typeColor, display: 'inline-block' }} />
+                                                    <span style={{ fontWeight: 600, color: typeColor, textTransform: 'capitalize' }}>{ev.violation_type}</span>
+                                                </span>
+                                                <span style={{ color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={ev.violation_categories}>{ev.violation_categories || '—'}</span>
+                                                <span style={{ color: ev.direction === 'output' ? '#f59e0b' : '#3b82f6', fontWeight: 600, textTransform: 'capitalize' }}>{ev.direction}</span>
+                                                <span style={{ fontWeight: 600, color: actionColor, fontSize: 10 }}>{(ev.action_taken || '').replace('_', ' ')}</span>
+                                            </div>
+                                        );
+                                    })}
+                                </Card>
+                            </div>
+                        )}
+                    </div>
                 </>
             )}
         </div>
