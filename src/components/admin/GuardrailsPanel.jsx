@@ -44,6 +44,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     const [euModeEnabled, setEuModeEnabled] = useState(false);
     const [orgWebSearchGuard, setOrgWebSearchGuard] = useState(false);
     const [orgDisableSearchOnUpload, setOrgDisableSearchOnUpload] = useState(false);
+    const [webSearchGuardPiiCategories, setWebSearchGuardPiiCategories] = useState([]);
     const [orgAzurePiiEnabled, setOrgAzurePiiEnabled] = useState(false);
     const [activeModerationProvider, setActiveModerationProvider] = useState('llamaguard');
     const [hasAzureEndpoint, setHasAzureEndpoint] = useState(false);
@@ -184,6 +185,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 setEuModeEnabled(data.euModeEnabled || false);
                 setOrgWebSearchGuard(data.webSearchGuardEnabled || false);
                 setOrgDisableSearchOnUpload(data.disableSearchOnUpload || false);
+                setWebSearchGuardPiiCategories(data.webSearchGuardPiiCategories || []);
                 setOrgAzurePiiEnabled(data.azurePiiEnabled || false);
                 setOrgSeverityThreshold(data.azureSeverityThreshold ?? 2);
                 setOrgAzureCategories(data.azureEnabledCategories?.length > 0 ? data.azureEnabledCategories : ['Hate', 'Violence', 'Sexual', 'SelfHarm']);
@@ -223,6 +225,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                     euModeEnabled: euModeEnabled,
                     webSearchGuardEnabled: orgWebSearchGuard,
                     disableSearchOnUpload: orgDisableSearchOnUpload,
+                    webSearchGuardPiiCategories: webSearchGuardPiiCategories,
                     azurePiiEnabled: orgAzurePiiEnabled,
                     azureSeverityThreshold: orgSeverityThreshold,
                     azureEnabledCategories: orgAzureCategories,
@@ -947,6 +950,49 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                         <input type="checkbox" checked={orgWebSearchGuard} onChange={e => setOrgWebSearchGuard(e.target.checked)} className="sr-only peer" />
                                                         <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
                                                     </label>
+                                                </div>
+                                                )}
+                                                {/* Web Search Guard PII Filter — shown when guard is ON */}
+                                                {hasWebSearchEnabled && orgWebSearchGuard && (
+                                                <div className="ml-6 p-4 rounded-xl border bg-white/3 border-white/8">
+                                                    <div className="flex items-center justify-between mb-3">
+                                                        <span className="text-xs font-medium text-muted">🛡️ {t('admin.shield_web_pii_filter') || 'Web Search PII Filter'}</span>
+                                                        <div className="flex gap-2">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setWebSearchGuardPiiCategories(PII_CATEGORIES_LIST.map(c => c.id))}
+                                                                className="text-xs px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[var(--text-secondary)] transition-colors"
+                                                            >{t('admin.all') || 'All'}</button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setWebSearchGuardPiiCategories([])}
+                                                                className="text-xs px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[var(--text-secondary)] transition-colors"
+                                                            >{t('admin.none') || 'None'}</button>
+                                                        </div>
+                                                    </div>
+                                                    <p className="text-xs text-muted mb-3">{t('admin.shield_web_pii_desc') || 'Block search queries that contain selected PII types from being sent to external search engines.'}</p>
+                                                    <div className="grid grid-cols-2 gap-1.5">
+                                                        {PII_CATEGORIES_LIST.map(cat => (
+                                                            <label key={cat.id} className="flex items-center gap-2 text-xs text-[var(--text-secondary)] cursor-pointer hover:text-primary transition-colors py-1 px-2 rounded hover:bg-white/5">
+                                                                <input
+                                                                    type="checkbox"
+                                                                    checked={webSearchGuardPiiCategories.includes(cat.id)}
+                                                                    onChange={e => {
+                                                                        if (e.target.checked) {
+                                                                            setWebSearchGuardPiiCategories(prev => [...prev, cat.id]);
+                                                                        } else {
+                                                                            setWebSearchGuardPiiCategories(prev => prev.filter(id => id !== cat.id));
+                                                                        }
+                                                                    }}
+                                                                    className="w-3.5 h-3.5 rounded border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0"
+                                                                />
+                                                                <span>{cat.icon} {cat.label}</span>
+                                                            </label>
+                                                        ))}
+                                                    </div>
+                                                    {webSearchGuardPiiCategories.length > 0 && (
+                                                        <p className="text-xs text-emerald-400/80 mt-2">✓ {webSearchGuardPiiCategories.length}/{PII_CATEGORIES_LIST.length} {t('admin.categories_selected') || 'categories selected'}</p>
+                                                    )}
                                                 </div>
                                                 )}
 
