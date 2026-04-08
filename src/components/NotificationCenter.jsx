@@ -542,7 +542,7 @@ export default function NotificationCenter() {
                                                                 fontSize: 13, color: 'var(--text-primary, #0f172a)',
                                                                 lineHeight: 1.6,
                                                                 wordBreak: 'break-word',
-                                                                maxHeight: 200, overflowY: 'auto',
+                                                                maxHeight: 600, overflowY: 'auto',
                                                             }}>
                                                                 <MarkdownRenderer content={n.message} />
                                                             </div>
