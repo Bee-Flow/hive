@@ -31,6 +31,9 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
     const [isSetupComplete, setIsSetupComplete] = useState(true);
     const [isDemoEnabled, setIsDemoEnabled] = useState(true);
     const [allowSignups, setAllowSignups] = useState(null);
+    const [allowOrgSignups, setAllowOrgSignups] = useState(true);
+    const [allowConsumerSignups, setAllowConsumerSignups] = useState(true);
+    const [consumerLoginMethods, setConsumerLoginMethods] = useState(['password', 'google', 'microsoft']);
     const [allowPasswordLogin, setAllowPasswordLogin] = useState(null);
     const [authSettingsLoaded, setAuthSettingsLoaded] = useState(false);
     const [deploymentMode, setDeploymentMode] = useState('cloud');
@@ -80,6 +83,9 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                     setIsSetupComplete(data.isSetupComplete);
                     if (data.allowSignups === false) setAllowSignups(false);
                     else setAllowSignups(true);
+                    setAllowOrgSignups(data.allowOrgSignups !== false);
+                    setAllowConsumerSignups(data.allowConsumerSignups !== false);
+                    if (Array.isArray(data.consumerLoginMethods)) setConsumerLoginMethods(data.consumerLoginMethods);
                     if (data.allowPasswordLogin === false) setAllowPasswordLogin(false);
                     else setAllowPasswordLogin(true);
                     if (data.deploymentMode) setDeploymentMode(data.deploymentMode);
@@ -227,8 +233,19 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                 return;
             }
             // Consumer and existing org paths skip directly to account creation
-            if (signupData.signupType === 'consumer' || signupData.signupType === 'existing') {
+            if (signupData.signupType === 'existing') {
                 setSignupStep(4);
+                return;
+            }
+            if (signupData.signupType === 'consumer') {
+                // If only one login method is allowed, auto-select and skip auth step
+                if (consumerLoginMethods.length === 1) {
+                    setSignupData(p => ({ ...p, authMethod: consumerLoginMethods[0] }));
+                    setSignupStep(4);
+                } else {
+                    // Show auth method selection step
+                    setSignupStep(2);
+                }
                 return;
             }
             setSignupStep(2);
@@ -431,6 +448,7 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
         if (!signupMode) return t('login.sign_in_continue');
         if (signupStep === 1) return t('login.setup_org');
         if (signupData.signupType === 'consumer' && signupStep === 4) return t('login.setup_personal_account');
+        if (signupData.signupType === 'consumer' && signupStep === 2) return t('login.choose_signin_method') || 'Choose how to sign in';
         if (signupStep === 2) return t('login.how_team_signin');
         if (signupStep === 3) return t('login.protect_org');
         return t('login.complete_account');
@@ -531,6 +549,10 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                                 [1, 2, 3, 4].map(i => (
                                     <div key={i} className={`w-8 h-1 rounded-full transition-all ${signupStep >= i ? 'bg-[var(--accent-primary)]' : 'bg-[var(--border-default)]'}`} />
                                 ))
+                            ) : signupData.signupType === 'consumer' && consumerLoginMethods.length > 1 ? (
+                                [1, 2, 4].map((step, idx) => (
+                                    <div key={step} className={`w-10 h-1 rounded-full transition-all ${signupStep >= step ? 'bg-[var(--accent-primary)]' : 'bg-[var(--border-default)]'}`} />
+                                ))
                             ) : (
                                 [1, 4].map((step, idx) => (
                                     <div key={step} className={`w-12 h-1 rounded-full transition-all ${signupStep >= step ? 'bg-[var(--accent-primary)]' : 'bg-[var(--border-default)]'}`} />
@@ -560,12 +582,15 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                                 resetSignup={resetSignup}
                                 inputClass={inputClass} inputClassSimple={inputClassSimple} labelClass={labelClass}
                                 deploymentMode={deploymentMode}
+                                allowOrgSignups={allowOrgSignups}
+                                allowConsumerSignups={allowConsumerSignups}
                             />
                         ) : signupStep === 2 ? (
                             <SignupStepAuth
                                 signupData={signupData} setSignupData={setSignupData}
                                 handleSignupNext={handleSignupNext}
                                 setSignupStep={setSignupStep} setError={setError}
+                                allowedMethods={signupData.signupType === 'consumer' ? consumerLoginMethods : null}
                             />
                         ) : signupStep === 3 ? (
                             <SignupStepPrivacy

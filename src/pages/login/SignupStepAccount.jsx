@@ -10,18 +10,19 @@ const SignupStepAccount = ({
 }) => {
     const { t } = useTranslation();
 
-    // OAuth flow — redirect to provider
-    if (signupData.authMethod !== 'password' && signupData.signupType === 'new') {
+    // OAuth flow — redirect to provider (org or consumer)
+    if (signupData.authMethod !== 'password' && (signupData.signupType === 'new' || signupData.signupType === 'consumer')) {
         const providerName = signupData.authMethod === 'google' ? 'Google' : 'Microsoft';
+
+        const isConsumerOAuth = signupData.signupType === 'consumer';
 
         const handleOAuthSignup = async () => {
             setIsLoading(true);
             setError('');
             try {
-                const res = await authFetch(`${API_BASE}/auth/pending-signup`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
+                const pendingBody = isConsumerOAuth
+                    ? { signupType: 'consumer', authMethod: signupData.authMethod }
+                    : {
                         newOrgName: signupData.newOrgName,
                         orgDetails: {
                             tagline: signupData.orgTagline,
@@ -37,7 +38,12 @@ const SignupStepAccount = ({
                             privacyLevel: signupData.privacyLevel,
                             euModeEnabled: signupData.euModeEnabled
                         }
-                    })
+                    };
+
+                const res = await authFetch(`${API_BASE}/auth/pending-signup`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(pendingBody)
                 });
                 const data = await res.json();
                 if (data.ok) {
@@ -55,10 +61,17 @@ const SignupStepAccount = ({
         return (
             <div className="space-y-4">
                 <div className="p-3 rounded-lg border flex items-center gap-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}>
-                    <Building className="w-5 h-5 text-[var(--accent-primary)]" />
+                    {isConsumerOAuth
+                        ? <User className="w-5 h-5 text-[var(--accent-primary)]" />
+                        : <Building className="w-5 h-5 text-[var(--accent-primary)]" />
+                    }
                     <div>
-                        <span className="text-sm font-medium block" style={{ color: 'var(--text-primary)' }}>{signupData.newOrgName}</span>
-                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{t('signup.new_org')}</span>
+                        <span className="text-sm font-medium block" style={{ color: 'var(--text-primary)' }}>
+                            {isConsumerOAuth ? t('signup.personal_account') : signupData.newOrgName}
+                        </span>
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                            {isConsumerOAuth ? t('signup.personal_account_desc') : t('signup.new_org')}
+                        </span>
                     </div>
                 </div>
 
@@ -90,7 +103,7 @@ const SignupStepAccount = ({
                     )}
                 </button>
 
-                <button type="button" onClick={() => { setSignupStep(3); setError(''); }}
+                <button type="button" onClick={() => { setSignupStep(isConsumerOAuth ? 2 : 3); setError(''); }}
                     className="w-full py-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm">
                     <ArrowLeft className="w-4 h-4" /> {t('signup.back')}
                 </button>
@@ -118,8 +131,10 @@ const SignupStepAccount = ({
             ? t('signup.new_org')
             : t('signup.joining_existing');
 
-    // Back navigation — consumer and existing go to step 1, new org goes to step 3
-    const backStep = (isConsumer || signupData.signupType === 'existing') ? 1 : 3;
+    // Back navigation — consumer goes to step 2 (auth selection) or 1 if auto-selected,
+    // existing org goes to step 1, new org goes to step 3
+    const backStep = isConsumer ? (signupData.authMethod ? 2 : 1)
+        : signupData.signupType === 'existing' ? 1 : 3;
 
     return (
         <form onSubmit={handleSignup} className="space-y-4">

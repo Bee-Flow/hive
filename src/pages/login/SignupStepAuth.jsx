@@ -2,10 +2,10 @@ import React from 'react';
 import { AlertCircle, ArrowLeft, ArrowRight } from 'lucide-react';
 import { useTranslation } from '../../hooks/useTranslation';
 
-const SignupStepAuth = ({ signupData, setSignupData, handleSignupNext, setSignupStep, setError }) => {
+const SignupStepAuth = ({ signupData, setSignupData, handleSignupNext, setSignupStep, setError, allowedMethods = null }) => {
     const { t } = useTranslation();
 
-    const methods = [{
+    const allMethods = [{
         id: 'password',
         name: t('org.password_auth'),
         description: t('org.password_auth_desc'),
@@ -44,6 +44,24 @@ const SignupStepAuth = ({ signupData, setSignupData, handleSignupNext, setSignup
         color: '#00A4EF',
     }];
 
+    // Filter methods if allowedMethods is provided (consumer flow)
+    const methods = allowedMethods ? allMethods.filter(m => allowedMethods.includes(m.id)) : allMethods;
+
+    const isConsumer = signupData.signupType === 'consumer';
+
+    const handleNext = () => {
+        if (!signupData.authMethod) {
+            setError('Please select a sign-in method');
+            return;
+        }
+        if (isConsumer) {
+            // Consumer flow: skip privacy step, go straight to account
+            setSignupStep(4);
+        } else {
+            handleSignupNext();
+        }
+    };
+
     return (
         <div className="space-y-4">
             {methods.map(method => {
@@ -75,7 +93,7 @@ const SignupStepAuth = ({ signupData, setSignupData, handleSignupNext, setSignup
                 <span><strong>{t('signup.choose_auth_carefully')}</strong> {t('signup.choose_auth_carefully_desc')}</span>
             </div>
 
-            <button type="button" onClick={handleSignupNext}
+            <button type="button" onClick={handleNext}
                 className="w-full py-3 bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-base shadow-lg mt-2">
                 {t('signup.continue')} <ArrowRight className="w-5 h-5" />
             </button>
@@ -88,3 +106,4 @@ const SignupStepAuth = ({ signupData, setSignupData, handleSignupNext, setSignup
 };
 
 export default SignupStepAuth;
+

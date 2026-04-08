@@ -523,7 +523,10 @@ function App() {
                         </div>
                         <h2 className="text-lg font-bold mb-2" style={{ color: 'var(--text-primary)' }}>Awaiting Approval</h2>
                         <p className="text-sm mb-6" style={{ color: 'var(--text-secondary)', lineHeight: '1.6' }}>
-                            Your account has been created and linked to an organisation, but it needs to be approved by an administrator before you can access the platform.
+                            {user?.isConsumerAccount
+                                ? 'Your account has been created and is being reviewed. An administrator will approve your access shortly.'
+                                : 'Your account has been created and linked to an organisation, but it needs to be approved by an administrator before you can access the platform.'
+                            }
                         </p>
                         <button
                             onClick={handleLogout}

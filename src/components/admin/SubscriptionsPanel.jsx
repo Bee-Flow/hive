@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Package, Building2, Plus, Pencil, Trash2, Save, X, Star, AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Shield, Infinity, ScrollText, Euro, Eye, EyeOff, CreditCard, Settings, ExternalLink, Loader2, Tag, Percent, Users, ToggleLeft, ToggleRight, Clock, Hash } from 'lucide-react';
+import { Package, Building2, Plus, Pencil, Trash2, Save, X, Star, AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Shield, Infinity, ScrollText, Euro, Eye, EyeOff, CreditCard, Settings, ExternalLink, Loader2, Tag, Percent, Users, ToggleLeft, ToggleRight, Clock, Hash, ShieldCheck } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 const FEATURE_OPTIONS = [
@@ -15,6 +15,7 @@ const FEATURE_OPTIONS = [
 const SECTIONS = [
     { id: 'plans', label: 'Plans', icon: Package, color: '#8b5cf6' },
     { id: 'organizations', label: 'Orgs', icon: Building2, color: '#3b82f6' },
+    { id: 'access', label: 'Access', icon: ShieldCheck, color: '#f97316' },
     { id: 'promos', label: 'Promos', icon: Tag, color: '#10b981' },
     { id: 'settings', label: 'Stripe', icon: CreditCard, color: '#635bff' },
     { id: 'audit', label: 'Audit', icon: ScrollText, color: '#f59e0b' },
@@ -1594,6 +1595,336 @@ const StripeSettingsView = () => {
 
 
 // ═══════════════════════════════════════════
+//  Access Control / Signup Toggles
+// ═══════════════════════════════════════════
+const AccessView = () => {
+    const [allowOrgSignups, setAllowOrgSignups] = useState(true);
+    const [allowConsumerSignups, setAllowConsumerSignups] = useState(true);
+    const [consumerLoginMethods, setConsumerLoginMethods] = useState(['password', 'google', 'microsoft']);
+    const [waitlistEnabled, setWaitlistEnabled] = useState(false);
+    const [waitlistUsers, setWaitlistUsers] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [message, setMessage] = useState(null);
+
+    const fetchWaitlist = async () => {
+        try {
+            const res = await authFetch(`${API_BASE}/auth/admin/waitlist`);
+            if (res.ok) setWaitlistUsers(await res.json());
+        } catch (e) { console.error('Failed to fetch waitlist:', e); }
+    };
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/auth/admin/signup-settings`);
+                if (res.ok) {
+                    const data = await res.json();
+                    setAllowOrgSignups(data.allowOrgSignups !== false);
+                    setAllowConsumerSignups(data.allowConsumerSignups !== false);
+                    setWaitlistEnabled(!!data.waitlistEnabled);
+                    if (Array.isArray(data.consumerLoginMethods)) setConsumerLoginMethods(data.consumerLoginMethods);
+                }
+            } catch (e) {
+                console.error('Failed to fetch signup settings:', e);
+            } finally {
+                setLoading(false);
+            }
+            fetchWaitlist();
+        })();
+    }, []);
+
+    const handleSave = async () => {
+        setSaving(true);
+        setMessage(null);
+        try {
+            const res = await authFetch(`${API_BASE}/auth/admin/signup-settings`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ allowOrgSignups, allowConsumerSignups, waitlistEnabled, consumerLoginMethods }),
+            });
+            if (res.ok) {
+                setMessage({ type: 'success', text: 'Signup settings saved successfully.' });
+            } else {
+                const data = await res.json();
+                setMessage({ type: 'error', text: data.error || 'Failed to save.' });
+            }
+        } catch (e) {
+            setMessage({ type: 'error', text: 'Error saving settings.' });
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    if (loading) return <div style={{ padding: '32px', color: 'var(--text-muted)', fontSize: '13px' }}>Loading settings...</div>;
+
+    const toggleStyle = (enabled) => ({
+        position: 'relative',
+        width: '44px',
+        height: '24px',
+        borderRadius: '12px',
+        background: enabled ? '#10b981' : '#4b5563',
+        cursor: 'pointer',
+        transition: 'background 0.2s ease',
+        flexShrink: 0,
+    });
+
+    const toggleKnob = (enabled) => ({
+        position: 'absolute',
+        top: '2px',
+        left: enabled ? '22px' : '2px',
+        width: '20px',
+        height: '20px',
+        borderRadius: '50%',
+        background: 'white',
+        transition: 'left 0.2s ease',
+        boxShadow: '0 1px 3px rgba(0,0,0,0.2)',
+    });
+
+    return (
+        <div style={{ padding: '32px', maxWidth: '640px', margin: '0 auto' }}>
+            <div style={{ marginBottom: '24px' }}>
+                <h2 style={{ fontSize: '18px', fontWeight: '700', color: 'var(--text-primary)', margin: '0 0 6px' }}>
+                    🔐 Access Control
+                </h2>
+                <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>
+                    Control which types of accounts can be created on this platform.
+                </p>
+            </div>
+
+            <div style={{ ...card, marginBottom: '16px' }}>
+                {/* Organization Signups */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', borderRadius: '10px', background: 'var(--bg-tertiary)', marginBottom: '12px' }}>
+                    <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                            <Building2 style={{ width: 18, height: 18, color: '#3b82f6' }} />
+                            <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>Organization Signups</span>
+                        </div>
+                        <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0, paddingLeft: '26px' }}>
+                            Allow users to register and create new organizations.
+                        </p>
+                    </div>
+                    <div style={toggleStyle(allowOrgSignups)} onClick={() => setAllowOrgSignups(!allowOrgSignups)}>
+                        <div style={toggleKnob(allowOrgSignups)} />
+                    </div>
+                </div>
+
+                {/* Consumer Signups */}
+                <div style={{ borderRadius: '10px', background: 'var(--bg-tertiary)', marginBottom: '12px', overflow: 'hidden' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px' }}>
+                        <div style={{ flex: 1 }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                <Users style={{ width: 18, height: 18, color: '#a855f7' }} />
+                                <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>Consumer Signups</span>
+                            </div>
+                            <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0, paddingLeft: '26px' }}>
+                                Allow users to register personal (non-organization) accounts.
+                            </p>
+                        </div>
+                        <div style={toggleStyle(allowConsumerSignups)} onClick={() => setAllowConsumerSignups(!allowConsumerSignups)}>
+                            <div style={toggleKnob(allowConsumerSignups)} />
+                        </div>
+                    </div>
+
+                    {/* Consumer Login Methods */}
+                    {allowConsumerSignups && (
+                        <div style={{ padding: '0 16px 16px', borderTop: '1px solid var(--border-default)' }}>
+                            <p style={{ fontSize: '12px', fontWeight: '600', color: 'var(--text-secondary)', margin: '12px 0 8px', paddingLeft: '26px' }}>
+                                Allowed login methods
+                            </p>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', paddingLeft: '26px' }}>
+                                {[
+                                    { id: 'password', label: 'Username & Password', icon: '🔑', color: '#6366f1' },
+                                    { id: 'google', label: 'Google SSO', icon: null, color: '#4285F4', svgIcon: <svg width="14" height="14" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 0 1-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" /><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853" /><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05" /><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335" /></svg> },
+                                    { id: 'microsoft', label: 'Microsoft SSO', icon: null, color: '#00A4EF', svgIcon: <svg width="14" height="14" viewBox="0 0 21 21"><rect x="1" y="1" width="9" height="9" fill="#F25022" /><rect x="11" y="1" width="9" height="9" fill="#7FBA00" /><rect x="1" y="11" width="9" height="9" fill="#00A4EF" /><rect x="11" y="11" width="9" height="9" fill="#FFB900" /></svg> },
+                                ].map(m => {
+                                    const checked = consumerLoginMethods.includes(m.id);
+                                    return (
+                                        <label key={m.id} style={{
+                                            display: 'flex', alignItems: 'center', gap: '10px',
+                                            padding: '8px 12px', borderRadius: '8px', cursor: 'pointer',
+                                            background: checked ? `${m.color}08` : 'transparent',
+                                            border: `1px solid ${checked ? `${m.color}30` : 'transparent'}`,
+                                            transition: 'all 0.15s ease',
+                                        }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={checked}
+                                                onChange={() => {
+                                                    setConsumerLoginMethods(prev =>
+                                                        checked ? prev.filter(x => x !== m.id) : [...prev, m.id]
+                                                    );
+                                                }}
+                                                style={{ accentColor: m.color, width: '16px', height: '16px', cursor: 'pointer' }}
+                                            />
+                                            <span style={{ fontSize: '13px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                {m.icon ? <span>{m.icon}</span> : m.svgIcon}
+                                                <span style={{ fontWeight: checked ? '600' : '400', color: checked ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{m.label}</span>
+                                            </span>
+                                        </label>
+                                    );
+                                })}
+                            </div>
+                            {consumerLoginMethods.length === 0 && (
+                                <p style={{ fontSize: '11px', color: '#ef4444', margin: '8px 0 0', paddingLeft: '26px' }}>
+                                    ⚠️ At least one login method must be enabled for consumer accounts.
+                                </p>
+                            )}
+                        </div>
+                    )}
+                </div>
+
+                {/* Waitlist Mode */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px', borderRadius: '10px', background: waitlistEnabled ? 'rgba(245,158,11,0.06)' : 'var(--bg-tertiary)', border: waitlistEnabled ? '1px solid rgba(245,158,11,0.2)' : '1px solid transparent', transition: 'all 0.2s ease' }}>
+                    <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                            <Clock style={{ width: 18, height: 18, color: '#f59e0b' }} />
+                            <span style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)' }}>Waitlist Mode</span>
+                        </div>
+                        <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0, paddingLeft: '26px' }}>
+                            Require admin approval for new account registrations. Invited users bypass the waitlist.
+                        </p>
+                    </div>
+                    <div style={toggleStyle(waitlistEnabled)} onClick={() => setWaitlistEnabled(!waitlistEnabled)}>
+                        <div style={toggleKnob(waitlistEnabled)} />
+                    </div>
+                </div>
+            </div>
+
+            {/* Warning when both are off */}
+            {!allowOrgSignups && !allowConsumerSignups && (
+                <div style={{ ...card, marginBottom: '16px', background: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.2)', display: 'flex', alignItems: 'flex-start', gap: '10px' }}>
+                    <AlertTriangle style={{ width: 18, height: 18, color: '#ef4444', flexShrink: 0, marginTop: '1px' }} />
+                    <div>
+                        <span style={{ fontSize: '13px', fontWeight: '600', color: '#ef4444' }}>All signups are disabled</span>
+                        <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: '4px 0 0' }}>
+                            No new users will be able to create accounts. The "Create Account" button will be hidden from the login page. Invited users can still join existing organizations.
+                        </p>
+                    </div>
+                </div>
+            )}
+
+            {/* Info box */}
+            <div style={{ ...card, background: 'rgba(59,130,246,0.04)', borderColor: 'rgba(59,130,246,0.15)', display: 'flex', alignItems: 'flex-start', gap: '10px', marginBottom: '20px' }}>
+                <span style={{ fontSize: '16px' }}>💡</span>
+                <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0, lineHeight: '1.6' }}>
+                    These settings take effect immediately. The <strong style={{ color: 'var(--text-primary)' }}>ALLOW_SIGNUPS</strong> environment variable acts as a global override — if set to <code style={{ fontSize: '11px', padding: '1px 4px', borderRadius: '3px', background: 'var(--bg-tertiary)' }}>false</code>, both toggles above are ignored and all signups are blocked.
+                </p>
+            </div>
+
+            {/* Save */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', marginBottom: '28px' }}>
+                {message && (
+                    <span style={{ fontSize: '13px', color: message.type === 'success' ? '#10b981' : '#ef4444' }}>
+                        {message.type === 'success' ? '✅' : '❌'} {message.text}
+                    </span>
+                )}
+                <button onClick={handleSave} disabled={saving} style={{ ...btnPrimary, opacity: saving ? 0.6 : 1 }}>
+                    {saving ? <Loader2 style={{ width: 14, height: 14, animation: 'spin 1s linear infinite' }} /> : <Save style={{ width: 14, height: 14 }} />}
+                    {saving ? 'Saving...' : 'Save Changes'}
+                </button>
+            </div>
+
+            {/* ── Waitlist Queue ── */}
+            {(waitlistEnabled || waitlistUsers.length > 0) && (
+                <div style={{ marginTop: '12px' }}>
+                    <div style={{ marginBottom: '16px' }}>
+                        <h3 style={{ fontSize: '16px', fontWeight: '700', color: 'var(--text-primary)', margin: '0 0 4px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <Clock style={{ width: 18, height: 18, color: '#f59e0b' }} />
+                            Waitlist Queue
+                            {waitlistUsers.length > 0 && (
+                                <span style={{ fontSize: '12px', fontWeight: '600', color: 'white', background: '#f59e0b', borderRadius: '10px', padding: '2px 8px', minWidth: '20px', textAlign: 'center' }}>
+                                    {waitlistUsers.length}
+                                </span>
+                            )}
+                        </h3>
+                        <p style={{ fontSize: '12px', color: 'var(--text-secondary)', margin: 0 }}>
+                            Users waiting for account approval.
+                        </p>
+                    </div>
+
+                    {waitlistUsers.length === 0 ? (
+                        <div style={{ ...card, padding: '32px', textAlign: 'center' }}>
+                            <CheckCircle style={{ width: 28, height: 28, color: '#10b981', margin: '0 auto 10px', opacity: 0.6 }} />
+                            <p style={{ fontSize: '13px', color: 'var(--text-secondary)', margin: 0 }}>No users in the waitlist</p>
+                        </div>
+                    ) : (
+                        <div style={{ ...card, padding: '0', overflow: 'hidden' }}>
+                            {waitlistUsers.map((u, idx) => (
+                                <div key={u.id} style={{
+                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    padding: '14px 16px',
+                                    borderBottom: idx < waitlistUsers.length - 1 ? '1px solid var(--border-default)' : 'none',
+                                    transition: 'background 0.15s ease',
+                                }}>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontSize: '14px', fontWeight: '600', color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                            {u.displayName || u.username}
+                                        </div>
+                                        <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '2px', display: 'flex', gap: '12px' }}>
+                                            {u.email && <span>{u.email}</span>}
+                                            {u.createdAt && <span>Signed up {new Date(u.createdAt).toLocaleDateString()}</span>}
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+                                        <button
+                                            onClick={async () => {
+                                                try {
+                                                    const res = await authFetch(`${API_BASE}/auth/admin/waitlist/${u.id}/approve`, { method: 'POST' });
+                                                    if (res.ok) {
+                                                        setWaitlistUsers(prev => prev.filter(w => w.id !== u.id));
+                                                        setMessage({ type: 'success', text: `${u.displayName || u.username} approved.` });
+                                                    }
+                                                } catch (e) { setMessage({ type: 'error', text: 'Failed to approve.' }); }
+                                            }}
+                                            style={{
+                                                display: 'flex', alignItems: 'center', gap: '5px',
+                                                padding: '6px 14px', borderRadius: '8px', border: 'none',
+                                                fontSize: '12px', fontWeight: '600', cursor: 'pointer',
+                                                background: 'rgba(16,185,129,0.1)', color: '#10b981',
+                                                transition: 'all 0.15s ease',
+                                            }}
+                                            onMouseEnter={e => { e.target.style.background = '#10b981'; e.target.style.color = 'white'; }}
+                                            onMouseLeave={e => { e.target.style.background = 'rgba(16,185,129,0.1)'; e.target.style.color = '#10b981'; }}
+                                        >
+                                            <CheckCircle style={{ width: 13, height: 13 }} /> Approve
+                                        </button>
+                                        <button
+                                            onClick={async () => {
+                                                if (!confirm(`Reject and delete ${u.displayName || u.username}?`)) return;
+                                                try {
+                                                    const res = await authFetch(`${API_BASE}/auth/admin/waitlist/${u.id}/reject`, { method: 'POST' });
+                                                    if (res.ok) {
+                                                        setWaitlistUsers(prev => prev.filter(w => w.id !== u.id));
+                                                        setMessage({ type: 'success', text: `${u.displayName || u.username} rejected.` });
+                                                    }
+                                                } catch (e) { setMessage({ type: 'error', text: 'Failed to reject.' }); }
+                                            }}
+                                            style={{
+                                                display: 'flex', alignItems: 'center', gap: '5px',
+                                                padding: '6px 14px', borderRadius: '8px', border: 'none',
+                                                fontSize: '12px', fontWeight: '600', cursor: 'pointer',
+                                                background: 'rgba(239,68,68,0.08)', color: '#ef4444',
+                                                transition: 'all 0.15s ease',
+                                            }}
+                                            onMouseEnter={e => { e.target.style.background = '#ef4444'; e.target.style.color = 'white'; }}
+                                            onMouseLeave={e => { e.target.style.background = 'rgba(239,68,68,0.08)'; e.target.style.color = '#ef4444'; }}
+                                        >
+                                            <Trash2 style={{ width: 13, height: 13 }} /> Reject
+                                        </button>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
+
+// ═══════════════════════════════════════════
 //  Main SubscriptionsPanel
 // ═══════════════════════════════════════════
 const SubscriptionsPanel = () => {
@@ -1662,6 +1993,11 @@ const SubscriptionsPanel = () => {
                 {active === 'settings' && (
                     <div style={{ position: 'absolute', inset: 0, overflowY: 'auto' }}>
                         <StripeSettingsView />
+                    </div>
+                )}
+                {active === 'access' && (
+                    <div style={{ position: 'absolute', inset: 0, overflowY: 'auto' }}>
+                        <AccessView />
                     </div>
                 )}
             </div>

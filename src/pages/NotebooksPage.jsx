@@ -14,6 +14,8 @@ import NotebookSources from './notebooks/NotebookSources';
 import NotebookTOC from './notebooks/NotebookTOC';
 import NotebookVersions from './notebooks/NotebookVersions';
 import CitationOverlay from './notebooks/CitationOverlay';
+import TaxAssistantWizard from './notebooks/TaxAssistantWizard';
+import TaxDashboard from './notebooks/TaxDashboard';
 import GenerationOverlay from './notebooks/GenerationOverlay';
 import SendForSigningModal from './notebooks/SendForSigningModal';
 import { preprocessMermaidContent } from './notebooks/MermaidExtension';
@@ -141,6 +143,10 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     const [sources, setSources] = useState([]);
     const [loading, setLoading] = useState(true);
     const [creating, setCreating] = useState(false);
+    const [showTaxWizard, setShowTaxWizard] = useState(false);
+
+    const hasTaxBeta = user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('dutch_tax_assistant'));
+    const isTaxNotebook = selected?.type === 'tax_assistant';
     const [newName, setNewName] = useState('');
     const [search, setSearch] = useState('');
     const [error, setError] = useState(null);
@@ -846,6 +852,7 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                         }}
                         signRequestConfigured={signRequestConfigured}
                         onSignRequest={() => setSignModalOpen(true)}
+                        isTaxNotebook={isTaxNotebook}
                     />
                 </div>
 
@@ -864,19 +871,32 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                     {/* ═══ LEFT: Sources Panel ═══ */}
                     {leftPanelOpen && (
                     <div className="w-[240px] shrink-0 border-r flex flex-col overflow-hidden" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
-                        <NotebookSources
-                            sources={sources}
-                            onFileUpload={(files) => handleFileUpload(Array.from(files))}
-                            onAddUrl={(url) => { if (url?.trim()) handleAddUrl(url); }}
-                            onAddText={(text, name) => { if (text?.trim()) handleAddText(text, name); }}
-                            onAddMeeting={handleAddMeeting}
-                            onDeleteSource={handleDeleteSource}
-                            dragOver={dragOver}
-                            setDragOver={setDragOver}
-                            totalWords={totalWords}
-                            readyCount={readySources.length}
-                            showMeetingNotes={user?.featureFlags?.meeting_notes !== false && (user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('meeting_notes')))}
-                        />
+                        {isTaxNotebook ? (
+                            <TaxDashboard
+                                notebook={selected}
+                                sources={sources}
+                                onGather={() => {
+                                    sendChatMessage('Start gathering all financial documents (invoices, bank statements, expense receipts) from my connected email and drive for this tax period. Search thoroughly and categorize each document as income or expense.');
+                                }}
+                                onSourceClick={(source) => {
+                                    sendChatMessage(`Tell me about this document: ${source.name}`);
+                                }}
+                            />
+                        ) : (
+                            <NotebookSources
+                                sources={sources}
+                                onFileUpload={(files) => handleFileUpload(Array.from(files))}
+                                onAddUrl={(url) => { if (url?.trim()) handleAddUrl(url); }}
+                                onAddText={(text, name) => { if (text?.trim()) handleAddText(text, name); }}
+                                onAddMeeting={handleAddMeeting}
+                                onDeleteSource={handleDeleteSource}
+                                dragOver={dragOver}
+                                setDragOver={setDragOver}
+                                totalWords={totalWords}
+                                readyCount={readySources.length}
+                                showMeetingNotes={user?.featureFlags?.meeting_notes !== false && (user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('meeting_notes')))}
+                            />
+                        )}
                     </div>
                     )}
 
@@ -1032,6 +1052,13 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                             {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                             Create
                         </button>
+                        {hasTaxBeta && (
+                            <button onClick={() => setShowTaxWizard(true)}
+                                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.02]"
+                                style={{ background: 'linear-gradient(135deg, #059669, #10b981)' }}>
+                                🧾 Tax
+                            </button>
+                        )}
                     </div>
                 </div>
             </div>
@@ -1070,8 +1097,12 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                                 className="group rounded-xl border p-4 cursor-pointer transition-all hover:shadow-lg hover:border-[var(--accent-primary)]/30 hover:scale-[1.01]"
                                 style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
                                 <div className="flex items-start gap-3">
-                                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1))' }}>
-                                        <BookOpen className="w-5 h-5" style={{ color: '#6366f1' }} />
+                                    <div className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0" style={{ background: nb.type === 'tax_assistant' ? 'linear-gradient(135deg, rgba(5, 150, 105, 0.1), rgba(16, 185, 129, 0.1))' : 'linear-gradient(135deg, rgba(99, 102, 241, 0.1), rgba(139, 92, 246, 0.1))' }}>
+                                        {nb.type === 'tax_assistant' ? (
+                                            <span style={{ fontSize: 18 }}>🧾</span>
+                                        ) : (
+                                            <BookOpen className="w-5 h-5" style={{ color: '#6366f1' }} />
+                                        )}
                                     </div>
                                     <div className="flex-1 min-w-0">
                                         {renamingId === nb.id ? (
@@ -1085,6 +1116,9 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                                             <h3 className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{nb.name}</h3>
                                         )}
                                         <div className="flex items-center gap-2 mt-1">
+                                            {nb.type === 'tax_assistant' && (
+                                                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded" style={{ background: 'rgba(5,150,105,0.1)', color: '#059669' }}>TAX</span>
+                                            )}
                                             <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{nb.sourceCount || 0} source{nb.sourceCount !== 1 ? 's' : ''}</span>
                                             <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>·</span>
                                             <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{timeAgo(nb.updatedAt || nb.createdAt)}</span>
@@ -1126,6 +1160,19 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                         handleDocSave(content);
                     }}
                     onClose={() => setVersionsOpen(false)}
+                />
+            )}
+
+            {/* ═══ Tax Assistant Wizard ═══ */}
+            {showTaxWizard && (
+                <TaxAssistantWizard
+                    user={user}
+                    onClose={() => setShowTaxWizard(false)}
+                    onCreated={(notebook) => {
+                        setShowTaxWizard(false);
+                        fetchNotebooks();
+                        if (notebook) selectNotebook(notebook);
+                    }}
                 />
             )}
         </div>

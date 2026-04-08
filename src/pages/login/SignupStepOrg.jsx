@@ -2,12 +2,12 @@ import React from 'react';
 import { Building, MapPin, Phone, FileText, ArrowLeft, ArrowRight, User, UserPlus, Users, Sparkles } from 'lucide-react';
 import { useTranslation } from '../../hooks/useTranslation';
 
-const SignupStepOrg = ({ signupData, setSignupData, signupOrgs, handleSignupNext, resetSignup, inputClass, inputClassSimple, labelClass, deploymentMode }) => {
+const SignupStepOrg = ({ signupData, setSignupData, signupOrgs, handleSignupNext, resetSignup, inputClass, inputClassSimple, labelClass, deploymentMode, allowOrgSignups = true, allowConsumerSignups = true }) => {
     const { t } = useTranslation();
     const isCloud = deploymentMode === 'cloud';
 
     const accountTypes = [
-        {
+        ...(allowOrgSignups ? [{
             id: 'new',
             icon: <Building className="w-6 h-6" />,
             title: t('signup.org_account'),
@@ -15,8 +15,8 @@ const SignupStepOrg = ({ signupData, setSignupData, signupOrgs, handleSignupNext
             description: t('signup.org_account_features'),
             gradient: 'linear-gradient(135deg, #3b82f6, #6366f1)',
             accentColor: '#6366f1',
-        },
-        ...(isCloud ? [{
+        }] : []),
+        ...(isCloud && allowConsumerSignups ? [{
             id: 'consumer',
             icon: <User className="w-6 h-6" />,
             title: t('signup.personal_account'),
@@ -25,7 +25,7 @@ const SignupStepOrg = ({ signupData, setSignupData, signupOrgs, handleSignupNext
             gradient: 'linear-gradient(135deg, #a855f7, #ec4899)',
             accentColor: '#a855f7',
         }] : []),
-        ...(signupOrgs.length > 0 ? [{
+        ...(allowOrgSignups && signupOrgs.length > 0 ? [{
             id: 'existing',
             icon: <UserPlus className="w-6 h-6" />,
             title: t('signup.join_existing'),
@@ -35,6 +35,13 @@ const SignupStepOrg = ({ signupData, setSignupData, signupOrgs, handleSignupNext
             accentColor: '#10b981',
         }] : []),
     ];
+
+    // Auto-select if only one type is available
+    React.useEffect(() => {
+        if (accountTypes.length === 1 && signupData.signupType !== accountTypes[0].id) {
+            setSignupData(p => ({ ...p, signupType: accountTypes[0].id }));
+        }
+    }, [accountTypes.length]);
 
     return (
         <form onSubmit={e => { e.preventDefault(); handleSignupNext(); }} className="space-y-4">
