@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
-import { Bell, Check, CheckCheck, Info, AlertTriangle, AlertCircle, X, Trash2, Clock, Plus, Calendar, Repeat, BellOff, AlarmClock, Bot, Play, Pause, Sparkles, Zap, Filter } from 'lucide-react';
+import { Bell, Check, CheckCheck, Info, AlertTriangle, AlertCircle, X, Trash2, Clock, Plus, Calendar, Repeat, BellOff, AlarmClock, Bot, Play, Pause, Sparkles, Zap, Filter, Pencil } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 import MarkdownRenderer from './MarkdownRenderer';
 
@@ -92,6 +92,7 @@ export default function NotificationCenter() {
     const [aiTaskTier, setAiTaskTier] = useState('fast');
     const [maxAiTasks, setMaxAiTasks] = useState(10);
     const [expandedTaskId, setExpandedTaskId] = useState(null);
+    const [editingTaskId, setEditingTaskId] = useState(null); // null = create mode, id = edit mode
     const [resultModal, setResultModal] = useState(null); // { title, content, notifId? }
 
     // Helper: open result modal and auto-mark-as-read
@@ -215,6 +216,27 @@ export default function NotificationCenter() {
     };
 
     // AI Task handlers
+    const resetAiTaskForm = () => {
+        setAiTaskTitle(''); setAiTaskPrompt(''); setAiTaskDate(''); setAiTaskTime('');
+        setAiTaskRepeat('weekly'); setAiTaskTier('fast');
+        setShowAiTaskForm(false); setEditingTaskId(null);
+    };
+
+    const startEditTask = (task) => {
+        setEditingTaskId(task.id);
+        setAiTaskTitle(task.title || '');
+        setAiTaskPrompt(task.prompt || '');
+        if (task.nextRunAt) {
+            const d = new Date(task.nextRunAt);
+            setAiTaskDate(d.toLocaleDateString('sv-SE')); // yyyy-mm-dd
+            setAiTaskTime(d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' }));
+        }
+        setAiTaskRepeat(task.repeatInterval || 'weekly');
+        setAiTaskTier(task.modelTier || 'fast');
+        setShowAiTaskForm(true);
+        setExpandedTaskId(null);
+    };
+
     const createAiTask = async () => {
         if (!aiTaskTitle.trim() || !aiTaskPrompt.trim() || !aiTaskDate || !aiTaskTime) return;
         const nextRunAt = new Date(`${aiTaskDate}T${aiTaskTime}`).toISOString();
@@ -233,14 +255,38 @@ export default function NotificationCenter() {
             });
             if (res.ok) {
                 fetchAiTasks();
-                setAiTaskTitle(''); setAiTaskPrompt(''); setAiTaskDate(''); setAiTaskTime('');
-                setAiTaskRepeat('weekly'); setAiTaskTier('fast');
-                setShowAiTaskForm(false);
+                resetAiTaskForm();
             } else {
                 const err = await res.json();
                 alert(err.error || 'Failed to create task');
             }
         } catch (err) { console.error('Create AI task failed:', err); }
+    };
+
+    const updateAiTask = async () => {
+        if (!editingTaskId || !aiTaskTitle.trim() || !aiTaskPrompt.trim() || !aiTaskDate || !aiTaskTime) return;
+        const nextRunAt = new Date(`${aiTaskDate}T${aiTaskTime}`).toISOString();
+        try {
+            const res = await authFetch(`${API_BASE}/api/ai-tasks/${editingTaskId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: aiTaskTitle.trim(),
+                    prompt: aiTaskPrompt.trim(),
+                    nextRunAt,
+                    repeatInterval: aiTaskRepeat || null,
+                    modelTier: aiTaskTier,
+                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+                }),
+            });
+            if (res.ok) {
+                fetchAiTasks();
+                resetAiTaskForm();
+            } else {
+                const err = await res.json();
+                alert(err.error || 'Failed to update task');
+            }
+        } catch (err) { console.error('Update AI task failed:', err); }
     };
 
     const toggleAiTask = async (id) => {
@@ -1073,7 +1119,7 @@ export default function NotificationCenter() {
                                     </div>
                                     <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
                                         <button
-                                            onClick={() => { setShowAiTaskForm(false); setAiTaskTitle(''); setAiTaskPrompt(''); }}
+                                            onClick={resetAiTaskForm}
                                             style={{
                                                 padding: '7px 16px', borderRadius: 9, fontSize: 12, fontWeight: 500,
                                                 border: 'none', background: 'transparent', cursor: 'pointer',
@@ -1081,7 +1127,7 @@ export default function NotificationCenter() {
                                             }}
                                         >Cancel</button>
                                         <button
-                                            onClick={createAiTask}
+                                            onClick={editingTaskId ? updateAiTask : createAiTask}
                                             disabled={!aiTaskTitle.trim() || !aiTaskPrompt.trim() || !aiTaskDate || !aiTaskTime}
                                             style={{
                                                 padding: '7px 18px', borderRadius: 9, fontSize: 12, fontWeight: 600,
@@ -1094,7 +1140,7 @@ export default function NotificationCenter() {
                                                     ? 'none'
                                                     : '0 2px 8px rgba(139,92,246,0.25)',
                                             }}
-                                        >Create</button>
+                                        >{editingTaskId ? 'Save Changes' : 'Create'}</button>
                                     </div>
                                 </div>
                             )}
@@ -1150,6 +1196,7 @@ export default function NotificationCenter() {
                                         expanded={expandedTaskId === t.id}
                                         onToggleExpand={() => setExpandedTaskId(expandedTaskId === t.id ? null : t.id)}
                                         onToggle={toggleAiTask} onDelete={deleteAiTask} onRunNow={runAiTaskNow}
+                                        onEdit={startEditTask}
                                         onOpenInChat={openInDirectChat}
                                         onOpenResult={(data) => setResultModal(data)} />
                                 ))}
@@ -1167,6 +1214,7 @@ export default function NotificationCenter() {
                                         expanded={expandedTaskId === t.id}
                                         onToggleExpand={() => setExpandedTaskId(expandedTaskId === t.id ? null : t.id)}
                                         onToggle={toggleAiTask} onDelete={deleteAiTask} onRunNow={runAiTaskNow}
+                                        onEdit={startEditTask}
                                         onOpenInChat={openInDirectChat}
                                         onOpenResult={(data) => setResultModal(data)} />
                                 ))}
@@ -1413,7 +1461,7 @@ function ReminderItem({ r, index, isOverdue, onComplete, onDelete }) {
     );
 }
 
-function AITaskItem({ task, index, expanded, onToggleExpand, onToggle, onDelete, onRunNow, onOpenInChat, onOpenResult }) {
+function AITaskItem({ task, index, expanded, onToggleExpand, onToggle, onDelete, onRunNow, onEdit, onOpenInChat, onOpenResult }) {
     const t = task;
     const statusColors = {
         pending: { bg: 'rgba(99,102,241,0.08)', color: '#6366f1', label: '⏳ Pending' },
@@ -1575,6 +1623,19 @@ function AITaskItem({ task, index, expanded, onToggleExpand, onToggle, onDelete,
                             >
                                 <Play style={{ width: 11, height: 11 }} />
                                 Run Now
+                            </button>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onEdit(t); }}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: 4,
+                                    padding: '5px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600,
+                                    border: 'none', cursor: 'pointer',
+                                    background: 'rgba(99,102,241,0.08)', color: '#6366f1',
+                                    transition: 'all 0.15s',
+                                }}
+                            >
+                                <Pencil style={{ width: 11, height: 11 }} />
+                                Edit
                             </button>
                             <button
                                 onClick={(e) => { e.stopPropagation(); onToggle(t.id); }}
