@@ -36,9 +36,9 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
     const [driveConnected, setDriveConnected] = useState(false);
     const [sitemapMode, setSitemapMode] = useState(false);
     const [sitemapMaxPages, setSitemapMaxPages] = useState(50);
-    const [reindexing, setReindexing] = useState(false);
     const [reindexStatus, setReindexStatus] = useState('');
     const [useAzureKB, setUseAzureKB] = useState(false);
+    const [n8nWorkflows, setN8nWorkflows] = useState([]);
 
     useEffect(() => { fetchKnowledge(); }, [agentId]);
     useEffect(() => { setSelectedIds(new Set()); }, [items]);
@@ -58,6 +58,18 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
         };
         checkDrive();
     }, []);
+
+    useEffect(() => {
+        if (kbInputMode === 'n8n') {
+            const fetchWfs = async () => {
+                try {
+                    const res = await authFetch(`${API_BASE}/api/kb/n8n/ingestible`);
+                    if (res.ok) setN8nWorkflows(await res.json());
+                } catch (e) { console.error('Failed to fetch n8n ingestible:', e); }
+            };
+            fetchWfs();
+        }
+    }, [kbInputMode]);
 
     // Fetch Azure KB processing config
     useEffect(() => {
@@ -230,6 +242,28 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
                 setKbIngestStatus(''); alert('Sitemap error: ' + err.error);
             }
         } catch (e) { setKbIngestStatus(''); alert('Sitemap failed: ' + e.message); }
+        finally { setKbIngesting(false); }
+    };
+
+    const ingestN8n = async (workflowId) => {
+        if (!selectedKB || !workflowId) return;
+        setKbIngesting(true); setKbIngestStatus('Ingesting workflow...');
+        try {
+            const res = await authFetch(`${API_BASE}/api/kb/${selectedKB.id}/ingest/n8n`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ workflowId })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setKbIngestStatus(`Done: ${data.chunks} chunks`);
+                fetchKBDocs(selectedKB.id); fetchKBs();
+                setTimeout(() => setKbIngestStatus(''), 5000);
+            } else {
+                const err = await res.json();
+                setKbIngestStatus(''); alert('Error: ' + err.error);
+            }
+        } catch (e) { setKbIngestStatus(''); alert('Failed: ' + e.message); }
         finally { setKbIngesting(false); }
     };
 
@@ -536,7 +570,7 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
                                 {/* Ingest Section */}
                                 <div className="space-y-3">
                                     <div className="flex gap-1 p-0.5 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] w-fit">
-                                        {[{ id: 'text', label: '📝 Text' }, { id: 'url', label: '🌐 URL' }].map(tab => (
+                                        {[{ id: 'text', label: '📝 Text' }, { id: 'url', label: '🌐 URL' }, { id: 'n8n', label: '⚙️ n8n' }].map(tab => (
                                             <button key={tab.id} onClick={() => setKbInputMode(tab.id)}
                                                 className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${kbInputMode === tab.id
                                                     ? 'bg-[var(--accent-primary)] text-white' : 'text-[var(--text-secondary)]'}`}>
@@ -581,6 +615,29 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
                                             </div>
                                         </div>
                                     )}
+                                    {kbInputMode === 'n8n' && (
+                                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+                                            {n8nWorkflows.length === 0 ? (
+                                                <div className="text-xs p-3 text-center rounded border border-dashed" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}>
+                                                    No n8n workflows enabled for KB ingestion. Enable them in your Organisation settings.
+                                                </div>
+                                            ) : (
+                                                n8nWorkflows.map(wf => (
+                                                    <div key={wf.id} className="flex items-center justify-between p-2 rounded border" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-tertiary)' }}>
+                                                        <div className="min-w-0 pr-2">
+                                                            <div className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{wf.name}</div>
+                                                            <div className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>n8n_run_{wf.slug}</div>
+                                                        </div>
+                                                        <button disabled={kbIngesting} onClick={() => ingestN8n(wf.id)}
+                                                            className="px-2 py-1 text-[10px] font-medium rounded text-white disabled:opacity-50 transition-opacity hover:opacity-80 flex-shrink-0"
+                                                            style={{ background: 'var(--accent-primary)' }}>
+                                                            Ingest
+                                                        </button>
+                                                    </div>
+                                                ))
+                                            )}
+                                        </div>
+                                    )}
 
                                     <div className="flex gap-2 justify-end items-center">
                                         {kbIngestStatus && (
@@ -591,32 +648,36 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
                                                 {kbIngestStatus}
                                             </span>
                                         )}
-                                        <label className="cursor-pointer px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5"
-                                            style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}>
-                                            <input type="file" accept=".pdf,.txt,.md,.docx,.csv" className="hidden" onChange={ingestFile} disabled={kbIngesting} />
-                                            📎 File
-                                        </label>
-                                        {driveConnected && (
-                                            <button onClick={() => setDrivePickerOpen(true)} disabled={kbIngesting}
-                                                className="px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 hover:bg-[var(--bg-tertiary)] transition-colors disabled:opacity-50"
-                                                style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}>
-                                                <svg className="w-3.5 h-3.5" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg">
-                                                    <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da" />
-                                                    <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-20.4 35.3c-.8 1.4-1.2 2.95-1.2 4.5h27.5z" fill="#00ac47" />
-                                                    <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.5l5.85 13.8z" fill="#ea4335" />
-                                                    <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d" />
-                                                    <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc" />
-                                                    <path d="m73.4 26.5-10.1-17.5c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 23.5h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00" />
-                                                </svg>
-                                                Drive
-                                            </button>
+                                        {kbInputMode !== 'n8n' && (
+                                            <>
+                                                <label className="cursor-pointer px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5"
+                                                    style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}>
+                                                    <input type="file" accept=".pdf,.txt,.md,.docx,.csv" className="hidden" onChange={ingestFile} disabled={kbIngesting} />
+                                                    📎 File
+                                                </label>
+                                                {driveConnected && (
+                                                    <button onClick={() => setDrivePickerOpen(true)} disabled={kbIngesting}
+                                                        className="px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 hover:bg-[var(--bg-tertiary)] transition-colors disabled:opacity-50"
+                                                        style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}>
+                                                        <svg className="w-3.5 h-3.5" viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg">
+                                                            <path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da" />
+                                                            <path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-20.4 35.3c-.8 1.4-1.2 2.95-1.2 4.5h27.5z" fill="#00ac47" />
+                                                            <path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.5l5.85 13.8z" fill="#ea4335" />
+                                                            <path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d" />
+                                                            <path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc" />
+                                                            <path d="m73.4 26.5-10.1-17.5c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 23.5h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00" />
+                                                        </svg>
+                                                        Drive
+                                                    </button>
+                                                )}
+                                                <button onClick={kbInputMode === 'url' ? (sitemapMode ? ingestSitemap : ingestUrl) : ingestText}
+                                                    disabled={kbIngesting || (kbInputMode === 'text' ? !kbTextContent.trim() : !kbUrlInput.trim())}
+                                                    className="px-4 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-50"
+                                                    style={{ background: 'var(--accent-primary)' }}>
+                                                    {kbIngesting ? 'Processing...' : 'Ingest'}
+                                                </button>
+                                            </>
                                         )}
-                                        <button onClick={kbInputMode === 'url' ? (sitemapMode ? ingestSitemap : ingestUrl) : ingestText}
-                                            disabled={kbIngesting || (kbInputMode === 'text' ? !kbTextContent.trim() : !kbUrlInput.trim())}
-                                            className="px-4 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-50"
-                                            style={{ background: 'var(--accent-primary)' }}>
-                                            {kbIngesting ? 'Processing...' : 'Ingest'}
-                                        </button>
                                     </div>
                                 </div>
 

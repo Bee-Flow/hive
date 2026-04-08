@@ -17,23 +17,7 @@ export default function N8nSection() {
     const [discovering, setDiscovering] = useState(false);
     const [expandedWf, setExpandedWf] = useState(null);
 
-    // KB import state
-    const [availableKBs, setAvailableKBs] = useState([]);
-    const [kbsLoaded, setKbsLoaded] = useState(false);
-    const [kbImporting, setKbImporting] = useState(null); // workflowId currently importing
-    const [kbImportMsg, setKbImportMsg] = useState(null);
-
-    useEffect(() => { loadConfig(); }, []);
-
-    // Fetch available KBs once for the import picker
-    const fetchKBs = async () => {
-        if (kbsLoaded) return;
-        try {
-            const res = await authFetch(`${API_BASE}/api/kb`);
-            if (res.ok) setAvailableKBs(await res.json());
-        } catch (e) { console.error('Failed to fetch KBs:', e); }
-        setKbsLoaded(true);
-    };
+    // (KB import logic has been moved to KnowledgePanel)
 
     const loadConfig = async () => {
         setLoading(true);
@@ -168,37 +152,7 @@ export default function N8nSection() {
         }));
     };
 
-    // ── KB Import ──────────────────────────────────────────────────
-    const ingestToKB = async (wfId, kbId) => {
-        if (!kbId || !wfId) return;
-        setKbImporting(wfId);
-        setKbImportMsg(null);
-        try {
-            const res = await authFetch(`${API_BASE}/api/kb/${kbId}/ingest/n8n`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ workflowId: wfId }),
-            });
-            const data = await res.json();
-            if (res.ok) {
-                // Persist import state on the workflow
-                const kbName = availableKBs.find(k => k.id === kbId)?.name || 'KB';
-                const updated = workflows.map(w => w.id === wfId
-                    ? { ...w, kbImport: { kbId, kbName, importedAt: new Date().toISOString(), chunks: data.chunks } }
-                    : w
-                );
-                setWorkflows(updated);
-                persistWorkflows(updated);
-                setKbImportMsg({ type: 'success', text: `Imported (${data.chunks} chunks)` });
-            } else {
-                setKbImportMsg({ type: 'error', text: data.error || 'Import failed' });
-            }
-        } catch (e) {
-            setKbImportMsg({ type: 'error', text: 'Import failed: ' + e.message });
-        }
-        setKbImporting(null);
-        setTimeout(() => setKbImportMsg(null), 5000);
-    };
+    // ── KB Import logic now resides in KnowledgePanel.jsx ──────────
 
     const saveWorkflows = async () => {
         setSaving(true);
@@ -333,8 +287,8 @@ export default function N8nSection() {
                                         <div className="flex-1 min-w-0">
                                             <div className="text-sm font-medium truncate flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
                                                 {wf.name}
-                                                {wf.kbImport && (
-                                                    <span className="text-[9px] px-1 py-0.5 rounded font-medium flex-shrink-0" style={{ background: 'rgba(59,130,246,0.1)', color: '#3b82f6' }} title={`Imported to ${wf.kbImport.kbName}`}>📚 KB</span>
+                                                {wf.allowKbIngestion && (
+                                                    <span className="text-[9px] px-1 py-0.5 rounded font-medium flex-shrink-0" style={{ background: 'rgba(59,130,246,0.1)', color: '#3b82f6' }} title="Enabled for KB ingestion">📚 KB</span>
                                                 )}
                                             </div>
                                             <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
