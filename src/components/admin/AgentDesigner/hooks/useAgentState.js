@@ -43,6 +43,7 @@ export default function useAgentState() {
     const [enableGuardrails, setEnableGuardrails] = useState(false);
     const [llamaGuardEnabled, setLlamaGuardEnabled] = useState(false);
     const [webSearchGuardEnabled, setWebSearchGuardEnabled] = useState(false);
+    const [disableExternalTools, setDisableExternalTools] = useState(false);
 
     const [strictKnowledge, setStrictKnowledge] = useState(false);
     const [includeSourceReferences, setIncludeSourceReferences] = useState(false);
@@ -118,6 +119,7 @@ export default function useAgentState() {
         allowCopy, setAllowCopy, embedEnabled, setEmbedEnabled,
         workspaceEnabled, setWorkspaceEnabled, enableGuardrails, setEnableGuardrails,
         llamaGuardEnabled, setLlamaGuardEnabled, webSearchGuardEnabled, setWebSearchGuardEnabled,
+        disableExternalTools, setDisableExternalTools,
 
         strictKnowledge, setStrictKnowledge,
         includeSourceReferences, setIncludeSourceReferences,

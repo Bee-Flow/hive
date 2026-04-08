@@ -442,7 +442,12 @@ const EN_DEFAULTS = {
     "usage.in_cost": "In Cost",
     "usage.out_cost": "Out Cost",
     "usage.total_cost": "Total Cost",
-    // ── Safety & Guardrails (previously hardcoded) ──
+    // ── Report Tabs ──
+    "usage.tab_overview": "Overview",
+    "usage.tab_safety": "Safety & Guardrails",
+    "usage.tab_integrations": "Integrations",
+    "usage.no_guardrail_data": "No safety events recorded for this period",
+    // ── Safety & Guardrails ──
     "usage.safety_title": "Safety & Guardrails",
     "usage.safety_subtitle": "Content moderation, PII detection & regex guardrail events",
     "usage.total_violations": "Total Violations",

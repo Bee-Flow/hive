@@ -21,11 +21,12 @@ export default function useAgentApi(state, { systemMode, securityMode, initialAg
         setRegexScope, setGuardrailAction, setMessages, setShowChat,
         setActiveSection, name, description, systemPrompt, selectedTools,
         toolParams, starterPrompts, avatar, workspaceEnabled, embedEnabled,
-        enableGuardrails, llamaGuardEnabled, webSearchGuardEnabled,
+        enableGuardrails, llamaGuardEnabled, webSearchGuardEnabled, disableExternalTools,
         includeSourceReferences, knowledgeBaseIds, enabledIntegrations,
         regexGuardrailsEnabled, selectedCollections, regexScope, guardrailAction,
         isPublished, sharedGroups, saving, setSaving, showPublishMenu, setShowPublishMenu,
         categoryId, setCategoryId, setAgentCategories,
+        setDisableExternalTools,
     } = state;
 
     const initialSelectionDoneRef = useRef(false);
@@ -181,6 +182,7 @@ export default function useAgentApi(state, { systemMode, securityMode, initialAg
                 setWebSearchGuardEnabled(config.webSearchGuardEnabled === true);
 
                 setStrictKnowledge(config.strictKnowledge === true);
+                setDisableExternalTools(config.disableExternalTools === true);
                 setIncludeSourceReferences(config.includeSourceReferences === true);
                 setEnabledIntegrations(config.enabledIntegrations || null);
                 setKnowledgeBaseIds(config.knowledge_base_ids || []);
@@ -228,6 +230,7 @@ export default function useAgentApi(state, { systemMode, securityMode, initialAg
         setAvatar('🤖');
         setCategoryId(null);
         setStrictKnowledge(false);
+        setDisableExternalTools(false);
         setIncludeSourceReferences(false);
         setKnowledgeBaseIds([]);
         setEnabledIntegrations(null);
@@ -246,6 +249,7 @@ export default function useAgentApi(state, { systemMode, securityMode, initialAg
                 config: {
                     enableGuardrails, llamaGuardEnabled, webSearchGuardEnabled,
                     strictKnowledge, includeSourceReferences,
+                    disableExternalTools,
                     knowledge_base_ids: knowledgeBaseIds,
                     enabledIntegrations: enabledIntegrations || undefined,
                     regexGuardrails: {
@@ -333,6 +337,7 @@ export default function useAgentApi(state, { systemMode, securityMode, initialAg
             setWebSearchGuardEnabled(config.webSearchGuardEnabled === true);
 
             setStrictKnowledge(config.strictKnowledge === true);
+            setDisableExternalTools(config.disableExternalTools === true);
             setIncludeSourceReferences(config.includeSourceReferences === true);
             setKnowledgeBaseIds(config.knowledge_base_ids || []);
             setEnabledIntegrations(config.enabledIntegrations || null);

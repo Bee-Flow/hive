@@ -220,11 +220,50 @@ const FilterPill = ({ label, icon: Icon, value, onChange, options, placeholder }
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  MAIN COMPONENT                                                           */
 /* ═══════════════════════════════════════════════════════════════════════════ */
+/* ── Report Tab component ────────────────────────────────────────────────── */
+const REPORT_TABS = [
+    { id: 'overview', labelKey: 'usage.tab_overview', icon: BarChart3, color: '#6366f1' },
+    { id: 'safety', labelKey: 'usage.tab_safety', icon: Shield, color: '#ef4444' },
+    { id: 'integrations', labelKey: 'usage.tab_integrations', icon: Globe, color: '#0ea5e9' },
+];
+
+const ReportTabBar = ({ active, onChange, t: translate }) => (
+    <div style={{
+        display: 'flex', gap: 2, padding: 3, borderRadius: 10,
+        background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)',
+        width: 'fit-content',
+    }}>
+        {REPORT_TABS.map(tab => {
+            const Icon = tab.icon;
+            const isActive = active === tab.id;
+            return (
+                <button
+                    key={tab.id}
+                    onClick={() => onChange(tab.id)}
+                    style={{
+                        display: 'flex', alignItems: 'center', gap: 6,
+                        padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                        background: isActive ? 'var(--bg-primary)' : 'transparent',
+                        boxShadow: isActive ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
+                        color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
+                        fontWeight: isActive ? 700 : 500,
+                        fontSize: 12, transition: 'all 0.15s ease',
+                    }}
+                >
+                    <Icon style={{ width: 13, height: 13, color: isActive ? tab.color : 'var(--text-muted)' }} />
+                    {translate(tab.labelKey)}
+                </button>
+            );
+        })}
+    </div>
+);
+
 const UsageSection = () => {
     const { t } = useTranslation();
     const [days, setDays] = useState(30);
     const [loading, setLoading] = useState(true);
     const [expandedAgent, setExpandedAgent] = useState(null);
+    const [activeReport, setActiveReport] = useState('overview');
 
     // Filters
     const [filterUser, setFilterUser] = useState(null);
@@ -358,6 +397,9 @@ const UsageSection = () => {
                 </div>
             </div>
 
+            {/* ── Report Tabs ── */}
+            <ReportTabBar active={activeReport} onChange={setActiveReport} t={t} />
+
             {/* ── Filter Bar ── */}
             <div style={{
                 display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
@@ -390,6 +432,10 @@ const UsageSection = () => {
                 </div>
             ) : (
                 <>
+                    {/* ════════════════════════════════════════════════════════════ */}
+                    {/* OVERVIEW TAB                                                */}
+                    {/* ════════════════════════════════════════════════════════════ */}
+                    {activeReport === 'overview' && (<>
                     {/* ── Summary Cards ── */}
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
                         <StatCard icon={Zap} label={t('usage.ai_calls')} color="#6366f1"
@@ -630,10 +676,12 @@ const UsageSection = () => {
                         </div>
                     )}
 
-                    {/* ════════════════════════════════════════════════════════ */}
-                    {/* SAFETY & GUARDRAILS SECTION                            */}
-                    {/* ════════════════════════════════════════════════════════ */}
-                    <div style={{ marginTop: 12, borderTop: '1px solid var(--border-subtle)', paddingTop: 20 }}>
+                    </>)}
+
+                    {/* ════════════════════════════════════════════════════════════ */}
+                    {/* SAFETY & GUARDRAILS TAB                                    */}
+                    {/* ════════════════════════════════════════════════════════════ */}
+                    {activeReport === 'safety' && (<div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
                             <div style={{ width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #ef444420, #f59e0b20)' }}>
                                 <Shield style={{ width: 15, height: 15, color: '#ef4444' }} />
@@ -788,12 +836,20 @@ const UsageSection = () => {
                                 </Card>
                             </div>
                         )}
-                    </div>
+
+                        {/* Empty state for Safety */}
+                        {(!guardrails.summary || Number(guardrails.summary.total_events) === 0) && guardrails.recent.length === 0 && (
+                            <Card style={{ padding: '20px 24px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <Info style={{ width: 16, height: 16, color: 'var(--text-muted)', flexShrink: 0 }} />
+                                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('usage.no_guardrail_data')}</span>
+                            </Card>
+                        )}
+                    </div>)}
 
                     {/* ════════════════════════════════════════════════════════ */}
-                    {/* INTEGRATION ACTIVITY MONITOR                            */}
+                    {/* INTEGRATION ACTIVITY MONITOR TAB                        */}
                     {/* ════════════════════════════════════════════════════════ */}
-                    <div style={{ marginTop: 12, borderTop: '1px solid var(--border-subtle)', paddingTop: 20 }}>
+                    {activeReport === 'integrations' && (<div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
                             <div style={{ width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #0ea5e920, #6366f120)' }}>
                                 <Globe style={{ width: 15, height: 15, color: '#0ea5e9' }} />
@@ -965,7 +1021,7 @@ const UsageSection = () => {
                                 )}
                             </>
                         )}
-                    </div>
+                    </div>)}
                 </>
             )}
         </div>

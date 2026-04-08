@@ -283,7 +283,7 @@ const AgentEditorUI = ({
 
                         <div className="space-y-4">
                             <div className="space-y-4">
-                                <div className="grid grid-cols-2 gap-4">
+                                <div className="grid grid-cols-3 gap-4">
                                     <div className="flex items-center justify-between p-3 rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)]">
                                         <div>
                                             <div className="text-sm font-medium text-[var(--text-primary)]">Allow Copy</div>
@@ -306,6 +306,18 @@ const AgentEditorUI = ({
                                             className={`relative w-10 h-6 rounded-full transition-colors ${data.embedEnabled ? 'bg-green-500' : 'bg-gray-600'}`}
                                         >
                                             <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${data.embedEnabled ? 'left-5' : 'left-1'}`} />
+                                        </button>
+                                    </div>
+                                    <div className="flex items-center justify-between p-3 rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)]">
+                                        <div>
+                                            <div className="text-sm font-medium text-[var(--text-primary)]">No External</div>
+                                            <div className="text-xs text-[var(--text-muted)]">No integrations/search</div>
+                                        </div>
+                                        <button
+                                            onClick={() => handleChange('disableExternalTools', !data.disableExternalTools)}
+                                            className={`relative w-10 h-6 rounded-full transition-colors ${data.disableExternalTools ? 'bg-amber-500' : 'bg-gray-600'}`}
+                                        >
+                                            <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${data.disableExternalTools ? 'left-5' : 'left-1'}`} />
                                         </button>
                                     </div>
                                 </div>
