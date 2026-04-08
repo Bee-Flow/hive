@@ -37,6 +37,7 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
     const [sitemapMode, setSitemapMode] = useState(false);
     const [sitemapMaxPages, setSitemapMaxPages] = useState(50);
     const [reindexStatus, setReindexStatus] = useState('');
+    const [reindexing, setReindexing] = useState(false);
     const [useAzureKB, setUseAzureKB] = useState(false);
     const [n8nWorkflows, setN8nWorkflows] = useState([]);
 
@@ -75,7 +76,7 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
     useEffect(() => {
         const fetchAzureConfig = async () => {
             try {
-                const res = await authFetch(`${API_BASE}/api/ai/config`);
+                const res = await authFetch(`${API_BASE}/ai/config`);
                 if (res.ok) {
                     const data = await res.json();
                     setUseAzureKB(!!data.useAzureDocProcessing);
