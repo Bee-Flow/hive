@@ -668,6 +668,25 @@ export default function NotificationCenter() {
                                                     border: '1px solid var(--border-subtle, rgba(0,0,0,0.05))',
                                                     animation: 'notifExpand 0.2s ease',
                                                 }}>
+                                                    {/* View Full Result button at top for AI tasks */}
+                                                    {n.category === 'ai_task' && n.message && (
+                                                        <div style={{ marginBottom: 10 }}>
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); openResultModal({ title: n.title, content: n.message }, n.id); }}
+                                                                style={{
+                                                                    display: 'flex', alignItems: 'center', gap: 5,
+                                                                    padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                                                                    border: 'none', cursor: 'pointer',
+                                                                    background: 'rgba(139,92,246,0.1)', color: '#8b5cf6',
+                                                                    transition: 'all 0.15s',
+                                                                }}
+                                                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(139,92,246,0.18)'}
+                                                                onMouseLeave={e => e.currentTarget.style.background = 'rgba(139,92,246,0.1)'}
+                                                            >
+                                                                View Full Result
+                                                            </button>
+                                                        </div>
+                                                    )}
                                                     {n.message && (
                                                         n.category === 'ai_task' ? (
                                                             <div style={{
@@ -703,24 +722,6 @@ export default function NotificationCenter() {
                                                                 hour: '2-digit', minute: '2-digit',
                                                             }) : ''}
                                                         </span>
-                                                        {n.category === 'ai_task' && n.message && (
-                                                            <button
-                                                                onClick={(e) => { e.stopPropagation(); openResultModal({ title: n.title, content: n.message }, n.id); }}
-                                                                style={{
-                                                                    marginLeft: 'auto',
-                                                                    display: 'flex', alignItems: 'center', gap: 4,
-                                                                    padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600,
-                                                                    border: 'none', cursor: 'pointer',
-                                                                    background: 'rgba(139,92,246,0.08)', color: '#8b5cf6',
-                                                                    transition: 'all 0.15s',
-                                                                }}
-                                                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(139,92,246,0.15)'}
-                                                                onMouseLeave={e => e.currentTarget.style.background = 'rgba(139,92,246,0.08)'}
-                                                            >
-                                                                <Sparkles style={{ width: 11, height: 11 }} />
-                                                                View Full Result
-                                                            </button>
-                                                        )}
                                                     </div>
                                                 </div>
                                             )}
