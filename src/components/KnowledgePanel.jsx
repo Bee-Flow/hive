@@ -40,6 +40,7 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
     const [reindexing, setReindexing] = useState(false);
     const [useAzureKB, setUseAzureKB] = useState(false);
     const [n8nWorkflows, setN8nWorkflows] = useState([]);
+    const [n8nIngestMode, setN8nIngestMode] = useState('data'); // 'data' | 'definition'
 
     useEffect(() => { fetchKnowledge(); }, [agentId]);
     useEffect(() => { setSelectedIds(new Set()); }, [items]);
@@ -253,7 +254,7 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
             const res = await authFetch(`${API_BASE}/api/kb/${selectedKB.id}/ingest/n8n`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ workflowId })
+                body: JSON.stringify({ workflowId, mode: n8nIngestMode })
             });
             if (res.ok) {
                 const data = await res.json();
@@ -617,26 +618,43 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
                                         </div>
                                     )}
                                     {kbInputMode === 'n8n' && (
-                                        <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
-                                            {n8nWorkflows.length === 0 ? (
-                                                <div className="text-xs p-3 text-center rounded border border-dashed" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}>
-                                                    No n8n workflows enabled for KB ingestion. Enable them in your Organisation settings.
-                                                </div>
-                                            ) : (
-                                                n8nWorkflows.map(wf => (
-                                                    <div key={wf.id} className="flex items-center justify-between p-2 rounded border" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-tertiary)' }}>
-                                                        <div className="min-w-0 pr-2">
-                                                            <div className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{wf.name}</div>
-                                                            <div className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>n8n_run_{wf.slug}</div>
-                                                        </div>
-                                                        <button disabled={kbIngesting} onClick={() => ingestN8n(wf.id)}
-                                                            className="px-2 py-1 text-[10px] font-medium rounded text-white disabled:opacity-50 transition-opacity hover:opacity-80 flex-shrink-0"
-                                                            style={{ background: 'var(--accent-primary)' }}>
-                                                            Ingest
-                                                        </button>
+                                        <div className="space-y-3">
+                                            <div className="flex bg-[var(--bg-tertiary)] p-1 rounded-lg border" style={{ borderColor: 'var(--border-subtle)' }}>
+                                                <button
+                                                    onClick={() => setN8nIngestMode('data')}
+                                                    className={`flex-1 py-1 px-2 text-[11px] font-medium rounded-md transition-all ${n8nIngestMode === 'data' ? 'bg-[var(--bg-primary)] shadow-sm' : 'opacity-70 hover:opacity-100'}`}
+                                                    style={{ color: n8nIngestMode === 'data' ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                                                    Execute & Ingest Output Data
+                                                </button>
+                                                <button
+                                                    onClick={() => setN8nIngestMode('definition')}
+                                                    className={`flex-1 py-1 px-2 text-[11px] font-medium rounded-md transition-all ${n8nIngestMode === 'definition' ? 'bg-[var(--bg-primary)] shadow-sm' : 'opacity-70 hover:opacity-100'}`}
+                                                    style={{ color: n8nIngestMode === 'definition' ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                                                    Import Workflow Definition
+                                                </button>
+                                            </div>
+                                            
+                                            <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
+                                                {n8nWorkflows.length === 0 ? (
+                                                    <div className="text-xs p-3 text-center rounded border border-dashed" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}>
+                                                        No n8n workflows enabled for KB ingestion. Enable them in your Organisation settings.
                                                     </div>
-                                                ))
-                                            )}
+                                                ) : (
+                                                    n8nWorkflows.map(wf => (
+                                                        <div key={wf.id} className="flex items-center justify-between p-2 rounded border" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-tertiary)' }}>
+                                                            <div className="min-w-0 pr-2">
+                                                                <div className="text-xs font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{wf.name}</div>
+                                                                <div className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>n8n_run_{wf.slug}</div>
+                                                            </div>
+                                                            <button disabled={kbIngesting} onClick={() => ingestN8n(wf.id)}
+                                                                className="px-2 py-1 text-[10px] font-medium rounded text-white disabled:opacity-50 transition-opacity hover:opacity-80 flex-shrink-0"
+                                                                style={{ background: 'var(--accent-primary)' }}>
+                                                                {n8nIngestMode === 'data' ? 'Execute' : 'Ingest'}
+                                                            </button>
+                                                        </div>
+                                                    ))
+                                                )}
+                                            </div>
                                         </div>
                                     )}
 
