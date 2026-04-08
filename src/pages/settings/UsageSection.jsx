@@ -868,7 +868,10 @@ const UsageSection = () => {
                                                 <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>{t('usage.integ_no_data')}</div>
                                             ) : integData.servers.slice(0, 10).map((srv, i) => {
                                                 const total = Number(srv.total) || 0;
-                                                const geoLabel = srv.country_flag ? `${srv.country_flag} ${srv.country_name || srv.country_code}` : null;
+                                                const flags = srv.country_flags || [];
+                                                const names = srv.country_names || [];
+                                                const codes = srv.country_codes || [];
+                                                const ips = srv.server_ips || [];
                                                 return (
                                                     <ListRow key={i}>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
@@ -876,13 +879,15 @@ const UsageSection = () => {
                                                             <div style={{ minWidth: 0, flex: 1 }}>
                                                                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={srv.server_endpoint}>{srv.server_endpoint}</div>
                                                                 <div style={{ display: 'flex', gap: 6, marginTop: 2, fontSize: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                                                                    {geoLabel && <span style={{ fontWeight: 600, color: srv.is_eu ? '#10b981' : '#f59e0b' }}>{geoLabel}</span>}
+                                                                    {flags.length > 0 && flags.map((flag, fi) => (
+                                                                        <span key={fi} style={{ fontWeight: 600, color: srv.is_eu ? '#10b981' : '#f59e0b' }}>{flag} {names[fi] || codes[fi]}</span>
+                                                                    ))}
                                                                     {srv.is_eu !== undefined && <span style={{ fontSize: 8, fontWeight: 700, padding: '1px 5px', borderRadius: 6, background: srv.is_eu ? '#10b98118' : '#f59e0b18', color: srv.is_eu ? '#10b981' : '#f59e0b', letterSpacing: '0.03em' }}>{srv.is_eu ? 'EU/EEA' : 'Non-EU'}</span>}
                                                                     <span style={{ color: 'var(--text-muted)' }}>{Number(srv.integration_count) || 0} integrations</span>
                                                                     {Number(srv.sent) > 0 && <span style={{ color: '#3b82f6', fontWeight: 600 }}>{srv.sent}↑</span>}
                                                                     {Number(srv.received) > 0 && <span style={{ color: '#10b981', fontWeight: 600 }}>{srv.received}↓</span>}
                                                                 </div>
-                                                                {srv.server_ip && <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 1 }}>IP: {srv.server_ip}{srv.server_city ? ` · ${srv.server_city}` : ''}</div>}
+                                                                {ips.length > 0 && <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 1 }}>IP: {ips.join(', ')}</div>}
                                                             </div>
                                                         </div>
                                                         <div style={{ textAlign: 'right', flexShrink: 0 }}>

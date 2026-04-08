@@ -73,6 +73,14 @@ export default function NotificationCenter() {
     const [expandedTaskId, setExpandedTaskId] = useState(null);
     const [resultModal, setResultModal] = useState(null); // { title, content }
 
+    // Helper: open AI task result in Direct Chat for follow-up questions
+    const openInDirectChat = useCallback((title, content) => {
+        setResultModal(null); // close modal if open
+        window.dispatchEvent(new CustomEvent('openDirectChatWithContext', {
+            detail: { title, content }
+        }));
+    }, []);
+
     const fetchCount = useCallback(async () => {
         try {
             const res = await authFetch(`${API_BASE}/api/notifications/unread-count`);
@@ -529,15 +537,25 @@ export default function NotificationCenter() {
                                                     animation: 'notifExpand 0.2s ease',
                                                 }}>
                                                     {n.message && (
-                                                        <p style={{
-                                                            fontSize: 13, color: 'var(--text-primary, #0f172a)',
-                                                            margin: 0, lineHeight: 1.6,
-                                                            wordBreak: 'break-word',
-                                                            whiteSpace: 'pre-wrap',
-                                                            maxHeight: 160, overflow: 'hidden',
-                                                        }}>
-                                                            {n.message}
-                                                        </p>
+                                                        n.category === 'ai_task' ? (
+                                                            <div style={{
+                                                                fontSize: 13, color: 'var(--text-primary, #0f172a)',
+                                                                lineHeight: 1.6,
+                                                                wordBreak: 'break-word',
+                                                                maxHeight: 200, overflowY: 'auto',
+                                                            }}>
+                                                                <MarkdownRenderer content={n.message} />
+                                                            </div>
+                                                        ) : (
+                                                            <p style={{
+                                                                fontSize: 13, color: 'var(--text-primary, #0f172a)',
+                                                                margin: 0, lineHeight: 1.6,
+                                                                wordBreak: 'break-word',
+                                                                whiteSpace: 'pre-wrap',
+                                                            }}>
+                                                                {n.message}
+                                                            </p>
+                                                        )
                                                     )}
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: n.message ? 10 : 0, flexWrap: 'wrap' }}>
                                                         <span style={{
@@ -999,6 +1017,7 @@ export default function NotificationCenter() {
                                         expanded={expandedTaskId === t.id}
                                         onToggleExpand={() => setExpandedTaskId(expandedTaskId === t.id ? null : t.id)}
                                         onToggle={toggleAiTask} onDelete={deleteAiTask} onRunNow={runAiTaskNow}
+                                        onOpenInChat={openInDirectChat}
                                         onOpenResult={(data) => setResultModal(data)} />
                                 ))}
                                 {inactiveAiTasks.length > 0 && (
@@ -1015,6 +1034,7 @@ export default function NotificationCenter() {
                                         expanded={expandedTaskId === t.id}
                                         onToggleExpand={() => setExpandedTaskId(expandedTaskId === t.id ? null : t.id)}
                                         onToggle={toggleAiTask} onDelete={deleteAiTask} onRunNow={runAiTaskNow}
+                                        onOpenInChat={openInDirectChat}
                                         onOpenResult={(data) => setResultModal(data)} />
                                 ))}
                             </>
@@ -1079,6 +1099,24 @@ export default function NotificationCenter() {
                                     AI Task Result
                                 </div>
                             </div>
+                            <button
+                                onClick={() => { openInDirectChat(resultModal.title, resultModal.content); }}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: 6,
+                                    padding: '8px 14px', borderRadius: 10,
+                                    fontSize: 13, fontWeight: 600,
+                                    border: 'none', cursor: 'pointer',
+                                    background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
+                                    color: '#fff',
+                                    transition: 'all 0.2s',
+                                    boxShadow: '0 2px 8px rgba(139,92,246,0.3)',
+                                    flexShrink: 0,
+                                }}
+                                onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-1px)'; e.currentTarget.style.boxShadow = '0 4px 14px rgba(139,92,246,0.4)'; }}
+                                onMouseLeave={e => { e.currentTarget.style.transform = 'translateY(0)'; e.currentTarget.style.boxShadow = '0 2px 8px rgba(139,92,246,0.3)'; }}
+                            >
+                                💬 Discuss in Chat
+                            </button>
                             <button
                                 onClick={() => setResultModal(null)}
                                 style={{
@@ -1242,7 +1280,7 @@ function ReminderItem({ r, index, isOverdue, onComplete, onDelete }) {
     );
 }
 
-function AITaskItem({ task, index, expanded, onToggleExpand, onToggle, onDelete, onRunNow, onOpenResult }) {
+function AITaskItem({ task, index, expanded, onToggleExpand, onToggle, onDelete, onRunNow, onOpenInChat, onOpenResult }) {
     const t = task;
     const statusColors = {
         pending: { bg: 'rgba(99,102,241,0.08)', color: '#6366f1', label: '⏳ Pending' },
@@ -1357,22 +1395,19 @@ function AITaskItem({ task, index, expanded, onToggleExpand, onToggle, onDelete,
                                         onMouseEnter={e => e.currentTarget.style.background = 'rgba(139,92,246,0.15)'}
                                         onMouseLeave={e => e.currentTarget.style.background = 'rgba(139,92,246,0.08)'}
                                     >
-                                        Open ↗
+                                        View ↗
                                     </button>
                                 </div>
                                 <div style={{
                                     fontSize: 12, color: 'var(--text-primary, #0f172a)',
-                                    lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                                    lineHeight: 1.6,
                                     maxHeight: 120, overflowY: 'hidden',
                                     padding: '8px 10px', borderRadius: 8,
                                     background: 'var(--bg-card, #fff)',
                                     border: '1px solid var(--border-subtle, rgba(0,0,0,0.05))',
-                                    cursor: 'pointer',
                                     position: 'relative',
-                                }}
-                                    onClick={(e) => { e.stopPropagation(); onOpenResult && onOpenResult({ title: t.title, content: t.lastResult }); }}
-                                >
-                                    {t.lastResult}
+                                }}>
+                                    <MarkdownRenderer content={t.lastResult} />
                                     <div style={{
                                         position: 'absolute', bottom: 0, left: 0, right: 0, height: 40,
                                         background: 'linear-gradient(transparent, var(--bg-card, #fff))',

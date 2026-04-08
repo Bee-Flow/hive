@@ -531,6 +531,55 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
         return () => window.removeEventListener('chatHistoryModeChanged', handler);
     }, []);
 
+    // Listen for "Open in Direct Chat" events from NotificationCenter (AI Task results)
+    useEffect(() => {
+        const handler = (e) => {
+            const { title, content } = e.detail || {};
+            if (!content) return;
+
+            // Switch to direct chat mode
+            setDirectChatMode(true);
+            setSelectedAgent(null);
+            setCurrentConversation(null);
+            setCurrentDirectConversation(null);
+            setMessages([]);
+            setNotebookContent('');
+            setNotebookSelection('');
+            setShowNotebook(false);
+            setNotebookLinkedId(null);
+            localStorage.setItem('lastUsedMode', 'direct-chat');
+            loadDirectConversations();
+            loadModelTiers();
+            updateDirectChatUrl(null);
+
+            // Auto-close sidebar on mobile
+            if (isMobile) setSidebarOpen(false);
+
+            // Seed the chat with the AI task result as a conversation history
+            // so the user can immediately ask follow-up questions
+            const now = new Date().toISOString();
+            setTimeout(() => {
+                setMessages([
+                    {
+                        id: generateMessageId(),
+                        role: 'user',
+                        content: `Show me the result from my AI Task "${title}"`,
+                        timestamp: now,
+                    },
+                    {
+                        id: generateMessageId(),
+                        role: 'assistant',
+                        content: content,
+                        timestamp: now,
+                        respondingAgentAvatar: '🤖',
+                    },
+                ]);
+            }, 100);
+        };
+        window.addEventListener('openDirectChatWithContext', handler);
+        return () => window.removeEventListener('openDirectChatWithContext', handler);
+    }, [isMobile]);
+
     const loadModelTiers = async () => {
         try {
             const res = await authFetch(`${API_BASE}/ai/config/chat-models`);
