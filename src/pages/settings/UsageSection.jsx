@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
-import { Bot, MessageSquare, BookOpen, Search, Code, LayoutTemplate, Filter, X, Cpu, Users, ChevronDown, Activity, ArrowUpRight, ArrowDownLeft, BarChart3, Zap, DollarSign, TrendingUp, ChevronRight, Shield, AlertTriangle, Eye, Fingerprint, Clock } from 'lucide-react';
+import { Bot, MessageSquare, BookOpen, Search, Code, LayoutTemplate, Filter, X, Cpu, Users, ChevronDown, Activity, ArrowUpRight, ArrowDownLeft, BarChart3, Zap, DollarSign, TrendingUp, ChevronRight, Shield, AlertTriangle, Eye, Fingerprint, Clock, Globe, Server, ArrowRight, ArrowLeft, Link2, Info } from 'lucide-react';
 
 // ── Formatters ──────────────────────────────────────────────────────────────
 const fNum = (n) => {
@@ -240,6 +240,9 @@ const UsageSection = () => {
     const [guardrails, setGuardrails] = useState({
         summary: null, timeline: [], byUser: [], byCategory: [], recent: [],
     });
+    const [integData, setIntegData] = useState({
+        summary: null, byType: [], byTool: [], piiSummary: [], servers: [], recent: [],
+    });
 
     const buildQS = useCallback(() => {
         const params = new URLSearchParams({ days });
@@ -278,6 +281,17 @@ const UsageSection = () => {
                     byUser: await sa(gResults[2]),
                     byCategory: await sa(gResults[3]),
                     recent: await sa(gResults[4]),
+                });
+                // Fetch integration monitoring data
+                const iEps = ['integrations/summary', 'integrations/by-type', 'integrations/by-tool', 'integrations/pii-summary', 'integrations/servers', 'integrations/recent'];
+                const iResults = await Promise.all(iEps.map(ep => authFetch(`${API_BASE}/api/usage/${ep}?${qs}`)));
+                setIntegData({
+                    summary: await sj(iResults[0], {}),
+                    byType: await sa(iResults[1]),
+                    byTool: await sa(iResults[2]),
+                    piiSummary: await sa(iResults[3]),
+                    servers: await sa(iResults[4]),
+                    recent: await sa(iResults[5]),
                 });
             } catch (err) { console.error("Failed to load usage", err); }
             setLoading(false);
@@ -625,25 +639,25 @@ const UsageSection = () => {
                                 <Shield style={{ width: 15, height: 15, color: '#ef4444' }} />
                             </div>
                             <div>
-                                <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.01em' }}>Safety & Guardrails</h3>
-                                <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0, fontWeight: 400 }}>Content moderation, PII detection & regex guardrail events</p>
+                                <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.01em' }}>{t('usage.safety_title')}</h3>
+                                <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0, fontWeight: 400 }}>{t('usage.safety_subtitle')}</p>
                             </div>
                         </div>
 
                         {/* Summary Cards */}
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
-                            <StatCard icon={Shield} label="Total Violations" color="#ef4444"
+                            <StatCard icon={Shield} label={t('usage.total_violations')} color="#ef4444"
                                 value={guardrails.summary?.total_events?.toLocaleString() || '0'}
-                                sub={<span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{guardrails.summary?.unique_users || 0} users</span>} />
-                            <StatCard icon={AlertTriangle} label="Moderation" color="#f59e0b"
+                                sub={<span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{guardrails.summary?.unique_users || 0} {t('usage.users')}</span>} />
+                            <StatCard icon={AlertTriangle} label={t('usage.moderation')} color="#f59e0b"
                                 value={guardrails.summary?.moderation_count?.toLocaleString() || '0'}
-                                sub={<span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Content safety blocks</span>} />
-                            <StatCard icon={Fingerprint} label="PII Detections" color="#8b5cf6"
+                                sub={<span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('usage.content_safety_blocks')}</span>} />
+                            <StatCard icon={Fingerprint} label={t('usage.pii_detections')} color="#8b5cf6"
                                 value={guardrails.summary?.pii_count?.toLocaleString() || '0'}
-                                sub={<span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Personal data flagged</span>} />
-                            <StatCard icon={Eye} label="Regex Matches" color="#3b82f6"
+                                sub={<span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('usage.personal_data_flagged')}</span>} />
+                            <StatCard icon={Eye} label={t('usage.regex_matches')} color="#3b82f6"
                                 value={guardrails.summary?.regex_count?.toLocaleString() || '0'}
-                                sub={<span style={{ fontSize: 10, color: 'var(--text-muted)' }}>Pattern-based blocks</span>} />
+                                sub={<span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('usage.pattern_based_blocks')}</span>} />
                         </div>
 
                         {/* Violation Timeline */}
@@ -651,9 +665,9 @@ const UsageSection = () => {
                             <Card style={{ padding: '12px 16px', marginBottom: 14 }}>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 8 }}>
                                     <TrendingUp style={{ width: 13, height: 13, color: '#ef4444', opacity: 0.7 }} />
-                                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>Violation Trend</span>
+                                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{t('usage.violation_trend')}</span>
                                     <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, fontSize: 10 }}>
-                                        <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><span style={{ width: 7, height: 7, borderRadius: 2, background: '#f59e0b', display: 'inline-block' }} /> Moderation</span>
+                                        <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><span style={{ width: 7, height: 7, borderRadius: 2, background: '#f59e0b', display: 'inline-block' }} /> {t('usage.moderation')}</span>
                                         <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><span style={{ width: 7, height: 7, borderRadius: 2, background: '#8b5cf6', display: 'inline-block' }} /> PII</span>
                                         <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><span style={{ width: 7, height: 7, borderRadius: 2, background: '#3b82f6', display: 'inline-block' }} /> Regex</span>
                                     </div>
@@ -689,10 +703,10 @@ const UsageSection = () => {
                         {/* Two Column: By Category + By User */}
                         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
                             <div>
-                                <SectionTitle icon={AlertTriangle}>By Violation Category</SectionTitle>
+                                <SectionTitle icon={AlertTriangle}>{t('usage.by_violation_category')}</SectionTitle>
                                 <Card>
                                     {guardrails.byCategory.length === 0 ? (
-                                        <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>No violations recorded</div>
+                                        <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>{t('usage.no_violations')}</div>
                                     ) : guardrails.byCategory.slice(0, 10).map((c, i) => {
                                         const typeColor = c.violation_type === 'moderation' ? '#f59e0b' : c.violation_type === 'pii' ? '#8b5cf6' : '#3b82f6';
                                         return (
@@ -715,10 +729,10 @@ const UsageSection = () => {
                                 </Card>
                             </div>
                             <div>
-                                <SectionTitle icon={Users}>Violations by User</SectionTitle>
+                                <SectionTitle icon={Users}>{t('usage.violations_by_user')}</SectionTitle>
                                 <Card>
                                     {guardrails.byUser.length === 0 ? (
-                                        <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>No violations recorded</div>
+                                        <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>{t('usage.no_violations')}</div>
                                     ) : guardrails.byUser.slice(0, 8).map((u, i) => (
                                         <ListRow key={i}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
@@ -742,10 +756,10 @@ const UsageSection = () => {
                         {/* Recent Events Table */}
                         {guardrails.recent.length > 0 && (
                             <div>
-                                <SectionTitle icon={Clock}>Recent Guardrail Events</SectionTitle>
+                                <SectionTitle icon={Clock}>{t('usage.recent_guardrail_events')}</SectionTitle>
                                 <Card>
                                     <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 80px 1.2fr 65px 80px', padding: '8px 14px', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-subtle)' }}>
-                                        {['Time', 'User', 'Type', 'Categories', 'Dir', 'Action'].map(h => (
+                                        {[t('usage.col_time'), t('usage.col_user'), t('usage.col_type'), t('usage.col_categories'), t('usage.col_direction'), t('usage.col_action')].map(h => (
                                             <span key={h} style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>{h}</span>
                                         ))}
                                     </div>
@@ -773,6 +787,173 @@ const UsageSection = () => {
                                     })}
                                 </Card>
                             </div>
+                        )}
+                    </div>
+
+                    {/* ════════════════════════════════════════════════════════ */}
+                    {/* INTEGRATION ACTIVITY MONITOR                            */}
+                    {/* ════════════════════════════════════════════════════════ */}
+                    <div style={{ marginTop: 12, borderTop: '1px solid var(--border-subtle)', paddingTop: 20 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+                            <div style={{ width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #0ea5e920, #6366f120)' }}>
+                                <Globe style={{ width: 15, height: 15, color: '#0ea5e9' }} />
+                            </div>
+                            <div>
+                                <h3 style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.01em' }}>{t('usage.integ_title')}</h3>
+                                <p style={{ fontSize: 11, color: 'var(--text-muted)', margin: 0, fontWeight: 400 }}>{t('usage.integ_subtitle')}</p>
+                            </div>
+                        </div>
+
+                        {/* No data notice */}
+                        {(!integData.summary || (Number(integData.summary.total_calls) === 0 && integData.byType.length === 0)) ? (
+                            <Card style={{ padding: '20px 24px', display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <Info style={{ width: 16, height: 16, color: 'var(--text-muted)', flexShrink: 0 }} />
+                                <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{t('usage.integ_not_enabled')}</span>
+                            </Card>
+                        ) : (
+                            <>
+                                {/* Summary Cards */}
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
+                                    <StatCard icon={Zap} label={t('usage.integ_total_calls')} color="#0ea5e9"
+                                        value={Number(integData.summary?.total_calls)?.toLocaleString() || '0'}
+                                        sub={<span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{Number(integData.summary?.sent_count) || 0} {t('usage.integ_data_sent')}, {Number(integData.summary?.received_count) || 0} {t('usage.integ_data_received')}</span>} />
+                                    <StatCard icon={Link2} label={t('usage.integ_integrations')} color="#6366f1"
+                                        value={Number(integData.summary?.unique_integrations)?.toLocaleString() || '0'}
+                                        sub={<span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('usage.integ_unique_integrations')}</span>} />
+                                    <StatCard icon={Server} label={t('usage.integ_servers')} color="#10b981"
+                                        value={Number(integData.summary?.unique_servers)?.toLocaleString() || '0'}
+                                        sub={<span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('usage.integ_unique_servers')}</span>} />
+                                    <StatCard icon={Fingerprint} label={t('usage.integ_pii_events')} color="#ef4444"
+                                        value={Number(integData.summary?.pii_events)?.toLocaleString() || '0'}
+                                        sub={<span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('usage.integ_pii_detected')}</span>} />
+                                </div>
+
+                                {/* Two Column: By Type + Server Endpoints */}
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
+                                    <div>
+                                        <SectionTitle icon={Link2}>{t('usage.integ_by_type')}</SectionTitle>
+                                        <Card>
+                                            {integData.byType.length === 0 ? (
+                                                <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>{t('usage.integ_no_data')}</div>
+                                            ) : integData.byType.slice(0, 10).map((item, i) => {
+                                                const total = Number(item.total) || 0;
+                                                const pii = Number(item.pii_events) || 0;
+                                                return (
+                                                    <ListRow key={i}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                                                            <IconBadge icon={Globe} color={getColor(i)} />
+                                                            <div style={{ minWidth: 0, flex: 1 }}>
+                                                                <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', textTransform: 'capitalize' }}>{(item.integration_type || 'unknown').replace(/_/g, ' ')}</div>
+                                                                <div style={{ display: 'flex', gap: 8, marginTop: 2, fontSize: 10 }}>
+                                                                    {Number(item.sent) > 0 && <span style={{ color: '#3b82f6', fontWeight: 600 }}>{item.sent} {t('usage.integ_sent')}</span>}
+                                                                    {Number(item.received) > 0 && <span style={{ color: '#10b981', fontWeight: 600 }}>{item.received} {t('usage.integ_received')}</span>}
+                                                                    {pii > 0 && <span style={{ color: '#ef4444', fontWeight: 600 }}>{pii} {t('usage.integ_pii')}</span>}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                                            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{total}</div>
+                                                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('usage.integ_last_used')} {item.last_used ? new Date(item.last_used).toLocaleDateString() : '—'}</div>
+                                                        </div>
+                                                    </ListRow>
+                                                );
+                                            })}
+                                        </Card>
+                                    </div>
+
+                                    <div>
+                                        <SectionTitle icon={Server}>{t('usage.integ_by_server')}</SectionTitle>
+                                        <Card>
+                                            {integData.servers.length === 0 ? (
+                                                <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>{t('usage.integ_no_data')}</div>
+                                            ) : integData.servers.slice(0, 10).map((srv, i) => {
+                                                const total = Number(srv.total) || 0;
+                                                return (
+                                                    <ListRow key={i}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                                                            <IconBadge icon={Server} color={getColor(i + 2)} />
+                                                            <div style={{ minWidth: 0, flex: 1 }}>
+                                                                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={srv.server_endpoint}>{srv.server_endpoint}</div>
+                                                                <div style={{ display: 'flex', gap: 6, marginTop: 2, fontSize: 10 }}>
+                                                                    <span style={{ color: 'var(--text-muted)' }}>{Number(srv.integration_count) || 0} integrations</span>
+                                                                    {Number(srv.sent) > 0 && <span style={{ color: '#3b82f6', fontWeight: 600 }}>{srv.sent}↑</span>}
+                                                                    {Number(srv.received) > 0 && <span style={{ color: '#10b981', fontWeight: 600 }}>{srv.received}↓</span>}
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                        <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                                            <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--text-primary)' }}>{total}</div>
+                                                            <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('usage.integ_last_contact')} {srv.last_contact ? new Date(srv.last_contact).toLocaleDateString() : '—'}</div>
+                                                        </div>
+                                                    </ListRow>
+                                                );
+                                            })}
+                                        </Card>
+                                    </div>
+                                </div>
+
+                                {/* PII Categories by Integration */}
+                                {integData.piiSummary.length > 0 && (
+                                    <div style={{ marginBottom: 14 }}>
+                                        <SectionTitle icon={Fingerprint}>{t('usage.integ_pii_by_category')}</SectionTitle>
+                                        <Card style={{ padding: 16 }}>
+                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                                {integData.piiSummary.map((p, i) => (
+                                                    <div key={i} style={{
+                                                        display: 'flex', alignItems: 'center', gap: 6,
+                                                        padding: '6px 12px', borderRadius: 20,
+                                                        background: '#ef444412', border: '1px solid #ef444420',
+                                                    }}>
+                                                        <Fingerprint style={{ width: 11, height: 11, color: '#ef4444' }} />
+                                                        <span style={{ fontSize: 11, fontWeight: 600, color: '#ef4444' }}>{p.pii_category}</span>
+                                                        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', background: 'var(--bg-tertiary)', padding: '1px 6px', borderRadius: 8 }}>{p.count}</span>
+                                                        <span style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'capitalize' }}>{(p.integration_type || '').replace(/_/g, ' ')}</span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </Card>
+                                    </div>
+                                )}
+
+                                {/* Recent Integration Activity Table */}
+                                {integData.recent.length > 0 && (
+                                    <div>
+                                        <SectionTitle icon={Clock}>{t('usage.integ_recent')}</SectionTitle>
+                                        <Card>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 90px 100px 1.2fr 70px 60px', padding: '8px 14px', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-subtle)' }}>
+                                                {[t('usage.integ_col_time'), t('usage.integ_col_user'), t('usage.integ_col_tool'), t('usage.integ_col_integration'), t('usage.integ_col_server'), t('usage.integ_col_direction'), t('usage.integ_col_pii')].map(h => (
+                                                    <span key={h} style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>{h}</span>
+                                                ))}
+                                            </div>
+                                            {integData.recent.slice(0, 25).map((ev, i) => {
+                                                const dirColor = ev.data_direction === 'sent' ? '#3b82f6' : ev.data_direction === 'received' ? '#10b981' : '#f59e0b';
+                                                const hasPii = ev.pii_categories_detected && ev.pii_categories_detected !== '';
+                                                return (
+                                                    <div key={i} style={{
+                                                        display: 'grid', gridTemplateColumns: '120px 1fr 90px 100px 1.2fr 70px 60px',
+                                                        padding: '6px 14px', alignItems: 'center',
+                                                        background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-secondary)',
+                                                        borderBottom: '1px solid var(--border-subtle)', fontSize: 11,
+                                                    }}>
+                                                        <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>{new Date(ev.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                                        <span style={{ fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.display_name || ev.user_id || 'Unknown'}</span>
+                                                        <span style={{ fontWeight: 600, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={ev.tool_name}>{ev.tool_name}</span>
+                                                        <span style={{ fontWeight: 600, color: getColor(i), textTransform: 'capitalize' }}>{(ev.integration_type || '').replace(/_/g, ' ')}</span>
+                                                        <span style={{ color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10 }} title={ev.server_endpoint}>{ev.server_endpoint || '—'}</span>
+                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                                            {ev.data_direction === 'sent' && <ArrowRight style={{ width: 10, height: 10, color: dirColor }} />}
+                                                            {ev.data_direction === 'received' && <ArrowLeft style={{ width: 10, height: 10, color: dirColor }} />}
+                                                            {ev.data_direction === 'both' && <><ArrowRight style={{ width: 8, height: 8, color: dirColor }} /><ArrowLeft style={{ width: 8, height: 8, color: dirColor }} /></>}
+                                                            <span style={{ fontWeight: 600, color: dirColor, textTransform: 'capitalize' }}>{ev.data_direction}</span>
+                                                        </span>
+                                                        <span>{hasPii ? <span style={{ fontSize: 9, fontWeight: 700, color: '#ef4444', background: '#ef444415', padding: '2px 6px', borderRadius: 8 }}>⚠ PII</span> : <span style={{ color: 'var(--text-muted)', fontSize: 9 }}>—</span>}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </Card>
+                                    </div>
+                                )}
+                            </>
                         )}
                     </div>
                 </>
