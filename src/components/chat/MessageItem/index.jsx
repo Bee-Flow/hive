@@ -751,8 +751,9 @@ const MessageItem = ({
                     <div className="mt-3 pt-2">
                         <details className="group/sources">
                             <summary className="flex items-center gap-2 cursor-pointer text-xs transition-colors select-none list-none [&::-webkit-details-marker]:hidden px-1 py-1 rounded-lg hover:bg-[var(--bg-tertiary)]/50" style={{ color: 'var(--text-secondary)' }}>
-                                <span className="text-sm opacity-70">📚</span>
-                                <span className="font-medium">{chunkCount} Source{chunkCount !== 1 ? 's' : ''}{docCount < chunkCount ? ` from ${docCount} document${docCount !== 1 ? 's' : ''}` : ''}</span>
+                                <span className="text-sm opacity-70">💡</span>
+                                <span className="font-medium">How I got this answer</span>
+                                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }}>{chunkCount} Source{chunkCount !== 1 ? 's' : ''}{docCount < chunkCount ? ` from ${docCount} document${docCount !== 1 ? 's' : ''}` : ''}</span>
                                 <svg className="w-3 h-3 transition-transform group-open/sources:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                             </summary>
                             <div className="mt-2 space-y-1.5">
