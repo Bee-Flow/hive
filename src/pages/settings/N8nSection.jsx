@@ -17,7 +17,23 @@ export default function N8nSection() {
     const [discovering, setDiscovering] = useState(false);
     const [expandedWf, setExpandedWf] = useState(null);
 
+    // KB import state
+    const [availableKBs, setAvailableKBs] = useState([]);
+    const [kbsLoaded, setKbsLoaded] = useState(false);
+    const [kbImporting, setKbImporting] = useState(null); // workflowId currently importing
+    const [kbImportMsg, setKbImportMsg] = useState(null);
+
     useEffect(() => { loadConfig(); }, []);
+
+    // Fetch available KBs once for the import picker
+    const fetchKBs = async () => {
+        if (kbsLoaded) return;
+        try {
+            const res = await authFetch(`${API_BASE}/api/kb`);
+            if (res.ok) setAvailableKBs(await res.json());
+        } catch (e) { console.error('Failed to fetch KBs:', e); }
+        setKbsLoaded(true);
+    };
 
     const loadConfig = async () => {
         setLoading(true);
@@ -152,6 +168,38 @@ export default function N8nSection() {
         }));
     };
 
+    // ── KB Import ──────────────────────────────────────────────────
+    const ingestToKB = async (wfId, kbId) => {
+        if (!kbId || !wfId) return;
+        setKbImporting(wfId);
+        setKbImportMsg(null);
+        try {
+            const res = await authFetch(`${API_BASE}/api/kb/${kbId}/ingest/n8n`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ workflowId: wfId }),
+            });
+            const data = await res.json();
+            if (res.ok) {
+                // Persist import state on the workflow
+                const kbName = availableKBs.find(k => k.id === kbId)?.name || 'KB';
+                const updated = workflows.map(w => w.id === wfId
+                    ? { ...w, kbImport: { kbId, kbName, importedAt: new Date().toISOString(), chunks: data.chunks } }
+                    : w
+                );
+                setWorkflows(updated);
+                persistWorkflows(updated);
+                setKbImportMsg({ type: 'success', text: `Imported (${data.chunks} chunks)` });
+            } else {
+                setKbImportMsg({ type: 'error', text: data.error || 'Import failed' });
+            }
+        } catch (e) {
+            setKbImportMsg({ type: 'error', text: 'Import failed: ' + e.message });
+        }
+        setKbImporting(null);
+        setTimeout(() => setKbImportMsg(null), 5000);
+    };
+
     const saveWorkflows = async () => {
         setSaving(true);
         try {
@@ -283,7 +331,12 @@ export default function N8nSection() {
                                         onClick={() => setExpandedWf(isExpanded ? null : wf.id)}>
                                         {isExpanded ? <ChevronDown className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--text-muted)' }} /> : <ChevronRight className="w-3.5 h-3.5 shrink-0" style={{ color: 'var(--text-muted)' }} />}
                                         <div className="flex-1 min-w-0">
-                                            <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{wf.name}</div>
+                                            <div className="text-sm font-medium truncate flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
+                                                {wf.name}
+                                                {wf.kbImport && (
+                                                    <span className="text-[9px] px-1 py-0.5 rounded font-medium flex-shrink-0" style={{ background: 'rgba(59,130,246,0.1)', color: '#3b82f6' }} title={`Imported to ${wf.kbImport.kbName}`}>📚 KB</span>
+                                                )}
+                                            </div>
                                             <div className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>
                                                 n8n_run_{wf.slug} · {(wf.inputs || []).length} input(s)
                                             </div>
@@ -358,6 +411,81 @@ export default function N8nSection() {
                                                                 </button>
                                                             </div>
                                                         ))}
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* ── KB Import Section ── */}
+                                            <div className="pt-2 mt-1 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+                                                <div className="flex items-center justify-between mb-1">
+                                                    <label className="text-[11px] font-semibold flex items-center gap-1" style={{ color: 'var(--text-secondary)' }}>📚 Knowledge Base</label>
+                                                </div>
+                                                {wf.kbImport ? (
+                                                    <div className="space-y-1.5">
+                                                        <div className="flex items-center gap-2 p-1.5 rounded border" style={{ borderColor: 'var(--border-subtle)', background: 'rgba(59,130,246,0.04)' }}>
+                                                            <span className="text-[11px] font-medium flex items-center gap-1" style={{ color: '#3b82f6' }}>
+                                                                <Check className="w-3 h-3" /> Imported to "{wf.kbImport.kbName}"
+                                                            </span>
+                                                            <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                                                                · {wf.kbImport.chunks} chunks · {new Date(wf.kbImport.importedAt).toLocaleDateString()}
+                                                            </span>
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <button
+                                                                onClick={() => ingestToKB(wf.id, wf.kbImport.kbId)}
+                                                                disabled={kbImporting === wf.id}
+                                                                className="text-[11px] font-medium px-2 py-1 rounded transition-all hover:opacity-80 disabled:opacity-50"
+                                                                style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }}>
+                                                                {kbImporting === wf.id ? '⏳ Updating...' : '🔄 Re-import'}
+                                                            </button>
+                                                            <button
+                                                                onClick={() => {
+                                                                    const updated = workflows.map(w => w.id === wf.id ? { ...w, kbImport: undefined } : w);
+                                                                    setWorkflows(updated);
+                                                                    persistWorkflows(updated);
+                                                                }}
+                                                                className="text-[11px] font-medium px-2 py-1 rounded transition-all hover:opacity-80"
+                                                                style={{ color: 'var(--text-muted)' }}>
+                                                                Unlink
+                                                            </button>
+                                                            {kbImportMsg && kbImporting !== wf.id && (
+                                                                <span className={`text-[10px] font-medium ${kbImportMsg.type === 'success' ? 'text-green-500' : 'text-red-500'}`}>
+                                                                    {kbImportMsg.text}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="space-y-1.5">
+                                                        <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Import this workflow's definition into a knowledge base so AI agents can understand and reference it.</p>
+                                                        <div className="flex items-center gap-2">
+                                                            <select
+                                                                onFocus={fetchKBs}
+                                                                defaultValue=""
+                                                                id={`kb-select-${wf.id}`}
+                                                                className="flex-1 px-2 py-1 text-[11px] rounded border bg-transparent outline-none focus:border-[var(--accent-primary)]"
+                                                                style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)', background: 'var(--bg-primary)' }}>
+                                                                <option value="" disabled>Select a knowledge base…</option>
+                                                                {availableKBs.map(kb => (
+                                                                    <option key={kb.id} value={kb.id}>{kb.name} ({kb.document_count || 0} docs)</option>
+                                                                ))}
+                                                            </select>
+                                                            <button
+                                                                onClick={() => {
+                                                                    const sel = document.getElementById(`kb-select-${wf.id}`);
+                                                                    if (sel?.value) ingestToKB(wf.id, sel.value);
+                                                                }}
+                                                                disabled={kbImporting === wf.id}
+                                                                className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded transition-all hover:opacity-80 disabled:opacity-50"
+                                                                style={{ background: 'var(--accent-primary)', color: 'white' }}>
+                                                                {kbImporting === wf.id ? '⏳ Importing...' : '📚 Import'}
+                                                            </button>
+                                                        </div>
+                                                        {kbImportMsg && kbImporting !== wf.id && (
+                                                            <span className={`text-[10px] font-medium ${kbImportMsg.type === 'success' ? 'text-green-500' : 'text-red-500'}`}>
+                                                                {kbImportMsg.text}
+                                                            </span>
+                                                        )}
                                                     </div>
                                                 )}
                                             </div>
