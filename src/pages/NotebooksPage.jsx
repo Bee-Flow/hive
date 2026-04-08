@@ -145,7 +145,6 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     const [creating, setCreating] = useState(false);
     const [showTaxWizard, setShowTaxWizard] = useState(false);
 
-    const hasTaxBeta = user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('dutch_tax_assistant'));
     const isTaxNotebook = selected?.type === 'tax_assistant';
     const [newName, setNewName] = useState('');
     const [search, setSearch] = useState('');
@@ -1052,13 +1051,11 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                             {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                             Create
                         </button>
-                        {hasTaxBeta && (
-                            <button onClick={() => setShowTaxWizard(true)}
-                                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.02]"
-                                style={{ background: 'linear-gradient(135deg, #059669, #10b981)' }}>
-                                🧾 Tax
-                            </button>
-                        )}
+                        <button onClick={() => setShowTaxWizard(true)}
+                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.02]"
+                            style={{ background: 'linear-gradient(135deg, #059669, #10b981)' }}>
+                            🧾 Tax
+                        </button>
                     </div>
                 </div>
             </div>

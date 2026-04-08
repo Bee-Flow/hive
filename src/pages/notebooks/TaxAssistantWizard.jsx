@@ -36,18 +36,13 @@ export default function TaxAssistantWizard({ onClose, onCreated, user }) {
     const [integrations, setIntegrations] = useState({ google: false, checking: true });
 
     useEffect(() => {
-        // Check which integrations are connected
-        authFetch(`${API_BASE}/api/user/connected-providers`)
-            .then(r => r.ok ? r.json() : { providers: [] })
-            .then(data => {
-                const providers = data.providers || [];
-                setIntegrations({
-                    google: providers.includes('google'),
-                    checking: false,
-                });
-            })
-            .catch(() => setIntegrations(prev => ({ ...prev, checking: false })));
-    }, []);
+        // Google SSO login = Gmail + Drive are available (same as integrationTools.js check)
+        const isGoogle = user?.provider === 'google';
+        setIntegrations({
+            google: isGoogle,
+            checking: false,
+        });
+    }, [user?.provider]);
 
     const handleCreate = async () => {
         setCreating(true);
@@ -113,11 +108,6 @@ export default function TaxAssistantWizard({ onClose, onCreated, user }) {
                     <div>
                         <div style={{ fontSize: 20, fontWeight: 700, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
                             🧾 New Tax Assistant
-                            <span style={{
-                                fontSize: 10, fontWeight: 700, padding: '2px 8px',
-                                borderRadius: 6, background: 'linear-gradient(135deg, #059669, #10b981)',
-                                color: '#fff', textTransform: 'uppercase', letterSpacing: 1,
-                            }}>beta</span>
                         </div>
                         <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 4 }}>
                             Dutch business tax preparation assistant

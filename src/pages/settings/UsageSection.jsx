@@ -765,7 +765,7 @@ const UsageSection = () => {
                                     </div>
                                     {guardrails.recent.slice(0, 20).map((ev, i) => {
                                         const typeColor = ev.violation_type === 'moderation' ? '#f59e0b' : ev.violation_type === 'pii' ? '#8b5cf6' : '#3b82f6';
-                                        const actionColor = ev.action_taken === 'hard_block' || ev.action_taken === 'blocked' || ev.action_taken === 'search_blocked' ? '#ef4444' : ev.action_taken === 'tokenized' ? '#8b5cf6' : ev.action_taken === 'redacted' ? '#3b82f6' : '#f59e0b';
+                                        const actionColor = ev.action_taken === 'hard_block' || ev.action_taken === 'blocked' || ev.action_taken === 'search_blocked' ? '#ef4444' : ev.action_taken === 'pii_detected' ? '#8b5cf6' : ev.action_taken === 'tokenized' ? '#8b5cf6' : ev.action_taken === 'redacted' ? '#3b82f6' : '#f59e0b';
                                         return (
                                             <div key={i} style={{
                                                 display: 'grid', gridTemplateColumns: '120px 1fr 80px 1.2fr 65px 80px',
@@ -868,17 +868,21 @@ const UsageSection = () => {
                                                 <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>{t('usage.integ_no_data')}</div>
                                             ) : integData.servers.slice(0, 10).map((srv, i) => {
                                                 const total = Number(srv.total) || 0;
+                                                const geoLabel = srv.country_flag ? `${srv.country_flag} ${srv.country_name || srv.country_code}` : null;
                                                 return (
                                                     <ListRow key={i}>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
                                                             <IconBadge icon={Server} color={getColor(i + 2)} />
                                                             <div style={{ minWidth: 0, flex: 1 }}>
                                                                 <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={srv.server_endpoint}>{srv.server_endpoint}</div>
-                                                                <div style={{ display: 'flex', gap: 6, marginTop: 2, fontSize: 10 }}>
+                                                                <div style={{ display: 'flex', gap: 6, marginTop: 2, fontSize: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                                                                    {geoLabel && <span style={{ fontWeight: 600, color: srv.is_eu ? '#10b981' : '#f59e0b' }}>{geoLabel}</span>}
+                                                                    {srv.is_eu !== undefined && <span style={{ fontSize: 8, fontWeight: 700, padding: '1px 5px', borderRadius: 6, background: srv.is_eu ? '#10b98118' : '#f59e0b18', color: srv.is_eu ? '#10b981' : '#f59e0b', letterSpacing: '0.03em' }}>{srv.is_eu ? 'EU/EEA' : 'Non-EU'}</span>}
                                                                     <span style={{ color: 'var(--text-muted)' }}>{Number(srv.integration_count) || 0} integrations</span>
                                                                     {Number(srv.sent) > 0 && <span style={{ color: '#3b82f6', fontWeight: 600 }}>{srv.sent}↑</span>}
                                                                     {Number(srv.received) > 0 && <span style={{ color: '#10b981', fontWeight: 600 }}>{srv.received}↓</span>}
                                                                 </div>
+                                                                {srv.server_ip && <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 1 }}>IP: {srv.server_ip}{srv.server_city ? ` · ${srv.server_city}` : ''}</div>}
                                                             </div>
                                                         </div>
                                                         <div style={{ textAlign: 'right', flexShrink: 0 }}>
@@ -920,8 +924,8 @@ const UsageSection = () => {
                                     <div>
                                         <SectionTitle icon={Clock}>{t('usage.integ_recent')}</SectionTitle>
                                         <Card>
-                                            <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 90px 100px 1.2fr 70px 60px', padding: '8px 14px', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-subtle)' }}>
-                                                {[t('usage.integ_col_time'), t('usage.integ_col_user'), t('usage.integ_col_tool'), t('usage.integ_col_integration'), t('usage.integ_col_server'), t('usage.integ_col_direction'), t('usage.integ_col_pii')].map(h => (
+                                            <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 90px 100px 1fr 60px 70px 60px', padding: '8px 14px', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-subtle)' }}>
+                                                {[t('usage.integ_col_time'), t('usage.integ_col_user'), t('usage.integ_col_tool'), t('usage.integ_col_integration'), t('usage.integ_col_server'), 'Region', t('usage.integ_col_direction'), t('usage.integ_col_pii')].map(h => (
                                                     <span key={h} style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>{h}</span>
                                                 ))}
                                             </div>
@@ -930,7 +934,7 @@ const UsageSection = () => {
                                                 const hasPii = ev.pii_categories_detected && ev.pii_categories_detected !== '';
                                                 return (
                                                     <div key={i} style={{
-                                                        display: 'grid', gridTemplateColumns: '120px 1fr 90px 100px 1.2fr 70px 60px',
+                                                        display: 'grid', gridTemplateColumns: '120px 1fr 90px 100px 1fr 60px 70px 60px',
                                                         padding: '6px 14px', alignItems: 'center',
                                                         background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-secondary)',
                                                         borderBottom: '1px solid var(--border-subtle)', fontSize: 11,
@@ -940,6 +944,7 @@ const UsageSection = () => {
                                                         <span style={{ fontWeight: 600, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={ev.tool_name}>{ev.tool_name}</span>
                                                         <span style={{ fontWeight: 600, color: getColor(i), textTransform: 'capitalize' }}>{(ev.integration_type || '').replace(/_/g, ' ')}</span>
                                                         <span style={{ color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10 }} title={ev.server_endpoint}>{ev.server_endpoint || '—'}</span>
+                                                        <span style={{ fontSize: 10, fontWeight: 600, color: ev.is_eu ? '#10b981' : ev.country_flag ? '#f59e0b' : 'var(--text-muted)' }} title={ev.country_name || ''}>{ev.country_flag ? `${ev.country_flag} ${ev.country_code || ''}` : '—'}</span>
                                                         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                                                             {ev.data_direction === 'sent' && <ArrowRight style={{ width: 10, height: 10, color: dirColor }} />}
                                                             {ev.data_direction === 'received' && <ArrowLeft style={{ width: 10, height: 10, color: dirColor }} />}
