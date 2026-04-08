@@ -116,7 +116,14 @@ export default function NotificationCenter() {
             const res = await authFetch(`${API_BASE}/api/notifications/unread-count`);
             if (res.ok) {
                 const data = await res.json();
-                setUnreadCount(data.count || 0);
+                const newCount = data.count || 0;
+                setUnreadCount(prev => {
+                    // If count increased, a new notification arrived — refresh the list
+                    if (newCount > prev) {
+                        fetchNotificationsRef.current?.();
+                    }
+                    return newCount;
+                });
             }
         } catch (err) { /* silent */ }
     }, []);
@@ -134,11 +141,16 @@ export default function NotificationCenter() {
         setLoading(false);
     }, []);
 
+    // Keep a ref to fetchNotifications so the polling callback can call it
+    const fetchNotificationsRef = useRef(fetchNotifications);
+    useEffect(() => { fetchNotificationsRef.current = fetchNotifications; }, [fetchNotifications]);
+
     useEffect(() => {
         fetchCount();
+        fetchNotifications(); // initial load so notifications are ready before panel opens
         const interval = setInterval(fetchCount, 30000);
         return () => clearInterval(interval);
-    }, [fetchCount]);
+    }, [fetchCount, fetchNotifications]);
 
     useEffect(() => {
         if (open) {
