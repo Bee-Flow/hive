@@ -1,11 +1,12 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Bell, Check, CheckCheck, Info, AlertTriangle, AlertCircle, X, Trash2, Clock, Plus, Calendar, Repeat, BellOff, AlarmClock } from 'lucide-react';
+import { Bell, Check, CheckCheck, Info, AlertTriangle, AlertCircle, X, Trash2, Clock, Plus, Calendar, Repeat, BellOff, AlarmClock, Bot, Play, Pause, Sparkles, Zap } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 
 const CATEGORY_CONFIG = {
     info: { icon: Info, color: '#6366f1', bg: 'rgba(99, 102, 241, 0.08)', label: 'Info' },
     heads_up: { icon: AlertTriangle, color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.08)', label: 'Heads Up' },
     urgent: { icon: AlertCircle, color: '#ef4444', bg: 'rgba(239, 68, 68, 0.08)', label: 'Urgent' },
+    ai_task: { icon: Bot, color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.08)', label: 'AI Task' },
 };
 
 function timeAgo(dateStr) {
@@ -57,6 +58,19 @@ export default function NotificationCenter() {
     const [reminderTime, setReminderTime] = useState('');
     const [reminderRepeat, setReminderRepeat] = useState('');
 
+    // AI Tasks state
+    const [aiTasks, setAiTasks] = useState([]);
+    const [aiTasksLoading, setAiTasksLoading] = useState(false);
+    const [showAiTaskForm, setShowAiTaskForm] = useState(false);
+    const [aiTaskTitle, setAiTaskTitle] = useState('');
+    const [aiTaskPrompt, setAiTaskPrompt] = useState('');
+    const [aiTaskDate, setAiTaskDate] = useState('');
+    const [aiTaskTime, setAiTaskTime] = useState('');
+    const [aiTaskRepeat, setAiTaskRepeat] = useState('weekly');
+    const [aiTaskTier, setAiTaskTier] = useState('fast');
+    const [maxAiTasks, setMaxAiTasks] = useState(10);
+    const [expandedTaskId, setExpandedTaskId] = useState(null);
+
     const fetchCount = useCallback(async () => {
         try {
             const res = await authFetch(`${API_BASE}/api/notifications/unread-count`);
@@ -90,6 +104,7 @@ export default function NotificationCenter() {
         if (open) {
             fetchNotifications();
             fetchReminders();
+            fetchAiTasks();
             setExpandedId(null);
         }
     }, [open, fetchNotifications]);
@@ -101,6 +116,19 @@ export default function NotificationCenter() {
             if (res.ok) setReminders(await res.json());
         } catch (err) { /* silent */ }
         setRemindersLoading(false);
+    }, []);
+
+    const fetchAiTasks = useCallback(async () => {
+        setAiTasksLoading(true);
+        try {
+            const res = await authFetch(`${API_BASE}/api/ai-tasks`);
+            if (res.ok) {
+                const data = await res.json();
+                setAiTasks(data.tasks || []);
+                if (data.maxTasks) setMaxAiTasks(data.maxTasks);
+            }
+        } catch (err) { /* silent */ }
+        setAiTasksLoading(false);
     }, []);
 
     const createReminder = async () => {
@@ -132,6 +160,58 @@ export default function NotificationCenter() {
             await authFetch(`${API_BASE}/api/reminders/${id}`, { method: 'DELETE' });
             setReminders(prev => prev.filter(r => r.id !== id));
         } catch (err) { console.error('Delete reminder failed:', err); }
+    };
+
+    // AI Task handlers
+    const createAiTask = async () => {
+        if (!aiTaskTitle.trim() || !aiTaskPrompt.trim() || !aiTaskDate || !aiTaskTime) return;
+        const nextRunAt = new Date(`${aiTaskDate}T${aiTaskTime}`).toISOString();
+        try {
+            const res = await authFetch(`${API_BASE}/api/ai-tasks`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    title: aiTaskTitle.trim(),
+                    prompt: aiTaskPrompt.trim(),
+                    nextRunAt,
+                    repeatInterval: aiTaskRepeat || null,
+                    modelTier: aiTaskTier,
+                    timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+                }),
+            });
+            if (res.ok) {
+                fetchAiTasks();
+                setAiTaskTitle(''); setAiTaskPrompt(''); setAiTaskDate(''); setAiTaskTime('');
+                setAiTaskRepeat('weekly'); setAiTaskTier('fast');
+                setShowAiTaskForm(false);
+            } else {
+                const err = await res.json();
+                alert(err.error || 'Failed to create task');
+            }
+        } catch (err) { console.error('Create AI task failed:', err); }
+    };
+
+    const toggleAiTask = async (id) => {
+        try {
+            const res = await authFetch(`${API_BASE}/api/ai-tasks/${id}/toggle`, { method: 'POST' });
+            if (res.ok) fetchAiTasks();
+        } catch (err) { console.error('Toggle AI task failed:', err); }
+    };
+
+    const deleteAiTask = async (id) => {
+        try {
+            await authFetch(`${API_BASE}/api/ai-tasks/${id}`, { method: 'DELETE' });
+            setAiTasks(prev => prev.filter(t => t.id !== id));
+        } catch (err) { console.error('Delete AI task failed:', err); }
+    };
+
+    const runAiTaskNow = async (id) => {
+        try {
+            const res = await authFetch(`${API_BASE}/api/ai-tasks/${id}/run-now`, { method: 'POST' });
+            if (res.ok) {
+                fetchAiTasks();
+            }
+        } catch (err) { console.error('Run AI task failed:', err); }
     };
 
     useEffect(() => {
@@ -176,6 +256,8 @@ export default function NotificationCenter() {
     const activeReminders = reminders.filter(r => !r.isCompleted);
     const overdueReminders = activeReminders.filter(r => r.remindAt && new Date(r.remindAt) < new Date());
     const upcomingReminders = activeReminders.filter(r => r.remindAt && new Date(r.remindAt) >= new Date());
+    const activeAiTasks = aiTasks.filter(t => t.isActive);
+    const inactiveAiTasks = aiTasks.filter(t => !t.isActive);
 
     return (
         <div ref={panelRef} style={{ position: 'relative' }}>
@@ -243,7 +325,8 @@ export default function NotificationCenter() {
                     }}>
                         {[
                             { id: 'notifications', label: 'Notifications', icon: Bell },
-                            { id: 'reminders', label: 'Reminders', icon: AlarmClock }
+                            { id: 'reminders', label: 'Reminders', icon: AlarmClock },
+                            { id: 'ai-tasks', label: 'AI Tasks', icon: Bot },
                         ].map(t => (
                             <button
                                 key={t.id}
@@ -252,8 +335,8 @@ export default function NotificationCenter() {
                                     background: 'none', border: 'none', cursor: 'pointer',
                                     display: 'flex', alignItems: 'center', gap: 6,
                                     padding: '11px 14px', fontSize: 12.5, fontWeight: 600,
-                                    borderBottom: tab === t.id ? '2px solid #6366f1' : '2px solid transparent',
-                                    color: tab === t.id ? '#6366f1' : 'var(--text-muted, #64748b)',
+                                    borderBottom: tab === t.id ? `2px solid ${t.id === 'ai-tasks' ? '#8b5cf6' : '#6366f1'}` : '2px solid transparent',
+                                    color: tab === t.id ? (t.id === 'ai-tasks' ? '#8b5cf6' : '#6366f1') : 'var(--text-muted, #64748b)',
                                     transition: 'all 0.15s ease',
                                     letterSpacing: '0.01em',
                                 }}
@@ -275,6 +358,14 @@ export default function NotificationCenter() {
                                         fontSize: 9.5, fontWeight: 700,
                                         borderRadius: 10, padding: '2px 6px', lineHeight: 1.3,
                                     }}>{activeReminders.length}</span>
+                                )}
+                                {t.id === 'ai-tasks' && activeAiTasks.length > 0 && (
+                                    <span style={{
+                                        background: 'rgba(139,92,246,0.1)',
+                                        color: '#8b5cf6',
+                                        fontSize: 9.5, fontWeight: 700,
+                                        borderRadius: 10, padding: '2px 6px', lineHeight: 1.3,
+                                    }}>{activeAiTasks.length}</span>
                                 )}
                             </button>
                         ))}
@@ -683,6 +774,230 @@ export default function NotificationCenter() {
                         )}
                     </div>
                     )}
+
+                    {/* AI Tasks Tab */}
+                    {tab === 'ai-tasks' && (
+                    <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
+                        {/* Add task button / form */}
+                        <div style={{ padding: '8px 14px' }}>
+                            {!showAiTaskForm ? (
+                                <button
+                                    onClick={() => setShowAiTaskForm(true)}
+                                    disabled={aiTasks.length >= maxAiTasks}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: 6,
+                                        width: '100%', padding: '10px 12px',
+                                        border: '1.5px dashed var(--border-subtle, rgba(0,0,0,0.12))',
+                                        background: 'transparent', borderRadius: 12, cursor: 'pointer',
+                                        color: aiTasks.length >= maxAiTasks ? 'var(--text-muted, #94a3b8)' : '#8b5cf6',
+                                        fontSize: 13, fontWeight: 600,
+                                        transition: 'all 0.2s ease',
+                                        letterSpacing: '0.01em',
+                                        opacity: aiTasks.length >= maxAiTasks ? 0.5 : 1,
+                                    }}
+                                    onMouseEnter={e => { if (aiTasks.length < maxAiTasks) { e.currentTarget.style.background = 'rgba(139,92,246,0.04)'; e.currentTarget.style.borderColor = '#8b5cf6'; } }}
+                                    onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.borderColor = 'var(--border-subtle, rgba(0,0,0,0.12))'; }}
+                                >
+                                    <Plus style={{ width: 15, height: 15 }} />
+                                    New AI Task
+                                    <span style={{ marginLeft: 'auto', fontSize: 10, opacity: 0.6, fontWeight: 500 }}>
+                                        {aiTasks.length}/{maxAiTasks}
+                                    </span>
+                                </button>
+                            ) : (
+                                <div style={{
+                                    padding: 14, borderRadius: 14,
+                                    background: 'var(--bg-secondary, #f8fafc)',
+                                    border: '1px solid var(--border-subtle, rgba(0,0,0,0.06))',
+                                    animation: 'notifExpand 0.2s ease',
+                                }}>
+                                    <input
+                                        value={aiTaskTitle}
+                                        onChange={e => setAiTaskTitle(e.target.value)}
+                                        placeholder="Task name (e.g. Weekly AI News Digest)"
+                                        autoFocus
+                                        style={{
+                                            width: '100%', padding: '9px 12px', borderRadius: 10,
+                                            border: '1px solid var(--border-subtle, rgba(0,0,0,0.08))',
+                                            background: 'var(--bg-card, #fff)', fontSize: 13,
+                                            color: 'var(--text-primary, #0f172a)', outline: 'none',
+                                            marginBottom: 6, transition: 'border-color 0.15s',
+                                            boxSizing: 'border-box',
+                                        }}
+                                        onFocus={e => e.target.style.borderColor = '#8b5cf6'}
+                                        onBlur={e => e.target.style.borderColor = 'var(--border-subtle, rgba(0,0,0,0.08))'}
+                                    />
+                                    <textarea
+                                        value={aiTaskPrompt}
+                                        onChange={e => setAiTaskPrompt(e.target.value)}
+                                        placeholder="What should the AI do? Be specific...&#10;e.g. Search for the top 5 AI news from the past week and summarize each with a source link."
+                                        rows={3}
+                                        style={{
+                                            width: '100%', padding: '9px 12px', borderRadius: 10,
+                                            border: '1px solid var(--border-subtle, rgba(0,0,0,0.08))',
+                                            background: 'var(--bg-card, #fff)', fontSize: 13,
+                                            color: 'var(--text-primary, #0f172a)', outline: 'none',
+                                            marginBottom: 6, transition: 'border-color 0.15s',
+                                            boxSizing: 'border-box', resize: 'vertical', fontFamily: 'inherit',
+                                        }}
+                                        onFocus={e => e.target.style.borderColor = '#8b5cf6'}
+                                        onBlur={e => e.target.style.borderColor = 'var(--border-subtle, rgba(0,0,0,0.08))'}
+                                    />
+                                    <div style={{ display: 'flex', gap: 6, marginBottom: 6 }}>
+                                        <input
+                                            type="date"
+                                            value={aiTaskDate}
+                                            onChange={e => setAiTaskDate(e.target.value)}
+                                            style={{
+                                                flex: 1, padding: '9px 12px', borderRadius: 10,
+                                                border: '1px solid var(--border-subtle, rgba(0,0,0,0.08))',
+                                                background: 'var(--bg-card, #fff)', fontSize: 12,
+                                                color: 'var(--text-primary, #0f172a)', outline: 'none',
+                                            }}
+                                        />
+                                        <input
+                                            type="time"
+                                            value={aiTaskTime}
+                                            onChange={e => setAiTaskTime(e.target.value)}
+                                            style={{
+                                                flex: 1, padding: '9px 12px', borderRadius: 10,
+                                                border: '1px solid var(--border-subtle, rgba(0,0,0,0.08))',
+                                                background: 'var(--bg-card, #fff)', fontSize: 12,
+                                                color: 'var(--text-primary, #0f172a)', outline: 'none',
+                                            }}
+                                        />
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+                                        <select
+                                            value={aiTaskRepeat}
+                                            onChange={e => setAiTaskRepeat(e.target.value)}
+                                            style={{
+                                                flex: 1, padding: '9px 12px', borderRadius: 10,
+                                                border: '1px solid var(--border-subtle, rgba(0,0,0,0.08))',
+                                                background: 'var(--bg-card, #fff)', fontSize: 12,
+                                                color: 'var(--text-primary, #0f172a)', outline: 'none',
+                                                cursor: 'pointer',
+                                            }}
+                                        >
+                                            <option value="daily">Daily</option>
+                                            <option value="weekly">Weekly</option>
+                                            <option value="monthly">Monthly</option>
+                                        </select>
+                                        <select
+                                            value={aiTaskTier}
+                                            onChange={e => setAiTaskTier(e.target.value)}
+                                            style={{
+                                                flex: 1, padding: '9px 12px', borderRadius: 10,
+                                                border: '1px solid var(--border-subtle, rgba(0,0,0,0.08))',
+                                                background: 'var(--bg-card, #fff)', fontSize: 12,
+                                                color: 'var(--text-primary, #0f172a)', outline: 'none',
+                                                cursor: 'pointer',
+                                            }}
+                                        >
+                                            <option value="fast">⚡ Fast (quick lookups)</option>
+                                            <option value="smart">🧠 Smart (analysis)</option>
+                                            <option value="thinking">💎 Thinking (deep research)</option>
+                                        </select>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+                                        <button
+                                            onClick={() => { setShowAiTaskForm(false); setAiTaskTitle(''); setAiTaskPrompt(''); }}
+                                            style={{
+                                                padding: '7px 16px', borderRadius: 9, fontSize: 12, fontWeight: 500,
+                                                border: 'none', background: 'transparent', cursor: 'pointer',
+                                                color: 'var(--text-muted, #64748b)',
+                                            }}
+                                        >Cancel</button>
+                                        <button
+                                            onClick={createAiTask}
+                                            disabled={!aiTaskTitle.trim() || !aiTaskPrompt.trim() || !aiTaskDate || !aiTaskTime}
+                                            style={{
+                                                padding: '7px 18px', borderRadius: 9, fontSize: 12, fontWeight: 600,
+                                                border: 'none',
+                                                background: (!aiTaskTitle.trim() || !aiTaskPrompt.trim() || !aiTaskDate || !aiTaskTime)
+                                                    ? 'rgba(139,92,246,0.3)'
+                                                    : 'linear-gradient(135deg, #8b5cf6, #7c3aed)',
+                                                color: '#fff', cursor: 'pointer',
+                                                boxShadow: (!aiTaskTitle.trim() || !aiTaskPrompt.trim() || !aiTaskDate || !aiTaskTime)
+                                                    ? 'none'
+                                                    : '0 2px 8px rgba(139,92,246,0.25)',
+                                            }}
+                                        >Create</button>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* AI Tasks list */}
+                        {aiTasksLoading && aiTasks.length === 0 ? (
+                            <div style={{
+                                padding: 40, textAlign: 'center',
+                                color: 'var(--text-muted, #94a3b8)', fontSize: 13,
+                            }}>
+                                <div style={{
+                                    width: 28, height: 28, margin: '0 auto 10px',
+                                    border: '2px solid rgba(139,92,246,0.2)',
+                                    borderTopColor: '#8b5cf6',
+                                    borderRadius: '50%',
+                                    animation: 'notifSpin 0.8s linear infinite',
+                                }} />
+                                Loading AI tasks...
+                            </div>
+                        ) : aiTasks.length === 0 && !showAiTaskForm ? (
+                            <div style={{
+                                padding: '40px 32px', textAlign: 'center',
+                                color: 'var(--text-muted, #94a3b8)',
+                            }}>
+                                <div style={{
+                                    width: 52, height: 52, margin: '0 auto 14px',
+                                    borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                    background: 'rgba(139,92,246,0.06)',
+                                }}>
+                                    <Bot style={{ width: 24, height: 24, color: '#8b5cf6', opacity: 0.4 }} />
+                                </div>
+                                <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 600, color: 'var(--text-secondary, #64748b)' }}>
+                                    No AI Tasks yet
+                                </p>
+                                <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #94a3b8)' }}>
+                                    Ask the AI chat or tap + to create one
+                                </p>
+                            </div>
+                        ) : (
+                            <>
+                                {activeAiTasks.length > 0 && (
+                                    <div style={{ padding: '4px 14px 0' }}>
+                                        <div style={{
+                                            fontSize: 10, fontWeight: 700, color: '#8b5cf6',
+                                            textTransform: 'uppercase', letterSpacing: '0.06em',
+                                            padding: '4px 0', marginBottom: 2,
+                                        }}>Active</div>
+                                    </div>
+                                )}
+                                {activeAiTasks.map((t, i) => (
+                                    <AITaskItem key={t.id} task={t} index={i}
+                                        expanded={expandedTaskId === t.id}
+                                        onToggleExpand={() => setExpandedTaskId(expandedTaskId === t.id ? null : t.id)}
+                                        onToggle={toggleAiTask} onDelete={deleteAiTask} onRunNow={runAiTaskNow} />
+                                ))}
+                                {inactiveAiTasks.length > 0 && (
+                                    <div style={{ padding: '8px 14px 0' }}>
+                                        <div style={{
+                                            fontSize: 10, fontWeight: 700, color: 'var(--text-muted, #94a3b8)',
+                                            textTransform: 'uppercase', letterSpacing: '0.06em',
+                                            padding: '4px 0', marginBottom: 2,
+                                        }}>Inactive</div>
+                                    </div>
+                                )}
+                                {inactiveAiTasks.map((t, i) => (
+                                    <AITaskItem key={t.id} task={t} index={i}
+                                        expanded={expandedTaskId === t.id}
+                                        onToggleExpand={() => setExpandedTaskId(expandedTaskId === t.id ? null : t.id)}
+                                        onToggle={toggleAiTask} onDelete={deleteAiTask} onRunNow={runAiTaskNow} />
+                                ))}
+                            </>
+                        )}
+                    </div>
+                    )}
                 </div>
             )}
 
@@ -804,6 +1119,179 @@ function ReminderItem({ r, index, isOverdue, onComplete, onDelete }) {
                 onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = '#ef4444'; }}
                 onMouseLeave={e => { e.currentTarget.style.opacity = 0; e.currentTarget.style.color = 'var(--text-muted, #94a3b8)'; }}
                 title="Delete reminder"
+                className="notif-delete-btn"
+            >
+                <Trash2 style={{ width: 13, height: 13 }} />
+            </button>
+        </div>
+    );
+}
+
+function AITaskItem({ task, index, expanded, onToggleExpand, onToggle, onDelete, onRunNow }) {
+    const t = task;
+    const statusColors = {
+        pending: { bg: 'rgba(99,102,241,0.08)', color: '#6366f1', label: '⏳ Pending' },
+        running: { bg: 'rgba(245,158,11,0.08)', color: '#f59e0b', label: '⚡ Running' },
+        success: { bg: 'rgba(34,197,94,0.08)', color: '#22c55e', label: '✅ Success' },
+        error: { bg: 'rgba(239,68,68,0.08)', color: '#ef4444', label: '❌ Error' },
+    };
+    const status = statusColors[t.lastStatus] || statusColors.pending;
+    const tierLabels = { fast: '⚡ Fast', smart: '🧠 Smart', thinking: '💎 Thinking' };
+
+    return (
+        <div
+            style={{
+                padding: '10px 14px', display: 'flex', gap: 10, alignItems: 'flex-start',
+                borderBottom: '1px solid var(--border-subtle, rgba(0,0,0,0.04))',
+                animation: `notifFadeIn 0.2s ease ${index * 0.04}s both`,
+                transition: 'background 0.15s ease',
+                cursor: 'pointer',
+                opacity: t.isActive ? 1 : 0.55,
+            }}
+            onClick={onToggleExpand}
+            onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.01)'}
+            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+        >
+            <div style={{
+                flexShrink: 0, width: 34, height: 34, borderRadius: 10,
+                background: t.isActive ? 'rgba(139,92,246,0.08)' : 'rgba(0,0,0,0.04)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                border: `1px solid ${t.isActive ? 'rgba(139,92,246,0.15)' : 'rgba(0,0,0,0.06)'}`,
+            }}>
+                <Bot style={{ width: 16, height: 16, color: t.isActive ? '#8b5cf6' : '#94a3b8' }} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{
+                    fontSize: 13, fontWeight: 600,
+                    color: 'var(--text-primary, #0f172a)',
+                    marginBottom: 3, lineHeight: 1.4,
+                }}>{t.title}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                    <span style={{
+                        fontSize: 10, padding: '2px 7px', borderRadius: 6,
+                        background: status.bg, color: status.color, fontWeight: 600,
+                    }}>{status.label}</span>
+                    {t.repeatInterval && (
+                        <span style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 3,
+                            fontSize: 10, padding: '2px 7px', borderRadius: 6,
+                            background: 'rgba(139,92,246,0.06)', color: '#8b5cf6', fontWeight: 600,
+                        }}>
+                            <Repeat style={{ width: 10, height: 10 }} />
+                            {t.repeatInterval}
+                        </span>
+                    )}
+                    <span style={{
+                        fontSize: 10, padding: '2px 7px', borderRadius: 6,
+                        background: 'rgba(0,0,0,0.04)', color: 'var(--text-muted, #94a3b8)',
+                        fontWeight: 600,
+                    }}>{tierLabels[t.modelTier] || t.modelTier}</span>
+                </div>
+                {t.nextRunAt && t.isActive && (
+                    <div style={{
+                        display: 'flex', alignItems: 'center', gap: 4,
+                        fontSize: 11, color: 'var(--text-muted, #94a3b8)',
+                        marginTop: 4, fontWeight: 500,
+                    }}>
+                        <Clock style={{ width: 11, height: 11 }} />
+                        Next: {formatReminderTime(t.nextRunAt)}
+                    </div>
+                )}
+
+                {/* Expanded content */}
+                {expanded && (
+                    <div style={{
+                        marginTop: 10, padding: '10px 12px',
+                        background: 'var(--bg-secondary, #f8fafc)',
+                        borderRadius: 10,
+                        border: '1px solid var(--border-subtle, rgba(0,0,0,0.05))',
+                        animation: 'notifExpand 0.2s ease',
+                    }}>
+                        <div style={{
+                            fontSize: 10, fontWeight: 700, color: 'var(--text-muted, #94a3b8)',
+                            textTransform: 'uppercase', letterSpacing: '0.06em',
+                            marginBottom: 6,
+                        }}>Prompt</div>
+                        <p style={{
+                            fontSize: 12, color: 'var(--text-secondary, #64748b)',
+                            margin: '0 0 10px', lineHeight: 1.5,
+                            whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                        }}>{t.prompt}</p>
+
+                        {t.lastResult && (
+                            <>
+                                <div style={{
+                                    fontSize: 10, fontWeight: 700, color: 'var(--text-muted, #94a3b8)',
+                                    textTransform: 'uppercase', letterSpacing: '0.06em',
+                                    marginBottom: 6,
+                                }}>Last Result {t.lastRunAt && <span style={{ fontWeight: 500, textTransform: 'none' }}>• {timeAgo(t.lastRunAt)}</span>}</div>
+                                <div style={{
+                                    fontSize: 12, color: 'var(--text-primary, #0f172a)',
+                                    lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
+                                    maxHeight: 200, overflowY: 'auto',
+                                    padding: '8px 10px', borderRadius: 8,
+                                    background: 'var(--bg-card, #fff)',
+                                    border: '1px solid var(--border-subtle, rgba(0,0,0,0.05))',
+                                }}>{t.lastResult}</div>
+                            </>
+                        )}
+
+                        {t.runCount > 0 && (
+                            <div style={{
+                                fontSize: 11, color: 'var(--text-muted, #94a3b8)',
+                                marginTop: 8,
+                            }}>
+                                Ran {t.runCount} time{t.runCount !== 1 ? 's' : ''}
+                            </div>
+                        )}
+
+                        {/* Action buttons */}
+                        <div style={{ display: 'flex', gap: 6, marginTop: 10 }}>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onRunNow(t.id); }}
+                                disabled={t.lastStatus === 'running'}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: 4,
+                                    padding: '5px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600,
+                                    border: 'none', cursor: 'pointer',
+                                    background: 'rgba(139,92,246,0.08)', color: '#8b5cf6',
+                                    opacity: t.lastStatus === 'running' ? 0.5 : 1,
+                                    transition: 'all 0.15s',
+                                }}
+                            >
+                                <Play style={{ width: 11, height: 11 }} />
+                                Run Now
+                            </button>
+                            <button
+                                onClick={(e) => { e.stopPropagation(); onToggle(t.id); }}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: 4,
+                                    padding: '5px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600,
+                                    border: 'none', cursor: 'pointer',
+                                    background: t.isActive ? 'rgba(245,158,11,0.08)' : 'rgba(34,197,94,0.08)',
+                                    color: t.isActive ? '#f59e0b' : '#22c55e',
+                                    transition: 'all 0.15s',
+                                }}
+                            >
+                                {t.isActive ? <Pause style={{ width: 11, height: 11 }} /> : <Play style={{ width: 11, height: 11 }} />}
+                                {t.isActive ? 'Pause' : 'Resume'}
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
+            <button
+                onClick={(e) => { e.stopPropagation(); onDelete(t.id); }}
+                style={{
+                    background: 'none', border: 'none', cursor: 'pointer',
+                    padding: 4, borderRadius: 6,
+                    color: 'var(--text-muted, #94a3b8)',
+                    opacity: 0, flexShrink: 0,
+                    transition: 'all 0.15s ease',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.opacity = 1; e.currentTarget.style.color = '#ef4444'; }}
+                onMouseLeave={e => { e.currentTarget.style.opacity = 0; e.currentTarget.style.color = 'var(--text-muted, #94a3b8)'; }}
+                title="Delete AI task"
                 className="notif-delete-btn"
             >
                 <Trash2 style={{ width: 13, height: 13 }} />

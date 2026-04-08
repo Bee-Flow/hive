@@ -44,6 +44,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     const [euModeEnabled, setEuModeEnabled] = useState(false);
     const [orgWebSearchGuard, setOrgWebSearchGuard] = useState(false);
     const [orgDisableSearchOnUpload, setOrgDisableSearchOnUpload] = useState(false);
+    const [orgMonitorIntegrations, setOrgMonitorIntegrations] = useState(false);
     const [webSearchGuardPiiCategories, setWebSearchGuardPiiCategories] = useState([]);
     const [orgAzurePiiEnabled, setOrgAzurePiiEnabled] = useState(false);
     const [activeModerationProvider, setActiveModerationProvider] = useState('llamaguard');
@@ -185,6 +186,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 setEuModeEnabled(data.euModeEnabled || false);
                 setOrgWebSearchGuard(data.webSearchGuardEnabled || false);
                 setOrgDisableSearchOnUpload(data.disableSearchOnUpload || false);
+                setOrgMonitorIntegrations(data.monitorIntegrations || false);
                 setWebSearchGuardPiiCategories(data.webSearchGuardPiiCategories || []);
                 setOrgAzurePiiEnabled(data.azurePiiEnabled || false);
                 setOrgSeverityThreshold(data.azureSeverityThreshold ?? 2);
@@ -225,6 +227,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                     euModeEnabled: euModeEnabled,
                     webSearchGuardEnabled: orgWebSearchGuard,
                     disableSearchOnUpload: orgDisableSearchOnUpload,
+                    monitorIntegrations: orgMonitorIntegrations,
                     webSearchGuardPiiCategories: webSearchGuardPiiCategories,
                     azurePiiEnabled: orgAzurePiiEnabled,
                     azureSeverityThreshold: orgSeverityThreshold,
@@ -1010,6 +1013,17 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                 </div>
                                                 )}
 
+                                                {/* Monitor Integrations */}
+                                                <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
+                                                    <div>
+                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">🌐 {t('admin.shield_integ_monitor')}</span>
+                                                        <span className="text-xs text-muted">{t('admin.shield_integ_monitor_desc')}</span>
+                                                    </div>
+                                                    <label className="relative inline-flex items-center cursor-pointer">
+                                                        <input type="checkbox" checked={orgMonitorIntegrations} onChange={e => setOrgMonitorIntegrations(e.target.checked)} className="sr-only peer" />
+                                                        <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                                                    </label>
+                                                </div>
                                                 <div className="grid grid-cols-2 gap-6">
                                                     {/* Scope */}
                                                     <div>
