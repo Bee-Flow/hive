@@ -598,7 +598,7 @@ const MessageItem = ({
 
                 {/* How I got this answer — comprehensive collapsed section */}
                 {!isUser && !isTool && !msg.isStreaming && msg.content && (
-                    (msg.thinking || msg.orchestratorThinking || msg.toolHistory?.length > 0 || msg.autoSelectedTier) && (() => {
+                    (msg.thinking || msg.orchestratorThinking || msg.toolHistory?.length > 0 || msg.autoSelectedTier || msg.kbSources?.length > 0) && (() => {
                         const visibleTools = msg.toolHistory?.filter(t => t.name !== 'sequentialthinking') || [];
                         const totalMs = visibleTools.reduce((acc, t) => acc + (t.endTime && t.startTime ? t.endTime - t.startTime : 0), 0);
                         const totalSec = totalMs > 0 ? (totalMs / 1000).toFixed(1) : null;
@@ -613,6 +613,11 @@ const MessageItem = ({
                                         {visibleTools.length > 0 && (
                                             <span className="px-1.5 py-0.5 rounded-full font-medium" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
                                                 {visibleTools.length} tool{visibleTools.length !== 1 ? 's' : ''}{totalSec ? ` · ${totalSec}s` : ''}
+                                            </span>
+                                        )}
+                                        {msg.kbSources?.length > 0 && (
+                                            <span className="px-1.5 py-0.5 rounded-full font-medium" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                                                {msg.kbSources.length} source{msg.kbSources.length !== 1 ? 's' : ''}
                                             </span>
                                         )}
                                         {msg.autoSelectedTier && (
@@ -729,79 +734,73 @@ const MessageItem = ({
                                         </div>
                                     )}
 
+                                    {/* KB Sources — inside How I got this answer */}
+                                    {msg.kbSources?.length > 0 && (() => {
+                                        const grouped = new Map();
+                                        msg.kbSources.forEach(s => {
+                                            const key = s.title || 'Unknown Source';
+                                            if (!grouped.has(key)) grouped.set(key, []);
+                                            grouped.get(key).push(s);
+                                        });
+                                        const docCount = grouped.size;
+                                        const chunkCount = msg.kbSources.length;
+                                        return (
+                                            <div>
+                                                <div className="text-[10px] font-semibold uppercase tracking-wider mb-2 px-1" style={{ color: 'var(--text-tertiary)' }}>
+                                                    {chunkCount} Source{chunkCount !== 1 ? 's' : ''} from {docCount} document{docCount !== 1 ? 's' : ''}
+                                                </div>
+                                                <div className="space-y-1.5">
+                                                    {[...grouped.entries()].map(([docTitle, chunks], di) => (
+                                                        <details key={di} className="group/doc rounded-lg border transition-colors" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
+                                                            <summary className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden text-xs" style={{ color: 'var(--text-primary)' }}>
+                                                                <span className="font-medium truncate max-w-[250px]">{docTitle}</span>
+                                                                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                                                                    📦 KB · {chunks.length} chunk{chunks.length !== 1 ? 's' : ''}
+                                                                </span>
+                                                                <svg className="w-3 h-3 transition-transform group-open/doc:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                                            </summary>
+                                                            <div className="px-2 pb-2 space-y-1" style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                                                                {chunks.map((source, ci) => {
+                                                                    const scorePercent = source.score != null ? Math.round(source.score * 100) : null;
+                                                                    const sectionLabel = source.section || `Chunk ${ci + 1}`;
+                                                                    return (
+                                                                        <details key={ci} className="group/src rounded-lg border transition-colors mt-1" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}>
+                                                                            <summary className="flex items-start gap-2 px-3 py-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden text-xs" style={{ color: 'var(--text-primary)' }}>
+                                                                                <div className="flex-1 min-w-0">
+                                                                                    <div className="flex items-center gap-2 flex-wrap">
+                                                                                        <span className="font-medium text-[11px]">{sectionLabel}</span>
+                                                                                    </div>
+                                                                                    {scorePercent != null && (
+                                                                                        <div className="flex items-center gap-1.5 mt-1">
+                                                                                            <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: 'var(--border-subtle)' }}>
+                                                                                                <div className="h-full rounded-full transition-all" style={{ width: `${scorePercent}%`, background: scorePercent >= 80 ? 'var(--accent-primary)' : scorePercent >= 60 ? '#f59e0b' : '#9ca3af' }} />
+                                                                                            </div>
+                                                                                            <span className="text-[9px] flex-shrink-0 tabular-nums" style={{ color: 'var(--text-tertiary)' }}>{scorePercent}%</span>
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
+                                                                                <svg className="w-3 h-3 transition-transform group-open/src:rotate-90 opacity-40 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                                                            </summary>
+                                                                            <div className="px-3 pb-3 pt-2 text-xs leading-relaxed whitespace-pre-wrap max-h-[300px] overflow-y-auto custom-scrollbar" style={{ color: 'var(--text-secondary)', borderTop: '1px solid var(--border-subtle)' }}>
+                                                                                {source.content}
+                                                                            </div>
+                                                                        </details>
+                                                                    );
+                                                                })}
+                                                            </div>
+                                                        </details>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        );
+                                    })()}
+
                                 </div>
                             </details>
                         </div>
                         );
                     })()
                 )}
-
-                {/* KB Source References */}
-                {!isUser && !isTool && msg.kbSources && msg.kbSources.length > 0 && !msg.isStreaming && (() => {
-                    // Group sources by document title, keeping individual chunks
-                    const grouped = new Map();
-                    msg.kbSources.forEach(s => {
-                        const key = s.title || 'Unknown Source';
-                        if (!grouped.has(key)) grouped.set(key, []);
-                        grouped.get(key).push(s);
-                    });
-                    const docCount = grouped.size;
-                    const chunkCount = msg.kbSources.length;
-                    return (
-                    <div className="mt-3 pt-2">
-                        <details className="group/sources">
-                            <summary className="flex items-center gap-2 cursor-pointer text-xs transition-colors select-none list-none [&::-webkit-details-marker]:hidden px-1 py-1 rounded-lg hover:bg-[var(--bg-tertiary)]/50" style={{ color: 'var(--text-secondary)' }}>
-                                <span className="text-sm opacity-70">💡</span>
-                                <span className="font-medium">How I got this answer</span>
-                                <span className="px-1.5 py-0.5 rounded text-[10px] font-medium" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-tertiary)' }}>{chunkCount} Source{chunkCount !== 1 ? 's' : ''}{docCount < chunkCount ? ` from ${docCount} document${docCount !== 1 ? 's' : ''}` : ''}</span>
-                                <svg className="w-3 h-3 transition-transform group-open/sources:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                            </summary>
-                            <div className="mt-2 space-y-1.5">
-                                {[...grouped.entries()].map(([docTitle, chunks], di) => (
-                                    <details key={di} className="group/doc rounded-lg border transition-colors" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
-                                        <summary className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden text-xs" style={{ color: 'var(--text-primary)' }}>
-                                            <span className="font-medium truncate max-w-[250px]">{docTitle}</span>
-                                            <span className="px-1.5 py-0.5 rounded text-[10px] font-medium flex-shrink-0" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
-                                                📦 KB · {chunks.length} chunk{chunks.length !== 1 ? 's' : ''}
-                                            </span>
-                                            <svg className="w-3 h-3 transition-transform group-open/doc:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                                        </summary>
-                                        <div className="px-2 pb-2 space-y-1" style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                                            {chunks.map((source, ci) => {
-                                                const scorePercent = source.score != null ? Math.round(source.score * 100) : null;
-                                                const sectionLabel = source.section || `Chunk ${ci + 1}`;
-                                                return (
-                                                    <details key={ci} className="group/src rounded-lg border transition-colors mt-1" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}>
-                                                        <summary className="flex items-start gap-2 px-3 py-2 cursor-pointer select-none list-none [&::-webkit-details-marker]:hidden text-xs" style={{ color: 'var(--text-primary)' }}>
-                                                            <div className="flex-1 min-w-0">
-                                                                <div className="flex items-center gap-2 flex-wrap">
-                                                                    <span className="font-medium text-[11px]">{sectionLabel}</span>
-                                                                </div>
-                                                                {scorePercent != null && (
-                                                                    <div className="flex items-center gap-1.5 mt-1">
-                                                                        <div className="flex-1 h-1 rounded-full overflow-hidden" style={{ background: 'var(--border-subtle)' }}>
-                                                                            <div className="h-full rounded-full transition-all" style={{ width: `${scorePercent}%`, background: scorePercent >= 80 ? 'var(--accent-primary)' : scorePercent >= 60 ? '#f59e0b' : '#9ca3af' }} />
-                                                                        </div>
-                                                                        <span className="text-[9px] flex-shrink-0 tabular-nums" style={{ color: 'var(--text-tertiary)' }}>{scorePercent}%</span>
-                                                                    </div>
-                                                                )}
-                                                            </div>
-                                                            <svg className="w-3 h-3 transition-transform group-open/src:rotate-90 opacity-40 flex-shrink-0 mt-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                                                        </summary>
-                                                        <div className="px-3 pb-3 pt-2 text-xs leading-relaxed whitespace-pre-wrap max-h-[300px] overflow-y-auto custom-scrollbar" style={{ color: 'var(--text-secondary)', borderTop: '1px solid var(--border-subtle)' }}>
-                                                            {source.content}
-                                                        </div>
-                                                    </details>
-                                                );
-                                            })}
-                                        </div>
-                                    </details>
-                                ))}
-                            </div>
-                        </details>
-                    </div>
-                    );
-                })()}
 
                 {/* Forms */}
                 {msg.form && (
