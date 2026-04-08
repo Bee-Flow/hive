@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Bell, Check, CheckCheck, Info, AlertTriangle, AlertCircle, X, Trash2, Clock, Plus, Calendar, Repeat, BellOff, AlarmClock, Bot, Play, Pause, Sparkles, Zap } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { Bell, Check, CheckCheck, Info, AlertTriangle, AlertCircle, X, Trash2, Clock, Plus, Calendar, Repeat, BellOff, AlarmClock, Bot, Play, Pause, Sparkles, Zap, Filter } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 import MarkdownRenderer from './MarkdownRenderer';
 
@@ -40,6 +40,26 @@ function formatReminderTime(dateStr) {
     return dt.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) + ` at ${timeStr}`;
 }
 
+/** Group notifications by time period */
+function getTimeGroup(dateStr) {
+    if (!dateStr) return 'older';
+    const now = new Date();
+    const date = new Date(dateStr);
+    const diffMs = now - date;
+    const diffH = diffMs / (1000 * 60 * 60);
+    if (diffH < 24 && date.getDate() === now.getDate()) return 'today';
+    const weekAgo = new Date(now);
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    if (date > weekAgo) return 'this_week';
+    return 'older';
+}
+
+const TIME_GROUP_LABELS = {
+    today: 'Today',
+    this_week: 'Earlier This Week',
+    older: 'Older',
+};
+
 export default function NotificationCenter() {
     const [open, setOpen] = useState(false);
     const [tab, setTab] = useState('notifications');
@@ -47,6 +67,7 @@ export default function NotificationCenter() {
     const [unreadCount, setUnreadCount] = useState(0);
     const [loading, setLoading] = useState(false);
     const [expandedId, setExpandedId] = useState(null);
+    const [notifFilter, setNotifFilter] = useState('all'); // 'all' | 'unread'
     const panelRef = useRef(null);
 
     // Reminders state
@@ -71,7 +92,16 @@ export default function NotificationCenter() {
     const [aiTaskTier, setAiTaskTier] = useState('fast');
     const [maxAiTasks, setMaxAiTasks] = useState(10);
     const [expandedTaskId, setExpandedTaskId] = useState(null);
-    const [resultModal, setResultModal] = useState(null); // { title, content }
+    const [resultModal, setResultModal] = useState(null); // { title, content, notifId? }
+
+    // Helper: open result modal and auto-mark-as-read
+    const openResultModal = useCallback((data, notifId) => {
+        setResultModal(data);
+        if (notifId) {
+            const n = notifications.find(x => x.id === notifId);
+            if (n && !n.read) markRead(notifId);
+        }
+    }, [notifications]);
 
     // Helper: open AI task result in Direct Chat for follow-up questions
     const openInDirectChat = useCallback((title, content) => {
@@ -269,6 +299,28 @@ export default function NotificationCenter() {
     const activeAiTasks = aiTasks.filter(t => t.isActive);
     const inactiveAiTasks = aiTasks.filter(t => !t.isActive);
 
+    // Filtered & grouped notifications
+    const filteredNotifications = useMemo(() => {
+        const list = notifFilter === 'unread'
+            ? notifications.filter(n => !n.read)
+            : notifications;
+        return list;
+    }, [notifications, notifFilter]);
+
+    const groupedNotifications = useMemo(() => {
+        const groups = [];
+        let lastGroup = null;
+        for (const n of filteredNotifications) {
+            const group = getTimeGroup(n.created_at);
+            if (group !== lastGroup) {
+                groups.push({ type: 'header', group, label: TIME_GROUP_LABELS[group] });
+                lastGroup = group;
+            }
+            groups.push({ type: 'notification', data: n });
+        }
+        return groups;
+    }, [filteredNotifications]);
+
     return (
         <div ref={panelRef} style={{ position: 'relative' }}>
             {/* Bell button */}
@@ -315,8 +367,8 @@ export default function NotificationCenter() {
                 <div style={{
                     position: 'absolute', bottom: '100%', left: 0,
                     marginBottom: 8,
-                    width: 480,
-                    maxHeight: 540,
+                    width: 520,
+                    maxHeight: 680,
                     background: 'var(--bg-card, #ffffff)',
                     border: '1px solid var(--border-subtle, rgba(0,0,0,0.06))',
                     borderRadius: 16,
@@ -384,13 +436,45 @@ export default function NotificationCenter() {
                     {/* Notifications Tab */}
                     {tab === 'notifications' && (
                     <>
-                        {/* Actions bar */}
-                        {unreadCount > 0 && (
+                        {/* Filter + Actions bar */}
+                        <div style={{
+                            padding: '6px 14px',
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            borderBottom: '1px solid var(--border-subtle, rgba(0,0,0,0.04))',
+                        }}>
+                            {/* Filter toggle */}
                             <div style={{
-                                padding: '6px 16px',
-                                display: 'flex', justifyContent: 'flex-end',
-                                borderBottom: '1px solid var(--border-subtle, rgba(0,0,0,0.04))',
+                                display: 'flex', gap: 2,
+                                background: 'var(--bg-secondary, rgba(0,0,0,0.03))',
+                                borderRadius: 8, padding: 2,
                             }}>
+                                {[{ id: 'all', label: 'All' }, { id: 'unread', label: 'Unread' }].map(f => (
+                                    <button
+                                        key={f.id}
+                                        onClick={() => setNotifFilter(f.id)}
+                                        style={{
+                                            background: notifFilter === f.id ? 'var(--bg-card, #fff)' : 'transparent',
+                                            border: 'none', cursor: 'pointer',
+                                            fontSize: 11, fontWeight: 600,
+                                            padding: '4px 12px', borderRadius: 6,
+                                            color: notifFilter === f.id ? '#6366f1' : 'var(--text-muted, #94a3b8)',
+                                            transition: 'all 0.15s',
+                                            boxShadow: notifFilter === f.id ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
+                                        }}
+                                    >
+                                        {f.label}
+                                        {f.id === 'unread' && unreadCount > 0 && (
+                                            <span style={{
+                                                marginLeft: 4, fontSize: 9, fontWeight: 700,
+                                                background: 'rgba(239,68,68,0.1)', color: '#ef4444',
+                                                borderRadius: 8, padding: '1px 5px',
+                                            }}>{unreadCount}</span>
+                                        )}
+                                    </button>
+                                ))}
+                            </div>
+                            <div style={{ flex: 1 }} />
+                            {unreadCount > 0 && (
                                 <button
                                     onClick={markAllRead}
                                     style={{
@@ -406,8 +490,8 @@ export default function NotificationCenter() {
                                     <CheckCheck style={{ width: 13, height: 13 }} />
                                     Mark all read
                                 </button>
-                            </div>
-                        )}
+                            )}
+                        </div>
 
                         {/* Notification list */}
                         <div style={{ flex: 1, overflowY: 'auto', padding: '2px 0' }}>
@@ -425,7 +509,7 @@ export default function NotificationCenter() {
                                     }} />
                                     Loading notifications...
                                 </div>
-                            ) : notifications.length === 0 ? (
+                            ) : filteredNotifications.length === 0 ? (
                                 <div style={{
                                     padding: '48px 32px', textAlign: 'center',
                                     color: 'var(--text-muted, #94a3b8)',
@@ -435,17 +519,40 @@ export default function NotificationCenter() {
                                         borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center',
                                         background: 'rgba(99,102,241,0.06)',
                                     }}>
-                                        <BellOff style={{ width: 24, height: 24, color: '#6366f1', opacity: 0.4 }} />
+                                        {notifFilter === 'unread'
+                                            ? <Check style={{ width: 24, height: 24, color: '#22c55e', opacity: 0.6 }} />
+                                            : <BellOff style={{ width: 24, height: 24, color: '#6366f1', opacity: 0.4 }} />
+                                        }
                                     </div>
                                     <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 600, color: 'var(--text-secondary, #64748b)' }}>
-                                        All caught up!
+                                        {notifFilter === 'unread' ? 'All caught up!' : 'No notifications yet'}
                                     </p>
                                     <p style={{ margin: 0, fontSize: 12, color: 'var(--text-muted, #94a3b8)' }}>
-                                        No notifications to show
+                                        {notifFilter === 'unread' ? 'You\'ve read all your notifications' : 'Notifications will appear here'}
                                     </p>
                                 </div>
                             ) : (
-                                notifications.map((n, index) => {
+                                groupedNotifications.map((item, index) => {
+                                    if (item.type === 'header') {
+                                        return (
+                                            <div
+                                                key={`group-${item.group}`}
+                                                style={{
+                                                    padding: '8px 18px 4px',
+                                                    fontSize: 10, fontWeight: 700,
+                                                    color: 'var(--text-muted, #94a3b8)',
+                                                    textTransform: 'uppercase',
+                                                    letterSpacing: '0.08em',
+                                                    background: 'var(--bg-secondary, rgba(0,0,0,0.015))',
+                                                    borderBottom: '1px solid var(--border-subtle, rgba(0,0,0,0.04))',
+                                                }}
+                                            >
+                                                {item.label}
+                                            </div>
+                                        );
+                                    }
+
+                                    const n = item.data;
                                     const cat = CATEGORY_CONFIG[n.category] || CATEGORY_CONFIG.info;
                                     const CatIcon = cat.icon;
                                     const isExpanded = expandedId === n.id;
@@ -456,38 +563,49 @@ export default function NotificationCenter() {
                                                 padding: '10px 16px',
                                                 cursor: 'pointer',
                                                 background: isExpanded
-                                                    ? 'rgba(99, 102, 241, 0.03)'
-                                                    : n.read ? 'transparent' : 'rgba(99, 102, 241, 0.02)',
+                                                    ? 'rgba(99, 102, 241, 0.04)'
+                                                    : n.read ? 'transparent' : 'rgba(99, 102, 241, 0.025)',
                                                 borderLeft: n.read ? '3px solid transparent' : `3px solid ${cat.color}`,
-                                                transition: 'background 0.15s ease',
+                                                transition: 'all 0.2s ease',
                                                 borderBottom: '1px solid var(--border-subtle, rgba(0,0,0,0.04))',
-                                                animation: `notifFadeIn 0.2s ease ${index * 0.03}s both`,
+                                                animation: `notifFadeIn 0.2s ease ${index * 0.02}s both`,
                                             }}
-                                            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.015)'; }}
-                                            onMouseLeave={(e) => { e.currentTarget.style.background = isExpanded ? 'rgba(99, 102, 241, 0.03)' : (n.read ? 'transparent' : 'rgba(99, 102, 241, 0.02)'); }}
+                                            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.018)'; }}
+                                            onMouseLeave={(e) => { e.currentTarget.style.background = isExpanded ? 'rgba(99, 102, 241, 0.04)' : (n.read ? 'transparent' : 'rgba(99, 102, 241, 0.025)'); }}
                                             onClick={() => toggleExpand(n)}
                                         >
                                             {/* Header row */}
                                             <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>
                                                 <div style={{
                                                     flexShrink: 0, width: 34, height: 34,
-                                                    borderRadius: 10, background: cat.bg,
+                                                    borderRadius: 10,
+                                                    background: n.read ? 'rgba(0,0,0,0.03)' : cat.bg,
                                                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                    border: `1px solid ${cat.color}15`,
+                                                    border: `1px solid ${n.read ? 'rgba(0,0,0,0.05)' : cat.color + '20'}`,
+                                                    transition: 'all 0.2s ease',
                                                 }}>
-                                                    <CatIcon style={{ width: 16, height: 16, color: cat.color }} />
+                                                    <CatIcon style={{ width: 16, height: 16, color: n.read ? 'var(--text-muted, #94a3b8)' : cat.color, transition: 'color 0.2s' }} />
                                                 </div>
                                                 <div style={{ flex: 1, minWidth: 0 }}>
                                                     <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 2 }}>
+                                                        {!n.read && (
+                                                            <span style={{
+                                                                width: 6, height: 6, borderRadius: '50%',
+                                                                background: cat.color, flexShrink: 0,
+                                                                boxShadow: `0 0 4px ${cat.color}40`,
+                                                            }} />
+                                                        )}
                                                         <span style={{
-                                                            fontSize: 13, fontWeight: n.read ? 400 : 600,
-                                                            color: 'var(--text-primary, #0f172a)',
+                                                            fontSize: 13,
+                                                            fontWeight: n.read ? 400 : 600,
+                                                            color: n.read ? 'var(--text-secondary, #64748b)' : 'var(--text-primary, #0f172a)',
                                                             ...(isExpanded
                                                                 ? { wordBreak: 'break-word' }
                                                                 : { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }
                                                             ),
                                                             flex: 1,
                                                             lineHeight: 1.4,
+                                                            transition: 'color 0.2s, font-weight 0.2s',
                                                         }}>
                                                             {n.title}
                                                         </span>
@@ -500,9 +618,11 @@ export default function NotificationCenter() {
                                                     </div>
                                                     {n.message && !isExpanded && (
                                                         <p style={{
-                                                            fontSize: 12, color: 'var(--text-muted, #64748b)',
+                                                            fontSize: 12,
+                                                            color: n.read ? 'var(--text-muted, #94a3b8)' : 'var(--text-secondary, #64748b)',
                                                             margin: 0, lineHeight: 1.45,
                                                             overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                                            transition: 'color 0.2s',
                                                         }}>
                                                             {n.message}
                                                         </p>
@@ -573,7 +693,7 @@ export default function NotificationCenter() {
                                                         </span>
                                                         {n.category === 'ai_task' && n.message && (
                                                             <button
-                                                                onClick={(e) => { e.stopPropagation(); setResultModal({ title: n.title, content: n.message }); }}
+                                                                onClick={(e) => { e.stopPropagation(); openResultModal({ title: n.title, content: n.message }, n.id); }}
                                                                 style={{
                                                                     marginLeft: 'auto',
                                                                     display: 'flex', alignItems: 'center', gap: 4,
