@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { Bell, Check, CheckCheck, Info, AlertTriangle, AlertCircle, X, Trash2, Clock, Plus, Calendar, Repeat, BellOff, AlarmClock, Bot, Play, Pause, Sparkles, Zap } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
+import MarkdownRenderer from './MarkdownRenderer';
 
 const CATEGORY_CONFIG = {
     info: { icon: Info, color: '#6366f1', bg: 'rgba(99, 102, 241, 0.08)', label: 'Info' },
@@ -70,6 +71,7 @@ export default function NotificationCenter() {
     const [aiTaskTier, setAiTaskTier] = useState('fast');
     const [maxAiTasks, setMaxAiTasks] = useState(10);
     const [expandedTaskId, setExpandedTaskId] = useState(null);
+    const [resultModal, setResultModal] = useState(null); // { title, content }
 
     const fetchCount = useCallback(async () => {
         try {
@@ -532,11 +534,12 @@ export default function NotificationCenter() {
                                                             margin: 0, lineHeight: 1.6,
                                                             wordBreak: 'break-word',
                                                             whiteSpace: 'pre-wrap',
+                                                            maxHeight: 160, overflow: 'hidden',
                                                         }}>
                                                             {n.message}
                                                         </p>
                                                     )}
-                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: n.message ? 10 : 0 }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: n.message ? 10 : 0, flexWrap: 'wrap' }}>
                                                         <span style={{
                                                             fontSize: 10, padding: '2px 8px', borderRadius: 6,
                                                             background: cat.bg, color: cat.color, fontWeight: 600,
@@ -550,6 +553,24 @@ export default function NotificationCenter() {
                                                                 hour: '2-digit', minute: '2-digit',
                                                             }) : ''}
                                                         </span>
+                                                        {n.category === 'ai_task' && n.message && (
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); setResultModal({ title: n.title, content: n.message }); }}
+                                                                style={{
+                                                                    marginLeft: 'auto',
+                                                                    display: 'flex', alignItems: 'center', gap: 4,
+                                                                    padding: '4px 10px', borderRadius: 7, fontSize: 11, fontWeight: 600,
+                                                                    border: 'none', cursor: 'pointer',
+                                                                    background: 'rgba(139,92,246,0.08)', color: '#8b5cf6',
+                                                                    transition: 'all 0.15s',
+                                                                }}
+                                                                onMouseEnter={e => e.currentTarget.style.background = 'rgba(139,92,246,0.15)'}
+                                                                onMouseLeave={e => e.currentTarget.style.background = 'rgba(139,92,246,0.08)'}
+                                                            >
+                                                                <Sparkles style={{ width: 11, height: 11 }} />
+                                                                View Full Result
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 </div>
                                             )}
@@ -977,7 +998,8 @@ export default function NotificationCenter() {
                                     <AITaskItem key={t.id} task={t} index={i}
                                         expanded={expandedTaskId === t.id}
                                         onToggleExpand={() => setExpandedTaskId(expandedTaskId === t.id ? null : t.id)}
-                                        onToggle={toggleAiTask} onDelete={deleteAiTask} onRunNow={runAiTaskNow} />
+                                        onToggle={toggleAiTask} onDelete={deleteAiTask} onRunNow={runAiTaskNow}
+                                        onOpenResult={(data) => setResultModal(data)} />
                                 ))}
                                 {inactiveAiTasks.length > 0 && (
                                     <div style={{ padding: '8px 14px 0' }}>
@@ -992,12 +1014,97 @@ export default function NotificationCenter() {
                                     <AITaskItem key={t.id} task={t} index={i}
                                         expanded={expandedTaskId === t.id}
                                         onToggleExpand={() => setExpandedTaskId(expandedTaskId === t.id ? null : t.id)}
-                                        onToggle={toggleAiTask} onDelete={deleteAiTask} onRunNow={runAiTaskNow} />
+                                        onToggle={toggleAiTask} onDelete={deleteAiTask} onRunNow={runAiTaskNow}
+                                        onOpenResult={(data) => setResultModal(data)} />
                                 ))}
                             </>
                         )}
                     </div>
                     )}
+                </div>
+            )}
+
+            {/* AI Task Result Modal */}
+            {resultModal && (
+                <div
+                    onClick={() => setResultModal(null)}
+                    style={{
+                        position: 'fixed', inset: 0, zIndex: 2000,
+                        background: 'rgba(0,0,0,0.5)',
+                        backdropFilter: 'blur(4px)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        padding: 24,
+                        animation: 'resultModalBgIn 0.2s ease',
+                    }}
+                >
+                    <div
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            width: '100%', maxWidth: 720, maxHeight: '85vh',
+                            background: 'var(--bg-card, #ffffff)',
+                            borderRadius: 20,
+                            boxShadow: '0 25px 80px rgba(0,0,0,0.25), 0 8px 24px rgba(0,0,0,0.12)',
+                            display: 'flex', flexDirection: 'column',
+                            overflow: 'hidden',
+                            animation: 'resultModalIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                            border: '1px solid var(--border-subtle, rgba(0,0,0,0.06))',
+                        }}
+                    >
+                        {/* Modal header */}
+                        <div style={{
+                            display: 'flex', alignItems: 'center', gap: 10,
+                            padding: '16px 20px',
+                            borderBottom: '1px solid var(--border-subtle, rgba(0,0,0,0.06))',
+                            background: 'linear-gradient(135deg, rgba(139,92,246,0.04), rgba(99,102,241,0.02))',
+                        }}>
+                            <div style={{
+                                width: 36, height: 36, borderRadius: 10,
+                                background: 'rgba(139,92,246,0.08)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                border: '1px solid rgba(139,92,246,0.15)',
+                                flexShrink: 0,
+                            }}>
+                                <Bot style={{ width: 18, height: 18, color: '#8b5cf6' }} />
+                            </div>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                                <div style={{
+                                    fontSize: 15, fontWeight: 700,
+                                    color: 'var(--text-primary, #0f172a)',
+                                    lineHeight: 1.3,
+                                    overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                                }}>
+                                    {resultModal.title}
+                                </div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted, #94a3b8)', fontWeight: 500, marginTop: 2 }}>
+                                    AI Task Result
+                                </div>
+                            </div>
+                            <button
+                                onClick={() => setResultModal(null)}
+                                style={{
+                                    background: 'none', border: 'none', cursor: 'pointer',
+                                    padding: 6, borderRadius: 8,
+                                    color: 'var(--text-muted, #94a3b8)',
+                                    transition: 'all 0.15s',
+                                    flexShrink: 0,
+                                }}
+                                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.06)'; e.currentTarget.style.color = 'var(--text-primary, #0f172a)'; }}
+                                onMouseLeave={e => { e.currentTarget.style.background = 'none'; e.currentTarget.style.color = 'var(--text-muted, #94a3b8)'; }}
+                            >
+                                <X style={{ width: 18, height: 18 }} />
+                            </button>
+                        </div>
+
+                        {/* Modal body — markdown rendered */}
+                        <div style={{
+                            flex: 1, overflowY: 'auto',
+                            padding: '20px 24px',
+                            fontSize: 14, lineHeight: 1.7,
+                            color: 'var(--text-primary, #0f172a)',
+                        }}>
+                            <MarkdownRenderer content={resultModal.content} />
+                        </div>
+                    </div>
                 </div>
             )}
 
@@ -1021,6 +1128,14 @@ export default function NotificationCenter() {
                 }
                 @keyframes notifSpin {
                     to { transform: rotate(360deg); }
+                }
+                @keyframes resultModalBgIn {
+                    from { opacity: 0; }
+                    to { opacity: 1; }
+                }
+                @keyframes resultModalIn {
+                    from { opacity: 0; transform: translateY(12px) scale(0.96); }
+                    to { opacity: 1; transform: translateY(0) scale(1); }
                 }
                 /* Show delete button on hover */
                 div:hover > div > .notif-delete-btn {
@@ -1127,7 +1242,7 @@ function ReminderItem({ r, index, isOverdue, onComplete, onDelete }) {
     );
 }
 
-function AITaskItem({ task, index, expanded, onToggleExpand, onToggle, onDelete, onRunNow }) {
+function AITaskItem({ task, index, expanded, onToggleExpand, onToggle, onDelete, onRunNow, onOpenResult }) {
     const t = task;
     const statusColors = {
         pending: { bg: 'rgba(99,102,241,0.08)', color: '#6366f1', label: '⏳ Pending' },
@@ -1224,15 +1339,46 @@ function AITaskItem({ task, index, expanded, onToggleExpand, onToggle, onDelete,
                                     fontSize: 10, fontWeight: 700, color: 'var(--text-muted, #94a3b8)',
                                     textTransform: 'uppercase', letterSpacing: '0.06em',
                                     marginBottom: 6,
-                                }}>Last Result {t.lastRunAt && <span style={{ fontWeight: 500, textTransform: 'none' }}>• {timeAgo(t.lastRunAt)}</span>}</div>
+                                    display: 'flex', alignItems: 'center', gap: 8,
+                                }}>
+                                    <span>Last Result {t.lastRunAt && <span style={{ fontWeight: 500, textTransform: 'none' }}>• {timeAgo(t.lastRunAt)}</span>}</span>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); onOpenResult && onOpenResult({ title: t.title, content: t.lastResult }); }}
+                                        style={{
+                                            marginLeft: 'auto',
+                                            display: 'flex', alignItems: 'center', gap: 3,
+                                            padding: '2px 8px', borderRadius: 6,
+                                            fontSize: 10, fontWeight: 600,
+                                            border: 'none', cursor: 'pointer',
+                                            background: 'rgba(139,92,246,0.08)', color: '#8b5cf6',
+                                            textTransform: 'none', letterSpacing: 'normal',
+                                            transition: 'all 0.15s',
+                                        }}
+                                        onMouseEnter={e => e.currentTarget.style.background = 'rgba(139,92,246,0.15)'}
+                                        onMouseLeave={e => e.currentTarget.style.background = 'rgba(139,92,246,0.08)'}
+                                    >
+                                        Open ↗
+                                    </button>
+                                </div>
                                 <div style={{
                                     fontSize: 12, color: 'var(--text-primary, #0f172a)',
                                     lineHeight: 1.6, whiteSpace: 'pre-wrap', wordBreak: 'break-word',
-                                    maxHeight: 200, overflowY: 'auto',
+                                    maxHeight: 120, overflowY: 'hidden',
                                     padding: '8px 10px', borderRadius: 8,
                                     background: 'var(--bg-card, #fff)',
                                     border: '1px solid var(--border-subtle, rgba(0,0,0,0.05))',
-                                }}>{t.lastResult}</div>
+                                    cursor: 'pointer',
+                                    position: 'relative',
+                                }}
+                                    onClick={(e) => { e.stopPropagation(); onOpenResult && onOpenResult({ title: t.title, content: t.lastResult }); }}
+                                >
+                                    {t.lastResult}
+                                    <div style={{
+                                        position: 'absolute', bottom: 0, left: 0, right: 0, height: 40,
+                                        background: 'linear-gradient(transparent, var(--bg-card, #fff))',
+                                        pointerEvents: 'none',
+                                    }} />
+                                </div>
                             </>
                         )}
 
