@@ -765,7 +765,7 @@ const UsageSection = () => {
                                     </div>
                                     {guardrails.recent.slice(0, 20).map((ev, i) => {
                                         const typeColor = ev.violation_type === 'moderation' ? '#f59e0b' : ev.violation_type === 'pii' ? '#8b5cf6' : '#3b82f6';
-                                        const actionColor = ev.action_taken === 'hard_block' || ev.action_taken === 'blocked' ? '#ef4444' : ev.action_taken === 'tokenized' ? '#8b5cf6' : ev.action_taken === 'redacted' ? '#3b82f6' : '#f59e0b';
+                                        const actionColor = ev.action_taken === 'hard_block' || ev.action_taken === 'blocked' || ev.action_taken === 'search_blocked' ? '#ef4444' : ev.action_taken === 'tokenized' ? '#8b5cf6' : ev.action_taken === 'redacted' ? '#3b82f6' : '#f59e0b';
                                         return (
                                             <div key={i} style={{
                                                 display: 'grid', gridTemplateColumns: '120px 1fr 80px 1.2fr 65px 80px',
