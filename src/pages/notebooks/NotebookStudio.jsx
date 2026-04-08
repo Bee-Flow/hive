@@ -42,41 +42,7 @@ const STUDIO_GROUPS = [
     }
 ];
 
-const TAX_STUDIO_GROUPS = [
-    {
-        id: 'tax_reports',
-        label: 'Tax Reports',
-        icon: FileText,
-        color: '#059669', // green
-        items: [
-            { key: 'btw_summary', icon: ClipboardList, label: 'BTW Summary', desc: 'Quarterly VAT return overview' },
-            { key: 'pnl_statement', icon: Layers, label: 'P&L Statement', desc: 'Profit & loss by category' },
-            { key: 'tax_package', icon: FileText, label: 'Accountant Package', desc: 'Full structured export' },
-            { key: 'expense_overview', icon: Table2, label: 'Expense Overview', desc: 'Categorized expense table' },
-        ]
-    },
-    {
-        id: 'analysis',
-        label: 'Analysis',
-        icon: Activity,
-        color: '#3b82f6', // blue
-        items: [
-            { key: 'deduction_finder', icon: Search, label: 'Deduction Finder', desc: 'Identify missed tax deductions' },
-            { key: 'compliance_check', icon: ListChecks, label: 'Compliance Check', desc: 'Verify invoice requirements' },
-            { key: 'summary', icon: ClipboardList, label: 'Period Summary', desc: 'High-level financial overview' },
-        ]
-    },
-    {
-        id: 'export',
-        label: 'Visuals',
-        icon: Activity,
-        color: '#8b5cf6', // purple
-        items: [
-            { key: 'data_table', icon: Table2, label: 'Data Table', desc: 'Financial data as structured table' },
-            { key: 'mind_map', icon: Activity, label: 'Category Map', desc: 'Income/expense category visualization' },
-        ]
-    }
-];
+
 
 function BookOpenIcon(props) {
     return (
@@ -157,9 +123,9 @@ function DropdownMenu({ group, onSelect, generating, disabled }) {
     );
 }
 
-export default function NotebookStudio({ onGenerate, generating, onExport, exporting, hasContent, readySourceCount, generationCount = 0, onHistoryClick, onSignRequest, signRequestConfigured, isTaxNotebook }) {
+export default function NotebookStudio({ onGenerate, generating, onExport, exporting, hasContent, readySourceCount, generationCount = 0, onHistoryClick, onSignRequest, signRequestConfigured }) {
     const disabled = readySourceCount === 0;
-    const groups = isTaxNotebook ? TAX_STUDIO_GROUPS : STUDIO_GROUPS;
+    const groups = STUDIO_GROUPS;
 
     return (
         <div className="flex items-center space-x-2 pl-4 border-l ml-3" style={{ borderColor: 'var(--border-subtle)' }}>

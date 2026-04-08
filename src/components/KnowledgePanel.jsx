@@ -516,7 +516,14 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
                                                         📚
                                                     </div>
                                                     <div>
-                                                        <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{kb.name}</div>
+                                                        <div className="text-sm font-medium flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
+                                                            {kb.name}
+                                                            {kb.organization_id ? (
+                                                                <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium bg-blue-500/10 text-blue-400" title="Shared with organization">🏢 Org</span>
+                                                            ) : (
+                                                                <span className="text-[9px] px-1.5 py-0.5 rounded-full font-medium bg-white/5 text-[var(--text-muted)]" title="Personal KB">👤</span>
+                                                            )}
+                                                        </div>
                                                         <div className="text-[10px] flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
                                                             {kb.document_count || 0} docs · {kb.total_chunks || 0} chunks
                                                             {kb.description && <span>· {kb.description}</span>}

@@ -443,7 +443,14 @@ export default function ProjectModal({ project, onClose, onSaved, onDeleted, use
                                                             onClick={e => e.stopPropagation()}
                                                         />
                                                         <div className="min-w-0 flex-1">
-                                                            <div className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>📚 {kb.name}</div>
+                                                            <div className="text-xs font-medium truncate flex items-center gap-1" style={{ color: 'var(--text-primary)' }}>
+                                                                📚 {kb.name}
+                                                                {kb.organization_id ? (
+                                                                    <span className="text-[8px] px-1 py-0.5 rounded-full font-medium bg-blue-500/10 text-blue-400 flex-shrink-0" title="Shared with organization">🏢</span>
+                                                                ) : (
+                                                                    <span className="text-[8px] px-1 py-0.5 rounded-full font-medium bg-white/5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} title="Personal KB">👤</span>
+                                                                )}
+                                                            </div>
                                                             <div className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
                                                                 {kb.document_count || 0} docs · {kb.total_chunks || 0} chunks
                                                             </div>
