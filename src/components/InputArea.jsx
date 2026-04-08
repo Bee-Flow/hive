@@ -727,8 +727,8 @@ const InputArea = ({
                                 >
                                     <Paperclip className="w-5 h-5" />
                                 </button>
-                                {/* Multimedia Creation — grouped dropdown (gated by org settings) */}
-                                {(() => {
+                                {/* Multimedia Creation — grouped dropdown (gated by org settings + agent disableExternalTools) */}
+                                {!selectedAgent?.config?.disableExternalTools && (() => {
                                     const orgOn = (id) => !orgEnabledIntegrations || orgEnabledIntegrations.includes(id);
                                     const showImageGen = orgOn('image-gen') && hasGoogleKey;
                                     const showMusicGen = orgOn('music-gen') && hasGoogleKey;
@@ -827,8 +827,8 @@ const InputArea = ({
                                         </div>
                                     );
                                 })()}
-                                {/* Web Search Toggle (gated by org settings for agent-search) */}
-                                {searchProviderConfig !== 'disabled' && (!orgEnabledIntegrations || orgEnabledIntegrations.includes('agent-search')) && (
+                                {/* Web Search Toggle (gated by org settings for agent-search + agent disableExternalTools) */}
+                                {!selectedAgent?.config?.disableExternalTools && searchProviderConfig !== 'disabled' && (!orgEnabledIntegrations || orgEnabledIntegrations.includes('agent-search')) && (
                                 <button
                                     onClick={() => {
                                         if (orgDisableSearchOnUpload && attachments.length > 0) return;
@@ -845,8 +845,8 @@ const InputArea = ({
                                     <Globe className="w-5 h-5" />
                                 </button>
                                 )}
-                                {/* Apps Button — hidden if no apps available */}
-                                {(() => {
+                                {/* Apps Button — hidden if no apps available or agent disableExternalTools */}
+                                {!selectedAgent?.config?.disableExternalTools && (() => {
                                     const n8nAppDefs = n8nWorkflows.map(wf => ({
                                         id: `n8n_run_${wf.slug}`,
                                         label: wf.name,
