@@ -2,6 +2,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Sparkles, Plus, X, Trash2, Edit2, Check, ChevronDown, ChevronUp, Users, Lock, Zap, Search } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 
+const SKILLS_API = `${API_BASE}/api/skills`;
+
 /* ─── Icon picker options ─────────────────────────────────────────── */
 const ICONS = ['⚡', '🎯', '📝', '📧', '📊', '🔍', '💡', '🚀', '🎨', '🤝', '📋', '🏆', '🔧', '⚙️', '🌟', '💬', '📞', '🖊️', '🗂️', '🔑'];
 
@@ -379,7 +381,7 @@ export default function SkillsPanel({ user, onClose, activeSkillIds = [], onTogg
         setLoading(true);
         setError(null);
         try {
-            const res = await authFetch(`${API_BASE}/skills`);
+            const res = await authFetch(SKILLS_API);
             if (!res.ok) throw new Error('Failed to load skills');
             const data = await res.json();
             setSkills(data);
@@ -396,10 +398,10 @@ export default function SkillsPanel({ user, onClose, activeSkillIds = [], onTogg
         setSaving(true);
         try {
             if (editingSkill) {
-                const res = await authFetch(`${API_BASE}/skills/${editingSkill.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+                const res = await authFetch(`${SKILLS_API}/${editingSkill.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
                 if (!res.ok) throw new Error('Failed to update skill');
             } else {
-                const res = await authFetch(`${API_BASE}/skills`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+                const res = await authFetch(SKILLS_API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
                 if (!res.ok) throw new Error('Failed to create skill');
             }
             setShowForm(false);
@@ -414,7 +416,7 @@ export default function SkillsPanel({ user, onClose, activeSkillIds = [], onTogg
 
     const handleDelete = async (id) => {
         try {
-            await authFetch(`${API_BASE}/skills/${id}`, { method: 'DELETE' });
+            await authFetch(`${SKILLS_API}/${id}`, { method: 'DELETE' });
             await load();
         } catch (err) {
             alert(err.message);
