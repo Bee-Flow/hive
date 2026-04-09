@@ -1,7 +1,17 @@
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { Search, X, MessageSquare, Calendar, ArrowRight, Filter, SortDesc, Check } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
-import MarkdownRenderer from './MarkdownRenderer';
+const highlightSnippet = (snippet, query) => {
+    if (!query) return snippet;
+    // Escape HTML entities in the snippet to prevent XSS
+    const escaped = snippet
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+    // Bold-highlight each occurrence of the query
+    const regex = new RegExp(`(${query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')})`, 'gi');
+    return escaped.replace(regex, '<mark style="background:var(--accent-primary);color:var(--bg-primary);border-radius:2px;padding:0 2px;font-weight:600">$1</mark>');
+};
 
 const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
     const [query, setQuery] = useState('');
@@ -272,9 +282,9 @@ const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
                                                     {result.matchRole === 'assistant' && <span className="text-[9px] font-black text-[var(--accent-primary)] uppercase tracking-widest">AI</span>}
                                                 </div>
                                                 <div className="inline">
-                                                    <MarkdownRenderer
-                                                        content={result.snippet.replace(new RegExp(`(${query})`, 'gi'), '**$1**')}
-                                                        className="inline [&>p]:inline [&>p]:m-0"
+                                                    <span
+                                                        className="text-sm leading-relaxed"
+                                                        dangerouslySetInnerHTML={{ __html: highlightSnippet(result.snippet, query) }}
                                                     />
                                                 </div>
                                             </div>

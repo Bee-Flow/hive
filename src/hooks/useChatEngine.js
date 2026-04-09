@@ -448,7 +448,7 @@ export default function useChatEngine({
 
     // --- Core send ---
 
-    const sendMessage = useCallback(async (text, attachments = [], isHidden = false, historyOverride = null) => {
+    const sendMessage = useCallback(async (text, attachments = [], isHidden = false, historyOverride = null, overrideTier = null) => {
         const isDirectMode = directMode?.enabled;
         if (!isDirectMode && !selectedAgent) return;
         if (isLoading) return;
@@ -503,7 +503,7 @@ export default function useChatEngine({
                 payload = {
                     message: text,
                     conversationId: currentConversation?.id,
-                    modelTier: directMode.modelTier || 'fast',
+                    modelTier: overrideTier || directMode.modelTier || 'fast',
                     attachments,
                     history,
                     ...getNotebookPayload?.(),
@@ -546,6 +546,7 @@ export default function useChatEngine({
                     stream: true,
                     ...wsPayload,
                     ...(activeProject?.id ? { projectId: activeProject.id } : {}),
+                    ...(overrideTier ? { modelTier: overrideTier } : {}),
                     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                     // When editing/retrying, send truncated history so server doesn't use full DB history
                     ...(historyOverride ? {
@@ -681,14 +682,7 @@ export default function useChatEngine({
 
             // Pass truncated history directly to avoid stale closure issues
             setTimeout(() => {
-                if (overrideTier && directMode?.enabled) {
-                    const originalTier = directMode.modelTier;
-                    directMode.modelTier = overrideTier;
-                    sendMessage(userMsg.content, userMsg.attachments || [], false, truncated);
-                    directMode.modelTier = originalTier;
-                } else {
-                    sendMessage(userMsg.content, userMsg.attachments || [], false, truncated);
-                }
+                sendMessage(userMsg.content, userMsg.attachments || [], false, truncated, overrideTier || null);
             }, 50);
 
             return truncated;
