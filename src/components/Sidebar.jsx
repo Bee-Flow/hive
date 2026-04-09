@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
-import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, PenLine } from 'lucide-react';
+import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, PenLine, Sparkles } from 'lucide-react';
 import { API_BASE } from '../utils/helpers';
 import NotificationCenter from './NotificationCenter';
 import NavLink from './NavLink';
@@ -396,6 +396,7 @@ const Sidebar = ({
     onSelectAllChatsConversation,
     showSettings = false,
     showAgentDesigner = false,
+    showSkillsPanel = false,
 }) => {
     const { t } = useTranslation();
     // We'll use the 'isOpen' prop as 'sidebarOpen' (expanded state)
@@ -854,6 +855,20 @@ const Sidebar = ({
                                     {currentPage === 'meetingNotes' && <div className={ACCENT_BAR} />}
                                     <Mic className={`w-4 h-4 ${currentPage === 'meetingNotes' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
                                     <span className={`text-[13px] ${currentPage === 'meetingNotes' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.meeting_notes')}</span>
+                                    <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
+                                </NavLink>
+                            )}
+                            {!isMobile && (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('skills')) && (
+                                <NavLink
+                                    href="/skills"
+                                    onClick={() => setShowProfileMenu(false)}
+                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('skills'); }}
+                                    className={`${ROW} ${currentPage === 'skills' || showSkillsPanel ? ROW_ACTIVE : ROW_IDLE}`}
+                                    style={{ textDecoration: 'none', color: 'inherit' }}
+                                >
+                                    {(currentPage === 'skills' || showSkillsPanel) && <div className={ACCENT_BAR} />}
+                                    <Sparkles className={`w-4 h-4 ${currentPage === 'skills' || showSkillsPanel ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
+                                    <span className={`text-[13px] ${currentPage === 'skills' || showSkillsPanel ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.skills') || 'Skills'}</span>
                                     <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
                                 </NavLink>
                             )}

@@ -264,24 +264,10 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
         <div className="h-full flex flex-col" style={{ background: 'var(--bg-primary)' }}>
             {/* ── Title bar ── */}
             <div
-                className="flex-shrink-0 flex items-center justify-between px-5"
+                className="flex-shrink-0 flex items-center px-5"
                 style={{ height: '48px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-subtle)' }}
             >
                 <span className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>{t('settings.title')}</span>
-                <div className="flex items-center gap-2">
-                    <button
-                        onClick={handleClose}
-                        className="w-7 h-7 rounded-md flex items-center justify-center transition-colors"
-                        style={{ color: 'var(--text-muted)' }}
-                        onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}
-                        onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
-                        title={t('common.close')}
-                    >
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M18 6L6 18M6 6l12 12" />
-                        </svg>
-                    </button>
-                </div>
             </div>
 
             {/* ── Body ── */}

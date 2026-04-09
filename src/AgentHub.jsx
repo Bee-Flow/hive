@@ -14,12 +14,13 @@ import DirectChatWelcome from './components/DirectChatWelcome';
 import ProjectModal from './components/ProjectModal';
 import AdvancedSettings from './pages/AdvancedSettings';
 import AgentDesigner from './components/admin/AgentDesigner';
+import SkillsPanel from './components/SkillsPanel';
 import useChatEngine from './hooks/useChatEngine';
 
 import { API_BASE, generateMessageId, authFetch } from './utils/helpers';
 import { X, Sparkles, PenLine, Heart, MoreVertical, Menu, EyeOff, Pencil } from 'lucide-react';
 
-const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = null, initialConversationId = null, initialDirectConvId = null, showSettings = false, onCloseSettings, showAgentDesigner = false, onCloseAgentDesigner, initialDesignerAgentId = null }) => {
+const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = null, initialConversationId = null, initialDirectConvId = null, showSettings = false, onCloseSettings, showAgentDesigner = false, onCloseAgentDesigner, initialDesignerAgentId = null, showSkillsPanel = false, onCloseSkillsPanel }) => {
     // Permission helper - checks if user has a specific permission
     const hasPermission = (perm) => {
         const perms = user?.permissions || [];
@@ -81,6 +82,11 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
     const [chatHistoryMode, setChatHistoryMode] = useState(() => localStorage.getItem('chatHistoryMode') || 'per-agent');
     const [allAgentConversations, setAllAgentConversations] = useState([]);
 
+    // Skills State (must be declared before useChatEngine so it can reference activeSkillIds)
+    const [activeSkillIds, setActiveSkillIds] = useState(() => {
+        try { return JSON.parse(localStorage.getItem('activeSkillIds') || '[]'); } catch { return []; }
+    });
+
     // Chat engine hook — owns messages, isLoading, sendMessage, stopGenerating
     const { messages, setMessages, isLoading, sendMessage, stopGenerating, retryMessage, editAndRegenerate, submittedFormIds, setSubmittedFormIds } = useChatEngine({
         selectedAgent,
@@ -118,10 +124,22 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
             // Refresh conversations list
             loadDirectConversations();
         }, [currentDirectConversation]),
+        activeSkillIds,
     });
 
 
 
+
+    // Skills handlers
+    const handleToggleSkill = useCallback((skillId) => {
+        setActiveSkillIds(prev => {
+            const next = prev.includes(skillId)
+                ? prev.filter(id => id !== skillId)
+                : [...prev.slice(0, 2), skillId]; // max 3
+            localStorage.setItem('activeSkillIds', JSON.stringify(next));
+            return next;
+        });
+    }, []);
 
     // UI/Mode State
     const [designMode, setDesignMode] = useState(false);
@@ -1035,8 +1053,8 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 }}
                 onDeleteConversation={handleDeleteConversation}
                 onSelectAgent={handleSelectAgent}
-                onOpenMarketplace={() => setShowMarketplace(true)}
-                onOpenSearch={() => setShowSearch(true)}
+                onOpenMarketplace={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); setShowMarketplace(true); }}
+                onOpenSearch={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); setShowSearch(true); }}
                 hasPermission={hasPermission}
                 user={user}
                 onLogout={onLogout}
@@ -1044,6 +1062,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 currentPage={currentPage}
                 showSettings={showSettings}
                 showAgentDesigner={showAgentDesigner}
+                showSkillsPanel={showSkillsPanel}
                 onDirectChat={handleDirectChat}
                 directChatMode={directChatMode}
                 directConversations={directConversations}
@@ -1107,6 +1126,14 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                         const perms = user?.permissions || [];
                         return perms.includes('all') || perms.includes(perm);
                     }} initialAgentId={initialDesignerAgentId} onClose={onCloseAgentDesigner} />
+                ) : showSkillsPanel ? (
+                    /* Skills panel rendered inline in conversation area */
+                    <SkillsPanel
+                        user={user}
+                        onClose={onCloseSkillsPanel}
+                        activeSkillIds={activeSkillIds}
+                        onToggleSkill={handleToggleSkill}
+                    />
                 ) : showMarketplace ? (
                     /* Agent Marketplace rendered inline in conversation area */
                     <AgentMarketplace
@@ -1434,7 +1461,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                             Select an agent from the marketplace to start chatting, or create your own custom AI assistant.
                         </p>
                         <button
-                            onClick={() => setShowMarketplace(true)}
+                            onClick={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); setShowMarketplace(true); }}
                             className="flex items-center gap-2 px-6 py-3 bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-white rounded-xl font-medium shadow-lg transition-all hover:scale-105"
                         >
                             <Sparkles className="w-5 h-5" />
