@@ -10,7 +10,6 @@ import MonitoringPanel from '../components/admin/MonitoringPanel';
 import SubscriptionsPanel from '../components/admin/SubscriptionsPanel';
 import LanguagesPanel from '../components/admin/LanguagesPanel';
 import AppearanceAdminPanel from '../components/admin/AppearanceAdminPanel';
-import KnowledgeBasesSection from '../components/admin/AgentDesigner/sections/KnowledgeBasesSection';
 
 
 const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
@@ -27,7 +26,6 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
     // 'agents' tab accepts admin_agents (catch-all) OR any granular admin_agents_* permission
     const tabs = [
         { id: 'agents', label: t('admin.tab_agents'), perm: ['admin_agents', 'admin_agents_chat', 'admin_agents_system'], superAdminOnly: false },
-        { id: 'knowledge-bases', label: 'Knowledge Bases', perm: ['manage_knowledge'], superAdminOnly: false },
         { id: 'ai-config', label: t('admin.tab_ai_config'), perm: ['admin_ai_config'], superAdminOnly: true },
         { id: 'security', label: t('admin.tab_security'), perm: ['admin_security'], superAdminOnly: false },
         { id: 'integrations', label: t('admin.tab_integrations'), perm: ['admin_security'], superAdminOnly: true },
@@ -180,12 +178,6 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                     ) : activeTab === 'languages' ? (
                         <div className="absolute inset-0 overflow-hidden">
                             <LanguagesPanel />
-                        </div>
-                    ) : activeTab === 'knowledge-bases' ? (
-                        <div className="absolute inset-0 overflow-y-auto p-6">
-                            <div className="max-w-5xl mx-auto">
-                                <KnowledgeBasesSection isReadonly={false} />
-                            </div>
                         </div>
                     ) : null}
             </div>
