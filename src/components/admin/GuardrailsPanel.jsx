@@ -68,18 +68,33 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     const [piiMessage, setPiiMessage] = useState(null);
 
     const PII_CATEGORIES_LIST = [
+        // Personal
         { id: 'Person',                           label: t('pii.person_name'),      group: 'Personal',   icon: '👤' },
+        { id: 'PersonType',                       label: t('pii.person_type'),      group: 'Personal',   icon: '👥' },
+        { id: 'Age',                              label: t('pii.age'),             group: 'Personal',   icon: '🎂' },
+        { id: 'DateOfBirth',                      label: t('pii.date_of_birth'),   group: 'Personal',   icon: '📅' },
+        // Contact
         { id: 'PhoneNumber',                      label: t('pii.phone_number'),     group: 'Contact',    icon: '📱' },
         { id: 'Email',                            label: t('pii.email_address'),    group: 'Contact',    icon: '📧' },
         { id: 'Address',                          label: t('pii.physical_address'), group: 'Contact',    icon: '🏠' },
+        // Financial
         { id: 'CreditCardNumber',                 label: t('pii.credit_card'),      group: 'Financial',  icon: '💳' },
         { id: 'BankAccountNumber',                label: t('pii.bank_account'),     group: 'Financial',  icon: '🏦' },
         { id: 'InternationalBankingAccountNumber',label: t('pii.iban'),             group: 'Financial',  icon: '🌐' },
+        { id: 'ABARoutingNumber',                 label: t('pii.aba_routing'),     group: 'Financial',  icon: '🔢' },
+        { id: 'SWIFTCode',                        label: t('pii.swift_code'),      group: 'Financial',  icon: '🏧' },
+        // Identity / Government
         { id: 'USSocialSecurityNumber',           label: t('pii.ssn'),             group: 'Identity',   icon: '🆔' },
         { id: 'PassportNumber',                   label: t('pii.passport'),        group: 'Identity',   icon: '🛂' },
         { id: 'DriversLicenseNumber',             label: t('pii.drivers_license'), group: 'Identity',   icon: '🪪' },
+        // Digital / Secrets
         { id: 'IPAddress',                        label: t('pii.ip_address'),      group: 'Digital',    icon: '🌐' },
         { id: 'URL',                              label: t('pii.url'),             group: 'Digital',    icon: '🔗' },
+        { id: 'AzureDocumentDBAuthKey',           label: t('pii.azure_cosmosdb_key'), group: 'Digital', icon: '☁️' },
+        { id: 'AzureStorageAccountKey',           label: t('pii.azure_storage_key'), group: 'Digital',  icon: '☁️' },
+        // Organization
+        { id: 'Organization',                     label: t('pii.organization'),    group: 'Organization', icon: '🏢' },
+        // EU / Netherlands
         { id: 'EUNationalIdentificationNumber',   label: t('pii.eu_national_id'),  group: 'EU',         icon: '🇪🇺' },
     ];
 
