@@ -229,16 +229,21 @@ const ConvRow = ({
             {conv.pinned && <Pin className="w-3 h-3 text-[var(--accent-primary)] flex-shrink-0 -rotate-45" />}
             {/* Label dots */}
             {(() => { try { const ls = JSON.parse(conv.labels_json || '[]'); return ls.length > 0 ? <div className="flex gap-0.5 flex-shrink-0">{ls.map(lid => { const l = (conversationLabels || []).find(x => x.id === lid); return l ? <div key={lid} className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: l.color }} title={l.name} /> : null; })}</div> : null; } catch { return null; } })()}
-            <span className={`text-[14px] truncate flex-1 leading-snug ${active ? TEXT_ACTIVE : TEXT_IDLE}`}>
+            {/* Agent avatar to the left */}
+            {agentBadge && (
+                <div className={`w-6 h-6 rounded-md flex-shrink-0 overflow-hidden flex items-center justify-center text-[11px] font-bold ring-1 ${agentBadge.avatarUrl ? 'ring-black/8 bg-[var(--bg-tertiary)]' : 'ring-black/8 bg-gradient-to-br from-[var(--accent-primary)]/10 to-[var(--accent-primary)]/25 text-[var(--accent-primary)]'}`}>
+                    {agentBadge.avatarUrl ? (
+                        <img src={agentBadge.avatarUrl} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                        <span className="leading-none">{agentBadge.icon}</span>
+                    )}
+                </div>
+            )}
+            <span className={`text-[14px] truncate flex-1 leading-snug min-w-0 ${active ? TEXT_ACTIVE : TEXT_IDLE}`}>
                 <span className="block truncate">{conv.title || t('sidebar.untitled_chat')}</span>
                 {agentBadge && (
-                    <span className="flex items-center gap-1 text-[10px] truncate mt-0.5" style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
-                        {agentBadge.avatarUrl ? (
-                            <img src={agentBadge.avatarUrl} alt="" className="w-3.5 h-3.5 rounded flex-shrink-0 object-cover" />
-                        ) : (
-                            <span className="flex-shrink-0">{agentBadge.icon}</span>
-                        )}
-                        <span className="truncate">{agentBadge.name}</span>
+                    <span className="block text-[10px] truncate mt-0.5" style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
+                        {agentBadge.name}
                     </span>
                 )}
             </span>
