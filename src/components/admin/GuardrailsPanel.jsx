@@ -56,6 +56,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     const [orgAzureCategories, setOrgAzureCategories] = useState(['Hate', 'Violence', 'Sexual', 'SelfHarm']);
     const [orgPiiCategories, setOrgPiiCategories] = useState([]);
     const [orgPiiConfidenceThreshold, setOrgPiiConfidenceThreshold] = useState(0.7);
+    const [orgPiiAction, setOrgPiiAction] = useState('block');
 
     // PII Detection State
     const [piiEnabled, setPiiEnabled] = useState(false);
@@ -210,6 +211,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 const loaded = (data.piiDetectionCategories || []).filter(id => validIds.has(id));
                 setOrgPiiCategories(loaded);
                 setOrgPiiConfidenceThreshold(data.piiDetectionConfidenceThreshold ?? 0.7);
+                setOrgPiiAction(data.piiDetectionAction || 'block');
             }
         } catch (e) {
             console.error('Failed to fetch org shield', e);
@@ -249,6 +251,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                     azureEnabledCategories: orgAzureCategories,
                     piiDetectionCategories: orgPiiCategories,
                     piiDetectionConfidenceThreshold: orgPiiConfidenceThreshold,
+                    piiDetectionAction: orgPiiAction,
                 })
             });
             if (res.ok) {
@@ -903,6 +906,27 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                             <div className="flex justify-between text-xs text-muted mt-1">
                                                                 <span>{t('admin.shield_pii_detect_more')}</span>
                                                                 <span>{t('admin.shield_pii_detect_less')}</span>
+                                                            </div>
+                                                        </div>
+
+                                                        {/* PII Action */}
+                                                        <div className="p-4 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
+                                                            <label className="text-xs font-medium text-muted block mb-2">{t('azure.pii_action_on_detection')}</label>
+                                                            <div className="flex gap-2">
+                                                                {[{ id: 'block', label: t('azure.pii_action_block'), desc: t('azure.pii_action_block_desc'), icon: '🚫' }, { id: 'tokenize', label: t('azure.pii_action_redact'), desc: t('azure.pii_action_redact_desc'), icon: '🔒' }].map(opt => (
+                                                                    <button
+                                                                        key={opt.id}
+                                                                        onClick={() => setOrgPiiAction(opt.id)}
+                                                                        className="flex-1 px-3 py-2.5 rounded-lg text-left transition-all"
+                                                                        style={{
+                                                                            background: orgPiiAction === opt.id ? 'rgba(16,185,129,0.1)' : 'var(--bg-primary)',
+                                                                            border: `1.5px solid ${orgPiiAction === opt.id ? '#10B981' : 'var(--border-subtle)'}`,
+                                                                        }}
+                                                                    >
+                                                                        <p className="text-xs font-medium" style={{ color: orgPiiAction === opt.id ? '#10B981' : 'var(--text-primary)' }}>{opt.icon} {opt.label}</p>
+                                                                        <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{opt.desc}</p>
+                                                                    </button>
+                                                                ))}
                                                             </div>
                                                         </div>
 
