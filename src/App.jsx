@@ -137,6 +137,7 @@ function App() {
     const [showAgentDesigner, setShowAgentDesigner] = useState(false);
     const [initialDesignerAgentId, setInitialDesignerAgentId] = useState(null);
     const [showSettings, setShowSettings] = useState(false);
+    const [showSkillsPanel, setShowSkillsPanel] = useState(false);
     const [encryptionState, setEncryptionState] = useState(null); // null | 'setup' | 'pin' | { recoveryKey: string }
     const [noOrganization, setNoOrganization] = useState(false);
     const [pendingApproval, setPendingApproval] = useState(false);
@@ -269,11 +270,20 @@ function App() {
             setInitialDesignerAgentId(agentId);
             setShowAgentDesigner(true);
             setShowSettings(false);
+            setShowSkillsPanel(false);
             return;
         }
         // Settings renders inline in conversation area
         if (page === 'settings') {
             setShowSettings(true);
+            setShowAgentDesigner(false);
+            setShowSkillsPanel(false);
+            return;
+        }
+        // Skills panel renders inline in conversation area
+        if (page === 'skills') {
+            setShowSkillsPanel(true);
+            setShowSettings(false);
             setShowAgentDesigner(false);
             return;
         }
@@ -577,7 +587,7 @@ function App() {
             />;
         }
 
-        return <AgentHub onNavigate={navigateToPage} user={user} initialAgentId={initialUrlRef.current.agentId} initialConversationId={initialUrlRef.current.conversationId} initialDirectConvId={initialDirectConvRef.current} onLogout={handleLogout} currentPage={currentPage} showSettings={showSettings} onCloseSettings={() => setShowSettings(false)} showAgentDesigner={showAgentDesigner} onCloseAgentDesigner={() => setShowAgentDesigner(false)} initialDesignerAgentId={initialDesignerAgentId} />;
+        return <AgentHub onNavigate={navigateToPage} user={user} initialAgentId={initialUrlRef.current.agentId} initialConversationId={initialUrlRef.current.conversationId} initialDirectConvId={initialDirectConvRef.current} onLogout={handleLogout} currentPage={currentPage} showSettings={showSettings} onCloseSettings={() => { setShowSettings(false); }} showAgentDesigner={showAgentDesigner} onCloseAgentDesigner={() => setShowAgentDesigner(false)} initialDesignerAgentId={initialDesignerAgentId} showSkillsPanel={showSkillsPanel} onCloseSkillsPanel={() => setShowSkillsPanel(false)} />;
     };
 
     return (
