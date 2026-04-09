@@ -17,6 +17,7 @@ import useCapabilities from "./hooks/useCapabilities";
 import { IdentitySection } from "./sections/IdentitySection";
 import { ToolsSection } from "./sections/ToolsSection";
 import { BehaviorSection } from "./sections/BehaviorSection";
+import { KnowledgeBasesSection } from "./sections/KnowledgeBasesSection";
 
 
 const AgentDesigner = ({
@@ -594,6 +595,7 @@ const AgentDesigner = ({
                         { id: "knowledge", label: "Knowledge" },
                         ...(hasIntegrations ? [{ id: "tools", label: "Integrations" }] : []),
                         { id: "behavior", label: "Behavior" },
+                        ...(hasPermission('manage_knowledge') ? [{ id: "kbs", label: "Knowledge Bases" }] : []),
                       ].map((item) => (
                       <button
                         key={item.id}
@@ -663,6 +665,9 @@ const AgentDesigner = ({
                       )}
                       {activeSection === "behavior" && (
                         <BehaviorSection {...sharedProps} />
+                      )}
+                      {activeSection === "kbs" && (
+                        <KnowledgeBasesSection isReadonly={isReadonly} />
                       )}
 
                     </div>
