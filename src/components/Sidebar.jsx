@@ -394,6 +394,8 @@ const Sidebar = ({
     chatHistoryMode = 'per-agent',
     allAgentConversations = [],
     onSelectAllChatsConversation,
+    showSettings = false,
+    showAgentDesigner = false,
 }) => {
     const { t } = useTranslation();
     // We'll use the 'isOpen' prop as 'sidebarOpen' (expanded state)
@@ -816,13 +818,13 @@ const Sidebar = ({
                                     href="/agents"
                                     onClick={() => setShowProfileMenu(false)}
                                     onNavigate={() => { setShowProfileMenu(false); onNavigate('agentDesigner'); }}
-                                    className={`${ROW} ${currentPage === 'agentDesigner' ? ROW_ACTIVE : ROW_IDLE}`}
+                                    className={`${ROW} ${showAgentDesigner ? ROW_ACTIVE : ROW_IDLE}`}
                                     style={{ textDecoration: 'none', color: 'inherit' }}
                                     data-testid="profile-menu-agents"
                                 >
-                                    {currentPage === 'agentDesigner' && <div className={ACCENT_BAR} />}
-                                    <Bot className={`w-4 h-4 ${currentPage === 'agentDesigner' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'agentDesigner' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.agents')}</span>
+                                    {showAgentDesigner && <div className={ACCENT_BAR} />}
+                                    <Bot className={`w-4 h-4 ${showAgentDesigner ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
+                                    <span className={`text-[13px] ${showAgentDesigner ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.agents')}</span>
                                 </NavLink>
                             )}
                             {!isMobile && (
@@ -830,13 +832,13 @@ const Sidebar = ({
                                     href="/settings"
                                     onClick={() => setShowProfileMenu(false)}
                                     onNavigate={() => { setShowProfileMenu(false); onNavigate('settings'); }}
-                                    className={`${ROW} ${currentPage === 'settings' ? ROW_ACTIVE : ROW_IDLE}`}
+                                    className={`${ROW} ${showSettings ? ROW_ACTIVE : ROW_IDLE}`}
                                     style={{ textDecoration: 'none', color: 'inherit' }}
                                     data-testid="profile-menu-settings"
                                 >
-                                    {currentPage === 'settings' && <div className={ACCENT_BAR} />}
-                                    <Settings className={`w-4 h-4 ${currentPage === 'settings' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'settings' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.settings')}</span>
+                                    {showSettings && <div className={ACCENT_BAR} />}
+                                    <Settings className={`w-4 h-4 ${showSettings ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
+                                    <span className={`text-[13px] ${showSettings ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.settings')}</span>
                                 </NavLink>
                             )}
                         </div>

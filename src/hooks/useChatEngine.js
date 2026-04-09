@@ -29,6 +29,7 @@ export default function useChatEngine({
     onNotebookDocUpdate,
     onNotebookSourceAdded,
     onNotebookThemeUpdate,
+    activeSkillIds,
 }) {
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -532,6 +533,7 @@ export default function useChatEngine({
                     ...(activeProject?.id ? { projectId: activeProject.id } : {}),
                     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                     ...(typeof directMode.getExtraPayload === 'function' ? directMode.getExtraPayload() : {}),
+                    ...(Array.isArray(activeSkillIds) && activeSkillIds.length > 0 ? { activeSkillIds } : {}),
                 };
             } else {
                 // Agent chat mode — post to /agents/:id/chat/stream

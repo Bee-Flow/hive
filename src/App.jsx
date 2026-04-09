@@ -2,7 +2,6 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import AgentHub from './AgentHub';
 import ComponentBuilder from './components/admin/ComponentBuilder';
 import AdminDashboard from './pages/AdminDashboard';
-import AdvancedSettings from './pages/AdvancedSettings';
 import OrgSettings from './pages/OrgSettings';
 
 import MeetingNotesPage from './pages/MeetingNotesPage';
@@ -264,16 +263,18 @@ function App() {
             window.history.pushState({}, '', '/app');
             return;
         }
-        // Agent Designer opens as overlay, not a page
+        // Agent Designer renders inline in conversation area
         if (page === 'agentDesigner' || page.startsWith('agentDesigner:')) {
             const agentId = page.includes(':') ? page.split(':')[1] : null;
             setInitialDesignerAgentId(agentId);
             setShowAgentDesigner(true);
+            setShowSettings(false);
             return;
         }
-        // Settings opens as overlay
+        // Settings renders inline in conversation area
         if (page === 'settings') {
             setShowSettings(true);
+            setShowAgentDesigner(false);
             return;
         }
         // Support admin sub-paths like 'admin/ai-config' or 'admin/security/sso'
@@ -576,7 +577,7 @@ function App() {
             />;
         }
 
-        return <AgentHub onNavigate={navigateToPage} user={user} initialAgentId={initialUrlRef.current.agentId} initialConversationId={initialUrlRef.current.conversationId} initialDirectConvId={initialDirectConvRef.current} onLogout={handleLogout} currentPage={currentPage} />;
+        return <AgentHub onNavigate={navigateToPage} user={user} initialAgentId={initialUrlRef.current.agentId} initialConversationId={initialUrlRef.current.conversationId} initialDirectConvId={initialDirectConvRef.current} onLogout={handleLogout} currentPage={currentPage} showSettings={showSettings} onCloseSettings={() => setShowSettings(false)} showAgentDesigner={showAgentDesigner} onCloseAgentDesigner={() => setShowAgentDesigner(false)} initialDesignerAgentId={initialDesignerAgentId} />;
     };
 
     return (
@@ -609,46 +610,8 @@ function App() {
                 }
             `}</style>
 
-            {/* Agent Designer Overlay */}
-            {showAgentDesigner && (
-                <div
-                    className="fixed inset-0 z-[100] flex items-center justify-center"
-                    style={{ animation: 'overlayIn .2s ease-out' }}
-                    onKeyDown={(e) => { if (e.key === 'Escape') setShowAgentDesigner(false); }}
-                    tabIndex={-1}
-                    ref={(el) => el?.focus()}
-                >
-                    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm cursor-pointer" onClick={() => setShowAgentDesigner(false)} />
-                    <div
-                        className="relative w-[92vw] h-[90vh] max-w-[1400px] rounded-2xl overflow-hidden shadow-2xl border"
-                        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', animation: 'overlayContentIn .25s ease-out' }}
-                    >
-                        <AgentDesigner onBack={null} hasPermission={(perm) => {
-                            const perms = user?.permissions || [];
-                            return perms.includes('all') || perms.includes(perm);
-                        }} initialAgentId={initialDesignerAgentId} />
-                    </div>
-                </div>
-            )}
 
-            {/* Settings Overlay */}
-            {showSettings && (
-                <div
-                    className="fixed inset-0 z-[100] flex items-center justify-center"
-                    style={{ animation: 'overlayIn .2s ease-out' }}
-                    onKeyDown={(e) => { if (e.key === 'Escape') setShowSettings(false); }}
-                    tabIndex={-1}
-                    ref={(el) => el?.focus()}
-                >
-                    <div className="absolute inset-0 bg-black/50 backdrop-blur-sm cursor-pointer" onClick={() => setShowSettings(false)} />
-                    <div
-                        className="relative w-[95vw] h-[93vh] max-w-[1400px] rounded-2xl overflow-hidden shadow-2xl border"
-                        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', animation: 'overlayContentIn .25s ease-out' }}
-                    >
-                        <AdvancedSettings onBack={null} onNavigate={navigateToPage} onLogout={handleLogout} user={user} onClose={() => setShowSettings(false)} />
-                    </div>
-                </div>
-            )}
+
         </div>
     );
 }

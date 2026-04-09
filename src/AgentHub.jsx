@@ -12,12 +12,14 @@ import MemoryPanel from './components/MemoryPanel';
 import WorkspaceNotebook from './components/WorkspaceNotebook';
 import DirectChatWelcome from './components/DirectChatWelcome';
 import ProjectModal from './components/ProjectModal';
+import AdvancedSettings from './pages/AdvancedSettings';
+import AgentDesigner from './components/admin/AgentDesigner';
 import useChatEngine from './hooks/useChatEngine';
 
 import { API_BASE, generateMessageId, authFetch } from './utils/helpers';
 import { X, Sparkles, PenLine, Heart, MoreVertical, Menu, EyeOff, Pencil } from 'lucide-react';
 
-const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = null, initialConversationId = null, initialDirectConvId = null }) => {
+const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = null, initialConversationId = null, initialDirectConvId = null, showSettings = false, onCloseSettings, showAgentDesigner = false, onCloseAgentDesigner, initialDesignerAgentId = null }) => {
     // Permission helper - checks if user has a specific permission
     const hasPermission = (perm) => {
         const perms = user?.permissions || [];
@@ -458,6 +460,8 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
         setDesignMode(false);
         setShowMarketplace(false);
         setDirectChatMode(false);
+        if (onCloseSettings) onCloseSettings();
+        if (onCloseAgentDesigner) onCloseAgentDesigner();
 
         // Auto-start new chat — reset notebook only when switching agents
         setCurrentConversation({ id: null, title: 'New Chat', messages: [] });
@@ -749,6 +753,9 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
         setCurrentConversation(null);
         setMessages([]);
         setCurrentDirectConversation(null);
+        setShowMarketplace(false);
+        if (onCloseSettings) onCloseSettings();
+        if (onCloseAgentDesigner) onCloseAgentDesigner();
         localStorage.setItem('lastUsedMode', 'direct-chat');
         loadDirectConversations();
         loadModelTiers();
@@ -805,6 +812,9 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
     };
 
     const handleNewChat = () => {
+        if (onCloseSettings) onCloseSettings();
+        if (onCloseAgentDesigner) onCloseAgentDesigner();
+        setShowMarketplace(false);
         if (directChatMode) {
             setCurrentDirectConversation(null);
             setMessages([]);
@@ -1032,6 +1042,8 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 onLogout={onLogout}
                 onNavigate={onNavigate}
                 currentPage={currentPage}
+                showSettings={showSettings}
+                showAgentDesigner={showAgentDesigner}
                 onDirectChat={handleDirectChat}
                 directChatMode={directChatMode}
                 directConversations={directConversations}
@@ -1086,7 +1098,29 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
 
             {/* Main Content Area */}
             <div className="flex-1 flex flex-col min-w-0 relative">
-                {selectedAgent ? (
+                {showSettings ? (
+                    /* Settings rendered inline in conversation area — Open WebUI style */
+                    <AdvancedSettings onBack={null} onNavigate={onNavigate} onLogout={onLogout} user={user} onClose={onCloseSettings} />
+                ) : showAgentDesigner ? (
+                    /* Agent Designer rendered inline in conversation area */
+                    <AgentDesigner onBack={null} hasPermission={(perm) => {
+                        const perms = user?.permissions || [];
+                        return perms.includes('all') || perms.includes(perm);
+                    }} initialAgentId={initialDesignerAgentId} onClose={onCloseAgentDesigner} />
+                ) : showMarketplace ? (
+                    /* Agent Marketplace rendered inline in conversation area */
+                    <AgentMarketplace
+                        agents={agents}
+                        favorites={favorites}
+                        categories={agentCategories}
+                        onToggleFavorite={handleToggleFavorite}
+                        onSelect={handleSelectAgent}
+                        onClose={() => setShowMarketplace(false)}
+                        onUnpublish={handleUnpublishAgent}
+                        onEditAgent={(agent) => { setShowMarketplace(false); onNavigate(agent ? `agentDesigner:${agent.id}` : 'agentDesigner'); }}
+                        user={user}
+                    />
+                ) : selectedAgent ? (
                     <>
                         {/* New Inline Header for Agent */}
                         <div className={`h-14 flex items-center justify-between ${isMobile ? 'px-3' : 'px-6'} bg-[var(--bg-primary)]/80 backdrop-blur-md sticky top-0 z-20 border-b border-[var(--border-subtle)]/50`}>
@@ -1410,24 +1444,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 )}
             </div>
 
-            {/* Marketplace Modal Overlay */}
-            {showMarketplace && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowMarketplace(false)}>
-                    <div className={`relative bg-[var(--bg-primary)] shadow-2xl flex flex-col overflow-hidden border border-[var(--border-subtle)] ${isMobile ? 'w-full h-full' : 'rounded-2xl w-[90vw] max-w-5xl h-[80vh]'}`} onClick={e => e.stopPropagation()}>
-                        <AgentMarketplace
-                            agents={agents}
-                            favorites={favorites}
-                            categories={agentCategories}
-                            onToggleFavorite={handleToggleFavorite}
-                            onSelect={handleSelectAgent}
-                            onClose={() => setShowMarketplace(false)}
-                            onUnpublish={handleUnpublishAgent}
-                            onEditAgent={(agent) => { setShowMarketplace(false); onNavigate(agent ? `agentDesigner:${agent.id}` : 'agentDesigner'); }}
-                            user={user}
-                        />
-                    </div>
-                </div>
-            )}
+
 
 
 
