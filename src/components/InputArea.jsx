@@ -236,7 +236,7 @@ const InputArea = ({
             .then(r => r.ok ? r.json() : null)
             .then(data => {
                 if (data?.workflows?.length) {
-                    setN8nWorkflows(data.workflows.filter(w => w.enabled));
+                    setN8nWorkflows(data.workflows.filter(w => w.enabled && !w.allowKbIngestion));
                 }
             })
             .catch(() => { });
