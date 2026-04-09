@@ -240,12 +240,7 @@ const ConvRow = ({
                 </div>
             )}
             <span className={`text-[14px] truncate flex-1 leading-snug min-w-0 ${active ? TEXT_ACTIVE : TEXT_IDLE}`}>
-                <span className="block truncate">{conv.title || t('sidebar.untitled_chat')}</span>
-                {agentBadge && (
-                    <span className="block text-[10px] truncate mt-0.5" style={{ color: 'var(--text-muted)', fontWeight: 400 }}>
-                        {agentBadge.name}
-                    </span>
-                )}
+                {conv.title || t('sidebar.untitled_chat')}
             </span>
             {/* Three-dot menu */}
             <div className="relative" ref={menuRef}>
