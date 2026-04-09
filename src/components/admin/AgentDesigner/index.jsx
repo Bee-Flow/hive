@@ -25,6 +25,7 @@ const AgentDesigner = ({
   securityMode = false,
   hasPermission = () => true,
   initialAgentId = null,
+  user = null,
 }) => {
   // All state from hooks
   const state = useAgentState();
@@ -173,6 +174,10 @@ const AgentDesigner = ({
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, [showEmojiPicker]);
 
+  const isAgentEditor = user?.orgRole === 'agent_editor';
+  const isOwner = selectedAgent?.owner_id === user?.id;
+  const isReadonly = Boolean(selectedAgent && isAgentEditor && !isOwner && !selectedAgent?.is_published && !isCreating);
+
   const sharedProps = {
     ...state,
     authFetch,
@@ -180,6 +185,7 @@ const AgentDesigner = ({
     CAPABILITIES,
     checkCapability,
     toggleCapability,
+    isReadonly,
   };
   return (
     <div
@@ -298,21 +304,12 @@ const AgentDesigner = ({
                               e.stopPropagation();
                               duplicateAgent(agent);
                             }}
-                            className="opacity-0 group-hover:opacity-100 p-1 text-[var(--text-tertiary)] hover:text-blue-400 transition-all rounded"
+                            className="opacity-0 group-hover:opacity-100 p-1 text-[var(--text-tertiary)] hover:text-blue-400 transition-all rounded disabled:opacity-0 disabled:cursor-not-allowed"
                             title="Duplicate agent"
+                            disabled={Boolean(user?.orgRole === 'agent_editor' && agent.owner_id !== user?.id && !agent.is_published)}
                           >
-                            <svg
-                              className="w-3 h-3"
-                              fill="none"
-                              stroke="currentColor"
-                              viewBox="0 0 24 24"
-                            >
-                              <path
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                strokeWidth={2}
-                                d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"
-                              />
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                             </svg>
                           </button>
                         )}
@@ -321,21 +318,12 @@ const AgentDesigner = ({
                             e.stopPropagation();
                             deleteAgent(agent.id);
                           }}
-                          className="opacity-0 group-hover:opacity-100 p-1 text-[var(--text-tertiary)] hover:text-red-500 transition-all rounded"
+                          className="opacity-0 group-hover:opacity-100 p-1 text-[var(--text-tertiary)] hover:text-red-500 transition-all rounded disabled:opacity-0 disabled:cursor-not-allowed"
                           title="Delete agent"
+                          disabled={Boolean(user?.orgRole === 'agent_editor' && agent.owner_id !== user?.id && !agent.is_published)}
                         >
-                          <svg
-                            className="w-3 h-3"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={2}
-                              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
-                            />
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
                           </svg>
                         </button>
                       </div>
@@ -374,65 +362,29 @@ const AgentDesigner = ({
                   </div>
                   <div className="flex items-center gap-3">
                     {!systemMode && selectedAgent && (
-                      <div className="relative">
-                        <button
-                          onClick={() =>
-                            isPublished
-                              ? togglePublish()
-                              : setShowPublishMenu(!showPublishMenu)
-                          }
-                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 border ${
-                            isPublished
-                              ? "bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600"
-                              : "text-[var(--text-secondary)] bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)]"
-                          }`}
-                          style={
-                            !isPublished
-                              ? { borderColor: "var(--border-default)" }
-                              : {}
-                          }
-                        >
-                          {isPublished ? (
-                            <>
-                              <svg
-                                className="w-3.5 h-3.5"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M5 13l4 4L19 7"
-                                />
-                              </svg>
-                              Published
-                              {sharedGroups.length > 0
-                                ? ` (${sharedGroups.length})`
-                                : ""}
-                            </>
-                          ) : (
-                            <>
-                              Publish
-                              <svg
-                                className="w-3 h-3"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                              >
-                                <path
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                  strokeWidth={2}
-                                  d="M19 9l-7 7-7-7"
-                                />
-                              </svg>
-                            </>
+                        {/* Publish Menu Toggle or Current State */}
+                        <div className="relative">
+                          {!isReadonly && (
+                            <button
+                              onClick={() => isPublished ? togglePublish() : setShowPublishMenu(!showPublishMenu)}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 border ${
+                                isPublished ? "bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600" : "text-[var(--text-secondary)] bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)]"
+                              }`}
+                              style={!isPublished ? { borderColor: "var(--border-default)" } : {}}
+                            >
+                              {isPublished ? (
+                                <>
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                                  Published {sharedGroups.length > 0 ? ` (${sharedGroups.length})` : ""}
+                                </>
+                              ) : (
+                                <>Publish <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg></>
+                              )}
+                            </button>
                           )}
-                        </button>
-
-                        {/* Publish Target Dropdown */}
+                          
+                          {/* Publish Target Dropdown */}
+                          {/* ... remainder handled by existing React component ... */}
                         {showPublishMenu && !isPublished && (
                           <div
                             className="absolute right-0 top-full mt-2 w-72 rounded-xl shadow-2xl z-50 overflow-hidden"
@@ -592,17 +544,22 @@ const AgentDesigner = ({
                         )}
                       </div>
                     )}
-                    <button
-                      onClick={saveAgent}
-                      disabled={saving || !name.trim()}
-                      className="px-5 py-1.5 text-sm font-medium rounded-lg border bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
-                      style={{
-                        borderColor: "var(--border-default)",
-                        color: "var(--text-secondary)",
-                      }}
-                    >
-                      {saving ? "Saving..." : "Save Changes"}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {isReadonly && (
+                        <span className="text-xs px-2 py-1 rounded bg-red-500/10 text-red-500 font-medium">Read-only (Unpublished)</span>
+                      )}
+                      <button
+                        onClick={saveAgent}
+                        disabled={saving || !name.trim() || isReadonly}
+                        className="px-5 py-1.5 text-sm font-medium rounded-lg border bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                        style={{
+                          borderColor: "var(--border-default)",
+                          color: "var(--text-secondary)",
+                        }}
+                      >
+                        {saving ? "Saving..." : "Save Changes"}
+                      </button>
+                    </div>
                   </div>
                 </div>
 

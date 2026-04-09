@@ -107,7 +107,7 @@ const OrgSettings = ({ user, onBack, orgSettingsPath = {}, onNavigate }) => {
                     </div>
                 ) : activeTab === 'agents' ? (
                     <div className="absolute inset-0">
-                        <AgentDesigner onBack={null} hasPermission={hasPermission} />
+                        <AgentDesigner onBack={null} hasPermission={hasPermission} user={user} />
                     </div>
                 ) : null}
             </div>

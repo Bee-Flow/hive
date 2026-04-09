@@ -136,9 +136,9 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
     const [orgExpanded, setOrgExpanded] = useState(false);
 
     const perms = user?.permissions || [];
-    const canSeeOrg = perms.includes('all') || perms.includes('org_admin') || perms.some(p => p.startsWith('admin_')) || user?.orgRole === 'admin' || user?.orgRole === 'org_admin';
+    const canSeeOrg = perms.includes('all') || perms.includes('org_admin') || user?.orgRole === 'admin' || user?.orgRole === 'org_admin';
 
-    const canManageUsers = canSeeOrg;
+    const canManageUsers = perms.includes('all') || perms.includes('manage_users') || user?.orgRole === 'admin' || user?.orgRole === 'org_admin';
     const deploymentMode = user?.featureFlags?.deploymentMode || 'cloud';
     const isPrivateCloud = deploymentMode === 'private-cloud';
     const isConsumerAccount = !!user?.isConsumerAccount;
