@@ -250,8 +250,12 @@ const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
                                 >
                                     <div className="flex items-start justify-between">
                                         <div className="flex items-center gap-3">
-                                            <div className="w-9 h-9 rounded-lg bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] flex items-center justify-center text-xs font-bold flex-shrink-0 border border-[var(--accent-primary)]/20 shadow-inner">
-                                                {result.agent_avatar || result.agent_name?.[0] || '?'}
+                                            <div className="w-9 h-9 rounded-lg bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] flex items-center justify-center text-xs font-bold flex-shrink-0 border border-[var(--accent-primary)]/20 shadow-inner overflow-hidden">
+                                                {result.agent_avatar ? (
+                                                    <img src={result.agent_avatar} alt="" className="w-full h-full object-cover" />
+                                                ) : (
+                                                    result.agent_name?.[0] || '?'
+                                                )}
                                             </div>
                                             <div>
                                                 <div className="flex items-center gap-2">
