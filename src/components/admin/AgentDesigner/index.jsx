@@ -362,6 +362,7 @@ const AgentDesigner = ({
                   </div>
                   <div className="flex items-center gap-3">
                     {!systemMode && selectedAgent && (
+                      <>
                         {/* Publish Menu Toggle or Current State */}
                         <div className="relative">
                           {!isReadonly && (
@@ -543,6 +544,7 @@ const AgentDesigner = ({
                           </div>
                         )}
                       </div>
+                      </>
                     )}
                     <div className="flex items-center gap-2">
                       {isReadonly && (
