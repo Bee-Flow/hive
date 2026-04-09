@@ -1,9 +1,12 @@
 import React, { useMemo } from 'react';
 import ModelTierSelector from './ModelTierSelector';
 import { ALL_PROMPTS, WELCOME_MESSAGES } from '../utils/prompts';
+import { useTranslation } from '../hooks/useTranslation';
 
 const DirectChatWelcome = ({ tiers, selectedTier, onTierChange, onPromptClick, children }) => {
-    const welcomeText = useMemo(() => {
+    const { t } = useTranslation();
+
+    const welcomeMsg = useMemo(() => {
         return WELCOME_MESSAGES[Math.floor(Math.random() * WELCOME_MESSAGES.length)];
     }, []);
 
@@ -19,7 +22,7 @@ const DirectChatWelcome = ({ tiers, selectedTier, onTierChange, onPromptClick, c
                 color: 'var(--text-primary)', marginBottom: '20px',
                 letterSpacing: '-0.02em'
             }}>
-                {welcomeText}
+                {t(welcomeMsg.i18nKey)}
             </h1>
 
             {/* Render passing InputArea here */}
@@ -33,12 +36,12 @@ const DirectChatWelcome = ({ tiers, selectedTier, onTierChange, onPromptClick, c
                 {prompts.map((prompt, i) => (
                     <button
                         key={i}
-                        onClick={() => onPromptClick && onPromptClick(prompt.text)}
+                        onClick={() => onPromptClick && onPromptClick(t(prompt.i18nKey))}
                         className="text-left px-3.5 py-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-card)] hover:bg-[var(--bg-secondary)] hover:border-purple-500/30 transition-all flex items-center gap-2 group whitespace-nowrap"
                     >
                         <span className="text-sm group-hover:scale-110 transition-transform">{prompt.icon}</span>
                         <span className="text-[12.5px] font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors">
-                            {prompt.text}
+                            {t(prompt.i18nKey)}
                         </span>
                     </button>
                 ))}
