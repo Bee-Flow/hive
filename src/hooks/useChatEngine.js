@@ -565,6 +565,22 @@ export default function useChatEngine({
                 signal: controller.signal
             });
 
+            if (response.status === 403 || response.status === 401) {
+                // Permissions were revoked while the user had the agent open.
+                // Show a clear message rather than a generic error.
+                setMessages(prev => prev.map(m =>
+                    m.id === assistantMsgId ? {
+                        ...m,
+                        isStreaming: false,
+                        isError: true,
+                        isPermissionDenied: true,
+                        content: "⚠️ **Access denied** — you no longer have permission to use this agent. Please refresh the page."
+                    } : m
+                ));
+                setIsLoading(false);
+                return;
+            }
+
             if (!response.ok) throw new Error('Failed to send message');
 
             const reader = response.body.getReader();
