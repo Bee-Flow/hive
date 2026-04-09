@@ -230,6 +230,33 @@ export default function SSOSection({ ssoClientId, setSsoClientId, ssoClientSecre
                                 {settings.periodicSync && ` • Auto-sync every ${settings.syncIntervalHours}h`}
                             </p>
                         )}
+                        {settings.periodicSync && status.lastSyncAt && (() => {
+                            const nextSyncDate = new Date(new Date(status.lastSyncAt).getTime() + settings.syncIntervalHours * 60 * 60 * 1000);
+                            const now = new Date();
+                            const diffMs = nextSyncDate - now;
+                            const isOverdue = diffMs < 0;
+                            const absDiffMin = Math.floor(Math.abs(diffMs) / 60000);
+                            const absDiffHr = Math.floor(absDiffMin / 60);
+                            const remainingMin = absDiffMin % 60;
+
+                            let timeLabel;
+                            if (isOverdue) {
+                                timeLabel = t('azure.sync_overdue', 'Overdue');
+                            } else if (absDiffMin < 1) {
+                                timeLabel = t('azure.sync_next_imminent', 'Any moment');
+                            } else if (absDiffHr < 1) {
+                                timeLabel = `${absDiffMin}m`;
+                            } else {
+                                timeLabel = remainingMin > 0 ? `${absDiffHr}h ${remainingMin}m` : `${absDiffHr}h`;
+                            }
+
+                            return (
+                                <p className="text-[11px] flex items-center gap-1" style={{ color: isOverdue ? '#f59e0b' : '#22c55e' }}>
+                                    <Clock size={10} />
+                                    {t('azure.sync_next', 'Next sync')}: {timeLabel}
+                                </p>
+                            );
+                        })()}
                     </div>
 
                     {/* Sync button */}

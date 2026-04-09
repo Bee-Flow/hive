@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
-import { Bot, MessageSquare, BookOpen, Search, Code, LayoutTemplate, Filter, X, Cpu, Users, ChevronDown, Activity, ArrowUpRight, ArrowDownLeft, BarChart3, Zap, DollarSign, TrendingUp, ChevronRight, Shield, AlertTriangle, Eye, Fingerprint, Clock, Globe, Server, ArrowRight, ArrowLeft, Link2, Info } from 'lucide-react';
+import { Bot, MessageSquare, BookOpen, Search, Code, LayoutTemplate, Filter, X, Cpu, Users, ChevronDown, Activity, ArrowUpRight, ArrowDownLeft, BarChart3, Zap, DollarSign, TrendingUp, ChevronRight, Shield, AlertTriangle, Eye, Fingerprint, Clock, Globe, Server, ArrowRight, ArrowLeft, Link2, Info, FileText, ScanEye, ShieldCheck, Binary } from 'lucide-react';
 
 // ── Formatters ──────────────────────────────────────────────────────────────
 const fNum = (n) => {
@@ -285,6 +285,9 @@ const UsageSection = () => {
     const [integData, setIntegData] = useState({
         summary: null, byType: [], byTool: [], piiSummary: [], servers: [], recent: [],
     });
+    const [azureServices, setAzureServices] = useState({
+        summary: null, byType: [], byUser: [],
+    });
 
     const buildQS = useCallback(() => {
         const params = new URLSearchParams({ days });
@@ -335,6 +338,14 @@ const UsageSection = () => {
                     piiSummary: await sa(iResults[3]),
                     servers: await sa(iResults[4]),
                     recent: await sa(iResults[5]),
+                });
+                // Fetch Azure service cost data
+                const azEps = ['azure-services/summary', 'azure-services/by-type', 'azure-services/by-user'];
+                const azResults = await Promise.all(azEps.map(ep => authFetch(`${API_BASE}/api/usage/${ep}?${qs}`)));
+                setAzureServices({
+                    summary: await sj(azResults[0], {}),
+                    byType: await sa(azResults[1]),
+                    byUser: await sa(azResults[2]),
                 });
             } catch (err) { console.error("Failed to load usage", err); }
             setLoading(false);
@@ -449,11 +460,19 @@ const UsageSection = () => {
                             sub={<InOutLabel input={data.summary?.total_prompt_tokens} output={data.summary?.total_completion_tokens}
                                 showCost inputCost={data.summary?.total_input_cost} outputCost={data.summary?.total_output_cost} />} />
                         <StatCard icon={DollarSign} label={t('usage.est_cost')} color="#10b981"
-                            value={fCur(data.summary?.total_estimated_cost)}
+                            value={fCur(data.summary?.combined_total_cost ?? data.summary?.total_estimated_cost)}
                             sub={
-                                <div style={{ display: 'flex', gap: 10, fontSize: 10 }}>
-                                    <span style={{ color: '#3b82f6', fontWeight: 600 }}>In: {fCur(data.summary?.total_input_cost)}</span>
-                                    <span style={{ color: '#f59e0b', fontWeight: 600 }}>Out: {fCur(data.summary?.total_output_cost)}</span>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                                    <div style={{ display: 'flex', gap: 10, fontSize: 10 }}>
+                                        <span style={{ color: '#3b82f6', fontWeight: 600 }}>In: {fCur(data.summary?.total_input_cost)}</span>
+                                        <span style={{ color: '#f59e0b', fontWeight: 600 }}>Out: {fCur(data.summary?.total_output_cost)}</span>
+                                    </div>
+                                    {(data.summary?.azure_services_total_cost || 0) > 0 && (
+                                        <div style={{ display: 'flex', gap: 4, fontSize: 9, alignItems: 'center' }}>
+                                            <Server style={{ width: 9, height: 9, color: '#0ea5e9' }} />
+                                            <span style={{ color: '#0ea5e9', fontWeight: 600 }}>Azure: {fCur(data.summary?.azure_services_total_cost)}</span>
+                                        </div>
+                                    )}
                                 </div>
                             } />
                         <StatCard icon={Users} label={t('usage.active_users')} color="#f59e0b"
@@ -676,6 +695,61 @@ const UsageSection = () => {
                                         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)', textAlign: 'right' }}>{fCur(row.estimated_cost)}</span>
                                     </div>
                                 ))}
+                            </Card>
+                        </div>
+                    )}
+
+                    {/* ── Azure Services Breakdown ── */}
+                    {(azureServices.byType?.length > 0) && (
+                        <div>
+                            <SectionTitle icon={Server}>{t('usage.azure_services') || 'Azure Services'}</SectionTitle>
+                            <Card>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 0 }}>
+                                    {azureServices.byType.map((svc, i) => {
+                                        const svcInfo = {
+                                            doc_intelligence: { label: 'Document Intelligence', icon: FileText, color: '#6366f1', metric: `${fNum(svc.total_pages)} pages` },
+                                            content_safety: { label: 'Content Safety', icon: ShieldCheck, color: '#f59e0b', metric: `${fNum(svc.total_chars)} chars` },
+                                            pii_detection: { label: 'PII Detection', icon: ScanEye, color: '#8b5cf6', metric: `${fNum(svc.total_chars)} chars` },
+                                            embedding: { label: 'Embeddings', icon: Binary, color: '#0ea5e9', metric: `${fNum(svc.total_tokens)} tokens` },
+                                        }[svc.service_type] || { label: svc.service_type, icon: Server, color: '#94a3b8', metric: '' };
+                                        const SvcIcon = svcInfo.icon;
+                                        return (
+                                            <div key={i} style={{
+                                                display: 'flex', alignItems: 'center', gap: 10, padding: '12px 14px',
+                                                borderBottom: '1px solid var(--border-subtle)',
+                                            }}>
+                                                <div style={{
+                                                    width: 32, height: 32, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    background: `${svcInfo.color}15`, flexShrink: 0,
+                                                }}>
+                                                    <SvcIcon style={{ width: 16, height: 16, color: svcInfo.color }} />
+                                                </div>
+                                                <div style={{ flex: 1, minWidth: 0 }}>
+                                                    <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{svcInfo.label}</div>
+                                                    <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
+                                                        {svc.calls} {t('usage.calls')} · {svcInfo.metric}
+                                                    </div>
+                                                </div>
+                                                <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                                                    <div style={{ fontSize: 14, fontWeight: 700, color: svcInfo.color }}>{fCur(svc.total_cost)}</div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                                {/* Azure services total */}
+                                <div style={{
+                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                    padding: '10px 14px', background: 'var(--bg-tertiary)',
+                                    borderTop: '2px solid var(--border-subtle)',
+                                }}>
+                                    <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                        {t('usage.total') || 'Total'}
+                                    </span>
+                                    <span style={{ fontSize: 16, fontWeight: 800, color: '#10b981' }}>
+                                        {fCur(azureServices.summary?.total_cost)}
+                                    </span>
+                                </div>
                             </Card>
                         </div>
                     )}

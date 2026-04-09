@@ -15,7 +15,7 @@ import ProjectModal from './components/ProjectModal';
 import useChatEngine from './hooks/useChatEngine';
 
 import { API_BASE, generateMessageId, authFetch } from './utils/helpers';
-import { X, Sparkles, PenLine, Heart, MoreVertical, Menu, EyeOff } from 'lucide-react';
+import { X, Sparkles, PenLine, Heart, MoreVertical, Menu, EyeOff, Pencil } from 'lucide-react';
 
 const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = null, initialConversationId = null, initialDirectConvId = null }) => {
     // Permission helper - checks if user has a specific permission
@@ -1131,14 +1131,24 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                                     {favorites.includes(selectedAgent.id) ? 'Remove from favorites' : 'Add to favorites'}
                                                 </button>
                                                 {(selectedAgent.owner_id === user?.id || user?.isAdmin || (user?.permissions || []).includes('all')) && (
-                                                    <button
-                                                        onClick={() => { handleUnpublishAgent(selectedAgent.id); setShowAgentMenu(false); }}
-                                                        className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-[var(--bg-secondary)] transition-colors text-left"
-                                                        style={{ color: 'var(--error, #ef4444)' }}
-                                                    >
-                                                        <EyeOff className="w-4 h-4" />
-                                                        Unpublish Agent
-                                                    </button>
+                                                    <>
+                                                        <button
+                                                            onClick={() => { setShowAgentMenu(false); onNavigate(`agentDesigner:${selectedAgent.id}`); }}
+                                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-[var(--bg-secondary)] transition-colors text-left"
+                                                            style={{ color: 'var(--text-primary)' }}
+                                                        >
+                                                            <Pencil className="w-4 h-4" />
+                                                            Edit Agent
+                                                        </button>
+                                                        <button
+                                                            onClick={() => { handleUnpublishAgent(selectedAgent.id); setShowAgentMenu(false); }}
+                                                            className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-[var(--bg-secondary)] transition-colors text-left"
+                                                            style={{ color: 'var(--error, #ef4444)' }}
+                                                        >
+                                                            <EyeOff className="w-4 h-4" />
+                                                            Unpublish Agent
+                                                        </button>
+                                                    </>
                                                 )}
                                             </div>
                                         </>
