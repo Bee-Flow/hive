@@ -444,40 +444,41 @@ const MessageItem = ({
                             ))}
                         </div>
                     )}
-                    {isTool ? renderToolOutput() : (
-                        msg.isError && msg.content ? (
-                            <div className={`flex items-start gap-3 p-3 rounded-xl border ${msg.content.includes('limit') || msg.content.includes('subscription') || msg.content.includes('suspended') || msg.content.includes('cancelled')
+                    {isTool ? renderToolOutput() : (() => {
+                        const errText = typeof msg.content === 'string' ? msg.content : String(msg.content || '');
+                        return msg.isError && errText ? (
+                            <div className={`flex items-start gap-3 p-3 rounded-xl border ${errText.includes('limit') || errText.includes('subscription') || errText.includes('suspended') || errText.includes('cancelled')
                                 ? 'bg-orange-100 dark:bg-amber-900/30 border-orange-400 dark:border-amber-500/50'
                                 : 'bg-red-100 dark:bg-red-900/30 border-red-400 dark:border-red-500/50'
                                 }`}>
-                                <span className="text-lg flex-shrink-0 mt-0.5">{msg.content.includes('limit') || msg.content.includes('subscription') ? '⚠️' : '❌'}</span>
+                                <span className="text-lg flex-shrink-0 mt-0.5">{errText.includes('limit') || errText.includes('subscription') ? '⚠️' : '❌'}</span>
                                 <div>
-                                    <div className={`font-semibold text-sm mb-0.5 ${msg.content.includes('limit') || msg.content.includes('subscription') || msg.content.includes('suspended') || msg.content.includes('cancelled')
+                                    <div className={`font-semibold text-sm mb-0.5 ${errText.includes('limit') || errText.includes('subscription') || errText.includes('suspended') || errText.includes('cancelled')
                                         ? 'text-orange-800 dark:text-amber-200' : 'text-red-800 dark:text-red-200'
                                         }`}>
-                                        {msg.content.includes('suspended')
+                                        {errText.includes('suspended')
                                             ? 'Subscription Suspended'
-                                            : msg.content.includes('cancelled')
+                                            : errText.includes('cancelled')
                                                 ? 'Subscription Cancelled'
-                                                : msg.content.includes('Chat') && msg.content.includes('type')
+                                                : errText.includes('Chat') && errText.includes('type')
                                                     ? 'Chat Agent Limit Reached'
-                                                    : msg.content.includes('message limit')
+                                                    : errText.includes('message limit')
                                                         ? 'Monthly Message Limit Reached'
-                                                        : msg.content.includes('token limit')
+                                                        : errText.includes('token limit')
                                                             ? 'Monthly Token Limit Reached'
-                                                            : msg.content.includes('cost limit')
+                                                            : errText.includes('cost limit')
                                                                 ? 'Monthly Cost Limit Reached'
-                                                                : (msg.content.includes('limit') || msg.content.includes('subscription'))
+                                                                : (errText.includes('limit') || errText.includes('subscription'))
                                                                     ? 'Subscription Limit Reached'
                                                                                 : 'Something went wrong'}
                                     </div>
-                                    <div className={`text-xs ${msg.content.includes('limit') || msg.content.includes('subscription')
+                                    <div className={`text-xs ${errText.includes('limit') || errText.includes('subscription')
                                         ? 'text-orange-700 dark:text-amber-300/90' : 'text-red-700 dark:text-red-300/90'
-                                        }`}>{msg.content}</div>
+                                        }`}>{errText}</div>
                                 </div>
                             </div>
                         ) : msg.content ? (
-                            <MarkdownRenderer content={msg.images?.length > 0 ? msg.content.replace(/!\[[^\]]*\]\([^)]*\)/g, '').trim() : msg.content} isLoading={msg.isStreaming} />
+                            <MarkdownRenderer content={msg.images?.length > 0 ? errText.replace(/!\[[^\]]*\]\([^)]*\)/g, '').trim() : errText} isLoading={msg.isStreaming} />
                         ) : msg.isStreaming && !msg.thinking ? (
                             <div className="flex items-center gap-3 py-1 animate-pulse">
                                 <div className="flex gap-1.5">
@@ -489,8 +490,8 @@ const MessageItem = ({
                                     Thinking...
                                 </span>
                             </div>
-                        ) : null
-                    )}
+                        ) : null;
+                    })()}
                     {/* AI Generated Images — rendered after text (skip if album art for audio) */}
                     {!isUser && msg.images && msg.images.length > 0 && !(msg.audioFiles && msg.audioFiles.length > 0) && (
                         <div className="mt-3 flex flex-wrap gap-2">

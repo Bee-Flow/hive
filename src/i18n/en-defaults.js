@@ -342,6 +342,7 @@ const EN_DEFAULTS = {
     "settings.appearance": "Appearance",
     "settings.notifications": "Notifications",
     "settings.integrations": "Integrations",
+    "settings.github_sync": "GitHub Sync",
     "settings.language": "Language",
     "settings.theme": "Theme",
     "settings.dark_mode": "Dark Mode",

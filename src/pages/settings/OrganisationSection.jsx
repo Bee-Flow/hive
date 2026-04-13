@@ -3,6 +3,7 @@ import OrgInfoPanel, { SECTIONS as INFO_SECTIONS } from '../../components/admin/
 import OrgUsersPanel from '../../components/admin/OrgUsersPanel';
 import N8nSection from './N8nSection';
 import UsageSection from './UsageSection';
+import GitHubSyncPanel from '../../components/admin/GitHubSyncPanel';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 
@@ -195,6 +196,11 @@ const OrganisationSection = ({ user, activeSection = 'license' }) => {
                         </div>
                     )}
                 </div>
+            )}
+
+            {/* GitHub Sync */}
+            {activeSection === 'github_sync' && isOrgAdmin && (
+                <GitHubSyncPanel user={user} />
             )}
         </div>
     );

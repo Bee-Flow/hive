@@ -217,6 +217,14 @@ const MemoryPanel = ({ onClose, projectId }) => {
             <div className="px-5 py-4 border-b" style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)' }}>
                 <div className="flex items-center justify-between mb-4">
                     <div className="flex items-center gap-3">
+                        {onClose && (
+                            <button onClick={onClose} className="p-1.5 -ml-1 rounded-lg transition-colors hover:bg-black/5"
+                                style={{ color: 'var(--text-muted)' }} title="Back to Settings">
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
+                                </svg>
+                            </button>
+                        )}
                         <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{
                             background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(99, 102, 241, 0.2))',
                         }}>
@@ -261,13 +269,6 @@ const MemoryPanel = ({ onClose, projectId }) => {
                             </svg>
                             {showAddForm ? 'Cancel' : 'Add Memory'}
                         </button>
-                        {onClose && (
-                            <button onClick={onClose} className="p-2 rounded-lg transition-colors hover:bg-white/5" style={{ color: 'var(--text-muted)' }}>
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                            </button>
-                        )}
                     </div>
                 </div>
 

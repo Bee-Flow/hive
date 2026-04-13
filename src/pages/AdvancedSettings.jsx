@@ -10,7 +10,7 @@ import ConsumerLicenseSection from './settings/ConsumerLicenseSection';
 import ConsumerPrivacySection from './settings/ConsumerPrivacySection';
 import { SECTIONS as ORG_SECTIONS } from '../components/admin/OrgInfoPanel';
 import OrgAzureConfigPanel from '../components/admin/OrgAzureConfigPanel';
-import { Users, Link2, BarChart2, Cloud, CreditCard, Shield } from 'lucide-react';
+import { Users, Link2, BarChart2, Cloud, CreditCard, Shield, FolderGit2 } from 'lucide-react';
 
 /* ── Org sub-items (use labelKey for i18n) ────────────────────────────────── */
 const BASE_ORG_SUB_ITEMS = [
@@ -18,6 +18,7 @@ const BASE_ORG_SUB_ITEMS = [
     { id: 'org_usage', labelKey: 'settings.usage_monitoring', icon: BarChart2, color: '#f59e0b' },
     { id: 'org_users', labelKey: 'settings.users_groups', icon: Users, color: '#3b82f6' },
     { id: 'org_integrations', labelKey: 'settings.integrations', icon: Link2, color: '#0ea5e9' },
+    { id: 'org_github_sync', labelKey: 'settings.github_sync', icon: FolderGit2, color: '#8b5cf6' },
 ];
 const AZURE_SUB_ITEM = { id: 'org_azure', labelKey: 'settings.azure_config', icon: Cloud, color: '#0078D4' };
 
@@ -164,7 +165,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
         return items;
     }, [canSeeOrg, canManageUsers, isPrivateCloud, hasOrgIntegrations]);
 
-    const ALL_ORG_IDS = [...BASE_ORG_SUB_ITEMS.map(s => s.id), AZURE_SUB_ITEM.id];
+    const ALL_ORG_IDS = [...BASE_ORG_SUB_ITEMS.map(s => s.id), AZURE_SUB_ITEM.id, 'org_github_sync'];
     const isOrgSubTab = ALL_ORG_IDS.includes(activeTab);
 
     // If user navigates to an org sub-tab, keep org expanded
@@ -223,7 +224,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
 
     // Map org sub-tab ids to the activeSection prop OrganisationSection expects
     const orgActiveSection = isOrgSubTab
-        ? (activeTab === 'org_users' ? 'users' : activeTab === 'org_integrations' ? 'integrations' : activeTab === 'org_usage' ? 'usage' : activeTab === 'org_azure' ? 'azure' : activeTab)
+        ? (activeTab === 'org_users' ? 'users' : activeTab === 'org_integrations' ? 'integrations' : activeTab === 'org_usage' ? 'usage' : activeTab === 'org_azure' ? 'azure' : activeTab === 'org_github_sync' ? 'github_sync' : activeTab)
         : 'license';
 
     const renderContent = () => {
@@ -261,7 +262,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
     };
 
     return (
-        <div className="h-full flex flex-col" style={{ background: 'var(--bg-primary)' }}>
+        <div className="h-full flex flex-col" style={{ background: 'var(--bg-primary)', position: 'relative' }}>
             {/* ── Title bar ── */}
             <div
                 className="flex-shrink-0 flex items-center px-5"
@@ -408,7 +409,9 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
             </div>
 
             {showMemoryPanel && (
-                <MemoryPanel onClose={() => { setShowMemoryPanel(false); fetchMemoryStats(); }} />
+                <div style={{ position: 'absolute', inset: 0, zIndex: 10, background: 'var(--bg-primary)' }}>
+                    <MemoryPanel onClose={() => { setShowMemoryPanel(false); fetchMemoryStats(); }} />
+                </div>
             )}
         </div>
     );

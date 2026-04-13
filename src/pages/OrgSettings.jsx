@@ -4,6 +4,7 @@ import AgentDesigner from '../components/admin/AgentDesigner';
 import OrgUsersPanel from '../components/admin/OrgUsersPanel';
 import OrgInfoPanel from '../components/admin/OrgInfoPanel';
 import KnowledgeBasesSection from '../components/admin/AgentDesigner/sections/KnowledgeBasesSection';
+import GitHubSyncPanel from '../components/admin/GitHubSyncPanel';
 import { AGENT_MANAGEMENT_ROLES, USER_MANAGEMENT_ROLES } from '../config/orgRoles';
 
 const OrgSettings = ({ user, onBack, orgSettingsPath = {}, onNavigate }) => {
@@ -32,6 +33,7 @@ const OrgSettings = ({ user, onBack, orgSettingsPath = {}, onNavigate }) => {
         { id: 'organisation', label: 'Organisation', allowed: canAccessOrgSettings },
         { id: 'agents', label: 'Agents', allowed: canManageAgents },
         { id: 'knowledge-bases', label: 'Knowledge Bases', allowed: canManageKnowledge },
+        { id: 'github-sync', label: 'GitHub Sync', allowed: canManageAgents },
         { id: 'users', label: 'Users', allowed: canManageUsers },
     ];
 
@@ -118,6 +120,10 @@ const OrgSettings = ({ user, onBack, orgSettingsPath = {}, onNavigate }) => {
                         <div className="max-w-5xl mx-auto">
                             <KnowledgeBasesSection isReadonly={false} />
                         </div>
+                    </div>
+                ) : activeTab === 'github-sync' ? (
+                    <div className="absolute inset-0 overflow-y-auto p-6">
+                        <GitHubSyncPanel user={user} />
                     </div>
                 ) : null}
             </div>

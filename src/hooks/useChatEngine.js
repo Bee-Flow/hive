@@ -410,11 +410,13 @@ export default function useChatEngine({
                 }
                 break;
 
-            case 'error':
+            case 'error': {
+                const errMsg = typeof data.error === 'string' ? data.error : (data.error?.message || JSON.stringify(data.error) || 'An error occurred');
                 setMessages(prev => prev.map(m =>
-                    m.id === assistantMsgId ? { ...m, content: data.error, isStreaming: false, isError: true } : m
+                    m.id === assistantMsgId ? { ...m, content: errMsg, isStreaming: false, isError: true } : m
                 ));
                 break;
+            }
 
             case 'guardrail_violation': {
                 const secs = data.autoDeleteSeconds || 5;
