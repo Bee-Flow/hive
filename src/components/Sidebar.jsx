@@ -397,6 +397,7 @@ const Sidebar = ({
     showSettings = false,
     showAgentDesigner = false,
     showSkillsPanel = false,
+    showEmailKB = false,
 }) => {
     const { t } = useTranslation();
     // We'll use the 'isOpen' prop as 'sidebarOpen' (expanded state)
@@ -877,6 +878,12 @@ const Sidebar = ({
                                     href="/email-kb"
                                     onClick={() => setShowProfileMenu(false)}
                                     onNavigate={() => { setShowProfileMenu(false); onNavigate('emailKB'); }}
+                                    className={`${ROW} ${showEmailKB ? ROW_ACTIVE : ROW_IDLE}`}
+                                    style={{ textDecoration: 'none', color: 'inherit' }}
+                                >
+                                    {showEmailKB && <div className={ACCENT_BAR} />}
+                                    <Mail className={`w-4 h-4 ${showEmailKB ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
+                                    <span className={`text-[13px] ${showEmailKB ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('email_kb.title') || 'Email KB'}</span>
                                     className={`${ROW} ${currentPage === 'emailKB' ? ROW_ACTIVE : ROW_IDLE}`}
                                     style={{ textDecoration: 'none', color: 'inherit' }}
                                 >

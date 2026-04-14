@@ -1,15 +1,16 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { getAgentInitials, getAgentColor } from '../utils/helpers';
 import { ChevronDown, ChevronUp, X, Search, Heart, EyeOff, Pencil } from 'lucide-react';
+import { useTranslation } from '../hooks/useTranslation';
 
-const STATIC_CATEGORIES_BEFORE = [
-    { key: 'popular', label: 'Popular' },
-    { key: 'lastused', label: 'Last Used' },
+const STATIC_CATEGORIES_BEFORE_KEYS = [
+    { key: 'popular', tKey: 'store.tab_popular' },
+    { key: 'lastused', tKey: 'store.tab_last_used' },
 ];
 
-const STATIC_CATEGORIES_AFTER = [
-    { key: 'favorites', label: 'Favorites' },
-    { key: 'all', label: 'All' },
+const STATIC_CATEGORIES_AFTER_KEYS = [
+    { key: 'favorites', tKey: 'store.tab_favorites' },
+    { key: 'all', tKey: 'store.tab_all' },
 ];
 
 const JOB_CHIPS = [
@@ -112,6 +113,7 @@ const AgentCard = React.memo(({ agentId, name, avatar, description, typeLabel, i
 const API = (import.meta.env.VITE_API_URL || '') + '/api/usage';
 
 const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onToggleFavorite, onSelect, onClose, onUnpublish, onEditAgent, user }) => {
+    const { t } = useTranslation();
     const [search, setSearch] = useState('');
     const [showFilters, setShowFilters] = useState(false);
     const [activeCategory, setActiveCategory] = useState('popular');
@@ -124,9 +126,11 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
 
     // Build category list dynamically: static before + dynamic org categories + static after
     const CATEGORIES = useMemo(() => {
+        const before = STATIC_CATEGORIES_BEFORE_KEYS.map(c => ({ key: c.key, label: t(c.tKey) }));
+        const after = STATIC_CATEGORIES_AFTER_KEYS.map(c => ({ key: c.key, label: t(c.tKey) }));
         const dynamicCats = categories.map(c => ({ key: `cat_${c.id}`, label: `${c.icon || ''} ${c.name}`.trim() }));
-        return [...STATIC_CATEGORIES_BEFORE, ...dynamicCats, ...STATIC_CATEGORIES_AFTER];
-    }, [categories]);
+        return [...before, ...dynamicCats, ...after];
+    }, [categories, t]);
 
     // Build a type map that includes dynamic categories
     const TYPE_MAP = useMemo(() => {
@@ -211,7 +215,7 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
         const isOwner = user && (a.owner_id === user.id || user.isAdmin || (user.permissions || []).includes('all'));
         return {
             id: a.id, name: a.name, avatar: a.avatar, description: a.description,
-            typeLabel: TYPE_MAP[getAgentType(a)] || 'Agent', isFavorite: favorites.includes(a.id), isOwner, agent: a,
+            typeLabel: TYPE_MAP[getAgentType(a)] || t('store.badge_agent'), isFavorite: favorites.includes(a.id), isOwner, agent: a,
         };
     }), [filtered, favorites, TYPE_MAP, user]);
     // Permission check: can this user edit/create agents?
@@ -230,8 +234,8 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
             <div className="px-6 pt-5 pb-4 border-b" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)' }}>
                 <div className="flex items-center justify-between mb-3">
                     <div>
-                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Agent Store</h1>
-                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{filtered.length} of {agents.length} agents</p>
+                        <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('store.title')}</h1>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{t('store.count', { visible: filtered.length, total: agents.length })}</p>
                     </div>
                     <div className="flex items-center gap-2">
                         {canManageAgents && onEditAgent && (
@@ -242,7 +246,7 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
                                     data-testid="marketplace-agent-editor"
                                 >
                                     <Pencil className="w-3.5 h-3.5" />
-                                    Agent Editor
+                                    {t('store.agent_editor')}
                                 </button>
                             )}
                         <button onClick={onClose} className="p-2 rounded-lg transition-colors" style={{ color: 'var(--text-muted)' }}>
@@ -254,7 +258,7 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
                 <div className="relative mb-3">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                     <input
-                        type="text" placeholder="Search agents..." value={search}
+                        type="text" placeholder={t('store.search_placeholder')} value={search}
                         onChange={(e) => setSearch(e.target.value)}
                         className="w-full pl-9 pr-4 py-2 rounded-lg border text-sm focus:outline-none transition-all"
                         style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
@@ -287,7 +291,7 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
                     style={{ color: hasActiveFilters ? 'var(--accent-primary)' : 'var(--text-muted)' }}
                 >
                     {showFilters ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-                    Advanced
+                    {t('store.advanced')}
                 </button>
 
                 {showFilters && (
@@ -335,7 +339,7 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
                     {/* Grid */}
                     <div>
                         <h2 className="text-[11px] font-semibold uppercase tracking-wider mb-3" style={{ color: 'var(--text-muted)' }}>
-                            {isSearching ? 'Results' : activeCategory === 'all' ? 'All agents' : CATEGORIES.find(c => c.key === activeCategory)?.label || 'Agents'}
+                            {isSearching ? t('store.results') : activeCategory === 'all' ? t('store.all_agents') : CATEGORIES.find(c => c.key === activeCategory)?.label || t('store.badge_agent')}
                             <span className="font-normal ml-1 normal-case tracking-normal">({filtered.length})</span>
                         </h2>
 
@@ -354,11 +358,11 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
                         {filtered.length === 0 && (
                             <div className="py-16 flex flex-col items-center justify-center">
                                 <div className="text-3xl mb-3">📭</div>
-                                <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>No agents found</h3>
-                                <p className="text-xs text-center max-w-xs" style={{ color: 'var(--text-muted)' }}>Try adjusting your search or filters.</p>
+                                <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{t('store.no_agents')}</h3>
+                                <p className="text-xs text-center max-w-xs" style={{ color: 'var(--text-muted)' }}>{t('store.no_agents_hint')}</p>
                                 <button onClick={() => { setActiveCategory('popular'); setActiveJobs([]); setSearch(''); }}
                                     className="mt-4 px-4 py-1.5 rounded-lg text-white text-xs font-semibold hover:opacity-90"
-                                    style={{ background: 'var(--accent-primary)' }}>Clear filters</button>
+                                    style={{ background: 'var(--accent-primary)' }}>{t('store.clear_filters')}</button>
                             </div>
                         )}
                     </div>

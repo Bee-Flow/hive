@@ -834,6 +834,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
         if (onCloseSettings) onCloseSettings();
         if (onCloseAgentDesigner) onCloseAgentDesigner();
         if (onCloseSkillsPanel) onCloseSkillsPanel();
+        if (onCloseEmailKB) onCloseEmailKB();
         setShowMarketplace(false);
         if (directChatMode) {
             setCurrentDirectConversation(null);
@@ -1069,6 +1070,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                     if (onCloseSettings) onCloseSettings();
                     if (onCloseAgentDesigner) onCloseAgentDesigner();
                     if (onCloseSkillsPanel) onCloseSkillsPanel();
+        if (onCloseEmailKB) onCloseEmailKB();
                     setShowMarketplace(false);
                     // Switch agent if the conversation belongs to a different one
                     if (conv.agent_id && (!selectedAgent || selectedAgent.id !== conv.agent_id)) {
@@ -1095,6 +1097,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 showSettings={showSettings}
                 showAgentDesigner={showAgentDesigner}
                 showSkillsPanel={showSkillsPanel}
+                showEmailKB={showEmailKB}
                 onDirectChat={handleDirectChat}
                 directChatMode={directChatMode}
                 directConversations={directConversations}
@@ -1103,6 +1106,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                     if (onCloseSettings) onCloseSettings();
                     if (onCloseAgentDesigner) onCloseAgentDesigner();
                     if (onCloseSkillsPanel) onCloseSkillsPanel();
+        if (onCloseEmailKB) onCloseEmailKB();
                     setShowMarketplace(false);
                     // Ensure we're in direct chat mode
                     if (!directChatMode) {
@@ -1137,6 +1141,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                     if (onCloseSettings) onCloseSettings();
                     if (onCloseAgentDesigner) onCloseAgentDesigner();
                     if (onCloseSkillsPanel) onCloseSkillsPanel();
+        if (onCloseEmailKB) onCloseEmailKB();
                     setShowMarketplace(false);
                     if (conv._source === 'direct') {
                         // Switch to direct chat mode and open the conversation
@@ -1184,7 +1189,11 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                         onToggleSkill={handleToggleSkill}
                     />
                 ) : showEmailKB ? (
+<<<<<<< test2
+                    /* Email Knowledge Base rendered inline in conversation area */
+=======
                     /* Email Knowledge Base settings rendered inline */
+>>>>>>> main
                     <EmailKBSettings
                         user={user}
                         onNavigateBack={onCloseEmailKB}
