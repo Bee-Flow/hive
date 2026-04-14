@@ -138,6 +138,7 @@ function App() {
     const [initialDesignerAgentId, setInitialDesignerAgentId] = useState(null);
     const [showSettings, setShowSettings] = useState(false);
     const [showSkillsPanel, setShowSkillsPanel] = useState(false);
+    const [showEmailKB, setShowEmailKB] = useState(false);
     const [encryptionState, setEncryptionState] = useState(null); // null | 'setup' | 'pin' | { recoveryKey: string }
     const [noOrganization, setNoOrganization] = useState(false);
     const [pendingApproval, setPendingApproval] = useState(false);
@@ -285,6 +286,15 @@ function App() {
             setShowSkillsPanel(true);
             setShowSettings(false);
             setShowAgentDesigner(false);
+            setShowEmailKB(false);
+            return;
+        }
+        // Email KB renders inline in conversation area
+        if (page === 'emailKB') {
+            setShowEmailKB(true);
+            setShowSettings(false);
+            setShowAgentDesigner(false);
+            setShowSkillsPanel(false);
             return;
         }
         // Support admin sub-paths like 'admin/ai-config' or 'admin/security/sso'
@@ -587,7 +597,7 @@ function App() {
             />;
         }
 
-        return <AgentHub onNavigate={navigateToPage} user={user} initialAgentId={initialUrlRef.current.agentId} initialConversationId={initialUrlRef.current.conversationId} initialDirectConvId={initialDirectConvRef.current} onLogout={handleLogout} currentPage={currentPage} showSettings={showSettings} onCloseSettings={() => { setShowSettings(false); }} showAgentDesigner={showAgentDesigner} onCloseAgentDesigner={() => setShowAgentDesigner(false)} initialDesignerAgentId={initialDesignerAgentId} showSkillsPanel={showSkillsPanel} onCloseSkillsPanel={() => setShowSkillsPanel(false)} />;
+        return <AgentHub onNavigate={navigateToPage} user={user} initialAgentId={initialUrlRef.current.agentId} initialConversationId={initialUrlRef.current.conversationId} initialDirectConvId={initialDirectConvRef.current} onLogout={handleLogout} currentPage={currentPage} showSettings={showSettings} onCloseSettings={() => { setShowSettings(false); }} showAgentDesigner={showAgentDesigner} onCloseAgentDesigner={() => setShowAgentDesigner(false)} initialDesignerAgentId={initialDesignerAgentId} showSkillsPanel={showSkillsPanel} onCloseSkillsPanel={() => setShowSkillsPanel(false)} showEmailKB={showEmailKB} onCloseEmailKB={() => setShowEmailKB(false)} />;
     };
 
     return (

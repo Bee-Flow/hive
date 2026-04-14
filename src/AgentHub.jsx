@@ -15,12 +15,13 @@ import ProjectModal from './components/ProjectModal';
 import AdvancedSettings from './pages/AdvancedSettings';
 import AgentDesigner from './components/admin/AgentDesigner';
 import SkillsPanel from './components/SkillsPanel';
+import EmailKBSettings from './components/EmailKBSettings';
 import useChatEngine from './hooks/useChatEngine';
 
 import { API_BASE, generateMessageId, authFetch } from './utils/helpers';
 import { X, Sparkles, PenLine, Heart, MoreVertical, Menu, EyeOff, Pencil } from 'lucide-react';
 
-const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = null, initialConversationId = null, initialDirectConvId = null, showSettings = false, onCloseSettings, showAgentDesigner = false, onCloseAgentDesigner, initialDesignerAgentId = null, showSkillsPanel = false, onCloseSkillsPanel }) => {
+const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = null, initialConversationId = null, initialDirectConvId = null, showSettings = false, onCloseSettings, showAgentDesigner = false, onCloseAgentDesigner, initialDesignerAgentId = null, showSkillsPanel = false, onCloseSkillsPanel, showEmailKB = false, onCloseEmailKB }) => {
     // Permission helper - checks if user has a specific permission
     const hasPermission = (perm) => {
         const perms = user?.permissions || [];
@@ -1133,6 +1134,12 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                         onClose={onCloseSkillsPanel}
                         activeSkillIds={activeSkillIds}
                         onToggleSkill={handleToggleSkill}
+                    />
+                ) : showEmailKB ? (
+                    /* Email Knowledge Base settings rendered inline */
+                    <EmailKBSettings
+                        user={user}
+                        onNavigateBack={onCloseEmailKB}
                     />
                 ) : showMarketplace ? (
                     /* Agent Marketplace rendered inline in conversation area */

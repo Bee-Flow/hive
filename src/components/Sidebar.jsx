@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
-import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, PenLine, Sparkles } from 'lucide-react';
+import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, PenLine, Sparkles, Mail } from 'lucide-react';
 import { API_BASE } from '../utils/helpers';
 import NotificationCenter from './NotificationCenter';
 import NavLink from './NavLink';
@@ -869,6 +869,20 @@ const Sidebar = ({
                                     {(currentPage === 'skills' || showSkillsPanel) && <div className={ACCENT_BAR} />}
                                     <Sparkles className={`w-4 h-4 ${currentPage === 'skills' || showSkillsPanel ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
                                     <span className={`text-[13px] ${currentPage === 'skills' || showSkillsPanel ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.skills') || 'Skills'}</span>
+                                    <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
+                                </NavLink>
+                            )}
+                            {!isMobile && (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('email_knowledge_base')) && (
+                                <NavLink
+                                    href="/email-kb"
+                                    onClick={() => setShowProfileMenu(false)}
+                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('emailKB'); }}
+                                    className={`${ROW} ${currentPage === 'emailKB' ? ROW_ACTIVE : ROW_IDLE}`}
+                                    style={{ textDecoration: 'none', color: 'inherit' }}
+                                >
+                                    {currentPage === 'emailKB' && <div className={ACCENT_BAR} />}
+                                    <Mail className={`w-4 h-4 ${currentPage === 'emailKB' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
+                                    <span className={`text-[13px] ${currentPage === 'emailKB' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('email_kb.title') || 'Email KB'}</span>
                                     <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
                                 </NavLink>
                             )}
