@@ -68,7 +68,7 @@ const LanguageSettingsSection = () => {
 
     return (
         <div className="space-y-1.5 mt-6">
-            <p className="text-[11px] font-semibold uppercase tracking-widest px-1 mb-2" style={{ color: 'var(--text-muted)' }}>Language</p>
+            <p className="text-[11px] font-semibold uppercase tracking-widest px-1 mb-2" style={{ color: 'var(--text-muted)' }}>{t('settings.language_section')}</p>
             <div className="rounded-xl" style={{ border: '1px solid var(--border-subtle)' }}>
                 <div className="px-5 py-3.5" style={{ background: 'var(--bg-secondary)', borderRadius: '0.75rem' }}>
                     <div className="flex items-center gap-3">
@@ -76,8 +76,8 @@ const LanguageSettingsSection = () => {
                             <Globe className="w-4 h-4" style={{ color: '#3b82f6' }} />
                         </div>
                         <div className="flex-1 min-w-0">
-                            <p className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>Interface Language</p>
-                            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Choose the language for the BeeFlow interface</p>
+                            <p className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{t('settings.interface_language')}</p>
+                            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{t('settings.interface_language_desc')}</p>
                         </div>
                         <div className="relative" ref={ref}>
                             <button
@@ -118,6 +118,7 @@ const LanguageSettingsSection = () => {
 
 // ── EU-Only Models Toggle ─────────────────────────────────────────────────────
 const EUPrivacySection = () => {
+    const { t } = useTranslation();
     const [euEnabled, setEuEnabled] = useState(false);
     const [orgForced, setOrgForced] = useState(false);
     const [hasEuModels, setHasEuModels] = useState(false);
@@ -157,18 +158,18 @@ const EUPrivacySection = () => {
 
     return (
         <div className="space-y-1.5 mt-6">
-            <p className="text-[11px] font-semibold uppercase tracking-widest px-1 mb-2" style={{ color: 'var(--text-muted)' }}>Privacy</p>
+            <p className="text-[11px] font-semibold uppercase tracking-widest px-1 mb-2" style={{ color: 'var(--text-muted)' }}>{t('settings.privacy_section')}</p>
             <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
                 <div className="flex items-center gap-3 px-5 py-4" style={{ background: 'var(--bg-secondary)', borderRadius: '0.75rem' }}>
                     <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'rgba(59,130,246,0.1)' }}>
                         <Shield className="w-4 h-4" style={{ color: '#3b82f6' }} />
                     </div>
                     <div className="flex-1 min-w-0">
-                        <p className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>EU-Only Models</p>
+                        <p className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>{t('settings.eu_only_models')}</p>
                         <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
                             {orgForced
-                                ? 'Your organisation enforces EU-compliant AI models for all requests.'
-                                : 'Route all AI requests through EU-hosted models for data residency compliance.'}
+                                ? t('settings.eu_only_models_org_forced')
+                                : t('settings.eu_only_models_desc')}
                         </p>
                     </div>
                     {orgForced ? (
@@ -176,7 +177,7 @@ const EUPrivacySection = () => {
                             className="text-[10px] font-semibold px-2.5 py-1 rounded-full flex-shrink-0"
                             style={{ background: 'rgba(5,150,105,0.1)', color: '#059669' }}
                         >
-                            Enforced by org
+                            {t('settings.enforced_by_org')}
                         </span>
                     ) : (
                         <button
@@ -232,7 +233,7 @@ const StartupAgentSection = ({ defaultAgentMode, setDefaultAgentMode, defaultAge
                                 <p className="text-[13px] truncate mt-0.5" style={{ color: 'var(--text-muted)' }}>{localUser.email}</p>
                             )}
                             <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                                Click avatar to change photo or emoji
+                                {t('settings.click_avatar_hint')}
                             </p>
                         </div>
                     </div>
@@ -241,7 +242,7 @@ const StartupAgentSection = ({ defaultAgentMode, setDefaultAgentMode, defaultAge
 
             <div className="space-y-1.5">
                 <p className="text-[11px] font-semibold uppercase tracking-widest px-1 mb-2" style={{ color: 'var(--text-muted)' }}>
-                    Startup
+                    {t('settings.startup_section')}
                 </p>
 
                 <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
@@ -285,7 +286,7 @@ const StartupAgentSection = ({ defaultAgentMode, setDefaultAgentMode, defaultAge
                     {/* Agent selector — only when mode = specific */}
                     {showAgentSelect && (
                         <div className="px-5 py-4" style={{ background: 'var(--bg-secondary)' }}>
-                            <p className="text-[11px] font-medium mb-2" style={{ color: 'var(--text-muted)' }}>Select agent</p>
+                            <p className="text-[11px] font-medium mb-2" style={{ color: 'var(--text-muted)' }}>{t('settings.select_agent_label')}</p>
                             <select
                                 value={defaultAgentId}
                                 onChange={e => setDefaultAgentId(e.target.value)}
@@ -346,7 +347,7 @@ const StartupAgentSection = ({ defaultAgentMode, setDefaultAgentMode, defaultAge
             {/* Session Settings */}
             {onLogout && (
                 <div className="space-y-1.5 mt-6">
-                    <p className="text-[11px] font-semibold uppercase tracking-widest px-1 mb-2" style={{ color: 'var(--text-muted)' }}>Session</p>
+                    <p className="text-[11px] font-semibold uppercase tracking-widest px-1 mb-2" style={{ color: 'var(--text-muted)' }}>{t('settings.session_section')}</p>
                     <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
                         <button
                             onClick={onLogout}
@@ -358,7 +359,7 @@ const StartupAgentSection = ({ defaultAgentMode, setDefaultAgentMode, defaultAge
                             <svg width="15" height="15" fill="none" stroke="#dc2626" viewBox="0 0 24 24" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round">
                                 <path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4M16 17l5-5-5-5M21 12H9" />
                             </svg>
-                            <span className="text-[13px] font-medium" style={{ color: '#dc2626' }}>Sign out</span>
+                            <span className="text-[13px] font-medium" style={{ color: '#dc2626' }}>{t('settings.sign_out')}</span>
                         </button>
                     </div>
                 </div>

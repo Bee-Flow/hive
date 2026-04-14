@@ -222,6 +222,7 @@ const UsageBar = ({ label, icon: Icon, used, limit, unit, color = '#8b5cf6', pct
 
 // ── Org Default Language ───────────────────────────────────────────────────
 const OrgDefaultLanguage = () => {
+    const { t } = useTranslation();
     const [locales, setLocales] = useState([]);
     const [defaultLocale, setDefaultLocale] = useState('en');
     const [saving, setSaving] = useState(false);
@@ -263,8 +264,8 @@ const OrgDefaultLanguage = () => {
     return (
         <div className="space-y-5">
             <div>
-                <h2 className="text-lg font-bold text-[var(--text-primary)]">Default Language</h2>
-                <p className="text-sm text-[var(--text-muted)] mt-0.5">Set the default interface language for new users in your organisation</p>
+                <h2 className="text-lg font-bold text-[var(--text-primary)]">{t('org.default_language')}</h2>
+                <p className="text-sm text-[var(--text-muted)] mt-0.5">{t('org.default_language_desc')}</p>
             </div>
             <div className="p-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
                 <div className="flex items-start gap-3">
@@ -276,10 +277,9 @@ const OrgDefaultLanguage = () => {
                         </svg>
                     </div>
                     <div className="flex-1 min-w-0">
-                        <p className="text-[13px] font-medium text-[var(--text-primary)]">New User Language</p>
+                        <p className="text-[13px] font-medium text-[var(--text-primary)]">{t('org.new_user_language')}</p>
                         <p className="text-[11px] text-[var(--text-muted)] mt-0.5 mb-3">
-                            When a new user signs in for the first time, the interface will be displayed in this language.
-                            Users can change their language at any time in their personal settings.
+                            {t('org.new_user_language_desc')}
                         </p>
                         <div className="flex items-center gap-3">
                             <select
@@ -295,11 +295,11 @@ const OrgDefaultLanguage = () => {
                             </select>
                             {saved && (
                                 <span className="text-[11px] font-medium flex items-center gap-1" style={{ color: '#059669' }}>
-                                    <Check className="w-3.5 h-3.5" /> Saved
+                                    <Check className="w-3.5 h-3.5" /> {t('common.saved')}
                                 </span>
                             )}
                             {saving && (
-                                <span className="text-[11px] text-[var(--text-muted)]">Saving…</span>
+                                <span className="text-[11px] text-[var(--text-muted)]">{t('common.saving')}</span>
                             )}
                         </div>
                     </div>
@@ -309,8 +309,7 @@ const OrgDefaultLanguage = () => {
                 style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.15)', color: 'var(--text-secondary)' }}>
                 <Info className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: '#3b82f6' }} />
                 <span>
-                    This setting only affects new users who haven't chosen a language yet. Existing users keep their current language preference.
-                    To add more languages to BeeFlow, go to the admin dashboard &gt; Languages section.
+                    {t('org.default_language_info')}
                 </span>
             </div>
         </div>
@@ -999,7 +998,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                             <Field label={t('org.tagline')} hint={t('org.tagline_hint')}>
                                 <input type="text" value={orgData.tagline} onChange={e => setOrgData(p => ({ ...p, tagline: e.target.value }))} className={inputClass} placeholder="Your Processes, Pollinated with Intelligence." />
                             </Field>
-                            <Field label="Description">
+                            <Field label={t('org.description')}>
                                 <input type="text" value={orgData.description} onChange={e => setOrgData(p => ({ ...p, description: e.target.value }))} className={inputClass} placeholder="Brief description of your organisation" />
                             </Field>
                             <div className="grid grid-cols-2 gap-4">

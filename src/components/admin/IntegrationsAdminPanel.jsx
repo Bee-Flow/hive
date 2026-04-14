@@ -24,6 +24,7 @@ const ALL_INTEGRATIONS = [
     { id: 'google-contacts', label: 'Contacts', description: 'Search, create & update contacts', category: 'Google' },
     { id: 'google-keep', label: 'Keep', description: 'List, create & delete notes (Workspace only)', category: 'Google' },
     { id: 'outlook', label: 'Outlook', description: 'Send and read emails', category: 'Microsoft' },
+    { id: 'outlook-readonly', label: 'Outlook (Read-Only)', description: 'Search and read emails only', category: 'Microsoft' },
     { id: 'ms-calendar', label: 'Calendar', description: 'Manage calendar events', category: 'Microsoft' },
     { id: 'onedrive', label: 'OneDrive', description: 'Access and manage files', category: 'Microsoft' },
     { id: 'ms-contacts', label: 'Contacts', description: 'Search, create & update contacts', category: 'Microsoft' },
