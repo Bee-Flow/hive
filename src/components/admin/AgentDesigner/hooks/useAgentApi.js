@@ -373,9 +373,15 @@ export default function useAgentApi(state, { systemMode, securityMode, initialAg
                 setSharedGroups(newSharedGroups);
                 setShowPublishMenu(false);
                 fetchAgents();
+            } else {
+                const data = await res.json().catch(() => ({}));
+                const msg = data.error || `Failed to publish agent (${res.status})`;
+                console.error('Failed to toggle publish:', msg);
+                alert(msg);
             }
         } catch (err) {
             console.error('Failed to toggle publish:', err);
+            alert('Failed to publish agent. Please try again.');
         }
     };
 
