@@ -832,6 +832,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
     const handleNewChat = () => {
         if (onCloseSettings) onCloseSettings();
         if (onCloseAgentDesigner) onCloseAgentDesigner();
+        if (onCloseSkillsPanel) onCloseSkillsPanel();
         setShowMarketplace(false);
         if (directChatMode) {
             setCurrentDirectConversation(null);
@@ -843,7 +844,22 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
             updateDirectChatUrl(null);
             return;
         }
-        if (!selectedAgent) return;
+        if (!selectedAgent) {
+            // No agent selected — fall back to direct chat mode
+            setDirectChatMode(true);
+            setSelectedAgent(null);
+            setCurrentDirectConversation(null);
+            setMessages([]);
+            setNotebookContent('');
+            setNotebookSelection('');
+            setShowNotebook(false);
+            setNotebookLinkedId(null);
+            localStorage.setItem('lastUsedMode', 'direct-chat');
+            loadDirectConversations();
+            loadModelTiers();
+            updateDirectChatUrl(null);
+            return;
+        }
         setCurrentConversation({ id: null, title: 'New Chat', messages: [] });
         setMessages([]);
         // Keep notebook content alive across chats — don't reset
@@ -1048,7 +1064,22 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 groupedConversations={getGroupedConversations()}
                 currentConversation={currentConversation}
                 onSelectConversation={(conv) => {
-                    selectConversation(conv.agent_id, conv.id);
+                    // Close any open overlays
+                    if (onCloseSettings) onCloseSettings();
+                    if (onCloseAgentDesigner) onCloseAgentDesigner();
+                    if (onCloseSkillsPanel) onCloseSkillsPanel();
+                    setShowMarketplace(false);
+                    // Switch agent if the conversation belongs to a different one
+                    if (conv.agent_id && (!selectedAgent || selectedAgent.id !== conv.agent_id)) {
+                        const agent = agents.find(a => a.id === conv.agent_id);
+                        if (agent) {
+                            setSelectedAgent(agent);
+                            setDirectChatMode(false);
+                            localStorage.setItem('lastUsedAgentId', agent.id);
+                            localStorage.setItem('lastUsedMode', 'agent');
+                        }
+                    }
+                    selectConversation(conv.agent_id || selectedAgent?.id, conv.id);
                     if (isMobile) setSidebarOpen(false);
                 }}
                 onDeleteConversation={handleDeleteConversation}
@@ -1067,6 +1098,18 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 directChatMode={directChatMode}
                 directConversations={directConversations}
                 onSelectDirectConversation={(conv) => {
+                    // Close any open overlays
+                    if (onCloseSettings) onCloseSettings();
+                    if (onCloseAgentDesigner) onCloseAgentDesigner();
+                    if (onCloseSkillsPanel) onCloseSkillsPanel();
+                    setShowMarketplace(false);
+                    // Ensure we're in direct chat mode
+                    if (!directChatMode) {
+                        setDirectChatMode(true);
+                        setSelectedAgent(null);
+                        localStorage.setItem('lastUsedMode', 'direct-chat');
+                        loadModelTiers();
+                    }
                     handleSelectDirectConversation(conv);
                     if (isMobile) setSidebarOpen(false);
                 }}
@@ -1089,6 +1132,11 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 chatHistoryMode={chatHistoryMode}
                 allAgentConversations={allAgentConversations}
                 onSelectAllChatsConversation={(conv) => {
+                    // Close any open overlays
+                    if (onCloseSettings) onCloseSettings();
+                    if (onCloseAgentDesigner) onCloseAgentDesigner();
+                    if (onCloseSkillsPanel) onCloseSkillsPanel();
+                    setShowMarketplace(false);
                     if (conv._source === 'direct') {
                         // Switch to direct chat mode and open the conversation
                         if (!directChatMode) {
