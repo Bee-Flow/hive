@@ -443,14 +443,40 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, knowledgeBas
 };
 
 /* ─── Add Connection Modal ─── */
-const AddConnectionModal = ({ onClose, onAdd, knowledgeBases, oauthProvider, t }) => {
+const AddConnectionModal = ({ onClose, onAdd, knowledgeBases, onKBCreated, oauthProvider, t }) => {
     const [provider, setProvider] = useState(oauthProvider === 'microsoft' ? 'outlook' : oauthProvider === 'google' ? 'gmail' : '');
     const [kbId, setKbId] = useState(knowledgeBases?.[0]?.id || '');
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [creatingKB, setCreatingKB] = useState(false);
+    const [newKBName, setNewKBName] = useState('');
 
     const canConnectGmail = oauthProvider === 'google';
     const canConnectOutlook = oauthProvider === 'microsoft';
+
+    const handleCreateKB = async () => {
+        if (!newKBName.trim()) return;
+        setLoading(true);
+        setError('');
+        try {
+            const res = await fetch(`${API_BASE}/api/kb`, {
+                method: 'POST',
+                credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: newKBName.trim() }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+            setKbId(data.id);
+            setCreatingKB(false);
+            setNewKBName('');
+            if (onKBCreated) onKBCreated(data);
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     const handleSubmit = async () => {
         if (!provider || !kbId) return;
@@ -506,12 +532,39 @@ const AddConnectionModal = ({ onClose, onAdd, knowledgeBases, oauthProvider, t }
                 <div>
                     <label className="text-[12px] font-medium text-[var(--text-secondary)] mb-1.5 block">{t('email_kb.target_kb')}</label>
                     <p className="text-[10px] text-[var(--text-tertiary)] mb-1.5">{t('email_kb.target_kb_desc')}</p>
-                    <select value={kbId} onChange={e => setKbId(e.target.value)}
-                        className="w-full px-3 py-2 rounded-lg text-[13px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)] text-[var(--text-primary)]">
-                        {(knowledgeBases || []).map(kb => (
-                            <option key={kb.id} value={kb.id}>{kb.name}</option>
-                        ))}
-                    </select>
+                    {creatingKB ? (
+                        <div className="flex gap-2">
+                            <input
+                                value={newKBName}
+                                onChange={e => setNewKBName(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && handleCreateKB()}
+                                placeholder="Knowledge base name..."
+                                autoFocus
+                                className="flex-1 px-3 py-2 rounded-lg text-[13px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]"
+                            />
+                            <button onClick={handleCreateKB} disabled={!newKBName.trim() || loading}
+                                className="px-3 py-2 rounded-lg text-[12px] font-medium bg-[var(--accent-primary)] text-white hover:opacity-90 disabled:opacity-50">
+                                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Create'}
+                            </button>
+                            <button onClick={() => { setCreatingKB(false); setNewKBName(''); }}
+                                className="px-2 py-2 rounded-lg text-[12px] text-[var(--text-tertiary)] hover:bg-[var(--bg-secondary)]">
+                                Cancel
+                            </button>
+                        </div>
+                    ) : (
+                        <div className="flex gap-2">
+                            <select value={kbId} onChange={e => setKbId(e.target.value)}
+                                className="flex-1 px-3 py-2 rounded-lg text-[13px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)] text-[var(--text-primary)]">
+                                {(knowledgeBases || []).map(kb => (
+                                    <option key={kb.id} value={kb.id}>{kb.name}</option>
+                                ))}
+                            </select>
+                            <button onClick={() => setCreatingKB(true)}
+                                className="flex items-center gap-1 px-3 py-2 rounded-lg text-[12px] font-medium text-[var(--accent-primary)] hover:bg-[var(--accent-primary)]/5 border border-[var(--border-subtle)] transition-all whitespace-nowrap">
+                                <Plus className="w-3.5 h-3.5" /> New
+                            </button>
+                        </div>
+                    )}
                 </div>
 
                 {error && (
@@ -525,9 +578,9 @@ const AddConnectionModal = ({ onClose, onAdd, knowledgeBases, oauthProvider, t }
                         className="px-4 py-2 rounded-lg text-[13px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] transition-all">
                         Cancel
                     </button>
-                    <button onClick={handleSubmit} disabled={!provider || !kbId || loading}
+                    <button onClick={handleSubmit} disabled={!provider || !kbId || loading || creatingKB}
                         className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-[13px] font-medium bg-[var(--accent-primary)] text-white hover:opacity-90 disabled:opacity-50 transition-all">
-                        {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                        {loading && !creatingKB ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
                         Connect
                     </button>
                 </div>
@@ -668,6 +721,7 @@ const EmailKBSettings = ({ user, onNavigateBack }) => {
                     onClose={() => setShowAddModal(false)}
                     onAdd={handleAdd}
                     knowledgeBases={knowledgeBases}
+                    onKBCreated={(newKB) => setKnowledgeBases(prev => [newKB, ...prev])}
                     oauthProvider={oauthProvider}
                     t={t}
                 />
