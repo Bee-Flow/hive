@@ -87,6 +87,7 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, onEditingCha
         ai_system_prompt: conn.ai_system_prompt || '',
         redact_pii: conn.redact_pii !== false,
         max_emails_per_sync: conn.max_emails_per_sync || 50,
+        sync_after_date: conn.sync_after_date || '',
     });
     const [senderInput, setSenderInput] = useState('');
     const [folderInput, setFolderInput] = useState('');
@@ -271,6 +272,15 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, onEditingCha
                                         className="flex-1 accent-[var(--accent-primary)]" />
                                     <span className="text-[12px] font-medium text-[var(--text-primary)] w-16 text-right">{settings.sync_interval_minutes} {t('email_kb.minutes')}</span>
                                 </div>
+                            </div>
+
+                            {/* Sync after date */}
+                            <div>
+                                <label className="text-[11px] font-medium text-[var(--text-secondary)] mb-1 block">{t('email_kb.sync_after_date')}</label>
+                                <p className="text-[10px] text-[var(--text-tertiary)] mb-1.5">{t('email_kb.sync_after_date_desc')}</p>
+                                <input type="date" value={settings.sync_after_date || ''}
+                                    onChange={e => setSettings(s => ({ ...s, sync_after_date: e.target.value || '' }))}
+                                    className="px-3 py-1.5 rounded-lg text-[12px] bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]" />
                             </div>
 
                             {/* Toggles */}
