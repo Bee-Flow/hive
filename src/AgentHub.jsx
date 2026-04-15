@@ -1189,11 +1189,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                         onToggleSkill={handleToggleSkill}
                     />
                 ) : showEmailKB ? (
-<<<<<<< test2
-                    /* Email Knowledge Base rendered inline in conversation area */
-=======
                     /* Email Knowledge Base settings rendered inline */
->>>>>>> main
                     <EmailKBSettings
                         user={user}
                         onNavigateBack={onCloseEmailKB}
