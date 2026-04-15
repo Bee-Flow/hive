@@ -76,6 +76,7 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, onEditingCha
     const [showSettings, setShowSettings] = useState(false);
     const [showLogs, setShowLogs] = useState(false);
     const [logs, setLogs] = useState([]);
+    const defaultPc = { language: '', article: { modelTier: 'fast', systemPrompt: '' }, category: { modelTier: 'fast', systemPrompt: '' }, merge: { modelTier: 'fast', systemPrompt: '' } };
     const [settings, setSettings] = useState({
         sync_interval_minutes: conn.sync_interval_minutes || 60,
         group_threads: conn.group_threads,
@@ -88,6 +89,7 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, onEditingCha
         redact_pii: conn.redact_pii !== false,
         max_emails_per_sync: conn.max_emails_per_sync || 50,
         sync_after_date: conn.sync_after_date || '',
+        pipeline_config: { ...defaultPc, ...conn.pipeline_config, article: { ...defaultPc.article, ...conn.pipeline_config?.article }, category: { ...defaultPc.category, ...conn.pipeline_config?.category }, merge: { ...defaultPc.merge, ...conn.pipeline_config?.merge } },
     });
     const [senderInput, setSenderInput] = useState('');
     const [folderInput, setFolderInput] = useState('');
@@ -244,160 +246,202 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, onEditingCha
                         </div>
                     )}
 
-                    {/* Settings panel */}
+                    {/* Settings panel — timeline layout */}
                     {showSettings && (
-                        <div className="p-4 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-subtle)] space-y-4">
+                        <div className="p-4 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-subtle)] space-y-5">
                             <h4 className="text-[13px] font-semibold text-[var(--text-primary)]">{t('email_kb.connection_settings')}</h4>
 
-                            {/* Target KB */}
-                            <div>
-                                <label className="text-[11px] font-medium text-[var(--text-secondary)] mb-1 block">{t('email_kb.target_kb')}</label>
-                                <select
-                                    value={settings.knowledge_base_id}
-                                    onChange={e => setSettings(s => ({ ...s, knowledge_base_id: e.target.value }))}
-                                    className="w-full px-3 py-1.5 rounded-lg text-[12px] bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)]"
-                                >
-                                    {(knowledgeBases || []).map(kb => (
-                                        <option key={kb.id} value={kb.id}>{kb.name}</option>
-                                    ))}
-                                </select>
-                            </div>
-
-                            {/* Sync interval */}
-                            <div>
-                                <label className="text-[11px] font-medium text-[var(--text-secondary)] mb-1 block">{t('email_kb.sync_interval')}</label>
-                                <div className="flex items-center gap-2">
-                                    <input type="range" min="15" max="120" step="15" value={settings.sync_interval_minutes}
-                                        onChange={e => setSettings(s => ({ ...s, sync_interval_minutes: parseInt(e.target.value) }))}
-                                        className="flex-1 accent-[var(--accent-primary)]" />
-                                    <span className="text-[12px] font-medium text-[var(--text-primary)] w-16 text-right">{settings.sync_interval_minutes} {t('email_kb.minutes')}</span>
+                            {/* ── Connection Settings ── */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-[11px] font-medium text-[var(--text-secondary)] mb-1 block">{t('email_kb.target_kb')}</label>
+                                    <select value={settings.knowledge_base_id} onChange={e => setSettings(s => ({ ...s, knowledge_base_id: e.target.value }))}
+                                        className="w-full px-3 py-1.5 rounded-lg text-[12px] bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)]">
+                                        {(knowledgeBases || []).map(kb => <option key={kb.id} value={kb.id}>{kb.name}</option>)}
+                                    </select>
+                                </div>
+                                <div>
+                                    <label className="text-[11px] font-medium text-[var(--text-secondary)] mb-1 block">{t('email_kb.language')}</label>
+                                    <select value={settings.pipeline_config.language} onChange={e => setSettings(s => ({ ...s, pipeline_config: { ...s.pipeline_config, language: e.target.value } }))}
+                                        className="w-full px-3 py-1.5 rounded-lg text-[12px] bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)]">
+                                        <option value="">{t('email_kb.language_auto')}</option>
+                                        <option value="Nederlands">Nederlands</option>
+                                        <option value="English">English</option>
+                                        <option value="Deutsch">Deutsch</option>
+                                        <option value="Fran\u00e7ais">Fran\u00e7ais</option>
+                                    </select>
                                 </div>
                             </div>
-
-                            {/* Sync after date */}
-                            <div>
-                                <label className="text-[11px] font-medium text-[var(--text-secondary)] mb-1 block">{t('email_kb.sync_after_date')}</label>
-                                <p className="text-[10px] text-[var(--text-tertiary)] mb-1.5">{t('email_kb.sync_after_date_desc')}</p>
-                                <input type="date" value={settings.sync_after_date || ''}
-                                    onChange={e => setSettings(s => ({ ...s, sync_after_date: e.target.value || '' }))}
-                                    className="px-3 py-1.5 rounded-lg text-[12px] bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]" />
-                            </div>
-
-                            {/* Toggles */}
-                            <div className="grid grid-cols-2 gap-3">
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                    <input type="checkbox" checked={settings.group_threads}
-                                        onChange={e => setSettings(s => ({ ...s, group_threads: e.target.checked }))}
-                                        className="w-4 h-4 rounded accent-[var(--accent-primary)]" />
-                                    <div>
-                                        <div className="text-[12px] font-medium text-[var(--text-primary)]">{t('email_kb.group_threads')}</div>
-                                        <div className="text-[10px] text-[var(--text-tertiary)]">{t('email_kb.group_threads_desc')}</div>
+                            <div className="grid grid-cols-3 gap-3">
+                                <div>
+                                    <label className="text-[11px] font-medium text-[var(--text-secondary)] mb-1 block">{t('email_kb.sync_interval')}</label>
+                                    <div className="flex items-center gap-2">
+                                        <input type="range" min="15" max="120" step="15" value={settings.sync_interval_minutes}
+                                            onChange={e => setSettings(s => ({ ...s, sync_interval_minutes: parseInt(e.target.value) }))}
+                                            className="flex-1 accent-[var(--accent-primary)]" />
+                                        <span className="text-[11px] text-[var(--text-primary)] w-12 text-right">{settings.sync_interval_minutes}m</span>
                                     </div>
-                                </label>
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                    <input type="checkbox" checked={settings.process_attachments}
-                                        onChange={e => setSettings(s => ({ ...s, process_attachments: e.target.checked }))}
-                                        className="w-4 h-4 rounded accent-[var(--accent-primary)]" />
-                                    <div>
-                                        <div className="text-[12px] font-medium text-[var(--text-primary)]">{t('email_kb.process_attachments')}</div>
-                                        <div className="text-[10px] text-[var(--text-tertiary)]">{t('email_kb.process_attachments_desc')}</div>
-                                    </div>
-                                </label>
-                            </div>
-
-                            {/* PII redaction + max emails */}
-                            <div className="grid grid-cols-2 gap-3">
-                                <label className="flex items-center gap-2 cursor-pointer">
-                                    <input type="checkbox" checked={settings.redact_pii}
-                                        onChange={e => setSettings(s => ({ ...s, redact_pii: e.target.checked }))}
-                                        className="w-4 h-4 rounded accent-[var(--accent-primary)]" />
-                                    <div>
-                                        <div className="text-[12px] font-medium text-[var(--text-primary)]">{t('email_kb.redact_pii')}</div>
-                                        <div className="text-[10px] text-[var(--text-tertiary)]">{t('email_kb.redact_pii_desc')}</div>
-                                    </div>
-                                </label>
+                                </div>
+                                <div>
+                                    <label className="text-[11px] font-medium text-[var(--text-secondary)] mb-1 block">{t('email_kb.sync_after_date')}</label>
+                                    <input type="date" value={settings.sync_after_date || ''} onChange={e => setSettings(s => ({ ...s, sync_after_date: e.target.value || '' }))}
+                                        className="w-full px-2 py-1.5 rounded-lg text-[11px] bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]" />
+                                </div>
                                 <div>
                                     <label className="text-[11px] font-medium text-[var(--text-secondary)] mb-1 block">{t('email_kb.max_emails')}</label>
-                                    <div className="flex items-center gap-2">
-                                        <input type="number" min="1" max="500" value={settings.max_emails_per_sync}
-                                            onChange={e => setSettings(s => ({ ...s, max_emails_per_sync: Math.max(1, Math.min(500, parseInt(e.target.value) || 50)) }))}
-                                            className="w-20 px-2.5 py-1.5 rounded-lg text-[12px] bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]" />
-                                        <span className="text-[10px] text-[var(--text-tertiary)]">{t('email_kb.max_emails_desc')}</span>
+                                    <input type="number" min="1" max="500" value={settings.max_emails_per_sync}
+                                        onChange={e => setSettings(s => ({ ...s, max_emails_per_sync: Math.max(1, Math.min(500, parseInt(e.target.value) || 50)) }))}
+                                        className="w-full px-2 py-1.5 rounded-lg text-[11px] bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]" />
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-3 gap-3">
+                                {[['group_threads', t('email_kb.group_threads')], ['process_attachments', t('email_kb.process_attachments')], ['redact_pii', t('email_kb.redact_pii')]].map(([key, label]) => (
+                                    <label key={key} className="flex items-center gap-2 cursor-pointer">
+                                        <input type="checkbox" checked={!!settings[key]} onChange={e => setSettings(s => ({ ...s, [key]: e.target.checked }))}
+                                            className="w-3.5 h-3.5 rounded accent-[var(--accent-primary)]" />
+                                        <span className="text-[11px] text-[var(--text-primary)]">{label}</span>
+                                    </label>
+                                ))}
+                            </div>
+                            {/* Folder filter + blacklist */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <label className="text-[11px] font-medium text-[var(--text-secondary)] mb-1 block">{t('email_kb.folder_filter')}</label>
+                                    <div className="flex gap-1 mb-1">
+                                        <input value={folderInput} onChange={e => setFolderInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addFolderEntry()}
+                                            placeholder={conn.provider === 'gmail' ? 'SENT, INBOX' : 'Inbox, SentItems'}
+                                            className="flex-1 px-2 py-1 rounded text-[11px] bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]" />
+                                        <button onClick={addFolderEntry} className="px-2 py-1 rounded text-[10px] bg-[var(--accent-primary)] text-white"><Plus className="w-3 h-3" /></button>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1">{settings.folder_filter.map(f => (
+                                        <span key={f} className="inline-flex items-center gap-0.5 px-1.5 py-px rounded-full text-[10px] bg-blue-500/10 text-blue-600">{f}<button onClick={() => removeFolderEntry(f)}>×</button></span>
+                                    ))}</div>
+                                </div>
+                                <div>
+                                    <label className="text-[11px] font-medium text-[var(--text-secondary)] mb-1 block">{t('email_kb.sender_blacklist')}</label>
+                                    <div className="flex gap-1 mb-1">
+                                        <input value={senderInput} onChange={e => setSenderInput(e.target.value)} onKeyDown={e => e.key === 'Enter' && addBlacklistEntry()}
+                                            placeholder="noreply@example.com"
+                                            className="flex-1 px-2 py-1 rounded text-[11px] bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]" />
+                                        <button onClick={addBlacklistEntry} className="px-2 py-1 rounded text-[10px] bg-[var(--accent-primary)] text-white"><Plus className="w-3 h-3" /></button>
+                                    </div>
+                                    <div className="flex flex-wrap gap-1">{settings.sender_blacklist.map(e => (
+                                        <span key={e} className="inline-flex items-center gap-0.5 px-1.5 py-px rounded-full text-[10px] bg-red-500/10 text-red-600">{e}<button onClick={() => removeBlacklistEntry(e)}>×</button></span>
+                                    ))}</div>
+                                </div>
+                            </div>
+
+                            {/* ── Pipeline Timeline ── */}
+                            <div className="border-t border-[var(--border-subtle)] pt-4">
+                                <h4 className="text-[12px] font-semibold text-[var(--text-primary)] mb-3">{t('email_kb.pipeline_config')}</h4>
+                                <div className="relative pl-6">
+                                    {/* Vertical timeline line */}
+                                    <div className="absolute left-[9px] top-2 bottom-2 w-px bg-[var(--border-subtle)]" />
+
+                                    {/* Stage 1: Cleanup (no config) */}
+                                    <div className="relative mb-4">
+                                        <div className="absolute -left-6 top-1 w-[18px] h-[18px] rounded-full bg-[var(--bg-tertiary)] border-2 border-[var(--border-subtle)] flex items-center justify-center text-[9px]">1</div>
+                                        <div className="text-[11px] font-medium text-[var(--text-tertiary)]">{t('email_kb.stage_cleanup')}</div>
+                                        <div className="text-[10px] text-[var(--text-tertiary)]">{t('email_kb.stage_cleanup_desc')}</div>
+                                    </div>
+
+                                    {/* Stage 2: Article Generation */}
+                                    {(() => { const stageKey = 'article'; const pc = settings.pipeline_config; return (
+                                    <div className="relative mb-4">
+                                        <div className="absolute -left-6 top-1 w-[18px] h-[18px] rounded-full bg-blue-500/20 border-2 border-blue-500/40 flex items-center justify-center text-[9px] text-blue-600 font-bold">2</div>
+                                        <div className="p-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <div className="text-[11px] font-semibold text-[var(--text-primary)]">{t('email_kb.stage_article')}</div>
+                                                    <div className="text-[10px] text-[var(--text-tertiary)]">{t('email_kb.stage_article_desc')}</div>
+                                                </div>
+                                                <select value={pc[stageKey].modelTier} onChange={e => setSettings(s => ({ ...s, pipeline_config: { ...s.pipeline_config, [stageKey]: { ...s.pipeline_config[stageKey], modelTier: e.target.value } } }))}
+                                                    className="px-2 py-1 rounded text-[11px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)] text-[var(--text-primary)]">
+                                                    <option value="fast">{t('email_kb.tier_fast')}</option>
+                                                    <option value="thinking">{t('email_kb.tier_thinking')}</option>
+                                                    <option value="writer">{t('email_kb.tier_writer')}</option>
+                                                    <option value="deep_thinking">{t('email_kb.tier_deep_thinking')}</option>
+                                                </select>
+                                            </div>
+                                            <details className="text-[10px]">
+                                                <summary className="cursor-pointer text-[var(--text-tertiary)] hover:text-[var(--accent-primary)]">{t('email_kb.custom_prompt')}</summary>
+                                                <textarea value={pc[stageKey].systemPrompt} onChange={e => setSettings(s => ({ ...s, pipeline_config: { ...s.pipeline_config, [stageKey]: { ...s.pipeline_config[stageKey], systemPrompt: e.target.value } } }))}
+                                                    placeholder={t('email_kb.custom_prompt_placeholder')} rows={3}
+                                                    className="w-full mt-1.5 px-2 py-1.5 rounded text-[11px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)] resize-y font-mono" />
+                                                {pc[stageKey].systemPrompt && <button onClick={() => setSettings(s => ({ ...s, pipeline_config: { ...s.pipeline_config, [stageKey]: { ...s.pipeline_config[stageKey], systemPrompt: '' } } }))}
+                                                    className="flex items-center gap-1 mt-1 text-[var(--text-tertiary)] hover:text-[var(--accent-primary)]"><RotateCcw className="w-3 h-3" />{t('email_kb.reset_prompt')}</button>}
+                                            </details>
+                                        </div>
+                                    </div>
+                                    ); })()}
+
+                                    {/* Stage 3: Categorization */}
+                                    {(() => { const stageKey = 'category'; const pc = settings.pipeline_config; return (
+                                    <div className="relative mb-4">
+                                        <div className="absolute -left-6 top-1 w-[18px] h-[18px] rounded-full bg-amber-500/20 border-2 border-amber-500/40 flex items-center justify-center text-[9px] text-amber-600 font-bold">3</div>
+                                        <div className="p-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <div className="text-[11px] font-semibold text-[var(--text-primary)]">{t('email_kb.stage_category')}</div>
+                                                    <div className="text-[10px] text-[var(--text-tertiary)]">{t('email_kb.stage_category_desc')}</div>
+                                                </div>
+                                                <select value={pc[stageKey].modelTier} onChange={e => setSettings(s => ({ ...s, pipeline_config: { ...s.pipeline_config, [stageKey]: { ...s.pipeline_config[stageKey], modelTier: e.target.value } } }))}
+                                                    className="px-2 py-1 rounded text-[11px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)] text-[var(--text-primary)]">
+                                                    <option value="fast">{t('email_kb.tier_fast')}</option>
+                                                    <option value="thinking">{t('email_kb.tier_thinking')}</option>
+                                                    <option value="writer">{t('email_kb.tier_writer')}</option>
+                                                    <option value="deep_thinking">{t('email_kb.tier_deep_thinking')}</option>
+                                                </select>
+                                            </div>
+                                            <details className="text-[10px]">
+                                                <summary className="cursor-pointer text-[var(--text-tertiary)] hover:text-[var(--accent-primary)]">{t('email_kb.custom_prompt')}</summary>
+                                                <textarea value={pc[stageKey].systemPrompt} onChange={e => setSettings(s => ({ ...s, pipeline_config: { ...s.pipeline_config, [stageKey]: { ...s.pipeline_config[stageKey], systemPrompt: e.target.value } } }))}
+                                                    placeholder={t('email_kb.custom_prompt_placeholder')} rows={3}
+                                                    className="w-full mt-1.5 px-2 py-1.5 rounded text-[11px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)] resize-y font-mono" />
+                                                {pc[stageKey].systemPrompt && <button onClick={() => setSettings(s => ({ ...s, pipeline_config: { ...s.pipeline_config, [stageKey]: { ...s.pipeline_config[stageKey], systemPrompt: '' } } }))}
+                                                    className="flex items-center gap-1 mt-1 text-[var(--text-tertiary)] hover:text-[var(--accent-primary)]"><RotateCcw className="w-3 h-3" />{t('email_kb.reset_prompt')}</button>}
+                                            </details>
+                                        </div>
+                                    </div>
+                                    ); })()}
+
+                                    {/* Stage 4: Category Merge */}
+                                    {(() => { const stageKey = 'merge'; const pc = settings.pipeline_config; return (
+                                    <div className="relative mb-4">
+                                        <div className="absolute -left-6 top-1 w-[18px] h-[18px] rounded-full bg-purple-500/20 border-2 border-purple-500/40 flex items-center justify-center text-[9px] text-purple-600 font-bold">4</div>
+                                        <div className="p-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] space-y-2">
+                                            <div className="flex items-center justify-between">
+                                                <div>
+                                                    <div className="text-[11px] font-semibold text-[var(--text-primary)]">{t('email_kb.stage_merge')}</div>
+                                                    <div className="text-[10px] text-[var(--text-tertiary)]">{t('email_kb.stage_merge_desc')}</div>
+                                                </div>
+                                                <select value={pc[stageKey].modelTier} onChange={e => setSettings(s => ({ ...s, pipeline_config: { ...s.pipeline_config, [stageKey]: { ...s.pipeline_config[stageKey], modelTier: e.target.value } } }))}
+                                                    className="px-2 py-1 rounded text-[11px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)] text-[var(--text-primary)]">
+                                                    <option value="fast">{t('email_kb.tier_fast')}</option>
+                                                    <option value="thinking">{t('email_kb.tier_thinking')}</option>
+                                                    <option value="writer">{t('email_kb.tier_writer')}</option>
+                                                    <option value="deep_thinking">{t('email_kb.tier_deep_thinking')}</option>
+                                                </select>
+                                            </div>
+                                            <details className="text-[10px]">
+                                                <summary className="cursor-pointer text-[var(--text-tertiary)] hover:text-[var(--accent-primary)]">{t('email_kb.custom_prompt')}</summary>
+                                                <textarea value={pc[stageKey].systemPrompt} onChange={e => setSettings(s => ({ ...s, pipeline_config: { ...s.pipeline_config, [stageKey]: { ...s.pipeline_config[stageKey], systemPrompt: e.target.value } } }))}
+                                                    placeholder={t('email_kb.custom_prompt_placeholder')} rows={3}
+                                                    className="w-full mt-1.5 px-2 py-1.5 rounded text-[11px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)] resize-y font-mono" />
+                                                {pc[stageKey].systemPrompt && <button onClick={() => setSettings(s => ({ ...s, pipeline_config: { ...s.pipeline_config, [stageKey]: { ...s.pipeline_config[stageKey], systemPrompt: '' } } }))}
+                                                    className="flex items-center gap-1 mt-1 text-[var(--text-tertiary)] hover:text-[var(--accent-primary)]"><RotateCcw className="w-3 h-3" />{t('email_kb.reset_prompt')}</button>}
+                                            </details>
+                                        </div>
+                                    </div>
+                                    ); })()}
+
+                                    {/* Stage 5: Ingestion (no config) */}
+                                    <div className="relative">
+                                        <div className="absolute -left-6 top-1 w-[18px] h-[18px] rounded-full bg-emerald-500/20 border-2 border-emerald-500/40 flex items-center justify-center text-[9px] text-emerald-600 font-bold">5</div>
+                                        <div className="text-[11px] font-medium text-[var(--text-tertiary)]">{t('email_kb.stage_ingest')}</div>
+                                        <div className="text-[10px] text-[var(--text-tertiary)]">{t('email_kb.stage_ingest_desc')}</div>
                                     </div>
                                 </div>
-                            </div>
-
-                            {/* Sender blacklist */}
-                            <div>
-                                <label className="text-[11px] font-medium text-[var(--text-secondary)] mb-1 block">{t('email_kb.sender_blacklist')}</label>
-                                <p className="text-[10px] text-[var(--text-tertiary)] mb-1.5">{t('email_kb.sender_blacklist_desc')}</p>
-                                <div className="flex gap-1.5 mb-2">
-                                    <input value={senderInput} onChange={e => setSenderInput(e.target.value)}
-                                        onKeyDown={e => e.key === 'Enter' && addBlacklistEntry()}
-                                        placeholder="noreply@example.com"
-                                        className="flex-1 px-2.5 py-1.5 rounded-lg text-[12px] bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]" />
-                                    <button onClick={addBlacklistEntry}
-                                        className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-[var(--accent-primary)] text-white hover:opacity-90">
-                                        <Plus className="w-3.5 h-3.5" />
-                                    </button>
-                                </div>
-                                <div className="flex flex-wrap gap-1">
-                                    {settings.sender_blacklist.map(email => (
-                                        <span key={email} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-red-500/10 text-red-600">
-                                            {email}
-                                            <button onClick={() => removeBlacklistEntry(email)} className="hover:text-red-800">×</button>
-                                        </span>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Folder filter */}
-                            <div>
-                                <label className="text-[11px] font-medium text-[var(--text-secondary)] mb-1 block">{t('email_kb.folder_filter')}</label>
-                                <p className="text-[10px] text-[var(--text-tertiary)] mb-1.5">{t('email_kb.folder_filter_desc')}</p>
-                                <div className="flex gap-1.5 mb-2">
-                                    <input value={folderInput} onChange={e => setFolderInput(e.target.value)}
-                                        onKeyDown={e => e.key === 'Enter' && addFolderEntry()}
-                                        placeholder={conn.provider === 'gmail' ? 'INBOX, SENT, Label_123' : 'Inbox, SentItems, Drafts'}
-                                        className="flex-1 px-2.5 py-1.5 rounded-lg text-[12px] bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]" />
-                                    <button onClick={addFolderEntry}
-                                        className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-[var(--accent-primary)] text-white hover:opacity-90">
-                                        <Plus className="w-3.5 h-3.5" />
-                                    </button>
-                                </div>
-                                <div className="flex flex-wrap gap-1">
-                                    {settings.folder_filter.map(folder => (
-                                        <span key={folder} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-blue-500/10 text-blue-600">
-                                            {folder}
-                                            <button onClick={() => removeFolderEntry(folder)} className="hover:text-blue-800">×</button>
-                                        </span>
-                                    ))}
-                                </div>
-                            </div>
-
-                            {/* Custom AI prompt */}
-                            <div>
-                                <div className="flex items-center justify-between mb-1">
-                                    <label className="text-[11px] font-medium text-[var(--text-secondary)] flex items-center gap-1">
-                                        <FileText className="w-3 h-3" />
-                                        {t('email_kb.custom_prompt')}
-                                    </label>
-                                    {settings.ai_system_prompt && (
-                                        <button onClick={() => setSettings(s => ({ ...s, ai_system_prompt: '' }))}
-                                            className="flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] transition-colors">
-                                            <RotateCcw className="w-3 h-3" />
-                                            {t('email_kb.reset_prompt')}
-                                        </button>
-                                    )}
-                                </div>
-                                <p className="text-[10px] text-[var(--text-tertiary)] mb-1.5">{t('email_kb.custom_prompt_desc')}</p>
-                                <textarea
-                                    value={settings.ai_system_prompt}
-                                    onChange={e => setSettings(s => ({ ...s, ai_system_prompt: e.target.value }))}
-                                    placeholder={t('email_kb.custom_prompt_placeholder')}
-                                    rows={4}
-                                    className="w-full px-3 py-2 rounded-lg text-[12px] bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)] resize-y font-mono"
-                                />
                             </div>
 
                             {/* Save */}
