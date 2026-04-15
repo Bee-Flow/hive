@@ -589,7 +589,7 @@ const EmailKBSettings = ({ user, onNavigateBack }) => {
         await loadData();
     };
 
-    const oauthProvider = user?.oauthProvider || '';
+    const oauthProvider = user?.oauthProvider || user?.provider || '';
 
     return (
         <div className="flex flex-col h-full bg-[var(--bg-primary)]">
