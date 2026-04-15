@@ -380,6 +380,19 @@ const EmbedChat = ({ agentId }) => {
                                     if (existing.some(d => JSON.stringify({ to: d.to, subject: d.subject, body: d.body }) === draftKey)) return m;
                                     return { ...m, emailDrafts: [...existing, { ...data, status: 'pending' }] };
                                 }));
+                                // Gmail-extension-only: also open the draft directly in Gmail's
+                                // compose window via the content script. The user gets both the
+                                // side-panel card (API-backed Send/Save) and the inline Gmail
+                                // draft they can edit.
+                                if (isGmailEmbed && data.body) {
+                                    emailDraftEmittedThisTurn = true;
+                                    try {
+                                        window.parent.postMessage(
+                                            { type: 'beeflow:email_draft', draft: data },
+                                            '*'
+                                        );
+                                    } catch { /* parent closed */ }
+                                }
                             } else if (currentEvent === 'calendar_draft') {
                                 const draftKey = JSON.stringify({ summary: data.summary, start: data.start, end: data.end });
                                 setMessages(prev => prev.map(m => {
