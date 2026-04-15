@@ -1270,7 +1270,11 @@ const EN_DEFAULTS = {
     "email_kb.reset_prompt": "Reset to default",
     "email_kb.error_details": "Error details",
     "email_kb.duration": "Duration",
-    "email_kb.sync_timed_out": "Sync timed out"
+    "email_kb.sync_timed_out": "Sync timed out",
+    "email_kb.redact_pii": "Redact PII",
+    "email_kb.redact_pii_desc": "Mask emails, phone numbers, IPs and other personal data",
+    "email_kb.max_emails": "Emails per sync",
+    "email_kb.max_emails_desc": "per sync cycle (1\u2013500)"
 };
 
 export default EN_DEFAULTS;

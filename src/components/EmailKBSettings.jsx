@@ -85,6 +85,8 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, knowledgeBas
         sender_blacklist: conn.sender_blacklist || [],
         knowledge_base_id: conn.knowledge_base_id,
         ai_system_prompt: conn.ai_system_prompt || '',
+        redact_pii: conn.redact_pii !== false,
+        max_emails_per_sync: conn.max_emails_per_sync || 50,
     });
     const [senderInput, setSenderInput] = useState('');
     const [folderInput, setFolderInput] = useState('');
@@ -290,6 +292,28 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, knowledgeBas
                                         <div className="text-[10px] text-[var(--text-tertiary)]">{t('email_kb.process_attachments_desc')}</div>
                                     </div>
                                 </label>
+                            </div>
+
+                            {/* PII redaction + max emails */}
+                            <div className="grid grid-cols-2 gap-3">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input type="checkbox" checked={settings.redact_pii}
+                                        onChange={e => setSettings(s => ({ ...s, redact_pii: e.target.checked }))}
+                                        className="w-4 h-4 rounded accent-[var(--accent-primary)]" />
+                                    <div>
+                                        <div className="text-[12px] font-medium text-[var(--text-primary)]">{t('email_kb.redact_pii')}</div>
+                                        <div className="text-[10px] text-[var(--text-tertiary)]">{t('email_kb.redact_pii_desc')}</div>
+                                    </div>
+                                </label>
+                                <div>
+                                    <label className="text-[11px] font-medium text-[var(--text-secondary)] mb-1 block">{t('email_kb.max_emails')}</label>
+                                    <div className="flex items-center gap-2">
+                                        <input type="number" min="1" max="500" value={settings.max_emails_per_sync}
+                                            onChange={e => setSettings(s => ({ ...s, max_emails_per_sync: Math.max(1, Math.min(500, parseInt(e.target.value) || 50)) }))}
+                                            className="w-20 px-2.5 py-1.5 rounded-lg text-[12px] bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]" />
+                                        <span className="text-[10px] text-[var(--text-tertiary)]">{t('email_kb.max_emails_desc')}</span>
+                                    </div>
+                                </div>
                             </div>
 
                             {/* Sender blacklist */}
