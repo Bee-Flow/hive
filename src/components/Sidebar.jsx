@@ -884,12 +884,6 @@ const Sidebar = ({
                                     {showEmailKB && <div className={ACCENT_BAR} />}
                                     <Mail className={`w-4 h-4 ${showEmailKB ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
                                     <span className={`text-[13px] ${showEmailKB ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('email_kb.title') || 'Email KB'}</span>
-                                    className={`${ROW} ${currentPage === 'emailKB' ? ROW_ACTIVE : ROW_IDLE}`}
-                                    style={{ textDecoration: 'none', color: 'inherit' }}
-                                >
-                                    {currentPage === 'emailKB' && <div className={ACCENT_BAR} />}
-                                    <Mail className={`w-4 h-4 ${currentPage === 'emailKB' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'emailKB' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('email_kb.title') || 'Email KB'}</span>
                                     <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
                                 </NavLink>
                             )}
