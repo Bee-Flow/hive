@@ -5,6 +5,7 @@ import { useTranslation } from '../hooks/useTranslation';
 import StartupAgentSection from './settings/StartupAgentSection';
 import MemorySection from './settings/MemorySection';
 import IntegrationsSection from './settings/IntegrationsSection';
+import PersonalAccessTokensSection from './settings/PersonalAccessTokensSection';
 import OrganisationSection from './settings/OrganisationSection';
 import ConsumerLicenseSection from './settings/ConsumerLicenseSection';
 import ConsumerPrivacySection from './settings/ConsumerPrivacySection';
@@ -60,6 +61,10 @@ const NAV_ITEMS = [
     {
         id: 'integrations', labelKey: 'settings.connections',
         icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>,
+    },
+    {
+        id: 'api_tokens', label: 'API Tokens',
+        icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>,
     },
 ];
 
@@ -237,6 +242,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
             case 'preferences': return <StartupAgentSection defaultAgentMode={defaultAgentMode} setDefaultAgentMode={setDefaultAgentMode} defaultAgentId={defaultAgentId} setDefaultAgentId={setDefaultAgentId} agents={agents} onLogout={onLogout} user={user} />;
             case 'memory': return <MemorySection memoryStats={memoryStats} onOpenMemory={() => setShowMemoryPanel(true)} user={user} />;
             case 'integrations': return <IntegrationsSection statuses={statuses} onSaved={handleIntegrationSaved} enabledIntegrations={user?.enabledIntegrations} isOrgAdmin={canSeeOrg} user={user} showOrgIntegrations={isConsumerAccount} />;
+            case 'api_tokens': return <PersonalAccessTokensSection />;
             case 'organisation': return canSeeOrg ? <OrganisationSection user={user} activeSection="license" /> : null;
             default: return null;
         }
@@ -324,7 +330,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
                             <NavItem
                                 key={item.id}
                                 {...item}
-                                label={t(item.labelKey)}
+                                label={item.labelKey ? t(item.labelKey) : item.label}
                                 isActive={activeTab === item.id && !isOrgSubTab}
                                 onClick={handleNavClick}
                             />
