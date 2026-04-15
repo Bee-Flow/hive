@@ -201,18 +201,30 @@ const EmbedChat = ({ agentId }) => {
                 return `${header}\n${meta}\n${m.body || '(body not available from DOM — use gmail_read)'}`;
             }).join('\n\n');
 
+            const lastMessageId = [...msgs].reverse().find(m => m.messageId)?.messageId || null;
+            const lastSender = [...msgs].reverse().find(m => m.from)?.from || '';
+            const subjectEscaped = (gCtx.subject || '').replace(/"/g, '\\"');
+
             const instructions = [
                 `You are helping the user with a Gmail thread currently open in their browser. Reply in the same language as the thread.`,
                 ``,
                 `IMPORTANT — Use your Gmail tools to get the full conversation:`,
                 `  • The body snippets below come from scraping the Gmail DOM and may be partial, clipped, or missing for hidden messages.`,
                 `  • You have gmail_search and gmail_read available. When a message is marked [CLIPPED] or looks truncated, call gmail_read with its messageId to fetch the full content.`,
-                `  • If no messageId is available, use gmail_search with query like: subject:"${(gCtx.subject || '').replace(/"/g, '\\"')}" to find the thread, then gmail_read on each message.`,
+                `  • If no messageId is available, use gmail_search with query like: subject:"${subjectEscaped}" to find the thread, then gmail_read on each message.`,
+                ``,
+                `DRAFTING replies / new emails:`,
+                `  • When the user asks you to write, draft, reply to, or forward an email, DO NOT write the reply as prose in the chat. Call gmail_compose so the user gets a real Gmail draft card with Send / Save-as-Draft buttons.`,
+                `  • For a reply: set replyToMessageId to the messageId of the message you are replying to (usually the last one in the thread) and prefix subject with "Re: ".`,
+                `  • For a forward: prefix subject with "Fwd: " and include the original body.`,
+                `  • Use the sender address and subject from the thread metadata below — don't invent contacts.`,
                 ``,
                 `Thread metadata:`,
                 `  Subject: ${gCtx.subject || '(no subject)'}`,
                 `  Participants: ${(gCtx.participants || []).join(', ')}`,
                 `  Message count: ${msgs.length}`,
+                lastSender ? `  Last sender (likely reply target): ${lastSender}` : null,
+                lastMessageId ? `  Suggested replyToMessageId: ${lastMessageId}` : null,
                 gCtx.threadId ? `  Gmail URL thread id (UI id, not API id): ${gCtx.threadId}` : null,
                 knownMessageIds.length ? `  Known API message IDs: ${knownMessageIds.join(', ')}` : null,
                 anyClipped ? `  ⚠ One or more messages are CLIPPED — you MUST call gmail_read to get the full text.` : null,
@@ -348,6 +360,94 @@ const EmbedChat = ({ agentId }) => {
                                     }
                                     return m;
                                 }));
+                            } else if (currentEvent === 'thinking') {
+                                if (data.text) {
+                                    setMessages(prev => prev.map(m =>
+                                        m.id === assistantMsgId ? { ...m, thinking: (m.thinking || '') + data.text } : m
+                                    ));
+                                }
+                            } else if (currentEvent === 'orchestrator_thinking') {
+                                if (data.text) {
+                                    setMessages(prev => prev.map(m =>
+                                        m.id === assistantMsgId ? { ...m, orchestratorThinking: (m.orchestratorThinking || '') + data.text } : m
+                                    ));
+                                }
+                            } else if (currentEvent === 'email_draft') {
+                                const draftKey = JSON.stringify({ to: data.to, subject: data.subject, body: data.body });
+                                setMessages(prev => prev.map(m => {
+                                    if (m.id !== assistantMsgId) return m;
+                                    const existing = m.emailDrafts || [];
+                                    if (existing.some(d => JSON.stringify({ to: d.to, subject: d.subject, body: d.body }) === draftKey)) return m;
+                                    return { ...m, emailDrafts: [...existing, { ...data, status: 'pending' }] };
+                                }));
+                            } else if (currentEvent === 'calendar_draft') {
+                                const draftKey = JSON.stringify({ summary: data.summary, start: data.start, end: data.end });
+                                setMessages(prev => prev.map(m => {
+                                    if (m.id !== assistantMsgId) return m;
+                                    const existing = m.calendarDrafts || [];
+                                    if (existing.some(d => JSON.stringify({ summary: d.summary, start: d.start, end: d.end }) === draftKey)) return m;
+                                    return { ...m, calendarDrafts: [...existing, { ...data, status: 'pending' }] };
+                                }));
+                            } else if (currentEvent === 'linkedin_draft') {
+                                setMessages(prev => prev.map(m =>
+                                    m.id === assistantMsgId ? { ...m, linkedInDrafts: [...(m.linkedInDrafts || []), { ...data, status: 'pending' }] } : m
+                                ));
+                            } else if (currentEvent === 'whatsapp_draft') {
+                                const draftKey = JSON.stringify({ to: data.to, message: data.message });
+                                setMessages(prev => prev.map(m => {
+                                    if (m.id !== assistantMsgId) return m;
+                                    const existing = m.whatsappDrafts || [];
+                                    if (existing.some(d => JSON.stringify({ to: d.to, message: d.message }) === draftKey)) return m;
+                                    return { ...m, whatsappDrafts: [...existing, { ...data, status: 'pending' }] };
+                                }));
+                            } else if (currentEvent === 'contacts_draft') {
+                                const draftKey = JSON.stringify({ name: data.name, email: data.email, phone: data.phone });
+                                setMessages(prev => prev.map(m => {
+                                    if (m.id !== assistantMsgId) return m;
+                                    const existing = m.contactsDrafts || [];
+                                    if (existing.some(d => JSON.stringify({ name: d.name, email: d.email, phone: d.phone }) === draftKey)) return m;
+                                    return { ...m, contactsDrafts: [...existing, { ...data, status: 'pending' }] };
+                                }));
+                            } else if (currentEvent === 'keep_draft') {
+                                const draftKey = JSON.stringify({ title: data.title, content: data.content });
+                                setMessages(prev => prev.map(m => {
+                                    if (m.id !== assistantMsgId) return m;
+                                    const existing = m.keepDrafts || [];
+                                    if (existing.some(d => JSON.stringify({ title: d.title, content: d.content }) === draftKey)) return m;
+                                    return { ...m, keepDrafts: [...existing, { ...data, status: 'pending' }] };
+                                }));
+                            } else if (currentEvent === 'kb_sources') {
+                                if (data.sources) {
+                                    setMessages(prev => prev.map(m => {
+                                        if (m.id !== assistantMsgId) return m;
+                                        const existing = m.kbSources || [];
+                                        const existingContentKeys = new Set(existing.map(s => (s.content || '').slice(0, 100)));
+                                        const newSources = data.sources.filter(s => !existingContentKeys.has((s.content || '').slice(0, 100)));
+                                        return { ...m, kbSources: [...existing, ...newSources] };
+                                    }));
+                                }
+                            } else if (currentEvent === 'map_embed') {
+                                setMessages(prev => prev.map(m =>
+                                    m.id === assistantMsgId ? { ...m, mapEmbeds: [...(m.mapEmbeds || []), data] } : m
+                                ));
+                            } else if (currentEvent === 'image') {
+                                if (data.data && data.mimeType) {
+                                    setMessages(prev => prev.map(m =>
+                                        m.id === assistantMsgId ? { ...m, images: [...(m.images || []), { data: data.data, mimeType: data.mimeType }] } : m
+                                    ));
+                                }
+                            } else if (currentEvent === 'audio') {
+                                if (data.url) {
+                                    setMessages(prev => prev.map(m =>
+                                        m.id === assistantMsgId ? { ...m, audioFiles: [...(m.audioFiles || []), { url: data.url, mimeType: data.mimeType || 'audio/mpeg', source: data.source || 'elevenlabs' }] } : m
+                                    ));
+                                }
+                            } else if (currentEvent === 'video') {
+                                if (data.url && data.mimeType) {
+                                    setMessages(prev => prev.map(m =>
+                                        m.id === assistantMsgId ? { ...m, videoFiles: [...(m.videoFiles || []), { url: data.url, mimeType: data.mimeType }] } : m
+                                    ));
+                                }
                             } else if (currentEvent === 'error') {
                                 setMessages(prev => prev.map(m =>
                                     m.id === assistantMsgId ? { ...m, content: data.error, isStreaming: false, isError: true } : m
