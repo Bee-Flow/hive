@@ -27,6 +27,31 @@ const EmbedChat = ({ agentId }) => {
     const messagesContainerRef = useRef(null);
     const shouldForceScrollRef = useRef(false);
 
+    // ── Gmail extension bridge ──────────────────────────────────────────────
+    // When hosted in the Chrome extension's side-panel iframe
+    // (?source=gmail-extension), accept email-thread context from the parent
+    // and emit the agent's final response back so the extension can auto-draft.
+    const isGmailEmbed = new URLSearchParams(window.location.search).get('source') === 'gmail-extension';
+    const [gmailContext, setGmailContext] = useState(null);
+    const gmailContextRef = useRef(null);
+    useEffect(() => { gmailContextRef.current = gmailContext; }, [gmailContext]);
+
+    useEffect(() => {
+        if (!isGmailEmbed) return;
+        const onMessage = (event) => {
+            if (!event.origin.startsWith('chrome-extension://')) return;
+            const msg = event.data;
+            if (!msg || typeof msg !== 'object' || !msg.type?.startsWith?.('beeflow:')) return;
+            if (msg.type === 'beeflow:gmail_context' && msg.thread) {
+                setGmailContext(msg.thread);
+            }
+        };
+        window.addEventListener('message', onMessage);
+        // Announce readiness so the extension re-sends the latest thread.
+        try { window.parent.postMessage({ type: 'beeflow:ready' }, '*'); } catch {}
+        return () => window.removeEventListener('message', onMessage);
+    }, [isGmailEmbed]);
+
     // Apply theme to document
     useEffect(() => {
         document.documentElement.setAttribute('data-theme', theme);
@@ -149,7 +174,27 @@ const EmbedChat = ({ agentId }) => {
         const msgId = `embed-${Date.now()}`;
         const assistantMsgId = `embed-${Date.now() + 1}`;
 
-        const userMessage = { id: msgId, role: 'user', content: text.trim(), attachments };
+        const userDisplayText = text.trim();
+
+        // If hosted in the Gmail extension and a thread has been posted from
+        // the parent, prepend it to the agent-facing message. The UI still
+        // shows only the user's original text.
+        let agentMessage = userDisplayText;
+        const gCtx = gmailContextRef.current;
+        if (isGmailEmbed && gCtx) {
+            const threadBlock = (gCtx.messages || [])
+                .map((m, i, arr) =>
+                    `--- Message ${i + 1} of ${arr.length} ---\nFrom: ${m.from || 'unknown'}  Date: ${m.date || 'unknown'}\n${m.body || ''}`)
+                .join('\n\n');
+            agentMessage =
+                `You are helping the user with the following Gmail thread. Reply in the same language as the thread.\n\n` +
+                `Subject: ${gCtx.subject || '(no subject)'}\n` +
+                `Participants: ${(gCtx.participants || []).join(', ')}\n\n` +
+                `Thread (oldest → newest):\n${threadBlock}\n\n` +
+                `---\nUser request: ${userDisplayText}`;
+        }
+
+        const userMessage = { id: msgId, role: 'user', content: userDisplayText, attachments };
         const assistantMessage = { id: assistantMsgId, role: 'assistant', content: '', isStreaming: true };
 
         setMessages(prev => [...prev, userMessage, assistantMessage]);
@@ -160,15 +205,18 @@ const EmbedChat = ({ agentId }) => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    message: text.trim(),
+                    message: agentMessage,
                     // Include full history WITH current message, since historyOverride
                     // replaces conversation messages entirely in the runtime
                     history: [
                         ...messages.map(m => ({ role: m.role, content: m.content })),
-                        { role: 'user', content: text.trim() }
+                        { role: 'user', content: agentMessage }
                     ],
                     attachments,
-                    ephemeral: true  // Don't persist embed conversations to database
+                    // Normal public embed conversations are ephemeral (not persisted).
+                    // In the Gmail extension the user is session-authed via
+                    // X-Session-Token, so we can persist like the direct chat does.
+                    ...(isGmailEmbed ? {} : { ephemeral: true })
                 })
             });
 
@@ -275,7 +323,17 @@ const EmbedChat = ({ agentId }) => {
                                     m.id === assistantMsgId ? { ...m, content: data.error, isStreaming: false, isError: true } : m
                                 ));
                             } else if (currentEvent === 'done') {
-                                // Stream complete
+                                // Notify the Chrome extension parent so it can
+                                // auto-open a Gmail draft when the agent
+                                // didn't already emit an email_draft event.
+                                if (isGmailEmbed && assistantContent.trim()) {
+                                    try {
+                                        window.parent.postMessage(
+                                            { type: 'beeflow:agent_response', text: assistantContent },
+                                            '*'
+                                        );
+                                    } catch {}
+                                }
                             }
                         } catch { }
                     }
@@ -386,6 +444,13 @@ const EmbedChat = ({ agentId }) => {
                     </div>
                 )}
             </div>
+
+            {isGmailEmbed && gmailContext && (
+                <div className="px-3 pt-2 text-xs text-[var(--text-muted)] flex items-center gap-1">
+                    <span>📧</span>
+                    <span>Email thread attached ({(gmailContext.messages || []).length} message{(gmailContext.messages || []).length === 1 ? '' : 's'})</span>
+                </div>
+            )}
 
             {/* Input Area - same as main app */}
             <InputArea
