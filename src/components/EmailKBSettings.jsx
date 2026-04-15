@@ -68,7 +68,7 @@ const SyncStatusBadge = ({ status, t }) => {
 };
 
 /* ─── Connection Card ─── */
-const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, knowledgeBases, t }) => {
+const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, onEditingChange, knowledgeBases, t }) => {
     const [expanded, setExpanded] = useState(false);
     const [syncing, setSyncing] = useState(false);
     const [testing, setTesting] = useState(false);
@@ -122,6 +122,7 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, knowledgeBas
     const handleSaveSettings = async () => {
         await onUpdate(conn.id, settings);
         setShowSettings(false);
+        onEditingChange?.(false);
     };
 
     const addBlacklistEntry = () => {
@@ -193,7 +194,7 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, knowledgeBas
                             {conn.enabled ? <Pause className="w-3.5 h-3.5" /> : <Play className="w-3.5 h-3.5" />}
                             {conn.enabled ? t('email_kb.disabled') : t('email_kb.enabled')}
                         </button>
-                        <button onClick={() => { setShowSettings(v => !v); setShowLogs(false); }}
+                        <button onClick={() => { setShowSettings(v => { const next = !v; onEditingChange?.(next); return next; }); setShowLogs(false); }}
                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-medium bg-[var(--bg-secondary)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-all border border-[var(--border-subtle)]">
                             <Settings className="w-3.5 h-3.5" />
                             {t('email_kb.connection_settings')}
@@ -621,9 +622,10 @@ const EmailKBSettings = ({ user, onNavigateBack }) => {
     const [loading, setLoading] = useState(true);
     const [showAddModal, setShowAddModal] = useState(false);
     const [error, setError] = useState('');
+    const [editingConnection, setEditingConnection] = useState(null); // tracks which card has settings open
 
-    const loadData = useCallback(async () => {
-        setLoading(true);
+    const loadData = useCallback(async (isAutoRefresh = false) => {
+        if (!isAutoRefresh) setLoading(true);
         try {
             const [connData, kbRes] = await Promise.all([
                 api('/connections'),
@@ -632,19 +634,21 @@ const EmailKBSettings = ({ user, onNavigateBack }) => {
             setConnections(connData.connections || []);
             setKnowledgeBases(Array.isArray(kbRes) ? kbRes : kbRes.knowledgeBases || []);
         } catch (err) {
-            setError(err.message);
+            if (!isAutoRefresh) setError(err.message);
         } finally {
-            setLoading(false);
+            if (!isAutoRefresh) setLoading(false);
         }
     }, []);
 
     useEffect(() => { loadData(); }, [loadData]);
 
-    // Auto-refresh every 30s to pick up sync state changes
+    // Auto-refresh every 30s — skip when user is editing settings to avoid losing unsaved changes
     useEffect(() => {
-        const interval = setInterval(loadData, 30000);
+        const interval = setInterval(() => {
+            if (!editingConnection) loadData(true);
+        }, 30000);
         return () => clearInterval(interval);
-    }, [loadData]);
+    }, [loadData, editingConnection]);
 
     const handleAdd = async (params) => {
         await api('/connections', { method: 'POST', body: JSON.stringify(params) });
@@ -729,6 +733,7 @@ const EmailKBSettings = ({ user, onNavigateBack }) => {
                                 conn={conn}
                                 onSync={handleSync}
                                 onTest={() => {}}
+                                onEditingChange={(isEditing) => setEditingConnection(isEditing ? conn.id : null)}
                                 onDelete={handleDelete}
                                 onUpdate={handleUpdate}
                                 knowledgeBases={knowledgeBases}
