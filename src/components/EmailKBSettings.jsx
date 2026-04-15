@@ -606,7 +606,7 @@ const EmailKBSettings = ({ user, onNavigateBack }) => {
                 fetch(`${API_BASE}/api/kb`, { credentials: 'include' }).then(r => r.json()),
             ]);
             setConnections(connData.connections || []);
-            setKnowledgeBases(kbRes.knowledgeBases || []);
+            setKnowledgeBases(Array.isArray(kbRes) ? kbRes : kbRes.knowledgeBases || []);
         } catch (err) {
             setError(err.message);
         } finally {
