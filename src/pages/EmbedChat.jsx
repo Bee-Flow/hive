@@ -23,6 +23,8 @@ const EmbedChat = ({ agentId }) => {
     const [isStreaming, setIsStreaming] = useState(false);
     const [error, setError] = useState(null);
     const [submittedFormIds, setSubmittedFormIds] = useState(new Set());
+    // InputArea expects input/setInput as controlled props.
+    const [input, setInput] = useState('');
     const messagesEndRef = useRef(null);
     const messagesContainerRef = useRef(null);
     const shouldForceScrollRef = useRef(false);
@@ -458,6 +460,8 @@ const EmbedChat = ({ agentId }) => {
                 isLoading={isStreaming}
                 selectedAgent={agent}
                 warningText={customWarning}
+                input={input}
+                setInput={setInput}
             />
         </div>
     );
