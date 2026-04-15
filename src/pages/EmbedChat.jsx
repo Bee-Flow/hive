@@ -179,20 +179,48 @@ const EmbedChat = ({ agentId }) => {
         const userDisplayText = text.trim();
 
         // If hosted in the Gmail extension and a thread has been posted from
-        // the parent, prepend it to the agent-facing message. The UI still
-        // shows only the user's original text.
+        // the parent, prepend context to the agent-facing message. The UI
+        // still shows only the user's original text.
+        //
+        // Strategy: we give the agent enough info to find & read the full
+        // thread via its Gmail API tools (gmail_search / gmail_read). The
+        // body snippets we scrape from the DOM are only a hint — they may
+        // be truncated, clipped, or missing entirely for hidden messages.
         let agentMessage = userDisplayText;
         const gCtx = gmailContextRef.current;
         if (isGmailEmbed && gCtx) {
-            const threadBlock = (gCtx.messages || [])
-                .map((m, i, arr) =>
-                    `--- Message ${i + 1} of ${arr.length} ---\nFrom: ${m.from || 'unknown'}  Date: ${m.date || 'unknown'}\n${m.body || ''}`)
-                .join('\n\n');
+            const msgs = gCtx.messages || [];
+            const anyClipped = msgs.some(m => m.clipped);
+            const knownMessageIds = msgs.map(m => m.messageId).filter(Boolean);
+
+            const threadBlock = msgs.map((m, i, arr) => {
+                const header = `--- Message ${i + 1} of ${arr.length} ---`;
+                const meta = `From: ${m.from || 'unknown'}  Date: ${m.date || 'unknown'}` +
+                    (m.messageId ? `  messageId: ${m.messageId}` : '') +
+                    (m.clipped ? '  [CLIPPED — fetch full content via gmail_read]' : '');
+                return `${header}\n${meta}\n${m.body || '(body not available from DOM — use gmail_read)'}`;
+            }).join('\n\n');
+
+            const instructions = [
+                `You are helping the user with a Gmail thread currently open in their browser. Reply in the same language as the thread.`,
+                ``,
+                `IMPORTANT — Use your Gmail tools to get the full conversation:`,
+                `  • The body snippets below come from scraping the Gmail DOM and may be partial, clipped, or missing for hidden messages.`,
+                `  • You have gmail_search and gmail_read available. When a message is marked [CLIPPED] or looks truncated, call gmail_read with its messageId to fetch the full content.`,
+                `  • If no messageId is available, use gmail_search with query like: subject:"${(gCtx.subject || '').replace(/"/g, '\\"')}" to find the thread, then gmail_read on each message.`,
+                ``,
+                `Thread metadata:`,
+                `  Subject: ${gCtx.subject || '(no subject)'}`,
+                `  Participants: ${(gCtx.participants || []).join(', ')}`,
+                `  Message count: ${msgs.length}`,
+                gCtx.threadId ? `  Gmail URL thread id (UI id, not API id): ${gCtx.threadId}` : null,
+                knownMessageIds.length ? `  Known API message IDs: ${knownMessageIds.join(', ')}` : null,
+                anyClipped ? `  ⚠ One or more messages are CLIPPED — you MUST call gmail_read to get the full text.` : null,
+            ].filter(Boolean).join('\n');
+
             agentMessage =
-                `You are helping the user with the following Gmail thread. Reply in the same language as the thread.\n\n` +
-                `Subject: ${gCtx.subject || '(no subject)'}\n` +
-                `Participants: ${(gCtx.participants || []).join(', ')}\n\n` +
-                `Thread (oldest → newest):\n${threadBlock}\n\n` +
+                `${instructions}\n\n` +
+                `Thread (oldest → newest, DOM-scraped hint only):\n${threadBlock}\n\n` +
                 `---\nUser request: ${userDisplayText}`;
         }
 
