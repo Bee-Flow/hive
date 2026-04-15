@@ -4,7 +4,7 @@ import { API_BASE } from '../utils/helpers';
 import {
     Mail, Plus, RefreshCw, Settings, Trash2, ChevronDown, ChevronRight,
     CheckCircle2, XCircle, Clock, AlertTriangle, Loader2, TestTube2,
-    Pause, Play, ArrowLeft
+    Pause, Play, ArrowLeft, FileText, RotateCcw
 } from 'lucide-react';
 
 /* ─── Helpers ─── */
@@ -84,8 +84,11 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, knowledgeBas
         folder_filter: conn.folder_filter || ['INBOX'],
         sender_blacklist: conn.sender_blacklist || [],
         knowledge_base_id: conn.knowledge_base_id,
+        ai_system_prompt: conn.ai_system_prompt || '',
     });
     const [senderInput, setSenderInput] = useState('');
+    const [folderInput, setFolderInput] = useState('');
+    const [expandedLogId, setExpandedLogId] = useState(null);
 
     const handleSync = async () => {
         setSyncing(true);
@@ -129,6 +132,18 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, knowledgeBas
 
     const removeBlacklistEntry = (email) => {
         setSettings(s => ({ ...s, sender_blacklist: s.sender_blacklist.filter(e => e !== email) }));
+    };
+
+    const addFolderEntry = () => {
+        const entry = folderInput.trim();
+        if (entry && !settings.folder_filter.includes(entry)) {
+            setSettings(s => ({ ...s, folder_filter: [...s.folder_filter, entry] }));
+            setFolderInput('');
+        }
+    };
+
+    const removeFolderEntry = (folder) => {
+        setSettings(s => ({ ...s, folder_filter: s.folder_filter.filter(f => f !== folder) }));
     };
 
     return (
@@ -301,6 +316,55 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, knowledgeBas
                                 </div>
                             </div>
 
+                            {/* Folder filter */}
+                            <div>
+                                <label className="text-[11px] font-medium text-[var(--text-secondary)] mb-1 block">{t('email_kb.folder_filter')}</label>
+                                <p className="text-[10px] text-[var(--text-tertiary)] mb-1.5">{t('email_kb.folder_filter_desc')}</p>
+                                <div className="flex gap-1.5 mb-2">
+                                    <input value={folderInput} onChange={e => setFolderInput(e.target.value)}
+                                        onKeyDown={e => e.key === 'Enter' && addFolderEntry()}
+                                        placeholder={conn.provider === 'gmail' ? 'INBOX, SENT, Label_123' : 'Inbox, SentItems, Drafts'}
+                                        className="flex-1 px-2.5 py-1.5 rounded-lg text-[12px] bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)]" />
+                                    <button onClick={addFolderEntry}
+                                        className="px-2.5 py-1.5 rounded-lg text-[11px] font-medium bg-[var(--accent-primary)] text-white hover:opacity-90">
+                                        <Plus className="w-3.5 h-3.5" />
+                                    </button>
+                                </div>
+                                <div className="flex flex-wrap gap-1">
+                                    {settings.folder_filter.map(folder => (
+                                        <span key={folder} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] bg-blue-500/10 text-blue-600">
+                                            {folder}
+                                            <button onClick={() => removeFolderEntry(folder)} className="hover:text-blue-800">×</button>
+                                        </span>
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Custom AI prompt */}
+                            <div>
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="text-[11px] font-medium text-[var(--text-secondary)] flex items-center gap-1">
+                                        <FileText className="w-3 h-3" />
+                                        {t('email_kb.custom_prompt')}
+                                    </label>
+                                    {settings.ai_system_prompt && (
+                                        <button onClick={() => setSettings(s => ({ ...s, ai_system_prompt: '' }))}
+                                            className="flex items-center gap-1 text-[10px] text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] transition-colors">
+                                            <RotateCcw className="w-3 h-3" />
+                                            {t('email_kb.reset_prompt')}
+                                        </button>
+                                    )}
+                                </div>
+                                <p className="text-[10px] text-[var(--text-tertiary)] mb-1.5">{t('email_kb.custom_prompt_desc')}</p>
+                                <textarea
+                                    value={settings.ai_system_prompt}
+                                    onChange={e => setSettings(s => ({ ...s, ai_system_prompt: e.target.value }))}
+                                    placeholder={t('email_kb.custom_prompt_placeholder')}
+                                    rows={4}
+                                    className="w-full px-3 py-2 rounded-lg text-[12px] bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)] resize-y font-mono"
+                                />
+                            </div>
+
                             {/* Save */}
                             <div className="flex justify-end">
                                 <button onClick={handleSaveSettings}
@@ -323,6 +387,7 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, knowledgeBas
                                         <thead className="bg-[var(--bg-secondary)] text-[var(--text-tertiary)] sticky top-0">
                                             <tr>
                                                 <th className="text-left px-2 py-1.5 font-medium">Date</th>
+                                                <th className="text-center px-2 py-1.5 font-medium">{t('email_kb.duration')}</th>
                                                 <th className="text-center px-2 py-1.5 font-medium">{t('email_kb.fetched')}</th>
                                                 <th className="text-center px-2 py-1.5 font-medium">{t('email_kb.created')}</th>
                                                 <th className="text-center px-2 py-1.5 font-medium">{t('email_kb.skipped')}</th>
@@ -330,17 +395,41 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, knowledgeBas
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {logs.map(log => (
-                                                <tr key={log.id} className="border-t border-[var(--border-subtle)] hover:bg-[var(--bg-secondary)]">
-                                                    <td className="px-2 py-1.5 text-[var(--text-secondary)]">
-                                                        {new Date(log.started_at).toLocaleString()}
-                                                    </td>
-                                                    <td className="text-center px-2 py-1.5 text-[var(--text-primary)] font-medium">{log.emails_fetched}</td>
-                                                    <td className="text-center px-2 py-1.5 text-emerald-600 font-medium">{log.articles_created}</td>
-                                                    <td className="text-center px-2 py-1.5 text-amber-600 font-medium">{log.articles_skipped}</td>
-                                                    <td className="text-center px-2 py-1.5 text-red-500 font-medium">{log.errors}</td>
-                                                </tr>
-                                            ))}
+                                            {logs.map(log => {
+                                                const hasErrors = log.errors > 0;
+                                                const duration = log.finished_at && log.started_at
+                                                    ? Math.round((new Date(log.finished_at) - new Date(log.started_at)) / 1000)
+                                                    : null;
+                                                return (
+                                                    <React.Fragment key={log.id}>
+                                                        <tr
+                                                            className={`border-t border-[var(--border-subtle)] hover:bg-[var(--bg-secondary)] ${hasErrors ? 'bg-red-50/30' : ''} ${log.error_details ? 'cursor-pointer' : ''}`}
+                                                            onClick={() => log.error_details && setExpandedLogId(expandedLogId === log.id ? null : log.id)}
+                                                        >
+                                                            <td className="px-2 py-1.5 text-[var(--text-secondary)]">
+                                                                {new Date(log.started_at).toLocaleString()}
+                                                            </td>
+                                                            <td className="text-center px-2 py-1.5 text-[var(--text-tertiary)]">
+                                                                {duration !== null ? (duration < 60 ? `${duration}s` : `${Math.floor(duration / 60)}m ${duration % 60}s`) : '—'}
+                                                            </td>
+                                                            <td className="text-center px-2 py-1.5 text-[var(--text-primary)] font-medium">{log.emails_fetched}</td>
+                                                            <td className="text-center px-2 py-1.5 text-emerald-600 font-medium">{log.articles_created}</td>
+                                                            <td className="text-center px-2 py-1.5 text-amber-600 font-medium">{log.articles_skipped}</td>
+                                                            <td className="text-center px-2 py-1.5 text-red-500 font-medium">
+                                                                {log.errors}
+                                                                {log.error_details && <ChevronDown className={`w-3 h-3 inline ml-0.5 transition-transform ${expandedLogId === log.id ? 'rotate-180' : ''}`} />}
+                                                            </td>
+                                                        </tr>
+                                                        {expandedLogId === log.id && log.error_details && (
+                                                            <tr>
+                                                                <td colSpan={6} className="px-3 py-2 bg-red-50/50 border-t border-red-200/50">
+                                                                    <div className="text-[10px] text-red-700 font-mono whitespace-pre-wrap max-h-32 overflow-y-auto">{log.error_details}</div>
+                                                                </td>
+                                                            </tr>
+                                                        )}
+                                                    </React.Fragment>
+                                                );
+                                            })}
                                         </tbody>
                                     </table>
                                 </div>
