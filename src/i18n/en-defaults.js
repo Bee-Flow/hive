@@ -216,6 +216,8 @@ const EN_DEFAULTS = {
     "dlp.action_block_label": "Block the message",
     "dlp.action_block_help": "Reject the message before it leaves the organisation. The user is asked to rephrase without sensitive data.",
     "dlp.action_footnote": "Admins who want the user to choose per-message can enable the separate DLP gate (Ask mode) below.",
+    "admin.shield_pii_confidence_too_high": "At this threshold most detections will be filtered out. Azure typically returns 0.70\u20130.85 confidence on short messages, so emails, phone numbers and IBANs may silently slip through. Recommended: 0.70.",
+    "admin.shield_pii_confidence_too_low": "Low threshold will flag more content but increases false positives (e.g. flagging ordinary names as PII). If that is intentional, ignore this hint.",
 
     // Admin — Org Privacy Shield / DLP section
     "admin.dlp_title": "Data Loss Prevention (pre-flight)",

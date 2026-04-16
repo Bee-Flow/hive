@@ -672,6 +672,57 @@ const MessageItem = ({
                                                     <p className="opacity-70">
                                                         The AI only saw placeholders like <code className="px-1 rounded" style={{ background: 'var(--bg-primary)' }}>[email_1]</code>. Real values were restored in the reply before you saw it.
                                                     </p>
+
+                                                    {/* Raw-payload transparency — only renders when the org opted in
+                                                        via Privacy Shield → Show raw payload. Lets the user verify the
+                                                        actual strings sent to and received from the LLM. */}
+                                                    {(info.tokenizedPrompt || info.rawResponse) && (() => {
+                                                        // Find the previous user message so we can show the "Original"
+                                                        // (the user's own typed text that never left their browser).
+                                                        let originalUserMsg = '';
+                                                        for (let i = idx - 1; i >= 0; i--) {
+                                                            const m = allMessages[i];
+                                                            if (m?.role === 'user') {
+                                                                originalUserMsg = typeof m.content === 'string'
+                                                                    ? m.content
+                                                                    : (Array.isArray(m.content) ? (m.content.find(p => p?.type === 'text')?.text || '') : '');
+                                                                break;
+                                                            }
+                                                        }
+                                                        const shownResponse = typeof msg.content === 'string' ? msg.content : '';
+                                                        const copy = (text) => { try { navigator.clipboard.writeText(text || ''); } catch (_) { /* ignore */ } };
+                                                        const Row = ({ label, text, hint, revealable }) => {
+                                                            const [revealed, setRevealed] = React.useState(!revealable);
+                                                            if (!text) return null;
+                                                            return (
+                                                                <div className="mt-2">
+                                                                    <div className="flex items-center gap-2 mb-1">
+                                                                        <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>{label}</span>
+                                                                        {hint && <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>· {hint}</span>}
+                                                                        {revealable && !revealed && (
+                                                                            <button onClick={() => setRevealed(true)} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-primary)', color: 'var(--accent-primary)' }}>
+                                                                                Click to reveal
+                                                                            </button>
+                                                                        )}
+                                                                        <button onClick={() => copy(text)} className="ml-auto text-[10px] px-1.5 py-0.5 rounded hover:bg-[var(--bg-primary)]" style={{ color: 'var(--text-tertiary)' }} title="Copy">
+                                                                            Copy
+                                                                        </button>
+                                                                    </div>
+                                                                    <pre className="px-2.5 py-1.5 rounded text-[11px] leading-relaxed font-mono whitespace-pre-wrap break-words" style={{ background: 'var(--bg-primary)', color: revealed ? 'var(--text-primary)' : 'transparent', maxHeight: '180px', overflow: 'auto' }}>
+                                                                        {revealed ? text : '•••'.repeat(Math.min(20, Math.ceil((text.length || 0) / 4)))}
+                                                                    </pre>
+                                                                </div>
+                                                            );
+                                                        };
+                                                        return (
+                                                            <div className="mt-3 pt-2 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+                                                                <Row label="Original message" text={originalUserMsg} hint="stays on your device" revealable />
+                                                                <Row label="Sent to AI" text={info.tokenizedPrompt} hint={info.provider ? `via ${info.provider}` : undefined} />
+                                                                <Row label="AI's raw response" text={info.rawResponse} hint={info.rawTruncated ? 'truncated' : undefined} />
+                                                                <Row label="What you saw" text={shownResponse} hint="tokens restored" />
+                                                            </div>
+                                                        );
+                                                    })()}
                                                 </div>
                                             </details>
                                         );

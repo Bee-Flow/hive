@@ -930,6 +930,25 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                                 <span>{t('admin.shield_pii_detect_more')}</span>
                                                                 <span>{t('admin.shield_pii_detect_less')}</span>
                                                             </div>
+                                                            {/* Guidance — too-high threshold is the #1 reason PII silently stops
+                                                                firing. Azure returns 0.70–0.85 confidence on short prompts, so
+                                                                anything above ~0.85 will miss almost every real email / phone. */}
+                                                            {orgPiiConfidenceThreshold >= 0.85 && (
+                                                                <div className="mt-3 flex items-start gap-2 text-[11px] px-3 py-2 rounded-lg" style={{ background: 'rgba(234, 179, 8, 0.10)', color: '#92400e', border: '1px solid rgba(234, 179, 8, 0.30)' }}>
+                                                                    <span>⚠️</span>
+                                                                    <span className="leading-relaxed">
+                                                                        {t('admin.shield_pii_confidence_too_high', 'At this threshold most detections will be filtered out. Azure typically returns 0.70–0.85 confidence on short messages, so emails, phone numbers and IBANs may silently slip through. Recommended: 0.70.')}
+                                                                    </span>
+                                                                </div>
+                                                            )}
+                                                            {orgPiiConfidenceThreshold < 0.5 && (
+                                                                <div className="mt-3 flex items-start gap-2 text-[11px] px-3 py-2 rounded-lg" style={{ background: 'rgba(59, 130, 246, 0.10)', color: '#1e40af', border: '1px solid rgba(59, 130, 246, 0.25)' }}>
+                                                                    <span>ℹ️</span>
+                                                                    <span className="leading-relaxed">
+                                                                        {t('admin.shield_pii_confidence_too_low', 'Low threshold will flag more content but increases false positives (e.g. flagging ordinary names as PII). If that is intentional, ignore this hint.')}
+                                                                    </span>
+                                                                </div>
+                                                            )}
                                                         </div>
 
                                                         {/* PII Action — three clear choices with end-user impact explainers. */}

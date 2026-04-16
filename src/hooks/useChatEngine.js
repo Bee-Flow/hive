@@ -472,6 +472,22 @@ export default function useChatEngine({
                 }));
                 break;
             }
+            case 'privacy_payload': {
+                // Transparency: the exact tokenised string that was sent to the LLM.
+                // Gated server-side by org `showRawPayload`. Attach to the assistant
+                // message so "How I got this answer → Privacy protection" can render it.
+                setMessages(prev => prev.map(m => m.id === assistantMsgId
+                    ? { ...m, tokenisationInfo: { ...(m.tokenisationInfo || {}), tokenizedPrompt: data?.tokenizedPrompt || '', provider: data?.provider || m.tokenisationInfo?.provider || null } }
+                    : m));
+                break;
+            }
+            case 'privacy_response_raw': {
+                // The raw pre-un-tokenise LLM response. Same gating as privacy_payload.
+                setMessages(prev => prev.map(m => m.id === assistantMsgId
+                    ? { ...m, tokenisationInfo: { ...(m.tokenisationInfo || {}), rawResponse: data?.rawResponse || '', rawTruncated: !!data?.truncated } }
+                    : m));
+                break;
+            }
             case 'dlp_blocked': {
                 window.dispatchEvent(new CustomEvent('beeflow:dlp_blocked', { detail: data }));
                 const reason = data?.reason || 'policy';
