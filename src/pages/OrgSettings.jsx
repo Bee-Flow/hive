@@ -109,7 +109,7 @@ const OrgSettings = ({ user, onBack, orgSettingsPath = {}, onNavigate }) => {
                     </div>
                 ) : activeTab === 'users' ? (
                     <div className="absolute inset-0 overflow-auto p-6">
-                        <OrgUsersPanel user={user} />
+                        <OrgUsersPanel user={user} initialSection={orgSettingsPath.seg2 || null} />
                     </div>
                 ) : activeTab === 'agents' ? (
                     <div className="absolute inset-0">

@@ -1,4 +1,7 @@
 import { useState, useRef } from 'react';
+import { useUrlQueryParam } from '../../../../hooks/useUrlTab';
+
+const VALID_DESIGNER_SECTIONS = ['identity', 'tools', 'behavior', 'knowledge'];
 
 /**
  * All form/UI state for the AgentDesigner.
@@ -75,8 +78,11 @@ export default function useAgentState() {
     const [assistantBubbleColor, setAssistantBubbleColor] = useState('');
     const [warningText, setWarningText] = useState('');
 
-    // Navigation
-    const [activeSection, setActiveSection] = useState('identity');
+    // Navigation — mirrored to the ?section= query param so the active
+    // sub-section of the Agent Designer is bookmarkable.
+    const [sectionParam, setSectionParam] = useUrlQueryParam('section');
+    const activeSection = VALID_DESIGNER_SECTIONS.includes(sectionParam) ? sectionParam : 'identity';
+    const setActiveSection = (v) => setSectionParam(VALID_DESIGNER_SECTIONS.includes(v) ? v : 'identity');
     const [activeGuardrailTab, setActiveGuardrailTab] = useState('llama');
     const [showPreview, setShowPreview] = useState(false);
 

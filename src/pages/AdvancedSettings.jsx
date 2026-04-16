@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import MemoryPanel from '../components/MemoryPanel';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { useTranslation } from '../hooks/useTranslation';
@@ -22,6 +22,48 @@ const BASE_ORG_SUB_ITEMS = [
     { id: 'org_github_sync', labelKey: 'settings.github_sync', icon: FolderGit2, color: '#8b5cf6' },
 ];
 const AZURE_SUB_ITEM = { id: 'org_azure', labelKey: 'settings.azure_config', icon: Cloud, color: '#0078D4' };
+
+/* ── URL ⟷ activeTab mapping ──────────────────────────────────────────────
+ * Top-level segments live at /app/settings/{section}.
+ * Organisation sub-tabs live at /app/settings/organisation/{sub}.
+ * We keep internal tab ids (`org_users`, `license`, …) the same but expose
+ * friendlier URL names (`users`, `license`) — disambiguated by the parent
+ * path segment.
+ */
+const TOP_LEVEL_TAB_IDS = ['preferences', 'memory', 'integrations', 'api_tokens'];
+const ORG_ID_TO_URL = {
+    license: 'license',
+    auth: 'auth',
+    privacy: 'privacy',
+    info: 'info',
+    org_usage: 'usage',
+    org_users: 'users',
+    org_integrations: 'integrations',
+    org_github_sync: 'github-sync',
+    org_azure: 'azure',
+};
+const ORG_URL_TO_ID = Object.fromEntries(Object.entries(ORG_ID_TO_URL).map(([id, url]) => [url, id]));
+
+function readTabFromUrl() {
+    const parts = window.location.pathname.replace(/^\/+|\/+$/g, '').split('/');
+    // Expecting 'app', 'settings', …
+    if (parts[0] !== 'app' || parts[1] !== 'settings') return null;
+    const seg = parts[2];
+    if (!seg) return 'preferences';
+    if (seg === 'organisation') {
+        const sub = parts[3];
+        return ORG_URL_TO_ID[sub] || 'license';
+    }
+    if (TOP_LEVEL_TAB_IDS.includes(seg)) return seg;
+    return 'preferences';
+}
+
+function urlForTab(tabId) {
+    if (TOP_LEVEL_TAB_IDS.includes(tabId)) return `/app/settings/${tabId}`;
+    const urlName = ORG_ID_TO_URL[tabId];
+    if (urlName) return `/app/settings/organisation/${urlName}`;
+    return '/app/settings';
+}
 
 export const AvatarDisplay = ({ user, size = 40, className = '' }) => {
     const sizeStyle = { width: `${size}px`, height: `${size}px`, flexShrink: 0 };
@@ -138,8 +180,28 @@ const OrgSubItem = ({ section, label, isActive, onClick }) => {
 const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
     const { t } = useTranslation();
     // activeTab can be a top-level id OR an org sub-item id (e.g. 'license', 'org_users')
-    const [activeTab, setActiveTab] = useState('preferences');
-    const [orgExpanded, setOrgExpanded] = useState(false);
+    // State is kept in sync with the URL: /app/settings/{section} or
+    // /app/settings/organisation/{sub}. Back/forward buttons just work.
+    const [activeTab, setActiveTabState] = useState(() => readTabFromUrl() || 'preferences');
+    const setActiveTab = useCallback((id) => {
+        setActiveTabState(id);
+        const url = urlForTab(id);
+        if (window.location.pathname !== url) {
+            window.history.pushState({}, '', url);
+        }
+    }, []);
+    useEffect(() => {
+        const onPop = () => {
+            const tab = readTabFromUrl();
+            if (tab) setActiveTabState(tab);
+        };
+        window.addEventListener('popstate', onPop);
+        return () => window.removeEventListener('popstate', onPop);
+    }, []);
+    const [orgExpanded, setOrgExpanded] = useState(() => {
+        const tab = readTabFromUrl();
+        return !!tab && Object.prototype.hasOwnProperty.call(ORG_ID_TO_URL, tab);
+    });
 
     const perms = user?.permissions || [];
     const canSeeOrg = perms.includes('all') || perms.includes('org_admin') || user?.orgRole === 'admin' || user?.orgRole === 'org_admin';

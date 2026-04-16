@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import KnowledgePanel from '../KnowledgePanel';
 import VersionHistory from '../VersionHistory';
 import { API_BASE } from '../../utils/helpers';
+import { useUrlQueryParam } from '../../hooks/useUrlTab';
 
 /**
  * AgentEditorUI - Reusable presentational component for editing agents
@@ -29,9 +30,21 @@ const AgentEditorUI = ({
     groups = [],
     // Agent categories
     categories = [],
-    onCreateCategory
+    onCreateCategory,
+    // When set (e.g. 'editTab'), the inner tab is mirrored on a URL query
+    // parameter so the editor is deep-linkable. Undefined → local state only.
+    urlSyncKey = null,
 }) => {
-    const [activeTab, setActiveTab] = useState('general');
+    const VALID_TABS = ['general', ...(hasKnowledge ? ['knowledge'] : [])];
+    const [urlTab, setUrlTab] = useUrlQueryParam(urlSyncKey || '__noop_editor_tab__');
+    const [localTab, setLocalTab] = useState('general');
+    const activeTab = urlSyncKey
+        ? (VALID_TABS.includes(urlTab) ? urlTab : 'general')
+        : localTab;
+    const setActiveTab = (v) => {
+        if (urlSyncKey) setUrlTab(v);
+        else setLocalTab(v);
+    };
     const [showEmojiPicker, setShowEmojiPicker] = useState(false);
     const [showNewCategory, setShowNewCategory] = useState(false);
     const [newCategoryName, setNewCategoryName] = useState('');

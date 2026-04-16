@@ -308,6 +308,7 @@ const AgentDesignerPanel = ({
                     groups={groups}
                     categories={categories}
                     onCreateCategory={handleCreateCategory}
+                    urlSyncKey="editTab"
                 />
             </div>
 

@@ -2,7 +2,14 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Users, UserPlus, Shield, Trash2, Edit2, Check, X, Plus, ChevronDown, ChevronRight, Mail, Clock, Send, Link2, AlertCircle, Search } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
+import { useUrlTab } from '../../hooks/useUrlTab';
 import { ORG_ROLES } from '../../config/orgRoles';
+
+// The three sub-tabs map to /app/org-settings/users/{list|groups|roles}.
+// The 'list' URL corresponds to the 'users' internal id so the URL segment
+// doesn't collide with the parent path (`.../users`).
+const ORG_USERS_SECTIONS = ['users', 'groups', 'roles'];
+const ORG_USERS_URL_ALIASES = { users: 'list' };
 
 // Skeleton loader
 const TableSkeleton = () => (
@@ -25,14 +32,19 @@ const TableSkeleton = () => (
     </div>
 );
 
-const OrgUsersPanel = ({ user }) => {
+const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
     const { t } = useTranslation();
     const [users, setUsers] = useState([]);
     const [groups, setGroups] = useState([]);
     const [roles, setRoles] = useState([]);
     const [organizations, setOrganizations] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [activeSection, setActiveSection] = useState('users');
+    const [activeSection, setActiveSection] = useUrlTab({
+        basePath: '/app/org-settings/users',
+        validValues: ORG_USERS_SECTIONS,
+        defaultValue: 'users',
+        aliases: ORG_USERS_URL_ALIASES,
+    });
 
     // Group creation form
     const [showCreateGroup, setShowCreateGroup] = useState(false);

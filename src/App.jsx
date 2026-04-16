@@ -51,6 +51,10 @@ function pageFromPath(pathname) {
     if (pathname === '/app/org-settings' || pathname.startsWith('/app/org-settings/')) return 'orgSettings';
     // Legacy bare /org-settings
     if (pathname === '/org-settings' || pathname.startsWith('/org-settings/')) return 'orgSettings';
+    // /app/settings or /app/settings/* → settings
+    if (pathname === '/app/settings' || pathname.startsWith('/app/settings/')) return 'settings';
+    // /app/agent-designer or /app/agent-designer/* → agentDesigner
+    if (pathname === '/app/agent-designer' || pathname.startsWith('/app/agent-designer/')) return 'agentDesigner';
     // /app/notebooks/:id → notebooks page (must come before generic /app/*)
     if (pathname.startsWith('/app/notebooks')) return 'notebooks';
 
@@ -88,6 +92,12 @@ function parseOrgSettingsPath(pathname) {
         seg1: match?.[1] || '',
         seg2: match?.[2] || '',
     };
+}
+
+// Parse the agent id out of /app/agent-designer/{agentId} (trailing segments ignored).
+function parseAgentDesignerUrl(pathname) {
+    const match = pathname.match(/^\/app\/agent-designer(?:\/([^/]+))?/);
+    return match?.[1] || null;
 }
 
 // Extract agent ID prefix and conversation ID prefix from URL
@@ -134,9 +144,12 @@ function App() {
     const [deploymentMode, setDeploymentMode] = useState('cloud');
     const [serverAvailable, setServerAvailable] = useState(null); // null=unknown, true=ok, false=down
     const [showProfileMenu, setShowProfileMenu] = useState(false);
-    const [showAgentDesigner, setShowAgentDesigner] = useState(false);
-    const [initialDesignerAgentId, setInitialDesignerAgentId] = useState(null);
-    const [showSettings, setShowSettings] = useState(false);
+    const [showAgentDesigner, setShowAgentDesigner] = useState(() => pageFromPath(window.location.pathname) === 'agentDesigner');
+    const [initialDesignerAgentId, setInitialDesignerAgentId] = useState(() => parseAgentDesignerUrl(window.location.pathname));
+    // Settings panel is rendered inline inside AgentHub when showSettings is true.
+    // Keep it in sync with the URL so /app/settings/* on hard-refresh opens the panel
+    // and the browser's back/forward buttons toggle it.
+    const [showSettings, setShowSettings] = useState(() => pageFromPath(window.location.pathname) === 'settings');
     const [showSkillsPanel, setShowSkillsPanel] = useState(false);
     const [showEmailKB, setShowEmailKB] = useState(false);
     const [encryptionState, setEncryptionState] = useState(null); // null | 'setup' | 'pin' | { recoveryKey: string }
@@ -234,10 +247,16 @@ function App() {
     // Handle browser back/forward
     useEffect(() => {
         const handlePopState = () => {
-            setCurrentPage(pageFromPath(window.location.pathname));
+            const page = pageFromPath(window.location.pathname);
+            setCurrentPage(page);
             setAdminPath(parseAdminPath(window.location.pathname));
             setOrgSettingsPath(parseOrgSettingsPath(window.location.pathname));
             setInitialNotebookId(parseNotebookUrl(window.location.pathname));
+            // Sync inline-rendered panels with the URL so back/forward opens or closes them.
+            setShowSettings(page === 'settings');
+            const isDesigner = page === 'agentDesigner';
+            setShowAgentDesigner(isDesigner);
+            if (isDesigner) setInitialDesignerAgentId(parseAgentDesignerUrl(window.location.pathname));
         };
         window.addEventListener('popstate', handlePopState);
         return () => window.removeEventListener('popstate', handlePopState);
@@ -272,13 +291,27 @@ function App() {
             setShowAgentDesigner(true);
             setShowSettings(false);
             setShowSkillsPanel(false);
+            // Push the URL so /app/agent-designer[/{id}] is bookmarkable.
+            const path = agentId ? `/app/agent-designer/${agentId}` : '/app/agent-designer';
+            if (window.location.pathname !== path) {
+                window.history.pushState({ page: 'agentDesigner' }, '', path);
+            }
+            setCurrentPage('agentDesigner');
             return;
         }
         // Settings renders inline in conversation area
-        if (page === 'settings') {
+        if (page === 'settings' || page.startsWith('settings/')) {
             setShowSettings(true);
             setShowAgentDesigner(false);
             setShowSkillsPanel(false);
+            // Push the URL so the settings panel is bookmarkable / back-button aware.
+            // Sub-path (e.g. 'settings/memory') is preserved as `/app/settings/memory`.
+            const subPath = page === 'settings' ? '' : page.slice('settings'.length);
+            const path = '/app/settings' + subPath;
+            if (window.location.pathname !== path) {
+                window.history.pushState({ page: 'settings' }, '', path);
+            }
+            setCurrentPage('settings');
             return;
         }
         // Skills panel renders inline in conversation area
@@ -597,7 +630,23 @@ function App() {
             />;
         }
 
-        return <AgentHub onNavigate={navigateToPage} user={user} initialAgentId={initialUrlRef.current.agentId} initialConversationId={initialUrlRef.current.conversationId} initialDirectConvId={initialDirectConvRef.current} onLogout={handleLogout} currentPage={currentPage} showSettings={showSettings} onCloseSettings={() => { setShowSettings(false); }} showAgentDesigner={showAgentDesigner} onCloseAgentDesigner={() => setShowAgentDesigner(false)} initialDesignerAgentId={initialDesignerAgentId} showSkillsPanel={showSkillsPanel} onCloseSkillsPanel={() => setShowSkillsPanel(false)} showEmailKB={showEmailKB} onCloseEmailKB={() => setShowEmailKB(false)} />;
+        return <AgentHub onNavigate={navigateToPage} user={user} initialAgentId={initialUrlRef.current.agentId} initialConversationId={initialUrlRef.current.conversationId} initialDirectConvId={initialDirectConvRef.current} onLogout={handleLogout} currentPage={currentPage} showSettings={showSettings} onCloseSettings={() => {
+            setShowSettings(false);
+            // Return the URL to the app root when the settings panel closes, so
+            // the back button doesn't leave /app/settings stuck in the address bar.
+            if (window.location.pathname.startsWith('/app/settings')) {
+                setCurrentPage('agents');
+                window.history.pushState({ page: 'agents' }, '', '/app');
+            }
+        }} showAgentDesigner={showAgentDesigner} onCloseAgentDesigner={() => {
+            setShowAgentDesigner(false);
+            // Return the URL to the app root when the designer closes so /app/agent-designer
+            // doesn't stay in the address bar.
+            if (window.location.pathname.startsWith('/app/agent-designer')) {
+                setCurrentPage('agents');
+                window.history.pushState({ page: 'agents' }, '', '/app');
+            }
+        }} initialDesignerAgentId={initialDesignerAgentId} showSkillsPanel={showSkillsPanel} onCloseSkillsPanel={() => setShowSkillsPanel(false)} showEmailKB={showEmailKB} onCloseEmailKB={() => setShowEmailKB(false)} />;
     };
 
     return (
