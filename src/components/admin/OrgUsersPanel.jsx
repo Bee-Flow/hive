@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { Users, UserPlus, Shield, Trash2, Edit2, Check, X, Plus, ChevronDown, ChevronRight, Mail, Clock, Send, Link2, AlertCircle, Search } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
@@ -72,6 +72,11 @@ const OrgUsersPanel = ({ user }) => {
     // Per-user AI usage (last 30 days)
     const [usageByUser, setUsageByUser] = useState(new Map());
 
+    // Group-assign popover (click-to-open replaces the old hover dropdown).
+    const [groupAssignOpenFor, setGroupAssignOpenFor] = useState(null);
+    const [groupAssignSearch, setGroupAssignSearch] = useState('');
+    const groupAssignRef = useRef(null);
+
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
@@ -108,6 +113,24 @@ const OrgUsersPanel = ({ user }) => {
     }, []);
 
     useEffect(() => { fetchInvitations(); }, [fetchInvitations]);
+
+    // Close the group-assign popover on outside-click or Esc.
+    useEffect(() => {
+        if (!groupAssignOpenFor) return;
+        const onDocClick = (e) => {
+            if (groupAssignRef.current && !groupAssignRef.current.contains(e.target)) {
+                setGroupAssignOpenFor(null);
+                setGroupAssignSearch('');
+            }
+        };
+        const onKey = (e) => { if (e.key === 'Escape') { setGroupAssignOpenFor(null); setGroupAssignSearch(''); } };
+        document.addEventListener('mousedown', onDocClick);
+        document.addEventListener('keydown', onKey);
+        return () => {
+            document.removeEventListener('mousedown', onDocClick);
+            document.removeEventListener('keydown', onKey);
+        };
+    }, [groupAssignOpenFor]);
 
     // Fetch per-user AI usage (last 30 days) once; non-blocking for the panel.
     useEffect(() => {
@@ -705,30 +728,104 @@ const OrgUsersPanel = ({ user }) => {
                                                         </button>
                                                     )}
                                                 </div>
-                                                {/* Group assignment dropdown */}
-                                                <div className="relative group/assign">
-                                                    <button className="text-xs px-2 py-1 rounded-lg text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition-colors" title="Assign groups">
+                                                {/* Group assignment — click-to-open popover */}
+                                                <div className="relative" ref={groupAssignOpenFor === u.id ? groupAssignRef : null}>
+                                                    <button
+                                                        onClick={() => {
+                                                            setGroupAssignOpenFor(prev => prev === u.id ? null : u.id);
+                                                            setGroupAssignSearch('');
+                                                        }}
+                                                        className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded-lg transition-colors ${groupAssignOpenFor === u.id
+                                                            ? 'bg-[var(--accent-primary)]/15 text-[var(--accent-primary)]'
+                                                            : 'text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'}`}
+                                                        title={t('admin.org_assign_groups', 'Assign groups')}
+                                                    >
                                                         <UserPlus className="w-3.5 h-3.5" />
+                                                        {uGroups.length > 0 && (
+                                                            <span className="text-[10px] font-semibold">{uGroups.length}</span>
+                                                        )}
                                                     </button>
-                                                    <div className="absolute right-0 top-full mt-1 w-52 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] shadow-xl z-50 opacity-0 pointer-events-none group-hover/assign:opacity-100 group-hover/assign:pointer-events-auto transition-all">
-                                                        <div className="p-2 text-xs font-medium text-[var(--text-muted)] border-b border-[var(--border-subtle)]">Assign to groups</div>
-                                                        <div className="max-h-48 overflow-auto p-1">
-                                                            {orgGroups.map(g => (
-                                                                <label key={g.id} className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-[var(--bg-secondary)] cursor-pointer text-sm">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={uGroups.includes(g.id)}
-                                                                        onChange={() => handleUserGroupToggle(u.id, g.id, uGroups)}
-                                                                        className="rounded"
-                                                                    />
-                                                                    <span className="text-[var(--text-primary)]">{g.name}</span>
-                                                                </label>
-                                                            ))}
-                                                            {orgGroups.length === 0 && (
-                                                                <div className="px-2 py-2 text-xs text-[var(--text-muted)]">No groups in this organisation</div>
+                                                    {groupAssignOpenFor === u.id && (
+                                                        <div className="absolute right-0 top-full mt-1 w-64 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] shadow-xl z-50">
+                                                            <div className="px-3 py-2 border-b border-[var(--border-subtle)] flex items-center justify-between">
+                                                                <div className="text-xs font-semibold text-[var(--text-primary)]">{t('admin.org_assign_groups_title', 'Groups')}</div>
+                                                                <span className="text-[10px] text-[var(--text-muted)]">
+                                                                    {t('admin.org_assign_groups_selected', '{count} selected').replace('{count}', uGroups.length)}
+                                                                </span>
+                                                            </div>
+                                                            {orgGroups.length > 5 && (
+                                                                <div className="px-2 pt-2">
+                                                                    <div className="relative">
+                                                                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 text-[var(--text-muted)]" />
+                                                                        <input
+                                                                            type="text"
+                                                                            autoFocus
+                                                                            value={groupAssignSearch}
+                                                                            onChange={e => setGroupAssignSearch(e.target.value)}
+                                                                            placeholder={t('admin.org_assign_groups_search', 'Search groups…')}
+                                                                            className="w-full pl-7 pr-2 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs outline-none focus:border-[var(--accent-primary)]"
+                                                                        />
+                                                                    </div>
+                                                                </div>
+                                                            )}
+                                                            <div className="max-h-60 overflow-auto p-1">
+                                                                {orgGroups.length === 0 ? (
+                                                                    <div className="px-3 py-4 text-center">
+                                                                        <div className="text-xs text-[var(--text-muted)] mb-2">{t('admin.org_assign_groups_none', 'No groups in this organisation yet.')}</div>
+                                                                        <button
+                                                                            onClick={() => { setGroupAssignOpenFor(null); setActiveSection('groups'); setShowCreateGroup(true); }}
+                                                                            className="inline-flex items-center gap-1 text-[11px] text-[var(--accent-primary)] hover:underline"
+                                                                        >
+                                                                            <Plus className="w-3 h-3" />
+                                                                            {t('admin.org_new_group', 'Create New Group')}
+                                                                        </button>
+                                                                    </div>
+                                                                ) : (() => {
+                                                                    const q = groupAssignSearch.trim().toLowerCase();
+                                                                    const matches = q ? orgGroups.filter(g => (g.name || '').toLowerCase().includes(q)) : orgGroups;
+                                                                    // Selected first, then alphabetical within each segment.
+                                                                    const sorted = [...matches].sort((a, b) => {
+                                                                        const aSel = uGroups.includes(a.id) ? 0 : 1;
+                                                                        const bSel = uGroups.includes(b.id) ? 0 : 1;
+                                                                        if (aSel !== bSel) return aSel - bSel;
+                                                                        return (a.name || '').localeCompare(b.name || '');
+                                                                    });
+                                                                    if (sorted.length === 0) {
+                                                                        return <div className="px-3 py-3 text-[11px] text-[var(--text-muted)] text-center">{t('admin.org_assign_groups_no_match', 'No groups match your search.')}</div>;
+                                                                    }
+                                                                    return sorted.map(g => {
+                                                                        const isMember = uGroups.includes(g.id);
+                                                                        const memberCount = getGroupCount(g.id);
+                                                                        return (
+                                                                            <button
+                                                                                key={g.id}
+                                                                                type="button"
+                                                                                onClick={() => handleUserGroupToggle(u.id, g.id, uGroups)}
+                                                                                className={`w-full flex items-center gap-2 px-2 py-1.5 rounded-lg text-left cursor-pointer text-sm transition-colors ${isMember ? 'bg-[var(--accent-primary)]/10 hover:bg-[var(--accent-primary)]/15' : 'hover:bg-[var(--bg-secondary)]'}`}
+                                                                            >
+                                                                                <span className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${isMember ? 'bg-[var(--accent-primary)] border-[var(--accent-primary)]' : 'border-[var(--border-subtle)]'}`}>
+                                                                                    {isMember && <Check className="w-3 h-3 text-white" />}
+                                                                                </span>
+                                                                                <span className="flex-1 min-w-0 truncate text-[var(--text-primary)]">{g.name}</span>
+                                                                                <span className="text-[10px] text-[var(--text-muted)]">{memberCount}</span>
+                                                                            </button>
+                                                                        );
+                                                                    });
+                                                                })()}
+                                                            </div>
+                                                            {orgGroups.length > 0 && (
+                                                                <div className="px-2 py-1.5 border-t border-[var(--border-subtle)]">
+                                                                    <button
+                                                                        onClick={() => { setGroupAssignOpenFor(null); setActiveSection('groups'); setShowCreateGroup(true); }}
+                                                                        className="w-full flex items-center gap-1.5 px-2 py-1.5 rounded-lg text-[11px] font-medium text-[var(--accent-primary)] hover:bg-[var(--accent-primary)]/5 transition-colors"
+                                                                    >
+                                                                        <Plus className="w-3 h-3" />
+                                                                        {t('admin.org_new_group', 'Create New Group')}
+                                                                    </button>
+                                                                </div>
                                                             )}
                                                         </div>
-                                                    </div>
+                                                    )}
                                                 </div>
                                             </>
                                         )}
