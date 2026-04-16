@@ -69,6 +69,9 @@ const OrgUsersPanel = ({ user }) => {
     const [invitations, setInvitations] = useState([]);
     const [loadingInvitations, setLoadingInvitations] = useState(false);
 
+    // Per-user AI usage (last 30 days)
+    const [usageByUser, setUsageByUser] = useState(new Map());
+
     const fetchData = useCallback(async () => {
         setLoading(true);
         try {
@@ -105,6 +108,30 @@ const OrgUsersPanel = ({ user }) => {
     }, []);
 
     useEffect(() => { fetchInvitations(); }, [fetchInvitations]);
+
+    // Fetch per-user AI usage (last 30 days) once; non-blocking for the panel.
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/api/usage/by-user?days=30`);
+                if (!res.ok) return;
+                const rows = await res.json();
+                if (cancelled) return;
+                const map = new Map();
+                for (const r of rows) {
+                    map.set(r.user_id, {
+                        calls: Number(r.calls) || 0,
+                        tokens: Number(r.total_tokens) || 0,
+                    });
+                }
+                setUsageByUser(map);
+            } catch (err) {
+                console.warn('[OrgUsers] Failed to load usage:', err.message);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, []);
 
     useEffect(() => {
         if (!newGroupOrg && organizations.length > 0) {
@@ -520,37 +547,34 @@ const OrgUsersPanel = ({ user }) => {
                                     onChange={e => setUserRoleFilter(e.target.value)}
                                     className="px-2.5 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs outline-none"
                                 >
-                                    <option value="all">{t('admin.org_all_roles', 'All roles')}</option>
-                                    <option value="user">User</option>
+                                    <option value="all">{t('admin.org_all_roles')}</option>
+                                    <option value="user">{t('admin.org_role_user')}</option>
                                     {ORG_ROLES.map(r => (
                                         <option key={r.id} value={r.id}>{r.name}</option>
                                     ))}
                                 </select>
-                                {orgGroups.length > 0 && (
-                                    <select
-                                        value={userGroupFilter}
-                                        onChange={e => setUserGroupFilter(e.target.value)}
-                                        className="px-2.5 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs outline-none max-w-[200px]"
-                                    >
-                                        <option value="all">{t('admin.org_all_groups', 'All groups')}</option>
-                                        {orgGroups.map(g => (
-                                            <option key={g.id} value={g.id}>{g.name}</option>
-                                        ))}
-                                    </select>
-                                )}
+                                <select
+                                    value={userGroupFilter}
+                                    onChange={e => setUserGroupFilter(e.target.value)}
+                                    disabled={orgGroups.length === 0}
+                                    className="px-2.5 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs outline-none max-w-[200px] disabled:opacity-50"
+                                >
+                                    <option value="all">{t('admin.org_all_groups')}</option>
+                                    {orgGroups.map(g => (
+                                        <option key={g.id} value={g.id}>{g.name}</option>
+                                    ))}
+                                </select>
                                 <select
                                     value={userStatusFilter}
                                     onChange={e => setUserStatusFilter(e.target.value)}
                                     className="px-2.5 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs outline-none"
                                 >
-                                    <option value="all">{t('admin.org_all_statuses', 'Any status')}</option>
-                                    <option value="active">Active</option>
-                                    <option value="pending">Pending</option>
+                                    <option value="all">{t('admin.org_all_statuses')}</option>
+                                    <option value="active">{t('admin.org_status_active')}</option>
+                                    <option value="pending">{t('admin.org_status_pending')}</option>
                                 </select>
                                 <span className="text-[11px] text-[var(--text-muted)] ml-auto whitespace-nowrap">
-                                    {t('admin.org_showing_count', '{count} of {total}')
-                                        .replace('{count}', filteredOrgUsers.length)
-                                        .replace('{total}', orgUsers.length)}
+                                    {t('admin.org_showing_count', { count: filteredOrgUsers.length, total: orgUsers.length })}
                                 </span>
                                 {userFiltersActive && (
                                     <button
@@ -616,6 +640,21 @@ const OrgUsersPanel = ({ user }) => {
                                                 ))}
                                             </div>
                                         </div>
+                                        {/* AI usage — last 30 days */}
+                                        {(() => {
+                                            const usage = usageByUser.get(u.id);
+                                            if (!usage || !usage.tokens) return null;
+                                            const fmt = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n);
+                                            return (
+                                                <div
+                                                    className="hidden md:flex flex-col items-end shrink-0 text-right"
+                                                    title={t('admin.org_usage_tooltip', { calls: usage.calls.toLocaleString(), tokens: usage.tokens.toLocaleString() })}
+                                                >
+                                                    <span className="text-[11px] font-semibold text-[var(--text-primary)] leading-tight">{fmt(usage.tokens)}</span>
+                                                    <span className="text-[9px] text-[var(--text-muted)] uppercase tracking-wider leading-tight">{t('admin.org_usage_tokens_30d')}</span>
+                                                </div>
+                                            );
+                                        })()}
                                         {u.status === 'pending' ? (
                                             <div className="flex items-center gap-1">
                                                 <button
