@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { Users, UserPlus, Shield, Trash2, Edit2, Check, X, Plus, ChevronDown, ChevronRight, Mail, Clock, Send, Link2, AlertCircle } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { Users, UserPlus, Shield, Trash2, Edit2, Check, X, Plus, ChevronDown, ChevronRight, Mail, Clock, Send, Link2, AlertCircle, Search } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 import { ORG_ROLES } from '../../config/orgRoles';
@@ -47,6 +47,12 @@ const OrgUsersPanel = ({ user }) => {
 
     // User role editing
     const [editingUserRole, setEditingUserRole] = useState(null);
+
+    // User list filters
+    const [userSearch, setUserSearch] = useState('');
+    const [userRoleFilter, setUserRoleFilter] = useState('all');
+    const [userGroupFilter, setUserGroupFilter] = useState('all');
+    const [userStatusFilter, setUserStatusFilter] = useState('all');
 
     // Expanded role details
     const [expandedRole, setExpandedRole] = useState(null);
@@ -295,6 +301,33 @@ const OrgUsersPanel = ({ user }) => {
         return uGroups.some(gid => orgGroups.some(og => og.id === gid));
     });
 
+    const filteredOrgUsers = useMemo(() => {
+        const q = userSearch.trim().toLowerCase();
+        return orgUsers.filter(u => {
+            if (q) {
+                const hay = `${u.displayName || ''} ${u.username || ''} ${u.email || ''}`.toLowerCase();
+                if (!hay.includes(q)) return false;
+            }
+            if (userRoleFilter !== 'all') {
+                const role = u.orgRole || u.role || 'user';
+                if (userRoleFilter === 'user') {
+                    if (role !== 'user' && role !== 'member') return false;
+                } else if (role !== userRoleFilter) return false;
+            }
+            if (userGroupFilter !== 'all') {
+                const uGroups = Array.isArray(u.groups) ? u.groups : [];
+                if (!uGroups.includes(userGroupFilter)) return false;
+            }
+            if (userStatusFilter !== 'all') {
+                const status = u.status || 'active';
+                if (status !== userStatusFilter) return false;
+            }
+            return true;
+        });
+    }, [orgUsers, userSearch, userRoleFilter, userGroupFilter, userStatusFilter]);
+
+    const userFiltersActive = userSearch.trim() !== '' || userRoleFilter !== 'all' || userGroupFilter !== 'all' || userStatusFilter !== 'all';
+
     const getGroupCount = (groupId) => {
         return users.filter(u => {
             const uGroups = Array.isArray(u.groups) ? u.groups : [];
@@ -469,8 +502,75 @@ const OrgUsersPanel = ({ user }) => {
                             </div>
                         </div>
                     ) : (
+                        <>
+                            {/* Filter bar */}
+                            <div className="px-5 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-primary)] flex flex-wrap items-center gap-2">
+                                <div className="relative flex-1 min-w-[200px]">
+                                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-[var(--text-muted)]" />
+                                    <input
+                                        type="text"
+                                        value={userSearch}
+                                        onChange={e => setUserSearch(e.target.value)}
+                                        placeholder={t('admin.org_search_users', 'Search by name or email…')}
+                                        className="w-full pl-9 pr-3 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs outline-none focus:border-[var(--accent-primary)] transition-colors"
+                                    />
+                                </div>
+                                <select
+                                    value={userRoleFilter}
+                                    onChange={e => setUserRoleFilter(e.target.value)}
+                                    className="px-2.5 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs outline-none"
+                                >
+                                    <option value="all">{t('admin.org_all_roles', 'All roles')}</option>
+                                    <option value="user">User</option>
+                                    {ORG_ROLES.map(r => (
+                                        <option key={r.id} value={r.id}>{r.name}</option>
+                                    ))}
+                                </select>
+                                {orgGroups.length > 0 && (
+                                    <select
+                                        value={userGroupFilter}
+                                        onChange={e => setUserGroupFilter(e.target.value)}
+                                        className="px-2.5 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs outline-none max-w-[200px]"
+                                    >
+                                        <option value="all">{t('admin.org_all_groups', 'All groups')}</option>
+                                        {orgGroups.map(g => (
+                                            <option key={g.id} value={g.id}>{g.name}</option>
+                                        ))}
+                                    </select>
+                                )}
+                                <select
+                                    value={userStatusFilter}
+                                    onChange={e => setUserStatusFilter(e.target.value)}
+                                    className="px-2.5 py-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-xs outline-none"
+                                >
+                                    <option value="all">{t('admin.org_all_statuses', 'Any status')}</option>
+                                    <option value="active">Active</option>
+                                    <option value="pending">Pending</option>
+                                </select>
+                                <span className="text-[11px] text-[var(--text-muted)] ml-auto whitespace-nowrap">
+                                    {t('admin.org_showing_count', '{count} of {total}')
+                                        .replace('{count}', filteredOrgUsers.length)
+                                        .replace('{total}', orgUsers.length)}
+                                </span>
+                                {userFiltersActive && (
+                                    <button
+                                        onClick={() => { setUserSearch(''); setUserRoleFilter('all'); setUserGroupFilter('all'); setUserStatusFilter('all'); }}
+                                        className="text-[11px] text-[var(--accent-primary)] hover:underline"
+                                    >
+                                        {t('admin.org_clear_filters', 'Clear')}
+                                    </button>
+                                )}
+                            </div>
+                            {filteredOrgUsers.length === 0 ? (
+                                <div className="px-5 py-10 text-center">
+                                    <Search className="w-8 h-8 mx-auto mb-2 text-[var(--text-muted)] opacity-30" />
+                                    <p className="text-xs text-[var(--text-muted)]">
+                                        {t('admin.org_no_matches', 'No users match the current filters.')}
+                                    </p>
+                                </div>
+                            ) : (
                         <div className="divide-y divide-[var(--border-subtle)]">
-                            {orgUsers.map(u => {
+                            {filteredOrgUsers.map(u => {
                                 const uGroups = Array.isArray(u.groups) ? u.groups : [];
                                 const userOrgGroups = orgGroups.filter(g => uGroups.includes(g.id));
                                 return (
@@ -596,6 +696,8 @@ const OrgUsersPanel = ({ user }) => {
                                 );
                             })}
                         </div>
+                            )}
+                        </>
                     )}
 
                     {/* Pending Invitations */}
