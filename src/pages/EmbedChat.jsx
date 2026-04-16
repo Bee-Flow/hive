@@ -269,6 +269,10 @@ const EmbedChat = ({ agentId }) => {
             let assistantContent = '';
             let buffer = '';
             let currentEvent = '';
+            // Set when the agent fires an email_draft event during this turn —
+            // used to suppress the prose DOM-fallback on `done`, otherwise we'd
+            // double-insert into Gmail compose.
+            let emailDraftEmittedThisTurn = false;
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -466,10 +470,11 @@ const EmbedChat = ({ agentId }) => {
                                     m.id === assistantMsgId ? { ...m, content: data.error, isStreaming: false, isError: true } : m
                                 ));
                             } else if (currentEvent === 'done') {
-                                // Notify the Chrome extension parent so it can
-                                // auto-open a Gmail draft when the agent
-                                // didn't already emit an email_draft event.
-                                if (isGmailEmbed && assistantContent.trim()) {
+                                // Prose-fallback: if the agent didn't call gmail_compose,
+                                // push its final text into Gmail's compose via the
+                                // content script. Skip if an email_draft already fired —
+                                // that was handled by the email_draft branch above.
+                                if (isGmailEmbed && !emailDraftEmittedThisTurn && assistantContent.trim()) {
                                     try {
                                         window.parent.postMessage(
                                             { type: 'beeflow:agent_response', text: assistantContent },
