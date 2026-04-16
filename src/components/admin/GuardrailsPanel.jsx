@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
 import { API_BASE, authFetch } from '../../utils/helpers';
+import { LLAMA_GUARD_CATEGORIES, AZURE_CONTENT_SAFETY_CATEGORIES } from '../../utils/guardrailCategories';
+import { ToastHost, showToast } from './guardrails/Toast';
 
 // Guardrails Configuration Panel (Regex Rules)
 const GuardrailsPanel = ({ orgShieldOnly = false }) => {
@@ -111,29 +113,19 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
         { id: 'EUNationalIdentificationNumber',   label: t('pii.eu_national_id'),  group: 'EU',         icon: '🇪🇺' },
     ];
 
-    const MODERATION_CATEGORIES = [
-        { id: 'S1', label: 'Violent Crimes', icon: '⚔️' },
-        { id: 'S2', label: 'Non-Violent Crimes', icon: '⚠️' },
-        { id: 'S3', label: 'Sex-Related Crimes', icon: '🚫' },
-        { id: 'S4', label: 'Child Sexual Exploitation', icon: '🔴' },
-        { id: 'S5', label: 'Defamation', icon: '🗣️' },
-        { id: 'S6', label: 'Specialized Advice', icon: '⚖️' },
-        { id: 'S7', label: 'Privacy', icon: '🔒' },
-        { id: 'S8', label: 'Intellectual Property', icon: '©️' },
-        { id: 'S9', label: 'Indiscriminate Weapons', icon: '💣' },
-        { id: 'S10', label: 'Hate', icon: '🚷' },
-        { id: 'S11', label: 'Suicide & Self-Harm', icon: '💔' },
-        { id: 'S12', label: 'Sexual Content', icon: '🔞' },
-        { id: 'S13', label: 'Elections', icon: '🗳️' },
-        { id: 'S14', label: 'Code Interpreter Abuse', icon: '💻' },
-    ];
+    // Moved to a shared util so the admin UI and the end-user violation toast
+    // use the same human-friendly labels. See agent-hub/src/utils/guardrailCategories.js.
+    const MODERATION_CATEGORIES = LLAMA_GUARD_CATEGORIES;
 
-    const AZURE_MODERATION_CATEGORIES = [
-        { id: 'Hate', label: t('safety.hate'), icon: '🚷' },
-        { id: 'Violence', label: t('safety.violence'), icon: '⚔️' },
-        { id: 'Sexual', label: t('safety.sexual'), icon: '🔞' },
-        { id: 'SelfHarm', label: t('safety.self_harm'), icon: '💔' },
-    ];
+    // Azure Content Safety's four categories. Labels come from the shared util
+    // so the admin UI and violation toast read the same strings. Overridden
+    // here when a translation key exists.
+    const AZURE_TRANSLATION_KEYS = { Hate: 'safety.hate', Violence: 'safety.violence', Sexual: 'safety.sexual', SelfHarm: 'safety.self_harm' };
+    const AZURE_MODERATION_CATEGORIES = AZURE_CONTENT_SAFETY_CATEGORIES.map(c => {
+        const key = AZURE_TRANSLATION_KEYS[c.id];
+        const translated = key ? t(key) : '';
+        return { ...c, label: (translated && translated !== key) ? translated : c.label };
+    });
 
     // Navigation State (default to AI Moderation, or orgshield if orgShieldOnly)
     const [activeTab, setActiveTab] = useState(orgShieldOnly ? 'orgshield' : 'moderation');
@@ -281,12 +273,15 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 })
             });
             if (res.ok) {
-                setOrgShieldMessage({ type: 'success', text: t('admin.guard_saved') });
+                showToast('success', t('admin.guard_saved'));
+                setOrgShieldMessage(null);
             } else {
-                const data = await res.json();
+                const data = await res.json().catch(() => ({}));
+                showToast('error', data.error || 'Failed to save.');
                 setOrgShieldMessage({ type: 'error', text: data.error || 'Failed to save.' });
             }
         } catch (e) {
+            showToast('error', 'Error saving.');
             setOrgShieldMessage({ type: 'error', text: 'Error saving.' });
         } finally {
             setOrgShieldSaving(false);
@@ -427,6 +422,8 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
 
     return (
         <div className={`flex h-full ${orgShieldOnly ? '' : 'border rounded-xl'} overflow-hidden shadow-sm`} style={{ borderColor: orgShieldOnly ? 'transparent' : 'var(--border-default)', background: 'var(--bg-secondary)' }}>
+            {/* Auto-dismissing toasts for save / error feedback — shared across every sub-section. */}
+            <ToastHost />
             {/* Left Sidebar - hidden when orgShieldOnly */}
             {!orgShieldOnly && (
                 <div className="w-64 flex flex-col p-2 border-r" style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)' }}>
@@ -1411,29 +1408,16 @@ const AIModerationConfig = () => {
         }
     };
 
-    const llamaCategories = [
-        { id: 'S1', label: 'Violent Crimes', icon: '⚔️' },
-        { id: 'S2', label: 'Non-Violent Crimes', icon: '⚠️' },
-        { id: 'S3', label: 'Sex-Related Crimes', icon: '🚫' },
-        { id: 'S4', label: 'Child Sexual Exploitation', icon: '🛑' },
-        { id: 'S5', label: 'Defamation', icon: '📢' },
-        { id: 'S6', label: 'Specialized Advice', icon: '⚕️' },
-        { id: 'S7', label: 'Privacy', icon: '🔒' },
-        { id: 'S8', label: 'Intellectual Property', icon: '©️' },
-        { id: 'S9', label: 'Indiscriminate Weapons', icon: '💣' },
-        { id: 'S10', label: 'Hate', icon: '🚷' },
-        { id: 'S11', label: 'Suicide & Self-Harm', icon: '💔' },
-        { id: 'S12', label: 'Sexual Content', icon: '🔞' },
-        { id: 'S13', label: 'Elections', icon: '🗳️' },
-        { id: 'S14', label: 'Code Interpreter Abuse', icon: '💻' },
-    ];
-
-    const azureCategories = [
-        { id: 'Hate', label: 'Hate and Fairness', icon: '🚷', desc: 'Discrimination, slurs, identity attacks' },
-        { id: 'Violence', label: 'Violence', icon: '⚔️', desc: 'Physical harm, weapons, extremism' },
-        { id: 'Sexual', label: 'Sexual', icon: '🔞', desc: 'Sexual content, nudity, exploitation' },
-        { id: 'SelfHarm', label: 'Self-Harm', icon: '💔', desc: 'Self-injury, suicide, eating disorders' },
-    ];
+    // Shared category metadata — one source of truth per util.
+    const llamaCategories = LLAMA_GUARD_CATEGORIES;
+    // Azure categories here include extra `desc` copy shown under each row.
+    const AZURE_DESCRIPTIONS = {
+        Hate: 'Discrimination, slurs, identity attacks',
+        Violence: 'Physical harm, weapons, extremism',
+        Sexual: 'Sexual content, nudity, exploitation',
+        SelfHarm: 'Self-injury, suicide, eating disorders',
+    };
+    const azureCategories = AZURE_CONTENT_SAFETY_CATEGORIES.map(c => ({ ...c, desc: AZURE_DESCRIPTIONS[c.id] || '' }));
 
     const guardOnline = guardHealth?.status === 'ok';
     const guardFastOk = guardHealth?.guard_fast === 'ok';
