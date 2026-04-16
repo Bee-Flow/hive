@@ -434,6 +434,19 @@ export default function useChatEngine({
                 }
                 break;
             }
+            case 'pii_tokenized': {
+                // The server auto-tokenised PII in the user's message before sending
+                // it to the LLM. Attach the count + category labels to the user's
+                // own bubble so the <TokenisedBadge> can render "🔒 1 email redacted".
+                const entities = Array.isArray(data?.entities) ? data.entities : [];
+                const categories = [...new Set(entities.map(e => e.label || e.category).filter(Boolean))];
+                setMessages(prev => prev.map(m =>
+                    m.id === userMsgId
+                        ? { ...m, piiTokenizedCount: data?.tokenCount || entities.length, piiCategories: categories }
+                        : m
+                ));
+                break;
+            }
             case 'dlp_blocked': {
                 window.dispatchEvent(new CustomEvent('beeflow:dlp_blocked', { detail: data }));
                 const reason = data?.reason || 'policy';

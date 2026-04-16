@@ -932,25 +932,41 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                             </div>
                                                         </div>
 
-                                                        {/* PII Action */}
+                                                        {/* PII Action — three clear choices with end-user impact explainers. */}
                                                         <div className="p-4 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
                                                             <label className="text-xs font-medium text-muted block mb-2">{t('azure.pii_action_on_detection')}</label>
-                                                            <div className="flex gap-2">
-                                                                {[{ id: 'block', label: t('azure.pii_action_block'), desc: t('azure.pii_action_block_desc'), icon: '🚫' }, { id: 'tokenize', label: t('azure.pii_action_redact'), desc: t('azure.pii_action_redact_desc'), icon: '🔒' }].map(opt => (
+                                                            <div className="flex gap-2 flex-wrap">
+                                                                {[
+                                                                    {
+                                                                        id: 'tokenize',
+                                                                        label: t('dlp.action_tokenize_label', 'Tokenize & round-trip'),
+                                                                        desc: t('dlp.action_tokenize_help', 'Replace sensitive values with placeholders like [email_1] before the AI sees them. The real values are never sent to the model; BeeFlow swaps them back in the response. User sees a small \uD83D\uDD12 badge under their message.'),
+                                                                        icon: '🔄',
+                                                                    },
+                                                                    {
+                                                                        id: 'block',
+                                                                        label: t('dlp.action_block_label', 'Block the message'),
+                                                                        desc: t('dlp.action_block_help', 'Reject the message before it leaves the organisation. The user is asked to rephrase without sensitive data.'),
+                                                                        icon: '🚫',
+                                                                    },
+                                                                ].map(opt => (
                                                                     <button
                                                                         key={opt.id}
                                                                         onClick={() => setOrgPiiAction(opt.id)}
-                                                                        className="flex-1 px-3 py-2.5 rounded-lg text-left transition-all"
+                                                                        className="flex-1 min-w-[180px] px-3 py-2.5 rounded-lg text-left transition-all"
                                                                         style={{
                                                                             background: orgPiiAction === opt.id ? 'rgba(16,185,129,0.1)' : 'var(--bg-primary)',
                                                                             border: `1.5px solid ${orgPiiAction === opt.id ? '#10B981' : 'var(--border-subtle)'}`,
                                                                         }}
                                                                     >
                                                                         <p className="text-xs font-medium" style={{ color: orgPiiAction === opt.id ? '#10B981' : 'var(--text-primary)' }}>{opt.icon} {opt.label}</p>
-                                                                        <p className="text-[10px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{opt.desc}</p>
+                                                                        <p className="text-[10px] mt-0.5 leading-relaxed" style={{ color: 'var(--text-muted)' }}>{opt.desc}</p>
                                                                     </button>
                                                                 ))}
                                                             </div>
+                                                            <p className="text-[10px] mt-2 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                                                                {t('dlp.action_footnote', 'Admins who want the user to choose per-message can enable the separate DLP gate (Ask mode) below.')}
+                                                            </p>
                                                         </div>
 
                                                         {/* PII Categories */}

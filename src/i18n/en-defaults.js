@@ -205,6 +205,18 @@ const EN_DEFAULTS = {
     "dlp.blocked_user": "Prompt blocked by you.",
     "dlp.blocked_timeout": "Blocked: DLP decision timed out.",
 
+    // End-user tokenisation badge under a chat message
+    "dlp.badge_redacted_count": "{count} items redacted",
+    "dlp.badge_tooltip": "This message contained sensitive data \u2014 only placeholders were sent to the AI.",
+    "dlp.badge_explainer": "Only placeholders like [email_1] were sent to the AI. The real values stay here.",
+
+    // Admin UI \u2014 PII action labels
+    "dlp.action_tokenize_label": "Tokenize & round-trip",
+    "dlp.action_tokenize_help": "Replace sensitive values with placeholders like [email_1] before the AI sees them. The real values are never sent to the model; BeeFlow swaps them back in the response. User sees a small \ud83d\udd12 badge under their message.",
+    "dlp.action_block_label": "Block the message",
+    "dlp.action_block_help": "Reject the message before it leaves the organisation. The user is asked to rephrase without sensitive data.",
+    "dlp.action_footnote": "Admins who want the user to choose per-message can enable the separate DLP gate (Ask mode) below.",
+
     // Admin — Org Privacy Shield / DLP section
     "admin.dlp_title": "Data Loss Prevention (pre-flight)",
     "admin.dlp_desc": "Scan outbound prompts for PII + custom terms before they reach an external LLM.",

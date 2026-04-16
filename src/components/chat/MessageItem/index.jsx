@@ -12,6 +12,7 @@ import ToolOutput from './ToolOutput';
 import { SequentialThinking } from './ThinkingSteps';
 
 import TerminalProgress from './TerminalProgress';
+import TokenisedBadge from '../TokenisedBadge';
 import EmailDraftCard from './EmailDraftCard';
 import CalendarDraftCard from './CalendarDraftCard';
 import LinkedInDraftCard from './LinkedInDraftCard';
@@ -1052,6 +1053,19 @@ const MessageItem = ({
                     </div>
                 )}
             </div>
+
+            {/* PII / DLP tokenisation badge — visible confirmation that the user's
+                message had sensitive values replaced with placeholders before
+                reaching the LLM. `dlpRedactedCount` is set by the DLP path;
+                `piiTokenizedCount` by the legacy Azure-PII path. Take the max. */}
+            {isUser && (msg.dlpRedactedCount || msg.piiTokenizedCount) ? (
+                <div className="mt-1 mr-1 flex justify-end">
+                    <TokenisedBadge
+                        count={Math.max(msg.dlpRedactedCount || 0, msg.piiTokenizedCount || 0)}
+                        categories={msg.dlpCategories?.length ? msg.dlpCategories : (msg.piiCategories || [])}
+                    />
+                </div>
+            ) : null}
 
             {/* User message actions + timestamp */}
             {isUser && !msg.isStreaming && (
