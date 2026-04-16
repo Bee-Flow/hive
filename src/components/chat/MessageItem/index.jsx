@@ -600,7 +600,7 @@ const MessageItem = ({
 
                 {/* How I got this answer — comprehensive collapsed section */}
                 {!isUser && !isTool && !msg.isStreaming && msg.content && (
-                    (msg.thinking || msg.orchestratorThinking || msg.toolHistory?.length > 0 || msg.autoSelectedTier || msg.kbSources?.length > 0) && (() => {
+                    (msg.thinking || msg.orchestratorThinking || msg.toolHistory?.length > 0 || msg.autoSelectedTier || msg.kbSources?.length > 0 || msg.tokenisationInfo?.count > 0) && (() => {
                         const visibleTools = msg.toolHistory?.filter(t => t.name !== 'sequentialthinking') || [];
                         const totalMs = visibleTools.reduce((acc, t) => acc + (t.endTime && t.startTime ? t.endTime - t.startTime : 0), 0);
                         const totalSec = totalMs > 0 ? (totalMs / 1000).toFixed(1) : null;
@@ -627,10 +627,55 @@ const MessageItem = ({
                                                 Auto → {msg.autoSelectedTier.charAt(0).toUpperCase() + msg.autoSelectedTier.slice(1)}
                                             </span>
                                         )}
+                                        {msg.tokenisationInfo?.count > 0 && (
+                                            <span
+                                                className="px-1.5 py-0.5 rounded-full font-medium inline-flex items-center gap-1"
+                                                style={{ background: 'rgba(59, 130, 246, 0.10)', color: 'rgb(29, 78, 216)' }}
+                                                title="Sensitive data was tokenised on the outbound prompt and restored on the response"
+                                            >
+                                                🔒 {msg.tokenisationInfo.count} redacted
+                                            </span>
+                                        )}
                                     </span>
                                     <svg className="w-3 h-3 transition-transform group-open/reasoning:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                                 </summary>
                                 <div className="mt-3 space-y-2">
+
+                                    {/* Privacy protection — shows PII/DLP tokenisation applied to this turn. */}
+                                    {msg.tokenisationInfo?.count > 0 && (() => {
+                                        const info = msg.tokenisationInfo;
+                                        const counts = new Map();
+                                        for (const c of (info.categories || [])) counts.set(c, (counts.get(c) || 0) + 1);
+                                        const categoryList = [...counts.entries()].map(([label, n]) => `${label}${n > 1 ? ` ×${n}` : ''}`).join(', ');
+                                        const actionLabel = info.action === 'block' ? 'Blocked' : info.source === 'dlp' ? 'Tokenised (DLP)' : 'Tokenised (Azure PII)';
+                                        return (
+                                            <details className="group/privacy">
+                                                <summary className="flex items-center gap-2 cursor-pointer text-[11px] px-2 py-1.5 rounded-lg select-none list-none [&::-webkit-details-marker]:hidden transition-colors hover:bg-[var(--bg-tertiary)]" style={{ color: 'var(--text-secondary)' }}>
+                                                    <span className="text-xs">🔒</span>
+                                                    <span className="font-medium">Privacy protection</span>
+                                                    <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: 'rgba(59, 130, 246, 0.10)', color: 'rgb(29, 78, 216)' }}>
+                                                        {info.count} item{info.count === 1 ? '' : 's'} redacted
+                                                    </span>
+                                                    <svg className="w-2.5 h-2.5 transition-transform group-open/privacy:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
+                                                </summary>
+                                                <div className="mt-1 px-3 py-2 rounded-lg text-[11px] leading-relaxed" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                                                    <p className="mb-1.5">
+                                                        <strong style={{ color: 'var(--text-primary)' }}>{actionLabel}</strong>
+                                                        {info.provider && <> &middot; Sent to <strong>{info.provider}</strong></>}
+                                                        {info.automatic ? ' (automatic)' : ' (you chose)'}
+                                                    </p>
+                                                    {categoryList && (
+                                                        <p className="mb-1.5">
+                                                            <span className="opacity-70">Detected:</span> {categoryList}
+                                                        </p>
+                                                    )}
+                                                    <p className="opacity-70">
+                                                        The AI only saw placeholders like <code className="px-1 rounded" style={{ background: 'var(--bg-primary)' }}>[email_1]</code>. Real values were restored in the reply before you saw it.
+                                                    </p>
+                                                </div>
+                                            </details>
+                                        );
+                                    })()}
 
                                     {/* Model Reasoning / Thinking */}
                                     {msg.thinking && (

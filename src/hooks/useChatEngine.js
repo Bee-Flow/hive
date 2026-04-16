@@ -426,25 +426,50 @@ export default function useChatEngine({
             }
             case 'dlp_resolved': {
                 window.dispatchEvent(new CustomEvent('beeflow:dlp_resolved', { detail: data }));
-                // Optional: surface a toast/banner that redaction was applied.
                 if (data?.appliedChoice === 'redact' && data?.redactedCount > 0) {
-                    setMessages(prev => prev.map(m =>
-                        m.id === userMsgId ? { ...m, dlpRedactedCount: data.redactedCount, dlpCategories: data.categories || [] } : m
-                    ));
+                    const info = {
+                        source: 'dlp',
+                        action: data.appliedChoice,
+                        count: data.redactedCount,
+                        categories: data.categories || [],
+                        provider: data.provider?.displayName || null,
+                        automatic: !!data.automatic,
+                    };
+                    setMessages(prev => prev.map(m => {
+                        if (m.id === userMsgId) {
+                            return { ...m, dlpRedactedCount: data.redactedCount, dlpCategories: data.categories || [] };
+                        }
+                        // Also stash the info on the assistant message so the
+                        // "How I got this answer" panel can render the privacy step.
+                        if (m.id === assistantMsgId) {
+                            return { ...m, tokenisationInfo: info };
+                        }
+                        return m;
+                    }));
                 }
                 break;
             }
             case 'pii_tokenized': {
-                // The server auto-tokenised PII in the user's message before sending
-                // it to the LLM. Attach the count + category labels to the user's
-                // own bubble so the <TokenisedBadge> can render "🔒 1 email redacted".
                 const entities = Array.isArray(data?.entities) ? data.entities : [];
                 const categories = [...new Set(entities.map(e => e.label || e.category).filter(Boolean))];
-                setMessages(prev => prev.map(m =>
-                    m.id === userMsgId
-                        ? { ...m, piiTokenizedCount: data?.tokenCount || entities.length, piiCategories: categories }
-                        : m
-                ));
+                const count = data?.tokenCount || entities.length;
+                const info = {
+                    source: 'pii',
+                    action: 'redact',
+                    count,
+                    categories,
+                    provider: null,
+                    automatic: true,
+                };
+                setMessages(prev => prev.map(m => {
+                    if (m.id === userMsgId) {
+                        return { ...m, piiTokenizedCount: count, piiCategories: categories };
+                    }
+                    if (m.id === assistantMsgId) {
+                        return { ...m, tokenisationInfo: info };
+                    }
+                    return m;
+                }));
                 break;
             }
             case 'dlp_blocked': {
