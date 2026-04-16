@@ -137,6 +137,10 @@ async function uploadSourceFile(notebookId, file) {
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
 export default function NotebooksPage({ user, onBack, initialNotebookId, onNotebookChange }) {
+    // Permission gate — matches the server-side `use_notebooks` router guard.
+    // The result is used near the end of the component so hook order isn't disturbed.
+    const canUseNotebooks = !!(user?.permissions?.includes('all') || user?.permissions?.includes('use_notebooks'));
+
     const [notebooks, setNotebooks] = useState([]);
     const [selected, setSelected] = useState(null);
     const [sources, setSources] = useState([]);
@@ -159,6 +163,12 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     const [leftPanelOpen, setLeftPanelOpen] = useState(true);
     const [rightPanelWidth, setRightPanelWidth] = useState(320);
     const rightPanelDragRef = useRef(false);
+
+    // Aborts the current Studio generation SSE when the user navigates away
+    // or clicks "Cancel". Prevents state updates on an unmounted component and
+    // stops the server from burning tokens on a generation nobody will see.
+    const generationAbortRef = useRef(null);
+    useEffect(() => () => { generationAbortRef.current?.abort?.(); }, []);
 
     // Table of Contents state (populated by the TipTap TableOfContents extension)
     const [tocItems, setTocItems] = useState([]);
@@ -197,6 +207,12 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     // Document editor state
     const [documentContent, setDocumentContent] = useState('');
     const [docSaving, setDocSaving] = useState(false);
+    // Three save states: 'idle' (nothing pending), 'saving' (PUT in flight),
+    // 'error' (last PUT failed — retry scheduled or waiting for user).
+    const [saveState, setSaveState] = useState('idle');
+    const [lastSavedAt, setLastSavedAt] = useState(null);
+    const pendingContentRef = useRef(null);
+    const retryTimerRef = useRef(null);
     const editorRef = useRef(null);
 
     // Citation overlay
@@ -353,14 +369,53 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     }, [sendChatMessage]);
 
     /* ── Save document content ───────────────────────────────── */
-    const handleDocSave = useCallback(async (html) => {
+    // Tracks three states and retries once on failure. A second failure leaves
+    // the indicator in 'error' and the user can click Retry.
+    const handleDocSave = useCallback(async (html, { isRetry = false } = {}) => {
         if (!selected) return;
+        pendingContentRef.current = html;
+        if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
+        setDocSaving(true);
+        setSaveState('saving');
         try {
-            setDocSaving(true);
             await api(`/${selected.id}`, { method: 'PUT', body: JSON.stringify({ documentContent: html }) });
-        } catch (e) { console.error('[Notebooks] Doc save failed:', e); }
-        finally { setDocSaving(false); }
+            pendingContentRef.current = null;
+            setSaveState('idle');
+            setLastSavedAt(Date.now());
+        } catch (e) {
+            console.error('[Notebooks] Doc save failed:', e);
+            setSaveState('error');
+            if (!isRetry) {
+                retryTimerRef.current = setTimeout(() => {
+                    if (pendingContentRef.current !== null) handleDocSave(pendingContentRef.current, { isRetry: true });
+                }, 5000);
+            }
+        } finally {
+            setDocSaving(false);
+        }
     }, [selected]);
+
+    // Warn the user before closing the tab if a save is still pending.
+    useEffect(() => {
+        if (saveState === 'idle') return;
+        const onBeforeUnload = (e) => { e.preventDefault(); e.returnValue = ''; };
+        window.addEventListener('beforeunload', onBeforeUnload);
+        return () => window.removeEventListener('beforeunload', onBeforeUnload);
+    }, [saveState]);
+
+    // Cmd/Ctrl+S bypasses the editor's 2s debounce and saves immediately.
+    useEffect(() => {
+        const onKey = (e) => {
+            const metaS = (e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S');
+            if (!metaS || !selected) return;
+            e.preventDefault();
+            const editor = editorRef.current?.getEditor?.();
+            const html = editor?.getHTML?.() ?? documentContent;
+            handleDocSave(html);
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [selected, documentContent, handleDocSave]);
 
     /* ── Editor AI action (from TipTap bubble menu) ──────────── */
     const handleEditorAIAction = useCallback((actionKey, selectedText, range, customQuery) => {
@@ -466,11 +521,15 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
         const assistantMsg = { id: `gen-asst-${Date.now()}`, role: 'assistant', content: `⏳ Generating ${label}...` };
         setChatMessages(prev => [...prev, userMsg, assistantMsg]);
 
+        generationAbortRef.current?.abort?.();
+        const abortController = new AbortController();
+        generationAbortRef.current = abortController;
         try {
             const res = await authFetch(`${API_BASE}/api/notebooks/${selected.id}/generate/${type}`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ modelTier: selectedTier, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
+                signal: abortController.signal,
             });
 
             if (!res.ok) {
@@ -558,15 +617,26 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                 }
             }
         } catch (e) {
-            setError(e.message);
-            // Update chat message to show error
-            setChatMessages(prev => prev.map(m =>
-                m.id?.startsWith('gen-asst-') && m.content?.startsWith('⏳') ? { ...m, content: `❌ Generation failed: ${e.message}` } : m
-            ));
+            // Silently swallow aborts — the user cancelled or navigated away.
+            if (e.name === 'AbortError') {
+                setChatMessages(prev => prev.map(m =>
+                    m.id?.startsWith('gen-asst-') && m.content?.startsWith('⏳') ? { ...m, content: `⏹️ Generation cancelled.` } : m
+                ));
+            } else {
+                setError(e.message);
+                setChatMessages(prev => prev.map(m =>
+                    m.id?.startsWith('gen-asst-') && m.content?.startsWith('⏳') ? { ...m, content: `❌ Generation failed: ${e.message}` } : m
+                ));
+            }
         } finally {
             setGenerating(null);
+            if (generationAbortRef.current === abortController) generationAbortRef.current = null;
         }
     }, [selected, generating, selectedTier, setChatMessages, handleDocSave]);
+
+    const cancelGeneration = useCallback(() => {
+        generationAbortRef.current?.abort?.();
+    }, []);
 
     /* ── Export (PDF/Word) — uses document content or last generated ── */
     const getExportContent = useCallback(() => {
@@ -784,6 +854,24 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     const hasExportContent = !!getExportContent();
 
     /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+    /* ── Permission gate — must come before any render ─────── */
+    /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+    if (!canUseNotebooks) {
+        return (
+            <div className="h-full flex items-center justify-center" style={{ background: 'var(--bg-primary)' }}>
+                <div className="text-center p-8 rounded-2xl border max-w-md" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
+                    <div className="w-14 h-14 mx-auto mb-3 rounded-full flex items-center justify-center" style={{ background: 'rgba(239, 68, 68, 0.1)' }}>
+                        <AlertCircle className="w-7 h-7" style={{ color: 'rgb(239, 68, 68)' }} />
+                    </div>
+                    <h2 className="text-lg font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Notebooks disabled</h2>
+                    <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>Your role doesn't include access to notebooks. Ask an administrator to grant the &quot;Use Notebooks&quot; permission.</p>
+                    {onBack && <button onClick={onBack} className="px-4 py-2 rounded-lg font-medium text-white" style={{ background: 'var(--accent-primary)' }}>Go back</button>}
+                </div>
+            </div>
+        );
+    }
+
+    /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
     /* ── NOTEBOOK DETAIL VIEW (3-panel: Sources + Editor + Studio/Chat) */
     /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
     if (selected) {
@@ -827,6 +915,27 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                             <h2 className="text-base font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
                                 {selected.name}
                             </h2>
+                            {/* Save-state indicator — tiny dot + label in the header.
+                                Shown only while not idle, or briefly after a successful save. */}
+                            {saveState === 'saving' && (
+                                <span className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
+                                    <Loader2 className="w-3 h-3 animate-spin" />Saving…
+                                </span>
+                            )}
+                            {saveState === 'error' && (
+                                <button
+                                    onClick={() => pendingContentRef.current && handleDocSave(pendingContentRef.current)}
+                                    className="flex items-center gap-1 text-[10px] text-red-500 hover:underline"
+                                    title="Click to retry"
+                                >
+                                    <AlertCircle className="w-3 h-3" />Save failed — retry
+                                </button>
+                            )}
+                            {saveState === 'idle' && lastSavedAt && (Date.now() - lastSavedAt < 4000) && (
+                                <span className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
+                                    <CheckCircle2 className="w-3 h-3" />Saved
+                                </span>
+                            )}
                         </div>
                         <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
                             {sources.length} source{sources.length !== 1 ? 's' : ''} · {totalWords.toLocaleString()} words · Created {timeAgo(selected.createdAt)}
