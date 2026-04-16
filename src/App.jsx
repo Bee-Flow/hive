@@ -12,6 +12,7 @@ import AgentDesigner from './components/admin/AgentDesigner';
 import LoginPage from './pages/LoginPage';
 import EncryptionSetup from './pages/EncryptionSetup';
 import EmbedChat from './pages/EmbedChat';
+import DlpPreviewModal from './components/DlpPreviewModal';
 
 import { LogOut, User, Shield, Settings, ChevronDown } from 'lucide-react';
 
@@ -656,6 +657,10 @@ function App() {
             <div className="flex-1 overflow-hidden">
                 {renderContent()}
             </div>
+
+            {/* Pre-flight DLP preview modal — globally mounted, listens for
+                `beeflow:dlp_preview` window events emitted by useChatEngine. */}
+            {isAuthenticated && <DlpPreviewModal />}
 
             {/* Dropdown animation keyframe */}
             <style>{`

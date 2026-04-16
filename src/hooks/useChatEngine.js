@@ -418,6 +418,39 @@ export default function useChatEngine({
                 break;
             }
 
+            case 'dlp_preview': {
+                // Server is pausing the stream until the user responds via
+                // the DLP decision endpoint. The modal listens for this event.
+                window.dispatchEvent(new CustomEvent('beeflow:dlp_preview', { detail: data }));
+                break;
+            }
+            case 'dlp_resolved': {
+                window.dispatchEvent(new CustomEvent('beeflow:dlp_resolved', { detail: data }));
+                // Optional: surface a toast/banner that redaction was applied.
+                if (data?.appliedChoice === 'redact' && data?.redactedCount > 0) {
+                    setMessages(prev => prev.map(m =>
+                        m.id === userMsgId ? { ...m, dlpRedactedCount: data.redactedCount, dlpCategories: data.categories || [] } : m
+                    ));
+                }
+                break;
+            }
+            case 'dlp_blocked': {
+                window.dispatchEvent(new CustomEvent('beeflow:dlp_blocked', { detail: data }));
+                const reason = data?.reason || 'policy';
+                const labelKey = reason === 'timeout' ? 'dlp.blocked_timeout'
+                    : reason === 'user_blocked' ? 'dlp.blocked_user'
+                    : 'dlp.blocked_policy';
+                const msg = tRef.current(labelKey, {
+                    timeout: 'Blocked: DLP decision timed out.',
+                    user_blocked: 'Prompt blocked by you.',
+                    policy: 'Prompt blocked by data-loss-prevention policy.',
+                }[reason] || 'Prompt blocked by DLP.');
+                setMessages(prev => prev.map(m =>
+                    m.id === assistantMsgId ? { ...m, content: msg, isStreaming: false, isError: true } : m
+                ));
+                break;
+            }
+
             case 'guardrail_violation': {
                 const secs = data.autoDeleteSeconds || 5;
                 const categories = data.categories || data.rules || [];

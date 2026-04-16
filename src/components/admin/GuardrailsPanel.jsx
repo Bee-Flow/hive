@@ -58,6 +58,18 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     const [orgPiiConfidenceThreshold, setOrgPiiConfidenceThreshold] = useState(0.7);
     const [orgPiiAction, setOrgPiiAction] = useState('block');
 
+    // DLP (Data Loss Prevention) state
+    const [dlpEnabled, setDlpEnabled] = useState(false);
+    const [dlpScope, setDlpScope] = useState('external');
+    const [dlpMode, setDlpMode] = useState('ask');
+    const [dlpFailureMode, setDlpFailureMode] = useState('fail_closed');
+    const [dlpAllowlistedHosts, setDlpAllowlistedHosts] = useState([]);
+    const [customSensitiveTerms, setCustomSensitiveTerms] = useState([]);
+    const [newTermLabel, setNewTermLabel] = useState('');
+    const [newTermPattern, setNewTermPattern] = useState('');
+    const [newTermType, setNewTermType] = useState('literal');
+    const [newTermCaseSensitive, setNewTermCaseSensitive] = useState(false);
+
     // PII Detection State
     const [piiEnabled, setPiiEnabled] = useState(false);
     const [piiCategories, setPiiCategories] = useState([]);
@@ -212,6 +224,13 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 setOrgPiiCategories(loaded);
                 setOrgPiiConfidenceThreshold(data.piiDetectionConfidenceThreshold ?? 0.7);
                 setOrgPiiAction(data.piiDetectionAction || 'block');
+                // DLP
+                setDlpEnabled(!!data.dlpEnabled);
+                setDlpScope(data.dlpScope === 'all' ? 'all' : 'external');
+                setDlpMode(['ask', 'auto_redact', 'block'].includes(data.dlpMode) ? data.dlpMode : 'ask');
+                setDlpFailureMode(data.dlpFailureMode === 'fail_open' ? 'fail_open' : 'fail_closed');
+                setDlpAllowlistedHosts(Array.isArray(data.dlpAllowlistedHosts) ? data.dlpAllowlistedHosts : []);
+                setCustomSensitiveTerms(Array.isArray(data.customSensitiveTerms) ? data.customSensitiveTerms : []);
             }
         } catch (e) {
             console.error('Failed to fetch org shield', e);
@@ -252,6 +271,13 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                     piiDetectionCategories: orgPiiCategories,
                     piiDetectionConfidenceThreshold: orgPiiConfidenceThreshold,
                     piiDetectionAction: orgPiiAction,
+                    // DLP
+                    dlpEnabled,
+                    dlpScope,
+                    dlpMode,
+                    dlpFailureMode,
+                    dlpAllowlistedHosts,
+                    customSensitiveTerms,
                 })
             });
             if (res.ok) {
@@ -1102,6 +1128,126 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                 </div>
                                             </div>
                                         )}
+
+                                        {/* ═══ Data Loss Prevention (pre-flight DLP) ═══ */}
+                                        <div className="p-4 rounded-lg border mt-4" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)' }}>
+                                            <div className="flex items-center justify-between mb-3">
+                                                <div>
+                                                    <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                                                        {t('admin.dlp_title', 'Data Loss Prevention (pre-flight)')}
+                                                    </div>
+                                                    <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                                                        {t('admin.dlp_desc', 'Scan outbound prompts for PII + custom terms before they reach an external LLM.')}
+                                                    </div>
+                                                </div>
+                                                <label className="relative inline-flex items-center cursor-pointer">
+                                                    <input type="checkbox" checked={dlpEnabled} onChange={e => setDlpEnabled(e.target.checked)} className="sr-only peer" />
+                                                    <div className="w-11 h-6 bg-gray-600 rounded-full peer-checked:bg-[var(--accent-primary)] transition-colors" />
+                                                    <div className="absolute left-[2px] top-[2px] bg-white w-5 h-5 rounded-full transition-transform peer-checked:translate-x-5" />
+                                                </label>
+                                            </div>
+
+                                            {dlpEnabled && (
+                                                <div className="space-y-3">
+                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                                        <div>
+                                                            <label className="block text-[11px] font-medium mb-1 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{t('admin.dlp_mode_label', 'Default action')}</label>
+                                                            <select value={dlpMode} onChange={e => setDlpMode(e.target.value)} className="w-full px-2.5 py-1.5 rounded-lg border text-xs bg-[var(--bg-primary)] text-[var(--text-primary)]" style={{ borderColor: 'var(--border-subtle)' }}>
+                                                                <option value="ask">{t('admin.dlp_mode_ask', 'Ask user (Redact / Block / Allow)')}</option>
+                                                                <option value="auto_redact">{t('admin.dlp_mode_auto', 'Auto-redact (no prompt)')}</option>
+                                                                <option value="block">{t('admin.dlp_mode_block', 'Block on any finding')}</option>
+                                                            </select>
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[11px] font-medium mb-1 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{t('admin.dlp_scope_label', 'Scope')}</label>
+                                                            <select value={dlpScope} onChange={e => setDlpScope(e.target.value)} className="w-full px-2.5 py-1.5 rounded-lg border text-xs bg-[var(--bg-primary)] text-[var(--text-primary)]" style={{ borderColor: 'var(--border-subtle)' }}>
+                                                                <option value="external">{t('admin.dlp_scope_external', 'External providers only')}</option>
+                                                                <option value="all">{t('admin.dlp_scope_all', 'Every provider (including self-hosted)')}</option>
+                                                            </select>
+                                                        </div>
+                                                        <div>
+                                                            <label className="block text-[11px] font-medium mb-1 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{t('admin.dlp_failmode_label', 'If scan fails')}</label>
+                                                            <select value={dlpFailureMode} onChange={e => setDlpFailureMode(e.target.value)} className="w-full px-2.5 py-1.5 rounded-lg border text-xs bg-[var(--bg-primary)] text-[var(--text-primary)]" style={{ borderColor: 'var(--border-subtle)' }}>
+                                                                <option value="fail_closed">{t('admin.dlp_failmode_closed', 'Block (fail-closed)')}</option>
+                                                                <option value="fail_open">{t('admin.dlp_failmode_open', 'Allow (fail-open)')}</option>
+                                                            </select>
+                                                        </div>
+                                                    </div>
+
+                                                    {/* Custom sensitive terms */}
+                                                    <div>
+                                                        <div className="text-[11px] font-medium mb-2 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                                                            {t('admin.dlp_terms_title', 'Custom sensitive terms')} ({customSensitiveTerms.length})
+                                                        </div>
+                                                        {customSensitiveTerms.length > 0 && (
+                                                            <div className="space-y-1.5 mb-2 max-h-48 overflow-auto">
+                                                                {customSensitiveTerms.map((term, idx) => (
+                                                                    <div key={term.id || idx} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded" style={{ background: 'var(--bg-primary)' }}>
+                                                                        <span className="text-[10px] px-1.5 py-0.5 rounded uppercase" style={{ background: term.type === 'regex' ? 'rgba(139, 92, 246, 0.12)' : 'rgba(59, 130, 246, 0.12)', color: term.type === 'regex' ? '#8b5cf6' : '#3b82f6' }}>{term.type || 'literal'}</span>
+                                                                        <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{term.label}</span>
+                                                                        <code className="text-[11px] flex-1 min-w-0 truncate" style={{ color: 'var(--text-muted)' }}>{term.pattern}</code>
+                                                                        {term.caseSensitive && <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>case</span>}
+                                                                        <button onClick={() => setCustomSensitiveTerms(prev => prev.filter((_, i) => i !== idx))} className="text-[11px] px-1.5 py-0.5 rounded hover:bg-red-500/10 hover:text-red-500" style={{ color: 'var(--text-muted)' }}>×</button>
+                                                                    </div>
+                                                                ))}
+                                                            </div>
+                                                        )}
+                                                        <div className="flex items-center gap-1.5 flex-wrap">
+                                                            <input
+                                                                type="text"
+                                                                value={newTermLabel}
+                                                                onChange={e => setNewTermLabel(e.target.value)}
+                                                                placeholder={t('admin.dlp_term_label_ph', 'Label (e.g. "Project Falcon")')}
+                                                                className="flex-1 min-w-[140px] px-2 py-1.5 rounded-lg border text-xs bg-[var(--bg-primary)] text-[var(--text-primary)]"
+                                                                style={{ borderColor: 'var(--border-subtle)' }}
+                                                            />
+                                                            <input
+                                                                type="text"
+                                                                value={newTermPattern}
+                                                                onChange={e => setNewTermPattern(e.target.value)}
+                                                                placeholder={t('admin.dlp_term_pattern_ph', 'Pattern or regex')}
+                                                                className="flex-[2] min-w-[180px] px-2 py-1.5 rounded-lg border text-xs bg-[var(--bg-primary)] text-[var(--text-primary)] font-mono"
+                                                                style={{ borderColor: 'var(--border-subtle)' }}
+                                                            />
+                                                            <select value={newTermType} onChange={e => setNewTermType(e.target.value)} className="px-2 py-1.5 rounded-lg border text-xs bg-[var(--bg-primary)] text-[var(--text-primary)]" style={{ borderColor: 'var(--border-subtle)' }}>
+                                                                <option value="literal">{t('admin.dlp_term_literal', 'Literal')}</option>
+                                                                <option value="regex">{t('admin.dlp_term_regex', 'Regex')}</option>
+                                                            </select>
+                                                            <label className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                                                <input type="checkbox" checked={newTermCaseSensitive} onChange={e => setNewTermCaseSensitive(e.target.checked)} />
+                                                                {t('admin.dlp_term_case', 'Case')}
+                                                            </label>
+                                                            <button
+                                                                onClick={() => {
+                                                                    const label = newTermLabel.trim();
+                                                                    const pattern = newTermPattern.trim();
+                                                                    if (!label || !pattern) return;
+                                                                    if (newTermType === 'regex') {
+                                                                        try { new RegExp(pattern, newTermCaseSensitive ? '' : 'i'); }
+                                                                        catch (err) { alert(`Invalid regex: ${err.message}`); return; }
+                                                                    }
+                                                                    setCustomSensitiveTerms(prev => [...prev, {
+                                                                        id: `term-${Date.now()}`,
+                                                                        label, pattern,
+                                                                        type: newTermType,
+                                                                        caseSensitive: newTermCaseSensitive,
+                                                                    }]);
+                                                                    setNewTermLabel('');
+                                                                    setNewTermPattern('');
+                                                                }}
+                                                                className="px-3 py-1.5 rounded-lg text-xs font-medium text-white"
+                                                                style={{ background: 'var(--accent-primary)' }}
+                                                            >
+                                                                {t('admin.dlp_term_add', 'Add')}
+                                                            </button>
+                                                        </div>
+                                                        <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                                                            {t('admin.dlp_term_hint', 'Examples: project codenames ("Project Falcon"), contract-number regex (e.g. C-\\d{6}), internal product names.')}
+                                                        </p>
+                                                    </div>
+                                                </div>
+                                            )}
+                                        </div>
 
                                         <div className="flex items-center justify-end gap-3 pt-4 mt-6 border-t border-white/5">
                                             {orgShieldMessage && <span className={`text-sm ${orgShieldMessage.type === 'success' ? 'text-green-500' : 'text-red-500'}`}>{orgShieldMessage.text}</span>}
