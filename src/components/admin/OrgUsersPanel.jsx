@@ -122,7 +122,7 @@ const OrgUsersPanel = ({ user }) => {
                 for (const r of rows) {
                     map.set(r.user_id, {
                         calls: Number(r.calls) || 0,
-                        tokens: Number(r.total_tokens) || 0,
+                        cost: Number(r.estimated_cost) || 0,
                     });
                 }
                 setUsageByUser(map);
@@ -640,18 +640,19 @@ const OrgUsersPanel = ({ user }) => {
                                                 ))}
                                             </div>
                                         </div>
-                                        {/* AI usage — last 30 days */}
+                                        {/* AI cost — last 30 days */}
                                         {(() => {
                                             const usage = usageByUser.get(u.id);
-                                            if (!usage || !usage.tokens) return null;
-                                            const fmt = (n) => n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e3 ? `${(n / 1e3).toFixed(1)}k` : String(n);
+                                            if (!usage || !usage.cost) return null;
+                                            const cost = usage.cost;
+                                            const display = cost >= 100 ? `$${cost.toFixed(0)}` : cost >= 1 ? `$${cost.toFixed(2)}` : `$${cost.toFixed(3)}`;
                                             return (
                                                 <div
                                                     className="hidden md:flex flex-col items-end shrink-0 text-right"
-                                                    title={t('admin.org_usage_tooltip', { calls: usage.calls.toLocaleString(), tokens: usage.tokens.toLocaleString() })}
+                                                    title={t('admin.org_usage_tooltip', { calls: usage.calls.toLocaleString(), cost: `$${cost.toFixed(4)}` })}
                                                 >
-                                                    <span className="text-[11px] font-semibold text-[var(--text-primary)] leading-tight">{fmt(usage.tokens)}</span>
-                                                    <span className="text-[9px] text-[var(--text-muted)] uppercase tracking-wider leading-tight">{t('admin.org_usage_tokens_30d')}</span>
+                                                    <span className="text-[11px] font-semibold text-[var(--text-primary)] leading-tight">{display}</span>
+                                                    <span className="text-[9px] text-[var(--text-muted)] uppercase tracking-wider leading-tight">{t('admin.org_usage_cost_30d')}</span>
                                                 </div>
                                             );
                                         })()}
