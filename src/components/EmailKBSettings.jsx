@@ -331,9 +331,56 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, onEditingCha
                                 </div>
                             </div>
 
+                            {/* ── Ingestion Mode ── */}
+                            <div className="border-t border-[var(--border-subtle)] pt-4">
+                                <h4 className="text-[12px] font-semibold text-[var(--text-primary)] mb-2">Ingestion mode</h4>
+                                <div className="text-[10px] text-[var(--text-tertiary)] mb-3">
+                                    How emails are stored in the KB. Affects how well the agent can retrieve them.
+                                </div>
+                                {(() => {
+                                    const effectiveMode = settings.pipeline_config.ingestion_mode || 'category_merge';
+                                    const setMode = (mode) => setSettings(s => ({ ...s, pipeline_config: { ...s.pipeline_config, ingestion_mode: mode } }));
+                                    return (
+                                        <div className="space-y-2">
+                                            <label className="flex items-start gap-2 p-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] cursor-pointer hover:border-[var(--border-default)]">
+                                                <input type="radio" name="ingestion_mode" className="mt-1" checked={effectiveMode === 'per_email'} onChange={() => setMode('per_email')} />
+                                                <div>
+                                                    <div className="text-[11px] font-semibold text-[var(--text-primary)]">Per-email archive (recommended)</div>
+                                                    <div className="text-[10px] text-[var(--text-tertiary)] mt-0.5">
+                                                        Each email becomes its own KB document — sender, subject, date and body are all searchable.
+                                                        Best for questions like "what did Ewoud say about X?".
+                                                        Skips the AI article / category-merge stages below.
+                                                    </div>
+                                                </div>
+                                            </label>
+                                            <label className="flex items-start gap-2 p-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] cursor-pointer hover:border-[var(--border-default)]">
+                                                <input type="radio" name="ingestion_mode" className="mt-1" checked={effectiveMode === 'category_merge'} onChange={() => setMode('category_merge')} />
+                                                <div>
+                                                    <div className="text-[11px] font-semibold text-[var(--text-primary)]">Category summary (legacy)</div>
+                                                    <div className="text-[10px] text-[var(--text-tertiary)] mt-0.5">
+                                                        Emails are AI-rewritten and merged into one FAQ-style document per category.
+                                                        Good for a clean support overview, weak for searching specific messages.
+                                                    </div>
+                                                </div>
+                                            </label>
+                                            {effectiveMode === 'per_email' && (
+                                                <div className="text-[10px] text-amber-600 dark:text-amber-400 p-2 bg-amber-50 dark:bg-amber-900/20 rounded">
+                                                    Note: switching from Category summary to Per-email won't delete old category documents. Remove them from the KB manually to fully migrate, then trigger a full re-sync.
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+
                             {/* ── Pipeline Timeline ── */}
                             <div className="border-t border-[var(--border-subtle)] pt-4">
                                 <h4 className="text-[12px] font-semibold text-[var(--text-primary)] mb-3">{t('email_kb.pipeline_config')}</h4>
+                                {settings.pipeline_config.ingestion_mode === 'per_email' && (
+                                    <div className="text-[10px] text-[var(--text-tertiary)] mb-3 p-2 bg-[var(--bg-tertiary)] rounded">
+                                        Per-email mode skips stages 2–4 (AI article / categorization / merge). Only cleanup + ingestion run.
+                                    </div>
+                                )}
                                 <div className="relative pl-6">
                                     {/* Vertical timeline line */}
                                     <div className="absolute left-[9px] top-2 bottom-2 w-px bg-[var(--border-subtle)]" />
