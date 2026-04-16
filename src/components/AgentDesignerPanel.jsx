@@ -160,15 +160,22 @@ const AgentDesignerPanel = ({
             const res = await authFetch(`${API_BASE}/agents/${agent.id}/publish`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ isPublished: !formData.isPublished })
+                body: JSON.stringify({
+                    isPublished: !formData.isPublished,
+                    sharedGroups: formData.sharedGroups || [],
+                })
             });
 
             if (res.ok) {
                 setFormData(prev => ({ ...prev, isPublished: !prev.isPublished }));
                 if (onSave) onSave(); // Refresh agent list
+            } else {
+                const data = await res.json().catch(() => ({}));
+                alert(data.error || 'Failed to update publish status.');
             }
         } catch (err) {
             console.error('Failed to toggle publish:', err);
+            alert('Failed to update publish status. Please try again.');
         }
     };
 
