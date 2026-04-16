@@ -404,15 +404,33 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, onEditingCha
                                                 </div>
                                                 <div className="flex items-center gap-2">
                                                     <div className="flex flex-col items-end">
-                                                        <label className="text-[9px] text-[var(--text-tertiary)] leading-tight" title="Number of emails processed in parallel. Higher = faster sync, but risks API rate limits. 5 is safe for most setups.">Parallel</label>
+                                                        <label className="text-[9px] text-[var(--text-tertiary)] leading-tight" title="Number of emails processed in parallel. Default: 8 for fast models, 3 for deep_thinking. Max 10.">Parallel</label>
                                                         <input
                                                             type="number" min="1" max="10"
-                                                            value={pc[stageKey].concurrency ?? 5}
+                                                            placeholder={pc[stageKey].modelTier === 'deep_thinking' ? '3' : pc[stageKey].modelTier === 'fast' ? '8' : '5'}
+                                                            value={pc[stageKey].concurrency ?? ''}
                                                             onChange={e => {
-                                                                const n = Math.max(1, Math.min(10, parseInt(e.target.value) || 5));
+                                                                const raw = e.target.value;
+                                                                if (raw === '') {
+                                                                    setSettings(s => ({ ...s, pipeline_config: { ...s.pipeline_config, [stageKey]: { ...s.pipeline_config[stageKey], concurrency: undefined } } }));
+                                                                    return;
+                                                                }
+                                                                const n = Math.max(1, Math.min(10, parseInt(raw) || 1));
                                                                 setSettings(s => ({ ...s, pipeline_config: { ...s.pipeline_config, [stageKey]: { ...s.pipeline_config[stageKey], concurrency: n } } }));
                                                             }}
                                                             className="w-14 px-2 py-1 rounded text-[11px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-right"
+                                                        />
+                                                    </div>
+                                                    <div className="flex flex-col items-end">
+                                                        <label className="text-[9px] text-[var(--text-tertiary)] leading-tight" title="Emails sent to the LLM in ONE call (batched prompt). 1 = no batching (safe). 2–5 = ~2× faster for category_merge mode, but may reduce article quality on very long emails. Ignored in per-email mode.">Batch</label>
+                                                        <input
+                                                            type="number" min="1" max="5"
+                                                            value={pc[stageKey].batch_size ?? 1}
+                                                            onChange={e => {
+                                                                const n = Math.max(1, Math.min(5, parseInt(e.target.value) || 1));
+                                                                setSettings(s => ({ ...s, pipeline_config: { ...s.pipeline_config, [stageKey]: { ...s.pipeline_config[stageKey], batch_size: n } } }));
+                                                            }}
+                                                            className="w-12 px-2 py-1 rounded text-[11px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)] text-[var(--text-primary)] text-right"
                                                         />
                                                     </div>
                                                     <select value={pc[stageKey].modelTier} onChange={e => setSettings(s => ({ ...s, pipeline_config: { ...s.pipeline_config, [stageKey]: { ...s.pipeline_config[stageKey], modelTier: e.target.value } } }))}
