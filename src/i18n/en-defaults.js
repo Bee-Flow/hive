@@ -268,6 +268,7 @@ const EN_DEFAULTS = {
     "admin.integ_email": "Email",
     "admin.integ_search": "Search",
     "admin.integ_transcription": "Transcription",
+    "admin.integ_meet_bot": "Meeting Bot (SDK)",
     "admin.integ_services": "Services",
     "admin.integ_mcp": "MCP",
 

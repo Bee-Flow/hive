@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
 import { API_BASE, authFetch } from '../../utils/helpers';
-import { Loader2, ToggleLeft, ToggleRight, Check, Settings, Plus, Trash2, RefreshCw, Plug, ChevronDown, ExternalLink, Mail, Send, Layers, Search as SearchIcon, Cloud, BookOpen, FolderKanban, Sparkles, FileDown, Maximize2, LayoutList } from 'lucide-react';
+import { Loader2, ToggleLeft, ToggleRight, Check, Settings, Plus, Trash2, RefreshCw, Plug, ChevronDown, ExternalLink, Mail, Send, Layers, Search as SearchIcon, Cloud, BookOpen, FolderKanban, Sparkles, FileDown, Maximize2, LayoutList, Video } from 'lucide-react';
 import McpMarketplace from './McpMarketplace';
+import MeetBotSdkConfigPanel from './MeetBotSdkConfigPanel';
 
 const SECTIONS = [
     { id: 'features', labelKey: 'admin.integ_features', icon: Layers, color: '#10b981' },
@@ -10,6 +11,7 @@ const SECTIONS = [
     { id: 'email', labelKey: 'admin.integ_email', icon: Mail, color: '#ea4335' },
     { id: 'search', labelKey: 'admin.integ_search', icon: SearchIcon, color: '#10b981' },
     { id: 'transcription', labelKey: 'admin.integ_transcription', icon: Cloud, color: '#8b5cf6' },
+    { id: 'meet-bot', labelKey: 'admin.integ_meet_bot', icon: Video, color: '#10b981' },
     { id: 'services', labelKey: 'admin.integ_services', icon: ExternalLink, color: '#0A66C2' },
     { id: 'mcp', labelKey: 'admin.integ_mcp', icon: Plug, color: '#f59e0b' },
 ];
@@ -1940,6 +1942,10 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
 
             </div>
             </div>
+            )}
+
+            {active === 'meet-bot' && (
+                <MeetBotSdkConfigPanel />
             )}
 
             {active === 'mcp' && (
