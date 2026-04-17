@@ -579,15 +579,12 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
             }
             setLastGeneratedContent(content);
 
-            // Update chat with final content + audio files for AudioPlayer rendering
-            const isStudyAid = ['flashcards', 'studyGuide', 'quiz'].includes(type);
+            // Update chat with final content. Study-aid types (flashcards, studyGuide,
+            // quiz) were removed — all remaining types insert into the document.
             setChatMessages(prev => prev.map(m =>
                 m.id === assistantMsg.id ? {
                     ...m,
-                    content: isStudyAid
-                        ? `✅ ${label} generated successfully.`
-                        : `✅ ${label} generated and inserted into the document.`,
-                    ...(audioFiles.length > 0 ? { audioFiles } : {}),
+                    content: `✅ ${label} generated and inserted into the document.`,
                 } : m
             ));
 
@@ -845,6 +842,26 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
         } catch (e) { setError(e.message); }
     };
 
+    // Retry re-runs server-side ingestion. The row immediately flips back to
+    // "processing" so the UI shows the shimmer without waiting for the next poll.
+    const handleRetrySource = async (sid) => {
+        if (!selected) return;
+        try {
+            await api(`/${selected.id}/sources/${sid}/retry`, { method: 'POST' });
+            setSources(prev => prev.map(s => s.id === sid ? { ...s, status: 'processing', error: null } : s));
+        } catch (e) { setError(e.message); }
+    };
+
+    // Cancel marks a stuck `processing` row as errored so the user can delete
+    // it (or retry) without waiting for the 10-min server watchdog to fire.
+    const handleCancelSource = async (sid) => {
+        if (!selected) return;
+        try {
+            await api(`/${selected.id}/sources/${sid}/cancel`, { method: 'POST' });
+            setSources(prev => prev.map(s => s.id === sid ? { ...s, status: 'error', error: 'Cancelled by user' } : s));
+        } catch (e) { setError(e.message); }
+    };
+
     /* ── Filtered notebooks ──────────────────────────────────── */
     const filtered = notebooks.filter(nb =>
         nb.name.toLowerCase().includes(search.toLowerCase())
@@ -983,6 +1000,8 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                                 onAddText={(text, name) => { if (text?.trim()) handleAddText(text, name); }}
                                 onAddMeeting={handleAddMeeting}
                                 onDeleteSource={handleDeleteSource}
+                                onRetrySource={handleRetrySource}
+                                onCancelSource={handleCancelSource}
                                 dragOver={dragOver}
                                 setDragOver={setDragOver}
                                 totalWords={totalWords}

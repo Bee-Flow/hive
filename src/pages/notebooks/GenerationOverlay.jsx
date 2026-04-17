@@ -1,28 +1,23 @@
 import React, { useState, useRef, useEffect } from 'react';
 import {
-    X, FileText, ClipboardList, ListChecks, Layers,
-    HelpCircle, FileQuestion, Activity, Mic, Table2,
+    X, FileText, ClipboardList, Layers,
+    HelpCircle, Activity, Table2,
     Download, FileDown, Clock, ChevronLeft,
     ChevronRight as ChevronRightIcon
 } from 'lucide-react';
 import MarkdownRenderer from '../../components/MarkdownRenderer';
-import AudioPlayerInline from '../../components/chat/MessageItem/AudioPlayer';
-import FlashcardsView from './FlashcardsView';
-import StudyGuideView from './StudyGuideView';
-import QuizView from './QuizView';
 
-/* ── Generation type metadata (matches NotebookStudio groups) ── */
+/* ── Generation type metadata (matches NotebookStudio groups) ──
+ * Legacy entries (studyGuide / flashcards / quiz / audio_overview) are kept
+ * as plain markdown fallbacks so old history items from before the gimmick-
+ * cut still render — the custom view components were deleted. */
 const TYPE_META = {
     summary:      { icon: ClipboardList, label: 'Executive Summary', color: '#3b82f6', group: 'Reports' },
     briefing_doc: { icon: Layers, label: 'Briefing Doc', color: '#3b82f6', group: 'Reports' },
     blog_post:    { icon: FileText, label: 'Blog Post', color: '#3b82f6', group: 'Reports' },
     faq:          { icon: HelpCircle, label: 'FAQ', color: '#3b82f6', group: 'Reports' },
-    studyGuide:   { icon: ListChecks, label: 'Study Guide', color: '#22c55e', group: 'Study Aids' },
-    flashcards:   { icon: Layers, label: 'Flashcards', color: '#22c55e', group: 'Study Aids' },
-    quiz:         { icon: FileQuestion, label: 'Knowledge Quiz', color: '#22c55e', group: 'Study Aids' },
-    audio_overview: { icon: Mic, label: 'Audio Podcast', color: '#8b5cf6', group: 'Media & Visuals' },
-    mind_map:     { icon: Activity, label: 'Mind Map', color: '#8b5cf6', group: 'Media & Visuals' },
-    data_table:   { icon: Table2, label: 'Data Table', color: '#8b5cf6', group: 'Media & Visuals' },
+    mind_map:     { icon: Activity, label: 'Mind Map', color: '#8b5cf6', group: 'Visuals' },
+    data_table:   { icon: Table2, label: 'Data Table', color: '#8b5cf6', group: 'Visuals' },
 };
 
 function formatTime(ts) {
@@ -201,35 +196,16 @@ export default function GenerationOverlay({ generation, history, onClose, onSele
                         </button>
                     </div>
 
-                    {/* Audio Player (for audio_overview) */}
-                    {generation.audioFiles && generation.audioFiles.length > 0 && (
-                        <div className="shrink-0 px-6 py-4 border-b" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
-                            {generation.audioFiles.map((audio, i) => (
-                                <AudioPlayerInline
-                                    key={i}
-                                    src={audio.url}
-                                    title="AI Podcast"
-                                    subtitle="ElevenLabs · 2-Host Discussion"
-                                />
-                            ))}
-                        </div>
-                    )}
-
-                    {/* Scrollable content area */}
+                    {/* Scrollable content area — all generation types render as markdown.
+                        Legacy types (flashcards / studyGuide / quiz / audio_overview) that
+                        used bespoke view components still render via MarkdownRenderer; their
+                        custom UIs were removed as part of the Studio cleanup. */}
                     <div className="flex-1 overflow-y-auto custom-scrollbar h-full relative">
-                        {generation.type === 'flashcards' ? (
-                            <FlashcardsView content={generation.content} onSourceClick={onSourceClick} />
-                        ) : generation.type === 'studyGuide' ? (
-                            <StudyGuideView content={generation.content} onSourceClick={onSourceClick} />
-                        ) : generation.type === 'quiz' ? (
-                            <QuizView content={generation.content} />
-                        ) : (
-                            <div className="max-w-3xl mx-auto px-8 py-8">
-                                <div className="prose prose-sm dark:prose-invert max-w-none">
-                                    <MarkdownRenderer content={generation.content} />
-                                </div>
+                        <div className="max-w-3xl mx-auto px-8 py-8">
+                            <div className="prose prose-sm dark:prose-invert max-w-none">
+                                <MarkdownRenderer content={generation.content} />
                             </div>
-                        )}
+                        </div>
                     </div>
 
                     {/* Footer */}

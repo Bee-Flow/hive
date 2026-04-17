@@ -122,9 +122,15 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
         }, [selectedAgent]),
         getNotebookPayload: useCallback(() => {
             if (!showNotebook) return {};
+            // Ship `notebookspaceContent` as an empty string (not a single space)
+            // when the notebook is open but blank — the server treats
+            // `undefined` as "no notebook" and `""` as "notebook present,
+            // blank", so the AI still knows the notebook tools are available.
+            // Previously we sent `' '` to dodge a truthy-check; server now
+            // checks `!== undefined` explicitly.
             return {
-                workspaceContent: notebookContent || ' ',
-                workspaceSelection: notebookSelection
+                notebookspaceContent: notebookContent || '',
+                notebookspaceSelection: notebookSelection || '',
             };
         }, [notebookContent, notebookSelection, showNotebook]),
         onNotebookUpdate: useCallback((content) => {

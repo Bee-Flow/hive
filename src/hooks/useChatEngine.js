@@ -13,7 +13,7 @@ import useTranslation from './useTranslation';
  * @param {Object|null} opts.selectedAgent - Currently selected agent
  * @param {Object|null} opts.currentConversation - Current conversation object
  * @param {Function} opts.onConversationCreated - Called when stream creates/updates a conversation
- * @param {Function} opts.getNotebookPayload - Returns { workspaceContent, workspaceSelection } if workspace enabled
+ * @param {Function} opts.getNotebookPayload - Returns { notebookspaceContent, notebookspaceSelection } if notebook is open
  * @param {Function} opts.onNotebookUpdate - Called with new workspace content from stream
  * @param {Object} opts.directMode - { enabled: boolean, modelTier: string }
  * @param {Function} opts.onDirectConversationCreated - Called with { conversationId, title } for direct chats
@@ -274,6 +274,23 @@ export default function useChatEngine({
                 ));
                 break;
 
+            case 'document_truncated':
+                // The notebook document was too long for the system prompt — server
+                // trimmed it to fit. Store the counts on the streaming message so
+                // the UI can show a one-time banner ("Document too large — only
+                // N of M tokens shown"). Client decides how to render; we just
+                // attach the data.
+                setMessages(prev => prev.map(m =>
+                    m.id === activeIdRef.current ? {
+                        ...m,
+                        documentTruncation: {
+                            originalTokens: data.originalTokens,
+                            keptTokens: data.keptTokens,
+                        },
+                    } : m
+                ));
+                break;
+
             case 'email_draft': {
                 const draftKey = JSON.stringify({ to: data.to, subject: data.subject, body: data.body });
                 setMessages(prev => prev.map(m => {
@@ -468,8 +485,8 @@ export default function useChatEngine({
                     onConversationCreated?.(data.conversationId);
                 }
 
-                if (data.workspaceContent !== undefined) {
-                    onNotebookUpdate?.(data.workspaceContent);
+                if (data.notebookspaceContent !== undefined) {
+                    onNotebookUpdate?.(data.notebookspaceContent);
                 }
                 break;
 

@@ -2,7 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     Globe, Type, Upload, Trash2, Loader2,
     AlertCircle, X, Mic, Plus, Search,
-    FileText, File, Table2, Link2, Square, Radio
+    FileText, File, Table2, Link2, Square, Radio,
+    RotateCw, XCircle, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 
@@ -52,12 +53,17 @@ const ADD_BUTTONS = [
 ];
 
 /* ── SourceCard ────────────────────────────────────────────────── */
-function SourceCard({ source, onDelete }) {
+function SourceCard({ source, onDelete, onRetry, onCancel }) {
     const meta  = SOURCE_META[source.type] || SOURCE_META.file;
     const { Icon } = meta;
     const isProcessing = source.status === 'processing';
     const isError      = source.status === 'error';
     const isReady      = source.status === 'ready';
+    const [showDetails, setShowDetails] = useState(false);
+    // File + url sources can be retried server-side (we still have the bytes or
+    // the URL). Pasted text / drive-imported content isn't retained, so retry
+    // is hidden for those types.
+    const canRetry = isError && (source.type === 'url' || !!source.storageKey);
 
     return (
         <div
@@ -66,7 +72,6 @@ function SourceCard({ source, onDelete }) {
                 background: 'var(--bg-primary)',
                 borderColor: isError ? 'rgba(239,68,68,0.35)' : isProcessing ? 'rgba(251,191,36,0.3)' : 'var(--border-subtle)',
             }}
-            title={isError && source.error ? `Error: ${source.error}` : ''}
         >
             {/* Left accent bar */}
             <div
@@ -121,11 +126,56 @@ function SourceCard({ source, onDelete }) {
                     )}
                 </div>
 
-                {/* Error detail */}
+                {/* Error detail — collapsible so long messages don't blow out the card.
+                    The full error text reveals on click (previously only a tooltip). */}
                 {isError && source.error && (
-                    <p className="text-[9px] mt-1 leading-tight truncate" style={{ color: '#ef4444' }} title={source.error}>
-                        {source.error}
-                    </p>
+                    <div className="mt-1">
+                        <button
+                            onClick={() => setShowDetails(v => !v)}
+                            className="flex items-center gap-0.5 text-[9px] font-medium hover:underline"
+                            style={{ color: '#ef4444' }}
+                        >
+                            {showDetails ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
+                            {showDetails ? 'Hide details' : 'Show details'}
+                        </button>
+                        {showDetails && (
+                            <pre
+                                className="mt-1 text-[9px] leading-snug whitespace-pre-wrap break-words p-1.5 rounded"
+                                style={{ color: '#ef4444', background: 'rgba(239,68,68,0.08)', maxHeight: '120px', overflow: 'auto' }}
+                            >
+                                {source.error}
+                            </pre>
+                        )}
+                    </div>
+                )}
+
+                {/* Action row — retry / cancel / delete as icon pills. Previously the
+                    user could only delete a failed source, which lost the uploaded bytes. */}
+                {(isError || isProcessing) && (
+                    <div className="flex items-center gap-1 mt-1.5">
+                        {canRetry && (
+                            <button
+                                onClick={() => onRetry?.(source.id)}
+                                className="flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-md transition-colors"
+                                style={{ background: 'rgba(59,130,246,0.1)', color: '#2563eb' }}
+                                title="Retry ingestion"
+                            >
+                                <RotateCw className="w-2.5 h-2.5" />
+                                Retry
+                            </button>
+                        )}
+                        {isProcessing && onCancel && (
+                            <button
+                                onClick={() => onCancel(source.id)}
+                                className="flex items-center gap-1 text-[9px] font-medium px-1.5 py-0.5 rounded-md transition-colors"
+                                style={{ background: 'rgba(239,68,68,0.1)', color: '#ef4444' }}
+                                title="Cancel ingestion"
+                            >
+                                <XCircle className="w-2.5 h-2.5" />
+                                Cancel
+                            </button>
+                        )}
+                    </div>
                 )}
 
                 {/* Processing shimmer bar */}
@@ -179,6 +229,7 @@ function MeetingItem({ meeting, onSelect }) {
 /* ── Main component ─────────────────────────────────────────────── */
 export default function NotebookSources({
     sources, onFileUpload, onAddUrl, onAddText, onAddMeeting, onDeleteSource,
+    onRetrySource, onCancelSource,
     dragOver, setDragOver, totalWords, readyCount, showMeetingNotes = true
 }) {
     const visibleButtons = showMeetingNotes ? ADD_BUTTONS : ADD_BUTTONS.filter(b => b.key !== 'meeting');
@@ -647,6 +698,8 @@ export default function NotebookSources({
                             key={source.id}
                             source={source}
                             onDelete={onDeleteSource}
+                            onRetry={onRetrySource}
+                            onCancel={onCancelSource}
                         />
                     ))
                 )}

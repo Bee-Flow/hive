@@ -1,10 +1,13 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { 
-    FileText, HelpCircle, ClipboardList, ListChecks, 
-    Layers, Search, FileQuestion, Activity, Mic, 
+import {
+    FileText, HelpCircle, ClipboardList,
+    Layers, Activity,
     Download, FileDown, Loader2, ChevronDown, Table2, PenTool
 } from 'lucide-react';
 
+// Generation types kept after the NotebookLM-gimmick cut:
+// removed Audio Podcast / Flashcards / Quiz / Study Guide — low usage,
+// high generation cost, and duplicated by the Report / Briefing Doc flows.
 const STUDIO_GROUPS = [
     {
         id: 'reports',
@@ -19,39 +22,16 @@ const STUDIO_GROUPS = [
         ]
     },
     {
-        id: 'study',
-        label: 'Study Aids',
-        icon: BookOpenIcon,
-        color: '#22c55e', // green
-        items: [
-            { key: 'studyGuide', icon: ListChecks, label: 'Study Guide', desc: 'Structured learning material' },
-            { key: 'flashcards', icon: Layers, label: 'Flashcards', desc: 'Q&A pairs for memorization' },
-            { key: 'quiz', icon: FileQuestion, label: 'Knowledge Quiz', desc: 'Test your understanding' },
-        ]
-    },
-    {
-        id: 'media',
-        label: 'Media & Visuals',
+        id: 'visuals',
+        label: 'Visuals',
         icon: Activity,
         color: '#8b5cf6', // purple
         items: [
-            { key: 'audio_overview', icon: Mic, label: 'Audio Podcast', desc: 'AI-generated 2-host audio discussion' },
             { key: 'mind_map', icon: Activity, label: 'Mind Map', desc: 'Mermaid visualization of concepts' },
             { key: 'data_table', icon: Table2, label: 'Data Table', desc: 'Extract info into Markdown tables' },
         ]
     }
 ];
-
-
-
-function BookOpenIcon(props) {
-    return (
-        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" {...props}>
-            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"></path>
-            <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"></path>
-        </svg>
-    );
-}
 
 function DropdownMenu({ group, onSelect, generating, disabled }) {
     const [open, setOpen] = useState(false);
