@@ -71,6 +71,8 @@ const SyncStatusBadge = ({ status, t }) => {
 const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, onEditingChange, knowledgeBases, t }) => {
     const [expanded, setExpanded] = useState(false);
     const [syncing, setSyncing] = useState(false);
+    const [syncProgress, setSyncProgress] = useState(null); // { processed, total, recent:[{bucket, reason, subject, at}] }
+    const [syncConflict, setSyncConflict] = useState(null); // { retryAfterSeconds }
     const [testing, setTesting] = useState(false);
     const [testResult, setTestResult] = useState(null);
     const [showSettings, setShowSettings] = useState(false);
@@ -97,7 +99,76 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, onEditingCha
 
     const handleSync = async () => {
         setSyncing(true);
-        try { await onSync(conn.id); } finally { setTimeout(() => setSyncing(false), 2000); }
+        setSyncProgress({ processed: 0, total: null, recent: [] });
+        setSyncConflict(null);
+
+        // Open SSE stream BEFORE triggering the sync so we don't miss sync_started.
+        const streamUrl = `${API_BASE}/api/email-kb/connections/${conn.id}/sync/stream`;
+        const es = new EventSource(streamUrl, { withCredentials: true });
+
+        const finishOk = () => {
+            try { es.close(); } catch { /* noop */ }
+            setSyncing(false);
+            setSyncProgress(null);
+            onSync?.(conn.id, { sseFinished: true }); // parent refreshes list
+        };
+
+        es.addEventListener('sync_fetch_complete', (ev) => {
+            try {
+                const data = JSON.parse(ev.data);
+                setSyncProgress(p => ({ ...(p || { processed: 0, recent: [] }), total: data.total }));
+            } catch { /* ignore */ }
+        });
+
+        es.addEventListener('email_processed', (ev) => {
+            try {
+                const data = JSON.parse(ev.data);
+                setSyncProgress(p => {
+                    const recent = [...(p?.recent || []), {
+                        bucket: data.bucket,
+                        reason: data.detail?.reason,
+                        subject: data.detail?.subject || data.detail?.category || data.detail?.messageId || '',
+                        at: data.at,
+                    }].slice(-5);
+                    return { processed: data.processed ?? (p?.processed || 0) + 1, total: data.total ?? p?.total ?? null, recent };
+                });
+            } catch { /* ignore */ }
+        });
+
+        es.addEventListener('sync_completed', () => finishOk());
+
+        es.onerror = () => {
+            // Connection error (e.g. server restart, auth expiry). Close + fall
+            // back to polling via parent refresh after a short beat.
+            try { es.close(); } catch { /* noop */ }
+            setSyncing(false);
+            setSyncProgress(null);
+            onSync?.(conn.id, { sseError: true });
+        };
+
+        try {
+            const resp = await fetch(`${API_BASE}/api/email-kb/connections/${conn.id}/sync`, {
+                method: 'POST',
+                credentials: 'include',
+            });
+            if (resp.status === 409) {
+                const body = await resp.json().catch(() => ({}));
+                setSyncConflict({ retryAfterSeconds: body.retryAfterSeconds || 60 });
+                try { es.close(); } catch { /* noop */ }
+                setSyncing(false);
+                setSyncProgress(null);
+                return;
+            }
+            if (!resp.ok) {
+                const body = await resp.json().catch(() => ({}));
+                throw new Error(body.error || `Sync failed (${resp.status})`);
+            }
+        } catch (err) {
+            console.error('[EmailKB] Sync trigger failed:', err);
+            try { es.close(); } catch { /* noop */ }
+            setSyncing(false);
+            setSyncProgress(null);
+        }
     };
 
     const handleTest = async () => {
@@ -218,7 +289,67 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, onEditingCha
                     {conn.sync_error && (
                         <div className="flex items-start gap-2 p-3 rounded-lg bg-red-50 border border-red-200 text-[12px] text-red-700">
                             <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                            <span>{conn.sync_error}</span>
+                            <span className="flex-1">{conn.sync_error}</span>
+                            <button
+                                onClick={handleSync}
+                                disabled={syncing}
+                                className="flex-shrink-0 flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-white border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50"
+                            >
+                                <RefreshCw className={`w-3 h-3 ${syncing ? 'animate-spin' : ''}`} />
+                                {t('email_kb.retry') || 'Retry'}
+                            </button>
+                        </div>
+                    )}
+
+                    {/* Conflict: another sync is already running */}
+                    {syncConflict && (
+                        <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-[12px] text-amber-800">
+                            <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                            <span>
+                                {t('email_kb.sync_in_progress') || 'Sync already in progress'} —
+                                {' '}{t('email_kb.retry_in') || 'retry in'} {syncConflict.retryAfterSeconds}s.
+                            </span>
+                        </div>
+                    )}
+
+                    {/* Live sync progress */}
+                    {syncProgress && (
+                        <div className="p-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-subtle)] text-[12px] space-y-2">
+                            <div className="flex items-center justify-between">
+                                <span className="font-medium text-[var(--text-primary)]">
+                                    {t('email_kb.syncing') || 'Syncing'}…
+                                </span>
+                                <span className="text-[var(--text-tertiary)]">
+                                    {syncProgress.processed}{syncProgress.total != null ? ` / ${syncProgress.total}` : ''}
+                                </span>
+                            </div>
+                            <div className="h-1.5 rounded-full bg-[var(--bg-tertiary)] overflow-hidden">
+                                <div
+                                    className="h-full bg-[var(--accent-primary)] transition-all duration-200"
+                                    style={{
+                                        width: syncProgress.total
+                                            ? `${Math.min(100, Math.round((syncProgress.processed / syncProgress.total) * 100))}%`
+                                            : '10%',
+                                    }}
+                                />
+                            </div>
+                            {syncProgress.recent.length > 0 && (
+                                <ul className="space-y-0.5 text-[11px] text-[var(--text-tertiary)]">
+                                    {syncProgress.recent.map((r, i) => (
+                                        <li key={i} className="flex items-center gap-1.5 truncate">
+                                            <span className={
+                                                r.bucket === 'ingested' ? 'text-emerald-500' :
+                                                r.bucket === 'failed' ? 'text-red-500' :
+                                                'text-amber-500'
+                                            }>●</span>
+                                            <span className="truncate">{r.subject || r.reason || r.bucket}</span>
+                                            {r.bucket === 'skipped' && r.reason && (
+                                                <span className="flex-shrink-0 text-[10px] text-[var(--text-tertiary)]">({r.reason})</span>
+                                            )}
+                                        </li>
+                                    ))}
+                                </ul>
+                            )}
                         </div>
                     )}
 
@@ -373,9 +504,17 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, onEditingCha
                                 })()}
                             </div>
 
-                            {/* ── Pipeline Timeline ── */}
-                            <div className="border-t border-[var(--border-subtle)] pt-4">
-                                <h4 className="text-[12px] font-semibold text-[var(--text-primary)] mb-3">{t('email_kb.pipeline_config')}</h4>
+                            {/* ── Pipeline Timeline (advanced, collapsed by default) ── */}
+                            <details className="border-t border-[var(--border-subtle)] pt-4 group">
+                                <summary className="cursor-pointer list-none flex items-center justify-between gap-2 mb-3 select-none">
+                                    <div>
+                                        <h4 className="text-[12px] font-semibold text-[var(--text-primary)]">{t('email_kb.pipeline_config')}</h4>
+                                        <div className="text-[10px] text-[var(--text-tertiary)] mt-0.5">
+                                            {t('email_kb.pipeline_config_hint') || 'Advanced: model tiers, batching, custom prompts'}
+                                        </div>
+                                    </div>
+                                    <ChevronDown className="w-4 h-4 text-[var(--text-tertiary)] transition-transform group-open:rotate-180" />
+                                </summary>
                                 {settings.pipeline_config.ingestion_mode === 'per_email' && (
                                     <div className="text-[10px] text-[var(--text-tertiary)] mb-3 p-2 bg-[var(--bg-tertiary)] rounded">
                                         Per-email mode skips stages 2–4 (AI article / categorization / merge). Only cleanup + ingestion run.
@@ -521,7 +660,7 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, onEditingCha
                                         <div className="text-[10px] text-[var(--text-tertiary)]">{t('email_kb.stage_ingest_desc')}</div>
                                     </div>
                                 </div>
-                            </div>
+                            </details>
 
                             {/* Save */}
                             <div className="flex justify-end">
@@ -788,9 +927,12 @@ const EmailKBSettings = ({ user, onNavigateBack }) => {
         await loadData();
     };
 
-    const handleSync = async (id) => {
-        await api(`/connections/${id}/sync`, { method: 'POST' });
-        setTimeout(loadData, 3000);
+    // ConnectionCard now owns the POST + SSE stream; the parent's role is just
+    // to refresh the list when SSE reports the sync finished (or errored).
+    const handleSync = async (_id, opts = {}) => {
+        if (opts.sseFinished || opts.sseError) {
+            await loadData();
+        }
     };
 
     const handleUpdate = async (id, updates) => {

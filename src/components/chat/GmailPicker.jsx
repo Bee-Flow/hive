@@ -177,13 +177,12 @@ const GmailPicker = ({ isOpen, onClose, onFilesSelected, apiBase = '' }) => {
     };
 
     return (
-        <div className="fixed inset-0 z-[9999] flex items-center justify-center" onClick={onClose}>
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-2 sm:p-4" onClick={onClose}>
             <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" />
             <div
-                className="relative rounded-xl shadow-2xl overflow-hidden"
+                className="relative rounded-xl shadow-2xl overflow-hidden w-full sm:max-w-[600px]"
                 style={{
-                    width: '600px',
-                    maxHeight: '650px',
+                    maxHeight: 'min(650px, calc(100vh - 1rem))',
                     display: 'flex',
                     flexDirection: 'column',
                     background: '#fff',

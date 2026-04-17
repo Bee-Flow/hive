@@ -6,7 +6,7 @@ import OrgSettings from './pages/OrgSettings';
 
 import MeetingNotesPage from './pages/MeetingNotesPage';
 import TemplatesPage from './pages/TemplatesPage';
-import NotebooksPage from './pages/NotebooksPage';
+// NotebooksPage is imported by AgentHub now — it renders inline in the main content area.
 
 import AgentDesigner from './components/admin/AgentDesigner';
 import LoginPage from './pages/LoginPage';
@@ -161,6 +161,11 @@ function App() {
     const [showSettings, setShowSettings] = useState(() => pageFromPath(window.location.pathname) === 'settings');
     const [showSkillsPanel, setShowSkillsPanel] = useState(false);
     const [showEmailKB, setShowEmailKB] = useState(false);
+    // Notebooks panel is rendered inline inside AgentHub (same pattern as
+    // showSettings / showAgentDesigner) so the left sidebar stays visible.
+    // Hard-refreshes on /app/notebooks and /app/notebooks/:id still land the
+    // user on the notebook via `initialNotebookId` parsed by pageFromPath.
+    const [showNotebooks, setShowNotebooks] = useState(() => pageFromPath(window.location.pathname) === 'notebooks');
     const [encryptionState, setEncryptionState] = useState(null); // null | 'setup' | 'pin' | { recoveryKey: string }
     const [noOrganization, setNoOrganization] = useState(false);
     const [pendingApproval, setPendingApproval] = useState(false);
@@ -266,6 +271,7 @@ function App() {
             const isDesigner = page === 'agentDesigner';
             setShowAgentDesigner(isDesigner);
             if (isDesigner) setInitialDesignerAgentId(parseAgentDesignerUrl(window.location.pathname));
+            setShowNotebooks(page === 'notebooks');
         };
         window.addEventListener('popstate', handlePopState);
         return () => window.removeEventListener('popstate', handlePopState);
@@ -359,13 +365,23 @@ function App() {
             window.history.pushState({ page: 'orgSettings' }, '', path);
             return;
         }
-        // Support 'notebooks/123' format to open a specific notebook
-        if (page.startsWith('notebooks/')) {
-            const notebookId = page.slice('notebooks/'.length);
+        // Notebooks — rendered inline inside AgentHub (same pattern as
+        // settings / agent designer). Bare 'notebooks' → list view; the
+        // 'notebooks/:id' form deep-links directly to a specific notebook.
+        if (page === 'notebooks' || page.startsWith('notebooks/')) {
+            const notebookId = page.startsWith('notebooks/') ? page.slice('notebooks/'.length) : null;
             setInitialNotebookId(notebookId);
+            setShowNotebooks(true);
+            setShowSettings(false);
+            setShowAgentDesigner(false);
+            setShowSkillsPanel(false);
+            setShowEmailKB(false);
             setCurrentPage('notebooks');
             setShowProfileMenu(false);
-            window.history.pushState({ page: 'notebooks', notebookId }, '', `/app/notebooks/${notebookId}`);
+            const path = notebookId ? `/app/notebooks/${notebookId}` : '/app/notebooks';
+            if (window.location.pathname !== path) {
+                window.history.pushState({ page: 'notebooks', notebookId }, '', path);
+            }
             return;
         }
         setCurrentPage(page);
@@ -632,18 +648,9 @@ function App() {
             if (user?.featureFlags?.templates === false) return navigateToPage('agents');
             return <TemplatesPage user={user} onBack={() => navigateToPage('agents')} />;
         }
-        if (currentPage === 'notebooks') {
-            if (user?.featureFlags?.notebooks === false) return navigateToPage('agents');
-            return <NotebooksPage
-                user={user}
-                onBack={() => navigateToPage('agents')}
-                initialNotebookId={initialNotebookId}
-                onNotebookChange={(id) => {
-                    const path = id ? `/app/notebooks/${id}` : '/app/notebooks';
-                    window.history.replaceState({ page: 'notebooks', notebookId: id }, '', path);
-                }}
-            />;
-        }
+        // Notebooks used to render as a standalone page here, taking over the
+        // whole viewport. It now renders inline inside AgentHub below (same
+        // slot as Settings / Agent Designer) so the app sidebar stays visible.
 
         return <AgentHub onNavigate={navigateToPage} user={user} initialAgentId={initialUrlRef.current.agentId} initialConversationId={initialUrlRef.current.conversationId} initialDirectConvId={initialDirectConvRef.current} onLogout={handleLogout} currentPage={currentPage} showSettings={showSettings} onCloseSettings={() => {
             setShowSettings(false);
@@ -661,7 +668,20 @@ function App() {
                 setCurrentPage('agents');
                 window.history.pushState({ page: 'agents' }, '', '/app');
             }
-        }} initialDesignerAgentId={initialDesignerAgentId} showSkillsPanel={showSkillsPanel} onCloseSkillsPanel={() => setShowSkillsPanel(false)} showEmailKB={showEmailKB} onCloseEmailKB={() => setShowEmailKB(false)} />;
+        }} initialDesignerAgentId={initialDesignerAgentId} showSkillsPanel={showSkillsPanel} onCloseSkillsPanel={() => setShowSkillsPanel(false)} showEmailKB={showEmailKB} onCloseEmailKB={() => setShowEmailKB(false)} showNotebooks={showNotebooks && user?.featureFlags?.notebooks !== false} initialNotebookId={initialNotebookId} onNotebookChange={(id) => {
+            setInitialNotebookId(id);
+            const path = id ? `/app/notebooks/${id}` : '/app/notebooks';
+            window.history.replaceState({ page: 'notebooks', notebookId: id }, '', path);
+        }} onCloseNotebooks={() => {
+            setShowNotebooks(false);
+            setInitialNotebookId(null);
+            // Mirror the Settings / Agent Designer close pattern — rewrite the
+            // URL back to the app root so /app/notebooks doesn't linger.
+            if (window.location.pathname.startsWith('/app/notebooks')) {
+                setCurrentPage('agents');
+                window.history.pushState({ page: 'agents' }, '', '/app');
+            }
+        }} />;
     };
 
     return (

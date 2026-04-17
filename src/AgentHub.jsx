@@ -16,6 +16,7 @@ import AdvancedSettings from './pages/AdvancedSettings';
 import AgentDesigner from './components/admin/AgentDesigner';
 import SkillsPanel from './components/SkillsPanel';
 import EmailKBSettings from './components/EmailKBSettings';
+import NotebooksPage from './pages/NotebooksPage';
 import useChatEngine from './hooks/useChatEngine';
 import { useViewport } from './hooks/useViewport';
 
@@ -24,7 +25,16 @@ import scopedStorage from './utils/scopedStorage';
 import { normalizeLoadedMessages } from './utils/messageShape';
 import { X, Sparkles, PenLine, Heart, MoreVertical, Menu, EyeOff, Pencil } from 'lucide-react';
 
-const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = null, initialConversationId = null, initialDirectConvId = null, showSettings = false, onCloseSettings, showAgentDesigner = false, onCloseAgentDesigner, initialDesignerAgentId = null, showSkillsPanel = false, onCloseSkillsPanel, showEmailKB = false, onCloseEmailKB }) => {
+const AgentHub = ({
+    onNavigate, user, onLogout, currentPage,
+    initialAgentId = null, initialConversationId = null, initialDirectConvId = null,
+    showSettings = false, onCloseSettings,
+    showAgentDesigner = false, onCloseAgentDesigner, initialDesignerAgentId = null,
+    showSkillsPanel = false, onCloseSkillsPanel,
+    showEmailKB = false, onCloseEmailKB,
+    // Notebooks rendered inline (previously a standalone page at App level).
+    showNotebooks = false, onCloseNotebooks, initialNotebookId = null, onNotebookChange,
+}) => {
     // Permission helper - checks if user has a specific permission
     const hasPermission = (perm) => {
         const perms = user?.permissions || [];
@@ -1194,7 +1204,16 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
 
             {/* Main Content Area */}
             <div className="flex-1 flex flex-col min-w-0 relative">
-                {showSettings ? (
+                {showNotebooks ? (
+                    /* Notebooks rendered inline in conversation area (same slot as
+                       Settings / Agent Designer) so the app sidebar stays visible. */
+                    <NotebooksPage
+                        user={user}
+                        onBack={onCloseNotebooks}
+                        initialNotebookId={initialNotebookId}
+                        onNotebookChange={onNotebookChange}
+                    />
+                ) : showSettings ? (
                     /* Settings rendered inline in conversation area — Open WebUI style */
                     <AdvancedSettings onBack={null} onNavigate={onNavigate} onLogout={onLogout} user={user} onClose={onCloseSettings} />
                 ) : showAgentDesigner ? (
