@@ -1,10 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { API_BASE, authFetch } from '../../utils/helpers';
-import { Loader2, RefreshCw, Plus, Trash2, ChevronDown, ChevronRight, Check, X } from 'lucide-react';
+import {
+    Loader2, RefreshCw, Plus, Trash2, ChevronDown, ChevronRight, Check, X,
+    Link2, Workflow, ShieldCheck, Search, CircleCheck, CircleX, Info, ExternalLink,
+} from 'lucide-react';
 
 const INPUT_TYPES = ['string', 'number', 'file', 'json'];
 
+const TABS = [
+    { id: 'connection', label: 'Connection', Icon: Link2 },
+    { id: 'workflows', label: 'Workflows', Icon: Workflow },
+    { id: 'permissions', label: 'Permissions', Icon: ShieldCheck },
+];
+
 export default function N8nSection() {
+    const [tab, setTab] = useState('connection');
+
+    // Connection state
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState(null);
@@ -12,16 +24,29 @@ export default function N8nSection() {
     const [apiKey, setApiKey] = useState('');
     const [hasApiKey, setHasApiKey] = useState(false);
     const [configured, setConfigured] = useState(false);
+
+    // Test-connection state
+    const [testing, setTesting] = useState(false);
+    const [testResult, setTestResult] = useState(null); // { ok, activeWebhookCount?, error? }
+
+    // Workflow state
     const [workflows, setWorkflows] = useState([]);
     const [discoveredWorkflows, setDiscoveredWorkflows] = useState([]);
     const [discovering, setDiscovering] = useState(false);
     const [expandedWf, setExpandedWf] = useState(null);
+    const [wfSearch, setWfSearch] = useState('');
 
-    // (KB import logic has been moved to KnowledgePanel)
+    // Permissions state
+    const [permLoading, setPermLoading] = useState(false);
+    const [permSummary, setPermSummary] = useState(null);
+
+    useEffect(() => { loadConfig(); }, []);
 
     useEffect(() => {
-        loadConfig();
-    }, []);
+        if (tab === 'permissions' && !permSummary) loadPermissions();
+    }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── API calls ────────────────────────────────────────────────
 
     const loadConfig = async () => {
         setLoading(true);
@@ -53,6 +78,7 @@ export default function N8nSection() {
                 setHasApiKey(true);
                 setConfigured(!!(n8nUrl && (apiKey || hasApiKey)));
                 setApiKey('');
+                setTestResult(null); // invalidate previous test
             } else {
                 const err = await res.json();
                 setMessage({ type: 'error', text: err.error || 'Failed to save' });
@@ -62,6 +88,43 @@ export default function N8nSection() {
         }
         setSaving(false);
         setTimeout(() => setMessage(null), 3000);
+    };
+
+    const testConnection = async () => {
+        setTesting(true);
+        setTestResult(null);
+        try {
+            // If the user typed new creds but hasn't hit Save, test those instead.
+            const body = {};
+            if (n8nUrl) body.n8nUrl = n8nUrl;
+            if (apiKey) body.apiKey = apiKey;
+            const res = await authFetch(`${API_BASE}/ai/n8n/test`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const data = await res.json();
+            setTestResult(data);
+        } catch (e) {
+            setTestResult({ ok: false, error: e.message });
+        }
+        setTesting(false);
+    };
+
+    const loadPermissions = async () => {
+        setPermLoading(true);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/n8n/permissions`);
+            if (res.ok) {
+                const data = await res.json();
+                setPermSummary(data);
+            } else {
+                setPermSummary({ error: 'Failed to load permissions' });
+            }
+        } catch (e) {
+            setPermSummary({ error: e.message });
+        }
+        setPermLoading(false);
     };
 
     const discoverWorkflows = async () => {
@@ -83,7 +146,6 @@ export default function N8nSection() {
         setTimeout(() => setMessage(null), 4000);
     };
 
-    // Auto-save helper — saves a given workflows array to the server
     const persistWorkflows = async (wfs) => {
         try {
             await authFetch(`${API_BASE}/ai/n8n/workflows`, {
@@ -156,8 +218,6 @@ export default function N8nSection() {
         }));
     };
 
-    // ── KB Import logic now resides in KnowledgePanel.jsx ──────────
-
     const saveWorkflows = async () => {
         setSaving(true);
         try {
@@ -166,9 +226,8 @@ export default function N8nSection() {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ workflows }),
             });
-            if (res.ok) {
-                setMessage({ type: 'success', text: 'Workflows saved' });
-            } else {
+            if (res.ok) setMessage({ type: 'success', text: 'Workflows saved' });
+            else {
                 const err = await res.json();
                 setMessage({ type: 'error', text: err.error || 'Failed to save' });
             }
@@ -179,6 +238,26 @@ export default function N8nSection() {
         setTimeout(() => setMessage(null), 3000);
     };
 
+    // ── Derived ──────────────────────────────────────────────────
+
+    const filteredWorkflows = useMemo(() => {
+        if (!wfSearch.trim()) return workflows;
+        const q = wfSearch.toLowerCase();
+        return workflows.filter(w =>
+            (w.name || '').toLowerCase().includes(q) ||
+            (w.slug || '').toLowerCase().includes(q) ||
+            (w.description || '').toLowerCase().includes(q)
+        );
+    }, [workflows, wfSearch]);
+
+    const filteredDiscovered = useMemo(() => {
+        if (!wfSearch.trim()) return discoveredWorkflows;
+        const q = wfSearch.toLowerCase();
+        return discoveredWorkflows.filter(w => (w.name || '').toLowerCase().includes(q));
+    }, [discoveredWorkflows, wfSearch]);
+
+    // ── Render helpers ───────────────────────────────────────────
+
     if (loading) {
         return (
             <div className="flex items-center justify-center py-4" style={{ color: 'var(--text-muted)' }}>
@@ -188,14 +267,111 @@ export default function N8nSection() {
     }
 
     return (
-        <div className="space-y-4">
-            {message && (
-                <span className={`text-xs font-medium px-3 py-1.5 rounded-lg inline-block ${message.type === 'success' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                    {message.text}
-                </span>
+        <div className="space-y-3">
+            {/* Status row — shows live pill regardless of tab */}
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+                <StatusPill configured={configured} testResult={testResult} />
+                {message && (
+                    <span className={`text-xs font-medium px-3 py-1.5 rounded-lg ${message.type === 'success' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
+                        {message.text}
+                    </span>
+                )}
+            </div>
+
+            {/* Tabs */}
+            <div className="flex items-center gap-1 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+                {TABS.map(({ id, label, Icon }) => {
+                    const active = tab === id;
+                    return (
+                        <button
+                            key={id}
+                            onClick={() => setTab(id)}
+                            className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium transition-colors relative"
+                            style={{
+                                color: active ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                                borderBottom: active ? '2px solid var(--accent-primary)' : '2px solid transparent',
+                                marginBottom: '-1px',
+                            }}
+                        >
+                            <Icon className="w-3.5 h-3.5" />
+                            {label}
+                        </button>
+                    );
+                })}
+            </div>
+
+            {/* Tab content */}
+            {tab === 'connection' && (
+                <ConnectionTab
+                    n8nUrl={n8nUrl} setN8nUrl={setN8nUrl}
+                    apiKey={apiKey} setApiKey={setApiKey}
+                    hasApiKey={hasApiKey}
+                    saving={saving} onSave={saveConnection}
+                    testing={testing} onTest={testConnection} testResult={testResult}
+                />
             )}
 
-            {/* Connection fields */}
+            {tab === 'workflows' && (
+                <WorkflowsTab
+                    configured={configured}
+                    wfSearch={wfSearch} setWfSearch={setWfSearch}
+                    discoverWorkflows={discoverWorkflows}
+                    discovering={discovering}
+                    filteredDiscovered={filteredDiscovered}
+                    workflows={workflows}
+                    filteredWorkflows={filteredWorkflows}
+                    expandedWf={expandedWf} setExpandedWf={setExpandedWf}
+                    updateWorkflow={updateWorkflow}
+                    removeWorkflow={removeWorkflow}
+                    addWorkflow={addWorkflow}
+                    addInput={addInput} updateInput={updateInput} removeInput={removeInput}
+                    saving={saving} saveWorkflows={saveWorkflows}
+                    setWorkflows={setWorkflows} persistWorkflows={persistWorkflows}
+                />
+            )}
+
+            {tab === 'permissions' && (
+                <PermissionsTab
+                    loading={permLoading}
+                    summary={permSummary}
+                    onReload={loadPermissions}
+                />
+            )}
+        </div>
+    );
+}
+
+// ─── Status pill ─────────────────────────────────────────────
+
+function StatusPill({ configured, testResult }) {
+    let label, bg, color, Icon;
+    if (testResult?.ok) {
+        label = testResult.activeWebhookCount != null
+            ? `Connected · ${testResult.activeWebhookCount} active webhook workflow${testResult.activeWebhookCount === 1 ? '' : 's'}`
+            : 'Connected';
+        bg = 'rgba(16,185,129,0.12)'; color = '#10b981'; Icon = CircleCheck;
+    } else if (testResult && !testResult.ok) {
+        label = `Connection failed${testResult.error ? ` — ${String(testResult.error).slice(0, 80)}` : ''}`;
+        bg = 'rgba(239,68,68,0.12)'; color = '#ef4444'; Icon = CircleX;
+    } else if (configured) {
+        label = 'Configured — click Test to verify';
+        bg = 'var(--bg-tertiary)'; color = 'var(--text-secondary)'; Icon = Info;
+    } else {
+        label = 'Not configured';
+        bg = 'var(--bg-tertiary)'; color = 'var(--text-muted)'; Icon = Info;
+    }
+    return (
+        <span className="inline-flex items-center gap-1.5 text-[11px] font-medium px-2.5 py-1 rounded-full" style={{ background: bg, color }}>
+            <Icon className="w-3 h-3" /> {label}
+        </span>
+    );
+}
+
+// ─── Connection tab ─────────────────────────────────────────
+
+function ConnectionTab({ n8nUrl, setN8nUrl, apiKey, setApiKey, hasApiKey, saving, onSave, testing, onTest, testResult }) {
+    return (
+        <div className="space-y-4">
             <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>n8n Instance URL</label>
                 <input
@@ -204,6 +380,9 @@ export default function N8nSection() {
                     className="w-full px-3 py-2 text-sm rounded-lg border bg-transparent outline-none focus:border-[var(--accent-primary)]"
                     style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                 />
+                <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                    Base URL of your n8n instance. `/api/v1` is appended automatically.
+                </p>
             </div>
             <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>API Key</label>
@@ -213,63 +392,118 @@ export default function N8nSection() {
                     className="w-full px-3 py-2 text-sm rounded-lg border bg-transparent outline-none focus:border-[var(--accent-primary)]"
                     style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                 />
-                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                    Generate at n8n → Settings → API → Create API Key
+                <p className="text-[11px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                    Generate at n8n → Settings → API → Create API Key. Stored encrypted.
                 </p>
             </div>
-            <button onClick={saveConnection} disabled={saving || !n8nUrl}
-                className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
-                style={{ background: 'var(--accent-primary)', color: 'white' }}>
-                {saving ? 'Saving...' : 'Save Connection'}
-            </button>
+            <div className="flex items-center gap-2">
+                <button
+                    onClick={onSave} disabled={saving || !n8nUrl}
+                    className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+                    style={{ background: 'var(--accent-primary)', color: 'white' }}
+                >
+                    {saving ? 'Saving...' : 'Save Connection'}
+                </button>
+                <button
+                    onClick={onTest} disabled={testing || !n8nUrl || (!apiKey && !hasApiKey)}
+                    className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 border"
+                    style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)', background: 'transparent' }}
+                >
+                    {testing ? <><Loader2 className="w-3.5 h-3.5 animate-spin inline mr-1.5" />Testing...</> : 'Test Connection'}
+                </button>
+            </div>
+            {testResult && !testResult.ok && (
+                <div className="text-[11px] rounded-lg border px-3 py-2" style={{ background: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.2)', color: '#ef4444' }}>
+                    {testResult.error || `HTTP ${testResult.status || '?'}`}
+                </div>
+            )}
+        </div>
+    );
+}
 
-            {/* Workflow Discovery */}
-            {configured && (
-                <div className="rounded-lg border p-3 space-y-3 mt-3" style={{ borderColor: 'var(--border-subtle)' }}>
-                    <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>Discover Workflows</h4>
-                        <button onClick={discoverWorkflows} disabled={discovering}
-                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all disabled:opacity-50"
-                            style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }}>
-                            <RefreshCw className={`w-3 h-3 ${discovering ? 'animate-spin' : ''}`} />
-                            {discovering ? 'Scanning...' : 'Refresh'}
-                        </button>
+// ─── Workflows tab ──────────────────────────────────────────
+
+function WorkflowsTab({
+    configured, wfSearch, setWfSearch, discoverWorkflows, discovering,
+    filteredDiscovered, workflows, filteredWorkflows,
+    expandedWf, setExpandedWf, updateWorkflow, removeWorkflow, addWorkflow,
+    addInput, updateInput, removeInput, saving, saveWorkflows,
+    setWorkflows, persistWorkflows,
+}) {
+    if (!configured) {
+        return (
+            <div className="rounded-lg border px-4 py-6 text-center" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}>
+                <Info className="w-5 h-5 mx-auto mb-2 opacity-60" />
+                <p className="text-sm">Connect to n8n first — fill in the URL and API key on the Connection tab.</p>
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-3">
+            {/* Search + Refresh */}
+            <div className="flex items-center gap-2">
+                <div className="flex-1 relative">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+                    <input
+                        type="text" value={wfSearch} onChange={e => setWfSearch(e.target.value)}
+                        placeholder="Search workflows..."
+                        className="w-full pl-8 pr-3 py-1.5 text-xs rounded-lg border bg-transparent outline-none focus:border-[var(--accent-primary)]"
+                        style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                    />
+                </div>
+                <button
+                    onClick={discoverWorkflows} disabled={discovering}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all disabled:opacity-50"
+                    style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }}
+                >
+                    <RefreshCw className={`w-3.5 h-3.5 ${discovering ? 'animate-spin' : ''}`} />
+                    {discovering ? 'Scanning...' : 'Discover'}
+                </button>
+            </div>
+
+            {/* Discovered (not yet added) */}
+            {filteredDiscovered.length > 0 && (
+                <div className="rounded-lg border p-3 space-y-1.5" style={{ borderColor: 'var(--border-subtle)' }}>
+                    <div className="flex items-center justify-between mb-1">
+                        <h4 className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Available to add</h4>
                     </div>
-                    {discoveredWorkflows.length > 0 && (
-                        <div className="space-y-1.5">
-                            {discoveredWorkflows.map(dw => {
-                                const alreadyAdded = workflows.some(w => w.id === dw.id);
-                                return (
-                                    <div key={dw.id} className="flex items-center justify-between px-3 py-2 rounded-lg border"
-                                        style={{ borderColor: 'var(--border-subtle)', background: alreadyAdded ? 'rgba(16, 185, 129, 0.04)' : 'transparent' }}>
-                                        <div>
-                                            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{dw.name}</div>
-                                            <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                                {dw.webhookNodes?.map(n => `${n.method || 'POST'} /webhook/${n.path}`).join(', ')}
-                                            </div>
-                                        </div>
-                                        {alreadyAdded ? (
-                                            <span className="text-xs font-medium flex items-center gap-1" style={{ color: '#10b981' }}>
-                                                <Check className="w-3.5 h-3.5" /> Added
-                                            </span>
-                                        ) : (
-                                            <button onClick={() => addWorkflow(dw)}
-                                                className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all hover:opacity-80"
-                                                style={{ background: 'var(--accent-primary)', color: 'white' }}>
-                                                <Plus className="w-3 h-3" /> Add
-                                            </button>
-                                        )}
+                    {filteredDiscovered.map(dw => {
+                        const alreadyAdded = workflows.some(w => w.id === dw.id);
+                        return (
+                            <div key={dw.id} className="flex items-center justify-between px-3 py-2 rounded-lg border"
+                                style={{ borderColor: 'var(--border-subtle)', background: alreadyAdded ? 'rgba(16, 185, 129, 0.04)' : 'transparent' }}>
+                                <div className="min-w-0">
+                                    <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{dw.name}</div>
+                                    <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
+                                        {dw.webhookNodes?.map(n => `${n.method || 'POST'} /webhook/${n.path}`).join(', ')}
                                     </div>
-                                );
-                            })}
-                        </div>
-                    )}
+                                </div>
+                                {alreadyAdded ? (
+                                    <span className="text-xs font-medium flex items-center gap-1 shrink-0" style={{ color: '#10b981' }}>
+                                        <Check className="w-3.5 h-3.5" /> Added
+                                    </span>
+                                ) : (
+                                    <button onClick={() => addWorkflow(dw)}
+                                        className="flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-medium transition-all hover:opacity-80 shrink-0"
+                                        style={{ background: 'var(--accent-primary)', color: 'white' }}>
+                                        <Plus className="w-3 h-3" /> Add
+                                    </button>
+                                )}
+                            </div>
+                        );
+                    })}
                 </div>
             )}
 
-            {/* Configured Workflows */}
-            {workflows.length > 0 && (
-                <div className="rounded-lg border overflow-hidden mt-2" style={{ borderColor: 'var(--border-subtle)' }}>
+            {/* Configured workflows */}
+            {workflows.length === 0 ? (
+                <div className="rounded-lg border px-4 py-6 text-center" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}>
+                    <Workflow className="w-5 h-5 mx-auto mb-2 opacity-60" />
+                    <p className="text-sm">No workflows configured yet. Click <b>Discover</b> to scan your n8n instance for webhook-triggered workflows.</p>
+                </div>
+            ) : (
+                <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-subtle)' }}>
                     <div className="px-3 py-2 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-subtle)' }}>
                         <h4 className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>
                             Workflows ({workflows.filter(w => w.enabled).length}/{workflows.length} enabled)
@@ -281,7 +515,7 @@ export default function N8nSection() {
                         </button>
                     </div>
                     <div className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
-                        {workflows.map(wf => {
+                        {filteredWorkflows.map(wf => {
                             const isExpanded = expandedWf === wf.id;
                             return (
                                 <div key={wf.id}>
@@ -373,14 +607,11 @@ export default function N8nSection() {
                                                 )}
                                             </div>
 
-                                            {/* ── KB Ingestion Toggle ── */}
+                                            {/* KB Ingestion */}
                                             <div className="pt-2 mt-1 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
-                                                <div className="flex items-center justify-between mb-1">
-                                                    <label className="text-[11px] font-semibold flex items-center gap-1" style={{ color: 'var(--text-secondary)' }}>📚 Knowledge Base</label>
-                                                </div>
                                                 <div className="flex items-center justify-between p-2 rounded border" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}>
                                                     <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                                                        Allow agents to ingest this workflow into their Knowledge Base.
+                                                        📚 Allow agents to ingest this workflow into their Knowledge Base.
                                                     </div>
                                                     <label className="relative inline-flex items-center cursor-pointer flex-shrink-0" onClick={e => e.stopPropagation()}>
                                                         <input type="checkbox" checked={!!wf.allowKbIngestion} onChange={() => {
@@ -400,6 +631,88 @@ export default function N8nSection() {
                     </div>
                 </div>
             )}
+        </div>
+    );
+}
+
+// ─── Permissions tab (read-only summary) ─────────────────────
+
+function PermissionsTab({ loading, summary, onReload }) {
+    if (loading) {
+        return (
+            <div className="flex items-center justify-center py-6" style={{ color: 'var(--text-muted)' }}>
+                <Loader2 className="w-4 h-4 animate-spin mr-2" /> Loading permissions...
+            </div>
+        );
+    }
+    if (!summary || summary.error) {
+        return (
+            <div className="rounded-lg border px-4 py-6 text-center" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}>
+                <p className="text-sm mb-2">{summary?.error || 'Could not load permissions'}</p>
+                <button onClick={onReload} className="text-xs px-3 py-1 rounded-lg border"
+                    style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}>Retry</button>
+            </div>
+        );
+    }
+
+    const buckets = [
+        {
+            id: 'use_n8n_tools',
+            title: 'Use n8n Tools',
+            desc: 'Run webhook workflows from chat and inspect workflow definitions. Granted to all members by default.',
+            groups: summary.use_n8n_tools || [],
+        },
+        {
+            id: 'modify_n8n_workflows',
+            title: 'Modify n8n Workflows',
+            desc: 'Allow the AI to create, edit, delete, activate, and execute workflows on behalf of the user. Grant carefully — the AI can change live automations.',
+            groups: summary.modify_n8n_workflows || [],
+        },
+    ];
+
+    return (
+        <div className="space-y-3">
+            <div className="rounded-lg border px-3 py-2.5 text-[11px] flex items-start gap-2"
+                style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
+                <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+                <span>
+                    This page is a read-only summary. To change who holds these permissions, edit the relevant groups in{' '}
+                    <a href={summary.editUrl || '/settings/organisation/users'} className="underline font-medium inline-flex items-center gap-0.5" style={{ color: 'var(--accent-primary)' }}>
+                        Users & Groups <ExternalLink className="w-3 h-3" />
+                    </a>.
+                </span>
+            </div>
+
+            {buckets.map(bucket => (
+                <div key={bucket.id} className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-subtle)' }}>
+                    <div className="px-3 py-2.5 border-b" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
+                        <div className="flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                                <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{bucket.title}</div>
+                                <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{bucket.desc}</div>
+                            </div>
+                            <span className="text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0"
+                                style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                                {bucket.groups.length} group{bucket.groups.length === 1 ? '' : 's'}
+                            </span>
+                        </div>
+                    </div>
+                    {bucket.groups.length === 0 ? (
+                        <div className="px-3 py-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                            No groups currently hold this permission.
+                        </div>
+                    ) : (
+                        <ul className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
+                            {bucket.groups.map(g => (
+                                <li key={g.id} className="px-3 py-2 flex items-center justify-between text-xs">
+                                    <span style={{ color: 'var(--text-primary)' }}>{g.name}</span>
+                                    <span style={{ color: 'var(--text-muted)' }}>{g.userCount} user{g.userCount === 1 ? '' : 's'}</span>
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+            ))}
         </div>
     );
 }
