@@ -69,6 +69,7 @@ function detectMeetingPlatform(url) {
 function platformBadge(platform) {
     switch (platform) {
         case 'google': return { label: 'Google Meet', color: '#1a73e8', emoji: '🟢' };
+        case 'google-meet-sdk': return { label: 'Meet (SDK)', color: '#1a73e8', emoji: '⚡' };
         case 'teams': return { label: 'Teams', color: '#5059c9', emoji: '🟣' };
         case 'teams-sdk': return { label: 'Teams (SDK)', color: '#5059c9', emoji: '⚡' };
         case 'zoom': return { label: 'Zoom', color: '#2d8cff', emoji: '🔵' };
