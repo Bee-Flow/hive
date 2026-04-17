@@ -70,6 +70,11 @@ export const MISTRAL_MODEL_META = {
     'o3': { name: 'o3', desc: 'Powerful reasoning model', cat: 'Reasoning', input: 2.0, output: 8.0 },
     'o3-mini': { name: 'o3 Mini', desc: 'Fast reasoning model', cat: 'Reasoning', input: 1.10, output: 4.40 },
     'o4-mini': { name: 'o4 Mini', desc: 'Latest fast reasoning model', cat: 'Reasoning', input: 1.10, output: 4.40 },
+    // --- Claude ---
+    'claude-opus-4-7': { name: 'Claude Opus 4.7', desc: 'Most capable Claude — adaptive thinking, agentic coding, 1M context', cat: 'Reasoning', input: 5.0, output: 25.0 },
+    'claude-opus-4-6': { name: 'Claude Opus 4.6', desc: 'Powerful reasoning with adaptive thinking', cat: 'Reasoning', input: 5.0, output: 25.0 },
+    'claude-sonnet-4-6': { name: 'Claude Sonnet 4.6', desc: 'Balanced speed and intelligence, 1M context', cat: 'Generalist', input: 3.0, output: 15.0 },
+    'claude-haiku-4-5': { name: 'Claude Haiku 4.5', desc: 'Fastest Claude with near-frontier intelligence', cat: 'Generalist', input: 1.0, output: 5.0 },
 };
 
 // Only these models are shown by default
@@ -99,6 +104,11 @@ export const VISIBLE_MODELS = new Set([
     'o3',
     'o3-mini',
     'o4-mini',
+    // Claude
+    'claude-opus-4-7',
+    'claude-opus-4-6',
+    'claude-sonnet-4-6',
+    'claude-haiku-4-5',
 ]);
 
 // Get metadata for a model ID (exact then fuzzy prefix match)

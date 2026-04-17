@@ -41,15 +41,20 @@ const isReasoningCapable = (modelId) => {
     if (!modelId) return false;
     if (/^o\d/.test(modelId)) return true;                       // o1, o3, o4-mini, etc.
     if (/^gpt-5/.test(modelId)) return true;                     // GPT-5 family
-    if (/^claude-(opus|sonnet|haiku)-4/.test(modelId)) return true;    // Claude 4.x
+    if (/^claude-haiku-4-5/.test(modelId)) return false;         // Haiku 4.5: no adaptive thinking
+    if (/^claude-(opus|sonnet)-4/.test(modelId)) return true;    // Claude Opus/Sonnet 4.x
     return false;
 };
 
 // Detect Claude models specifically (they use adaptive thinking with effort levels)
 const isClaudeReasoning = (modelId) => {
     if (!modelId) return false;
-    return /^claude-(opus|sonnet|haiku)-4/.test(modelId);
+    if (/^claude-haiku-4-5/.test(modelId)) return false;
+    return /^claude-(opus|sonnet)-4/.test(modelId);
 };
+
+// Opus 4.7 exposes an additional 'xhigh' effort level between 'high' and 'max'
+const isClaudeOpus47 = (modelId) => /^claude-opus-4-7/.test(modelId || '');
 
 const MODEL_META = {
     // Mistral
@@ -76,6 +81,11 @@ const MODEL_META = {
     'o3': { name: 'o3', cat: 'Reasoning' },
     'o3-mini': { name: 'o3 Mini', cat: 'Reasoning' },
     'o4-mini': { name: 'o4 Mini', cat: 'Reasoning' },
+    // Claude
+    'claude-opus-4-7': { name: 'Claude Opus 4.7', cat: 'Reasoning' },
+    'claude-opus-4-6': { name: 'Claude Opus 4.6', cat: 'Reasoning' },
+    'claude-sonnet-4-6': { name: 'Claude Sonnet 4.6', cat: 'Generalist' },
+    'claude-haiku-4-5': { name: 'Claude Haiku 4.5', cat: 'Generalist' },
 };
 
 const TIERS = [
@@ -552,7 +562,12 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                                         <option value="low">Low — quick tasks</option>
                                         <option value="medium">Medium — balanced (default)</option>
                                         <option value="high">High — complex reasoning</option>
-                                        {isClaudeReasoning(tierConfig.modelId) ? (
+                                        {isClaudeOpus47(tierConfig.modelId) ? (
+                                            <>
+                                                <option value="xhigh">xHigh — extended exploration</option>
+                                                <option value="max">Max — no thinking constraints</option>
+                                            </>
+                                        ) : isClaudeReasoning(tierConfig.modelId) ? (
                                             <option value="xhigh">Max — deepest thinking</option>
                                         ) : (
                                             <option value="xhigh">xHigh — deepest reasoning</option>
