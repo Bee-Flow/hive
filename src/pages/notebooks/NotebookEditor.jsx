@@ -8,7 +8,6 @@ import TextAlign from '@tiptap/extension-text-align';
 import Highlight from '@tiptap/extension-highlight';
 import Link from '@tiptap/extension-link';
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table';
-import { PaginationPlus, PAGE_SIZES } from 'tiptap-pagination-plus';
 import { Markdown } from 'tiptap-markdown';
 import MermaidExtension, { preprocessMermaidContent } from './MermaidExtension';
 import Mathematics from '@tiptap/extension-mathematics';
@@ -479,17 +478,9 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
             // ── Section-aware drag (heading grabs entire section) ────
             SectionDragExtension,
 
-            // ── Page pagination (Letter-format page view) ────────────
-            PaginationPlus.configure({
-                ...PAGE_SIZES.LETTER,
-                pageGap: 16,
-                pageBreakBackground: 'var(--notebook-page-gap-bg, #e5e7eb)',
-                pageGapBorderSize: 0,
-                footerLeft: '',
-                footerRight: '<span style="font-size:9px;color:#94a3b8;font-family:Inter,system-ui,sans-serif;">Page {page}</span>',
-                headerLeft: '',
-                headerRight: '',
-            }),
+            // (Removed Letter-format paginated page view — the editor now
+            // renders as a single flowing document. Printing / PDF export
+            // still paginates server-side via the export pipeline.)
         ],
         content: content || '',
         onUpdate: ({ editor }) => {
@@ -974,9 +965,9 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
                 </div>
             </BubbleMenu>
 
-            {/* Editor Content */}
-            <div className="flex-1 overflow-y-auto custom-scrollbar notebook-pages-area">
-                <div className="notebook-pages-container">
+            {/* Editor Content — single flowing document, no page view. */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar">
+                <div className="max-w-[820px] mx-auto px-8 py-6">
                     <EditorContent editor={editor} className="notebook-editor" />
                 </div>
             </div>

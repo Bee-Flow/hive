@@ -55,7 +55,6 @@
         "remark-gfm": "^4.0.1",
         "remark-math": "^6.0.0",
         "tiptap-markdown": "^0.9.0",
-        "tiptap-pagination-plus": "^3.0.5",
         "uuid": "^13.0.0",
         "vega": "^6.2.0",
         "vega-embed": "^7.1.0",

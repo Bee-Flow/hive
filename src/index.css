@@ -585,49 +585,6 @@ pre.hljs {
     }
 }
 
-/* ── Notebook Pages Layout (tiptap-pagination-plus) ─── */
-.notebook-pages-area {
-    background: var(--notebook-desk-bg, #e5e7eb) !important;
-}
-
-.notebook-pages-container {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 24px 0;
-    min-height: 100%;
-}
-
-/* Each page rendered by pagination-plus */
-.notebook-pages-container .ProseMirror {
-    background: var(--bg-primary, #fff);
-    box-shadow: 0 1px 4px rgba(0,0,0,0.06), 0 4px 16px rgba(0,0,0,0.04);
-    border-radius: 2px;
-}
-
-/* Page break gap styling */
-.notebook-pages-container .page-break {
-    background: var(--notebook-page-gap-bg, #e5e7eb) !important;
-    border: none !important;
-    position: relative;
-}
-
-/* Dark mode adaptations */
-[data-theme="dark"] .notebook-pages-area {
-    --notebook-desk-bg: #1a1a2e;
-    --notebook-page-gap-bg: #1a1a2e;
-}
-
-[data-theme="dark"] .notebook-pages-container .ProseMirror {
-    box-shadow: 0 1px 4px rgba(0,0,0,0.2), 0 4px 16px rgba(0,0,0,0.15);
-}
-
-/* Light mode */
-[data-theme="light"] .notebook-pages-area {
-    --notebook-desk-bg: #e5e7eb;
-    --notebook-page-gap-bg: #e5e7eb;
-}
-
 /* ── Notebook TipTap Editor Styles ─────────────────── */
 .notebook-editor .tiptap {
     line-height: 1.45;
