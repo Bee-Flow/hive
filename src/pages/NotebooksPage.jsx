@@ -232,6 +232,12 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     const [generationHistory, setGenerationHistory] = useState([]);
     const [activeGeneration, setActiveGeneration] = useState(null);
 
+    // Pending selection passed alongside the next chat request. Set by
+    // `handleEditorAIAction` right before `sendChatMessage`. The useChatEngine
+    // payload builder reads it via `getExtraPayload` and we clear it after
+    // sending so it doesn't bleed into the next turn.
+    const pendingSelectionRef = useRef(null);
+
     /* ── useChatEngine — reuses direct chat pattern ──────────── */
     const { messages: chatMessages, setMessages: setChatMessages, isLoading: chatLoading,
         sendMessage: sendChatMessage, stopGenerating: stopChatGenerating,
@@ -247,7 +253,19 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
             enabled: true,
             modelTier: selectedTier,
             customEndpoint: selected ? '/ai/chat/notebook/stream' : undefined,
-            getExtraPayload: () => selected ? { notebookId: selected.id, documentContent } : {},
+            getExtraPayload: () => {
+                if (!selected) return {};
+                const payload = { notebookId: selected.id, documentContent };
+                // If the user triggered this turn from the editor's bubble menu
+                // (Ask AI / rewrite / shorten / expand), attach the selection so
+                // the server can build a dedicated [SELECTED TEXT] block into the
+                // system prompt. Single-shot: cleared after one send.
+                if (pendingSelectionRef.current) {
+                    payload.notebookSelection = pendingSelectionRef.current;
+                    pendingSelectionRef.current = null;
+                }
+                return payload;
+            },
         }), [selectedTier, selected?.id, documentContent]),
         onDirectConversationCreated: useCallback(() => {}, []),
         // Notebook-specific callbacks
@@ -420,13 +438,28 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     /* ── Editor AI action (from TipTap bubble menu) ──────────── */
     const handleEditorAIAction = useCallback((actionKey, selectedText, range, customQuery) => {
         if (!selectedText?.trim()) return;
+
+        // Attach the selection as a structured payload on the NEXT send. The
+        // server injects it into the system prompt as [SELECTED TEXT], so the
+        // AI sees the exact string to find + an explicit instruction to use
+        // notebook_doc_replace. This is much more reliable than embedding a
+        // blockquote in the user message (the old approach).
+        pendingSelectionRef.current = {
+            text: selectedText,
+            from: typeof range?.from === 'number' ? range.from : null,
+            to: typeof range?.to === 'number' ? range.to : null,
+            action: actionKey,
+        };
+
+        // User-visible prompts. Keep them short: the selection is in the system
+        // prompt, so the user message only needs to state what to do with it.
         const prompts = {
-            rewrite: `Rewrite the following text from my document and apply the change directly using the notebook_doc_replace tool. Find the original text and replace it with your rewritten version. Use <p> tags for the replacement text for consistent styling.\n\nOriginal text to find and replace:\n${selectedText}`,
-            shorten: `Shorten the following text from my document and apply the change directly using the notebook_doc_replace tool. Find the original text and replace it with a more concise version. Use <p> tags for the replacement text for consistent styling.\n\nOriginal text to find and replace:\n${selectedText}`,
-            expand: `Expand the following text from my document with more detail and apply the change directly using the notebook_doc_replace tool. Find the original text and replace it with an expanded version. Use <p> tags for the replacement text for consistent styling.\n\nOriginal text to find and replace:\n${selectedText}`,
-            ask: customQuery 
-                ? `> **Selected text from document:**\n> ${selectedText.split('\n').join('\n> ')}\n\n${customQuery}`
-                : `> **Selected text from document:**\n> ${selectedText.split('\n').join('\n> ')}\n\nAnalyze this text and provide insights.`,
+            rewrite: 'Rewrite the selected text. Use notebook_doc_replace to apply the change in place.',
+            shorten: 'Shorten the selected text. Use notebook_doc_replace to apply the change in place.',
+            expand: 'Expand the selected text with more detail. Use notebook_doc_replace to apply the change in place.',
+            ask: customQuery
+                ? customQuery
+                : 'Analyze the selected text and provide insights.',
         };
         sendChatMessage(prompts[actionKey] || prompts.ask);
     }, [sendChatMessage]);
