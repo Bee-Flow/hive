@@ -17,6 +17,11 @@ COPY . .
 ARG VITE_API_URL=""
 ENV VITE_API_URL=$VITE_API_URL
 
+# Build-time version metadata. CI passes ${{ github.sha }} so every deployment
+# gets a unique, traceable version shown in the UI footer.
+ARG VITE_BUILD_SHA=""
+ENV VITE_BUILD_SHA=$VITE_BUILD_SHA
+
 # Build the app
 RUN npm run build
 

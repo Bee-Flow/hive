@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import MemoryPanel from '../components/MemoryPanel';
 import { API_BASE, authFetch } from '../utils/helpers';
 import scopedStorage from '../utils/scopedStorage';
+import { formatVersion, formatVersionWithDate } from '../utils/appVersion';
 import { useTranslation } from '../hooks/useTranslation';
 import StartupAgentSection from './settings/StartupAgentSection';
 import MemorySection from './settings/MemorySection';
@@ -466,9 +467,15 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
                         )}
                     </div>
 
-                    {/* Footer */}
+                    {/* Footer — product name + build version (commit SHA is unique per CI deploy). */}
                     <div className="px-4 py-3 flex-shrink-0" style={{ borderTop: '1px solid var(--border-subtle)' }}>
-                        <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>BeeFlow</p>
+                        <p
+                            className="text-[10px]"
+                            style={{ color: 'var(--text-muted)' }}
+                            title={formatVersionWithDate()}
+                        >
+                            Bee Flow <span style={{ opacity: 0.7 }}>{formatVersion()}</span>
+                        </p>
                     </div>
                 </div>
 

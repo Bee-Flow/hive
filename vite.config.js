@@ -1,6 +1,22 @@
 import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import path from 'path'
+import { execSync } from 'child_process'
+import { readFileSync } from 'fs'
+
+// Resolve a version string for the running build. Precedence:
+//   1. VITE_BUILD_SHA env var (set by CI — `${{ github.sha }}` from the workflow).
+//   2. `git rev-parse --short HEAD` (local dev).
+//   3. 'dev' (no git available, e.g. inside a shallow Docker tarball).
+function resolveBuildSha(envSha) {
+    if (envSha && envSha.length > 0) return envSha.slice(0, 7);
+    try {
+        return execSync('git rev-parse --short HEAD', { cwd: __dirname, stdio: ['ignore', 'pipe', 'ignore'] })
+            .toString().trim();
+    } catch (_) {
+        return 'dev';
+    }
+}
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
@@ -11,9 +27,21 @@ export default defineConfig(({ mode }) => {
     const SERVER_PORT = env.SERVER_PORT || 3001
     const CLIENT_PORT = env.CLIENT_PORT || 5175
 
+    // Version metadata — injected at build time as a JS constant.
+    const pkg = JSON.parse(readFileSync(path.resolve(__dirname, 'package.json'), 'utf8'));
+    const buildSha = resolveBuildSha(env.VITE_BUILD_SHA || process.env.VITE_BUILD_SHA);
+    const buildDate = new Date().toISOString();
+
     return {
         plugins: [react()],
         envDir: '..',
+        define: {
+            // Available app-wide as import-meta constants. Rollup inlines them,
+            // so there's no runtime cost and no risk of "undefined".
+            __APP_VERSION__: JSON.stringify(pkg.version),
+            __APP_BUILD_SHA__: JSON.stringify(buildSha),
+            __APP_BUILD_DATE__: JSON.stringify(buildDate),
+        },
         build: {
             target: 'esnext',
             sourcemap: false,
