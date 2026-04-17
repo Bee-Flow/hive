@@ -511,7 +511,7 @@ export default function TemplatesPage({ user, onBack }) {
 
                 <div className="flex-1 flex overflow-hidden">
                     {/* Left Sidebar — Template Details */}
-                    <div className="w-[280px] shrink-0 border-r overflow-auto p-4 flex flex-col gap-4" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
+                    <div className="w-[200px] xl:w-[280px] shrink-0 border-r overflow-auto p-4 flex flex-col gap-4" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
                         {/* Parameters */}
                         <div>
                             <h3 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>Parameters</h3>

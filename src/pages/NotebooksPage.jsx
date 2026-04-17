@@ -975,7 +975,7 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
 
                     {/* ═══ LEFT: Sources Panel ═══ */}
                     {leftPanelOpen && (
-                    <div className="w-[240px] shrink-0 border-r flex flex-col overflow-hidden" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
+                    <div className="w-[180px] xl:w-[240px] shrink-0 border-r flex flex-col overflow-hidden" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
                         <NotebookSources
                                 sources={sources}
                                 onFileUpload={(files) => handleFileUpload(Array.from(files))}

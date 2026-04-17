@@ -343,9 +343,11 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
             <div className="flex-1 flex overflow-hidden">
 
                 {/* ── Sidebar ── */}
+                {/* 180px on laptops <1280, 220px on larger screens — keeps enough room
+                    for the settings content area without forcing horizontal scroll. */}
                 <div
-                    className="flex-shrink-0 flex flex-col"
-                    style={{ width: '220px', background: 'var(--bg-secondary)', borderRight: '1px solid var(--border-subtle)' }}
+                    className="flex-shrink-0 flex flex-col w-[180px] xl:w-[220px]"
+                    style={{ background: 'var(--bg-secondary)', borderRight: '1px solid var(--border-subtle)' }}
                 >
                     {/* User mini-card */}
                     <button

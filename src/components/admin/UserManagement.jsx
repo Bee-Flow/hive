@@ -499,7 +499,7 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                                                     )}
                                                     <div><h4 className="font-semibold" style={{ color: 'var(--text-primary)' }}>{org.name}</h4><p className="text-sm" style={{ color: 'var(--text-muted)' }}>{org.description}</p></div>
                                                 </div>
-                                                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100">
+                                                <div className="flex items-center gap-2 opacity-100 xl:opacity-0 xl:group-hover:opacity-100">
                                                     <button onClick={() => openEditOrg(org)} className="p-1.5 rounded hover:bg-blue-500/10 text-blue-500"><Edit2 className="w-4 h-4" /></button>
                                                     {isFullAdmin && <button onClick={() => handleDeleteOrg(org.id)} className="p-1.5 rounded hover:bg-red-500/10 text-red-500"><Trash2 className="w-4 h-4" /></button>}
                                                 </div>
@@ -534,7 +534,7 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                                                                 <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: 'rgba(139, 92, 246, 0.12)', color: '#a78bfa' }}>
                                                                     {users.filter(u => (u.groups || []).includes(group.id)).length} members
                                                                 </span>
-                                                                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100">
+                                                                <div className="flex items-center gap-2 opacity-100 xl:opacity-0 xl:group-hover:opacity-100">
                                                                     <button onClick={() => openEditGroup(group)} className="p-1.5 rounded hover:bg-blue-500/10 text-blue-500"><Edit2 className="w-4 h-4" /></button>
                                                                     {group.id !== 'admins' && group.id !== 'users' && <button onClick={() => handleDeleteGroup(group.id)} className="p-1.5 rounded hover:bg-red-500/10 text-red-500"><Trash2 className="w-4 h-4" /></button>}
                                                                 </div>
@@ -571,7 +571,7 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                                                                     <span className="text-xs px-2 py-0.5 rounded-full font-medium" style={{ background: 'rgba(139, 92, 246, 0.12)', color: '#a78bfa' }}>
                                                                         {users.filter(u => (u.groups || []).includes(group.id)).length} members
                                                                     </span>
-                                                                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100">
+                                                                    <div className="flex items-center gap-2 opacity-100 xl:opacity-0 xl:group-hover:opacity-100">
                                                                         <button onClick={() => openEditGroup(group)} className="p-1.5 rounded hover:bg-blue-500/10 text-blue-500"><Edit2 className="w-4 h-4" /></button>
                                                                         <button onClick={() => handleDeleteGroup(group.id)} className="p-1.5 rounded hover:bg-red-500/10 text-red-500"><Trash2 className="w-4 h-4" /></button>
                                                                     </div>
@@ -605,7 +605,7 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                                                     <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: 'rgba(245, 158, 11, 0.15)' }}><Tag className="w-5 h-5 text-amber-400" /></div>
                                                     <div><h4 className="font-semibold" style={{ color: 'var(--text-primary)' }}>{role.name}</h4><p className="text-sm" style={{ color: 'var(--text-muted)' }}>{role.description}</p></div>
                                                 </div>
-                                                <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100">
+                                                <div className="flex items-center gap-2 opacity-100 xl:opacity-0 xl:group-hover:opacity-100">
                                                     <button onClick={() => openEditRole(role)} className="p-1.5 rounded hover:bg-blue-500/10 text-blue-500"><Edit2 className="w-4 h-4" /></button>
                                                     {role.id !== 'admin' && role.id !== 'user' && <button onClick={() => handleDeleteRole(role.id)} className="p-1.5 rounded hover:bg-red-500/10 text-red-500"><Trash2 className="w-4 h-4" /></button>}
                                                 </div>

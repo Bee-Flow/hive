@@ -17,6 +17,7 @@ import AgentDesigner from './components/admin/AgentDesigner';
 import SkillsPanel from './components/SkillsPanel';
 import EmailKBSettings from './components/EmailKBSettings';
 import useChatEngine from './hooks/useChatEngine';
+import { useViewport } from './hooks/useViewport';
 
 import { API_BASE, generateMessageId, authFetch } from './utils/helpers';
 import { X, Sparkles, PenLine, Heart, MoreVertical, Menu, EyeOff, Pencil } from 'lucide-react';
@@ -36,18 +37,22 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
         return features.includes(featureId);
     };
 
-    // Mobile detection
-    const [isMobile, setIsMobile] = useState(() => window.innerWidth < 768);
+    // Viewport detection — shared hook (see hooks/useViewport.js).
+    //   isMobile  <768  — hamburger/overlay patterns
+    //   isCompact 768–1279 — 13" laptops: auto-collapse sidebar, notebook as drawer
+    //   isDesktop >=1280  — full split-pane layout
+    const { isMobile, isCompact } = useViewport();
+
+    // Notebook layout: split-pane on desktop, slide-over drawer on 13" laptops.
+    // The drawer floats above the chat (fixed position) so the chat keeps its
+    // full width; a scrim lets the user dismiss by tapping outside.
+    const notebookWrapperClass = isCompact
+        ? "fixed right-0 top-0 bottom-0 z-30 w-[420px] max-w-[90vw] flex flex-col h-full bg-[var(--bg-primary)] border-l border-[var(--border-subtle)] shadow-2xl animate-in slide-in-from-right duration-300"
+        : "w-1/2 min-w-[400px] flex flex-col h-full animate-in slide-in-from-right duration-300";
 
     // Feature flags
     const notebooksEnabled = user?.featureFlags?.notebooks !== false;
     const projectsEnabled = user?.featureFlags?.projects !== false;
-    useEffect(() => {
-        const mq = window.matchMedia('(max-width: 767px)');
-        const handler = (e) => setIsMobile(e.matches);
-        mq.addEventListener('change', handler);
-        return () => mq.removeEventListener('change', handler);
-    }, []);
 
     // Core State
     const [agents, setAgents] = useState([]);
@@ -55,7 +60,10 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
     const [selectedAgent, setSelectedAgent] = useState(null);
     const [conversations, setConversations] = useState([]);
     const [currentConversation, setCurrentConversation] = useState(null);
-    const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
+    // Sidebar defaults to its full-width state only on true desktops (>=1280).
+    // On small laptops (768-1279) we default to the icon-rail mode so the chat
+    // pane has room to breathe. The user can still toggle it open.
+    const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1280);
     const [notebookContent, setNotebookContent] = useState('');
     const [notebookLastFetchedId, setNotebookLastFetchedId] = useState(null);
     const [notebookSelection, setNotebookSelection] = useState('');
@@ -1368,9 +1376,12 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                 )}
                             </div>
 
-                            {/* Notebook Pane */}
+                            {/* Notebook Pane — split on desktop, drawer on compact */}
+                            {!isMobile && notebooksEnabled && showNotebook && isCompact && (
+                                <div className="fixed inset-0 bg-black/30 z-20 animate-in fade-in duration-200" onClick={() => setShowNotebook(false)} aria-hidden="true" />
+                            )}
                             {!isMobile && notebooksEnabled && showNotebook && (
-                                <div className="w-1/2 min-w-[400px] flex flex-col h-full animate-in slide-in-from-right duration-300">
+                                <div className={notebookWrapperClass}>
                                     <WorkspaceNotebook
                                         content={notebookContent}
                                         onChange={setNotebookContent}
@@ -1490,9 +1501,12 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                 )}
                             </div>
 
-                            {/* Notebook Pane */}
+                            {/* Notebook Pane — split on desktop, drawer on compact */}
+                            {!isMobile && notebooksEnabled && showNotebook && isCompact && (
+                                <div className="fixed inset-0 bg-black/30 z-20 animate-in fade-in duration-200" onClick={() => setShowNotebook(false)} aria-hidden="true" />
+                            )}
                             {!isMobile && notebooksEnabled && showNotebook && (
-                                <div className="w-1/2 min-w-[400px] flex flex-col h-full animate-in slide-in-from-right duration-300">
+                                <div className={notebookWrapperClass}>
                                     <WorkspaceNotebook
                                         content={notebookContent}
                                         onChange={setNotebookContent}

@@ -564,6 +564,27 @@ pre.hljs {
     }
 }
 
+/* ── Compact Responsive (small laptops 768–1279) ─────── */
+/* Mirrors the mobile block but lighter — just enough to stop layouts
+   feeling cramped on 13" laptops. Most compact-specific layout changes
+   are handled by Tailwind classes (xl: prefixes) on individual
+   components; this block covers global affordances like scrollbar
+   thickness and markdown table padding. */
+@media (min-width: 768px) and (max-width: 1279px) {
+
+    /* Slimmer scrollbars so they don't chew horizontal space */
+    .custom-scrollbar::-webkit-scrollbar {
+        width: 8px;
+    }
+
+    /* Tighter markdown tables so they fit without horizontal scroll */
+    .markdown-content th,
+    .markdown-content td {
+        padding: 0.35rem 0.55rem;
+        font-size: 0.85rem;
+    }
+}
+
 /* ── Notebook Pages Layout (tiptap-pagination-plus) ─── */
 .notebook-pages-area {
     background: var(--notebook-desk-bg, #e5e7eb) !important;

@@ -7,6 +7,7 @@ import {
     CheckSquare, Tag, BarChart3, ChevronUp, ArrowDown, ArrowUp, Sparkles, ListChecks
 } from 'lucide-react';
 import useChatEngine from '../hooks/useChatEngine';
+import { useViewport } from '../hooks/useViewport';
 import MessageItem from '../components/chat/MessageItem';
 import InputArea from '../components/InputArea';
 import MarkdownRenderer from '../components/MarkdownRenderer';
@@ -135,6 +136,7 @@ export default function MeetingNotesPage({ user, onBack }) {
 
     // AI Chat state
     const [showChat, setShowChat] = useState(false);
+    const { isCompact } = useViewport();
     const [selectedChatTier, setSelectedChatTier] = useState('auto');
     const [modelTiers, setModelTiers] = useState({});
     const [meetingChatInput, setMeetingChatInput] = useState('');
@@ -1529,9 +1531,21 @@ export default function MeetingNotesPage({ user, onBack }) {
                             </div>
                         </div>
 
-                        {/* AI Chat Sidebar */}
+                        {/* AI Chat — sidebar on desktop, slide-over drawer on compact laptops */}
+                        {showChat && isCompact && (
+                            <div
+                                className="fixed inset-0 bg-black/30 z-20 animate-in fade-in duration-200"
+                                onClick={() => setShowChat(false)}
+                                aria-hidden="true"
+                            />
+                        )}
                         {showChat && (
-                            <div className="w-[420px] shrink-0 border-l flex flex-col" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}>
+                            <div
+                                className={isCompact
+                                    ? "fixed right-0 top-0 bottom-0 z-30 w-[420px] max-w-[90vw] border-l flex flex-col shadow-2xl animate-in slide-in-from-right duration-300"
+                                    : "w-[420px] shrink-0 border-l flex flex-col"}
+                                style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}
+                            >
                                 {/* Chat Header */}
                                 <div className="px-4 py-3 border-b flex items-center gap-2" style={{ borderColor: 'var(--border-subtle)' }}>
                                     <Bot className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
