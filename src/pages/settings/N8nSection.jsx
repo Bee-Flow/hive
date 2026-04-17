@@ -802,8 +802,8 @@ function PermissionBucket({ bucket, availableGroups, orgAdminAlways, onAdd, onRe
                 {addable.length === 0 ? (
                     <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                         {availableGroups.length === 0
-                            ? 'No groups exist yet — create one in Users & Groups first.'
-                            : 'All groups already hold this permission.'}
+                            ? 'No groups exist in this organisation yet — create one in Users & Groups first.'
+                            : 'All available groups already hold this permission.'}
                     </span>
                 ) : !pickerOpen ? (
                     <button
@@ -824,7 +824,9 @@ function PermissionBucket({ bucket, availableGroups, orgAdminAlways, onAdd, onRe
                         >
                             <option value="" disabled>Select a group to grant…</option>
                             {addable.map(g => (
-                                <option key={g.id} value={g.id}>{g.name} ({g.userCount} user{g.userCount === 1 ? '' : 's'})</option>
+                                <option key={g.id} value={g.id}>
+                                    {g.name} ({g.userCount} user{g.userCount === 1 ? '' : 's'}){g.isGlobal ? ' — global' : ''}
+                                </option>
                             ))}
                         </select>
                         <button
