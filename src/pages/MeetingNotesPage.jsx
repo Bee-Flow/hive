@@ -55,6 +55,26 @@ const SPEAKER_COLORS = [
     '#8b5cf6', '#ef4444', '#f97316', '#84cc16', '#6366f1',
 ];
 
+// ── Meeting-bot platform detection ──────────────────────
+// Mirrors the server-side providers in server/core/meetBotProviders/*.
+// Keep in sync when platforms are added.
+function detectMeetingPlatform(url) {
+    if (!url) return null;
+    if (/meet\.google\.com/i.test(url)) return { id: 'google', label: 'Google Meet', requiresCreds: true, color: '#1a73e8' };
+    if (/teams\.(microsoft|live)\.com/i.test(url)) return { id: 'teams', label: 'Microsoft Teams', requiresCreds: false, color: '#5059c9' };
+    if (/zoom\.us/i.test(url)) return { id: 'zoom', label: 'Zoom', requiresCreds: false, color: '#2d8cff' };
+    return null;
+}
+
+function platformBadge(platform) {
+    switch (platform) {
+        case 'google': return { label: 'Google Meet', color: '#1a73e8', emoji: '🟢' };
+        case 'teams': return { label: 'Teams', color: '#5059c9', emoji: '🟣' };
+        case 'zoom': return { label: 'Zoom', color: '#2d8cff', emoji: '🔵' };
+        default: return { label: platform || 'Bot', color: '#6366f1', emoji: '🤖' };
+    }
+}
+
 export default function MeetingNotesPage({ user, onBack }) {
     const [transcriptions, setTranscriptions] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -849,7 +869,7 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
                                     className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-medium transition-all ${uploadMode === 'bot' ? 'bg-white shadow-sm' : 'hover:bg-white/50'}`}
                                     style={{ color: uploadMode === 'bot' ? 'var(--accent-primary)' : 'var(--text-secondary)' }}
                                 >
-                                    <Video className="w-4 h-4" />Meet Bot
+                                    <Video className="w-4 h-4" />Meeting Bot
                                 </button>
                             </div>
 
@@ -959,15 +979,15 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
                             ) : (
                                 /* Meet Bot mode */
                                 <div className="space-y-4">
-                                    {/* Bot Account Settings */}
+                                    {/* Bot Account Settings (Google only — Teams & Zoom join as guests) */}
                                     {showBotSettings ? (
                                         <div className="border-2 rounded-2xl p-6" style={{ borderColor: 'var(--accent-primary)', background: 'var(--bg-secondary)' }}>
                                             <div className="flex items-center gap-2 mb-3">
                                                 <Settings className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
-                                                <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Bot Google Account</p>
+                                                <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Bot Google Account (Google Meet only)</p>
                                             </div>
                                             <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-                                                The bot needs a Google account to join meetings. Create a dedicated Google account and enter the credentials below. They are stored encrypted on the server.
+                                                Google Meet requires a signed-in account to join. Create a dedicated Google account and enter the credentials below — they are stored encrypted. Teams and Zoom join as guests and do not need credentials.
                                             </p>
                                             <div className="space-y-3 max-w-sm">
                                                 <input
@@ -1019,39 +1039,55 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
                                         </div>
                                     ) : null}
 
-                                    {/* Send Bot to Meet */}
-                                    <div className="border-2 rounded-2xl p-8 text-center" style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)' }}>
-                                        <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4" style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(6, 182, 212, 0.1))' }}>
-                                            <Video className="w-8 h-8" style={{ color: '#10b981' }} />
-                                        </div>
-                                        <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Send Bot to Google Meet</p>
-                                        <p className="text-xs mb-5" style={{ color: 'var(--text-muted)' }}>
-                                            Paste a Google Meet link and the bot will join as "Bee Flow - Meeting Assistant", record the meeting, and automatically transcribe it when done.
-                                        </p>
-                                        <div className="flex gap-2 max-w-md mx-auto">
-                                            <input
-                                                value={meetLink}
-                                                onChange={e => setMeetLink(e.target.value)}
-                                                onKeyDown={e => { if (e.key === 'Enter') sendBotToMeet(); }}
-                                                placeholder="meet.google.com/abc-defg-hij"
-                                                className="flex-1 px-4 py-2.5 rounded-xl text-sm border outline-none focus:ring-2 transition-all"
-                                                style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': '#10b981' }}
-                                                disabled={sendingBot || !botCreds.configured}
-                                            />
-                                            <button
-                                                onClick={sendBotToMeet}
-                                                disabled={!meetLink.trim() || sendingBot || !botCreds.configured}
-                                                className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40"
-                                                style={{ background: 'linear-gradient(135deg, #10b981, #06b6d4)' }}
-                                            >
-                                                {sendingBot ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}
-                                                {sendingBot ? 'Sending...' : 'Send Bot'}
-                                            </button>
-                                        </div>
-                                        {!botCreds.configured && !showBotSettings && (
-                                            <p className="text-xs mt-3" style={{ color: '#f59e0b' }}>⚠ Configure a bot Google account above first</p>
-                                        )}
-                                    </div>
+                                    {/* Send Bot to Meeting — auto-detects Google Meet / Teams / Zoom */}
+                                    {(() => {
+                                        const detectedPlatform = detectMeetingPlatform(meetLink);
+                                        const needsCreds = detectedPlatform?.requiresCreds && !botCreds.configured;
+                                        const canSend = meetLink.trim() && !sendingBot && detectedPlatform && !needsCreds;
+                                        return (
+                                            <div className="border-2 rounded-2xl p-8 text-center" style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)' }}>
+                                                <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4" style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(6, 182, 212, 0.1))' }}>
+                                                    <Video className="w-8 h-8" style={{ color: '#10b981' }} />
+                                                </div>
+                                                <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Send Bot to Meeting</p>
+                                                <p className="text-xs mb-5" style={{ color: 'var(--text-muted)' }}>
+                                                    Paste a <strong>Google Meet</strong>, <strong>Microsoft Teams</strong>, or <strong>Zoom</strong> link. The bot joins as "Bee Flow - Meeting Assistant", records, and auto-transcribes when done.
+                                                </p>
+                                                <div className="flex gap-2 max-w-md mx-auto">
+                                                    <input
+                                                        value={meetLink}
+                                                        onChange={e => setMeetLink(e.target.value)}
+                                                        onKeyDown={e => { if (e.key === 'Enter' && canSend) sendBotToMeet(); }}
+                                                        placeholder="meet.google.com/… · teams.microsoft.com/… · zoom.us/j/…"
+                                                        className="flex-1 px-4 py-2.5 rounded-xl text-sm border outline-none focus:ring-2 transition-all"
+                                                        style={{ background: 'var(--bg-primary)', borderColor: detectedPlatform ? detectedPlatform.color : 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': '#10b981' }}
+                                                        disabled={sendingBot}
+                                                    />
+                                                    <button
+                                                        onClick={sendBotToMeet}
+                                                        disabled={!canSend}
+                                                        className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40"
+                                                        style={{ background: 'linear-gradient(135deg, #10b981, #06b6d4)' }}
+                                                    >
+                                                        {sendingBot ? <Loader2 className="w-4 h-4 animate-spin" /> : <Video className="w-4 h-4" />}
+                                                        {sendingBot ? 'Sending...' : 'Send Bot'}
+                                                    </button>
+                                                </div>
+                                                {meetLink.trim() && !detectedPlatform && (
+                                                    <p className="text-xs mt-3" style={{ color: '#f59e0b' }}>⚠ Not a recognised meeting link. Expected Google Meet, Teams, or Zoom.</p>
+                                                )}
+                                                {detectedPlatform && (
+                                                    <p className="text-xs mt-3" style={{ color: detectedPlatform.color }}>
+                                                        Detected: <strong>{detectedPlatform.label}</strong>
+                                                        {detectedPlatform.requiresCreds ? ' (needs Google bot account)' : ' (joins as guest, no account needed)'}
+                                                    </p>
+                                                )}
+                                                {needsCreds && !showBotSettings && (
+                                                    <p className="text-xs mt-2" style={{ color: '#f59e0b' }}>⚠ Google Meet requires a bot account — configure one above.</p>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
 
                                     {/* Active Bot Sessions */}
                                     {botSessions.length > 0 && (
@@ -1083,14 +1119,27 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
                                                             )}
                                                         </div>
                                                         <div className="flex-1 min-w-0">
-                                                            <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{s.title}</p>
-                                                            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                                            <div className="flex items-center gap-2">
+                                                                <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{s.title}</p>
+                                                                {(() => {
+                                                                    const badge = platformBadge(s.platform);
+                                                                    return (
+                                                                        <span
+                                                                            className="shrink-0 text-[10px] px-1.5 py-0.5 rounded-full font-medium"
+                                                                            style={{ background: `${badge.color}22`, color: badge.color }}
+                                                                        >
+                                                                            {badge.label}
+                                                                        </span>
+                                                                    );
+                                                                })()}
+                                                            </div>
+                                                            <p className={`text-[11px] ${s.status === 'failed' ? 'text-red-500' : ''}`} style={s.status === 'failed' ? undefined : { color: 'var(--text-muted)' }}>
                                                                 {s.status === 'pending' && 'Waiting...'}
                                                                 {s.status === 'joining' && 'Joining meeting...'}
                                                                 {s.status === 'recording' && '🔴 Recording in progress'}
                                                                 {s.status === 'processing' && 'Transcribing...'}
                                                                 {s.status === 'completed' && 'Done — transcription available'}
-                                                                {s.status === 'failed' && (s.error || 'Failed')}
+                                                                {s.status === 'failed' && `Failed: ${s.error || 'unknown error'}`}
                                                             </p>
                                                         </div>
                                                         <div className="shrink-0 flex items-center gap-1">
