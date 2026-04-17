@@ -1230,6 +1230,13 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                     )}
                                 </div>
                                 <h1 className="font-semibold text-[var(--text-primary)] text-sm">{selectedAgent.name}</h1>
+                                <button
+                                    onClick={handleNewChat}
+                                    className="p-1 rounded-md hover:bg-[var(--bg-tertiary)] transition-colors text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+                                    title="New Chat"
+                                >
+                                    <PenLine className="w-4 h-4" />
+                                </button>
                                 <div className="relative">
                                     <button
                                         onClick={() => setShowAgentMenu(v => !v)}
@@ -1389,34 +1396,32 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 ) : directChatMode ? (
                     /* Direct Chat Mode */
                     <>
-                        {/* New Inline Header for Direct Chat */}
-                        <div className={`h-14 flex items-center justify-between ${isMobile ? 'px-3' : 'px-6'} bg-[var(--bg-primary)]/80 backdrop-blur-md sticky top-0 z-20 border-b border-[var(--border-subtle)]/50`}>
-                            <div className="flex items-center gap-2">
-                                {isMobile && (
-                                    <button
-                                        onClick={() => setSidebarOpen(true)}
-                                        className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] transition-colors"
-                                    >
-                                        <Menu className="w-5 h-5" />
-                                    </button>
-                                )}
-                                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm">
-                                    <span className="text-sm">💬</span>
+                        {/* Minimal toolbar for Direct Chat */}
+                        {(isMobile || (!isMobile && notebooksEnabled)) && (
+                            <div className={`h-14 flex items-center justify-between ${isMobile ? 'px-3' : 'px-6'} bg-[var(--bg-primary)]/80 backdrop-blur-md sticky top-0 z-20 border-b border-[var(--border-subtle)]/50`}>
+                                <div className="flex items-center gap-2">
+                                    {isMobile && (
+                                        <button
+                                            onClick={() => setSidebarOpen(true)}
+                                            className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] transition-colors"
+                                        >
+                                            <Menu className="w-5 h-5" />
+                                        </button>
+                                    )}
                                 </div>
-                                <h1 className="font-semibold text-[var(--text-primary)] text-sm">Direct Chat</h1>
+                                <div className="flex items-center gap-2">
+                                    {!isMobile && notebooksEnabled && (
+                                        <button
+                                            onClick={() => setShowNotebook(prev => !prev)}
+                                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors border text-xs font-medium ${showNotebook ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] border-[var(--accent-primary)]/30' : 'bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-[var(--border-subtle)]'}`}
+                                            title={showNotebook ? 'Close Notebook' : 'Open Notebook'}
+                                        >
+                                            📓 {showNotebook ? 'Close' : 'Notebook'}
+                                        </button>
+                                    )}
+                                </div>
                             </div>
-                            <div className="flex items-center gap-2">
-                                {!isMobile && notebooksEnabled && (
-                                    <button
-                                        onClick={() => setShowNotebook(prev => !prev)}
-                                        className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors border text-xs font-medium ${showNotebook ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] border-[var(--accent-primary)]/30' : 'bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-[var(--border-subtle)]'}`}
-                                        title={showNotebook ? 'Close Notebook' : 'Open Notebook'}
-                                    >
-                                        📓 {showNotebook ? 'Close' : 'Notebook'}
-                                    </button>
-                                )}
-                            </div>
-                        </div>
+                        )}
 
                         {/* Split Panes: Chat + Workspace */}
                         <div className="flex-1 flex overflow-hidden">

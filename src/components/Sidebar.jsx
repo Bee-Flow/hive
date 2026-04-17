@@ -557,8 +557,7 @@ const Sidebar = ({
             {/* ── Nav rows ── */}
             <nav aria-label="Main navigation" data-testid="main-navigation" className={`px-2 pt-4 flex-shrink-0 flex flex-col gap-2 ${isOpen ? '' : 'items-center'}`}>
                 {[
-                    { label: t('sidebar.new_chat') || 'New Chat', icon: PenLine, onClick: onNewChat, active: false },
-                    { label: t('sidebar.direct_chat'), icon: MessageSquare, onClick: onDirectChat, active: directChatMode && !selectedAgent },
+                    { label: t('sidebar.new_chat') || 'New Chat', icon: PenLine, onClick: onDirectChat, active: directChatMode && !selectedAgent },
                     { label: t('sidebar.agent_store'), icon: Store, onClick: onOpenMarketplace, active: currentPage === 'marketplace' },
                     { label: t('sidebar.search'), icon: Search, onClick: onOpenSearch, active: false },
                 ].map(({ label, icon: Icon, onClick, active, primary, beta }) => (
