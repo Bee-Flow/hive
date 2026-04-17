@@ -451,15 +451,26 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
             action: actionKey,
         };
 
-        // User-visible prompts. Keep them short: the selection is in the system
-        // prompt, so the user message only needs to state what to do with it.
+        // Build the user-visible message in the conversation.
+        // • rewrite / shorten / expand: keep the message terse — the user just
+        //   wants the doc to change, not to see a long quoted block in chat.
+        //   The selection is in the system prompt so the AI knows what to edit.
+        // • ask: the question is a conversation so the USER should see what text
+        //   they're asking about. Include a truncated preview so the chat makes
+        //   sense in isolation.
+        const PREVIEW_CHARS = 300;
+        const selPreview = selectedText.length > PREVIEW_CHARS
+            ? selectedText.slice(0, PREVIEW_CHARS).trimEnd() + '…'
+            : selectedText;
+
         const prompts = {
             rewrite: 'Rewrite the selected text. Use notebook_doc_replace to apply the change in place.',
             shorten: 'Shorten the selected text. Use notebook_doc_replace to apply the change in place.',
             expand: 'Expand the selected text with more detail. Use notebook_doc_replace to apply the change in place.',
-            ask: customQuery
-                ? customQuery
-                : 'Analyze the selected text and provide insights.',
+            // For "ask", show the selection as a labelled quote so the
+            // conversation is self-contained and the user can scroll back and
+            // understand what was asked about.
+            ask: `**Selected text:**\n> ${selPreview.split('\n').join('\n> ')}\n\n${customQuery || 'Analyze this text and provide insights.'}`,
         };
         sendChatMessage(prompts[actionKey] || prompts.ask);
     }, [sendChatMessage]);
