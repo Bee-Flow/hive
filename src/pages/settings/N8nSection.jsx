@@ -41,11 +41,51 @@ export default function N8nSection() {
     const [permLoading, setPermLoading] = useState(false);
     const [permSummary, setPermSummary] = useState(null);
 
+    // Diagnostics state (access-check card on Connection tab)
+    const [diagLoading, setDiagLoading] = useState(false);
+    const [diag, setDiag] = useState(null);
+    const [enablingForOrg, setEnablingForOrg] = useState(false);
+
     useEffect(() => { loadConfig(); }, []);
 
     useEffect(() => {
         if (tab === 'permissions' && !permSummary) loadPermissions();
-    }, [tab]); // eslint-disable-line react-hooks/exhaustive-deps
+        if (tab === 'connection' && configured && !diag) loadDiagnostics();
+    }, [tab, configured]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    const loadDiagnostics = async () => {
+        setDiagLoading(true);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/n8n/diagnostics`);
+            if (res.ok) setDiag(await res.json());
+            else setDiag({ ok: false, error: 'Failed to load diagnostics' });
+        } catch (e) {
+            setDiag({ ok: false, error: e.message });
+        }
+        setDiagLoading(false);
+    };
+
+    const enableForOrg = async () => {
+        setEnablingForOrg(true);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/n8n/enable-for-org`, { method: 'POST' });
+            if (res.ok) {
+                const data = await res.json();
+                setMessage({
+                    type: 'success',
+                    text: data.changed ? 'n8n enabled for this organisation' : (data.note || 'n8n was already enabled'),
+                });
+                await loadDiagnostics();
+            } else {
+                const err = await res.json().catch(() => ({}));
+                setMessage({ type: 'error', text: err.error || 'Failed to enable' });
+            }
+        } catch (e) {
+            setMessage({ type: 'error', text: 'Request failed' });
+        }
+        setEnablingForOrg(false);
+        setTimeout(() => setMessage(null), 3000);
+    };
 
     // ── API calls ────────────────────────────────────────────────
 
@@ -365,6 +405,10 @@ export default function N8nSection() {
                     hasApiKey={hasApiKey}
                     saving={saving} onSave={saveConnection}
                     testing={testing} onTest={testConnection} testResult={testResult}
+                    configured={configured}
+                    diag={diag} diagLoading={diagLoading} onRefreshDiag={loadDiagnostics}
+                    onEnableForOrg={enableForOrg} enablingForOrg={enablingForOrg}
+                    onGotoPermissions={() => setTab('permissions')}
                 />
             )}
 
@@ -426,11 +470,139 @@ function StatusPill({ configured, testResult }) {
     );
 }
 
+// ─── Access check card ──────────────────────────────────────
+// Renders /ai/n8n/diagnostics as a short, actionable checklist so the admin
+// can tell at a glance why the AI can or can't see their n8n workflows.
+
+function AccessCheckCard({ diag, loading, onRefresh, onEnableForOrg, enablingForOrg, onGotoPermissions }) {
+    if (loading && !diag) {
+        return (
+            <div className="rounded-lg border px-3 py-3 flex items-center gap-2 text-[11px]"
+                style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)', color: 'var(--text-muted)' }}>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Checking access…
+            </div>
+        );
+    }
+    if (!diag) return null;
+
+    const rows = [
+        {
+            label: 'n8n credentials stored for this organisation',
+            ok: !!diag.org?.n8nConfigured,
+            fix: null, // happens on the same tab — just scroll to form
+        },
+        {
+            label: 'n8n is enabled in the organisation\'s integration set',
+            ok: !!diag.org?.enabledIntegrationsIncludesN8n,
+            fix: diag.org?.enabledIntegrationsIncludesN8n
+                ? null
+                : {
+                    label: enablingForOrg ? 'Enabling…' : 'Enable for organisation',
+                    action: onEnableForOrg,
+                    disabled: enablingForOrg,
+                },
+            detail: diag.org?.source === 'all_enabled' ? 'No restriction — implicit.' :
+                    diag.org?.source === 'org_override' ? 'Org-level override in use.' :
+                    diag.org?.source === 'global_default' ? 'Following global default.' : null,
+        },
+        {
+            label: 'Your account can use n8n (read/run tools)',
+            ok: !!diag.userLevel?.passes,
+            detail: diag.userLevel?.reason === 'auto_enabled' ? 'Auto-enabled for new integrations.' :
+                    diag.userLevel?.reason === 'in_saved_list' ? 'You have n8n in your Apps list.' :
+                    diag.userLevel?.reason === 'no_saved_list' ? 'All apps enabled by default.' : null,
+        },
+        {
+            label: 'Your account can modify workflows (create/edit/delete/execute)',
+            ok: !!diag.permissions?.modify_n8n_workflows,
+            fix: diag.permissions?.modify_n8n_workflows ? null : {
+                label: 'Manage permissions',
+                action: onGotoPermissions,
+            },
+            detail: diag.permissions?.modify_n8n_workflows
+                ? 'Granted via orgRole or group permission.'
+                : 'Ask an admin to grant the "Modify n8n Workflows" permission.',
+        },
+    ];
+
+    const allPass = rows.every(r => r.ok);
+    const toolCount = (diag.toolsThatWillBeInjected || []).length;
+
+    return (
+        <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-subtle)' }}>
+            <div className="px-3 py-2.5 flex items-center justify-between gap-2" style={{ background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-subtle)' }}>
+                <div className="flex items-center gap-1.5">
+                    {allPass
+                        ? <CircleCheck className="w-3.5 h-3.5" style={{ color: '#10b981' }} />
+                        : <CircleX className="w-3.5 h-3.5" style={{ color: '#ef4444' }} />}
+                    <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                        Access check
+                    </span>
+                    <span className="text-[11px] ml-1" style={{ color: 'var(--text-muted)' }}>
+                        {allPass ? `AI sees ${toolCount} n8n tool${toolCount === 1 ? '' : 's'}` : 'AI can\'t see n8n workflows'}
+                    </span>
+                </div>
+                <button onClick={onRefresh} disabled={loading}
+                    className="text-[11px] px-2 py-0.5 rounded flex items-center gap-1 disabled:opacity-50"
+                    style={{ color: 'var(--text-secondary)' }} title="Refresh">
+                    <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+                </button>
+            </div>
+            <ul className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
+                {rows.map((r, i) => (
+                    <li key={i} className="px-3 py-2 flex items-start gap-2.5">
+                        {r.ok
+                            ? <CircleCheck className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: '#10b981' }} />
+                            : <CircleX className="w-3.5 h-3.5 mt-0.5 shrink-0" style={{ color: '#ef4444' }} />}
+                        <div className="flex-1 min-w-0">
+                            <div className="text-xs" style={{ color: 'var(--text-primary)' }}>{r.label}</div>
+                            {r.detail && <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{r.detail}</div>}
+                        </div>
+                        {r.fix && (
+                            <button
+                                onClick={r.fix.action}
+                                disabled={r.fix.disabled}
+                                className="text-[11px] font-medium px-2 py-0.5 rounded border shrink-0 disabled:opacity-50"
+                                style={{ borderColor: 'var(--border-default)', color: 'var(--accent-primary)' }}
+                            >
+                                {r.fix.label}
+                            </button>
+                        )}
+                    </li>
+                ))}
+            </ul>
+            {allPass && toolCount > 0 && (
+                <details className="text-[11px] px-3 py-2 border-t" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-muted)' }}>
+                    <summary className="cursor-pointer">Show tool list</summary>
+                    <code className="block mt-1 font-mono text-[10.5px] break-all" style={{ color: 'var(--text-secondary)' }}>
+                        {(diag.toolsThatWillBeInjected || []).join(', ')}
+                    </code>
+                </details>
+            )}
+        </div>
+    );
+}
+
 // ─── Connection tab ─────────────────────────────────────────
 
-function ConnectionTab({ n8nUrl, setN8nUrl, apiKey, setApiKey, hasApiKey, saving, onSave, testing, onTest, testResult }) {
+function ConnectionTab({
+    n8nUrl, setN8nUrl, apiKey, setApiKey, hasApiKey, saving, onSave,
+    testing, onTest, testResult,
+    configured, diag, diagLoading, onRefreshDiag,
+    onEnableForOrg, enablingForOrg, onGotoPermissions,
+}) {
     return (
         <div className="space-y-4">
+            {configured && (
+                <AccessCheckCard
+                    diag={diag}
+                    loading={diagLoading}
+                    onRefresh={onRefreshDiag}
+                    onEnableForOrg={onEnableForOrg}
+                    enablingForOrg={enablingForOrg}
+                    onGotoPermissions={onGotoPermissions}
+                />
+            )}
             <div>
                 <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>n8n Instance URL</label>
                 <input
@@ -714,17 +886,13 @@ function PermissionsTab({ loading, summary, onReload, onMutate, onCreateAndGrant
         );
     }
 
+    // Only show the modify bucket — use_n8n_tools is implicit (auto-on for every
+    // member when the org has n8n configured).
     const buckets = [
-        {
-            id: 'use_n8n_tools',
-            title: 'Use n8n Tools',
-            desc: 'Run webhook workflows from chat and inspect workflow definitions.',
-            groups: summary.use_n8n_tools || [],
-        },
         {
             id: 'modify_n8n_workflows',
             title: 'Modify n8n Workflows',
-            desc: 'Allow the AI to create, edit, delete, activate, and execute workflows on behalf of the user. Grant carefully — the AI can change live automations.',
+            desc: 'Allow the AI to create, edit, delete, activate, and execute workflows on behalf of the user. Organisation admins have this by default — use this panel to grant the same capability to other groups.',
             groups: summary.modify_n8n_workflows || [],
         },
     ];
@@ -735,7 +903,9 @@ function PermissionsTab({ loading, summary, onReload, onMutate, onCreateAndGrant
                 style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
                 <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                 <span>
-                    Grant n8n permissions to groups here, or use the full group editor in{' '}
+                    Running n8n workflows from chat works for every member automatically once n8n is configured.
+                    The panel below controls <b>modify</b> access — who can let the AI create, edit, delete, or execute
+                    workflows. Alternative: use the full group editor in{' '}
                     <a href={summary.editUrl || '/settings/organisation/users'} className="underline font-medium inline-flex items-center gap-0.5" style={{ color: 'var(--accent-primary)' }}>
                         Users & Groups <ExternalLink className="w-3 h-3" />
                     </a>.
