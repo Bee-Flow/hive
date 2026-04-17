@@ -20,13 +20,17 @@ const TEXT_ACTIVE = 'font-bold text-black';
 const TEXT_IDLE = 'text-black hover:text-black transition-colors';
 const ACCENT_BAR_CONV = 'absolute left-0 top-0 bottom-0 w-[3px] bg-gray-400 rounded-r-sm';
 
-/* ─── localStorage helpers for collapse state ─── */
+import scopedStorage from '../utils/scopedStorage';
+
+/* ─── Scoped-storage helpers for sidebar collapse state (per-user). */
 const storageKey = (k) => `sidebar_${k}_expanded`;
 const readExpanded = (k, fallback) => {
-    try { const v = localStorage.getItem(storageKey(k)); return v !== null ? v === '1' : fallback; }
-    catch { return fallback; }
+    const v = scopedStorage.getItem(storageKey(k));
+    return v !== null ? v === '1' : fallback;
 };
-const writeExpanded = (k, v) => { try { localStorage.setItem(storageKey(k), v ? '1' : '0'); } catch { } };
+const writeExpanded = (k, v) => {
+    scopedStorage.setItem(storageKey(k), v ? '1' : '0');
+};
 
 /* ─── Inline label creator (with color wheel) ─── */
 const CreateLabelInline = ({ onCreateLabel, t }) => {

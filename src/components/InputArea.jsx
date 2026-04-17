@@ -9,6 +9,7 @@ import MusicGenSettings from './chat/MusicGenSettings';
 import ElevenLabsSettings from './chat/ElevenLabsSettings';
 import VideoGenSettings from './chat/VideoGenSettings';
 import { API_BASE, authFetch } from '../utils/helpers';
+import scopedStorage from '../utils/scopedStorage';
 
 // App definitions for the apps overlay
 const APP_DEFS = [
@@ -123,12 +124,12 @@ const InputArea = ({
     const [elevenLabsOpen, setElevenLabsOpen] = useState(false);
     const [videoGenOpen, setVideoGenOpen] = useState(false);
     const [mediaMenuOpen, setMediaMenuOpen] = useState(false);
-    // Per-integration enable/disable (persisted in localStorage)
-    const [disabledMedia, setDisabledMedia] = useState(() => {
-        try { return JSON.parse(localStorage.getItem('disabledMedia') || '{}'); } catch { return {}; }
-    });
+    // Per-integration enable/disable — user-scoped so toggling "disable images"
+    // as user A doesn't persist into user B's composer on the same browser.
+    const [disabledMedia, setDisabledMedia] = useState(() => scopedStorage.getJSON('disabledMedia', {}));
     const [webSearchEnabled, setWebSearchEnabled] = useState(() => {
-        try { const v = localStorage.getItem('webSearchEnabled'); return v === null ? true : v === 'true'; } catch { return true; }
+        const v = scopedStorage.getItem('webSearchEnabled');
+        return v === null ? true : v === 'true';
     });
     const [orgDisableSearchOnUpload, setOrgDisableSearchOnUpload] = useState(false);
     const [searchProviderConfig, setSearchProviderConfig] = useState('agent-search');
@@ -757,7 +758,7 @@ const InputArea = ({
                                                         <button
                                                             ref={imageGenBtnRef}
                                                             onClick={() => { setMediaMenuOpen(false); setImageGenOpen(true); }}
-                                                            onContextMenu={(e) => { e.preventDefault(); const next = { ...disabledMedia, image: !disabledMedia.image }; setDisabledMedia(next); localStorage.setItem('disabledMedia', JSON.stringify(next)); }}
+                                                            onContextMenu={(e) => { e.preventDefault(); const next = { ...disabledMedia, image: !disabledMedia.image }; setDisabledMedia(next); scopedStorage.setJSON('disabledMedia', next); }}
                                                             className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors text-sm text-left"
                                                             style={{ opacity: disabledMedia.image ? 0.35 : 1 }}
                                                         >
@@ -769,7 +770,7 @@ const InputArea = ({
                                                         <button
                                                             ref={musicGenBtnRef}
                                                             onClick={() => { setMediaMenuOpen(false); setMusicGenOpen(true); }}
-                                                            onContextMenu={(e) => { e.preventDefault(); const next = { ...disabledMedia, music: !disabledMedia.music }; setDisabledMedia(next); localStorage.setItem('disabledMedia', JSON.stringify(next)); }}
+                                                            onContextMenu={(e) => { e.preventDefault(); const next = { ...disabledMedia, music: !disabledMedia.music }; setDisabledMedia(next); scopedStorage.setJSON('disabledMedia', next); }}
                                                             className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors text-sm text-left"
                                                             style={{ opacity: disabledMedia.music ? 0.35 : 1 }}
                                                         >
@@ -781,7 +782,7 @@ const InputArea = ({
                                                         <button
                                                             ref={elevenLabsBtnRef}
                                                             onClick={() => { setMediaMenuOpen(false); setElevenLabsOpen(true); }}
-                                                            onContextMenu={(e) => { e.preventDefault(); const next = { ...disabledMedia, elevenlabs: !disabledMedia.elevenlabs }; setDisabledMedia(next); localStorage.setItem('disabledMedia', JSON.stringify(next)); }}
+                                                            onContextMenu={(e) => { e.preventDefault(); const next = { ...disabledMedia, elevenlabs: !disabledMedia.elevenlabs }; setDisabledMedia(next); scopedStorage.setJSON('disabledMedia', next); }}
                                                             className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors text-sm text-left"
                                                             style={{ opacity: disabledMedia.elevenlabs ? 0.35 : 1 }}
                                                         >
@@ -793,7 +794,7 @@ const InputArea = ({
                                                         <button
                                                             ref={videoGenBtnRef}
                                                             onClick={() => { setMediaMenuOpen(false); setVideoGenOpen(true); }}
-                                                            onContextMenu={(e) => { e.preventDefault(); const next = { ...disabledMedia, video: !disabledMedia.video }; setDisabledMedia(next); localStorage.setItem('disabledMedia', JSON.stringify(next)); }}
+                                                            onContextMenu={(e) => { e.preventDefault(); const next = { ...disabledMedia, video: !disabledMedia.video }; setDisabledMedia(next); scopedStorage.setJSON('disabledMedia', next); }}
                                                             className="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors text-sm text-left"
                                                             style={{ opacity: disabledMedia.video ? 0.35 : 1 }}
                                                         >
@@ -835,7 +836,7 @@ const InputArea = ({
                                         if (orgDisableSearchOnUpload && attachments.length > 0) return;
                                         const next = !webSearchEnabled;
                                         setWebSearchEnabled(next);
-                                        localStorage.setItem('webSearchEnabled', String(next));
+                                        scopedStorage.setItem('webSearchEnabled', String(next));
                                     }}
                                     className={`p-2 rounded-lg transition-colors ${orgDisableSearchOnUpload && attachments.length > 0 ? 'text-orange-400/60 opacity-50 cursor-not-allowed bg-orange-500/5' : webSearchEnabled ? 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20' : 'text-[var(--text-tertiary)] opacity-40 hover:opacity-70 hover:bg-[var(--bg-tertiary)]'}`}
                                     title={orgDisableSearchOnUpload && attachments.length > 0 ? 'Web search disabled by organisation policy (files attached)' : webSearchEnabled ? 'Web search enabled (click to disable)' : 'Web search disabled (click to enable)'}

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Check, ChevronDown } from 'lucide-react';
+import scopedStorage from '../../utils/scopedStorage';
 
 // ─── Constants ──────────────────────────────────────────────────
 const ASPECT_RATIOS = [
@@ -47,25 +48,18 @@ const TABS = [
 const STORAGE_KEY = 'nanoBananaSettings';
 
 function loadSettings() {
-    try {
-        const s = localStorage.getItem(STORAGE_KEY);
-        if (s) return JSON.parse(s);
-        // Migrate from old imageGenSettings
-        const old = localStorage.getItem('imageGenSettings');
-        if (old) {
-            const parsed = JSON.parse(old);
-            return { image: parsed };
-        }
-        return {};
-    } catch { return {}; }
+    const s = scopedStorage.getJSON(STORAGE_KEY, null);
+    if (s) return s;
+    // Migrate from the older imageGenSettings key (same user scope).
+    const old = scopedStorage.getJSON('imageGenSettings', null);
+    if (old) return { image: old };
+    return {};
 }
 
 function saveSettings(settings) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
-    // Keep backward compat for imageGenSettings
-    if (settings.image) {
-        localStorage.setItem('imageGenSettings', JSON.stringify(settings.image));
-    }
+    scopedStorage.setJSON(STORAGE_KEY, settings);
+    // Keep writing imageGenSettings for the legacy useChatEngine payload path.
+    if (settings.image) scopedStorage.setJSON('imageGenSettings', settings.image);
 }
 
 // ─── Reusable UI Components ─────────────────────────────────────

@@ -1191,4 +1191,20 @@ const MessageItem = ({
     );
 };
 
-export default React.memo(MessageItem);
+// Each message is wrapped in its own ErrorBoundary so a render failure in one
+// message (bad markdown, malformed tool result, etc.) can't take down the whole
+// conversation. The boundary is inside React.memo so the identity wrapping is
+// preserved.
+import { MessageErrorBoundary } from '../../ErrorBoundary';
+
+const MemoMessageItem = React.memo(MessageItem);
+
+function MessageItemWithBoundary(props) {
+    return (
+        <MessageErrorBoundary msg={props.msg}>
+            <MemoMessageItem {...props} />
+        </MessageErrorBoundary>
+    );
+}
+
+export default MessageItemWithBoundary;

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import MemoryPanel from '../components/MemoryPanel';
 import { API_BASE, authFetch } from '../utils/helpers';
+import scopedStorage from '../utils/scopedStorage';
 import { useTranslation } from '../hooks/useTranslation';
 import StartupAgentSection from './settings/StartupAgentSection';
 import MemorySection from './settings/MemorySection';
@@ -247,12 +248,13 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
         hasFirefliesKey: false, hasYouTrackConfig: false, hasGammaKey: false,
         hasN8nConfig: false, linkedInConnected: false, linkedInName: null, hasLinkedInConfig: false,
     });
-    const [defaultAgentMode, setDefaultAgentMode] = useState(() => localStorage.getItem('defaultAgentMode') || 'last-used');
-    const [defaultAgentId, setDefaultAgentId] = useState(() => localStorage.getItem('defaultAgentId') || '');
+    // User-scoped: these are personal "which agent do I start on?" preferences.
+    const [defaultAgentMode, setDefaultAgentMode] = useState(() => scopedStorage.getItem('defaultAgentMode') || 'last-used');
+    const [defaultAgentId, setDefaultAgentId] = useState(() => scopedStorage.getItem('defaultAgentId') || '');
 
     useEffect(() => { fetchMemoryStats(); fetchAgents(); fetchSettingsStatuses(); }, []);
-    useEffect(() => { localStorage.setItem('defaultAgentMode', defaultAgentMode); }, [defaultAgentMode]);
-    useEffect(() => { localStorage.setItem('defaultAgentId', defaultAgentId); }, [defaultAgentId]);
+    useEffect(() => { scopedStorage.setItem('defaultAgentMode', defaultAgentMode); }, [defaultAgentMode]);
+    useEffect(() => { scopedStorage.setItem('defaultAgentId', defaultAgentId); }, [defaultAgentId]);
 
     const fetchAgents = async () => {
         try { const res = await authFetch(`${API_BASE}/agents/all`); setAgents(await res.json()); }

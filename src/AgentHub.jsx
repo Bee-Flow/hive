@@ -20,6 +20,8 @@ import useChatEngine from './hooks/useChatEngine';
 import { useViewport } from './hooks/useViewport';
 
 import { API_BASE, generateMessageId, authFetch } from './utils/helpers';
+import scopedStorage from './utils/scopedStorage';
+import { normalizeLoadedMessages } from './utils/messageShape';
 import { X, Sparkles, PenLine, Heart, MoreVertical, Menu, EyeOff, Pencil } from 'lucide-react';
 
 const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = null, initialConversationId = null, initialDirectConvId = null, showSettings = false, onCloseSettings, showAgentDesigner = false, onCloseAgentDesigner, initialDesignerAgentId = null, showSkillsPanel = false, onCloseSkillsPanel, showEmailKB = false, onCloseEmailKB }) => {
@@ -87,14 +89,25 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
     // Conversation Labels State
     const [conversationLabels, setConversationLabels] = useState([]);
 
-    // Chat History Mode — "per-agent" (default) or "all-chats" (unified timeline)
-    const [chatHistoryMode, setChatHistoryMode] = useState(() => localStorage.getItem('chatHistoryMode') || 'per-agent');
+    // Chat History Mode — "per-agent" (default) or "all-chats" (unified timeline).
+    // Initial value is null because scopedStorage isn't populated until App.jsx's
+    // setCurrentUser fires. The useEffect below hydrates on first render.
+    const [chatHistoryMode, setChatHistoryMode] = useState('per-agent');
     const [allAgentConversations, setAllAgentConversations] = useState([]);
 
     // Skills State (must be declared before useChatEngine so it can reference activeSkillIds)
-    const [activeSkillIds, setActiveSkillIds] = useState(() => {
-        try { return JSON.parse(localStorage.getItem('activeSkillIds') || '[]'); } catch { return []; }
-    });
+    const [activeSkillIds, setActiveSkillIds] = useState([]);
+
+    // Hydrate user-scoped preferences once the user id is known.
+    useEffect(() => {
+        if (!user?.id) return;
+        const storedMode = scopedStorage.getItem('chatHistoryMode');
+        if (storedMode) setChatHistoryMode(storedMode);
+        const storedSkills = scopedStorage.getJSON('activeSkillIds', null);
+        if (Array.isArray(storedSkills)) setActiveSkillIds(storedSkills);
+        const storedFavs = scopedStorage.getJSON('agentFavorites', null);
+        if (Array.isArray(storedFavs)) setFavorites(storedFavs);
+    }, [user?.id]);
 
     // Chat engine hook — owns messages, isLoading, sendMessage, stopGenerating
     const { messages, setMessages, isLoading, sendMessage, stopGenerating, retryMessage, editAndRegenerate, submittedFormIds, setSubmittedFormIds } = useChatEngine({
@@ -145,7 +158,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
             const next = prev.includes(skillId)
                 ? prev.filter(id => id !== skillId)
                 : [...prev.slice(0, 2), skillId]; // max 3
-            localStorage.setItem('activeSkillIds', JSON.stringify(next));
+            scopedStorage.setJSON('activeSkillIds', next);
             return next;
         });
     }, []);
@@ -159,11 +172,8 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
     const [showMemoryPanel, setShowMemoryPanel] = useState(false);
     const [showAgentMenu, setShowAgentMenu] = useState(false);
 
-    const [favorites, setFavorites] = useState(() => {
-        try {
-            return JSON.parse(localStorage.getItem('agentFavorites') || '[]');
-        } catch { return []; }
-    });
+    // Favourites hydrate per-user via the same `user?.id` effect below.
+    const [favorites, setFavorites] = useState([]);
 
     const messagesEndRef = useRef(null);
     const messagesContainerRef = useRef(null);
@@ -281,12 +291,14 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
 
             loadLabels(); // Always load labels on init
 
-            // Startup Logic — URL agent takes priority over localStorage
+            // Startup Logic — URL agent takes priority over scopedStorage.
+            // These four keys are user-specific preferences so they must not
+                // survive an account switch on a shared browser.
             let targetId = initialAgentId;
             if (!targetId && !initialDirectConvId) {
-                const mode = localStorage.getItem('defaultAgentMode') || 'last-used';
-                const defaultId = localStorage.getItem('defaultAgentId');
-                const lastUsedId = localStorage.getItem('lastUsedAgentId');
+                const mode = scopedStorage.getItem('defaultAgentMode') || 'last-used';
+                const defaultId = scopedStorage.getItem('defaultAgentId');
+                const lastUsedId = scopedStorage.getItem('lastUsedAgentId');
                 if (mode === 'direct-chat') {
                     setDirectChatMode(true);
                     loadDirectConversations();
@@ -295,7 +307,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                 } else if (mode === 'specific' && defaultId) {
                     targetId = defaultId;
                 } else if (mode === 'last-used') {
-                    const lastMode = localStorage.getItem('lastUsedMode');
+                    const lastMode = scopedStorage.getItem('lastUsedMode');
                     if (lastMode === 'direct-chat') {
                         setDirectChatMode(true);
                         loadDirectConversations();
@@ -324,9 +336,8 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                 if (detailRes.ok) {
                                     const detailData = await detailRes.json();
                                     setCurrentDirectConversation(detailData);
-                                    setMessages((detailData.messages || []).map(m =>
-                                        m.content === '[Message removed - policy violation]' ? { ...m, isDeleted: true } : m
-                                    ));
+                                    // normalizeLoadedMessages also marks policy-removed messages as deleted.
+                                    setMessages(normalizeLoadedMessages(detailData.messages || []));
                                     if (detailData.model_tier) setSelectedTier(detailData.model_tier);
                                     updateDirectChatUrl(match.id);
 
@@ -350,7 +361,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                         }
                     } catch (e) { console.error('Failed to load direct conversation from URL:', e); }
                 });
-                localStorage.setItem('lastUsedMode', 'direct-chat');
+                scopedStorage.setItem('lastUsedMode', 'direct-chat');
             }
 
             if (targetId) {
@@ -461,12 +472,11 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                     if (clean.content && typeof clean.content === 'string' && clean.role === 'assistant') {
                         clean.content = clean.content.replace(/\{\s*"action":\s*"[^"]*"\s*,\s*"action_input":\s*"[^"]*"(?:\s*\}\s*,\s*"thought":\s*"[^"]*"\s*\}|\s*\})/g, '').trim();
                     }
-                    // Mark persisted guardrail violation messages so they display consistently
-                    if (clean.content === '[Message removed - policy violation]') {
-                        clean.isDeleted = true;
-                    }
                     return clean;
                 });
+
+                // Canonicalise thinking shape + deleted flag in one pass.
+                parsedMessages = normalizeLoadedMessages(parsedMessages);
 
                 // Remove messages that became empty after cleanup
                 parsedMessages = parsedMessages.filter(m =>
@@ -503,8 +513,8 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
 
         // Persist last used & update URL
         if (agent) {
-            localStorage.setItem('lastUsedAgentId', agent.id);
-            localStorage.setItem('lastUsedMode', 'agent');
+            scopedStorage.setItem('lastUsedAgentId', agent.id);
+            scopedStorage.setItem('lastUsedMode', 'agent');
             updateAgentUrl(agent.id, null);
         } else {
             updateAgentUrl(null, null);
@@ -578,7 +588,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
             setNotebookSelection('');
             setShowNotebook(false);
             setNotebookLinkedId(null);
-            localStorage.setItem('lastUsedMode', 'direct-chat');
+            scopedStorage.setItem('lastUsedMode', 'direct-chat');
             loadDirectConversations();
             loadModelTiers();
             updateDirectChatUrl(null);
@@ -783,7 +793,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
         setShowMarketplace(false);
         if (onCloseSettings) onCloseSettings();
         if (onCloseAgentDesigner) onCloseAgentDesigner();
-        localStorage.setItem('lastUsedMode', 'direct-chat');
+        scopedStorage.setItem('lastUsedMode', 'direct-chat');
         loadDirectConversations();
         loadModelTiers();
         updateDirectChatUrl(null);
@@ -795,11 +805,10 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
             if (res.ok) {
                 const data = await res.json();
                 setCurrentDirectConversation(data);
-                // Mark persisted guardrail violation messages so they display consistently
-                const loadedMessages = (data.messages || []).map(m =>
-                    m.content === '[Message removed - policy violation]' ? { ...m, isDeleted: true } : m
-                );
-                setMessages(loadedMessages);
+                // normalizeLoadedMessages handles both the deleted-placeholder
+                // marking AND lifting legacy string thinking into the canonical
+                // thinkingParts shape the UI expects.
+                setMessages(normalizeLoadedMessages(data.messages || []));
                 if (data.model_tier) setSelectedTier(data.model_tier);
                 updateDirectChatUrl(conv.id);
 
@@ -864,7 +873,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
             setNotebookSelection('');
             setShowNotebook(false);
             setNotebookLinkedId(null);
-            localStorage.setItem('lastUsedMode', 'direct-chat');
+            scopedStorage.setItem('lastUsedMode', 'direct-chat');
             loadDirectConversations();
             loadModelTiers();
             updateDirectChatUrl(null);
@@ -957,7 +966,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
             ? favorites.filter(f => f !== id)
             : [...favorites, id];
         setFavorites(newFavs);
-        localStorage.setItem('agentFavorites', JSON.stringify(newFavs));
+        scopedStorage.setJSON('agentFavorites', newFavs);
     };
 
     const handleUnpublishAgent = async (agentId) => {
@@ -1086,8 +1095,8 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                         if (agent) {
                             setSelectedAgent(agent);
                             setDirectChatMode(false);
-                            localStorage.setItem('lastUsedAgentId', agent.id);
-                            localStorage.setItem('lastUsedMode', 'agent');
+                            scopedStorage.setItem('lastUsedAgentId', agent.id);
+                            scopedStorage.setItem('lastUsedMode', 'agent');
                         }
                     }
                     selectConversation(conv.agent_id || selectedAgent?.id, conv.id);
@@ -1120,7 +1129,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                     if (!directChatMode) {
                         setDirectChatMode(true);
                         setSelectedAgent(null);
-                        localStorage.setItem('lastUsedMode', 'direct-chat');
+                        scopedStorage.setItem('lastUsedMode', 'direct-chat');
                         loadModelTiers();
                     }
                     handleSelectDirectConversation(conv);
@@ -1157,7 +1166,7 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                             setDirectChatMode(true);
                             setSelectedAgent(null);
                             loadModelTiers();
-                            localStorage.setItem('lastUsedMode', 'direct-chat');
+                            scopedStorage.setItem('lastUsedMode', 'direct-chat');
                         }
                         handleSelectDirectConversation(conv);
                     } else {
@@ -1166,8 +1175,8 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                         if (agent && (!selectedAgent || selectedAgent.id !== agent.id)) {
                             setSelectedAgent(agent);
                             setDirectChatMode(false);
-                            localStorage.setItem('lastUsedAgentId', agent.id);
-                            localStorage.setItem('lastUsedMode', 'agent');
+                            scopedStorage.setItem('lastUsedAgentId', agent.id);
+                            scopedStorage.setItem('lastUsedMode', 'agent');
                         } else if (!agent) {
                             setDirectChatMode(false);
                         }

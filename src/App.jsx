@@ -17,6 +17,7 @@ import DlpPreviewModal from './components/DlpPreviewModal';
 import { LogOut, User, Shield, Settings, ChevronDown } from 'lucide-react';
 
 import { API_BASE, authFetch } from './utils/helpers';
+import scopedStorage from './utils/scopedStorage';
 
 // ── Route mapping ──────────────────────────────────────────────
 const PAGE_ROUTES = {
@@ -140,6 +141,13 @@ function App() {
     const [initialNotebookId, setInitialNotebookId] = useState(() => parseNotebookUrl(window.location.pathname));
     const [user, setUser] = useState(null);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
+
+    // Keep scopedStorage pinned to the current user. When user logs out the
+    // scope clears — subsequent reads return null until the next login. On
+    // login, existing legacy global keys are migrated lazily on first read.
+    useEffect(() => {
+        scopedStorage.setCurrentUser(user?.id || null);
+    }, [user?.id]);
 
     const [isLoading, setIsLoading] = useState(true);
     const [deploymentMode, setDeploymentMode] = useState('cloud');
@@ -400,6 +408,7 @@ function App() {
     };
 
     const handleLogout = async () => {
+        const prevUserId = user?.id || null;
         try {
             await authFetch(`${API_BASE}/auth/logout`, {
                 method: 'POST',
@@ -407,6 +416,11 @@ function App() {
         } catch (err) {
             console.error('Logout error:', err);
         }
+        // Drop every user-scoped preference so the next login on this browser
+        // can't read the previous user's favourites / last-used agent / etc.
+        // Device-level keys (theme, locale) are not touched.
+        if (prevUserId) scopedStorage.clearUser(prevUserId);
+        scopedStorage.setCurrentUser(null);
         setUser(null);
         setIsAuthenticated(false);
         navigateToPage('agents');

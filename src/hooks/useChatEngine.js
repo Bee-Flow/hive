@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { API_BASE, generateMessageId, authFetch } from '../utils/helpers';
+import scopedStorage from '../utils/scopedStorage';
 import useTranslation from './useTranslation';
 
 /**
@@ -35,6 +36,14 @@ export default function useChatEngine({
     const [isLoading, setIsLoading] = useState(false);
     const [abortController, setAbortController] = useState(null);
     const [submittedFormIds, setSubmittedFormIds] = useState(new Set());
+
+    // Keep a ref in sync with messages so `sendMessage` can read the current
+    // conversation without listing `messages` in its dep array. With `messages`
+    // in the deps, `sendMessage` was recreated on every keystroke — that
+    // cascaded to `retryMessage` and `editAndRegenerate` (which depend on
+    // `sendMessage`), breaking memoization for every child that consumes them.
+    const messagesRef = useRef(messages);
+    useEffect(() => { messagesRef.current = messages; }, [messages]);
 
     // i18n access for SSE event handlers
     const { t } = useTranslation();
@@ -590,6 +599,12 @@ export default function useChatEngine({
         }
     }, [onConversationCreated, onNotebookUpdate]);
 
+    // Ref wrapper so `sendMessage` can dispatch SSE events without listing
+    // `handleSSEEvent` in its deps. Keeps `sendMessage`'s identity stable as
+    // long as its real inputs (selectedAgent, directMode, …) don't change.
+    const handleSSEEventRef = useRef(handleSSEEvent);
+    useEffect(() => { handleSSEEventRef.current = handleSSEEvent; }, [handleSSEEvent]);
+
     // --- Core send ---
 
     const sendMessage = useCallback(async (text, attachments = [], isHidden = false, historyOverride = null, overrideTier = null) => {
@@ -632,22 +647,21 @@ export default function useChatEngine({
         const contentRef = { current: '' };
 
         try {
-            // Thinking-effort override from composer (persisted in localStorage).
+            // Thinking-effort override from composer (persisted in scopedStorage
+            // so user A's choice doesn't follow user B after account switch).
             // Valid values: 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'.
             // When unset, the server falls back to the tier default.
-            let reasoningEffort = null;
-            try {
-                const v = localStorage.getItem('reasoningEffort');
-                if (v) reasoningEffort = v;
-            } catch (_) { /* ignore */ }
+            const reasoningEffort = scopedStorage.getItem('reasoningEffort') || null;
 
             let url, payload;
 
             if (isDirectMode) {
                 // Direct chat mode — post to custom endpoint or /ai/chat/direct/stream
                 url = directMode.customEndpoint ? `${API_BASE}${directMode.customEndpoint}` : `${API_BASE}/ai/chat/direct/stream`;
-                // Build history: use historyOverride when provided (edit/retry), otherwise use stale-safe messages
-                const sourceMessages = historyOverride || messages;
+                // Build history: use historyOverride when provided (edit/retry), otherwise
+                // read the current messages via ref — avoids churning `sendMessage`'s
+                // identity on every new message appended during streaming.
+                const sourceMessages = historyOverride || messagesRef.current;
                 const history = sourceMessages.filter(m => (m.role === 'user' || m.role === 'assistant') && m.content?.trim()).map(m => ({
                     role: m.role,
                     content: m.content,
@@ -661,26 +675,12 @@ export default function useChatEngine({
                     history,
                     ...getNotebookPayload?.(),
                     ...(directMode.systemPrompt ? { systemPrompt: directMode.systemPrompt } : {}),
-                    imageGenSettings: (() => {
-                        try {
-                            const s = localStorage.getItem('imageGenSettings');
-                            return s ? JSON.parse(s) : {};
-                        } catch { return {}; }
-                    })(),
-                    nanoBananaSettings: (() => {
-                        try {
-                            const s = localStorage.getItem('nanoBananaSettings');
-                            return s ? JSON.parse(s) : {};
-                        } catch { return {}; }
-                    })(),
-                    disabledMedia: (() => {
-                        try {
-                            const s = localStorage.getItem('disabledMedia');
-                            return s ? JSON.parse(s) : {};
-                        } catch { return {}; }
-                    })(),
+                    imageGenSettings: scopedStorage.getJSON('imageGenSettings', {}),
+                    nanoBananaSettings: scopedStorage.getJSON('nanoBananaSettings', {}),
+                    disabledMedia: scopedStorage.getJSON('disabledMedia', {}),
                     webSearchEnabled: (() => {
-                        try { const v = localStorage.getItem('webSearchEnabled'); return v === null ? true : v === 'true'; } catch { return true; }
+                        const v = scopedStorage.getItem('webSearchEnabled');
+                        return v === null ? true : v === 'true';
                     })(),
                     ...(activeProject?.id ? { projectId: activeProject.id } : {}),
                     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
@@ -769,7 +769,7 @@ export default function useChatEngine({
                                 }
                             }
 
-                            handleSSEEvent(currentEvent, data, {
+                            handleSSEEventRef.current(currentEvent, data, {
                                 assistantMsgId,
                                 userMsgId: msgId,
                                 activeIdRef,
@@ -796,7 +796,10 @@ export default function useChatEngine({
                 setIsLoading(false);
             }
         }
-    }, [selectedAgent, isLoading, abortController, currentConversation, getNotebookPayload, handleSSEEvent, directMode, messages, onDirectConversationCreated]);
+        // Deliberately NOT in deps: `messages` (read via messagesRef), `handleSSEEvent`
+        // (invoked via handleSSEEventRef). Keeping them here would recreate
+        // `sendMessage` on every streamed token and break child memoization.
+    }, [selectedAgent, isLoading, abortController, currentConversation, getNotebookPayload, directMode, onDirectConversationCreated, activeProject, activeSkillIds]);
 
     const stopGenerating = useCallback(() => {
         if (abortController) abortController.abort();

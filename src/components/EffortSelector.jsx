@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Brain } from 'lucide-react';
+import scopedStorage from '../utils/scopedStorage';
 
 const EFFORT_OPTIONS = [
     { value: 'none', label: 'Off', desc: 'No extra thinking' },
@@ -24,12 +25,8 @@ const STORAGE_KEY = 'reasoningEffort';
  *     effort level on Claude Opus 4.7.
  */
 function readStored() {
-    try {
-        const v = localStorage.getItem(STORAGE_KEY);
-        return EFFORT_OPTIONS.find(o => o.value === v)?.value || 'medium';
-    } catch (_) {
-        return 'medium';
-    }
+    const v = scopedStorage.getItem(STORAGE_KEY);
+    return EFFORT_OPTIONS.find(o => o.value === v)?.value || 'medium';
 }
 
 export default function EffortSelector({ available = true, modelId = '', dropDirection = 'up' }) {
@@ -45,7 +42,7 @@ export default function EffortSelector({ available = true, modelId = '', dropDir
 
     const handleChange = (next) => {
         setValue(next);
-        try { localStorage.setItem(STORAGE_KEY, next); } catch (_) { /* ignore */ }
+        scopedStorage.setItem(STORAGE_KEY, next);
         setOpen(false);
     };
 

@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Settings, X, Check } from 'lucide-react';
+import scopedStorage from '../../utils/scopedStorage';
 
 const ASPECT_RATIOS = [
     { label: '1:1', value: '1:1', icon: '⬛' },
@@ -17,14 +18,11 @@ const MODELS = [
 const STORAGE_KEY = 'imageGenSettings';
 
 function loadSettings() {
-    try {
-        const s = localStorage.getItem(STORAGE_KEY);
-        return s ? JSON.parse(s) : {};
-    } catch { return {}; }
+    return scopedStorage.getJSON(STORAGE_KEY, {});
 }
 
 function saveSettings(settings) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+    scopedStorage.setJSON(STORAGE_KEY, settings);
 }
 
 const ImageGenSettings = ({ isOpen, onClose, anchorRef, settings, onSettingsChange }) => {

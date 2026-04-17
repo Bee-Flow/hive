@@ -3,6 +3,7 @@ import AvatarPicker from './AvatarPicker';
 import { useTranslation } from '../../hooks/useTranslation';
 import { Globe, Check, ChevronDown, Shield } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
+import scopedStorage from '../../utils/scopedStorage';
 
 // ── macOS-style radio row ─────────────────────────────────────────────────────
 const RadioRow = ({ value, currentValue, onChange, label, description, last = false }) => {
@@ -205,12 +206,15 @@ const StartupAgentSection = ({ defaultAgentMode, setDefaultAgentMode, defaultAge
     const [localUser, setLocalUser] = useState(user);
     useEffect(() => { if (user) setLocalUser(user); }, [user]);
 
-    // Chat History display mode
-    const [chatHistoryMode, setChatHistoryModeRaw] = useState(() => localStorage.getItem('chatHistoryMode') || 'per-agent');
+    // Chat History display mode — user-scoped so two users on the same browser
+    // don't share preferences.
+    const [chatHistoryMode, setChatHistoryModeRaw] = useState(
+        () => scopedStorage.getItem('chatHistoryMode') || 'per-agent'
+    );
     const setChatHistoryMode = (v) => {
         setChatHistoryModeRaw(v);
-        localStorage.setItem('chatHistoryMode', v);
-        // Dispatch event so Sidebar picks it up instantly
+        scopedStorage.setItem('chatHistoryMode', v);
+        // Dispatch event so AgentHub / Sidebar pick it up without a remount.
         window.dispatchEvent(new CustomEvent('chatHistoryModeChanged', { detail: v }));
     };
 

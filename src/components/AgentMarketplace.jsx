@@ -2,6 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { getAgentInitials, getAgentColor } from '../utils/helpers';
 import { ChevronDown, ChevronUp, X, Search, Heart, EyeOff, Pencil } from 'lucide-react';
 import { useTranslation } from '../hooks/useTranslation';
+import scopedStorage from '../utils/scopedStorage';
 
 const STATIC_CATEGORIES_BEFORE_KEYS = [
     { key: 'popular', tKey: 'store.tab_popular' },
@@ -120,9 +121,7 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
     const [activeJobs, setActiveJobs] = useState([]);
     const [sortBy, setSortBy] = useState('top');
     const [usageByAgent, setUsageByAgent] = useState({});
-    const [recents, setRecents] = useState(() => {
-        try { return JSON.parse(localStorage.getItem('agent_marketplace_recents') || '[]'); } catch (_) { return []; }
-    });
+    const [recents, setRecents] = useState(() => scopedStorage.getJSON('agent_marketplace_recents', []));
 
     // Build category list dynamically: static before + dynamic org categories + static after
     const CATEGORIES = useMemo(() => {
@@ -152,12 +151,10 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
     }, []);
 
     const handleSelect = useCallback((agent) => {
-        try {
-            const r = JSON.parse(localStorage.getItem('agent_marketplace_recents') || '[]');
-            const updated = [agent.id, ...r.filter(id => id !== agent.id)].slice(0, 8);
-            localStorage.setItem('agent_marketplace_recents', JSON.stringify(updated));
-            setRecents(updated);
-        } catch (_) { }
+        const r = scopedStorage.getJSON('agent_marketplace_recents', []);
+        const updated = [agent.id, ...r.filter(id => id !== agent.id)].slice(0, 8);
+        scopedStorage.setJSON('agent_marketplace_recents', updated);
+        setRecents(updated);
         onSelect(agent);
     }, [onSelect]);
 

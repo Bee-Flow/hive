@@ -1,19 +1,17 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Check, ChevronDown } from 'lucide-react';
+import scopedStorage from '../../utils/scopedStorage';
 
 const STORAGE_KEY = 'nanoBananaSettings';
 
 function getSettings() {
-    try {
-        const s = localStorage.getItem(STORAGE_KEY);
-        return s ? JSON.parse(s) : {};
-    } catch { return {}; }
+    return scopedStorage.getJSON(STORAGE_KEY, {});
 }
 
 function saveSettings(section, data) {
     const all = getSettings();
     all[section] = data;
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+    scopedStorage.setJSON(STORAGE_KEY, all);
     return all;
 }
 
