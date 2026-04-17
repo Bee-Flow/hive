@@ -1,6 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Paperclip, X, StopCircle, MessageCircle, FileText, Image, File as FileIcon, FileSpreadsheet, ArrowUp, Sparkles, LayoutGrid, Globe } from 'lucide-react';
 import ModelTierSelector from './ModelTierSelector';
+import EffortSelector from './EffortSelector';
 import GoogleDrivePicker from './chat/GoogleDrivePicker';
 import GmailPicker from './chat/GmailPicker';
 import ImageGenSettings, { loadSettings } from './chat/ImageGenSettings';
@@ -1008,6 +1009,21 @@ const InputArea = ({
                                         />
                                     </div>
                                 )}
+
+                                {/* Thinking-effort selector — shown when the currently-selected
+                                    tier resolves to a reasoning-capable model. Mirrors the
+                                    `supportsReasoning` regexes used by the backend provider
+                                    adapters so server and client agree on availability. */}
+                                {directMode && modelTiers && (() => {
+                                    const modelId = modelTiers?.[selectedTier]?.model || '';
+                                    const supportsReasoning = /claude-opus-4|claude-sonnet-4|^o\d|gpt-5|gemini-2\.5|gemini-3|magistral/i.test(modelId);
+                                    if (!supportsReasoning) return null;
+                                    return (
+                                        <div className="mr-1">
+                                            <EffortSelector modelId={modelId} />
+                                        </div>
+                                    );
+                                })()}
 
                                 {/* Send / Stop Buttons */}
                                 {isLoading ? (

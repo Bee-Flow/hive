@@ -10,6 +10,7 @@ import AudioPlayerInline from './AudioPlayer';
 import ImageLightbox from './ImageLightbox';
 import ToolOutput from './ToolOutput';
 import { SequentialThinking } from './ThinkingSteps';
+import { ThinkingPanel } from './ThinkingPanel';
 
 import TerminalProgress from './TerminalProgress';
 import TokenisedBadge from '../TokenisedBadge';
@@ -384,28 +385,8 @@ const MessageItem = ({
                 {/* Sequential Thinking — always at the top */}
                 {!isUser && !isTool && msg.thinkingSteps?.length > 0 && <SequentialThinking msg={msg} />}
 
-                {/* Reasoning Model — streaming indicator (above content) */}
-                {!isUser && !isTool && msg.isStreaming && msg.thinking && !msg.content && (
-                    <div className="mb-3">
-                        <div className="flex items-center gap-2 text-xs text-purple-400/80 mb-2">
-                            <span className="text-sm animate-pulse">🧠</span>
-                            <span className="font-medium">Reasoning...</span>
-                            <span className="flex items-center gap-0.5">
-                                <span className="w-1 h-1 rounded-full bg-purple-400 animate-bounce"></span>
-                                <span className="w-1 h-1 rounded-full bg-purple-400 animate-bounce" style={{ animationDelay: '75ms' }}></span>
-                                <span className="w-1 h-1 rounded-full bg-purple-400 animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                            </span>
-                        </div>
-                        <div
-                            className="p-3 rounded-lg bg-purple-500/5 border border-purple-500/15 text-xs text-[var(--text-secondary)] whitespace-pre-wrap leading-relaxed max-h-[200px] overflow-y-auto custom-scrollbar"
-                            ref={el => { if (el) el.scrollTop = el.scrollHeight; }}
-                            style={{ fontStyle: 'italic', opacity: 0.75 }}
-                        >
-                            {msg.thinking}
-                            <span className="inline-block w-1.5 h-3.5 bg-purple-400/60 ml-0.5 animate-pulse align-text-bottom" />
-                        </div>
-                    </div>
-                )}
+                {/* Model Thinking / Reasoning — streams inline, auto-collapses to "Thought for Ns" after */}
+                {!isUser && !isTool && <ThinkingPanel msg={msg} />}
 
                 {!isUser && !isTool && renderToolCall()}
 
@@ -728,19 +709,9 @@ const MessageItem = ({
                                         );
                                     })()}
 
-                                    {/* Model Reasoning / Thinking */}
-                                    {msg.thinking && (
-                                        <details className="group/think">
-                                            <summary className="flex items-center gap-2 cursor-pointer text-[11px] px-2 py-1.5 rounded-lg select-none list-none [&::-webkit-details-marker]:hidden transition-colors hover:bg-[var(--bg-tertiary)]" style={{ color: 'var(--text-secondary)' }}>
-                                                <span className="text-xs">💭</span>
-                                                <span className="font-medium">Reasoning</span>
-                                                <svg className="w-2.5 h-2.5 transition-transform group-open/think:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                                            </summary>
-                                            <div className="mt-1 px-3 py-2 rounded-lg text-xs whitespace-pre-wrap leading-relaxed max-h-[300px] overflow-y-auto custom-scrollbar" style={{ fontStyle: 'italic', opacity: 0.8, color: 'var(--text-secondary)', background: 'var(--bg-tertiary)' }}>
-                                                {msg.thinking}
-                                            </div>
-                                        </details>
-                                    )}
+                                    {/* Reasoning is now rendered by <ThinkingPanel /> above the
+                                        message content — auto-collapses to "Thought for Ns" after
+                                        streaming completes, so it's no longer duplicated here. */}
 
                                     {/* Orchestrator Thinking */}
                                     {msg.orchestratorThinking && (

@@ -88,14 +88,68 @@ export default function useChatEngine({
                 }
                 break;
 
+            case 'thinking_start':
+                if (data.partId) {
+                    setMessages(prev => prev.map(m => {
+                        if (m.id !== activeIdRef.current) return m;
+                        const parts = Array.isArray(m.thinkingParts) ? [...m.thinkingParts] : [];
+                        if (parts.find(p => p.id === data.partId)) return m;
+                        parts.push({
+                            id: data.partId,
+                            text: '',
+                            startedAt: Date.now(),
+                            endedAt: null,
+                            redacted: data.redacted || false,
+                        });
+                        return { ...m, thinkingParts: parts, thinkingStartedAt: m.thinkingStartedAt || Date.now() };
+                    }));
+                }
+                break;
+
             case 'thinking':
                 if (data.text) {
-                    setMessages(prev => prev.map(m =>
-                        m.id === activeIdRef.current ? {
+                    setMessages(prev => prev.map(m => {
+                        if (m.id !== activeIdRef.current) return m;
+                        const prevParts = Array.isArray(m.thinkingParts) ? m.thinkingParts : [];
+                        const parts = prevParts.map(p => ({ ...p })); // deep-clone each part so we can safely mutate
+                        let idx = data.partId ? parts.findIndex(p => p.id === data.partId) : -1;
+                        if (idx === -1) {
+                            const lastIdx = parts.length - 1;
+                            if (!data.partId && lastIdx >= 0 && !parts[lastIdx].endedAt) {
+                                idx = lastIdx;
+                            } else {
+                                parts.push({
+                                    id: data.partId || `auto-${parts.length}`,
+                                    text: '',
+                                    startedAt: Date.now(),
+                                    endedAt: null,
+                                });
+                                idx = parts.length - 1;
+                            }
+                        }
+                        parts[idx] = { ...parts[idx], text: parts[idx].text + data.text };
+                        return {
                             ...m,
-                            thinking: (m.thinking || '') + data.text
-                        } : m
-                    ));
+                            thinkingParts: parts,
+                            thinking: (m.thinking || '') + data.text,
+                            thinkingStartedAt: m.thinkingStartedAt || Date.now(),
+                        };
+                    }));
+                }
+                break;
+
+            case 'thinking_stop':
+                if (data.partId) {
+                    setMessages(prev => prev.map(m => {
+                        if (m.id !== activeIdRef.current) return m;
+                        const prevParts = Array.isArray(m.thinkingParts) ? m.thinkingParts : [];
+                        const parts = prevParts.map(p =>
+                            p.id === data.partId
+                                ? { ...p, endedAt: Date.now(), redacted: p.redacted || !!data.redacted }
+                                : p
+                        );
+                        return { ...m, thinkingParts: parts, thinkingEndedAt: Date.now() };
+                    }));
                 }
                 break;
 
@@ -578,6 +632,15 @@ export default function useChatEngine({
         const contentRef = { current: '' };
 
         try {
+            // Thinking-effort override from composer (persisted in localStorage).
+            // Valid values: 'none' | 'low' | 'medium' | 'high' | 'xhigh' | 'max'.
+            // When unset, the server falls back to the tier default.
+            let reasoningEffort = null;
+            try {
+                const v = localStorage.getItem('reasoningEffort');
+                if (v) reasoningEffort = v;
+            } catch (_) { /* ignore */ }
+
             let url, payload;
 
             if (isDirectMode) {
@@ -623,6 +686,7 @@ export default function useChatEngine({
                     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                     ...(typeof directMode.getExtraPayload === 'function' ? directMode.getExtraPayload() : {}),
                     ...(Array.isArray(activeSkillIds) && activeSkillIds.length > 0 ? { activeSkillIds } : {}),
+                    ...(reasoningEffort ? { reasoningEffort } : {}),
                 };
             } else {
                 // Agent chat mode — post to /agents/:id/chat/stream
@@ -647,6 +711,7 @@ export default function useChatEngine({
                             ...(m.attachments && m.attachments.length > 0 ? { attachments: m.attachments.map(a => ({ name: a.name, type: a.type })) } : {})
                         }))
                     } : {}),
+                    ...(reasoningEffort ? { reasoningEffort } : {}),
                 };
             }
 
