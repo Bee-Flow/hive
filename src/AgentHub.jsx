@@ -1230,13 +1230,6 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                     )}
                                 </div>
                                 <h1 className="font-semibold text-[var(--text-primary)] text-sm">{selectedAgent.name}</h1>
-                                <button
-                                    onClick={handleNewChat}
-                                    className="p-1 rounded-md hover:bg-[var(--bg-tertiary)] transition-colors text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-                                    title="New Chat"
-                                >
-                                    <PenLine className="w-4 h-4" />
-                                </button>
                                 <div className="relative">
                                     <button
                                         onClick={() => setShowAgentMenu(v => !v)}
@@ -1251,6 +1244,14 @@ const AgentHub = ({ onNavigate, user, onLogout, currentPage, initialAgentId = nu
                                                 className="absolute top-full left-0 mt-1 w-44 rounded-lg border shadow-xl overflow-hidden z-50"
                                                 style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)' }}
                                             >
+                                                <button
+                                                    onClick={() => { setShowAgentMenu(false); handleNewChat(); }}
+                                                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-[var(--bg-secondary)] transition-colors text-left"
+                                                    style={{ color: 'var(--text-primary)' }}
+                                                >
+                                                    <PenLine className="w-4 h-4" />
+                                                    New Chat
+                                                </button>
                                                 <button
                                                     onClick={() => { handleToggleFavorite(selectedAgent.id); setShowAgentMenu(false); }}
                                                     className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-[var(--bg-secondary)] transition-colors text-left"
