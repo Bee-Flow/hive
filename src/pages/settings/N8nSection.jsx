@@ -129,7 +129,6 @@ export default function N8nSection() {
     };
 
     const mutatePermission = async (permission, groupId, action) => {
-        // Optimistic refresh — show the spinner and refetch after the mutation.
         try {
             const res = await authFetch(`${API_BASE}/ai/n8n/permissions`, {
                 method: 'PUT',
@@ -140,14 +139,48 @@ export default function N8nSection() {
                 const err = await res.json().catch(() => ({}));
                 setMessage({ type: 'error', text: err.error || 'Failed to update permission' });
                 setTimeout(() => setMessage(null), 3000);
-                return;
+                return false;
             }
             setMessage({ type: 'success', text: action === 'add' ? 'Group granted access' : 'Group access revoked' });
             setTimeout(() => setMessage(null), 2000);
             await loadPermissions();
+            return true;
         } catch (e) {
             setMessage({ type: 'error', text: 'Request failed' });
             setTimeout(() => setMessage(null), 3000);
+            return false;
+        }
+    };
+
+    // Inline create-and-grant: POST /auth/groups then PUT the permission.
+    // Removes the "create a group elsewhere, come back here to grant" hop.
+    const createGroupAndGrant = async (name, permission) => {
+        const trimmed = (name || '').trim();
+        if (!trimmed) {
+            setMessage({ type: 'error', text: 'Group name required' });
+            setTimeout(() => setMessage(null), 2500);
+            return false;
+        }
+        try {
+            const res = await authFetch(`${API_BASE}/auth/groups`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: trimmed, permissions: [permission] }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                setMessage({ type: 'error', text: err.error || 'Failed to create group' });
+                setTimeout(() => setMessage(null), 3000);
+                return false;
+            }
+            setMessage({ type: 'success', text: `Group "${trimmed}" created and granted access` });
+            setTimeout(() => setMessage(null), 2500);
+            await loadPermissions();
+            return true;
+        } catch (e) {
+            setMessage({ type: 'error', text: 'Request failed' });
+            setTimeout(() => setMessage(null), 3000);
+            return false;
         }
     };
 
@@ -360,6 +393,7 @@ export default function N8nSection() {
                     summary={permSummary}
                     onReload={loadPermissions}
                     onMutate={mutatePermission}
+                    onCreateAndGrant={createGroupAndGrant}
                 />
             )}
         </div>
@@ -662,7 +696,7 @@ function WorkflowsTab({
 
 // ─── Permissions tab (editable: add/remove groups) ──────────
 
-function PermissionsTab({ loading, summary, onReload, onMutate }) {
+function PermissionsTab({ loading, summary, onReload, onMutate, onCreateAndGrant }) {
     if (loading) {
         return (
             <div className="flex items-center justify-center py-6" style={{ color: 'var(--text-muted)' }}>
@@ -716,14 +750,18 @@ function PermissionsTab({ loading, summary, onReload, onMutate }) {
                     orgAdminAlways={!!summary.orgAdminAlways}
                     onAdd={(groupId) => onMutate(bucket.id, groupId, 'add')}
                     onRemove={(groupId) => onMutate(bucket.id, groupId, 'remove')}
+                    onCreateAndGrant={(name) => onCreateAndGrant(name, bucket.id)}
                 />
             ))}
         </div>
     );
 }
 
-function PermissionBucket({ bucket, availableGroups, orgAdminAlways, onAdd, onRemove }) {
+function PermissionBucket({ bucket, availableGroups, orgAdminAlways, onAdd, onRemove, onCreateAndGrant }) {
     const [pickerOpen, setPickerOpen] = useState(false);
+    const [creatingOpen, setCreatingOpen] = useState(false);
+    const [newGroupName, setNewGroupName] = useState('');
+    const [creating, setCreating] = useState(false);
     const [busyGroupId, setBusyGroupId] = useState(null);
 
     const heldIds = new Set((bucket.groups || []).map(g => g.id));
@@ -739,6 +777,13 @@ function PermissionBucket({ bucket, availableGroups, orgAdminAlways, onAdd, onRe
     const handleRemove = async (groupId) => {
         setBusyGroupId(groupId);
         try { await onRemove(groupId); } finally { setBusyGroupId(null); }
+    };
+    const handleCreate = async () => {
+        setCreating(true);
+        try {
+            const ok = await onCreateAndGrant(newGroupName);
+            if (ok) { setCreatingOpen(false); setNewGroupName(''); }
+        } finally { setCreating(false); }
     };
 
     return (
@@ -797,23 +842,40 @@ function PermissionBucket({ bucket, availableGroups, orgAdminAlways, onAdd, onRe
                 ))}
             </ul>
 
-            {/* Add-group row */}
-            <div className="px-3 py-2 border-t flex items-center justify-between gap-2" style={{ borderColor: 'var(--border-subtle)' }}>
-                {addable.length === 0 ? (
-                    <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                        {availableGroups.length === 0
-                            ? 'No groups exist in this organisation yet — create one in Users & Groups first.'
-                            : 'All available groups already hold this permission.'}
-                    </span>
-                ) : !pickerOpen ? (
-                    <button
-                        onClick={() => setPickerOpen(true)}
-                        className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg hover:opacity-80"
-                        style={{ color: 'var(--accent-primary)' }}
-                    >
-                        <Plus className="w-3.5 h-3.5" /> Add group
-                    </button>
-                ) : (
+            {/* Add-group / Create-group row */}
+            <div className="px-3 py-2 border-t flex items-center flex-wrap gap-2" style={{ borderColor: 'var(--border-subtle)' }}>
+                {creatingOpen ? (
+                    <div className="flex items-center gap-2 flex-1">
+                        <input
+                            type="text"
+                            value={newGroupName}
+                            onChange={e => setNewGroupName(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter' && !creating) handleCreate(); if (e.key === 'Escape') { setCreatingOpen(false); setNewGroupName(''); } }}
+                            autoFocus
+                            placeholder="New group name…"
+                            disabled={creating}
+                            className="flex-1 px-2 py-1 text-xs rounded border bg-transparent outline-none focus:border-[var(--accent-primary)] disabled:opacity-50"
+                            style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)', background: 'var(--bg-primary)' }}
+                        />
+                        <button
+                            onClick={handleCreate}
+                            disabled={creating || !newGroupName.trim()}
+                            className="px-2.5 py-1 rounded-lg text-xs font-medium transition-all disabled:opacity-50"
+                            style={{ background: 'var(--accent-primary)', color: 'white' }}
+                        >
+                            {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Create & grant'}
+                        </button>
+                        <button
+                            onClick={() => { setCreatingOpen(false); setNewGroupName(''); }}
+                            disabled={creating}
+                            className="p-1 rounded hover:bg-[var(--bg-tertiary)]"
+                            style={{ color: 'var(--text-muted)' }}
+                            title="Cancel"
+                        >
+                            <X className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
+                ) : pickerOpen ? (
                     <div className="flex items-center gap-2 flex-1">
                         <select
                             onChange={(e) => { if (e.target.value) handleAdd(e.target.value); }}
@@ -838,6 +900,30 @@ function PermissionBucket({ bucket, availableGroups, orgAdminAlways, onAdd, onRe
                             <X className="w-3.5 h-3.5" />
                         </button>
                     </div>
+                ) : (
+                    <>
+                        {addable.length > 0 && (
+                            <button
+                                onClick={() => setPickerOpen(true)}
+                                className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg hover:opacity-80"
+                                style={{ color: 'var(--accent-primary)' }}
+                            >
+                                <Plus className="w-3.5 h-3.5" /> Add existing group
+                            </button>
+                        )}
+                        <button
+                            onClick={() => setCreatingOpen(true)}
+                            className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg hover:opacity-80"
+                            style={{ color: 'var(--accent-primary)' }}
+                        >
+                            <Plus className="w-3.5 h-3.5" /> Create new group
+                        </button>
+                        {addable.length === 0 && availableGroups.length > 0 && (
+                            <span className="text-[11px] ml-auto" style={{ color: 'var(--text-muted)' }}>
+                                All existing groups already hold this permission.
+                            </span>
+                        )}
+                    </>
                 )}
             </div>
         </div>
