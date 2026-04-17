@@ -1,16 +1,16 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE, authFetch } from '../../utils/helpers';
-import { Loader2, Check, Video, Zap, Shield, ExternalLink } from 'lucide-react';
+import { Loader2, Check, Video, Shield, ExternalLink } from 'lucide-react';
 
 /**
- * Admin panel for Meet Bot SDK providers:
- *   - Microsoft Teams via Azure Communication Services (ACS) Call Automation
- *   - Google Meet via the Meet Media API v2beta + service-account DWD
+ * Admin panel for Meet Bot SDK providers.
  *
- * Both providers bypass the Playwright browser path and join meetings
- * through the official vendor media APIs. When configured here, the
- * dispatcher in server/core/meetBot.js prefers them over their browser
- * counterparts automatically.
+ * Currently exposes Microsoft Teams via Azure Communication Services (ACS)
+ * Call Automation. The Google Meet Media API backend is implemented server-
+ * side but not surfaced in the UI — it requires Developer Preview Program
+ * enrolment and an in-browser join flow, which isn't viable for a purely
+ * headless bot yet. Dispatcher still prefers the SDK provider automatically
+ * once it becomes configured, so surfacing the UI later is enough to flip on.
  */
 export default function MeetBotSdkConfigPanel() {
     const [loading, setLoading] = useState(true);
