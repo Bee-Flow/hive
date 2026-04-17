@@ -56,14 +56,79 @@ const SPEAKER_COLORS = [
 ];
 
 // ── Meeting-bot platform detection ──────────────────────
-// Mirrors the server-side providers in server/core/meetBotProviders/*.
-// Keep in sync when platforms are added.
-function detectMeetingPlatform(url) {
+// Uses backend platform config (/api/meet-bot/platforms) so UI reflects
+// actual provider priority and whether SDK providers are configured.
+function detectMeetingPlatform(url, platforms = []) {
     if (!url) return null;
-    if (/meet\.google\.com/i.test(url)) return { id: 'google', label: 'Google Meet', requiresCreds: true, color: '#1a73e8' };
-    if (/teams\.(microsoft|live)\.com/i.test(url)) return { id: 'teams', label: 'Microsoft Teams', requiresCreds: false, color: '#5059c9' };
-    if (/zoom\.us/i.test(url)) return { id: 'zoom', label: 'Zoom', requiresCreds: false, color: '#2d8cff' };
-    return null;
+
+    let family = null;
+    if (/meet\.google\.com/i.test(url)) family = 'google';
+    else if (/teams\.(microsoft|live)\.com/i.test(url)) family = 'teams';
+    else if (/zoom\.us/i.test(url)) family = 'zoom';
+    if (!family) return null;
+
+    const families = {
+        google: {
+            label: 'Google Meet',
+            color: '#1a73e8',
+            order: ['google-meet-sdk', 'google'],
+            fallbackId: 'google',
+            fallbackRequiresCreds: true,
+        },
+        teams: {
+            label: 'Microsoft Teams',
+            color: '#5059c9',
+            order: ['teams-sdk', 'teams'],
+            fallbackId: 'teams',
+            fallbackRequiresCreds: false,
+        },
+        zoom: {
+            label: 'Zoom',
+            color: '#2d8cff',
+            order: ['zoom'],
+            fallbackId: 'zoom',
+            fallbackRequiresCreds: false,
+        },
+    };
+    const meta = families[family];
+    const available = Array.isArray(platforms) ? platforms : [];
+
+    if (available.length > 0) {
+        for (const id of meta.order) {
+            const p = available.find(x => x.platform === id);
+            if (p && p.configured) {
+                return {
+                    id: p.platform,
+                    label: p.label || platformBadge(p.platform).label || meta.label,
+                    requiresCreds: !!p.requiresCredentials,
+                    color: meta.color,
+                    configured: true,
+                    family,
+                };
+            }
+        }
+        const known = meta.order.map(id => available.find(x => x.platform === id)).find(Boolean);
+        if (known) {
+            return {
+                id: known.platform,
+                label: known.label || platformBadge(known.platform).label || meta.label,
+                requiresCreds: !!known.requiresCredentials,
+                color: meta.color,
+                configured: false,
+                family,
+            };
+        }
+    }
+
+    // Fallback when platform matrix isn't loaded yet.
+    return {
+        id: meta.fallbackId,
+        label: meta.label,
+        requiresCreds: meta.fallbackRequiresCreds,
+        color: meta.color,
+        configured: true,
+        family,
+    };
 }
 
 function platformBadge(platform) {
@@ -151,6 +216,7 @@ export default function MeetingNotesPage({ user, onBack }) {
     const [botSessions, setBotSessions] = useState([]);
     const [sendingBot, setSendingBot] = useState(false);
     const [botCreds, setBotCreds] = useState({ configured: false, email: '' });
+    const [botPlatforms, setBotPlatforms] = useState([]);
     const [showBotSettings, setShowBotSettings] = useState(false);
     const [botEmail, setBotEmail] = useState('');
     const [botPassword, setBotPassword] = useState('');
@@ -231,7 +297,17 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
             if (res.ok) {
                 const data = await res.json();
                 setBotCreds(data);
-                if (!data.configured) setShowBotSettings(true);
+            }
+        } catch (e) { /* ignore */ }
+    }, []);
+
+    // Load backend provider matrix so UI can show real requirements (SDK vs fallback)
+    const loadBotPlatforms = useCallback(async () => {
+        try {
+            const res = await authFetch(`${API_BASE}/api/meet-bot/platforms`);
+            if (res.ok) {
+                const data = await res.json();
+                setBotPlatforms(Array.isArray(data?.platforms) ? data.platforms : []);
             }
         } catch (e) { /* ignore */ }
     }, []);
@@ -258,7 +334,7 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
         setSavingCreds(false);
     };
 
-    useEffect(() => { loadBotSessions(); loadBotCreds(); }, [loadBotSessions, loadBotCreds]);
+    useEffect(() => { loadBotSessions(); loadBotCreds(); loadBotPlatforms(); }, [loadBotSessions, loadBotCreds, loadBotPlatforms]);
 
     // Auto-poll while any session is active
     useEffect(() => {
@@ -981,15 +1057,15 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
                             ) : (
                                 /* Meet Bot mode */
                                 <div className="space-y-4">
-                                    {/* Bot Account Settings (Google only — Teams & Zoom join as guests) */}
+                                    {/* Bot Account Settings (only for browser-fallback Google provider) */}
                                     {showBotSettings ? (
                                         <div className="border-2 rounded-2xl p-6" style={{ borderColor: 'var(--accent-primary)', background: 'var(--bg-secondary)' }}>
                                             <div className="flex items-center gap-2 mb-3">
                                                 <Settings className="w-4 h-4" style={{ color: 'var(--accent-primary)' }} />
-                                                <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Bot Google Account (Google Meet only)</p>
+                                                <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Bot Google Account (fallback only)</p>
                                             </div>
                                             <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-                                                Google Meet requires a signed-in account to join. Create a dedicated Google account and enter the credentials below — they are stored encrypted. Teams and Zoom join as guests and do not need credentials.
+                                                Only needed when Google Meet falls back to the browser-based provider. If Google Meet SDK is configured, this account is not used. Credentials are stored encrypted.
                                             </p>
                                             <div className="space-y-3 max-w-sm">
                                                 <input
@@ -1035,7 +1111,7 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
                                                 <div className="w-6 h-6 rounded-full flex items-center justify-center" style={{ background: 'rgba(16, 185, 129, 0.1)' }}>
                                                     <Check className="w-3 h-3" style={{ color: '#10b981' }} />
                                                 </div>
-                                                <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Bot account: <strong style={{ color: 'var(--text-primary)' }}>{botCreds.email}</strong></span>
+                                                <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Fallback bot account: <strong style={{ color: 'var(--text-primary)' }}>{botCreds.email}</strong></span>
                                             </div>
                                             <button onClick={() => { setShowBotSettings(true); setBotEmail(botCreds.email || ''); }} className="text-xs underline" style={{ color: 'var(--text-muted)' }}>Change</button>
                                         </div>
@@ -1043,9 +1119,10 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
 
                                     {/* Send Bot to Meeting — auto-detects Google Meet / Teams / Zoom */}
                                     {(() => {
-                                        const detectedPlatform = detectMeetingPlatform(meetLink);
+                                        const detectedPlatform = detectMeetingPlatform(meetLink, botPlatforms);
+                                        const isUnconfigured = !!detectedPlatform && detectedPlatform.configured === false;
                                         const needsCreds = detectedPlatform?.requiresCreds && !botCreds.configured;
-                                        const canSend = meetLink.trim() && !sendingBot && detectedPlatform && !needsCreds;
+                                        const canSend = meetLink.trim() && !sendingBot && detectedPlatform && !isUnconfigured && !needsCreds;
                                         return (
                                             <div className="border-2 rounded-2xl p-8 text-center" style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)' }}>
                                                 <div className="w-20 h-20 rounded-full flex items-center justify-center mx-auto mb-4" style={{ background: 'linear-gradient(135deg, rgba(16, 185, 129, 0.1), rgba(6, 182, 212, 0.1))' }}>
@@ -1081,11 +1158,31 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
                                                 {detectedPlatform && (
                                                     <p className="text-xs mt-3" style={{ color: detectedPlatform.color }}>
                                                         Detected: <strong>{detectedPlatform.label}</strong>
-                                                        {detectedPlatform.requiresCreds ? ' (needs Google bot account)' : ' (joins as guest, no account needed)'}
+                                                        {isUnconfigured
+                                                            ? ' (provider not configured on server)'
+                                                            : detectedPlatform.id === 'google-meet-sdk'
+                                                                ? ' (SDK, no bot password required)'
+                                                                : detectedPlatform.requiresCreds
+                                                                    ? ' (needs Google bot account)'
+                                                                    : ' (no credentials required)'}
+                                                    </p>
+                                                )}
+                                                {isUnconfigured && (
+                                                    <p className="text-xs mt-2" style={{ color: '#f59e0b' }}>
+                                                        ⚠ This meeting provider is currently unavailable in server config.
                                                     </p>
                                                 )}
                                                 {needsCreds && !showBotSettings && (
-                                                    <p className="text-xs mt-2" style={{ color: '#f59e0b' }}>⚠ Google Meet requires a bot account — configure one above.</p>
+                                                    <div className="mt-2 flex items-center justify-center gap-2">
+                                                        <p className="text-xs" style={{ color: '#f59e0b' }}>⚠ Google Meet browser fallback requires a bot account.</p>
+                                                        <button
+                                                            onClick={() => setShowBotSettings(true)}
+                                                            className="text-xs underline"
+                                                            style={{ color: 'var(--text-secondary)' }}
+                                                        >
+                                                            Configure account
+                                                        </button>
+                                                    </div>
                                                 )}
                                             </div>
                                         );
