@@ -372,6 +372,54 @@ const ConnectionCard = ({ conn, onSync, onTest, onDelete, onUpdate, onEditingCha
                                             <pre className="mt-2 p-2 bg-white rounded border text-[11px] whitespace-pre-wrap overflow-auto max-h-60">{testResult.preview.article}</pre>
                                         </details>
                                     )}
+
+                                    {/* PII redaction diff */}
+                                    {testResult.pii && (
+                                        <details className="mt-2">
+                                            <summary className="cursor-pointer text-emerald-600 hover:underline">
+                                                PII redaction · {Object.entries(testResult.pii.counts || {})
+                                                    .filter(([, n]) => n > 0)
+                                                    .map(([k, n]) => `${n} ${k}`)
+                                                    .join(', ') || 'no matches'}
+                                            </summary>
+                                            <div className="mt-2 grid grid-cols-2 gap-2">
+                                                <div>
+                                                    <div className="text-[10px] font-semibold text-[var(--text-secondary)] mb-1">Before</div>
+                                                    <pre className="p-2 bg-white rounded border text-[11px] whitespace-pre-wrap overflow-auto max-h-48 text-[var(--text-primary)]">{testResult.pii.before}</pre>
+                                                </div>
+                                                <div>
+                                                    <div className="text-[10px] font-semibold text-[var(--text-secondary)] mb-1">After</div>
+                                                    <pre className="p-2 bg-white rounded border text-[11px] whitespace-pre-wrap overflow-auto max-h-48 text-[var(--text-primary)]">{testResult.pii.after}</pre>
+                                                </div>
+                                            </div>
+                                        </details>
+                                    )}
+
+                                    {/* Attachment preview (P3.3) */}
+                                    {Array.isArray(testResult.attachments) && testResult.attachments.length > 0 && (
+                                        <details className="mt-2">
+                                            <summary className="cursor-pointer text-emerald-600 hover:underline">
+                                                Attachments ({testResult.attachments.length})
+                                            </summary>
+                                            <ul className="mt-2 space-y-1">
+                                                {testResult.attachments.map((a, i) => (
+                                                    <li key={i} className="p-2 rounded border bg-white text-[11px] text-[var(--text-primary)]">
+                                                        <div className="flex items-center gap-2">
+                                                            <span>📎</span>
+                                                            <span className="font-medium truncate">{a.filename}</span>
+                                                            <span className="text-[10px] text-[var(--text-muted)]">{Math.ceil((a.bytes || 0) / 1024)} KB</span>
+                                                            <span className={`text-[10px] px-1 rounded ${a.kind === 'text' ? 'bg-emerald-100 text-emerald-700' : a.kind === 'failed' ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
+                                                                {a.kind}{a.reason ? `: ${a.reason}` : ''}
+                                                            </span>
+                                                        </div>
+                                                        {a.preview && (
+                                                            <pre className="mt-1 text-[10px] whitespace-pre-wrap text-[var(--text-tertiary)] max-h-24 overflow-auto">{a.preview}</pre>
+                                                        )}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        </details>
+                                    )}
                                 </div>
                             )}
                         </div>

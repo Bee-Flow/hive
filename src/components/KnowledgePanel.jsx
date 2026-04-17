@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { API_BASE, authFetch } from '../utils/helpers';
 import GoogleDrivePicker from './chat/GoogleDrivePicker';
+import EmailThreadExplorer from './EmailThreadExplorer';
 
 const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKnowledgeChange, includeSourceReferences = false, onIncludeSourceReferencesChange, knowledgeBaseIds = [], onKnowledgeBaseIdsChange }) => {
     // ── Legacy flat knowledge ───────────────────────────────────────
@@ -21,6 +22,12 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
     const [loadingKbs, setLoadingKbs] = useState(false);
     const [selectedKB, setSelectedKB] = useState(null);
     const [kbDocs, setKbDocs] = useState([]);
+    const [kbDocsTotal, setKbDocsTotal] = useState(0);
+    const [kbDocsOffset, setKbDocsOffset] = useState(0);
+    const [kbDocsPageSize] = useState(50);
+    const [kbSelectedIds, setKbSelectedIds] = useState(new Set());
+    const [kbDocsFilters, setKbDocsFilters] = useState({ sender: '', threadId: '', hasAttachment: false, dateFrom: '', dateTo: '' });
+    const [kbBulkBusy, setKbBulkBusy] = useState(false);
     const [showCreateKB, setShowCreateKB] = useState(false);
     const [newKBName, setNewKBName] = useState('');
     const [newKBDesc, setNewKBDesc] = useState('');
@@ -134,18 +141,75 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
         } catch (e) { console.error('Failed to delete KB:', e); }
     };
 
-    const fetchKBDocs = async (kbId) => {
+    const fetchKBDocs = async (kbId, { append = false, offset = 0, filters = kbDocsFilters } = {}) => {
         try {
-            const res = await authFetch(`${API_BASE}/api/kb/${kbId}/documents`);
-            if (res.ok) setKbDocs(await res.json());
+            const params = new URLSearchParams();
+            params.set('limit', String(kbDocsPageSize));
+            params.set('offset', String(offset));
+            if (filters.sender) params.set('sender', filters.sender);
+            if (filters.threadId) params.set('threadId', filters.threadId);
+            if (filters.hasAttachment) params.set('hasAttachment', 'true');
+            if (filters.dateFrom) params.set('dateFrom', filters.dateFrom);
+            if (filters.dateTo) params.set('dateTo', filters.dateTo);
+            const res = await authFetch(`${API_BASE}/api/kb/${kbId}/documents?${params.toString()}`);
+            if (!res.ok) return;
+            const body = await res.json();
+            const rows = Array.isArray(body) ? body : (body.documents || []);
+            const total = Array.isArray(body) ? rows.length : (body.total || rows.length);
+            if (append) setKbDocs(prev => [...prev, ...rows]);
+            else setKbDocs(rows);
+            setKbDocsTotal(total);
+            setKbDocsOffset(offset);
+            if (!append) setKbSelectedIds(new Set());
         } catch (e) { console.error('Failed to fetch docs:', e); }
+    };
+
+    const loadMoreKBDocs = () => {
+        if (!selectedKB) return;
+        fetchKBDocs(selectedKB.id, { append: true, offset: kbDocsOffset + kbDocsPageSize });
+    };
+
+    const toggleSelectDoc = (docId) => {
+        setKbSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(docId)) next.delete(docId); else next.add(docId);
+            return next;
+        });
+    };
+
+    const toggleSelectAllOnPage = () => {
+        setKbSelectedIds(prev => {
+            const visible = kbDocs.map(d => d.id);
+            const allSelected = visible.every(id => prev.has(id));
+            const next = new Set(prev);
+            if (allSelected) visible.forEach(id => next.delete(id));
+            else visible.forEach(id => next.add(id));
+            return next;
+        });
+    };
+
+    const bulkDeleteSelected = async () => {
+        if (!selectedKB || kbSelectedIds.size === 0) return;
+        if (!confirm(`Delete ${kbSelectedIds.size} document${kbSelectedIds.size === 1 ? '' : 's'}?`)) return;
+        setKbBulkBusy(true);
+        try {
+            await authFetch(`${API_BASE}/api/kb/${selectedKB.id}/documents/bulk-delete`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ documentIds: Array.from(kbSelectedIds) }),
+            });
+            setKbSelectedIds(new Set());
+            await fetchKBDocs(selectedKB.id, { offset: 0 });
+            await fetchKBs();
+        } catch (e) { console.error('Bulk delete failed:', e); }
+        finally { setKbBulkBusy(false); }
     };
 
     const deleteDoc = async (docId) => {
         if (!selectedKB || !confirm('Delete this document?')) return;
         try {
             await authFetch(`${API_BASE}/api/kb/${selectedKB.id}/documents/${docId}`, { method: 'DELETE' });
-            fetchKBDocs(selectedKB.id);
+            fetchKBDocs(selectedKB.id, { offset: 0 });
             fetchKBs();
         } catch (e) { console.error('Failed to delete doc:', e); }
     };
@@ -709,41 +773,114 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
 
                                 {/* Documents List */}
                                 <div>
-                                    <h5 className="text-xs font-medium mb-2" style={{ color: 'var(--text-muted)' }}>
-                                        Documents ({kbDocs.length})
-                                    </h5>
+                                    <div className="flex items-center justify-between mb-2">
+                                        <h5 className="text-xs font-medium" style={{ color: 'var(--text-muted)' }}>
+                                            Documents ({kbDocs.length}{kbDocsTotal > kbDocs.length ? ` of ${kbDocsTotal}` : ''})
+                                        </h5>
+                                        {kbSelectedIds.size > 0 && (
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{kbSelectedIds.size} selected</span>
+                                                <button onClick={bulkDeleteSelected} disabled={kbBulkBusy}
+                                                    className="px-2 py-0.5 rounded text-[10px] font-medium bg-red-500/10 text-red-600 hover:bg-red-500/20 disabled:opacity-50">
+                                                    {kbBulkBusy ? 'Deleting…' : 'Delete selected'}
+                                                </button>
+                                                <button onClick={() => setKbSelectedIds(new Set())} className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Clear</button>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Email-specific filter bar: shown when any doc in list is sourced from email. */}
+                                    {kbDocs.some(d => d.source_type === 'email') && (
+                                        <div className="mb-2 p-2 rounded-lg border flex flex-wrap gap-1.5 items-center" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
+                                            <input type="text" placeholder="Sender" value={kbDocsFilters.sender}
+                                                onChange={e => setKbDocsFilters(f => ({ ...f, sender: e.target.value }))}
+                                                className="px-2 py-1 rounded text-[11px] border" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }} />
+                                            <input type="date" value={kbDocsFilters.dateFrom}
+                                                onChange={e => setKbDocsFilters(f => ({ ...f, dateFrom: e.target.value }))}
+                                                className="px-2 py-1 rounded text-[11px] border" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }} />
+                                            <input type="date" value={kbDocsFilters.dateTo}
+                                                onChange={e => setKbDocsFilters(f => ({ ...f, dateTo: e.target.value }))}
+                                                className="px-2 py-1 rounded text-[11px] border" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }} />
+                                            <label className="flex items-center gap-1 text-[11px]" style={{ color: 'var(--text-primary)' }}>
+                                                <input type="checkbox" checked={kbDocsFilters.hasAttachment}
+                                                    onChange={e => setKbDocsFilters(f => ({ ...f, hasAttachment: e.target.checked }))} />
+                                                Has attachment
+                                            </label>
+                                            <button onClick={() => fetchKBDocs(selectedKB.id, { offset: 0 })}
+                                                className="px-2 py-1 rounded text-[11px] font-medium" style={{ background: 'var(--accent-primary)', color: '#fff' }}>
+                                                Apply
+                                            </button>
+                                            <button onClick={() => { const cleared = { sender: '', threadId: '', hasAttachment: false, dateFrom: '', dateTo: '' }; setKbDocsFilters(cleared); fetchKBDocs(selectedKB.id, { offset: 0, filters: cleared }); }}
+                                                className="px-2 py-1 rounded text-[11px]" style={{ color: 'var(--text-muted)' }}>Clear</button>
+                                        </div>
+                                    )}
+
                                     {kbDocs.length === 0 ? (
                                         <div className="text-center py-4 text-xs rounded-lg border border-dashed"
                                             style={{ color: 'var(--text-muted)', borderColor: 'var(--border-subtle)' }}>
                                             No documents yet. Ingest text, files, or URLs above.
                                         </div>
                                     ) : (
-                                        <div className="space-y-1.5">
-                                            {kbDocs.map(doc => (
-                                                <div key={doc.id} className="flex items-center justify-between p-2.5 rounded-lg group"
-                                                    style={{ background: 'var(--bg-tertiary)' }}
-                                                    data-testid={`kb-doc-${doc.id}`}>
-                                                    <div className="flex items-center gap-2 min-w-0">
-                                                        <span className="text-sm flex-shrink-0">
-                                                            {doc.source_type === 'web' ? '🌐' : doc.source_type === 'upload' ? '📄' : '📝'}
-                                                        </span>
-                                                        <div className="min-w-0">
-                                                            <div className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{doc.title || 'Untitled'}</div>
-                                                            <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
-                                                                {doc.chunk_count || 0} chunks · {new Date(doc.created_at).toLocaleDateString()}
+                                        <>
+                                            <div className="flex items-center gap-2 mb-1.5 text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                                                <input type="checkbox"
+                                                    checked={kbDocs.length > 0 && kbDocs.every(d => kbSelectedIds.has(d.id))}
+                                                    onChange={toggleSelectAllOnPage} />
+                                                Select all on page
+                                            </div>
+                                            <div className="space-y-1.5">
+                                                {kbDocs.map(doc => (
+                                                    <div key={doc.id} className="flex items-center justify-between p-2.5 rounded-lg group"
+                                                        style={{ background: 'var(--bg-tertiary)' }}
+                                                        data-testid={`kb-doc-${doc.id}`}>
+                                                        <div className="flex items-center gap-2 min-w-0">
+                                                            <input type="checkbox" checked={kbSelectedIds.has(doc.id)}
+                                                                onChange={() => toggleSelectDoc(doc.id)}
+                                                                className="flex-shrink-0" />
+                                                            <span className="text-sm flex-shrink-0">
+                                                                {doc.source_type === 'web' ? '🌐'
+                                                                    : doc.source_type === 'upload' ? '📄'
+                                                                    : doc.source_type === 'email' ? '✉️'
+                                                                    : '📝'}
+                                                            </span>
+                                                            <div className="min-w-0">
+                                                                <div className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{doc.title || 'Untitled'}</div>
+                                                                <div className="text-[10px] truncate" style={{ color: 'var(--text-muted)' }}>
+                                                                    {doc.chunk_count || 0} chunks · {new Date(doc.created_at).toLocaleDateString()}
+                                                                    {doc.metadata?.from ? ` · ${String(doc.metadata.from).replace(/<[^>]+>/, '').trim().slice(0, 30)}` : ''}
+                                                                    {doc.metadata?.hasAttachments ? ' · 📎' : ''}
+                                                                </div>
                                                             </div>
                                                         </div>
+                                                        <button onClick={() => deleteDoc(doc.id)}
+                                                            className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/10 flex-shrink-0"
+                                                            data-testid={`kb-doc-delete-${doc.id}`}>
+                                                            <svg className="w-3.5 h-3.5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                                            </svg>
+                                                        </button>
                                                     </div>
-                                                    <button onClick={() => deleteDoc(doc.id)}
-                                                        className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/10 flex-shrink-0"
-                                                        data-testid={`kb-doc-delete-${doc.id}`}>
-                                                        <svg className="w-3.5 h-3.5 text-red-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                                        </svg>
+                                                ))}
+                                            </div>
+                                            {kbDocsTotal > kbDocs.length && (
+                                                <div className="flex justify-center mt-2">
+                                                    <button onClick={loadMoreKBDocs}
+                                                        className="px-3 py-1 rounded text-[11px] font-medium border"
+                                                        style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}>
+                                                        Load more ({kbDocsTotal - kbDocs.length} left)
                                                     </button>
                                                 </div>
-                                            ))}
-                                        </div>
+                                            )}
+                                        </>
+                                    )}
+
+                                    {/* Email thread explorer (only renders when the KB has email threads). */}
+                                    {kbDocs.some(d => d.source_type === 'email') && selectedKB?.id && (
+                                        <EmailThreadExplorer
+                                            kbId={selectedKB.id}
+                                            authFetch={authFetch}
+                                            onOpenDoc={(doc) => setKbDocsFilters(f => ({ ...f, threadId: doc.metadata?.threadId || '' }))}
+                                        />
                                     )}
                                 </div>
                             </div>
