@@ -841,71 +841,87 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
 
             {/* ── Ask AI floating portal — rendered outside the BubbleMenu so
                    it never loses focus due to TipTap re-render cycles ── */}
-            {showAskInput && askAnchor && (
-                <div
-                    data-ask-portal
-                    className="fixed z-[9999] flex items-center gap-2 px-3 py-1.5 rounded-xl shadow-2xl border backdrop-blur-md"
-                    style={{
-                        top: askAnchor.top,
-                        left: askAnchor.left,
-                        background: 'var(--bg-primary)',
-                        borderColor: 'var(--border-default)',
-                    }}
-                    onMouseDown={e => e.stopPropagation()}
-                >
-                    <Wand2 className="w-3 h-3 shrink-0" style={{ color: 'var(--accent-primary)' }} />
-                    <input
-                        ref={askInputRef}
-                        type="text"
-                        placeholder={t('notebooks.ask_ai_placeholder')}
-                        value={askQuery}
-                        onChange={e => setAskQuery(e.target.value)}
-                        onKeyDown={e => {
-                            e.stopPropagation();
-                            if (e.key === 'Enter' && askQuery.trim()) {
-                                e.preventDefault();
-                                const frozen = frozenSelectionRef.current;
-                                if (frozen) onAIAction?.('ask', frozen.selectedText, { from: frozen.from, to: frozen.to }, askQuery.trim());
-                                setShowAskInput(false);
-                                setAskQuery('');
-                                frozenSelectionRef.current = null;
-                            } else if (e.key === 'Escape') {
-                                e.preventDefault();
-                                setShowAskInput(false);
-                                setAskQuery('');
-                                frozenSelectionRef.current = null;
-                            }
+            {showAskInput && askAnchor && (() => {
+                const frozen = frozenSelectionRef.current;
+                const rawPreview = frozen?.selectedText?.trim() ?? '';
+                const preview = rawPreview.length > 120 ? rawPreview.slice(0, 120) + '…' : rawPreview;
+                const submit = () => {
+                    if (!askQuery.trim()) return;
+                    const f = frozenSelectionRef.current;
+                    if (f) onAIAction?.('ask', f.selectedText, { from: f.from, to: f.to }, askQuery.trim());
+                    setShowAskInput(false);
+                    setAskQuery('');
+                    frozenSelectionRef.current = null;
+                };
+                const dismiss = () => {
+                    setShowAskInput(false);
+                    setAskQuery('');
+                    frozenSelectionRef.current = null;
+                };
+                return (
+                    <div
+                        data-ask-portal
+                        className="fixed z-[9999] flex flex-col rounded-xl shadow-2xl border backdrop-blur-md overflow-hidden"
+                        style={{
+                            top: askAnchor.top,
+                            left: askAnchor.left,
+                            minWidth: '280px',
+                            maxWidth: '360px',
+                            background: 'var(--bg-primary)',
+                            borderColor: 'var(--border-default)',
                         }}
-                        className="bg-transparent border-none outline-none text-[11px] w-[200px] font-medium placeholder-[var(--text-tertiary)] text-[var(--text-primary)]"
-                    />
-                    <button
-                        onMouseDown={e => {
-                            e.preventDefault();
-                            if (!askQuery.trim()) return;
-                            const frozen = frozenSelectionRef.current;
-                            if (frozen) onAIAction?.('ask', frozen.selectedText, { from: frozen.from, to: frozen.to }, askQuery.trim());
-                            setShowAskInput(false);
-                            setAskQuery('');
-                            frozenSelectionRef.current = null;
-                        }}
-                        className="px-2 py-1 rounded-lg text-[10px] font-bold bg-[var(--accent-primary)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
-                        disabled={!askQuery.trim()}
+                        onMouseDown={e => e.stopPropagation()}
                     >
-                        Send
-                    </button>
-                    <button
-                        onMouseDown={e => {
-                            e.preventDefault();
-                            setShowAskInput(false);
-                            setAskQuery('');
-                            frozenSelectionRef.current = null;
-                        }}
-                        className="px-1.5 py-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-                    >
-                        ×
-                    </button>
-                </div>
-            )}
+                        {/* Selected text preview — shows which text the question is about
+                            because clicking Ask AI deselects the editor text visually */}
+                        {preview && (
+                            <div
+                                className="px-3 pt-2.5 pb-1.5 text-[10px] leading-snug border-b"
+                                style={{
+                                    borderColor: 'var(--border-subtle)',
+                                    background: 'rgba(99,102,241,0.04)',
+                                    color: 'var(--text-secondary)',
+                                }}
+                            >
+                                <span className="font-semibold text-[9px] uppercase tracking-wider" style={{ color: 'var(--accent-primary)', opacity: 0.7 }}>
+                                    Selected text
+                                </span>
+                                <p className="mt-0.5 italic line-clamp-3">{preview}</p>
+                            </div>
+                        )}
+                        {/* Input row */}
+                        <div className="flex items-center gap-2 px-3 py-1.5">
+                            <Wand2 className="w-3 h-3 shrink-0" style={{ color: 'var(--accent-primary)' }} />
+                            <input
+                                ref={askInputRef}
+                                type="text"
+                                placeholder={t('notebooks.ask_ai_placeholder')}
+                                value={askQuery}
+                                onChange={e => setAskQuery(e.target.value)}
+                                onKeyDown={e => {
+                                    e.stopPropagation();
+                                    if (e.key === 'Enter') { e.preventDefault(); submit(); }
+                                    else if (e.key === 'Escape') { e.preventDefault(); dismiss(); }
+                                }}
+                                className="bg-transparent border-none outline-none text-[11px] w-[200px] font-medium placeholder-[var(--text-tertiary)] text-[var(--text-primary)]"
+                            />
+                            <button
+                                onMouseDown={e => { e.preventDefault(); submit(); }}
+                                className="px-2 py-1 rounded-lg text-[10px] font-bold bg-[var(--accent-primary)] text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+                                disabled={!askQuery.trim()}
+                            >
+                                Send
+                            </button>
+                            <button
+                                onMouseDown={e => { e.preventDefault(); dismiss(); }}
+                                className="px-1.5 py-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+                            >
+                                ×
+                            </button>
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* Image Bubble Menu — alignment, size, wrap, delete */}
             <BubbleMenu
