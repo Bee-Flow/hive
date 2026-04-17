@@ -610,11 +610,15 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
         }
     }, [showAskInput]);
 
-    // Close ask input on outside click
+    // Close ask input on outside click. Use the data attribute directly rather
+    // than dereferencing `askInputRef.current` — the ref can be null for a tick
+    // on first render, which made the handler a no-op AND was the reason the
+    // portal sometimes appeared to "do nothing" right after click.
     useEffect(() => {
         if (!showAskInput) return;
         const handler = (e) => {
-            if (askInputRef.current && !askInputRef.current.closest('[data-ask-portal]')?.contains(e.target)) {
+            const portal = document.querySelector('[data-ask-portal]');
+            if (portal && !portal.contains(e.target)) {
                 setShowAskInput(false);
                 setAskQuery('');
                 frozenSelectionRef.current = null;
@@ -797,15 +801,32 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
                             <button
                                 onMouseDown={e => {
                                     e.preventDefault();
+                                    e.stopPropagation();
                                     // Capture the selection range + screen position NOW,
                                     // before the BubbleMenu unmounts and selection may clear.
                                     const { from, to } = editor.state.selection;
                                     const selectedText = editor.state.doc.textBetween(from, to, ' ');
+                                    if (!selectedText.trim()) return; // guard — no text, nothing to ask about
                                     frozenSelectionRef.current = { from, to, selectedText };
 
-                                    // Get screen coordinates of the selection for portal placement
+                                    // Position the input portal above the selection. Clamp so it
+                                    // stays inside the viewport — the previous `coords.top - 52`
+                                    // pushed the portal above the top edge when the user clicked
+                                    // on text near the top of the window, which looked like the
+                                    // button did nothing.
                                     const coords = editor.view.coordsAtPos(from);
-                                    setAskAnchor({ top: coords.top - 52, left: coords.left });
+                                    const PORTAL_HEIGHT = 44;
+                                    const PORTAL_WIDTH = 320;
+                                    const margin = 8;
+                                    let top = coords.top - PORTAL_HEIGHT - margin;
+                                    // Not enough room above? Drop below the selection instead.
+                                    if (top < margin) top = (coords.bottom || coords.top) + margin;
+                                    // Keep within horizontal bounds.
+                                    let left = coords.left;
+                                    const maxLeft = window.innerWidth - PORTAL_WIDTH - margin;
+                                    if (left > maxLeft) left = Math.max(margin, maxLeft);
+                                    if (left < margin) left = margin;
+                                    setAskAnchor({ top, left });
                                     setShowAskInput(true);
                                 }}
                                 className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-all hover:bg-[var(--bg-tertiary)]"
