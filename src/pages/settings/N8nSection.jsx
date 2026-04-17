@@ -3,6 +3,7 @@ import { API_BASE, authFetch } from '../../utils/helpers';
 import {
     Loader2, RefreshCw, Plus, Trash2, ChevronDown, ChevronRight, Check, X,
     Link2, Workflow, ShieldCheck, Search, CircleCheck, CircleX, Info, ExternalLink,
+    Crown,
 } from 'lucide-react';
 
 const INPUT_TYPES = ['string', 'number', 'file', 'json'];
@@ -125,6 +126,29 @@ export default function N8nSection() {
             setPermSummary({ error: e.message });
         }
         setPermLoading(false);
+    };
+
+    const mutatePermission = async (permission, groupId, action) => {
+        // Optimistic refresh — show the spinner and refetch after the mutation.
+        try {
+            const res = await authFetch(`${API_BASE}/ai/n8n/permissions`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ permission, groupId, action }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                setMessage({ type: 'error', text: err.error || 'Failed to update permission' });
+                setTimeout(() => setMessage(null), 3000);
+                return;
+            }
+            setMessage({ type: 'success', text: action === 'add' ? 'Group granted access' : 'Group access revoked' });
+            setTimeout(() => setMessage(null), 2000);
+            await loadPermissions();
+        } catch (e) {
+            setMessage({ type: 'error', text: 'Request failed' });
+            setTimeout(() => setMessage(null), 3000);
+        }
     };
 
     const discoverWorkflows = async () => {
@@ -335,6 +359,7 @@ export default function N8nSection() {
                     loading={permLoading}
                     summary={permSummary}
                     onReload={loadPermissions}
+                    onMutate={mutatePermission}
                 />
             )}
         </div>
@@ -635,9 +660,9 @@ function WorkflowsTab({
     );
 }
 
-// ─── Permissions tab (read-only summary) ─────────────────────
+// ─── Permissions tab (editable: add/remove groups) ──────────
 
-function PermissionsTab({ loading, summary, onReload }) {
+function PermissionsTab({ loading, summary, onReload, onMutate }) {
     if (loading) {
         return (
             <div className="flex items-center justify-center py-6" style={{ color: 'var(--text-muted)' }}>
@@ -659,7 +684,7 @@ function PermissionsTab({ loading, summary, onReload }) {
         {
             id: 'use_n8n_tools',
             title: 'Use n8n Tools',
-            desc: 'Run webhook workflows from chat and inspect workflow definitions. Granted to all members by default.',
+            desc: 'Run webhook workflows from chat and inspect workflow definitions.',
             groups: summary.use_n8n_tools || [],
         },
         {
@@ -676,7 +701,7 @@ function PermissionsTab({ loading, summary, onReload }) {
                 style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)', color: 'var(--text-secondary)' }}>
                 <Info className="w-3.5 h-3.5 shrink-0 mt-0.5" />
                 <span>
-                    This page is a read-only summary. To change who holds these permissions, edit the relevant groups in{' '}
+                    Grant n8n permissions to groups here, or use the full group editor in{' '}
                     <a href={summary.editUrl || '/settings/organisation/users'} className="underline font-medium inline-flex items-center gap-0.5" style={{ color: 'var(--accent-primary)' }}>
                         Users & Groups <ExternalLink className="w-3 h-3" />
                     </a>.
@@ -684,35 +709,135 @@ function PermissionsTab({ loading, summary, onReload }) {
             </div>
 
             {buckets.map(bucket => (
-                <div key={bucket.id} className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-subtle)' }}>
-                    <div className="px-3 py-2.5 border-b" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
-                        <div className="flex items-center justify-between gap-2">
-                            <div className="min-w-0">
-                                <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{bucket.title}</div>
-                                <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{bucket.desc}</div>
-                            </div>
-                            <span className="text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0"
-                                style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
-                                {bucket.groups.length} group{bucket.groups.length === 1 ? '' : 's'}
-                            </span>
-                        </div>
-                    </div>
-                    {bucket.groups.length === 0 ? (
-                        <div className="px-3 py-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                            No groups currently hold this permission.
-                        </div>
-                    ) : (
-                        <ul className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
-                            {bucket.groups.map(g => (
-                                <li key={g.id} className="px-3 py-2 flex items-center justify-between text-xs">
-                                    <span style={{ color: 'var(--text-primary)' }}>{g.name}</span>
-                                    <span style={{ color: 'var(--text-muted)' }}>{g.userCount} user{g.userCount === 1 ? '' : 's'}</span>
-                                </li>
-                            ))}
-                        </ul>
-                    )}
-                </div>
+                <PermissionBucket
+                    key={bucket.id}
+                    bucket={bucket}
+                    availableGroups={summary.availableGroups || []}
+                    orgAdminAlways={!!summary.orgAdminAlways}
+                    onAdd={(groupId) => onMutate(bucket.id, groupId, 'add')}
+                    onRemove={(groupId) => onMutate(bucket.id, groupId, 'remove')}
+                />
             ))}
+        </div>
+    );
+}
+
+function PermissionBucket({ bucket, availableGroups, orgAdminAlways, onAdd, onRemove }) {
+    const [pickerOpen, setPickerOpen] = useState(false);
+    const [busyGroupId, setBusyGroupId] = useState(null);
+
+    const heldIds = new Set((bucket.groups || []).map(g => g.id));
+    const addable = availableGroups.filter(g => !heldIds.has(g.id));
+
+    const totalCount = (bucket.groups?.length || 0) + (orgAdminAlways ? 1 : 0);
+
+    const handleAdd = async (groupId) => {
+        setPickerOpen(false);
+        setBusyGroupId(groupId);
+        try { await onAdd(groupId); } finally { setBusyGroupId(null); }
+    };
+    const handleRemove = async (groupId) => {
+        setBusyGroupId(groupId);
+        try { await onRemove(groupId); } finally { setBusyGroupId(null); }
+    };
+
+    return (
+        <div className="rounded-lg border overflow-hidden" style={{ borderColor: 'var(--border-subtle)' }}>
+            <div className="px-3 py-2.5 border-b" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
+                <div className="flex items-center justify-between gap-2">
+                    <div className="min-w-0">
+                        <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{bucket.title}</div>
+                        <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{bucket.desc}</div>
+                    </div>
+                    <span className="text-[11px] font-medium px-2 py-0.5 rounded-full shrink-0"
+                        style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                        {totalCount} grantee{totalCount === 1 ? '' : 's'}
+                    </span>
+                </div>
+            </div>
+
+            <ul className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
+                {/* Always-on row for org admins */}
+                {orgAdminAlways && (
+                    <li className="px-3 py-2 flex items-center justify-between text-xs">
+                        <span className="flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
+                            <Crown className="w-3.5 h-3.5" style={{ color: '#f59e0b' }} />
+                            Organisation Admins
+                            <span className="text-[10px] px-1.5 py-0.5 rounded font-medium"
+                                style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>
+                                always
+                            </span>
+                        </span>
+                        <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>baked in</span>
+                    </li>
+                )}
+
+                {bucket.groups.length === 0 && !orgAdminAlways && (
+                    <li className="px-3 py-3 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        No groups currently hold this permission.
+                    </li>
+                )}
+
+                {bucket.groups.map(g => (
+                    <li key={g.id} className="px-3 py-2 flex items-center justify-between text-xs gap-2">
+                        <span className="truncate" style={{ color: 'var(--text-primary)' }}>{g.name}</span>
+                        <div className="flex items-center gap-2 shrink-0">
+                            <span style={{ color: 'var(--text-muted)' }}>{g.userCount} user{g.userCount === 1 ? '' : 's'}</span>
+                            <button
+                                onClick={() => handleRemove(g.id)}
+                                disabled={busyGroupId === g.id}
+                                className="p-1 rounded hover:bg-red-500/10 disabled:opacity-50"
+                                style={{ color: 'var(--text-muted)' }}
+                                title="Revoke permission"
+                            >
+                                {busyGroupId === g.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
+                            </button>
+                        </div>
+                    </li>
+                ))}
+            </ul>
+
+            {/* Add-group row */}
+            <div className="px-3 py-2 border-t flex items-center justify-between gap-2" style={{ borderColor: 'var(--border-subtle)' }}>
+                {addable.length === 0 ? (
+                    <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                        {availableGroups.length === 0
+                            ? 'No groups exist yet — create one in Users & Groups first.'
+                            : 'All groups already hold this permission.'}
+                    </span>
+                ) : !pickerOpen ? (
+                    <button
+                        onClick={() => setPickerOpen(true)}
+                        className="flex items-center gap-1 text-xs font-medium px-2 py-1 rounded-lg hover:opacity-80"
+                        style={{ color: 'var(--accent-primary)' }}
+                    >
+                        <Plus className="w-3.5 h-3.5" /> Add group
+                    </button>
+                ) : (
+                    <div className="flex items-center gap-2 flex-1">
+                        <select
+                            onChange={(e) => { if (e.target.value) handleAdd(e.target.value); }}
+                            defaultValue=""
+                            autoFocus
+                            className="flex-1 px-2 py-1 text-xs rounded border bg-transparent outline-none focus:border-[var(--accent-primary)]"
+                            style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)', background: 'var(--bg-primary)' }}
+                        >
+                            <option value="" disabled>Select a group to grant…</option>
+                            {addable.map(g => (
+                                <option key={g.id} value={g.id}>{g.name} ({g.userCount} user{g.userCount === 1 ? '' : 's'})</option>
+                            ))}
+                        </select>
+                        <button
+                            onClick={() => setPickerOpen(false)}
+                            className="p-1 rounded hover:bg-[var(--bg-tertiary)]"
+                            style={{ color: 'var(--text-muted)' }}
+                            title="Cancel"
+                        >
+                            <X className="w-3.5 h-3.5" />
+                        </button>
+                    </div>
+                )}
+            </div>
         </div>
     );
 }
