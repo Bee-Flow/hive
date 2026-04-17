@@ -25,11 +25,13 @@ export default function MeetBotSdkConfigPanel() {
     const [callbackSecretConfigured, setCallbackSecretConfigured] = useState(false);
     const [callbackSecret, setCallbackSecret] = useState('');
 
-    // Google Meet SDK
-    const [gmServiceAccountConfigured, setGmServiceAccountConfigured] = useState(false);
-    const [gmServiceAccountEmail, setGmServiceAccountEmail] = useState(null);
-    const [gmServiceAccountKey, setGmServiceAccountKey] = useState('');
-    const [gmImpersonationUser, setGmImpersonationUser] = useState('');
+    // Google Meet SDK (OAuth user flow)
+    const [gmClientConfigured, setGmClientConfigured] = useState(false);
+    const [gmClientIdPreview, setGmClientIdPreview] = useState(null);
+    const [gmAuthorized, setGmAuthorized] = useState(false);
+    const [gmAuthorizedEmail, setGmAuthorizedEmail] = useState(null);
+    const [gmClientId, setGmClientId] = useState('');
+    const [gmClientSecret, setGmClientSecret] = useState('');
 
     const loadStatus = useCallback(async () => {
         setLoading(true);
@@ -42,9 +44,10 @@ export default function MeetBotSdkConfigPanel() {
                 setCallbackBaseUrlFromEnv(data?.teams?.callbackBaseUrlFromEnv || null);
                 setCallbackSecretConfigured(!!data?.teams?.callbackSecretConfigured);
 
-                setGmServiceAccountConfigured(!!data?.googleMeet?.serviceAccountConfigured);
-                setGmServiceAccountEmail(data?.googleMeet?.serviceAccountEmail || null);
-                setGmImpersonationUser(data?.googleMeet?.impersonationUser || '');
+                setGmClientConfigured(!!data?.googleMeet?.clientConfigured);
+                setGmClientIdPreview(data?.googleMeet?.clientIdPreview || null);
+                setGmAuthorized(!!data?.googleMeet?.authorized);
+                setGmAuthorizedEmail(data?.googleMeet?.authorizedEmail || null);
             } else {
                 setMessage({ type: 'error', text: 'Failed to load SDK config (admin required).' });
             }
@@ -94,17 +97,17 @@ export default function MeetBotSdkConfigPanel() {
         }
     };
 
-    const saveGoogle = async ({ clear = false } = {}) => {
+    const saveGoogle = async ({ clearAll = false, revokeOnly = false } = {}) => {
         setSaving(true);
         try {
             const body = {};
-            if (clear) {
-                body.clearGoogleMeetServiceAccountKey = true;
-            } else if (gmServiceAccountKey.trim()) {
-                body.googleMeetServiceAccountKey = gmServiceAccountKey.trim();
-            }
-            if (gmImpersonationUser || gmImpersonationUser === '') {
-                body.googleMeetImpersonationUser = gmImpersonationUser.trim();
+            if (clearAll) {
+                body.clearGoogleMeetOAuthClient = true;
+            } else if (revokeOnly) {
+                body.clearGoogleMeetRefreshToken = true;
+            } else {
+                if (gmClientId.trim()) body.googleMeetOAuthClientId = gmClientId.trim();
+                if (gmClientSecret.trim()) body.googleMeetOAuthClientSecret = gmClientSecret.trim();
             }
 
             const res = await authFetch(`${API_BASE}/api/meet-bot/sdk-config`, {
@@ -116,14 +119,26 @@ export default function MeetBotSdkConfigPanel() {
                 const err = await res.json().catch(() => ({}));
                 throw new Error(err.error || `HTTP ${res.status}`);
             }
-            setGmServiceAccountKey('');
+            setGmClientId('');
+            setGmClientSecret('');
             await loadStatus();
-            flash('success', clear ? 'Google Meet service account cleared.' : 'Google Meet SDK settings saved.');
+            flash('success',
+                clearAll ? 'Google Meet OAuth client cleared.' :
+                revokeOnly ? 'Google Meet authorisation revoked. Re-authorise to continue using the SDK provider.' :
+                'Google Meet OAuth client saved. Click "Authorize with Google" to complete setup.'
+            );
         } catch (e) {
             flash('error', `Save failed: ${e.message}`);
         } finally {
             setSaving(false);
         }
+    };
+
+    const startGoogleAuth = () => {
+        // Full-page redirect so Google's consent screen can set cookies on the
+        // top-level origin. Opening in a popup sometimes breaks with 3P-cookie
+        // policies.
+        window.location.href = `${API_BASE}/api/meet-bot/google-oauth/start`;
     };
 
     if (loading) {
@@ -156,20 +171,23 @@ export default function MeetBotSdkConfigPanel() {
                     }}>{message.text}</div>
                 )}
 
-                {/* ── Google Meet SDK ───────────────────────────────────── */}
+                {/* ── Google Meet SDK (OAuth user flow) ─────────────────── */}
                 <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
                     <div className="px-6 py-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-subtle)' }}>
                         <div>
                             <h3 className="font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
                                 <Zap className="w-4 h-4" style={{ color: '#1a73e8' }} />
                                 Google Meet (Media API v2beta)
-                                {gmServiceAccountConfigured && gmImpersonationUser && (
+                                {gmClientConfigured && gmAuthorized && (
                                     <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-500">Configured</span>
+                                )}
+                                {gmClientConfigured && !gmAuthorized && (
+                                    <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'rgba(245, 158, 11, 0.1)', color: '#f59e0b' }}>Needs authorisation</span>
                                 )}
                             </h3>
                             <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                                Uses a Google Cloud service account with <strong>domain-wide delegation</strong> to impersonate a Workspace user and join active conferences
-                                via the Meet Media API. No browser, no bot password.
+                                Uses OAuth 2.0 <strong>user credentials</strong> (not a service account — the Meet Media scope isn't DWD-compatible).
+                                Authorise once as a dedicated bot account; the refresh token is stored and reused to mint access tokens on each join.
                             </p>
                         </div>
                     </div>
@@ -177,16 +195,18 @@ export default function MeetBotSdkConfigPanel() {
                     <div className="p-6 space-y-5">
                         <div className="rounded-lg border p-4 text-xs space-y-1" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)', color: 'var(--text-secondary)' }}>
                             <p className="font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Setup checklist</p>
-                            <p>1. Enable <strong>Google Meet API</strong> and <strong>Google Meet Media API</strong> in Google Cloud Console.</p>
-                            <p>2. Create a service account and generate a JSON key.</p>
-                            <p>3. In the Google Workspace Admin console, grant the service account <strong>domain-wide delegation</strong> for these scopes:</p>
+                            <p>1. Enable <strong>Google Meet API</strong> + <strong>Google Meet Media API</strong> in Google Cloud Console.</p>
+                            <p>2. OAuth consent screen → user type <strong>Internal</strong>. Add scopes:</p>
                             <pre className="mt-1 p-2 rounded text-[11px] whitespace-pre-wrap" style={{ background: 'var(--bg-secondary)' }}>
-{`https://www.googleapis.com/auth/meetings.space.created
-https://www.googleapis.com/auth/meetings.space.readonly
+{`https://www.googleapis.com/auth/meetings.space.readonly
 https://www.googleapis.com/auth/meetings.conference.media.readonly`}
                             </pre>
-                            <p>4. Enable the Meet <strong>Media API</strong> in Workspace → Apps → Google Workspace → Google Meet → Meet safety settings.</p>
-                            <p>5. The impersonation user must be a real Workspace user who can be invited to meetings.</p>
+                            <p>3. Create an OAuth <strong>Client ID</strong> (type: Web application). Add this server's callback URL as an authorised redirect URI:</p>
+                            <pre className="mt-1 p-2 rounded text-[11px] break-all" style={{ background: 'var(--bg-secondary)' }}>
+{`${(typeof window !== 'undefined' ? window.location.origin : '')}/api/meet-bot/google-oauth/callback`}
+                            </pre>
+                            <p>4. Enable the Meet <strong>Media API</strong> in Workspace Admin → Apps → Google Workspace → Google Meet → Meet safety settings.</p>
+                            <p>5. Paste client ID + secret below, then click "Authorize with Google" while signed in as the bot account.</p>
                             <a
                                 href="https://developers.google.com/meet/media-api/guides/overview"
                                 target="_blank" rel="noreferrer"
@@ -198,56 +218,80 @@ https://www.googleapis.com/auth/meetings.conference.media.readonly`}
                         </div>
 
                         <div>
-                            <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-primary)' }}>Service Account JSON key</label>
+                            <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-primary)' }}>OAuth Client ID</label>
                             <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
-                                {gmServiceAccountConfigured
-                                    ? <>Currently saved: <strong style={{ color: 'var(--text-primary)' }}>{gmServiceAccountEmail || '(key stored)'}</strong>. Paste a new key to replace it.</>
-                                    : 'Paste the entire JSON content of the service account key file.'
-                                }
+                                {gmClientConfigured
+                                    ? <>Currently saved: <strong style={{ color: 'var(--text-primary)' }}>{gmClientIdPreview || '(stored)'}</strong>. Paste a new value to replace it.</>
+                                    : 'Ends with .apps.googleusercontent.com'}
                             </p>
-                            <textarea
-                                value={gmServiceAccountKey}
-                                onChange={(e) => setGmServiceAccountKey(e.target.value)}
-                                placeholder='{ "type": "service_account", "project_id": "…", "private_key": "…", "client_email": "…" }'
-                                rows={6}
-                                className="w-full px-3 py-2 rounded-lg text-xs font-mono border outline-none focus:ring-2"
+                            <input
+                                type="text"
+                                value={gmClientId}
+                                onChange={(e) => setGmClientId(e.target.value)}
+                                placeholder="1234567890-abc123.apps.googleusercontent.com"
+                                className="w-full px-3 py-2 rounded-lg text-sm font-mono border outline-none focus:ring-2"
                                 style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
                             />
                         </div>
 
                         <div>
-                            <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-primary)' }}>Impersonation user (Workspace email)</label>
+                            <label className="text-xs font-medium block mb-1" style={{ color: 'var(--text-primary)' }}>OAuth Client Secret</label>
                             <p className="text-xs mb-2" style={{ color: 'var(--text-muted)' }}>
-                                The service account will call the Meet Media API as this user. Pick a dedicated account (e.g. <code>bot@your-workspace.com</code>).
+                                {gmClientConfigured ? 'A client secret is currently saved. Paste a new value to rotate it.' : 'From the OAuth 2.0 client credentials page.'}
                             </p>
                             <input
-                                type="email"
-                                value={gmImpersonationUser}
-                                onChange={(e) => setGmImpersonationUser(e.target.value)}
-                                placeholder="bot@your-workspace.com"
-                                className="w-full max-w-md px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2"
+                                type="password"
+                                value={gmClientSecret}
+                                onChange={(e) => setGmClientSecret(e.target.value)}
+                                placeholder="GOCSPX-…"
+                                className="w-full max-w-md px-3 py-2 rounded-lg text-sm font-mono border outline-none focus:ring-2"
                                 style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
                             />
                         </div>
 
-                        <div className="flex items-center gap-2 pt-2">
+                        <div className="flex flex-wrap items-center gap-2 pt-2">
                             <button
                                 onClick={() => saveGoogle()}
-                                disabled={saving || (!gmServiceAccountKey.trim() && gmImpersonationUser === (gmImpersonationUser || ''))}
+                                disabled={saving || (!gmClientId.trim() && !gmClientSecret.trim())}
                                 className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40"
                                 style={{ background: 'linear-gradient(135deg, #1a73e8, #4285f4)' }}
                             >
                                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                                Save Google Meet SDK
+                                Save OAuth client
                             </button>
-                            {gmServiceAccountConfigured && (
+                            <button
+                                onClick={startGoogleAuth}
+                                disabled={saving || !gmClientConfigured}
+                                title={!gmClientConfigured ? 'Save client ID + secret first' : undefined}
+                                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-40"
+                                style={{ border: '1px solid var(--border-default)', color: 'var(--text-primary)', background: 'var(--bg-primary)' }}
+                            >
+                                <ExternalLink className="w-4 h-4" />
+                                {gmAuthorized ? 'Re-authorize with Google' : 'Authorize with Google'}
+                            </button>
+                            {gmAuthorized && gmAuthorizedEmail && (
+                                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                    Authorised as <strong style={{ color: 'var(--text-primary)' }}>{gmAuthorizedEmail}</strong>
+                                </span>
+                            )}
+                            {gmAuthorized && (
                                 <button
-                                    onClick={() => saveGoogle({ clear: true })}
+                                    onClick={() => saveGoogle({ revokeOnly: true })}
                                     disabled={saving}
                                     className="px-3 py-2 rounded-lg text-xs border transition-all hover:bg-red-500/10"
                                     style={{ borderColor: 'var(--border-default)', color: '#ef4444' }}
                                 >
-                                    Clear service account key
+                                    Revoke authorisation
+                                </button>
+                            )}
+                            {gmClientConfigured && (
+                                <button
+                                    onClick={() => saveGoogle({ clearAll: true })}
+                                    disabled={saving}
+                                    className="px-3 py-2 rounded-lg text-xs border transition-all hover:bg-red-500/10"
+                                    style={{ borderColor: 'var(--border-default)', color: '#ef4444' }}
+                                >
+                                    Clear OAuth client
                                 </button>
                             )}
                         </div>
