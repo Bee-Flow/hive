@@ -66,8 +66,6 @@ export default function SkillsPopover({
         return source.filter(s => (s.name || '').toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q));
     }, [sessionSkills, search]);
 
-    if (!loading && skills.length === 0 && (!directMode || sessionSkills.length === 0)) return null;
-
     const canActivateMore = activeCount < SKILL_CAP;
 
     const refreshSessionSkills = async () => {
