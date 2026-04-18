@@ -74,7 +74,12 @@ const DetailPane = ({ conn, knowledgeBases, onSync, onUpdate, onDelete, onEditin
                     <SettingsTab conn={conn} controller={controller} onEditingChange={onEditingChange} knowledgeBases={knowledgeBases} t={t} />
                 )}
                 {tab === 'pipeline' && (
-                    <PipelineTab controller={controller} onEditingChange={onEditingChange} t={t} />
+                    <PipelineTab
+                        controller={controller}
+                        onEditingChange={onEditingChange}
+                        connectionId={conn.id}
+                        t={t}
+                    />
                 )}
                 {tab === 'history' && (
                     <HistoryTab controller={controller} t={t} />

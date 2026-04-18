@@ -3,6 +3,7 @@ import {
     Sparkles, Sparkle, Layers, FileText, CheckCircle2, ChevronRight, RotateCcw, Loader2,
     Shield, Filter, Combine
 } from 'lucide-react';
+import StageTestPanel from '../pipeline/StageTestPanel';
 
 const STAGES = [
     { key: 'cleanup',    icon: Sparkle,      color: 'slate',   configurable: false, titleKey: 'email_kb.stage_cleanup',    descKey: 'email_kb.stage_cleanup_desc' },
@@ -70,7 +71,7 @@ const StageNode = ({ stage, idx, selected, inactive, onClick, tier, subLabel, t 
     );
 };
 
-const StageConfigDrawer = ({ stage, pc, setSettings, t }) => {
+const StageConfigDrawer = ({ stage, pc, setSettings, connectionId, t }) => {
     if (!stage?.configurable) return null;
     const stageKey = stage.key;
     const cfg = pc[stageKey];
@@ -81,6 +82,8 @@ const StageConfigDrawer = ({ stage, pc, setSettings, t }) => {
             ...s,
             pipeline_config: { ...s.pipeline_config, [stageKey]: { ...s.pipeline_config[stageKey], ...patch } },
         }));
+
+    const acceptAiPrompt = (newPrompt) => update({ systemPrompt: newPrompt });
 
     return (
         <div className={`mt-4 p-4 rounded-xl border ${c.border} bg-[var(--bg-primary)] space-y-3`}>
@@ -141,6 +144,17 @@ const StageConfigDrawer = ({ stage, pc, setSettings, t }) => {
                     </button>
                 )}
             </details>
+
+            {connectionId && (
+                <StageTestPanel
+                    connectionId={connectionId}
+                    stageKey={stageKey}
+                    currentPrompt={cfg.systemPrompt}
+                    currentModelTier={cfg.modelTier}
+                    onAcceptPrompt={acceptAiPrompt}
+                    t={t}
+                />
+            )}
         </div>
     );
 };
@@ -152,7 +166,7 @@ const Connector = ({ active }) => (
     </div>
 );
 
-const PipelineTab = ({ controller, onEditingChange, t }) => {
+const PipelineTab = ({ controller, onEditingChange, connectionId, t }) => {
     const { settings, setSettings, dirty, saving, save, discard } = controller;
     const pc = settings.pipeline_config;
     const mode = pc.ingestion_mode || 'category_merge';
@@ -211,7 +225,13 @@ const PipelineTab = ({ controller, onEditingChange, t }) => {
 
                 {/* Config drawer for selected stage */}
                 {stage?.configurable && (
-                    <StageConfigDrawer stage={stage} pc={pc} setSettings={setSettings} t={t} />
+                    <StageConfigDrawer
+                        stage={stage}
+                        pc={pc}
+                        setSettings={setSettings}
+                        connectionId={connectionId}
+                        t={t}
+                    />
                 )}
             </div>
 
