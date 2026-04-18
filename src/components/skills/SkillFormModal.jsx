@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Sparkles, X, Users, Lock } from 'lucide-react';
+import { Sparkles, X, Users, Lock, Zap } from 'lucide-react';
 
 export const ICONS = ['⚡', '🎯', '📝', '📧', '📊', '🔍', '💡', '🚀', '🎨', '🤝', '📋', '🏆', '🔧', '⚙️', '🌟', '💬', '📞', '🖊️', '🗂️', '🔑'];
 export const INSTRUCTION_LIMIT = 4000;
@@ -13,6 +13,7 @@ const emptyForm = () => ({
     examples: '',
     icon: '⚡',
     isShared: false,
+    dynamicActivation: false,
 });
 
 const TABS = [
@@ -43,6 +44,7 @@ export default function SkillFormModal({ skill, onSave, onCancel, saving }) {
         examples: skill.examples || '',
         icon: skill.icon || '⚡',
         isShared: skill.isShared ?? false,
+        dynamicActivation: skill.dynamicActivation ?? false,
     } : emptyForm());
     const [showIconPicker, setShowIconPicker] = useState(false);
     const [activeTab, setActiveTab] = useState('instructions');
