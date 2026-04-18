@@ -3,6 +3,7 @@ import React, { useState, useRef, useEffect } from 'react';
 const TIER_META = {
     auto: { icon: '🔀', label: 'Auto', desc: 'Optimal choice', color: '#6366f1' },
     fast: { icon: '⚡', label: 'Fast', desc: 'Quick answers', color: '#10b981' },
+    standard: { icon: '🧩', label: 'Standard', desc: 'Direct chat with session skills', color: '#0ea5e9' },
     thinking: { icon: '🧠', label: 'Think', desc: 'Complex problems', color: '#8b5cf6' },
     writer: { icon: '✍️', label: 'Write', desc: 'Long-form content', color: '#ec4899' },
     pro: { icon: '✨', label: 'Deep Thinking', desc: 'Advanced reasoning', color: '#f59e0b' }
@@ -28,9 +29,9 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
         return () => document.removeEventListener('mousedown', handler);
     }, []);
 
-    // Preserve ordering: auto, fast, thinking, writer, pro, then any custom tiers
+    // Preserve ordering: auto, fast, standard, thinking, writer, pro, then custom tiers
     // the server included (filtered server-side by group + task-type permissions).
-    const standardKeys = ['auto', 'fast', 'thinking', 'writer', 'pro'];
+    const standardKeys = ['auto', 'fast', 'standard', 'thinking', 'writer', 'pro'];
     const customKeys = Object.keys(tiers).filter(k => k.startsWith('custom:'));
     const tierKeys = [...standardKeys, ...customKeys];
 

@@ -90,6 +90,7 @@ const MODEL_META = {
 
 const TIERS = [
     { key: 'fast', icon: '⚡', label: 'Fast', desc: 'Quick responses for simple questions' },
+    { key: 'standard', icon: '🧩', label: 'Standard (Direct)', desc: 'Direct chat tier with per-chat session skills' },
     { key: 'thinking', icon: '🧠', label: 'Thinking', desc: 'Complex reasoning and analysis' },
     { key: 'writer', icon: '✍️', label: 'Writer', desc: 'Long-form content and reports' },
     { key: 'pro', icon: '✨', label: 'Deep Thinking', desc: 'Maximum quality output' }
@@ -97,6 +98,7 @@ const TIERS = [
 
 const TIER_DEFAULTS = {
     fast: { maxTokens: 8192, temperature: 0.7 },
+    standard: { maxTokens: 8192, temperature: 0.5 },
     thinking: { maxTokens: 40960, temperature: 0.7 },
     writer: { maxTokens: 16384, temperature: 0.7 },
     pro: { maxTokens: 40960, temperature: 0.7 },
@@ -399,12 +401,14 @@ const SearchableModelSelect = ({ value, label, groups, getModelMeta, onChange })
 const ChatModelTiersConfig = ({ allModels = [] }) => {
     const [config, setConfig] = useState({
         fast: { modelId: '', label: 'Fast' },
+        standard: { modelId: '', label: 'Standard (Direct)' },
         thinking: { modelId: '', label: 'Thinking' },
         writer: { modelId: '', label: 'Writer' },
         pro: { modelId: '', label: 'Deep Thinking' }
     });
     const [euConfig, setEuConfig] = useState({
         fast: { modelId: '', label: 'Fast' },
+        standard: { modelId: '', label: 'Standard (Direct)' },
         thinking: { modelId: '', label: 'Thinking' },
         writer: { modelId: '', label: 'Writer' },
         pro: { modelId: '', label: 'Deep Thinking' }
