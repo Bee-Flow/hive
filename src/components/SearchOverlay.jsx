@@ -417,6 +417,8 @@ const FilterSelect = ({ icon: Icon, value, onChange, options, disabled }) => (
 const ResultRow = ({ result, query, idx, selected, onSelect, onHover }) => {
     const isDirect = result.kind === 'direct';
     const agentName = result.agent_name || (isDirect ? 'Direct Chat' : 'Agent');
+    const avatar = result.agent_avatar;
+    const hasImageAvatar = avatar && (avatar.startsWith('data:') || avatar.startsWith('http'));
 
     return (
         <button
@@ -439,13 +441,17 @@ const ResultRow = ({ result, query, idx, selected, onSelect, onHover }) => {
                     <div className="w-8 h-8 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] flex items-center justify-center text-[var(--text-secondary)]">
                         <MessageSquare className="w-4 h-4" />
                     </div>
-                ) : result.agent_avatar ? (
-                    <div className="w-8 h-8 rounded-lg overflow-hidden border border-[var(--border-subtle)]">
-                        <img src={result.agent_avatar} alt="" className="w-full h-full object-cover" />
+                ) : hasImageAvatar ? (
+                    <div className="w-8 h-8 rounded-lg overflow-hidden border border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
+                        <img src={avatar} alt="" className="w-full h-full object-contain" />
+                    </div>
+                ) : avatar ? (
+                    <div className="w-8 h-8 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] flex items-center justify-center text-base leading-none">
+                        {avatar}
                     </div>
                 ) : (
                     <div className="w-8 h-8 rounded-lg bg-[var(--accent-primary)]/10 border border-[var(--border-subtle)] flex items-center justify-center text-xs font-semibold text-[var(--accent-primary)]">
-                        {agentName[0] || '?'}
+                        {agentName[0]?.toUpperCase() || '?'}
                     </div>
                 )}
             </div>
