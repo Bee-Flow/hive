@@ -52,6 +52,7 @@ export default function useConnectionSettings(conn, { onUpdate, onSync } = {}) {
     const [syncing, setSyncing] = useState(false);
     const [syncProgress, setSyncProgress] = useState(null);
     const [syncConflict, setSyncConflict] = useState(null);
+    const [mergeProgress, setMergeProgress] = useState(null);
     const esRef = useRef(null);
 
     useEffect(() => () => { try { esRef.current?.close(); } catch { /* noop */ } }, []);
@@ -60,6 +61,7 @@ export default function useConnectionSettings(conn, { onUpdate, onSync } = {}) {
         setSyncing(true);
         setSyncProgress({ processed: 0, total: null, recent: [] });
         setSyncConflict(null);
+        setMergeProgress(null);
 
         const streamUrl = `${API_BASE}/api/email-kb/connections/${conn.id}/sync/stream`;
         const es = new EventSource(streamUrl, { withCredentials: true });
@@ -69,6 +71,7 @@ export default function useConnectionSettings(conn, { onUpdate, onSync } = {}) {
             try { es.close(); } catch { /* noop */ }
             setSyncing(false);
             setSyncProgress(null);
+            setMergeProgress(null);
             onSync?.(conn.id, { sseFinished: true });
         };
 
@@ -92,11 +95,36 @@ export default function useConnectionSettings(conn, { onUpdate, onSync } = {}) {
                 });
             } catch { /* ignore */ }
         });
+        es.addEventListener('merge_category_started', (ev) => {
+            try {
+                const data = JSON.parse(ev.data);
+                setMergeProgress((p) => ({
+                    phase: 'merge',
+                    categoriesDone: p?.categoriesDone ?? 0,
+                    currentCategory: data.category || null,
+                    currentCategoryChunks: data.chunkCount ?? 1,
+                    totalArticles: data.totalArticles ?? null,
+                }));
+            } catch { /* ignore */ }
+        });
+        es.addEventListener('merge_category_complete', (ev) => {
+            try {
+                const data = JSON.parse(ev.data);
+                setMergeProgress((p) => ({
+                    phase: 'merge',
+                    categoriesDone: (p?.categoriesDone ?? 0) + 1,
+                    currentCategory: data.category || p?.currentCategory || null,
+                    currentCategoryChunks: data.chunkCount ?? p?.currentCategoryChunks ?? 1,
+                    lastDedupeRan: !!data.dedupeRan,
+                }));
+            } catch { /* ignore */ }
+        });
         es.addEventListener('sync_completed', finishOk);
         es.onerror = () => {
             try { es.close(); } catch { /* noop */ }
             setSyncing(false);
             setSyncProgress(null);
+            setMergeProgress(null);
             onSync?.(conn.id, { sseError: true });
         };
 
@@ -111,6 +139,7 @@ export default function useConnectionSettings(conn, { onUpdate, onSync } = {}) {
                 try { es.close(); } catch { /* noop */ }
                 setSyncing(false);
                 setSyncProgress(null);
+                setMergeProgress(null);
                 return;
             }
             if (!resp.ok) {
@@ -122,6 +151,7 @@ export default function useConnectionSettings(conn, { onUpdate, onSync } = {}) {
             try { es.close(); } catch { /* noop */ }
             setSyncing(false);
             setSyncProgress(null);
+            setMergeProgress(null);
         }
     }, [conn.id, onSync]);
 
@@ -158,7 +188,7 @@ export default function useConnectionSettings(conn, { onUpdate, onSync } = {}) {
     return {
         settings, setSettings,
         dirty, saving, save, discard,
-        syncing, syncProgress, syncConflict, startSync,
+        syncing, syncProgress, syncConflict, mergeProgress, startSync,
         testing, testResult, runTest, clearTestResult,
         logs, logsLoaded, loadLogs,
     };

@@ -1454,7 +1454,12 @@ const EN_DEFAULTS = {
     "email_kb.ai_assist_accept": "Use this prompt",
     "email_kb.ai_assist_discard": "Discard",
     "email_kb.ai_assist_refine": "Refine further",
-    "email_kb.ai_assist_model_used": "Model used"
+    "email_kb.ai_assist_model_used": "Model used",
+
+    "email_kb.dedupe_only_multi_chunk": "Runs only when a category spans multiple chunks",
+    "email_kb.dedupe_test_placeholder": "Paste 2+ pre-merged chunk outputs separated by ---",
+    "email_kb.merge_progress_label": "Merging",
+    "email_kb.merge_progress_categories": "categories done"
 };
 
 export default EN_DEFAULTS;

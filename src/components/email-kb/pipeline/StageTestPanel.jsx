@@ -21,7 +21,10 @@ const TIER_OPTIONS = ['fast', 'thinking', 'writer', 'deep_thinking'];
  *   - t:  translator
  */
 const StageTestPanel = ({ connectionId, stageKey, currentPrompt, currentModelTier, onAcceptPrompt, t }) => {
-    const [mode, setMode] = useState('sample'); // 'sample' | 'custom'
+    // Dedupe needs 2+ pre-merged chunk outputs — sampling the latest email
+    // doesn't make sense. Default to custom mode in that case.
+    const defaultMode = stageKey === 'dedupe' ? 'custom' : 'sample';
+    const [mode, setMode] = useState(defaultMode);
     const [customInput, setCustomInput] = useState('');
     const [running, setRunning] = useState(false);
     const [result, setResult] = useState(null);
@@ -35,7 +38,11 @@ const StageTestPanel = ({ connectionId, stageKey, currentPrompt, currentModelTie
     const [assistResult, setAssistResult] = useState(null);
     const [assistError, setAssistError] = useState(null);
 
-    const canAssist = ['article', 'category', 'merge'].includes(stageKey);
+    const canAssist = ['article', 'category', 'merge', 'dedupe'].includes(stageKey);
+    const customPlaceholder = stageKey === 'dedupe'
+        ? t('email_kb.dedupe_test_placeholder')
+        : t('email_kb.custom_input_placeholder');
+    const canSampleMode = stageKey !== 'dedupe';
 
     const runStage = async (withCustom) => {
         setRunning(true);
@@ -93,10 +100,12 @@ const StageTestPanel = ({ connectionId, stageKey, currentPrompt, currentModelTie
             <div className="flex items-center justify-between">
                 <div className="text-[12px] font-semibold text-[var(--text-primary)]">{t('email_kb.try_stage')}</div>
                 <div className="flex items-center gap-1 text-[11px]">
-                    <button
-                        onClick={() => setMode('sample')}
-                        className={`px-2 py-0.5 rounded transition-colors ${mode === 'sample' ? 'bg-[var(--accent-primary)] text-white' : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)]'}`}
-                    >Sample</button>
+                    {canSampleMode && (
+                        <button
+                            onClick={() => setMode('sample')}
+                            className={`px-2 py-0.5 rounded transition-colors ${mode === 'sample' ? 'bg-[var(--accent-primary)] text-white' : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)]'}`}
+                        >Sample</button>
+                    )}
                     <button
                         onClick={() => setMode('custom')}
                         className={`px-2 py-0.5 rounded transition-colors ${mode === 'custom' ? 'bg-[var(--accent-primary)] text-white' : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)]'}`}
@@ -109,7 +118,7 @@ const StageTestPanel = ({ connectionId, stageKey, currentPrompt, currentModelTie
                 <textarea
                     value={customInput}
                     onChange={e => setCustomInput(e.target.value)}
-                    placeholder={t('email_kb.custom_input_placeholder')}
+                    placeholder={customPlaceholder}
                     rows={5}
                     className="w-full mt-2 px-2 py-1.5 rounded text-[11px] bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)] resize-y font-mono"
                 />
@@ -195,6 +204,7 @@ const pickOutputText = (result) => {
     if (o.category) return o.category;
     if (o.cleaned) return o.cleaned;
     if (o.after) return o.after;
+    if (typeof o.merged === 'string') return o.merged;
     if (o.merged) return JSON.stringify(o.merged, null, 2);
     return JSON.stringify(o, null, 2);
 };
@@ -283,6 +293,10 @@ const OutputBody = ({ output }) => {
         );
     }
     if (output.merged) {
+        // Dedupe stage returns a raw Markdown string; merge stage may return an array.
+        if (typeof output.merged === 'string') {
+            return <pre className="text-[11px] whitespace-pre-wrap text-[var(--text-primary)]">{output.merged}</pre>;
+        }
         return <pre className="text-[11px] whitespace-pre-wrap text-[var(--text-primary)]">{JSON.stringify(output.merged, null, 2)}</pre>;
     }
     return <pre className="text-[11px] whitespace-pre-wrap text-[var(--text-primary)]">{JSON.stringify(output, null, 2)}</pre>;

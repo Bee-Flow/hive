@@ -12,7 +12,7 @@ const STAGES = [
     { key: 'article',    icon: Sparkles,     color: 'blue',    configurable: true,  titleKey: 'email_kb.stage_article',    descKey: 'email_kb.stage_article_desc', withParallel: true },
     { key: 'category',   icon: Layers,       color: 'amber',   configurable: true,  titleKey: 'email_kb.stage_category',   descKey: 'email_kb.stage_category_desc' },
     { key: 'merge',      icon: FileText,     color: 'purple',  configurable: true,  titleKey: 'email_kb.stage_merge',      descKey: 'email_kb.stage_merge_desc' },
-    { key: 'dedupe',     icon: Combine,      color: 'fuchsia', configurable: false, titleKey: 'email_kb.stage_dedupe',     descKey: 'email_kb.stage_dedupe_desc', comingSoon: true },
+    { key: 'dedupe',     icon: Combine,      color: 'fuchsia', configurable: true,  titleKey: 'email_kb.stage_dedupe',     descKey: 'email_kb.stage_dedupe_desc', multiChunkOnly: true },
     { key: 'ingest',     icon: CheckCircle2, color: 'emerald', configurable: false, titleKey: 'email_kb.stage_ingest',     descKey: 'email_kb.stage_ingest_desc' },
 ];
 
@@ -204,6 +204,7 @@ const PipelineTab = ({ controller, onEditingChange, connectionId, t }) => {
                             let subLabel = null;
                             if (s.togglesSetting && !settings[s.togglesSetting]) subLabel = 'off';
                             else if (s.comingSoon) subLabel = t('email_kb.stage_coming_soon');
+                            else if (s.multiChunkOnly) subLabel = t('email_kb.dedupe_only_multi_chunk');
                             return (
                                 <React.Fragment key={s.key}>
                                     <StageNode

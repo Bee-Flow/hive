@@ -26,7 +26,7 @@ const OverviewTab = ({ conn, controller, onUpdate, onDelete, t }) => {
     }, [controller.syncProgress, refetchCost]);
 
     const {
-        syncing, syncProgress, syncConflict, startSync,
+        syncing, syncProgress, syncConflict, mergeProgress, startSync,
         testing, testResult, runTest, clearTestResult,
     } = controller;
 
@@ -117,6 +117,23 @@ const OverviewTab = ({ conn, controller, onUpdate, onDelete, t }) => {
                             }}
                         />
                     </div>
+                    {mergeProgress && mergeProgress.currentCategory && (
+                        <div className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
+                            <span className="font-semibold">{t('email_kb.merge_progress_label')}</span>
+                            <em className="not-italic text-[var(--text-primary)] font-medium truncate max-w-[16ch]">
+                                {mergeProgress.currentCategory}
+                            </em>
+                            {mergeProgress.currentCategoryChunks > 1 && (
+                                <span className="text-[var(--text-tertiary)]">
+                                    · {mergeProgress.currentCategoryChunks} chunks
+                                    {mergeProgress.lastDedupeRan ? ' (deduped)' : ''}
+                                </span>
+                            )}
+                            <span className="text-[var(--text-tertiary)] tabular-nums ml-auto">
+                                {mergeProgress.categoriesDone ?? 0} {t('email_kb.merge_progress_categories')}
+                            </span>
+                        </div>
+                    )}
                     {syncProgress.recent.length > 0 && (
                         <ul className="space-y-1 text-[11px] text-[var(--text-tertiary)]">
                             {syncProgress.recent.map((r, i) => (

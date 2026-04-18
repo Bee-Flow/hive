@@ -11,6 +11,7 @@ import VideoGenSettings from './chat/VideoGenSettings';
 import { API_BASE, authFetch } from '../utils/helpers';
 import scopedStorage from '../utils/scopedStorage';
 import SkillsPopover from './skills/SkillsPopover';
+import ActiveSkillChips from './skills/ActiveSkillChips';
 
 // App definitions for the apps overlay
 const APP_DEFS = [
@@ -689,7 +690,16 @@ const InputArea = ({
                     )}
 
 
-                    <div role="form" aria-label="Chat message input" data-testid="chat-input-form" className={`relative flex flex-col bg-[var(--bg-secondary)] rounded-2xl border border-[var(--border-subtle)] shadow-md transition-all focus-within:border-[var(--accent-primary)] focus-within:shadow-lg focus-within:shadow-[var(--accent-primary)]/10 ${(activeThreadParent || attachments.length > 0) ? 'rounded-t-none border-t-0' : ''} ${isDragOver ? 'border-[var(--accent-primary)] shadow-lg' : ''}`}>
+                    {/* Active Skills Preview — shows which skills apply to the next send */}
+                    <ActiveSkillChips
+                        activeSkillIds={activeSkillIds}
+                        attachedSkillIds={agentAttachedSkillIds}
+                        onToggleSkill={onToggleSkill}
+                        hasThreadBanner={!!activeThreadParent}
+                        hasAttachments={attachments.length > 0}
+                    />
+
+                    <div role="form" aria-label="Chat message input" data-testid="chat-input-form" className={`relative flex flex-col bg-[var(--bg-secondary)] rounded-2xl border border-[var(--border-subtle)] shadow-md transition-all focus-within:border-[var(--accent-primary)] focus-within:shadow-lg focus-within:shadow-[var(--accent-primary)]/10 ${(activeThreadParent || attachments.length > 0 || activeSkillIds.length > 0 || agentAttachedSkillIds.length > 0) ? 'rounded-t-none border-t-0' : ''} ${isDragOver ? 'border-[var(--accent-primary)] shadow-lg' : ''}`}>
 
                         {/* Hidden file input */}
                         <input

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Sparkles, Plus, Lock, Users, Link2 } from 'lucide-react';
+import { Sparkles, Plus, Lock, Users, Link2, Puzzle } from 'lucide-react';
 import SkillFormModal from './SkillFormModal';
 import { useSkills } from '../../hooks/useSkills';
 
@@ -77,7 +77,7 @@ export default function SkillsPopover({
                     `p-2 rounded-lg transition-colors flex items-center gap-1 ${open ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]' : 'text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'}`
                 }
             >
-                <Sparkles className="w-5 h-5" />
+                <Puzzle className="w-5 h-5" />
                 {activeCount > 0 && (
                     <span className="text-[10px] font-semibold px-1 rounded bg-[var(--accent-primary)] text-white">
                         {activeCount}

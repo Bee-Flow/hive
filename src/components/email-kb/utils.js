@@ -29,6 +29,7 @@ export const DEFAULT_PIPELINE_CONFIG = {
     article: { modelTier: 'fast', systemPrompt: '' },
     category: { modelTier: 'fast', systemPrompt: '' },
     merge: { modelTier: 'fast', systemPrompt: '' },
+    dedupe: { modelTier: 'fast', systemPrompt: '' },
 };
 
 export const mergePipelineConfig = (pc) => ({
@@ -37,6 +38,7 @@ export const mergePipelineConfig = (pc) => ({
     article: { ...DEFAULT_PIPELINE_CONFIG.article, ...pc?.article },
     category: { ...DEFAULT_PIPELINE_CONFIG.category, ...pc?.category },
     merge: { ...DEFAULT_PIPELINE_CONFIG.merge, ...pc?.merge },
+    dedupe: { ...DEFAULT_PIPELINE_CONFIG.dedupe, ...pc?.dedupe },
 });
 
 export const settingsFromConnection = (conn) => ({
