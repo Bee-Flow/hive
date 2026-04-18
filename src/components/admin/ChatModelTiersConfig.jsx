@@ -442,16 +442,32 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
     const save = async () => {
         setSaving(true);
         try {
-            const res = await authFetch(`${API_BASE}/ai/config/chat-models`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(config)
-            });
-            if (res.ok) {
-                setMessage({ type: 'success', text: 'Chat model tiers saved!' });
-                setTimeout(() => setMessage(null), 3000);
+            // Save standard tiers + custom tiers together so a single click
+            // persists everything the user edited in this section.
+            const [res, customRes] = await Promise.all([
+                authFetch(`${API_BASE}/ai/config/chat-models`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(config)
+                }),
+                authFetch(`${API_BASE}/ai/config/custom-chat-models`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tiers: customTiers })
+                })
+            ]);
+            const bothOk = res.ok && customRes.ok;
+            let warn = '';
+            try {
+                const j = customRes.ok ? await customRes.json() : null;
+                if (j && Array.isArray(j.warnings) && j.warnings.length > 0) warn = ' (' + j.warnings.join('; ') + ')';
+                if (j && Array.isArray(j.tiers)) setCustomTiers(j.tiers);
+            } catch (_) { /* ignore */ }
+            if (bothOk) {
+                setMessage({ type: warn ? 'warning' : 'success', text: `Chat model tiers saved${warn}` });
+                setTimeout(() => setMessage(null), 4000);
             } else {
-                setMessage({ type: 'error', text: 'Failed to save' });
+                setMessage({ type: 'error', text: 'Failed to save (one or more configs)' });
             }
         } catch (e) {
             setMessage({ type: 'error', text: 'Failed to save tier config' });
@@ -555,12 +571,23 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
     const saveEu = async () => {
         setEuSaving(true);
         try {
-            const res = await authFetch(`${API_BASE}/ai/config/chat-models-eu`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(euConfig)
-            });
-            if (res.ok) {
+            // Save EU standard tiers AND the full custom tiers array (which now
+            // contains each custom tier's euModelId). The custom-chat-models
+            // endpoint overwrites wholesale so race with `save()` is avoided as
+            // long as both callers write from the same local state.
+            const [res, customRes] = await Promise.all([
+                authFetch(`${API_BASE}/ai/config/chat-models-eu`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(euConfig)
+                }),
+                authFetch(`${API_BASE}/ai/config/custom-chat-models`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ tiers: customTiers })
+                })
+            ]);
+            if (res.ok && customRes.ok) {
                 setEuMessage({ type: 'success', text: 'EU model tiers saved!' });
                 setTimeout(() => setEuMessage(null), 3000);
             } else {
@@ -867,6 +894,38 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
         );
     };
 
+    // Compact EU model picker for a custom tier — lives inside the EU section.
+    const renderCustomTierEuRow = (tier) => {
+        const selectedModel = chatModels.find(m => m.id === tier.euModelId);
+        const displayName = selectedModel ? getDisplayName(selectedModel) : null;
+        const label = selectedModel
+            ? (displayName !== selectedModel.id ? displayName : selectedModel.id)
+            : '— Not configured —';
+        return (
+            <div key={tier.id} className="rounded-xl border overflow-hidden" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)' }}>
+                <div className="p-4">
+                    <div className="flex items-center gap-3 mb-3">
+                        <span className="text-xl">{tier.icon || '✨'}</span>
+                        <div className="flex-1">
+                            <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{tier.label}</span>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                {tier.description || <span className="italic opacity-60">Custom tier</span>}
+                            </p>
+                        </div>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full" style={{ background: 'rgba(234, 179, 8, 0.2)', color: '#eab308' }}>custom</span>
+                    </div>
+                    <SearchableModelSelect
+                        value={tier.euModelId || ''}
+                        label={label}
+                        groups={byProvider}
+                        getModelMeta={getModelMeta}
+                        onChange={val => updateCustomTier(tier.id, { euModelId: val })}
+                    />
+                </div>
+            </div>
+        );
+    };
+
     return (
         <div className="space-y-8">
             {/* Regular Chat Model Tiers */}
@@ -889,6 +948,36 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
 
                 <div className="space-y-4">
                     {TIERS.map(tier => renderTierCard(tier, config[tier.key] || {}, updateTier, TIER_DEFAULTS[tier.key]))}
+                </div>
+
+                {/* Custom tiers — live inside the same section as the standard four */}
+                <div className="mt-6 pt-6 border-t" style={{ borderColor: 'var(--border-default)' }}>
+                    <div className="flex items-center justify-between mb-3">
+                        <div>
+                            <h4 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                                Custom Tiers
+                            </h4>
+                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                Extra tiers beyond the standard four. Restrict each tier to specific task types and per-group access from the Organisation admin.
+                            </p>
+                        </div>
+                        <button
+                            onClick={addCustomTier}
+                            className="px-3 py-1.5 rounded-lg text-xs font-medium text-white hover:opacity-90 transition-opacity"
+                            style={{ background: 'var(--accent-primary)' }}
+                        >
+                            + Add Custom Tier
+                        </button>
+                    </div>
+                    {customTiers.length === 0 ? (
+                        <div className="p-4 rounded-lg border text-center text-xs" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
+                            No custom tiers yet.
+                        </div>
+                    ) : (
+                        <div className="space-y-4">
+                            {customTiers.map(renderCustomTierCard)}
+                        </div>
+                    )}
                 </div>
 
                 <button
@@ -923,6 +1012,21 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                     {TIERS.map(tier => renderTierCard(tier, euConfig[tier.key] || {}, updateEuTier, null))}
                 </div>
 
+                {/* Custom tiers — EU model picker per tier. Only shown when any custom tier exists. */}
+                {customTiers.length > 0 && (
+                    <div className="mt-6 pt-6 border-t" style={{ borderColor: 'var(--border-default)' }}>
+                        <h4 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+                            Custom Tiers — EU override
+                        </h4>
+                        <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+                            Pick an EU-hosted model for each custom tier. Used automatically when an organization has EU mode enabled.
+                        </p>
+                        <div className="space-y-4">
+                            {customTiers.map(renderCustomTierEuRow)}
+                        </div>
+                    </div>
+                )}
+
                 <button
                     onClick={saveEu}
                     disabled={euSaving}
@@ -930,55 +1034,6 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                     style={{ background: 'var(--accent-primary)' }}
                 >
                     {euSaving ? 'Saving...' : 'Save EU Tier Configuration'}
-                </button>
-            </div>
-
-            {/* Custom Tiers */}
-            <div className="p-4 sm:p-6 rounded-xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
-                <div className="flex items-center gap-3 mb-6">
-                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style={{ background: 'rgba(234, 179, 8, 0.15)' }}>✨</div>
-                    <div className="flex-1">
-                        <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>Custom Tiers</h3>
-                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                            Additional tiers beyond the standard four. Restrict each tier to specific task types and control per-group access from the Organisation Admin.
-                        </p>
-                    </div>
-                    <button
-                        onClick={addCustomTier}
-                        className="px-4 py-2 rounded-lg text-sm font-medium text-white hover:opacity-90 transition-opacity"
-                        style={{ background: 'var(--accent-primary)' }}
-                    >
-                        + Add Custom Tier
-                    </button>
-                </div>
-
-                {customMessage && (
-                    <div className={`mb-4 p-3 rounded-lg text-sm ${
-                        customMessage.type === 'success' ? 'bg-green-500/20 text-green-400' :
-                        customMessage.type === 'warning' ? 'bg-yellow-500/20 text-yellow-400' :
-                        'bg-red-500/20 text-red-400'
-                    }`}>
-                        {customMessage.text}
-                    </div>
-                )}
-
-                {customTiers.length === 0 ? (
-                    <div className="p-6 rounded-lg border text-center text-sm" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
-                        No custom tiers yet. Click <strong>Add Custom Tier</strong> to create one.
-                    </div>
-                ) : (
-                    <div className="space-y-4">
-                        {customTiers.map(renderCustomTierCard)}
-                    </div>
-                )}
-
-                <button
-                    onClick={() => saveCustomTiers()}
-                    disabled={customSaving}
-                    className="mt-6 px-6 py-2.5 rounded-lg font-medium text-sm transition-all text-white hover:opacity-90 disabled:opacity-50"
-                    style={{ background: 'var(--accent-primary)' }}
-                >
-                    {customSaving ? 'Saving...' : 'Save Custom Tiers'}
                 </button>
             </div>
         </div>

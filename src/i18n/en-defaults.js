@@ -1430,7 +1430,31 @@ const EN_DEFAULTS = {
     "email_kb.skip_reason_too_short": "Too short",
     "email_kb.skip_reason_duplicate_content": "Duplicate content",
     "email_kb.skip_reason_not_useful": "Not useful",
-    "email_kb.skip_reason_unknown": "Other"
+    "email_kb.skip_reason_unknown": "Other",
+
+    "email_kb.try_stage": "Try this stage",
+    "email_kb.try_stage_desc": "Run this stage on a sample email (or your own text) and inspect the output. If it's wrong, let an AI help tune the prompt.",
+    "email_kb.run_sample": "Run on latest email",
+    "email_kb.run_custom": "Run on custom input",
+    "email_kb.stage_running": "Running\u2026",
+    "email_kb.stage_output": "Output",
+    "email_kb.stage_input": "Input",
+    "email_kb.stage_from_sample": "Sample email",
+    "email_kb.stage_took": "took",
+    "email_kb.custom_input_placeholder": "Paste any email body or article here\u2026",
+    "email_kb.ask_ai_to_fix": "Not what you expected? Ask AI to improve the prompt",
+    "email_kb.ai_assist_title": "AI Prompt Assist",
+    "email_kb.ai_assist_feedback": "What's wrong with this output?",
+    "email_kb.ai_assist_feedback_placeholder": "e.g. \"The category is too generic \u2014 it should capture the specific intent like 'Refund request' instead of 'Support'\"",
+    "email_kb.ai_assist_model": "Model tier for the assistant",
+    "email_kb.ai_assist_run": "Get suggestion",
+    "email_kb.ai_assist_running": "Thinking\u2026",
+    "email_kb.ai_assist_proposed": "Proposed prompt",
+    "email_kb.ai_assist_reasoning": "Why this change",
+    "email_kb.ai_assist_accept": "Use this prompt",
+    "email_kb.ai_assist_discard": "Discard",
+    "email_kb.ai_assist_refine": "Refine further",
+    "email_kb.ai_assist_model_used": "Model used"
 };
 
 export default EN_DEFAULTS;
