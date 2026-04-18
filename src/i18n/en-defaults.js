@@ -1406,7 +1406,31 @@ const EN_DEFAULTS = {
     "email_kb.batch_help": "Emails sent to the LLM in ONE call (batched prompt). 1 = no batching (safe). 2\u20135 = ~2\u00d7 faster for category_merge mode.",
     "email_kb.retry": "Retry",
     "email_kb.sync_in_progress": "Sync already in progress",
-    "email_kb.retry_in": "retry in"
+    "email_kb.retry_in": "retry in",
+
+    "email_kb.stage_pii": "PII Redaction",
+    "email_kb.stage_pii_desc": "Mask emails, phone numbers, IPs and other personal data",
+    "email_kb.stage_usefulness": "Usefulness Check",
+    "email_kb.stage_usefulness_desc": "Classify whether the conversation contains reusable knowledge",
+    "email_kb.stage_dedupe": "Dedupe Across Chunks",
+    "email_kb.stage_dedupe_desc": "Merge category chunks and remove duplicated guidance",
+    "email_kb.stage_coming_soon": "Coming soon",
+
+    "email_kb.stat_cost": "Cost (30d)",
+    "email_kb.cost_loading": "calculating\u2026",
+    "email_kb.cost_unavailable": "unavailable",
+
+    "email_kb.outcomes_title": "Outcomes",
+    "email_kb.outcome_ingested": "Ingested",
+    "email_kb.outcome_skipped": "Skipped",
+    "email_kb.outcome_failed": "Failed",
+    "email_kb.skip_reason_already_ingested": "Already ingested",
+    "email_kb.skip_reason_sender_blacklisted": "Blacklisted sender",
+    "email_kb.skip_reason_empty_body": "Empty body",
+    "email_kb.skip_reason_too_short": "Too short",
+    "email_kb.skip_reason_duplicate_content": "Duplicate content",
+    "email_kb.skip_reason_not_useful": "Not useful",
+    "email_kb.skip_reason_unknown": "Other"
 };
 
 export default EN_DEFAULTS;

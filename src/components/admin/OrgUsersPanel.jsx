@@ -135,9 +135,16 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ allowedTiers: newAllowedTiers }),
             });
-            if (res.ok) await fetchData();
+            if (res.ok) {
+                await fetchData();
+            } else {
+                const body = await res.json().catch(() => ({}));
+                console.error('Failed to update group allowedTiers:', res.status, body);
+                alert(`Failed to update allowed tiers (${res.status}): ${body.error || 'unknown error'}`);
+            }
         } catch (err) {
             console.error('Failed to update group allowedTiers:', err);
+            alert(`Failed to update allowed tiers: ${err.message || err}`);
         }
     };
 

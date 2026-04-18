@@ -1,13 +1,30 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import {
-    FileText, Mail, Clock, Activity, RefreshCw, TestTube2, Pause, Play, Trash2,
+    FileText, Mail, Clock, Activity, DollarSign, RefreshCw, TestTube2, Pause, Play, Trash2,
     AlertTriangle, XCircle, CheckCircle2
 } from 'lucide-react';
 import StatCard from '../StatCard';
 import SyncStatusBadge from '../SyncStatusBadge';
 import { timeAgo } from '../utils';
+import useConnectionCost from '../hooks/useConnectionCost';
+
+const formatCost = (usd) => {
+    if (usd == null) return '—';
+    if (usd < 0.01) return '<$0.01';
+    if (usd < 10) return `$${usd.toFixed(2)}`;
+    return `$${usd.toFixed(0)}`;
+};
 
 const OverviewTab = ({ conn, controller, onUpdate, onDelete, t }) => {
+    const { cost, loading: costLoading, refetch: refetchCost } = useConnectionCost(conn.id);
+    const prevSyncing = useRef(false);
+    useEffect(() => {
+        // When a sync that was running completes, refresh the cost estimate.
+        const isSyncing = !!controller.syncProgress;
+        if (prevSyncing.current && !isSyncing) refetchCost();
+        prevSyncing.current = isSyncing;
+    }, [controller.syncProgress, refetchCost]);
+
     const {
         syncing, syncProgress, syncConflict, startSync,
         testing, testResult, runTest, clearTestResult,
@@ -25,6 +42,12 @@ const OverviewTab = ({ conn, controller, onUpdate, onDelete, t }) => {
                 <StatCard icon={Activity} label={t('email_kb.stat_status')}   value={statusLabel} accent="text-purple-500">
                     {!conn.enabled && <span className="text-amber-600">{t('email_kb.disabled')}</span>}
                 </StatCard>
+                <StatCard
+                    icon={DollarSign}
+                    label={t('email_kb.stat_cost')}
+                    value={costLoading ? t('email_kb.cost_loading') : formatCost(cost)}
+                    accent="text-green-500"
+                />
             </div>
 
             {/* Actions */}

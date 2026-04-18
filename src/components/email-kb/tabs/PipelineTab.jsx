@@ -1,25 +1,32 @@
 import React, { useState, useEffect } from 'react';
 import {
-    Sparkles, Sparkle, Layers, FileText, CheckCircle2, ChevronRight, RotateCcw, Loader2
+    Sparkles, Sparkle, Layers, FileText, CheckCircle2, ChevronRight, RotateCcw, Loader2,
+    Shield, Filter, Combine
 } from 'lucide-react';
 
 const STAGES = [
-    { key: 'cleanup',  icon: Sparkle,       color: 'slate',   configurable: false, titleKey: 'email_kb.stage_cleanup',  descKey: 'email_kb.stage_cleanup_desc' },
-    { key: 'article',  icon: Sparkles,      color: 'blue',    configurable: true,  titleKey: 'email_kb.stage_article',  descKey: 'email_kb.stage_article_desc', withParallel: true },
-    { key: 'category', icon: Layers,        color: 'amber',   configurable: true,  titleKey: 'email_kb.stage_category', descKey: 'email_kb.stage_category_desc' },
-    { key: 'merge',    icon: FileText,      color: 'purple',  configurable: true,  titleKey: 'email_kb.stage_merge',    descKey: 'email_kb.stage_merge_desc' },
-    { key: 'ingest',   icon: CheckCircle2,  color: 'emerald', configurable: false, titleKey: 'email_kb.stage_ingest',   descKey: 'email_kb.stage_ingest_desc' },
+    { key: 'cleanup',    icon: Sparkle,      color: 'slate',   configurable: false, titleKey: 'email_kb.stage_cleanup',    descKey: 'email_kb.stage_cleanup_desc' },
+    { key: 'pii',        icon: Shield,       color: 'rose',    configurable: false, titleKey: 'email_kb.stage_pii',        descKey: 'email_kb.stage_pii_desc', togglesSetting: 'redact_pii' },
+    { key: 'usefulness', icon: Filter,       color: 'cyan',    configurable: false, titleKey: 'email_kb.stage_usefulness', descKey: 'email_kb.stage_usefulness_desc', comingSoon: true },
+    { key: 'article',    icon: Sparkles,     color: 'blue',    configurable: true,  titleKey: 'email_kb.stage_article',    descKey: 'email_kb.stage_article_desc', withParallel: true },
+    { key: 'category',   icon: Layers,       color: 'amber',   configurable: true,  titleKey: 'email_kb.stage_category',   descKey: 'email_kb.stage_category_desc' },
+    { key: 'merge',      icon: FileText,     color: 'purple',  configurable: true,  titleKey: 'email_kb.stage_merge',      descKey: 'email_kb.stage_merge_desc' },
+    { key: 'dedupe',     icon: Combine,      color: 'fuchsia', configurable: false, titleKey: 'email_kb.stage_dedupe',     descKey: 'email_kb.stage_dedupe_desc', comingSoon: true },
+    { key: 'ingest',     icon: CheckCircle2, color: 'emerald', configurable: false, titleKey: 'email_kb.stage_ingest',     descKey: 'email_kb.stage_ingest_desc' },
 ];
 
 const COLORS = {
     slate:   { bg: 'bg-slate-500/10',   border: 'border-slate-400/40',   text: 'text-slate-600',   solid: 'bg-slate-500' },
+    rose:    { bg: 'bg-rose-500/10',    border: 'border-rose-500/40',    text: 'text-rose-600',    solid: 'bg-rose-500' },
+    cyan:    { bg: 'bg-cyan-500/10',    border: 'border-cyan-500/40',    text: 'text-cyan-600',    solid: 'bg-cyan-500' },
     blue:    { bg: 'bg-blue-500/10',    border: 'border-blue-500/40',    text: 'text-blue-600',    solid: 'bg-blue-500' },
     amber:   { bg: 'bg-amber-500/10',   border: 'border-amber-500/40',   text: 'text-amber-600',   solid: 'bg-amber-500' },
     purple:  { bg: 'bg-purple-500/10',  border: 'border-purple-500/40',  text: 'text-purple-600',  solid: 'bg-purple-500' },
+    fuchsia: { bg: 'bg-fuchsia-500/10', border: 'border-fuchsia-500/40', text: 'text-fuchsia-600', solid: 'bg-fuchsia-500' },
     emerald: { bg: 'bg-emerald-500/10', border: 'border-emerald-500/40', text: 'text-emerald-600', solid: 'bg-emerald-500' },
 };
 
-const StageNode = ({ stage, idx, selected, inactive, onClick, tier, t }) => {
+const StageNode = ({ stage, idx, selected, inactive, onClick, tier, subLabel, t }) => {
     const c = COLORS[stage.color];
     const Icon = stage.icon;
     return (
@@ -39,6 +46,11 @@ const StageNode = ({ stage, idx, selected, inactive, onClick, tier, t }) => {
                 <span className={`absolute -top-1.5 -left-1.5 w-5 h-5 rounded-full ${c.solid} text-white text-[10px] font-bold flex items-center justify-center`}>
                     {idx + 1}
                 </span>
+                {stage.comingSoon && (
+                    <span className="absolute -bottom-1.5 -right-1.5 w-4 h-4 rounded-full bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[8px] font-bold text-[var(--text-tertiary)] flex items-center justify-center" title={t('email_kb.stage_coming_soon')}>
+                        ⋯
+                    </span>
+                )}
             </div>
             <div className="mt-2 text-[11px] font-semibold text-[var(--text-primary)] leading-tight">
                 {t(stage.titleKey)}
@@ -46,7 +58,10 @@ const StageNode = ({ stage, idx, selected, inactive, onClick, tier, t }) => {
             {tier && stage.configurable && (
                 <div className={`mt-1 text-[10px] ${c.text} font-medium`}>{t(`email_kb.tier_${tier}`)}</div>
             )}
-            {inactive && (
+            {subLabel && (
+                <div className="mt-1 text-[10px] text-[var(--text-tertiary)]">{subLabel}</div>
+            )}
+            {inactive && !subLabel && (
                 <div className="mt-1 text-[10px] text-[var(--text-tertiary)] italic">
                     {t('email_kb.pipeline_stage_inactive')}
                 </div>
@@ -169,7 +184,12 @@ const PipelineTab = ({ controller, onEditingChange, t }) => {
                 <div className="p-4 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-subtle)] overflow-x-auto">
                     <div className="flex items-start gap-0 min-w-max">
                         {STAGES.map((s, i) => {
-                            const inactive = isPerEmail && ['article', 'category', 'merge'].includes(s.key);
+                            const inactive =
+                                (isPerEmail && ['article', 'category', 'merge', 'dedupe'].includes(s.key)) ||
+                                (s.togglesSetting && !settings[s.togglesSetting]);
+                            let subLabel = null;
+                            if (s.togglesSetting && !settings[s.togglesSetting]) subLabel = 'off';
+                            else if (s.comingSoon) subLabel = t('email_kb.stage_coming_soon');
                             return (
                                 <React.Fragment key={s.key}>
                                     <StageNode
@@ -179,6 +199,7 @@ const PipelineTab = ({ controller, onEditingChange, t }) => {
                                         inactive={inactive}
                                         onClick={setSelectedStage}
                                         tier={s.configurable ? pc[s.key]?.modelTier : null}
+                                        subLabel={subLabel}
                                         t={t}
                                     />
                                     {i < STAGES.length - 1 && <Connector active={!inactive} />}
