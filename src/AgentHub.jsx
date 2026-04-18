@@ -176,6 +176,10 @@ const AgentHub = ({
             setDirectSessionSkills(Array.isArray(skills) ? skills : []);
             setDirectActivatedSessionSkillIds(Array.isArray(activatedSkillIds) ? activatedSkillIds : []);
         }, []),
+        onSessionSkillsUpdated: useCallback(({ skills, activatedSkillIds }) => {
+            setDirectSessionSkills(Array.isArray(skills) ? skills : []);
+            setDirectActivatedSessionSkillIds(Array.isArray(activatedSkillIds) ? activatedSkillIds : []);
+        }, []),
     });
 
 
