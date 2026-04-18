@@ -118,6 +118,8 @@ const InputArea = ({
     user,
     activeSkillIds = [],
     agentAttachedSkillIds = [],
+    directSessionSkills = [],
+    directConversationId = null,
     onToggleSkill,
 }) => {
     const [attachments, setAttachments] = useState([]);
@@ -868,6 +870,9 @@ const InputArea = ({
                                         user={user}
                                         activeSkillIds={activeSkillIds}
                                         attachedSkillIds={agentAttachedSkillIds}
+                                        directMode={!!directMode}
+                                        directConversationId={directConversationId}
+                                        directSessionSkills={directSessionSkills}
                                         onToggleSkill={onToggleSkill}
                                     />
                                 )}

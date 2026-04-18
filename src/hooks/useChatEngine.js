@@ -31,6 +31,7 @@ export default function useChatEngine({
     onNotebookSourceAdded,
     onNotebookThemeUpdate,
     activeSkillIds,
+    onSessionSkillsBootstrapped,
 }) {
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -195,6 +196,15 @@ export default function useChatEngine({
                 }, seconds * 1000);
                 break;
             }
+
+            case 'session_skills_bootstrapped':
+                if (Array.isArray(data.skills)) {
+                    onSessionSkillsBootstrapped?.({
+                        skills: data.skills,
+                        activatedSkillIds: Array.isArray(data.activatedSkillIds) ? data.activatedSkillIds : [],
+                    });
+                }
+                break;
 
             case 'tool_start':
                 setMessages(prev => prev.map(m => {
@@ -816,7 +826,7 @@ export default function useChatEngine({
         // Deliberately NOT in deps: `messages` (read via messagesRef), `handleSSEEvent`
         // (invoked via handleSSEEventRef). Keeping them here would recreate
         // `sendMessage` on every streamed token and break child memoization.
-    }, [selectedAgent, isLoading, abortController, currentConversation, getNotebookPayload, directMode, onDirectConversationCreated, activeProject, activeSkillIds]);
+    }, [selectedAgent, isLoading, abortController, currentConversation, getNotebookPayload, directMode, onDirectConversationCreated, activeProject, activeSkillIds, onSessionSkillsBootstrapped]);
 
     const stopGenerating = useCallback(() => {
         if (abortController) abortController.abort();

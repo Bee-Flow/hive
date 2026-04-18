@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Sparkles, Plus, Lock, Users, Link2, Puzzle } from 'lucide-react';
 import SkillFormModal from './SkillFormModal';
 import { useSkills } from '../../hooks/useSkills';
+import { API_BASE, authFetch } from '../../utils/helpers';
 
 export const SKILL_CAP = 5;
 
@@ -19,6 +20,9 @@ export default function SkillsPopover({
     user,
     activeSkillIds = [],
     attachedSkillIds = [],
+    directMode = false,
+    directConversationId = null,
+    directSessionSkills = [],
     onToggleSkill,
     buttonClassName,
 }) {
@@ -27,7 +31,14 @@ export default function SkillsPopover({
     const [search, setSearch] = useState('');
     const [showForm, setShowForm] = useState(false);
     const [saving, setSaving] = useState(false);
+    const [sessionSkills, setSessionSkills] = useState([]);
+    const [importingSkillId, setImportingSkillId] = useState(null);
+    const [importedSessionSkillIds, setImportedSessionSkillIds] = useState([]);
     const popoverRef = useRef(null);
+
+    useEffect(() => {
+        setSessionSkills(Array.isArray(directSessionSkills) ? directSessionSkills : []);
+    }, [directSessionSkills]);
 
     useEffect(() => {
         if (!open) return;
@@ -48,9 +59,26 @@ export default function SkillsPopover({
         return skills.filter(s => s.name.toLowerCase().includes(q) || s.description?.toLowerCase().includes(q));
     }, [skills, search]);
 
-    if (!loading && skills.length === 0) return null;
+    const filteredSessionSkills = useMemo(() => {
+        const q = search.trim().toLowerCase();
+        const source = Array.isArray(sessionSkills) ? sessionSkills : [];
+        if (!q) return source;
+        return source.filter(s => (s.name || '').toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q));
+    }, [sessionSkills, search]);
+
+    if (!loading && skills.length === 0 && (!directMode || sessionSkills.length === 0)) return null;
 
     const canActivateMore = activeCount < SKILL_CAP;
+
+    const refreshSessionSkills = async () => {
+        if (!directMode || !directConversationId) return;
+        try {
+            const res = await authFetch(`${API_BASE}/ai/direct/conversations/${directConversationId}/session-skills`);
+            if (!res.ok) return;
+            const data = await res.json();
+            setSessionSkills(Array.isArray(data.skills) ? data.skills : []);
+        } catch (_) { /* ignore */ }
+    };
 
     const handleCreate = async (form) => {
         setSaving(true);
@@ -67,10 +95,37 @@ export default function SkillsPopover({
         }
     };
 
+    const handleImportSessionSkill = async (skillId) => {
+        if (!directConversationId || !skillId) return;
+        setImportingSkillId(skillId);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/direct/conversations/${directConversationId}/session-skills/${skillId}/import`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ isShared: false, dynamicActivation: true }),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || 'Failed to import skill');
+            }
+            setImportedSessionSkillIds(prev => prev.includes(skillId) ? prev : [...prev, skillId]);
+            await refresh();
+        } catch (err) {
+            alert(err.message || 'Failed to import session skill');
+        } finally {
+            setImportingSkillId(null);
+        }
+    };
+
     return (
         <div className="relative" ref={popoverRef}>
             <button
-                onClick={() => { setOpen(v => !v); setSearch(''); if (!skills.length) refresh(); }}
+                onClick={() => {
+                    setOpen(v => !v);
+                    setSearch('');
+                    if (!skills.length) refresh();
+                    if (directMode && directConversationId) refreshSessionSkills();
+                }}
                 title="Skills"
                 className={
                     buttonClassName ||
@@ -175,6 +230,52 @@ export default function SkillsPopover({
                                 </div>
                             );
                         })}
+
+                        {directMode && (
+                            <div className="mt-2 border-t pt-2" style={{ borderColor: 'var(--border-subtle)' }}>
+                                <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-tertiary)' }}>
+                                    Chat-Local Skills
+                                </div>
+                                {directConversationId && filteredSessionSkills.length === 0 && (
+                                    <div className="px-3 py-2 text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                                        No temporary skills yet for this direct chat.
+                                    </div>
+                                )}
+                                {!directConversationId && (
+                                    <div className="px-3 py-2 text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                                        Send the first message to generate temporary skills.
+                                    </div>
+                                )}
+                                {directConversationId && filteredSessionSkills.map(skill => {
+                                    const importing = importingSkillId === skill.id;
+                                    const imported = importedSessionSkillIds.includes(skill.id);
+                                    return (
+                                        <div
+                                            key={`session-${skill.id}`}
+                                            className="flex items-center gap-2 px-3 py-2 rounded-lg"
+                                            style={{ background: 'var(--bg-tertiary)' }}
+                                        >
+                                            <div className="w-7 h-7 rounded-md flex items-center justify-center text-sm bg-white/40">🧩</div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{skill.name}</div>
+                                                {skill.description && (
+                                                    <div className="text-[10px] truncate" style={{ color: 'var(--text-tertiary)' }}>{skill.description}</div>
+                                                )}
+                                            </div>
+                                            <button
+                                                onClick={() => handleImportSessionSkill(skill.id)}
+                                                disabled={importing || imported}
+                                                className="px-2 py-1 text-[10px] rounded border transition-colors disabled:opacity-60"
+                                                style={{ borderColor: 'var(--border-subtle)', color: 'var(--accent-primary)' }}
+                                                title="Import into skill library"
+                                            >
+                                                {imported ? 'Imported' : importing ? 'Importing…' : 'Import'}
+                                            </button>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
                     </div>
 
                     <button

@@ -107,6 +107,8 @@ const AgentHub = ({
 
     // Skills State (must be declared before useChatEngine so it can reference activeSkillIds)
     const [activeSkillIds, setActiveSkillIds] = useState([]);
+    const [directSessionSkills, setDirectSessionSkills] = useState([]);
+    const [directActivatedSessionSkillIds, setDirectActivatedSessionSkillIds] = useState([]);
 
     // Hydrate user-scoped preferences once the user id is known.
     useEffect(() => {
@@ -149,7 +151,14 @@ const AgentHub = ({
             setNotebookContent(content);
             if (content) setShowNotebook(true);
         }, []),
-        directMode: directChatMode ? { enabled: true, modelTier: selectedTier } : undefined,
+        directMode: directChatMode ? {
+            enabled: true,
+            modelTier: selectedTier,
+            getExtraPayload: () => ({
+                ...(Array.isArray(directSessionSkills) && directSessionSkills.length > 0 ? { sessionSkills: directSessionSkills } : {}),
+                ...(Array.isArray(directActivatedSessionSkillIds) && directActivatedSessionSkillIds.length > 0 ? { activatedSessionSkillIds: directActivatedSessionSkillIds } : {}),
+            }),
+        } : undefined,
         activeProject,
         onDirectConversationCreated: useCallback(({ conversationId, title }) => {
             if (conversationId && !currentDirectConversation?.id) {
@@ -163,6 +172,10 @@ const AgentHub = ({
             loadDirectConversations();
         }, [currentDirectConversation]),
         activeSkillIds,
+        onSessionSkillsBootstrapped: useCallback(({ skills, activatedSkillIds }) => {
+            setDirectSessionSkills(Array.isArray(skills) ? skills : []);
+            setDirectActivatedSessionSkillIds(Array.isArray(activatedSkillIds) ? activatedSkillIds : []);
+        }, []),
     });
 
 
@@ -827,6 +840,8 @@ const AgentHub = ({
         setCurrentConversation(null);
         setMessages([]);
         setCurrentDirectConversation(null);
+        setDirectSessionSkills([]);
+        setDirectActivatedSessionSkillIds([]);
         setShowMarketplace(false);
         if (onCloseSettings) onCloseSettings();
         if (onCloseAgentDesigner) onCloseAgentDesigner();
@@ -842,6 +857,8 @@ const AgentHub = ({
             if (res.ok) {
                 const data = await res.json();
                 setCurrentDirectConversation(data);
+                setDirectSessionSkills(Array.isArray(data.sessionSkills) ? data.sessionSkills : []);
+                setDirectActivatedSessionSkillIds(Array.isArray(data.activatedSessionSkillIds) ? data.activatedSessionSkillIds : []);
                 // normalizeLoadedMessages handles both the deleted-placeholder
                 // marking AND lifting legacy string thinking into the canonical
                 // thinkingParts shape the UI expects.
@@ -880,6 +897,8 @@ const AgentHub = ({
             if (currentDirectConversation?.id === convId) {
                 setCurrentDirectConversation(null);
                 setMessages([]);
+                setDirectSessionSkills([]);
+                setDirectActivatedSessionSkillIds([]);
             }
         } catch (e) { console.error('Failed to delete direct conversation:', e); }
     };
@@ -893,6 +912,8 @@ const AgentHub = ({
         if (directChatMode) {
             setCurrentDirectConversation(null);
             setMessages([]);
+            setDirectSessionSkills([]);
+            setDirectActivatedSessionSkillIds([]);
             setNotebookContent('');
             setNotebookSelection('');
             setShowNotebook(false);
@@ -906,6 +927,8 @@ const AgentHub = ({
             setSelectedAgent(null);
             setCurrentDirectConversation(null);
             setMessages([]);
+            setDirectSessionSkills([]);
+            setDirectActivatedSessionSkillIds([]);
             setNotebookContent('');
             setNotebookSelection('');
             setShowNotebook(false);
@@ -1531,6 +1554,8 @@ const AgentHub = ({
                                                     setInput={setChatInput}
                                                     user={user}
                                                     activeSkillIds={activeSkillIds}
+                                                    directSessionSkills={directSessionSkills}
+                                                    directConversationId={currentDirectConversation?.id}
                                                     onToggleSkill={handleToggleSkill}
                                                 />
                                             </DirectChatWelcome>
@@ -1571,6 +1596,8 @@ const AgentHub = ({
                                             setInput={setChatInput}
                                             user={user}
                                             activeSkillIds={activeSkillIds}
+                                            directSessionSkills={directSessionSkills}
+                                            directConversationId={currentDirectConversation?.id}
                                             onToggleSkill={handleToggleSkill}
                                         />
                                     </div>
