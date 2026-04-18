@@ -671,26 +671,39 @@ export default function NotebookSources({
                     margin: '0 8px 8px',
                     padding: dragOver ? '8px' : '4px 4px',
                     border: dragOver
-                        ? '2px dashed var(--accent-primary)'
+                        ? '2px dashed var(--brand-primary)'
                         : '2px dashed var(--border-subtle)',
-                    background: dragOver ? 'rgba(99,102,241,0.04)' : 'transparent',
+                    background: dragOver ? 'var(--brand-gradient-soft)' : 'transparent',
                     transition: 'border-color 0.2s, background 0.2s',
                 }}
             >
                 {sources.length === 0 ? (
-                    <div className="flex flex-col items-center justify-center h-full py-10 select-none">
+                    <div className="flex flex-col items-center justify-center h-full py-8 px-2 select-none">
                         <div
-                            className="w-12 h-12 rounded-2xl flex items-center justify-center mb-3"
-                            style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}
+                            className="w-14 h-14 rounded-2xl flex items-center justify-center mb-3"
+                            style={{ background: 'var(--brand-gradient-soft)', border: '1px solid var(--border-subtle)' }}
                         >
-                            <Upload className="w-5 h-5" style={{ color: 'var(--text-tertiary)' }} />
+                            <Upload className="w-6 h-6" style={{ color: 'var(--brand-primary)' }} />
                         </div>
-                        <p className="text-[11px] font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>
-                            No sources yet
+                        <p className="text-[12px] font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+                            Add your first source
                         </p>
-                        <p className="text-[10px] text-center leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
-                            Add files, URLs, or text above,<br/>or drag &amp; drop files here
+                        <p className="text-[10px] text-center leading-relaxed mb-3" style={{ color: 'var(--text-tertiary)' }}>
+                            PDFs, docs, URLs, or pasted text.<br/>Drop files here to upload.
                         </p>
+                        <div className="grid grid-cols-2 gap-1.5 w-full">
+                            {ADD_BUTTONS.map(({ key, label, Icon, accent }) => (
+                                <button
+                                    key={key}
+                                    onClick={() => setActivePanel(key)}
+                                    className="flex flex-col items-center gap-1 py-2 rounded-lg border transition-all hover:shadow-sm"
+                                    style={{ background: 'var(--surface-1)', borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}
+                                >
+                                    <Icon className="w-3.5 h-3.5" style={{ color: accent }} />
+                                    <span className="text-[10px] font-medium">{label}</span>
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 ) : (
                     sources.map(source => (
@@ -716,7 +729,7 @@ export default function NotebookSources({
                                 width: `${readyPct}%`,
                                 background: readyPct === 100
                                     ? 'linear-gradient(90deg, #22c55e, #16a34a)'
-                                    : 'linear-gradient(90deg, var(--accent-primary), #6366f1)',
+                                    : 'var(--brand-gradient)',
                             }}
                         />
                     </div>

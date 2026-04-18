@@ -563,8 +563,8 @@ const Sidebar = ({
                 {[
                     { label: t('sidebar.new_chat') || 'New Chat', icon: PenLine, onClick: onDirectChat, active: directChatMode && !selectedAgent },
                     { label: t('sidebar.agent_store'), icon: Store, onClick: onOpenMarketplace, active: currentPage === 'marketplace' },
-                    { label: t('sidebar.search'), icon: Search, onClick: onOpenSearch, active: false },
-                ].map(({ label, icon: Icon, onClick, active, primary, beta }) => (
+                    { label: t('sidebar.search'), icon: Search, onClick: onOpenSearch, active: false, kbd: (typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)) ? '⌘K' : 'Ctrl+K' },
+                ].map(({ label, icon: Icon, onClick, active, primary, beta, kbd }) => (
                     <button
                         key={label}
                         onClick={onClick}
@@ -579,6 +579,7 @@ const Sidebar = ({
                         {isOpen && active && <div className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-r-full bg-[var(--accent-primary)]" />}
                         <Icon className={`${isOpen ? 'w-4 h-4' : 'w-5 h-5'} ${isOpen ? (active ? 'text-[var(--accent-primary)]' : 'text-[var(--text-tertiary)]') : ''}`} strokeWidth={active || primary ? 2.25 : 1.75} />
                         {isOpen && <span className={`text-[13px] ${active ? 'font-semibold text-black' : 'text-black'}`}>{label}</span>}
+                        {isOpen && kbd && <kbd className="ml-auto inline-flex items-center px-1.5 py-0.5 rounded-md bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] text-[10px] font-medium text-[var(--text-tertiary)] group-hover:text-[var(--text-secondary)] transition-colors">{kbd}</kbd>}
                         {isOpen && primary === undefined && beta && <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>}
                     </button>
                 ))}

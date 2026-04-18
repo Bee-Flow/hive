@@ -1032,7 +1032,7 @@ function MathHint() {
     return (
         <div
             className="shrink-0 flex items-center justify-between px-4 py-1.5 text-[11px] border-b"
-            style={{ background: 'linear-gradient(90deg, rgba(99,102,241,0.06), transparent)', borderColor: 'var(--border-subtle)', color: 'var(--text-tertiary)' }}
+            style={{ background: 'var(--brand-gradient-soft)', borderColor: 'var(--border-subtle)', color: 'var(--text-tertiary)' }}
         >
             <span>
                 💡 <strong className="text-[var(--text-secondary)]">{t('notebooks.tips')}</strong>{' '}

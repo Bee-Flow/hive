@@ -266,6 +266,18 @@ const AgentHub = ({
         sendMessageRef.current = (text) => sendMessage(text, []);
     }, [selectedAgent, isLoading]);
 
+    // Global Cmd/Ctrl+K to open Search
+    useEffect(() => {
+        const onKey = (e) => {
+            if ((e.metaKey || e.ctrlKey) && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'k') {
+                e.preventDefault();
+                setShowSearch(prev => !prev);
+            }
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, []);
+
 
 
     // Reusable function to (re-)fetch published agents
@@ -925,6 +937,11 @@ const AgentHub = ({
 
     const handleSearchResultSelect = (result) => {
         setShowSearch(false);
+        if (result.kind === 'direct') {
+            setDirectChatMode(true);
+            handleSelectDirectConversation({ id: result.id });
+            return;
+        }
         // Switch agent if needed
         if (!selectedAgent || selectedAgent.id !== result.agent_id) {
             const agent = agents.find(a => a.id === result.agent_id);

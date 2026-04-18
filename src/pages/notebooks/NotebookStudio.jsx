@@ -158,7 +158,7 @@ export default function NotebookStudio({ onGenerate, generating, onExport, expor
                             <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
                         </svg>
                         <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center rounded-full text-[9px] font-bold text-white px-1"
-                            style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', boxShadow: '0 2px 6px rgba(139,92,246,0.4)' }}>
+                            style={{ background: 'var(--brand-gradient)', boxShadow: 'var(--shadow-sm)' }}>
                             {generationCount}
                         </span>
                     </button>

@@ -41,7 +41,7 @@ export default function NotebookChat({
                 {messages.length === 0 && (
                     <div className="flex flex-col items-center justify-center h-full text-center py-8">
                         <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3"
-                            style={{ background: 'linear-gradient(135deg, var(--accent-primary), #8b5cf6)' }}>
+                            style={{ background: 'var(--brand-gradient)' }}>
                             <span className="text-lg">🤖</span>
                         </div>
                         <p className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
