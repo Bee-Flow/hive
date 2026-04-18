@@ -42,9 +42,18 @@ export default function SkillsPopover({
 
     useEffect(() => {
         if (!open) return;
-        const close = (e) => { if (popoverRef.current && !popoverRef.current.contains(e.target)) setOpen(false); };
-        document.addEventListener('mousedown', close);
-        return () => document.removeEventListener('mousedown', close);
+        const close = (e) => {
+            const root = popoverRef.current;
+            if (!root) return;
+            const path = typeof e.composedPath === 'function' ? e.composedPath() : [];
+            const clickedInside = root.contains(e.target) || path.includes(root);
+            if (clickedInside) return;
+            setOpen(false);
+        };
+        // Capture phase + composedPath support prevents false "outside click"
+        // closes when events originate from/through shadow DOM.
+        document.addEventListener('pointerdown', close, true);
+        return () => document.removeEventListener('pointerdown', close, true);
     }, [open]);
 
     const attachedSet = useMemo(() => new Set(attachedSkillIds), [attachedSkillIds]);
