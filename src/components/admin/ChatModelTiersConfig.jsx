@@ -102,6 +102,28 @@ const TIER_DEFAULTS = {
     pro: { maxTokens: 40960, temperature: 0.7 },
 };
 
+// Custom tier defaults when creating a new one
+const CUSTOM_TIER_DEFAULTS = { maxTokens: 16384, temperature: 0.7 };
+
+const TASK_TYPES = [
+    { key: 'direct_chat', label: 'Direct Chat' },
+    { key: 'agent_chat', label: 'Agent Chat' },
+    { key: 'email_kb', label: 'Email Knowledge Base' },
+];
+
+// Convert a free-form label into a stable custom tier id (slug, namespaced).
+const slugifyTierLabel = (label) => {
+    const slug = String(label || '')
+        .toLowerCase()
+        .normalize('NFKD')
+        .replace(/[^\w\s-]/g, '')
+        .trim()
+        .replace(/[\s_]+/g, '-')
+        .replace(/-+/g, '-')
+        .replace(/^-|-$/g, '');
+    return slug ? `custom:${slug}` : '';
+};
+
 
 /** Searchable model selector — full-screen overlay with filters */
 const SearchableModelSelect = ({ value, label, groups, getModelMeta, onChange }) => {
@@ -387,15 +409,20 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
         writer: { modelId: '', label: 'Writer' },
         pro: { modelId: '', label: 'Deep Thinking' }
     });
+    const [customTiers, setCustomTiers] = useState([]);
+    const [customMessage, setCustomMessage] = useState(null);
+    const [customSaving, setCustomSaving] = useState(false);
     const [saving, setSaving] = useState(false);
     const [euSaving, setEuSaving] = useState(false);
     const [message, setMessage] = useState(null);
     const [euMessage, setEuMessage] = useState(null);
     const [expandedTier, setExpandedTier] = useState(null);
+    const [expandedCustomId, setExpandedCustomId] = useState(null);
 
     useEffect(() => {
         loadConfig();
         loadEuConfig();
+        loadCustomTiers();
     }, []);
 
     const loadConfig = async () => {
@@ -430,6 +457,99 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
             setMessage({ type: 'error', text: 'Failed to save tier config' });
         }
         setSaving(false);
+    };
+
+    const loadCustomTiers = async () => {
+        try {
+            const res = await authFetch(`${API_BASE}/ai/config/custom-chat-models`);
+            if (res.ok) {
+                const data = await res.json();
+                setCustomTiers(Array.isArray(data.tiers) ? data.tiers : []);
+            }
+        } catch (e) { console.error('Failed to load custom tiers:', e); }
+    };
+
+    const saveCustomTiers = async (next = customTiers) => {
+        setCustomSaving(true);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/config/custom-chat-models`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ tiers: next }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (Array.isArray(data.tiers)) setCustomTiers(data.tiers);
+                const warn = Array.isArray(data.warnings) && data.warnings.length > 0
+                    ? `Saved, with warnings: ${data.warnings.join('; ')}`
+                    : 'Custom tiers saved!';
+                setCustomMessage({ type: data.warnings?.length ? 'warning' : 'success', text: warn });
+                setTimeout(() => setCustomMessage(null), 4000);
+            } else {
+                setCustomMessage({ type: 'error', text: 'Failed to save custom tiers' });
+            }
+        } catch (e) {
+            setCustomMessage({ type: 'error', text: 'Failed to save custom tiers' });
+        }
+        setCustomSaving(false);
+    };
+
+    const addCustomTier = () => {
+        // Generate a unique placeholder id so the new card has a stable key
+        let n = customTiers.length + 1;
+        let placeholderId = `custom:new-tier-${n}`;
+        while (customTiers.some(t => t.id === placeholderId)) {
+            n += 1;
+            placeholderId = `custom:new-tier-${n}`;
+        }
+        setCustomTiers(prev => [
+            ...prev,
+            {
+                id: placeholderId,
+                label: `New tier ${n}`,
+                icon: '✨',
+                description: '',
+                modelId: '',
+                maxTokens: CUSTOM_TIER_DEFAULTS.maxTokens,
+                temperature: CUSTOM_TIER_DEFAULTS.temperature,
+                reasoningEffort: undefined,
+                reasoningSummary: false,
+                allowedTaskTypes: ['direct_chat', 'agent_chat', 'email_kb'],
+                _isNew: true, // local-only flag: show the label/id editor pre-expanded
+            },
+        ]);
+        setExpandedCustomId(placeholderId);
+    };
+
+    const updateCustomTier = (id, patch) => {
+        setCustomTiers(prev => prev.map(t => t.id === id ? { ...t, ...patch } : t));
+    };
+
+    const renameCustomTier = (currentId, newLabel) => {
+        const newId = slugifyTierLabel(newLabel);
+        setCustomTiers(prev => {
+            const next = prev.map(t => {
+                if (t.id !== currentId) return t;
+                return { ...t, label: newLabel, id: newId || currentId };
+            });
+            return next;
+        });
+        if (newId && newId !== currentId) setExpandedCustomId(newId);
+    };
+
+    const removeCustomTier = (id) => {
+        if (!window.confirm('Delete this custom tier? This cannot be undone.')) return;
+        setCustomTiers(prev => prev.filter(t => t.id !== id));
+    };
+
+    const toggleCustomTaskType = (id, taskKey) => {
+        setCustomTiers(prev => prev.map(t => {
+            if (t.id !== id) return t;
+            const set = new Set(t.allowedTaskTypes || []);
+            if (set.has(taskKey)) set.delete(taskKey);
+            else set.add(taskKey);
+            return { ...t, allowedTaskTypes: Array.from(set) };
+        }));
     };
 
     const saveEu = async () => {
@@ -607,6 +727,146 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
         );
     };
 
+    const renderCustomTierCard = (tier) => {
+        const isExpanded = expandedCustomId === tier.id;
+        const selectedModel = chatModels.find(m => m.id === tier.modelId);
+        const displayName = selectedModel ? getDisplayName(selectedModel) : null;
+        const selectedLabel = selectedModel
+            ? (displayName !== selectedModel.id ? displayName : selectedModel.id)
+            : '— Not configured —';
+        const taskTypes = new Set(tier.allowedTaskTypes || []);
+
+        return (
+            <div key={tier.id} className="rounded-xl border overflow-hidden" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)' }}>
+                <div className="p-4">
+                    <div className="flex items-center gap-3 mb-3">
+                        <input
+                            type="text"
+                            value={tier.icon || ''}
+                            onChange={e => updateCustomTier(tier.id, { icon: e.target.value.slice(0, 4) })}
+                            maxLength={4}
+                            className="w-12 text-center text-xl px-1 py-1 rounded-lg border outline-none"
+                            style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                            title="Icon or emoji"
+                        />
+                        <div className="flex-1 min-w-0">
+                            <input
+                                type="text"
+                                value={tier.label || ''}
+                                onChange={e => renameCustomTier(tier.id, e.target.value)}
+                                placeholder="Tier name"
+                                className="w-full text-sm font-semibold px-2 py-1 rounded-lg border outline-none"
+                                style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                            />
+                            <p className="text-[10px] mt-0.5 font-mono" style={{ color: 'var(--text-muted)' }}>{tier.id}</p>
+                        </div>
+                        <button
+                            onClick={() => setExpandedCustomId(isExpanded ? null : tier.id)}
+                            className="text-xs px-2 py-1 rounded-lg hover:bg-white/10 transition-colors"
+                            style={{ color: 'var(--text-muted)' }}
+                        >
+                            {isExpanded ? '▲ Settings' : '▼ Settings'}
+                        </button>
+                        <button
+                            onClick={() => removeCustomTier(tier.id)}
+                            className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-red-500/20 transition-colors"
+                            style={{ color: 'var(--text-muted)' }}
+                            title="Delete tier"
+                        >✕</button>
+                    </div>
+
+                    <input
+                        type="text"
+                        value={tier.description || ''}
+                        onChange={e => updateCustomTier(tier.id, { description: e.target.value })}
+                        placeholder="Short description (shown in tier picker)"
+                        className="w-full text-xs px-3 py-2 mb-3 rounded-lg border outline-none"
+                        style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                    />
+
+                    <SearchableModelSelect
+                        value={tier.modelId || ''}
+                        label={selectedLabel}
+                        groups={byProvider}
+                        getModelMeta={getModelMeta}
+                        onChange={val => updateCustomTier(tier.id, { modelId: val })}
+                    />
+
+                    <div className="mt-3">
+                        <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5" style={{ color: 'var(--text-muted)' }}>
+                            Available for
+                        </div>
+                        <div className="flex flex-wrap gap-1.5">
+                            {TASK_TYPES.map(tt => {
+                                const active = taskTypes.has(tt.key);
+                                return (
+                                    <button
+                                        key={tt.key}
+                                        type="button"
+                                        onClick={() => toggleCustomTaskType(tier.id, tt.key)}
+                                        className="px-2.5 py-1 rounded-full text-xs font-medium transition-all"
+                                        style={{
+                                            background: active ? 'var(--accent-primary)' : 'var(--bg-secondary)',
+                                            color: active ? '#fff' : 'var(--text-muted)',
+                                            border: `1px solid ${active ? 'var(--accent-primary)' : 'var(--border-default)'}`,
+                                        }}
+                                    >
+                                        {active ? '✓ ' : ''}{tt.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+                </div>
+
+                {isExpanded && (
+                    <div className="px-4 pb-4 pt-1 border-t flex gap-4 flex-wrap" style={{ borderColor: 'var(--border-default)' }}>
+                        <div className="flex-1 min-w-[180px]">
+                            <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Max Tokens</label>
+                            <input
+                                type="number"
+                                value={tier.maxTokens !== undefined ? tier.maxTokens : CUSTOM_TIER_DEFAULTS.maxTokens}
+                                onChange={e => updateCustomTier(tier.id, { maxTokens: parseInt(e.target.value) || CUSTOM_TIER_DEFAULTS.maxTokens })}
+                                min={256} max={131072} step={256}
+                                className="w-full px-3 py-2 rounded-lg border outline-none focus:border-[var(--accent-primary)] text-sm"
+                                style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                            />
+                        </div>
+                        <div className="flex-1 min-w-[180px]">
+                            <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Temperature</label>
+                            <input
+                                type="number"
+                                value={tier.temperature !== undefined ? tier.temperature : CUSTOM_TIER_DEFAULTS.temperature}
+                                onChange={e => updateCustomTier(tier.id, { temperature: parseFloat(e.target.value) || CUSTOM_TIER_DEFAULTS.temperature })}
+                                min={0} max={2} step={0.1}
+                                className="w-full px-3 py-2 rounded-lg border outline-none focus:border-[var(--accent-primary)] text-sm"
+                                style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                            />
+                        </div>
+                        {isReasoningCapable(tier.modelId) && (
+                            <div className="flex-1 min-w-[180px]">
+                                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>🧠 {isClaudeReasoning(tier.modelId) ? 'Thinking Effort' : 'Reasoning Effort'}</label>
+                                <select
+                                    value={tier.reasoningEffort || 'none'}
+                                    onChange={e => updateCustomTier(tier.id, { reasoningEffort: e.target.value === 'none' ? undefined : e.target.value })}
+                                    className="w-full px-3 py-2 rounded-lg border outline-none focus:border-[var(--accent-primary)] text-sm"
+                                    style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                                >
+                                    <option value="none">None (disabled)</option>
+                                    <option value="low">Low</option>
+                                    <option value="medium">Medium</option>
+                                    <option value="high">High</option>
+                                    {isClaudeOpus47(tier.modelId) && <option value="xhigh">xHigh</option>}
+                                    {isClaudeOpus47(tier.modelId) && <option value="max">Max</option>}
+                                </select>
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     return (
         <div className="space-y-8">
             {/* Regular Chat Model Tiers */}
@@ -670,6 +930,55 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                     style={{ background: 'var(--accent-primary)' }}
                 >
                     {euSaving ? 'Saving...' : 'Save EU Tier Configuration'}
+                </button>
+            </div>
+
+            {/* Custom Tiers */}
+            <div className="p-4 sm:p-6 rounded-xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
+                <div className="flex items-center gap-3 mb-6">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style={{ background: 'rgba(234, 179, 8, 0.15)' }}>✨</div>
+                    <div className="flex-1">
+                        <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>Custom Tiers</h3>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                            Additional tiers beyond the standard four. Restrict each tier to specific task types and control per-group access from the Organisation Admin.
+                        </p>
+                    </div>
+                    <button
+                        onClick={addCustomTier}
+                        className="px-4 py-2 rounded-lg text-sm font-medium text-white hover:opacity-90 transition-opacity"
+                        style={{ background: 'var(--accent-primary)' }}
+                    >
+                        + Add Custom Tier
+                    </button>
+                </div>
+
+                {customMessage && (
+                    <div className={`mb-4 p-3 rounded-lg text-sm ${
+                        customMessage.type === 'success' ? 'bg-green-500/20 text-green-400' :
+                        customMessage.type === 'warning' ? 'bg-yellow-500/20 text-yellow-400' :
+                        'bg-red-500/20 text-red-400'
+                    }`}>
+                        {customMessage.text}
+                    </div>
+                )}
+
+                {customTiers.length === 0 ? (
+                    <div className="p-6 rounded-lg border text-center text-sm" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
+                        No custom tiers yet. Click <strong>Add Custom Tier</strong> to create one.
+                    </div>
+                ) : (
+                    <div className="space-y-4">
+                        {customTiers.map(renderCustomTierCard)}
+                    </div>
+                )}
+
+                <button
+                    onClick={() => saveCustomTiers()}
+                    disabled={customSaving}
+                    className="mt-6 px-6 py-2.5 rounded-lg font-medium text-sm transition-all text-white hover:opacity-90 disabled:opacity-50"
+                    style={{ background: 'var(--accent-primary)' }}
+                >
+                    {customSaving ? 'Saving...' : 'Save Custom Tiers'}
                 </button>
             </div>
         </div>

@@ -651,7 +651,10 @@ const AgentHub = ({
 
     const loadModelTiers = async () => {
         try {
-            const res = await authFetch(`${API_BASE}/ai/config/chat-models`);
+            // Use the permission- and task-aware endpoint so custom tiers appear
+            // only when the user's groups grant access AND the tier is allowed
+            // for the direct_chat task type. Standard tiers always pass through.
+            const res = await authFetch(`${API_BASE}/ai/config/tiers-for-user?taskType=direct_chat`);
             if (res.ok) setModelTiers(await res.json());
         } catch (e) { console.error('Failed to load model tiers:', e); }
     };

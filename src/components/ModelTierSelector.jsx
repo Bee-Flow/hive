@@ -8,6 +8,16 @@ const TIER_META = {
     pro: { icon: '✨', label: 'Deep Thinking', desc: 'Advanced reasoning', color: '#f59e0b' }
 };
 
+// Build a TIER_META entry from a custom tier config the server returned.
+function customTierMeta(key, cfg) {
+    return {
+        icon: cfg?.icon || '✨',
+        label: cfg?.label || key.replace(/^custom:/, ''),
+        desc: cfg?.description || 'Custom tier',
+        color: '#eab308',
+    };
+}
+
 const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection = 'up' }) => {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
@@ -18,8 +28,15 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
         return () => document.removeEventListener('mousedown', handler);
     }, []);
 
-    const current = TIER_META[value] || TIER_META.fast;
-    const tierKeys = Object.keys(TIER_META);
+    // Preserve ordering: auto, fast, thinking, writer, pro, then any custom tiers
+    // the server included (filtered server-side by group + task-type permissions).
+    const standardKeys = ['auto', 'fast', 'thinking', 'writer', 'pro'];
+    const customKeys = Object.keys(tiers).filter(k => k.startsWith('custom:'));
+    const tierKeys = [...standardKeys, ...customKeys];
+
+    const currentMeta = TIER_META[value]
+        || (value && value.startsWith('custom:') ? customTierMeta(value, tiers[value]) : null)
+        || TIER_META.fast;
 
     return (
         <div ref={ref} style={{ position: 'relative', display: 'inline-block' }} data-testid="model-tier-selector">
@@ -38,8 +55,8 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
                 title="Select model tier"
                 data-testid="model-tier-trigger"
             >
-                <span>{current.icon}</span>
-                <span>{current.label}</span>
+                <span>{currentMeta.icon}</span>
+                <span>{currentMeta.label}</span>
                 <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ opacity: 0.5 }}>
                     <path d="M2 4L5 7L8 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
@@ -60,10 +77,13 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
 
 
                     {tierKeys.map(key => {
-                        const meta = TIER_META[key];
                         const tierConfig = tiers[key] || {};
+                        const meta = TIER_META[key] || (key.startsWith('custom:') ? customTierMeta(key, tierConfig) : null);
+                        if (!meta) return null;
                         const isSelected = value === key;
-                        const isConfigured = key === 'auto' || !!tierConfig.modelId;
+                        // A standard tier must have a configured modelId; auto is always valid;
+                        // a custom tier is only included in the server payload when permitted, so show it.
+                        const isConfigured = key === 'auto' || key.startsWith('custom:') || !!tierConfig.modelId;
 
                         // Hide unconfigured tiers entirely
                         if (!isConfigured) return null;

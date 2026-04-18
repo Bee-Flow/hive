@@ -72,6 +72,11 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
     // Expanded group members
     const [expandedGroup, setExpandedGroup] = useState(null);
 
+    // Custom tier metadata — used alongside the four standard tiers in the
+    // group's Allowed-tiers editor. Empty allowedTiers on a group means "no
+    // restriction"; non-empty = only those ids are usable by group members.
+    const [customTiersMeta, setCustomTiersMeta] = useState([]);
+
     // Invitation state
     const [showInviteForm, setShowInviteForm] = useState(false);
     const [inviteEmail, setInviteEmail] = useState('');
@@ -110,6 +115,31 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
     }, []);
 
     useEffect(() => { fetchData(); }, [fetchData]);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/ai/config/custom-tiers-list`);
+                if (res.ok) {
+                    const data = await res.json();
+                    if (Array.isArray(data.tiers)) setCustomTiersMeta(data.tiers);
+                }
+            } catch (_) { /* non-critical */ }
+        })();
+    }, []);
+
+    const handleUpdateGroupAllowedTiers = async (groupId, newAllowedTiers) => {
+        try {
+            const res = await authFetch(`${API_BASE}/auth/groups/${groupId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ allowedTiers: newAllowedTiers }),
+            });
+            if (res.ok) await fetchData();
+        } catch (err) {
+            console.error('Failed to update group allowedTiers:', err);
+        }
+    };
 
     // Fetch invitations
     const fetchInvitations = useCallback(async () => {
@@ -1083,6 +1113,74 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
                                                             </span>
                                                         )}
                                                     </div>
+
+                                                    {/* Allowed tiers — standard + custom. Empty array = no restriction (all tiers). */}
+                                                    {(() => {
+                                                        const allowed = Array.isArray(group.allowedTiers) ? group.allowedTiers : [];
+                                                        const standardTiers = [
+                                                            { id: 'fast', label: 'Fast', icon: '⚡' },
+                                                            { id: 'thinking', label: 'Thinking', icon: '🧠' },
+                                                            { id: 'writer', label: 'Writer', icon: '✍️' },
+                                                            { id: 'pro', label: 'Deep Thinking', icon: '✨' },
+                                                        ];
+                                                        const unrestricted = allowed.length === 0;
+                                                        const toggleTier = (tierId) => {
+                                                            const set = new Set(allowed);
+                                                            if (set.has(tierId)) set.delete(tierId);
+                                                            else set.add(tierId);
+                                                            handleUpdateGroupAllowedTiers(group.id, Array.from(set));
+                                                        };
+                                                        const clearAll = () => handleUpdateGroupAllowedTiers(group.id, []);
+                                                        const renderPill = (t, accent) => {
+                                                            // When unrestricted, render pills muted as inactive so clicking
+                                                            // feels like "selecting this one tier to restrict to" rather than
+                                                            // deselecting from an all-selected state.
+                                                            const active = !unrestricted && allowed.includes(t.id);
+                                                            return (
+                                                                <button
+                                                                    key={t.id}
+                                                                    type="button"
+                                                                    onClick={() => toggleTier(t.id)}
+                                                                    className="px-2.5 py-1 rounded-full text-xs font-medium transition-all"
+                                                                    style={{
+                                                                        background: active ? accent : 'var(--bg-primary)',
+                                                                        color: active ? '#fff' : 'var(--text-muted)',
+                                                                        border: `1px solid ${active ? accent : 'var(--border-subtle)'}`,
+                                                                    }}
+                                                                    title={t.description || ''}
+                                                                >
+                                                                    {t.icon || '✨'} {t.label || t.id}
+                                                                </button>
+                                                            );
+                                                        };
+                                                        return (
+                                                            <div className="flex items-start gap-2">
+                                                                <label className="text-xs text-[var(--text-secondary)] w-24 pt-1.5 shrink-0">Allowed tiers</label>
+                                                                <div className="flex-1 space-y-2">
+                                                                    <div className="flex flex-wrap gap-1.5">
+                                                                        {standardTiers.map(t => renderPill(t, 'rgb(59, 130, 246)'))}
+                                                                        {customTiersMeta.map(t => renderPill(t, 'rgb(234, 179, 8)'))}
+                                                                    </div>
+                                                                    <div className="text-[10px] text-[var(--text-muted)] flex items-center gap-3">
+                                                                        {unrestricted ? (
+                                                                            <span>No restriction set — members can use every tier. Click a pill to restrict access to only selected tiers.</span>
+                                                                        ) : (
+                                                                            <>
+                                                                                <span>{allowed.length} tier{allowed.length === 1 ? '' : 's'} permitted. Members of other groups may still see additional tiers through those groups.</span>
+                                                                                <button
+                                                                                    type="button"
+                                                                                    onClick={clearAll}
+                                                                                    className="underline hover:text-[var(--text-primary)]"
+                                                                                >
+                                                                                    Clear restrictions
+                                                                                </button>
+                                                                            </>
+                                                                        )}
+                                                                    </div>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })()}
                                                 </div>
 
                                                 {/* Members list */}

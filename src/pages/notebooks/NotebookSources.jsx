@@ -243,6 +243,16 @@ export default function NotebookSources({
     const [loadingMeetings, setLoadingMeetings] = useState(false);
     const fileInputRef = useRef();
 
+    // ── Meeting ingestion mode: 'full' transcript or 'summary' only ──
+    const [meetingMode, setMeetingMode] = useState(() => {
+        try { return localStorage.getItem('nb_meeting_mode') === 'summary' ? 'summary' : 'full'; }
+        catch { return 'full'; }
+    });
+    const updateMeetingMode = useCallback((m) => {
+        setMeetingMode(m);
+        try { localStorage.setItem('nb_meeting_mode', m); } catch {}
+    }, []);
+
     // ── Recording state ──────────────────────────────
     const [recLang,      setRecLang]      = useState('nl');
     const [isRecording,  setIsRecording]  = useState(false);
@@ -285,7 +295,6 @@ export default function NotebookSources({
             recorder.onstop = async () => {
                 const ext  = mimeType.includes('webm') ? 'webm' : 'mp4';
                 const blob = new Blob(chunksRef.current, { type: mimeType });
-                const file = new File([blob], `recording.${ext}`, { type: mimeType });
 
                 // Upload + transcribe
                 setRecStatus('uploading');
@@ -299,7 +308,9 @@ export default function NotebookSources({
                 const now  = new Date();
                 const title = `Meeting ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
                 const formData = new FormData();
-                formData.append('audio', file);
+                // Append Blob with filename — avoids the `new File(...)` constructor,
+                // which is unavailable in some browsers (older Safari / some mobile).
+                formData.append('audio', blob, `recording.${ext}`);
                 formData.append('language', recLang);
                 formData.append('title', title);
 
@@ -318,10 +329,10 @@ export default function NotebookSources({
                         const result = await res.json();
                         setRecStatus('done');
                         setRecStage('');
-                        onAddMeeting?.(result.id);
+                        onAddMeeting?.(result.id, { mode: meetingMode });
                         setTimeout(() => { setRecStatus('idle'); setRecTime(0); }, 2500);
                     } else {
-                        const err = await res.json();
+                        const err = await res.json().catch(() => ({}));
                         setRecStatus('error');
                         setRecError(err.error || 'Transcription failed');
                         clearInterval(stageTimer);
@@ -342,7 +353,7 @@ export default function NotebookSources({
             setRecStatus('error');
             setRecError('Microphone access denied. Allow mic in browser settings.');
         }
-    }, [recLang, onAddMeeting]);
+    }, [recLang, onAddMeeting, meetingMode]);
 
     const stopRecording = useCallback(() => {
         if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
@@ -531,6 +542,39 @@ export default function NotebookSources({
                         </button>
                     </div>
 
+        {/* ── Ingestion mode: full transcript vs summary ── */}
+                    <div className="mb-2">
+                        <p className="text-[9px] uppercase font-bold tracking-wide mb-1" style={{ color: 'var(--text-tertiary)' }}>
+                            Include as source
+                        </p>
+                        <div
+                            className="grid grid-cols-2 gap-0.5 p-0.5 rounded-lg"
+                            style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}
+                        >
+                            {[
+                                { key: 'full',    label: 'Full transcript', hint: 'Everything said, verbatim' },
+                                { key: 'summary', label: 'Summary only',    hint: 'Condensed overview' },
+                            ].map(opt => {
+                                const active = meetingMode === opt.key;
+                                return (
+                                    <button
+                                        key={opt.key}
+                                        onClick={() => updateMeetingMode(opt.key)}
+                                        title={opt.hint}
+                                        className="px-2 py-1 rounded-md text-[10px] font-semibold transition-all"
+                                        style={{
+                                            background: active ? 'var(--surface-1)' : 'transparent',
+                                            color: active ? 'var(--brand-primary)' : 'var(--text-secondary)',
+                                            boxShadow: active ? 'var(--shadow-sm)' : 'none',
+                                        }}
+                                    >
+                                        {opt.label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </div>
+
         {/* ── NEW: Inline Recording Panel ── */}
                     <div className="pb-2">
                         {/* Language + record controls */}
@@ -651,7 +695,7 @@ export default function NotebookSources({
                                     <MeetingItem
                                         key={m.id}
                                         meeting={m}
-                                        onSelect={(id) => { onAddMeeting?.(id); setActivePanel(null); setMeetingSearch(''); }}
+                                        onSelect={(id) => { onAddMeeting?.(id, { mode: meetingMode }); setActivePanel(null); setMeetingSearch(''); }}
                                     />
                                 ))}
                             </div>

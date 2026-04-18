@@ -868,10 +868,11 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
         } catch (e) { setError(e.message); }
     };
 
-    const handleAddMeeting = async (meetingId) => {
+    const handleAddMeeting = async (meetingId, opts = {}) => {
         if (!meetingId || !selected) return;
+        const mode = opts.mode === 'summary' ? 'summary' : 'full';
         try {
-            await api(`/${selected.id}/sources/meeting`, { method: 'POST', body: JSON.stringify({ meetingId }) });
+            await api(`/${selected.id}/sources/meeting`, { method: 'POST', body: JSON.stringify({ meetingId, mode }) });
             const data = await api(`/${selected.id}/sources`);
             setSources(data.sources || []);
             fetchNotebooks();
