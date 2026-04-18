@@ -173,11 +173,17 @@ const AgentHub = ({
         setActiveSkillIds(prev => {
             const next = prev.includes(skillId)
                 ? prev.filter(id => id !== skillId)
-                : [...prev.slice(0, 2), skillId]; // max 3
+                : [...prev.slice(0, 4), skillId]; // max 5
             scopedStorage.setJSON('activeSkillIds', next);
             return next;
         });
     }, []);
+
+    // Skills attached to the currently selected agent via agent.config.attachedSkillIds
+    const agentAttachedSkillIds = useMemo(() => {
+        const ids = selectedAgent?.config?.attachedSkillIds;
+        return Array.isArray(ids) ? ids : [];
+    }, [selectedAgent]);
 
     // UI/Mode State
     const [designMode, setDesignMode] = useState(false);
@@ -1087,6 +1093,7 @@ const AgentHub = ({
         return (
             <AgentDesignerPanel
                 agent={selectedAgent}
+                user={user}
                 onClose={() => setDesignMode(false)}
                 onSave={(newAgent) => {
                     if (newAgent && newAgent.id) {
@@ -1249,6 +1256,7 @@ const AgentHub = ({
                         onClose={onCloseSkillsPanel}
                         activeSkillIds={activeSkillIds}
                         onToggleSkill={handleToggleSkill}
+                        agents={agents}
                     />
                 ) : showEmailKB ? (
                     /* Email Knowledge Base settings rendered inline */
@@ -1382,6 +1390,10 @@ const AgentHub = ({
                                                     isMobile={isMobile}
                                                     input={chatInput}
                                                     setInput={setChatInput}
+                                                    user={user}
+                                                    activeSkillIds={activeSkillIds}
+                                                    agentAttachedSkillIds={agentAttachedSkillIds}
+                                                    onToggleSkill={handleToggleSkill}
                                                 />
                                             </WelcomeScreen>
                                         </div>
@@ -1425,6 +1437,10 @@ const AgentHub = ({
                                             input={chatInput}
                                             isMobile={isMobile}
                                             setInput={setChatInput}
+                                            user={user}
+                                            activeSkillIds={activeSkillIds}
+                                            agentAttachedSkillIds={agentAttachedSkillIds}
+                                            onToggleSkill={handleToggleSkill}
                                         />
                                     </div>
                                 )}
@@ -1513,6 +1529,9 @@ const AgentHub = ({
                                                     input={chatInput}
                                                     isMobile={isMobile}
                                                     setInput={setChatInput}
+                                                    user={user}
+                                                    activeSkillIds={activeSkillIds}
+                                                    onToggleSkill={handleToggleSkill}
                                                 />
                                             </DirectChatWelcome>
                                         </div>
@@ -1550,6 +1569,9 @@ const AgentHub = ({
                                             input={chatInput}
                                             isMobile={isMobile}
                                             setInput={setChatInput}
+                                            user={user}
+                                            activeSkillIds={activeSkillIds}
+                                            onToggleSkill={handleToggleSkill}
                                         />
                                     </div>
                                 )}

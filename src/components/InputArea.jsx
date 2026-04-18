@@ -10,6 +10,7 @@ import ElevenLabsSettings from './chat/ElevenLabsSettings';
 import VideoGenSettings from './chat/VideoGenSettings';
 import { API_BASE, authFetch } from '../utils/helpers';
 import scopedStorage from '../utils/scopedStorage';
+import SkillsPopover from './skills/SkillsPopover';
 
 // App definitions for the apps overlay
 const APP_DEFS = [
@@ -112,7 +113,11 @@ const InputArea = ({
     input,
     setInput,
     agentIntegrations,
-    isMobile
+    isMobile,
+    user,
+    activeSkillIds = [],
+    agentAttachedSkillIds = [],
+    onToggleSkill,
 }) => {
     const [attachments, setAttachments] = useState([]);
     const [isDragOver, setIsDragOver] = useState(false);
@@ -846,6 +851,15 @@ const InputArea = ({
                                 >
                                     <Globe className="w-5 h-5" />
                                 </button>
+                                )}
+                                {/* Skills Popover — mirrors the Apps popover, lists user's reusable instruction packs */}
+                                {onToggleSkill && (
+                                    <SkillsPopover
+                                        user={user}
+                                        activeSkillIds={activeSkillIds}
+                                        attachedSkillIds={agentAttachedSkillIds}
+                                        onToggleSkill={onToggleSkill}
+                                    />
                                 )}
                                 {/* Apps Button — hidden if no apps available or agent disableExternalTools */}
                                 {!selectedAgent?.config?.disableExternalTools && (() => {

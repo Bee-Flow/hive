@@ -3,6 +3,7 @@ import KnowledgePanel from '../KnowledgePanel';
 import VersionHistory from '../VersionHistory';
 import { API_BASE } from '../../utils/helpers';
 import { useUrlQueryParam } from '../../hooks/useUrlTab';
+import AgentSkillsTab from './AgentSkillsTab';
 
 /**
  * AgentEditorUI - Reusable presentational component for editing agents
@@ -22,6 +23,8 @@ const AgentEditorUI = ({
     availableModels = [],
     isSystem = false,
     hasKnowledge = true,
+    hasSkills = true,
+    user = null,
     agentId,
     API_BASE,
 
@@ -35,7 +38,7 @@ const AgentEditorUI = ({
     // parameter so the editor is deep-linkable. Undefined → local state only.
     urlSyncKey = null,
 }) => {
-    const VALID_TABS = ['general', ...(hasKnowledge ? ['knowledge'] : [])];
+    const VALID_TABS = ['general', ...(hasKnowledge ? ['knowledge'] : []), ...(hasSkills ? ['skills'] : [])];
     const [urlTab, setUrlTab] = useUrlQueryParam(urlSyncKey || '__noop_editor_tab__');
     const [localTab, setLocalTab] = useState('general');
     const activeTab = urlSyncKey
@@ -58,7 +61,7 @@ const AgentEditorUI = ({
         <div className="flex flex-col h-full bg-[var(--bg-primary)]">
             {/* Tabs */}
             <div className="flex border-b border-[var(--border-default)] bg-[var(--bg-secondary)]">
-                {['General', ...(hasKnowledge ? ['Knowledge'] : [])].map(tab => (
+                {['General', ...(hasKnowledge ? ['Knowledge'] : []), ...(hasSkills ? ['Skills'] : [])].map(tab => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab.toLowerCase())}
@@ -472,6 +475,15 @@ const AgentEditorUI = ({
                 {/* KNOWLEDGE TAB */}
                 {activeTab === 'knowledge' && hasKnowledge && (
                     <KnowledgePanel agentId={agentId} API_BASE={API_BASE} strictKnowledge={data.strictKnowledge} onStrictKnowledgeChange={(val) => onChange('strictKnowledge', val)} includeSourceReferences={data.includeSourceReferences} onIncludeSourceReferencesChange={(val) => onChange('includeSourceReferences', val)} />
+                )}
+
+                {/* SKILLS TAB */}
+                {activeTab === 'skills' && hasSkills && (
+                    <AgentSkillsTab
+                        user={user}
+                        attachedSkillIds={Array.isArray(data?.config?.attachedSkillIds) ? data.config.attachedSkillIds : []}
+                        onChangeAttached={(nextIds) => onChange('config', { ...(data.config || {}), attachedSkillIds: nextIds })}
+                    />
                 )}
 
             </div>

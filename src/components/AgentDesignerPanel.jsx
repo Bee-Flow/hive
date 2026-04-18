@@ -12,7 +12,8 @@ const AgentDesignerPanel = ({
     agent,
     onClose,
     onSave,
-    onDelete
+    onDelete,
+    user = null,
 }) => {
     const [saving, setSaving] = useState(false);
     const { t } = useTranslation();
@@ -37,7 +38,8 @@ const AgentDesignerPanel = ({
         embedEnabled: false,
         organizationId: '',
         sharedGroups: [],
-        categoryId: ''
+        categoryId: '',
+        config: {},
     });
 
     // Load agent data when agent changes
@@ -62,7 +64,10 @@ const AgentDesignerPanel = ({
                 sharedGroups: typeof agent.shared_groups === 'string'
                     ? (() => { try { return JSON.parse(agent.shared_groups || '[]'); } catch (_) { return []; } })()
                     : (agent.shared_groups || []),
-                categoryId: agent.category_id || ''
+                categoryId: agent.category_id || '',
+                config: (typeof agent.config === 'string'
+                    ? (() => { try { return JSON.parse(agent.config || '{}'); } catch (_) { return {}; } })()
+                    : (agent.config || {})),
             });
         } else {
             // New agent
@@ -81,7 +86,8 @@ const AgentDesignerPanel = ({
                 embedEnabled: false,
                 organizationId: '',
                 sharedGroups: [],
-                categoryId: ''
+                categoryId: '',
+                config: {},
             });
         }
     }, [agent]);
@@ -212,7 +218,8 @@ const AgentDesignerPanel = ({
                 embedEnabled: formData.embedEnabled,
                 organizationId: formData.organizationId || null,
                 sharedGroups: formData.sharedGroups || [],
-                categoryId: formData.categoryId || null
+                categoryId: formData.categoryId || null,
+                config: formData.config || {},
             };
 
             let savedAgent = agent;
@@ -302,6 +309,8 @@ const AgentDesignerPanel = ({
                     onChange={handleFieldChange}
                     availableModels={availableModels}
                     hasKnowledge={!!agent}
+                    hasSkills={Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('skills')}
+                    user={user}
                     agentId={agent ? agent.id : null}
                     API_BASE={API_BASE}
                     organizations={organizations}
