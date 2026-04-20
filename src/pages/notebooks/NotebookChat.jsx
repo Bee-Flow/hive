@@ -26,6 +26,13 @@ export default function NotebookChat({
         setTimeout(() => setCopied(false), 2000);
     };
 
+    const handleFormSubmit = (msg, formSubmission, formKey) => {
+        if (setSubmittedFormIds) {
+            setSubmittedFormIds(prev => new Set([...prev, formKey]));
+        }
+        setChatInput(formSubmission.text || 'Form submitted');
+    };
+
     return (
         <div className="flex flex-col h-full">
             {/* Chat header */}
@@ -59,6 +66,8 @@ export default function NotebookChat({
                             idx={idx}
                             isUser={msg.role === 'user'}
                             onCopy={handleCopy}
+                            handleFormSubmit={handleFormSubmit}
+                            isFormSubmitted={submittedFormIds?.has(`form-${msg.id || idx}`)}
                             allMessages={messages}
                             modelTiers={modelTiers || {}}
                             onRetry={onRetry}

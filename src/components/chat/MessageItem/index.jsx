@@ -207,7 +207,7 @@ const MessageItem = ({
     };
 
     const handleCopy = () => {
-        onCopy(msg.content);
+        onCopy?.(msg.content);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };
@@ -883,7 +883,7 @@ const MessageItem = ({
                         <FormRenderer
                             code={msg.form}
                             onSubmit={(data) => {
-                                handleFormSubmit(msg, { text: data.text || "Form Submitted", formData: data.formData }, `form-${msg.id || idx}`);
+                                handleFormSubmit?.(msg, { text: data.text || "Form Submitted", formData: data.formData }, `form-${msg.id || idx}`);
                             }}
                             initialSubmitted={isFormSubmitted || !!msg.savedFormData}
                             initialFormData={msg.savedFormData || {}}

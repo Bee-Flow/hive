@@ -1575,6 +1575,8 @@ const AgentHub = ({
                                                     msg={msg}
                                                     selectedAgent={{ name: 'AI', avatar: '💬' }}
                                                     onCopy={(txt) => navigator.clipboard.writeText(txt)}
+                                                    handleFormSubmit={handleFormSubmit}
+                                                    isFormSubmitted={submittedFormIds.has(`form-${msg.id || idx}`)}
                                                     allMessages={messages}
                                                     conversationId={currentDirectConversation?.id}
                                                     chatSource="direct"
