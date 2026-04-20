@@ -47,24 +47,6 @@ export default function VersionHistory({ agentId, onRestore }) {
         setRestoring(null);
     };
 
-    const handlePartialRestore = async (versionId, type, phaseId, workerIndex, label) => {
-        if (!confirm(`Restore ${label} from this version? Your current configuration will be saved as a new version.`)) return;
-        setRestoring(`${versionId}-${type}-${phaseId}-${workerIndex}`);
-        try {
-            await authFetch(`${API_BASE}/versions/${agentId}/${versionId}/restore-partial`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ type, phaseId, workerIndex })
-            });
-            await loadVersions();
-            if (onRestore) onRestore();
-        } catch (err) {
-            console.error('[VersionHistory] Partial restore error:', err);
-            alert('Failed to partially restore');
-        }
-        setRestoring(null);
-    };
-
     const handlePreview = async (versionId) => {
         if (previewVersion?.id === versionId) {
             setPreviewVersion(null);
@@ -230,14 +212,6 @@ export default function VersionHistory({ agentId, onRestore }) {
                                         {phase.icon && <span>{phase.icon}</span>}
                                         <span className="font-medium text-[var(--text-primary)]">{phase.name || `Phase ${pi + 1}`}</span>
                                         {phase.parallel && <span className="px-1 py-0.5 rounded bg-amber-500/15 text-amber-400 text-[9px]">parallel</span>}
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); handlePartialRestore(versionId, 'phase', phase.id, null, `phase "${phase.name}"`); }}
-                                            disabled={restoring === `${versionId}-phase-${phase.id}-null`}
-                                            className="ml-auto px-1.5 py-0.5 rounded text-[9px] font-medium bg-green-500/10 text-green-400 hover:bg-green-500/20 transition-colors disabled:opacity-50"
-                                            title="Restore this entire phase"
-                                        >
-                                            {restoring === `${versionId}-phase-${phase.id}-null` ? '...' : '↩ Phase'}
-                                        </button>
                                     </div>
                                     {phase.description && (
                                         <div className="text-[10px] text-[var(--text-tertiary)] mb-1">{phase.description}</div>
@@ -250,14 +224,6 @@ export default function VersionHistory({ agentId, onRestore }) {
                                                         <span className="text-[var(--text-primary)] font-medium">{agent.name || agent.role}</span>
                                                         {agent.role && agent.name && <span className="text-[var(--text-tertiary)]">({agent.role})</span>}
                                                         {agent.model && <span className="text-purple-400 text-[9px]">{agent.model}</span>}
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); handlePartialRestore(versionId, 'worker', phase.id, ai, `worker "${agent.name || agent.role}"`); }}
-                                                            disabled={restoring === `${versionId}-worker-${phase.id}-${ai}`}
-                                                            className="ml-auto px-1 py-0.5 rounded text-[9px] font-medium bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-colors disabled:opacity-50"
-                                                            title="Restore this worker only"
-                                                        >
-                                                            {restoring === `${versionId}-worker-${phase.id}-${ai}` ? '...' : '↩'}
-                                                        </button>
                                                     </div>
                                                     <div className="flex flex-wrap gap-1.5 text-[9px]">
                                                         {agent.temperature !== undefined && (
