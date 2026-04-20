@@ -214,14 +214,14 @@ const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
 
     return (
         <div
-            className="fixed inset-0 z-50 flex items-start justify-center p-4 sm:pt-[8vh] bg-black/60 backdrop-blur-sm animate-fade-in overflow-y-auto"
+            className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[max(2rem,8vh)] pb-8 bg-black/60 backdrop-blur-sm animate-fade-in"
             onClick={onClose}
             role="dialog"
             aria-label="Search conversations"
             aria-modal="true"
         >
             <div
-                className="bg-[var(--bg-primary)] w-[640px] max-w-[95vw] max-h-[min(640px,calc(100vh-4rem))] flex flex-col rounded-2xl shadow-2xl border border-[var(--border-subtle)] overflow-hidden my-auto"
+                className="bg-[var(--bg-primary)] w-[640px] max-w-[95vw] max-h-full flex flex-col rounded-2xl shadow-2xl border border-[var(--border-subtle)] overflow-hidden"
                 onClick={e => e.stopPropagation()}
                 data-testid="search-overlay"
             >
