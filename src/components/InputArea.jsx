@@ -119,6 +119,7 @@ const InputArea = ({
     activeSkillIds = [],
     agentAttachedSkillIds = [],
     directSessionSkills = [],
+    directActivatedSessionSkillIds = [],
     directConversationId = null,
     onToggleSkill,
 }) => {
@@ -874,6 +875,7 @@ const InputArea = ({
                                         directMode={!!directMode}
                                         directConversationId={directConversationId}
                                         directSessionSkills={directSessionSkills}
+                                        directActivatedSessionSkillIds={directActivatedSessionSkillIds}
                                         onToggleSkill={onToggleSkill}
                                     />
                                 )}

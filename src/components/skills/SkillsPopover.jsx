@@ -23,6 +23,7 @@ export default function SkillsPopover({
     directMode = false,
     directConversationId = null,
     directSessionSkills = [],
+    directActivatedSessionSkillIds = [],
     onToggleSkill,
     buttonClassName,
 }) {
@@ -74,9 +75,19 @@ export default function SkillsPopover({
     const filteredSessionSkills = useMemo(() => {
         const q = search.trim().toLowerCase();
         const source = Array.isArray(sessionSkills) ? sessionSkills : [];
-        if (!q) return source;
-        return source.filter(s => (s.name || '').toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q));
+        const sorted = [...source].sort((a, b) => (a.order || 0) - (b.order || 0));
+        if (!q) return sorted;
+        return sorted.filter(s => (s.name || '').toLowerCase().includes(q) || (s.description || '').toLowerCase().includes(q));
     }, [sessionSkills, search]);
+
+    const activatedSessionSet = useMemo(
+        () => new Set(Array.isArray(directActivatedSessionSkillIds) ? directActivatedSessionSkillIds : []),
+        [directActivatedSessionSkillIds]
+    );
+    const sessionSkillById = useMemo(
+        () => new Map((sessionSkills || []).map(s => [s.id, s])),
+        [sessionSkills]
+    );
 
     const canActivateMore = activeCount < SKILL_CAP;
 
@@ -323,6 +334,11 @@ export default function SkillsPopover({
                                     const imported = importedSessionSkillIds.includes(skill.id);
                                     const deleting = deletingSessionSkillId === skill.id;
                                     const expanded = expandedSessionSkillId === skill.id;
+                                    const isActivated = activatedSessionSet.has(skill.id);
+                                    const unmetDeps = (skill.dependsOn || []).filter(depId => !activatedSessionSet.has(depId));
+                                    const blocked = unmetDeps.length > 0 && !isActivated;
+                                    const blockedByNames = unmetDeps.map(id => sessionSkillById.get(id)?.name || id);
+                                    const stepNum = skill.order;
                                     return (
                                         <div
                                             key={`session-${skill.id}`}
@@ -332,13 +348,26 @@ export default function SkillsPopover({
                                             <div className="flex items-center gap-2 px-3 py-2">
                                                 <button
                                                     onClick={() => setExpandedSessionSkillId(expanded ? null : skill.id)}
-                                                    className="w-7 h-7 rounded-md flex items-center justify-center text-sm bg-white/40 hover:bg-white/60 transition-colors"
-                                                    title={expanded ? 'Hide details' : 'Show details'}
+                                                    className="w-7 h-7 rounded-md flex items-center justify-center text-[10px] font-bold bg-white/40 hover:bg-white/60 transition-colors"
+                                                    title={expanded ? 'Hide details' : `Step ${stepNum}`}
+                                                    style={{ color: 'var(--text-primary)' }}
                                                 >
-                                                    {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                                    {stepNum || <ChevronDown size={13} />}
                                                 </button>
                                                 <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setExpandedSessionSkillId(expanded ? null : skill.id)}>
-                                                    <div className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{skill.name}</div>
+                                                    <div className="flex items-center gap-1.5 min-w-0">
+                                                        <span className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{skill.name}</span>
+                                                        {isActivated && (
+                                                            <span className="flex-shrink-0 text-[9px] px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-600" title="Activated in this conversation">
+                                                                active
+                                                            </span>
+                                                        )}
+                                                        {blocked && (
+                                                            <span className="flex-shrink-0 text-[9px] px-1 py-0.5 rounded bg-amber-500/15 text-amber-600 truncate" title={`Depends on: ${blockedByNames.join(', ')}`}>
+                                                                blocked by {blockedByNames.join(', ')}
+                                                            </span>
+                                                        )}
+                                                    </div>
                                                     {skill.description && (
                                                         <div className="text-[10px] truncate" style={{ color: 'var(--text-tertiary)' }}>{skill.description}</div>
                                                     )}

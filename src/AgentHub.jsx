@@ -1590,6 +1590,7 @@ const AgentHub = ({
                                                     user={user}
                                                     activeSkillIds={activeSkillIds}
                                                     directSessionSkills={directSessionSkills}
+                                                    directActivatedSessionSkillIds={directActivatedSessionSkillIds}
                                                     directConversationId={currentDirectConversation?.id}
                                                     onToggleSkill={handleToggleSkill}
                                                 />
@@ -1634,6 +1635,7 @@ const AgentHub = ({
                                             user={user}
                                             activeSkillIds={activeSkillIds}
                                             directSessionSkills={directSessionSkills}
+                                            directActivatedSessionSkillIds={directActivatedSessionSkillIds}
                                             directConversationId={currentDirectConversation?.id}
                                             onToggleSkill={handleToggleSkill}
                                         />
