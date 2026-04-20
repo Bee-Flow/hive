@@ -172,11 +172,7 @@ const AgentHub = ({
             loadDirectConversations();
         }, [currentDirectConversation]),
         activeSkillIds,
-        onSessionSkillsBootstrapped: useCallback(({ skills, activatedSkillIds }) => {
-            setDirectSessionSkills(Array.isArray(skills) ? skills : []);
-            setDirectActivatedSessionSkillIds(Array.isArray(activatedSkillIds) ? activatedSkillIds : []);
-        }, []),
-        onSessionSkillsUpdated: useCallback(({ skills, activatedSkillIds }) => {
+        onSessionSkillsChanged: useCallback(({ skills, activatedSkillIds }) => {
             setDirectSessionSkills(Array.isArray(skills) ? skills : []);
             setDirectActivatedSessionSkillIds(Array.isArray(activatedSkillIds) ? activatedSkillIds : []);
         }, []),

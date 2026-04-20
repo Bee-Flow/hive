@@ -112,6 +112,9 @@ export const TOOL_NAME_MAP = {
     'pubmed_search': 'PubMed',
     'crossref_lookup': 'CrossRef',
     'serper_search': 'Web Search',
+    'activate_skill': 'Activating skill',
+    'activate_session_skill': 'Activating chat skill',
+    'publish_session_skill_to_library': 'Saving skill to library',
 };
 
 /**
@@ -137,6 +140,7 @@ export const getToolIcon = (name) => {
         'sql_query': '🗄️', 'file_read': '📂', 'document_reader': '📄',
         'gmail_tool': '📧', 'calendar_tool': '📅',
         'sequentialthinking': '🧠', 'api_fetcher': '🔗',
+        'activate_skill': '🧩', 'activate_session_skill': '🧩', 'publish_session_skill_to_library': '⭐',
     };
     return icons[name] || '🔧';
 };

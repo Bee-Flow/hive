@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Sparkles, Plus, Lock, Users, Link2, Puzzle } from 'lucide-react';
+import { Sparkles, Plus, Lock, Users, Link2, Puzzle, RefreshCw, Trash2, ChevronDown, ChevronUp, X } from 'lucide-react';
 import SkillFormModal from './SkillFormModal';
 import { useSkills } from '../../hooks/useSkills';
 import { API_BASE, authFetch } from '../../utils/helpers';
@@ -34,6 +34,9 @@ export default function SkillsPopover({
     const [sessionSkills, setSessionSkills] = useState([]);
     const [importingSkillId, setImportingSkillId] = useState(null);
     const [importedSessionSkillIds, setImportedSessionSkillIds] = useState([]);
+    const [expandedSessionSkillId, setExpandedSessionSkillId] = useState(null);
+    const [regenerating, setRegenerating] = useState(false);
+    const [deletingSessionSkillId, setDeletingSessionSkillId] = useState(null);
     const popoverRef = useRef(null);
 
     useEffect(() => {
@@ -99,6 +102,54 @@ export default function SkillsPopover({
             alert(err.message || 'Failed to create skill');
         } finally {
             setSaving(false);
+        }
+    };
+
+    const handleRegenerateSessionSkills = async () => {
+        if (!directConversationId || regenerating) return;
+        if (sessionSkills.length > 0) {
+            const ok = window.confirm('Replace the current chat-local skills with a new set? Activated skills will reset.');
+            if (!ok) return;
+        }
+        setRegenerating(true);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/direct/conversations/${directConversationId}/session-skills/regenerate`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({}),
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || 'Failed to regenerate skills');
+            }
+            const data = await res.json();
+            if (Array.isArray(data.skills)) setSessionSkills(data.skills);
+            setExpandedSessionSkillId(null);
+        } catch (err) {
+            alert(err.message || 'Failed to regenerate session skills');
+        } finally {
+            setRegenerating(false);
+        }
+    };
+
+    const handleDeleteSessionSkill = async (skillId) => {
+        if (!directConversationId || !skillId || deletingSessionSkillId) return;
+        setDeletingSessionSkillId(skillId);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/direct/conversations/${directConversationId}/session-skills/${skillId}`, {
+                method: 'DELETE',
+            });
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || 'Failed to delete skill');
+            }
+            const data = await res.json();
+            if (Array.isArray(data.skills)) setSessionSkills(data.skills);
+            if (expandedSessionSkillId === skillId) setExpandedSessionSkillId(null);
+        } catch (err) {
+            alert(err.message || 'Failed to delete session skill');
+        } finally {
+            setDeletingSessionSkillId(null);
         }
     };
 
@@ -240,8 +291,22 @@ export default function SkillsPopover({
 
                         {directMode && (
                             <div className="mt-2 border-t pt-2" style={{ borderColor: 'var(--border-subtle)' }}>
-                                <div className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-tertiary)' }}>
-                                    Chat-Local Skills
+                                <div className="flex items-center justify-between px-3 pb-1">
+                                    <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-tertiary)' }}>
+                                        Chat-Local Skills
+                                    </div>
+                                    {directConversationId && (
+                                        <button
+                                            onClick={handleRegenerateSessionSkills}
+                                            disabled={regenerating}
+                                            className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded hover:bg-[var(--bg-tertiary)] transition-colors disabled:opacity-60"
+                                            style={{ color: 'var(--text-secondary)' }}
+                                            title="Regenerate the chat-local skill set"
+                                        >
+                                            <RefreshCw size={10} className={regenerating ? 'animate-spin' : ''} />
+                                            {regenerating ? 'Regenerating…' : 'Regenerate'}
+                                        </button>
+                                    )}
                                 </div>
                                 {directConversationId && filteredSessionSkills.length === 0 && (
                                     <div className="px-3 py-2 text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
@@ -256,28 +321,63 @@ export default function SkillsPopover({
                                 {directConversationId && filteredSessionSkills.map(skill => {
                                     const importing = importingSkillId === skill.id;
                                     const imported = importedSessionSkillIds.includes(skill.id);
+                                    const deleting = deletingSessionSkillId === skill.id;
+                                    const expanded = expandedSessionSkillId === skill.id;
                                     return (
                                         <div
                                             key={`session-${skill.id}`}
-                                            className="flex items-center gap-2 px-3 py-2 rounded-lg"
+                                            className="rounded-lg mb-1"
                                             style={{ background: 'var(--bg-tertiary)' }}
                                         >
-                                            <div className="w-7 h-7 rounded-md flex items-center justify-center text-sm bg-white/40">🧩</div>
-                                            <div className="flex-1 min-w-0">
-                                                <div className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{skill.name}</div>
-                                                {skill.description && (
-                                                    <div className="text-[10px] truncate" style={{ color: 'var(--text-tertiary)' }}>{skill.description}</div>
-                                                )}
+                                            <div className="flex items-center gap-2 px-3 py-2">
+                                                <button
+                                                    onClick={() => setExpandedSessionSkillId(expanded ? null : skill.id)}
+                                                    className="w-7 h-7 rounded-md flex items-center justify-center text-sm bg-white/40 hover:bg-white/60 transition-colors"
+                                                    title={expanded ? 'Hide details' : 'Show details'}
+                                                >
+                                                    {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                                                </button>
+                                                <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setExpandedSessionSkillId(expanded ? null : skill.id)}>
+                                                    <div className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{skill.name}</div>
+                                                    {skill.description && (
+                                                        <div className="text-[10px] truncate" style={{ color: 'var(--text-tertiary)' }}>{skill.description}</div>
+                                                    )}
+                                                </div>
+                                                <button
+                                                    onClick={() => handleImportSessionSkill(skill.id)}
+                                                    disabled={importing || imported}
+                                                    className="px-2 py-1 text-[10px] rounded border transition-colors disabled:opacity-60"
+                                                    style={{ borderColor: 'var(--border-subtle)', color: 'var(--accent-primary)' }}
+                                                    title="Import into skill library"
+                                                >
+                                                    {imported ? 'Imported' : importing ? 'Importing…' : 'Import'}
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeleteSessionSkill(skill.id)}
+                                                    disabled={deleting}
+                                                    className="p-1 rounded hover:bg-red-500/15 hover:text-red-500 transition-colors disabled:opacity-50"
+                                                    style={{ color: 'var(--text-tertiary)' }}
+                                                    title="Delete from this conversation"
+                                                >
+                                                    {deleting ? <RefreshCw size={11} className="animate-spin" /> : <Trash2 size={11} />}
+                                                </button>
                                             </div>
-                                            <button
-                                                onClick={() => handleImportSessionSkill(skill.id)}
-                                                disabled={importing || imported}
-                                                className="px-2 py-1 text-[10px] rounded border transition-colors disabled:opacity-60"
-                                                style={{ borderColor: 'var(--border-subtle)', color: 'var(--accent-primary)' }}
-                                                title="Import into skill library"
-                                            >
-                                                {imported ? 'Imported' : importing ? 'Importing…' : 'Import'}
-                                            </button>
+                                            {expanded && (
+                                                <div className="px-3 pb-2 space-y-1.5 text-[10.5px]" style={{ color: 'var(--text-secondary)' }}>
+                                                    {skill.instructions && (
+                                                        <div><span className="font-semibold uppercase tracking-wide text-[9px]" style={{ color: 'var(--text-tertiary)' }}>Instructions</span><div className="whitespace-pre-wrap">{skill.instructions}</div></div>
+                                                    )}
+                                                    {skill.workflow && (
+                                                        <div><span className="font-semibold uppercase tracking-wide text-[9px]" style={{ color: 'var(--text-tertiary)' }}>Workflow</span><div className="whitespace-pre-wrap">{skill.workflow}</div></div>
+                                                    )}
+                                                    {skill.rules && (
+                                                        <div><span className="font-semibold uppercase tracking-wide text-[9px]" style={{ color: 'var(--text-tertiary)' }}>Rules</span><div className="whitespace-pre-wrap">{skill.rules}</div></div>
+                                                    )}
+                                                    {skill.examples && (
+                                                        <div><span className="font-semibold uppercase tracking-wide text-[9px]" style={{ color: 'var(--text-tertiary)' }}>Examples</span><div className="whitespace-pre-wrap">{skill.examples}</div></div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </div>
                                     );
                                 })}

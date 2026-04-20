@@ -668,6 +668,33 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                         getModelMeta={getModelMeta}
                         onChange={val => updateFn(tier.key, 'modelId', val)}
                     />
+                    {/* Bootstrap-only model picker for the Standard tier — used
+                        for the per-conversation skill bootstrap pass to keep
+                        cost down (e.g. Haiku) regardless of the main model. */}
+                    {tier.key === 'standard' && (() => {
+                        const bootstrapModel = chatModels.find(m => m.id === tierConfig.bootstrapModelId);
+                        const bootstrapDisplayName = bootstrapModel ? getDisplayName(bootstrapModel) : null;
+                        const bootstrapLabel = bootstrapModel
+                            ? (bootstrapDisplayName !== bootstrapModel.id ? bootstrapDisplayName : bootstrapModel.id)
+                            : '— Same as main model —';
+                        return (
+                            <div className="mt-3 pt-3 border-t" style={{ borderColor: 'var(--border-default)' }}>
+                                <label className="block text-[11px] font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                                    Bootstrap model (cheap & fast)
+                                </label>
+                                <SearchableModelSelect
+                                    value={tierConfig.bootstrapModelId || ''}
+                                    label={bootstrapLabel}
+                                    groups={byProvider}
+                                    getModelMeta={getModelMeta}
+                                    onChange={val => updateFn(tier.key, 'bootstrapModelId', val || '')}
+                                />
+                                <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                                    Used once per direct chat to generate the chat-local skill set. Pick a small/fast model (e.g. Haiku) to cut bootstrap cost. Leave empty to reuse the main model.
+                                </p>
+                            </div>
+                        );
+                    })()}
                 </div>
                 {defaults && isExpanded && (
                     <div className="px-4 pb-4 pt-1 border-t flex gap-4" style={{ borderColor: 'var(--border-default)' }}>

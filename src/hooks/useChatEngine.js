@@ -31,8 +31,7 @@ export default function useChatEngine({
     onNotebookSourceAdded,
     onNotebookThemeUpdate,
     activeSkillIds,
-    onSessionSkillsBootstrapped,
-    onSessionSkillsUpdated,
+    onSessionSkillsChanged,
 }) {
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -198,9 +197,34 @@ export default function useChatEngine({
                 break;
             }
 
+            case 'session_skills_bootstrap_started':
+                // Tag the in-flight assistant message so MessageItem can show a
+                // "Preparing chat-local skills…" status above the reply.
+                setMessages(prev => prev.map(m =>
+                    m.id === assistantMsgId
+                        ? { ...m, sessionSkillsBootstrap: { state: 'pending' } }
+                        : m
+                ));
+                break;
             case 'session_skills_bootstrapped':
                 if (Array.isArray(data.skills)) {
-                    onSessionSkillsBootstrapped?.({
+                    setMessages(prev => prev.map(m =>
+                        m.id === assistantMsgId
+                            ? {
+                                ...m,
+                                sessionSkillsBootstrap: {
+                                    state: 'done',
+                                    skills: data.skills.map(s => ({
+                                        id: s.id,
+                                        name: s.name,
+                                        description: s.description || '',
+                                        icon: s.icon || '🧩',
+                                    })),
+                                },
+                            }
+                            : m
+                    ));
+                    onSessionSkillsChanged?.({
                         skills: data.skills,
                         activatedSkillIds: Array.isArray(data.activatedSkillIds) ? data.activatedSkillIds : [],
                     });
@@ -208,7 +232,7 @@ export default function useChatEngine({
                 break;
             case 'session_skills_updated':
                 if (Array.isArray(data.skills)) {
-                    onSessionSkillsUpdated?.({
+                    onSessionSkillsChanged?.({
                         skills: data.skills,
                         activatedSkillIds: Array.isArray(data.activatedSkillIds) ? data.activatedSkillIds : [],
                     });
@@ -835,7 +859,7 @@ export default function useChatEngine({
         // Deliberately NOT in deps: `messages` (read via messagesRef), `handleSSEEvent`
         // (invoked via handleSSEEventRef). Keeping them here would recreate
         // `sendMessage` on every streamed token and break child memoization.
-    }, [selectedAgent, isLoading, abortController, currentConversation, getNotebookPayload, directMode, onDirectConversationCreated, activeProject, activeSkillIds, onSessionSkillsBootstrapped, onSessionSkillsUpdated]);
+    }, [selectedAgent, isLoading, abortController, currentConversation, getNotebookPayload, directMode, onDirectConversationCreated, activeProject, activeSkillIds, onSessionSkillsChanged]);
 
     const stopGenerating = useCallback(() => {
         if (abortController) abortController.abort();

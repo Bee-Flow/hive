@@ -11,6 +11,7 @@ import ImageLightbox from './ImageLightbox';
 import ToolOutput from './ToolOutput';
 import { SequentialThinking } from './ThinkingSteps';
 import { ThinkingPanel } from './ThinkingPanel';
+import SessionSkillsBootstrap from './SessionSkillsBootstrap';
 
 import TerminalProgress from './TerminalProgress';
 import TokenisedBadge from '../TokenisedBadge';
@@ -381,6 +382,11 @@ const MessageItem = ({
                     } 
                 ${msg.isGuardrailViolation ? 'opacity-60 scale-95' : ''} 
                 ${msg.isDeleted ? 'opacity-50 italic' : ''}`}>
+
+                {/* Session-skill bootstrap — Standard tier auto-generated chat-local skills */}
+                {!isUser && !isTool && msg.sessionSkillsBootstrap && (
+                    <SessionSkillsBootstrap bootstrap={msg.sessionSkillsBootstrap} />
+                )}
 
                 {/* Sequential Thinking — always at the top */}
                 {!isUser && !isTool && msg.thinkingSteps?.length > 0 && <SequentialThinking msg={msg} />}
