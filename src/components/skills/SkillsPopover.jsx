@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Sparkles, Plus, Lock, Users, Link2, Puzzle, RefreshCw, Trash2, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { Sparkles, Plus, Lock, Users, Link2, Puzzle, RefreshCw, Trash2, ChevronDown, ChevronUp, X, Check } from 'lucide-react';
+import { deriveCompletedSkillIds, classifySessionSkill } from './sessionSkillState';
 import SkillFormModal from './SkillFormModal';
 import { useSkills } from '../../hooks/useSkills';
 import { API_BASE, authFetch } from '../../utils/helpers';
@@ -88,6 +89,17 @@ export default function SkillsPopover({
         () => new Map((sessionSkills || []).map(s => [s.id, s])),
         [sessionSkills]
     );
+    const completedSessionSet = useMemo(
+        () => new Set(deriveCompletedSkillIds(sessionSkills, directActivatedSessionSkillIds)),
+        [sessionSkills, directActivatedSessionSkillIds]
+    );
+    // Progress summary for the Chat-Local Skills header: done X / Y, active K.
+    const sessionProgress = useMemo(() => {
+        const total = Array.isArray(sessionSkills) ? sessionSkills.length : 0;
+        const done = completedSessionSet.size;
+        const activeInFocus = activatedSessionSet.size - done;
+        return { total, done, activeInFocus };
+    }, [sessionSkills, activatedSessionSet, completedSessionSet]);
 
     const canActivateMore = activeCount < SKILL_CAP;
 
@@ -302,15 +314,28 @@ export default function SkillsPopover({
 
                         {directMode && (
                             <div className="mt-2 border-t pt-2" style={{ borderColor: 'var(--border-subtle)' }}>
-                                <div className="flex items-center justify-between px-3 pb-1">
-                                    <div className="text-[11px] font-semibold uppercase tracking-wide" style={{ color: 'var(--text-tertiary)' }}>
-                                        Chat-Local Skills
+                                <div className="flex items-center justify-between px-3 pb-1 gap-2">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                        <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: 'var(--text-tertiary)' }}>
+                                            Chat-Local Skills
+                                        </div>
+                                        {sessionProgress.total > 0 && (
+                                            <span
+                                                className="text-[10px] px-1.5 py-0.5 rounded-full"
+                                                style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}
+                                                title={`${sessionProgress.done} completed · ${sessionProgress.activeInFocus} active · ${sessionProgress.total - sessionProgress.done - sessionProgress.activeInFocus} pending`}
+                                            >
+                                                {sessionProgress.done === sessionProgress.total
+                                                    ? `Done ${sessionProgress.total}/${sessionProgress.total}`
+                                                    : `${sessionProgress.done}/${sessionProgress.total} done`}
+                                            </span>
+                                        )}
                                     </div>
                                     {directConversationId && (
                                         <button
                                             onClick={handleRegenerateSessionSkills}
                                             disabled={regenerating}
-                                            className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded hover:bg-[var(--bg-tertiary)] transition-colors disabled:opacity-60"
+                                            className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded hover:bg-[var(--bg-tertiary)] transition-colors disabled:opacity-60 flex-shrink-0"
                                             style={{ color: 'var(--text-secondary)' }}
                                             title="Regenerate the chat-local skill set"
                                         >
@@ -334,16 +359,26 @@ export default function SkillsPopover({
                                     const imported = importedSessionSkillIds.includes(skill.id);
                                     const deleting = deletingSessionSkillId === skill.id;
                                     const expanded = expandedSessionSkillId === skill.id;
-                                    const isActivated = activatedSessionSet.has(skill.id);
+                                    const state = classifySessionSkill(skill, activatedSessionSet, completedSessionSet);
                                     const unmetDeps = (skill.dependsOn || []).filter(depId => !activatedSessionSet.has(depId));
-                                    const blocked = unmetDeps.length > 0 && !isActivated;
                                     const blockedByNames = unmetDeps.map(id => sessionSkillById.get(id)?.name || id);
                                     const stepNum = skill.order;
+                                    // Styling by lifecycle state: done is dim with a ✓, active is accented,
+                                    // ready is neutral, waiting is dim with an amber "needs" pill.
+                                    const rowStyle = {
+                                        done:    { background: 'var(--bg-tertiary)', opacity: 0.65 },
+                                        active:  { background: 'rgba(16,185,129,.10)' },
+                                        ready:   { background: 'var(--bg-tertiary)' },
+                                        waiting: { background: 'var(--bg-tertiary)', opacity: 0.75 },
+                                    }[state];
+                                    const stepBadge = state === 'done'
+                                        ? <Check size={13} className="text-emerald-600" />
+                                        : stepNum;
                                     return (
                                         <div
                                             key={`session-${skill.id}`}
                                             className="rounded-lg mb-1"
-                                            style={{ background: 'var(--bg-tertiary)' }}
+                                            style={rowStyle}
                                         >
                                             <div className="flex items-center gap-2 px-3 py-2">
                                                 <button
@@ -352,19 +387,29 @@ export default function SkillsPopover({
                                                     title={expanded ? 'Hide details' : `Step ${stepNum}`}
                                                     style={{ color: 'var(--text-primary)' }}
                                                 >
-                                                    {stepNum || <ChevronDown size={13} />}
+                                                    {stepBadge || <ChevronDown size={13} />}
                                                 </button>
                                                 <div className="flex-1 min-w-0 cursor-pointer" onClick={() => setExpandedSessionSkillId(expanded ? null : skill.id)}>
                                                     <div className="flex items-center gap-1.5 min-w-0">
-                                                        <span className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{skill.name}</span>
-                                                        {isActivated && (
-                                                            <span className="flex-shrink-0 text-[9px] px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-600" title="Activated in this conversation">
+                                                        <span className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)', textDecoration: state === 'done' ? 'line-through' : 'none' }}>{skill.name}</span>
+                                                        {state === 'active' && (
+                                                            <span className="flex-shrink-0 text-[9px] px-1 py-0.5 rounded bg-emerald-500/15 text-emerald-600" title="Activated and in focus this turn">
                                                                 active
                                                             </span>
                                                         )}
-                                                        {blocked && (
+                                                        {state === 'done' && (
+                                                            <span className="flex-shrink-0 text-[9px] px-1 py-0.5 rounded bg-emerald-500/10 text-emerald-600" title="Work completed, full body no longer injected">
+                                                                done
+                                                            </span>
+                                                        )}
+                                                        {state === 'ready' && (
+                                                            <span className="flex-shrink-0 text-[9px] px-1 py-0.5 rounded bg-sky-500/15 text-sky-600" title="Ready to activate on demand">
+                                                                ready
+                                                            </span>
+                                                        )}
+                                                        {state === 'waiting' && (
                                                             <span className="flex-shrink-0 text-[9px] px-1 py-0.5 rounded bg-amber-500/15 text-amber-600 truncate" title={`Depends on: ${blockedByNames.join(', ')}`}>
-                                                                blocked by {blockedByNames.join(', ')}
+                                                                needs {blockedByNames.join(', ')}
                                                             </span>
                                                         )}
                                                     </div>

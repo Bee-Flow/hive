@@ -37,7 +37,8 @@ const MessageItem = ({
     onRetry,
     onEditMessage,
     modelTiers = {},
-    isLastAssistant = false
+    isLastAssistant = false,
+    sessionSkills = [],
 }) => {
     const { t } = useTranslation();
     const [expandedBrainEntries, setExpandedBrainEntries] = useState({});
@@ -120,7 +121,7 @@ const MessageItem = ({
     // Get render functions from ToolOutput — must be called before any early
     // return because ToolOutput uses useState internally, and calling a
     // component-as-function shares its hooks with this component.
-    const { renderToolOutput, renderToolCall } = ToolOutput({ msg });
+    const { renderToolOutput, renderToolCall } = ToolOutput({ msg, sessionSkills });
 
     // ── Fully deleted / PII-redacted user messages → compact indicator ──
     // Covers: real-time deletion (isDeleted from setTimeout), history-load

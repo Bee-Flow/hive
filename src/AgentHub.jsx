@@ -1609,6 +1609,7 @@ const AgentHub = ({
                                                     isFormSubmitted={submittedFormIds.has(`form-${msg.id || idx}`)}
                                                     allMessages={messages}
                                                     conversationId={currentDirectConversation?.id}
+                                                    sessionSkills={directSessionSkills}
                                                     chatSource="direct"
                                                     onRetry={retryMessage}
                                                     onEditMessage={editAndRegenerate}

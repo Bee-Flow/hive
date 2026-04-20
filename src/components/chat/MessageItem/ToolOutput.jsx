@@ -2,7 +2,24 @@ import React, { useState } from 'react';
 import { Terminal, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
 import { getToolLabel, getToolIcon } from '../../../utils/helpers';
 
-export default function ToolOutput({ msg }) {
+const SESSION_SKILL_TOOL_NAMES = new Set(['activate_session_skill', 'activate_skill']);
+
+/**
+ * For activate_session_skill / activate_skill, resolve the running tool's
+ * first skill_id arg to a friendlier `Step N: <Name>` label when the
+ * conversation's chat-local skills are known. Falls back to the default label.
+ */
+function skillAwareLabel(toolEntry, sessionSkills) {
+    if (!toolEntry || !SESSION_SKILL_TOOL_NAMES.has(toolEntry.name)) return null;
+    const ids = Array.isArray(toolEntry.args?.skill_ids) ? toolEntry.args.skill_ids : [];
+    if (ids.length === 0 || !Array.isArray(sessionSkills) || sessionSkills.length === 0) return null;
+    const match = sessionSkills.find(s => s.id === ids[0]);
+    if (!match) return null;
+    const prefix = typeof match.order === 'number' ? `Step ${match.order}: ` : '';
+    return `${prefix}${match.name}`;
+}
+
+export default function ToolOutput({ msg, sessionSkills = [] }) {
     const [showRawToolOutput, setShowRawToolOutput] = useState(false);
 
     const renderToolOutput = () => {
@@ -96,7 +113,10 @@ export default function ToolOutput({ msg }) {
             if (msg.isStreaming && !msg.content) return null;
 
             const icon = getToolIcon(msg.toolCall.name);
-            const label = getToolLabel(msg.toolCall.name);
+            // Find the in-flight entry in toolHistory so we can read its args;
+            // args is the only place the skill_ids live at render time.
+            const runningEntry = (msg.toolHistory || []).find(t => t.status === 'running' && t.name === msg.toolCall.name);
+            const label = skillAwareLabel(runningEntry, sessionSkills) || getToolLabel(msg.toolCall.name);
 
             // Completed tools from history (excluding sequentialthinking and the currently running one)
             const completedTools = (msg.toolHistory || []).filter(
@@ -114,7 +134,7 @@ export default function ToolOutput({ msg }) {
                                     <div key={i} className="flex items-center gap-1.5 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
                                         <span className="flex-shrink-0" style={{ color: 'var(--accent-primary)', opacity: 0.7 }}>✓</span>
                                         <span className="text-xs">{getToolIcon(t.name)}</span>
-                                        <span className="font-medium" style={{ color: 'var(--text-secondary)' }}>{getToolLabel(t.name)}</span>
+                                        <span className="font-medium" style={{ color: 'var(--text-secondary)' }}>{skillAwareLabel(t, sessionSkills) || getToolLabel(t.name)}</span>
                                         {dur !== null && (
                                             <span className="tabular-nums opacity-60">
                                                 {dur < 1 ? `${Math.round(dur * 1000)}ms` : `${dur.toFixed(1)}s`}
