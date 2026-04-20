@@ -864,8 +864,9 @@ const InputArea = ({
                                     <Globe className="w-5 h-5" />
                                 </button>
                                 )}
-                                {/* Skills Popover — mirrors the Apps popover, lists user's reusable instruction packs */}
-                                {onToggleSkill && (
+                                {/* Skills Popover — gated by the `skills` beta feature.
+                                    Matches the pattern used on the sidebar entry. */}
+                                {onToggleSkill && Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('skills') && (
                                     <SkillsPopover
                                         user={user}
                                         activeSkillIds={activeSkillIds}

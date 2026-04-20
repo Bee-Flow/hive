@@ -44,7 +44,11 @@ export default defineConfig(({ mode }) => {
         },
         build: {
             target: 'esnext',
-            sourcemap: false,
+            // 'hidden': emit .map files but omit the //# sourceMappingURL= comment,
+            // so browsers don't auto-fetch them. We strip the .map files from the
+            // served Docker image (nginx 404 + Dockerfile delete) and keep them
+            // only as CI artifacts for decoding minified production stack traces.
+            sourcemap: 'hidden',
             rollupOptions: {
                 output: {
                     manualChunks: {

@@ -92,7 +92,7 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
                         return (
                             <button
                                 key={key}
-                                onClick={() => { onChange(key); setOpen(false); }}
+                                onClick={() => { onChange?.(key); setOpen(false); }}
                                 data-testid={`model-tier-${key}`}
                                 style={{
                                     display: 'flex', alignItems: 'center', gap: '10px',

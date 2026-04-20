@@ -41,7 +41,7 @@ const WelcomeScreen = ({ agent, onSendMessage, children }) => {
                     {starterPrompts.map((prompt, idx) => (
                         <button
                             key={idx}
-                            onClick={() => onSendMessage(prompt)}
+                            onClick={() => onSendMessage?.(prompt)}
                             className="text-left px-3.5 py-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-card)] hover:bg-[var(--bg-secondary)] hover:border-purple-500/30 transition-all flex items-center gap-2 group whitespace-nowrap"
                         >
                             <span className="text-[12.5px] font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors">

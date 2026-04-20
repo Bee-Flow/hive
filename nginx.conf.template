@@ -40,6 +40,12 @@ server {
         add_header Permissions-Policy      "camera=(), microphone=(self), geolocation=(), clipboard-read=(self), clipboard-write=(self)" always;
     }
 
+    # Block source-map files. We build with sourcemap:'hidden' for post-mortem
+    # decoding via CI artifacts, but never want them to leak publicly.
+    location ~* \.map$ {
+        return 404;
+    }
+
     # Vite assets are hashed (e.g. assets/index.1234.js), so we can cache them forever
     location /assets/ {
         expires 1y;

@@ -25,6 +25,11 @@ ENV VITE_BUILD_SHA=$VITE_BUILD_SHA
 # Build the app
 RUN npm run build
 
+# Strip .map files from the image. Sourcemaps are generated via
+# vite build.sourcemap:'hidden' for CI artifact upload (see workflow), but
+# must never be served to clients.
+RUN find /app/dist -name '*.map' -type f -delete
+
 # Production stage
 FROM nginx:alpine
 

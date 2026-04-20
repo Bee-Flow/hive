@@ -4,6 +4,7 @@ import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, Chev
 import { API_BASE } from '../utils/helpers';
 import NotificationCenter from './NotificationCenter';
 import NavLink from './NavLink';
+import { formatVersion, formatVersionWithDate } from '../utils/appVersion';
 
 
 /* ─── Design tokens ─── */
@@ -911,6 +912,13 @@ const Sidebar = ({
                                 <LogOut className="w-4 h-4 text-red-400 group-hover/so:text-red-500 transition-colors" strokeWidth={1.75} />
                                 <span className="text-[13px] text-[var(--text-tertiary)] group-hover/so:text-red-500 transition-colors">{t('sidebar.sign_out')}</span>
                             </button>
+                            <div
+                                className="px-3 py-1 text-[10px] text-[var(--text-tertiary)] select-text"
+                                title={formatVersionWithDate()}
+                                data-testid="sidebar-build-version"
+                            >
+                                {formatVersion()}
+                            </div>
                         </div>
                     </div>
                 )}

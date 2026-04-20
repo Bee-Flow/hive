@@ -98,7 +98,7 @@ export default function SkillCard({
                     {isOwner && !compact && (
                         <>
                             <button
-                                onClick={() => onEdit(skill)}
+                                onClick={() => onEdit?.(skill)}
                                 title="Edit skill"
                                 className="w-7 h-7 rounded-md flex items-center justify-center transition-colors hover:bg-[var(--bg-tertiary)]"
                                 style={{ color: 'var(--text-tertiary)' }}
@@ -108,7 +108,7 @@ export default function SkillCard({
                             {confirmDelete ? (
                                 <div className="flex gap-1">
                                     <button
-                                        onClick={() => onDelete(skill.id)}
+                                        onClick={() => onDelete?.(skill.id)}
                                         className="text-[11px] px-2 py-1 rounded-md font-semibold bg-red-500 text-white hover:bg-red-600"
                                     >
                                         Delete
@@ -136,7 +136,7 @@ export default function SkillCard({
 
                     {onToggle && (
                         <button
-                            onClick={() => onToggle(skill.id)}
+                            onClick={() => onToggle?.(skill.id)}
                             title={isActive ? 'Deactivate skill' : 'Activate skill'}
                             className="h-7 px-3 rounded-lg text-[12px] font-semibold flex items-center gap-1.5 transition-colors"
                             style={{

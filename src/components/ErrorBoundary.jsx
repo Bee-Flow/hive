@@ -1,4 +1,5 @@
 import React from 'react';
+import { APP_BUILD_SHA } from '../utils/appVersion';
 
 /**
  * Two boundaries in one file:
@@ -25,6 +26,9 @@ function reportError(label, error, info) {
     } catch (_) { /* ignore console failures */ }
     // Fire-and-forget — we don't want a reporting failure to blow up the UI.
     try {
+        // Diagnostics populated by AgentHub on mount (role + feature flags) so
+        // we can correlate minified errors to the user's permission/tier state.
+        const diag = (typeof window !== 'undefined' && window.__APP_DIAGNOSTICS__) || {};
         const payload = {
             label,
             message: String(error?.message || error),
@@ -33,6 +37,9 @@ function reportError(label, error, info) {
             url: typeof window !== 'undefined' ? window.location.href : '',
             userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
             at: new Date().toISOString(),
+            buildSha: APP_BUILD_SHA,
+            userRole: diag.userRole || '',
+            featureFlags: diag.featureFlags || {},
         };
         if (typeof fetch === 'function') {
             fetch('/api/client-errors', {

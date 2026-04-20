@@ -678,6 +678,35 @@ const AgentHub = ({
         } catch (e) { console.error('Failed to load model tiers:', e); }
     };
 
+    // Non-admins without the skills-beta feature get a filtered modelTiers
+    // response (the server omits 'standard'). If our persisted/restored
+    // selectedTier is one the server no longer returns, fall back to 'auto'
+    // so downstream reads like modelTiers[selectedTier] don't see undefined.
+    useEffect(() => {
+        const keys = Object.keys(modelTiers || {});
+        if (keys.length === 0) return;
+        if (!keys.includes(selectedTier)) {
+            setSelectedTier(keys.includes('auto') ? 'auto' : keys[0]);
+        }
+    }, [modelTiers, selectedTier]);
+
+    // Populate a read-only diagnostics bag on window so ErrorBoundary can
+    // include role/tier context in crash reports without having to plumb
+    // hook state through the boundary.
+    useEffect(() => {
+        try {
+            window.__APP_DIAGNOSTICS__ = {
+                userRole: user?.isAdmin ? 'admin' : (user?.role || 'user'),
+                featureFlags: {
+                    permissions: Array.isArray(user?.permissions) ? user.permissions : [],
+                    betaFeatures: Array.isArray(user?.betaFeatures) ? user.betaFeatures : [],
+                    selectedTier,
+                    modelTierKeys: Object.keys(modelTiers || {}),
+                },
+            };
+        } catch (_) { /* ignore */ }
+    }, [user, selectedTier, modelTiers]);
+
     // --- Projects ---
     const loadProjects = async () => {
         try {
