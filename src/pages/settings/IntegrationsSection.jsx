@@ -4,11 +4,18 @@ import { useTranslation } from '../../hooks/useTranslation';
 import N8nSection from './N8nSection';
 
 // ── Shared UI helpers ─────────────────────────────────────────────────────────
-const ConnectedBadge = ({ t }) => (
-    <span className="text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0" style={{ background: 'rgba(5,150,105,0.1)', color: '#059669' }}>
-        {t('settings.connected')}
-    </span>
-);
+// Pull translations from the hook directly so parents don't have to thread `t`
+// through. Historically callers forgot to pass t={t}, causing render-time
+// crashes ("TypeError: t is not a function") the moment an integration was
+// connected and this badge actually rendered.
+const ConnectedBadge = () => {
+    const { t } = useTranslation();
+    return (
+        <span className="text-[10px] px-1.5 py-0.5 rounded font-medium flex-shrink-0" style={{ background: 'rgba(5,150,105,0.1)', color: '#059669' }}>
+            {t('settings.connected')}
+        </span>
+    );
+};
 
 const GroupLabel = ({ children }) => (
     <p className="text-[11px] font-semibold uppercase tracking-widest px-1 mb-2" style={{ color: 'var(--text-muted)' }}>
@@ -17,7 +24,7 @@ const GroupLabel = ({ children }) => (
 );
 
 // ── Integration row (expands inline) ─────────────────────────────────────────
-const IntegrationRow = ({ icon, name, description, connected, badge, children, last = false, t }) => {
+const IntegrationRow = ({ icon, name, description, connected, badge, children, last = false }) => {
     const [expanded, setExpanded] = useState(false);
 
     return (
@@ -37,7 +44,7 @@ const IntegrationRow = ({ icon, name, description, connected, badge, children, l
                     <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{description}</p>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                    {connected ? <ConnectedBadge t={t} /> : badge || null}
+                    {connected ? <ConnectedBadge /> : badge || null}
                     <svg
                         className="transition-transform"
                         style={{ color: 'var(--text-muted)', width: '13px', height: '13px', transform: expanded ? 'rotate(90deg)' : 'none' }}
