@@ -842,6 +842,10 @@ const AgentHub = ({
         setCurrentDirectConversation(null);
         setDirectSessionSkills([]);
         setDirectActivatedSessionSkillIds([]);
+        setNotebookContent('');
+        setNotebookSelection('');
+        setShowNotebook(false);
+        setNotebookLinkedId(null);
         setShowMarketplace(false);
         if (onCloseSettings) onCloseSettings();
         if (onCloseAgentDesigner) onCloseAgentDesigner();
@@ -941,8 +945,10 @@ const AgentHub = ({
         }
         setCurrentConversation({ id: null, title: 'New Chat', messages: [] });
         setMessages([]);
-        // Keep notebook content alive across chats — don't reset
+        setNotebookContent('');
         setNotebookSelection('');
+        setShowNotebook(false);
+        setNotebookLinkedId(null);
         updateAgentUrl(selectedAgent.id, null);
     };
     const handleDeleteConversation = async (convId, agentId) => {
