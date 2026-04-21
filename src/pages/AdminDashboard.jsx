@@ -7,6 +7,7 @@ import AIConfigPanel from '../components/admin/AIConfig';
 import SecurityHub from '../components/admin/SecurityHub';
 import IntegrationsAdminPanel from '../components/admin/IntegrationsAdminPanel';
 import MonitoringPanel from '../components/admin/MonitoringPanel';
+import ComplianceHub from '../components/admin/ComplianceHub';
 import SubscriptionsPanel from '../components/admin/SubscriptionsPanel';
 import LanguagesPanel from '../components/admin/LanguagesPanel';
 import AppearanceAdminPanel from '../components/admin/AppearanceAdminPanel';
@@ -30,6 +31,7 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
         { id: 'security', label: t('admin.tab_security'), perm: ['admin_security'], superAdminOnly: false },
         { id: 'integrations', label: t('admin.tab_integrations'), perm: ['admin_security'], superAdminOnly: true },
         { id: 'monitoring', label: t('admin.tab_monitoring'), perm: ['admin_monitoring'], superAdminOnly: false },
+        { id: 'compliance', label: t('admin.tab_compliance'), perm: ['admin_compliance'], superAdminOnly: false },
         { id: 'subscriptions', label: t('admin.tab_subscriptions'), perm: ['admin_subscriptions'], superAdminOnly: true },
         { id: 'appearance', label: t('admin.tab_appearance'), perm: ['admin_ai_config'], superAdminOnly: true },
         { id: 'languages', label: t('admin.tab_languages'), perm: ['admin_ai_config'], superAdminOnly: true },
@@ -166,6 +168,10 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                     ) : activeTab === 'monitoring' ? (
                         <div className="absolute inset-0">
                             <MonitoringPanel activeSection={adminPath.seg2} onNavigate={onNavigate} />
+                        </div>
+                    ) : activeTab === 'compliance' ? (
+                        <div className="absolute inset-0">
+                            <ComplianceHub activeSection={adminPath.seg2} onNavigate={onNavigate} />
                         </div>
                     ) : activeTab === 'subscriptions' ? (
                         <div className="absolute inset-0 overflow-hidden">
