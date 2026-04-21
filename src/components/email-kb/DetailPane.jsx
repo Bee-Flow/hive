@@ -9,10 +9,10 @@ import PipelineTab from './tabs/PipelineTab';
 import HistoryTab from './tabs/HistoryTab';
 
 const TABS = [
-    { id: 'overview', labelKey: 'email_kb.tab_overview', icon: Activity },
-    { id: 'settings', labelKey: 'email_kb.tab_settings', icon: SettingsIcon },
-    { id: 'pipeline', labelKey: 'email_kb.tab_pipeline', icon: GitBranch },
-    { id: 'history',  labelKey: 'email_kb.tab_history',  icon: Clock },
+    { id: 'overview', labelKey: 'ticket_assistant.tab_overview', icon: Activity },
+    { id: 'settings', labelKey: 'ticket_assistant.tab_settings', icon: SettingsIcon },
+    { id: 'pipeline', labelKey: 'ticket_assistant.tab_pipeline', icon: GitBranch },
+    { id: 'history',  labelKey: 'ticket_assistant.tab_history',  icon: Clock },
 ];
 
 const DetailPane = ({ conn, knowledgeBases, onSync, onUpdate, onDelete, onEditingChange, t }) => {
@@ -33,7 +33,7 @@ const DetailPane = ({ conn, knowledgeBases, onSync, onUpdate, onDelete, onEditin
                             <SyncStatusBadge status={conn.sync_status} t={t} />
                             {!conn.enabled && (
                                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-600 font-medium">
-                                    {t('email_kb.disabled')}
+                                    {t('ticket_assistant.disabled')}
                                 </span>
                             )}
                         </div>

@@ -30,22 +30,22 @@ const OverviewTab = ({ conn, controller, onUpdate, onDelete, t }) => {
         testing, testResult, runTest, clearTestResult,
     } = controller;
 
-    const statusLabel = t(`email_kb.sync_status_${conn.sync_status || 'idle'}`);
+    const statusLabel = t(`ticket_assistant.sync_status_${conn.sync_status || 'idle'}`);
 
     return (
         <div className="p-6 space-y-4 overflow-y-auto">
             {/* Stats */}
             <div className="flex gap-3 flex-wrap">
-                <StatCard icon={FileText} label={t('email_kb.stat_articles')} value={conn.total_articles_created ?? 0} accent="text-emerald-500" />
-                <StatCard icon={Mail}     label={t('email_kb.stat_emails')}   value={conn.total_emails_processed ?? 0} accent="text-blue-500" />
-                <StatCard icon={Clock}    label={t('email_kb.stat_last_sync')} value={timeAgo(conn.last_sync_at)} accent="text-amber-500" />
-                <StatCard icon={Activity} label={t('email_kb.stat_status')}   value={statusLabel} accent="text-purple-500">
-                    {!conn.enabled && <span className="text-amber-600">{t('email_kb.disabled')}</span>}
+                <StatCard icon={FileText} label={t('ticket_assistant.stat_articles')} value={conn.total_articles_created ?? 0} accent="text-emerald-500" />
+                <StatCard icon={Mail}     label={t('ticket_assistant.stat_emails')}   value={conn.total_emails_processed ?? 0} accent="text-blue-500" />
+                <StatCard icon={Clock}    label={t('ticket_assistant.stat_last_sync')} value={timeAgo(conn.last_sync_at)} accent="text-amber-500" />
+                <StatCard icon={Activity} label={t('ticket_assistant.stat_status')}   value={statusLabel} accent="text-purple-500">
+                    {!conn.enabled && <span className="text-amber-600">{t('ticket_assistant.disabled')}</span>}
                 </StatCard>
                 <StatCard
                     icon={DollarSign}
-                    label={t('email_kb.stat_cost')}
-                    value={costLoading ? t('email_kb.cost_loading') : formatCost(cost)}
+                    label={t('ticket_assistant.stat_cost')}
+                    value={costLoading ? t('ticket_assistant.cost_loading') : formatCost(cost)}
                     accent="text-green-500"
                 />
             </div>
@@ -55,23 +55,23 @@ const OverviewTab = ({ conn, controller, onUpdate, onDelete, t }) => {
                 <button onClick={startSync} disabled={syncing || conn.sync_status === 'syncing'}
                     className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold bg-[var(--accent-primary)] text-white hover:opacity-90 disabled:opacity-50 shadow-sm transition-all">
                     <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin' : ''}`} />
-                    {syncing ? t('email_kb.syncing') : t('email_kb.sync_now')}
+                    {syncing ? t('ticket_assistant.syncing') : t('ticket_assistant.sync_now')}
                 </button>
                 <button onClick={runTest} disabled={testing}
                     className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-medium bg-[var(--bg-secondary)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] disabled:opacity-50 border border-[var(--border-subtle)] transition-all">
                     <TestTube2 className={`w-4 h-4 ${testing ? 'animate-pulse' : ''}`} />
-                    {testing ? t('email_kb.testing') : t('email_kb.test_connection')}
+                    {testing ? t('ticket_assistant.testing') : t('ticket_assistant.test_connection')}
                 </button>
                 <button onClick={() => onUpdate(conn.id, { enabled: !conn.enabled })}
                     className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-medium bg-[var(--bg-secondary)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] transition-all">
                     {conn.enabled ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                    {conn.enabled ? t('email_kb.pause') : t('email_kb.resume')}
+                    {conn.enabled ? t('ticket_assistant.pause') : t('ticket_assistant.resume')}
                 </button>
                 <div className="flex-1" />
-                <button onClick={() => { if (confirm(t('email_kb.delete_confirm'))) onDelete(conn.id); }}
+                <button onClick={() => { if (confirm(t('ticket_assistant.delete_confirm'))) onDelete(conn.id); }}
                     className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-medium text-red-500 hover:bg-red-50 border border-red-200 transition-all">
                     <Trash2 className="w-4 h-4" />
-                    {t('email_kb.delete_connection')}
+                    {t('ticket_assistant.delete_connection')}
                 </button>
             </div>
 
@@ -83,7 +83,7 @@ const OverviewTab = ({ conn, controller, onUpdate, onDelete, t }) => {
                     <button onClick={startSync} disabled={syncing}
                         className="flex-shrink-0 flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-medium bg-white border border-red-300 text-red-700 hover:bg-red-50 disabled:opacity-50">
                         <RefreshCw className={`w-3 h-3 ${syncing ? 'animate-spin' : ''}`} />
-                        {t('email_kb.retry')}
+                        {t('ticket_assistant.retry')}
                     </button>
                 </div>
             )}
@@ -91,7 +91,7 @@ const OverviewTab = ({ conn, controller, onUpdate, onDelete, t }) => {
             {syncConflict && (
                 <div className="flex items-start gap-2 p-3 rounded-lg bg-amber-50 border border-amber-200 text-[12px] text-amber-800">
                     <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                    <span>{t('email_kb.sync_in_progress')} — {t('email_kb.retry_in')} {syncConflict.retryAfterSeconds}s.</span>
+                    <span>{t('ticket_assistant.sync_in_progress')} — {t('ticket_assistant.retry_in')} {syncConflict.retryAfterSeconds}s.</span>
                 </div>
             )}
 
@@ -101,7 +101,7 @@ const OverviewTab = ({ conn, controller, onUpdate, onDelete, t }) => {
                     <div className="flex items-center justify-between text-[12px]">
                         <span className="flex items-center gap-1.5 font-semibold text-[var(--text-primary)]">
                             <RefreshCw className="w-3.5 h-3.5 animate-spin text-[var(--accent-primary)]" />
-                            {t('email_kb.syncing')}
+                            {t('ticket_assistant.syncing')}
                         </span>
                         <span className="text-[var(--text-tertiary)] tabular-nums">
                             {syncProgress.processed}{syncProgress.total != null ? ` / ${syncProgress.total}` : ''}
@@ -119,7 +119,7 @@ const OverviewTab = ({ conn, controller, onUpdate, onDelete, t }) => {
                     </div>
                     {mergeProgress && mergeProgress.currentCategory && (
                         <div className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
-                            <span className="font-semibold">{t('email_kb.merge_progress_label')}</span>
+                            <span className="font-semibold">{t('ticket_assistant.merge_progress_label')}</span>
                             <em className="not-italic text-[var(--text-primary)] font-medium truncate max-w-[16ch]">
                                 {mergeProgress.currentCategory}
                             </em>
@@ -130,7 +130,7 @@ const OverviewTab = ({ conn, controller, onUpdate, onDelete, t }) => {
                                 </span>
                             )}
                             <span className="text-[var(--text-tertiary)] tabular-nums ml-auto">
-                                {mergeProgress.categoriesDone ?? 0} {t('email_kb.merge_progress_categories')}
+                                {mergeProgress.categoriesDone ?? 0} {t('ticket_assistant.merge_progress_categories')}
                             </span>
                         </div>
                     )}
@@ -165,7 +165,7 @@ const OverviewTab = ({ conn, controller, onUpdate, onDelete, t }) => {
                     ) : (
                         <div className="space-y-2">
                             <div className="flex items-center gap-2 font-semibold">
-                                <CheckCircle2 className="w-4 h-4" /> {t('email_kb.test_success')}
+                                <CheckCircle2 className="w-4 h-4" /> {t('ticket_assistant.test_success')}
                             </div>
                             {testResult.originalSubject && <div><strong>Subject:</strong> {testResult.originalSubject}</div>}
                             {testResult.preview?.title && <div><strong>Article:</strong> {testResult.preview.title}</div>}

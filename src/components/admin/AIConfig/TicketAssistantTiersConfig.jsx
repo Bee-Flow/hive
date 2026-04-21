@@ -9,12 +9,12 @@ const STANDARD_TIERS = [
 ];
 
 const STAGES = [
-    { key: 'article', label: 'Article generation', desc: 'Turns a cleaned email into a KB article.' },
-    { key: 'category', label: 'Categorisation', desc: 'Labels the generated article with a category.' },
+    { key: 'article', label: 'Article generation', desc: 'Turns a cleaned ticket/email into a KB article with Root Cause + Resolution sections.' },
+    { key: 'category', label: 'Categorisation', desc: 'Labels the generated article with a category and ITIL type.' },
     { key: 'merge', label: 'Category merge', desc: 'Merges multiple articles into a per-category KB document.' },
 ];
 
-const EmailKBTiersConfig = () => {
+const TicketAssistantTiersConfig = () => {
     const [config, setConfig] = useState({ article: 'fast', category: 'fast', merge: 'fast' });
     const [customTiers, setCustomTiers] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -25,7 +25,7 @@ const EmailKBTiersConfig = () => {
         (async () => {
             try {
                 const [cfgRes, tiersRes] = await Promise.all([
-                    authFetch(`${API_BASE}/ai/config/email-kb-tiers`),
+                    authFetch(`${API_BASE}/ai/config/ticket-assistant-tiers`),
                     authFetch(`${API_BASE}/ai/config/custom-tiers-list`),
                 ]);
                 if (cfgRes.ok) setConfig(await cfgRes.json());
@@ -34,7 +34,7 @@ const EmailKBTiersConfig = () => {
                     setCustomTiers(Array.isArray(data.tiers) ? data.tiers : []);
                 }
             } catch (e) {
-                console.error('Failed to load Email KB tiers:', e);
+                console.error('Failed to load Ticket Assistant tiers:', e);
             } finally {
                 setLoading(false);
             }
@@ -47,12 +47,12 @@ const EmailKBTiersConfig = () => {
     const handleSave = async () => {
         setSaving(true);
         try {
-            const res = await authFetch(`${API_BASE}/ai/config/email-kb-tiers`, {
+            const res = await authFetch(`${API_BASE}/ai/config/ticket-assistant-tiers`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(config),
             });
-            if (res.ok) setMessage({ type: 'success', text: 'Email KB tiers saved!' });
+            if (res.ok) setMessage({ type: 'success', text: 'Ticket Assistant tiers saved!' });
             else setMessage({ type: 'error', text: 'Failed to save' });
         } catch (e) {
             setMessage({ type: 'error', text: 'Failed to save' });
@@ -69,12 +69,12 @@ const EmailKBTiersConfig = () => {
             <div className="flex items-center justify-between mb-6">
                 <div className="flex items-center gap-4">
                     <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl" style={{ background: 'rgba(236, 72, 153, 0.15)' }}>
-                        📧
+                        🎫
                     </div>
                     <div>
-                        <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Email Knowledge Base — Model Tiers</h3>
+                        <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>ITIL Ticket Assistant — Model Tiers</h3>
                         <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            Pick a tier for each stage of the Email KB pipeline. Custom tiers appear here only if you enabled them for "Email Knowledge Base" in Chat Models.
+                            Pick a tier for each stage of the Ticket Assistant pipeline. Custom tiers appear here only if you enabled them for the "email_kb" task type in Chat Models.
                         </p>
                     </div>
                 </div>
@@ -107,7 +107,7 @@ const EmailKBTiersConfig = () => {
                                 ))}
                             </optgroup>
                             {availableCustom.length > 0 && (
-                                <optgroup label="Custom tiers (email-kb enabled)">
+                                <optgroup label="Custom tiers (ticket-assistant enabled)">
                                     {availableCustom.map(t => (
                                         <option key={t.id} value={t.id}>{t.icon || '✨'} {t.label}</option>
                                     ))}
@@ -124,10 +124,10 @@ const EmailKBTiersConfig = () => {
                 className="mt-6 px-6 py-2.5 rounded-lg font-medium text-sm transition-all text-white hover:opacity-90 disabled:opacity-50"
                 style={{ background: 'var(--accent-primary)' }}
             >
-                {saving ? 'Saving...' : 'Save Email KB Tiers'}
+                {saving ? 'Saving...' : 'Save Ticket Assistant Tiers'}
             </button>
         </div>
     );
 };
 
-export default EmailKBTiersConfig;
+export default TicketAssistantTiersConfig;

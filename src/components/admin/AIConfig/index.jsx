@@ -4,7 +4,7 @@ import { API_BASE, authFetch } from '../../../utils/helpers';
 import { getModelMeta, CAT_COLORS } from './modelMeta';
 
 import DirectChatConfig from './DirectChatConfig';
-import EmailKBTiersConfig from './EmailKBTiersConfig';
+import TicketAssistantTiersConfig from './TicketAssistantTiersConfig';
 
 import MistralApiKeyCard from './ProviderCards/MistralCard';
 import OpenAIApiKeyCard from './ProviderCards/OpenAICard';
@@ -104,7 +104,7 @@ const AIConfigPanel = () => {
         { id: 'providers', label: t('admin.ai_api_keys'), icon: '🔑' },
         { id: 'chatModels', label: t('admin.ai_chat_models'), icon: '🗨️' },
         { id: 'directChat', label: t('admin.ai_direct_chat'), icon: '💬' },
-        { id: 'emailKBTiers', label: t('admin.ai_email_kb_tiers', 'Email KB Models'), icon: '📧' },
+        { id: 'ticketAssistantTiers', label: t('admin.ai_ticket_assistant_tiers', 'Ticket Assistant Models'), icon: '🎫' },
 
     ];
 
@@ -232,9 +232,9 @@ const AIConfigPanel = () => {
                     <DirectChatConfig />
                 )}
 
-                {/* Email KB Tiers Tab — per-stage model tier picker */}
-                {activeTab === 'emailKBTiers' && (
-                    <EmailKBTiersConfig />
+                {/* Ticket Assistant Tiers Tab — per-stage model tier picker */}
+                {activeTab === 'ticketAssistantTiers' && (
+                    <TicketAssistantTiersConfig />
                 )}
 
             </div>

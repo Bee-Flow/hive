@@ -32,7 +32,13 @@ const PAGE_ROUTES = {
     meetingNotes: '/app/meeting-notes',
     templates: '/app/templates',
     notebooks: '/app/notebooks',
+    ticketAssistant: '/ticket-assistant',
+};
 
+// Legacy page aliases — map old page keys to their new canonical names.
+// Keeps deep links like ?page=emailKB working for one release.
+const LEGACY_PAGE_ALIASES = {
+    emailKB: 'ticketAssistant',
 };
 
 // Reverse lookup: path → page key
@@ -43,6 +49,9 @@ const PATH_TO_PAGE = Object.fromEntries(
 function pageFromPath(pathname) {
     // Root → agents (redirect to /app)
     if (pathname === '/') return 'agents';
+    // Legacy /email-kb → ticketAssistant
+    if (pathname === '/email-kb' || pathname.startsWith('/email-kb/')) return 'ticketAssistant';
+    if (pathname === '/ticket-assistant' || pathname.startsWith('/ticket-assistant/')) return 'ticketAssistant';
     // Exact match for app routes
     if (PATH_TO_PAGE[pathname]) return PATH_TO_PAGE[pathname];
     // /app/admin or /app/admin/* → admin page
@@ -337,8 +346,9 @@ function App() {
             setShowEmailKB(false);
             return;
         }
-        // Email KB renders inline in conversation area
-        if (page === 'emailKB') {
+        // Ticket Assistant (formerly Email KB) renders inline in conversation area.
+        // Accept legacy 'emailKB' page key for one release.
+        if (page === 'ticketAssistant' || page === 'emailKB') {
             setShowEmailKB(true);
             setShowSettings(false);
             setShowAgentDesigner(false);

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
-import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, PenLine, Sparkles, Mail } from 'lucide-react';
+import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, PenLine, Sparkles, Mail, Ticket } from 'lucide-react';
 import { API_BASE } from '../utils/helpers';
 import NotificationCenter from './NotificationCenter';
 import NavLink from './NavLink';
@@ -401,8 +401,13 @@ const Sidebar = ({
     showSettings = false,
     showAgentDesigner = false,
     showSkillsPanel = false,
-    showEmailKB = false,
+    showTicketAssistant = false,
+    // Legacy alias — callers passing showEmailKB still work for one release.
+    showEmailKB = undefined,
 }) => {
+    if (showEmailKB !== undefined && showTicketAssistant === false) {
+        showTicketAssistant = showEmailKB;
+    }
     const { t } = useTranslation();
     // We'll use the 'isOpen' prop as 'sidebarOpen' (expanded state)
     // and if !isOpen, we'll show the narrow 'Power Bar'
@@ -877,17 +882,17 @@ const Sidebar = ({
                                     <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
                                 </NavLink>
                             )}
-                            {!isMobile && (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('email_knowledge_base')) && (
+                            {!isMobile && (Array.isArray(user?.betaFeatures) && (user.betaFeatures.includes('itil_ticket_assistant') || user.betaFeatures.includes('email_knowledge_base'))) && (
                                 <NavLink
-                                    href="/email-kb"
+                                    href="/ticket-assistant"
                                     onClick={() => setShowProfileMenu(false)}
-                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('emailKB'); }}
-                                    className={`${ROW} ${showEmailKB ? ROW_ACTIVE : ROW_IDLE}`}
+                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('ticketAssistant'); }}
+                                    className={`${ROW} ${showTicketAssistant ? ROW_ACTIVE : ROW_IDLE}`}
                                     style={{ textDecoration: 'none', color: 'inherit' }}
                                 >
-                                    {showEmailKB && <div className={ACCENT_BAR} />}
-                                    <Mail className={`w-4 h-4 ${showEmailKB ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${showEmailKB ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('email_kb.title') || 'Email KB'}</span>
+                                    {showTicketAssistant && <div className={ACCENT_BAR} />}
+                                    <Ticket className={`w-4 h-4 ${showTicketAssistant ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
+                                    <span className={`text-[13px] ${showTicketAssistant ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('ticket_assistant.sidebar_label') || 'Ticket Assistant'}</span>
                                     <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
                                 </NavLink>
                             )}

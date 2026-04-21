@@ -34,7 +34,7 @@ const OutcomesBreakdown = ({ outcomes, t }) => {
     if (total === 0) return null;
 
     const skipReasonLabel = (reason) => {
-        const key = `email_kb.skip_reason_${reason}`;
+        const key = `ticket_assistant.skip_reason_${reason}`;
         const translated = t(key);
         return translated === key ? reason : translated;
     };
@@ -42,15 +42,15 @@ const OutcomesBreakdown = ({ outcomes, t }) => {
     return (
         <div className="space-y-2 text-[11px]">
             <div className="text-[10px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)]">
-                {t('email_kb.outcomes_title')}
+                {t('ticket_assistant.outcomes_title')}
             </div>
             <div className="flex items-center gap-3">
-                <span className="w-20 text-[var(--text-secondary)]">{t('email_kb.outcome_ingested')}</span>
+                <span className="w-20 text-[var(--text-secondary)]">{t('ticket_assistant.outcome_ingested')}</span>
                 <Bar value={ingested} total={total} color="bg-emerald-500" />
                 <span className="w-10 text-right tabular-nums text-emerald-600 font-medium">{ingested}</span>
             </div>
             <div className="flex items-center gap-3">
-                <span className="w-20 text-[var(--text-secondary)]">{t('email_kb.outcome_skipped')}</span>
+                <span className="w-20 text-[var(--text-secondary)]">{t('ticket_assistant.outcome_skipped')}</span>
                 <Bar value={skipped} total={total} color="bg-amber-500" />
                 <span className="w-10 text-right tabular-nums text-amber-600 font-medium">{skipped}</span>
             </div>
@@ -67,7 +67,7 @@ const OutcomesBreakdown = ({ outcomes, t }) => {
                 </ul>
             )}
             <div className="flex items-center gap-3">
-                <span className="w-20 text-[var(--text-secondary)]">{t('email_kb.outcome_failed')}</span>
+                <span className="w-20 text-[var(--text-secondary)]">{t('ticket_assistant.outcome_failed')}</span>
                 <Bar value={failed} total={total} color="bg-red-500" />
                 <span className="w-10 text-right tabular-nums text-red-500 font-medium">{failed}</span>
             </div>
@@ -94,7 +94,7 @@ const HistoryTab = ({ controller, t }) => {
     if (logs.length === 0) {
         return (
             <div className="p-6 text-center text-[13px] text-[var(--text-tertiary)] italic">
-                {t('email_kb.no_history')}
+                {t('ticket_assistant.no_history')}
             </div>
         );
     }
@@ -105,12 +105,12 @@ const HistoryTab = ({ controller, t }) => {
                 <table className="w-full text-[12px]">
                     <thead className="bg-[var(--bg-secondary)] text-[var(--text-tertiary)]">
                         <tr>
-                            <th className="text-left px-3 py-2 font-medium">{t('email_kb.history_date')}</th>
-                            <th className="text-center px-3 py-2 font-medium">{t('email_kb.duration')}</th>
-                            <th className="text-center px-3 py-2 font-medium">{t('email_kb.fetched')}</th>
-                            <th className="text-center px-3 py-2 font-medium">{t('email_kb.created')}</th>
-                            <th className="text-center px-3 py-2 font-medium">{t('email_kb.skipped')}</th>
-                            <th className="text-center px-3 py-2 font-medium">{t('email_kb.errors')}</th>
+                            <th className="text-left px-3 py-2 font-medium">{t('ticket_assistant.history_date')}</th>
+                            <th className="text-center px-3 py-2 font-medium">{t('ticket_assistant.duration')}</th>
+                            <th className="text-center px-3 py-2 font-medium">{t('ticket_assistant.fetched')}</th>
+                            <th className="text-center px-3 py-2 font-medium">{t('ticket_assistant.created')}</th>
+                            <th className="text-center px-3 py-2 font-medium">{t('ticket_assistant.skipped')}</th>
+                            <th className="text-center px-3 py-2 font-medium">{t('ticket_assistant.errors')}</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -153,7 +153,7 @@ const HistoryTab = ({ controller, t }) => {
                                                 {log.error_details && (
                                                     <div className={hasOutcomes ? 'mt-3 pt-3 border-t border-[var(--border-subtle)]' : ''}>
                                                         <div className="text-[10px] uppercase tracking-wide font-semibold text-red-600 mb-1">
-                                                            {t('email_kb.error_details')}
+                                                            {t('ticket_assistant.error_details')}
                                                         </div>
                                                         <div className="text-[10px] text-red-700 font-mono whitespace-pre-wrap max-h-40 overflow-y-auto">{log.error_details}</div>
                                                     </div>

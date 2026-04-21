@@ -2,9 +2,9 @@ import React from 'react';
 import { CheckCircle2, Loader2, XCircle } from 'lucide-react';
 
 const STYLES = {
-    idle:    { bg: 'bg-emerald-500/10', text: 'text-emerald-600', dot: 'bg-emerald-500', icon: CheckCircle2, key: 'email_kb.sync_status_idle' },
-    syncing: { bg: 'bg-blue-500/10',    text: 'text-blue-600',    dot: 'bg-blue-500',    icon: Loader2,       key: 'email_kb.sync_status_syncing' },
-    error:   { bg: 'bg-red-500/10',     text: 'text-red-600',     dot: 'bg-red-500',     icon: XCircle,       key: 'email_kb.sync_status_error' },
+    idle:    { bg: 'bg-emerald-500/10', text: 'text-emerald-600', dot: 'bg-emerald-500', icon: CheckCircle2, key: 'ticket_assistant.sync_status_idle' },
+    syncing: { bg: 'bg-blue-500/10',    text: 'text-blue-600',    dot: 'bg-blue-500',    icon: Loader2,       key: 'ticket_assistant.sync_status_syncing' },
+    error:   { bg: 'bg-red-500/10',     text: 'text-red-600',     dot: 'bg-red-500',     icon: XCircle,       key: 'ticket_assistant.sync_status_error' },
 };
 
 const SyncStatusBadge = ({ status, t, compact = false }) => {

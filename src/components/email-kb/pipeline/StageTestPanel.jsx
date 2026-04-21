@@ -40,8 +40,8 @@ const StageTestPanel = ({ connectionId, stageKey, currentPrompt, currentModelTie
 
     const canAssist = ['article', 'category', 'merge', 'dedupe'].includes(stageKey);
     const customPlaceholder = stageKey === 'dedupe'
-        ? t('email_kb.dedupe_test_placeholder')
-        : t('email_kb.custom_input_placeholder');
+        ? t('ticket_assistant.dedupe_test_placeholder')
+        : t('ticket_assistant.custom_input_placeholder');
     const canSampleMode = stageKey !== 'dedupe';
 
     const runStage = async (withCustom) => {
@@ -98,7 +98,7 @@ const StageTestPanel = ({ connectionId, stageKey, currentPrompt, currentModelTie
     return (
         <div className="mt-3 p-3 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
             <div className="flex items-center justify-between">
-                <div className="text-[12px] font-semibold text-[var(--text-primary)]">{t('email_kb.try_stage')}</div>
+                <div className="text-[12px] font-semibold text-[var(--text-primary)]">{t('ticket_assistant.try_stage')}</div>
                 <div className="flex items-center gap-1 text-[11px]">
                     {canSampleMode && (
                         <button
@@ -112,7 +112,7 @@ const StageTestPanel = ({ connectionId, stageKey, currentPrompt, currentModelTie
                     >Custom</button>
                 </div>
             </div>
-            <p className="text-[11px] text-[var(--text-tertiary)] mt-0.5">{t('email_kb.try_stage_desc')}</p>
+            <p className="text-[11px] text-[var(--text-tertiary)] mt-0.5">{t('ticket_assistant.try_stage_desc')}</p>
 
             {mode === 'custom' && (
                 <textarea
@@ -131,11 +131,11 @@ const StageTestPanel = ({ connectionId, stageKey, currentPrompt, currentModelTie
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold bg-[var(--accent-primary)] text-white hover:opacity-90 disabled:opacity-50 shadow-sm transition-all"
                 >
                     {running ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
-                    {running ? t('email_kb.stage_running') : (mode === 'custom' ? t('email_kb.run_custom') : t('email_kb.run_sample'))}
+                    {running ? t('ticket_assistant.stage_running') : (mode === 'custom' ? t('ticket_assistant.run_custom') : t('ticket_assistant.run_sample'))}
                 </button>
                 {result?.tookMs != null && (
                     <span className="text-[11px] text-[var(--text-tertiary)] tabular-nums">
-                        {t('email_kb.stage_took')} {result.tookMs}ms
+                        {t('ticket_assistant.stage_took')} {result.tookMs}ms
                     </span>
                 )}
             </div>
@@ -161,7 +161,7 @@ const StageTestPanel = ({ connectionId, stageKey, currentPrompt, currentModelTie
                             className="flex items-center gap-1.5 text-[12px] font-medium text-[var(--accent-primary)] hover:underline"
                         >
                             <Sparkles className="w-3.5 h-3.5" />
-                            {t('email_kb.ask_ai_to_fix')}
+                            {t('ticket_assistant.ask_ai_to_fix')}
                         </button>
                     ) : (
                         <AssistPanel
@@ -217,10 +217,10 @@ const ResultView = ({ result, t }) => {
                 <summary className="cursor-pointer px-2.5 py-1.5 text-[11px] font-semibold text-[var(--text-secondary)] flex items-center justify-between">
                     <span className="inline-flex items-center gap-1.5">
                         <ChevronDown className="w-3 h-3" />
-                        {t('email_kb.stage_input')}
+                        {t('ticket_assistant.stage_input')}
                         {source === 'sample' && (
                             <span className="text-[10px] font-normal text-[var(--text-tertiary)]">
-                                · {t('email_kb.stage_from_sample')}
+                                · {t('ticket_assistant.stage_from_sample')}
                                 {input?.sample?.subject ? `: "${input.sample.subject}"` : ''}
                             </span>
                         )}
@@ -235,10 +235,10 @@ const ResultView = ({ result, t }) => {
 
             <div className="rounded border border-[var(--border-subtle)] bg-[var(--bg-primary)]">
                 <div className="px-2.5 py-1.5 text-[11px] font-semibold text-[var(--text-secondary)] flex items-center justify-between border-b border-[var(--border-subtle)]">
-                    <span>{t('email_kb.stage_output')}</span>
+                    <span>{t('ticket_assistant.stage_output')}</span>
                     {config?.modelTier && (
                         <span className="text-[10px] font-normal text-[var(--text-tertiary)]">
-                            {t('email_kb.tier_' + config.modelTier)}
+                            {t('ticket_assistant.tier_' + config.modelTier)}
                         </span>
                     )}
                 </div>
@@ -307,7 +307,7 @@ const AssistPanel = ({ t, feedback, setFeedback, tier, setTier, loading, result,
         <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[var(--text-primary)]">
                 <Sparkles className="w-3.5 h-3.5 text-[var(--accent-primary)]" />
-                {t('email_kb.ai_assist_title')}
+                {t('ticket_assistant.ai_assist_title')}
             </div>
             <button onClick={onCancel} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
                 <X className="w-3.5 h-3.5" />
@@ -318,23 +318,23 @@ const AssistPanel = ({ t, feedback, setFeedback, tier, setTier, loading, result,
             <>
                 <div>
                     <label className="text-[11px] font-medium text-[var(--text-secondary)] mb-1 block">
-                        {t('email_kb.ai_assist_feedback')}
+                        {t('ticket_assistant.ai_assist_feedback')}
                     </label>
                     <textarea
                         value={feedback}
                         onChange={e => setFeedback(e.target.value)}
-                        placeholder={t('email_kb.ai_assist_feedback_placeholder')}
+                        placeholder={t('ticket_assistant.ai_assist_feedback_placeholder')}
                         rows={3}
                         className="w-full px-2 py-1.5 rounded text-[11px] bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)] outline-none focus:border-[var(--accent-primary)] resize-y"
                     />
                 </div>
                 <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2 text-[11px]">
-                        <label className="text-[var(--text-secondary)]">{t('email_kb.ai_assist_model')}:</label>
+                        <label className="text-[var(--text-secondary)]">{t('ticket_assistant.ai_assist_model')}:</label>
                         <select value={tier} onChange={e => setTier(e.target.value)}
                             className="px-2 py-0.5 rounded text-[11px] bg-[var(--bg-primary)] border border-[var(--border-subtle)] text-[var(--text-primary)]">
                             {TIER_OPTIONS.map(t_ => (
-                                <option key={t_} value={t_}>{t('email_kb.tier_' + t_)}</option>
+                                <option key={t_} value={t_}>{t('ticket_assistant.tier_' + t_)}</option>
                             ))}
                         </select>
                     </div>
@@ -344,7 +344,7 @@ const AssistPanel = ({ t, feedback, setFeedback, tier, setTier, loading, result,
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-semibold bg-[var(--accent-primary)] text-white hover:opacity-90 disabled:opacity-50"
                     >
                         {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
-                        {loading ? t('email_kb.ai_assist_running') : t('email_kb.ai_assist_run')}
+                        {loading ? t('ticket_assistant.ai_assist_running') : t('ticket_assistant.ai_assist_run')}
                     </button>
                 </div>
                 {error && (
@@ -359,10 +359,10 @@ const AssistPanel = ({ t, feedback, setFeedback, tier, setTier, loading, result,
             <div className="space-y-2">
                 <div className="rounded border border-[var(--border-subtle)] bg-[var(--bg-primary)]">
                     <div className="px-2.5 py-1.5 text-[11px] font-semibold text-[var(--text-secondary)] border-b border-[var(--border-subtle)] flex items-center justify-between">
-                        <span>{t('email_kb.ai_assist_proposed')}</span>
+                        <span>{t('ticket_assistant.ai_assist_proposed')}</span>
                         {result.modelUsed && (
                             <span className="text-[10px] font-normal text-[var(--text-tertiary)]">
-                                {t('email_kb.ai_assist_model_used')}: {result.modelUsed}
+                                {t('ticket_assistant.ai_assist_model_used')}: {result.modelUsed}
                             </span>
                         )}
                     </div>
@@ -373,7 +373,7 @@ const AssistPanel = ({ t, feedback, setFeedback, tier, setTier, loading, result,
                 {result.reasoning && (
                     <div className="p-2 rounded bg-[var(--bg-primary)] border border-[var(--border-subtle)]">
                         <div className="text-[10px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)] mb-1">
-                            {t('email_kb.ai_assist_reasoning')}
+                            {t('ticket_assistant.ai_assist_reasoning')}
                         </div>
                         <div className="text-[11px] text-[var(--text-secondary)]">{result.reasoning}</div>
                     </div>
@@ -381,15 +381,15 @@ const AssistPanel = ({ t, feedback, setFeedback, tier, setTier, loading, result,
                 <div className="flex items-center justify-end gap-2">
                     <button onClick={onRefine}
                         className="flex items-center gap-1 px-3 py-1.5 rounded text-[11px] font-medium text-[var(--text-secondary)] hover:bg-[var(--bg-primary)]">
-                        <RotateCcw className="w-3 h-3" /> {t('email_kb.ai_assist_refine')}
+                        <RotateCcw className="w-3 h-3" /> {t('ticket_assistant.ai_assist_refine')}
                     </button>
                     <button onClick={onCancel}
                         className="px-3 py-1.5 rounded text-[11px] font-medium text-[var(--text-tertiary)] hover:bg-[var(--bg-primary)]">
-                        {t('email_kb.ai_assist_discard')}
+                        {t('ticket_assistant.ai_assist_discard')}
                     </button>
                     <button onClick={() => onAccept(result.proposedPrompt)}
                         className="flex items-center gap-1 px-3 py-1.5 rounded text-[11px] font-semibold bg-[var(--accent-primary)] text-white hover:opacity-90">
-                        <Check className="w-3 h-3" /> {t('email_kb.ai_assist_accept')}
+                        <Check className="w-3 h-3" /> {t('ticket_assistant.ai_assist_accept')}
                     </button>
                 </div>
             </div>
