@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Save } from 'lucide-react';
 import { useTranslation } from '../../../hooks/useTranslation';
+// Toast feedback happens centrally in ComplianceHub.handleSaveSettings.
 
 const LEGAL_BASES = [
     { id: 'consent', labelKey: 'compliance.lb_consent' },
@@ -15,7 +16,6 @@ export default function SettingsPage({ settings, onSave }) {
     const { t } = useTranslation();
     const [form, setForm] = useState(() => normalize(settings));
     const [saving, setSaving] = useState(false);
-    const [savedAt, setSavedAt] = useState(null);
 
     useEffect(() => { setForm(normalize(settings)); }, [settings]);
 
@@ -49,8 +49,8 @@ export default function SettingsPage({ settings, onSave }) {
                 default_retention_days: form.default_retention_days ? Number(form.default_retention_days) : null,
                 privacy_notice_url: form.privacy_notice_url || null,
             });
-            setSavedAt(Date.now());
-        } finally { setSaving(false); }
+        } catch { /* onSave shows its own error toast */ }
+        finally { setSaving(false); }
     };
 
     return (
@@ -132,7 +132,6 @@ export default function SettingsPage({ settings, onSave }) {
                     <Save size={14} />
                     {saving ? t('compliance.saving') : t('compliance.save')}
                 </button>
-                {savedAt && <span style={{ fontSize: 12, color: '#10b981' }}>{t('compliance.saved')}</span>}
             </div>
         </div>
     );

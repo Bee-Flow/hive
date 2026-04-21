@@ -171,7 +171,7 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                         </div>
                     ) : activeTab === 'compliance' ? (
                         <div className="absolute inset-0">
-                            <ComplianceHub activeSection={adminPath.seg2} onNavigate={onNavigate} />
+                            <ComplianceHub activeSection={adminPath.seg2} focusCheckId={adminPath.seg3} onNavigate={onNavigate} />
                         </div>
                     ) : activeTab === 'subscriptions' ? (
                         <div className="absolute inset-0 overflow-hidden">

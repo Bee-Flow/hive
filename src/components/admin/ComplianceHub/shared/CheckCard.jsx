@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { CheckCircle2, AlertTriangle, XCircle, MinusCircle, ChevronDown, ArrowRight, RefreshCw } from 'lucide-react';
 import { useTranslation } from '../../../../hooks/useTranslation';
 
@@ -14,19 +14,41 @@ const SEVERITY_COLOR = {
     critical: '#ef4444', high: '#f59e0b', medium: '#3b82f6', low: '#6b7280',
 };
 
-export default function CheckCard({ check, onNavigate, onRerun, rerunning }) {
+const SEVERITY_LABEL_KEY = {
+    critical: 'compliance.sev_critical',
+    high: 'compliance.sev_high',
+    medium: 'compliance.sev_medium',
+    low: 'compliance.sev_low',
+};
+
+export default function CheckCard({ check, onNavigate, onRerun, rerunning, focus = false }) {
     const { t } = useTranslation();
-    const [open, setOpen] = useState(false);
+    const [open, setOpen] = useState(focus);
+    const rootRef = useRef(null);
     const s = STATUS_STYLES[check.status] || STATUS_STYLES.pending;
     const Icon = s.Icon;
     const remediationHref = check.remediationLink ? `/${check.remediationLink.replace(/^\//, '')}` : null;
+
+    // When the card is focused (navigated to from Overview open-items),
+    // scroll it into view and auto-expand once.
+    useEffect(() => {
+        if (!focus) return;
+        setOpen(true);
+        const el = rootRef.current;
+        if (el && typeof el.scrollIntoView === 'function') {
+            const id = setTimeout(() => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), 60);
+            return () => clearTimeout(id);
+        }
+    }, [focus]);
 
     const title = t(check.titleKey) || check.check_id;
     const description = t(check.descriptionKey) || '';
     const remediation = t(check.remediationKey) || '';
 
+    const severityLabel = t(SEVERITY_LABEL_KEY[check.severity]) || check.severity;
+
     return (
-        <div style={{
+        <div ref={rootRef} style={{
             border: `1px solid ${s.color}33`,
             borderLeft: `4px solid ${s.color}`,
             background: 'var(--bg-secondary, #1a1a2e)',
@@ -35,6 +57,8 @@ export default function CheckCard({ check, onNavigate, onRerun, rerunning }) {
             display: 'flex',
             flexDirection: 'column',
             gap: 10,
+            boxShadow: focus ? `0 0 0 2px ${s.color}55` : 'none',
+            transition: 'box-shadow 0.2s',
         }}>
             {/* Header */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -48,7 +72,7 @@ export default function CheckCard({ check, onNavigate, onRerun, rerunning }) {
                             background: `${SEVERITY_COLOR[check.severity] || '#6b7280'}22`,
                             color: SEVERITY_COLOR[check.severity] || '#9ca3af',
                             textTransform: 'uppercase',
-                        }}>{check.severity}</span>
+                        }}>{severityLabel}</span>
                         <span style={{
                             fontSize: 10, fontWeight: 600,
                             padding: '2px 6px', borderRadius: 4,

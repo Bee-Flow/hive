@@ -1,19 +1,23 @@
 import React from 'react';
 import { useTranslation } from '../../../hooks/useTranslation';
 import CheckCard from './shared/CheckCard';
+import { CheckCardSkeleton } from './shared/Skeleton';
+import { Empty } from '../MonitoringPanel/shared';
 
 /**
  * Generic checks list page used by both GDPR and AIA tabs.
  * Groups by article and renders a CheckCard per item.
  */
-export default function ChecksPage({ checks, regulation, onNavigate, onRerun, rerunningId }) {
+export default function ChecksPage({ checks, regulation, onNavigate, onRerun, rerunningId, loading, focusCheckId }) {
     const { t } = useTranslation();
     const list = (checks || []).filter(c => c.regulation === regulation);
 
+    if (loading && list.length === 0) {
+        return <CheckCardSkeleton count={5} />;
+    }
+
     if (list.length === 0) {
-        return <div style={{ padding: 30, textAlign: 'center', color: 'var(--text-muted, #888)' }}>
-            {t('compliance.no_checks_yet')}
-        </div>;
+        return <Empty text={t('compliance.no_checks_yet')} />;
     }
 
     const byArticle = {};
@@ -41,7 +45,8 @@ export default function ChecksPage({ checks, regulation, onNavigate, onRerun, re
                         <CheckCard key={c.check_id} check={c}
                             onNavigate={onNavigate}
                             onRerun={onRerun}
-                            rerunning={rerunningId === c.check_id} />
+                            rerunning={rerunningId === c.check_id}
+                            focus={focusCheckId === c.check_id} />
                     ))}
                 </div>
             ))}

@@ -1,7 +1,8 @@
 import React from 'react';
-import { AlertTriangle, CheckCircle2, Clock, RefreshCw, ArrowRight } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, RefreshCw, ArrowRight, ShieldCheck, Sparkles } from 'lucide-react';
 import { useTranslation } from '../../../hooks/useTranslation';
 import ScoreRing from './shared/ScoreRing';
+import { OverviewSkeleton, CheckCardSkeleton } from './shared/Skeleton';
 
 function timeAgo(iso) {
     if (!iso) return '—';
@@ -14,10 +15,47 @@ function timeAgo(iso) {
     return `${Math.floor(h / 24)}d ago`;
 }
 
-export default function OverviewPage({ overview, checks, running, onRunNow, onNavigate }) {
+export default function OverviewPage({ overview, checks, running, loading, onRunNow, onNavigate, onStartWizard }) {
     const { t } = useTranslation();
-    if (!overview) {
-        return <div style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted, #888)' }}>{t('compliance.loading')}</div>;
+    if (loading || !overview) {
+        return (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
+                <OverviewSkeleton />
+                <CheckCardSkeleton count={3} />
+            </div>
+        );
+    }
+
+    // Hero for organisations that haven't finished the 2-minute setup yet.
+    // Showing a 0/100 ring on an un-onboarded org is misleading and demotivating.
+    if (!overview.onboarded) {
+        return (
+            <div style={{
+                ...heroBox,
+                display: 'flex', gap: 28, alignItems: 'center',
+                borderLeft: '4px solid var(--accent-primary, #6366f1)',
+            }}>
+                <div style={{
+                    width: 96, height: 96, borderRadius: '50%',
+                    background: 'color-mix(in srgb, var(--accent-primary, #6366f1) 14%, transparent)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flexShrink: 0,
+                }}>
+                    <ShieldCheck size={44} style={{ color: 'var(--accent-primary, #6366f1)' }} />
+                </div>
+                <div style={{ flex: 1 }}>
+                    <h2 style={{ margin: 0, fontSize: 22, color: 'var(--text-primary, #fff)' }}>
+                        {t('compliance.hero_onboard_title')}
+                    </h2>
+                    <p style={{ margin: '6px 0 18px', color: 'var(--text-muted, #aaa)', fontSize: 14, maxWidth: 560 }}>
+                        {t('compliance.hero_onboard_desc')}
+                    </p>
+                    <button onClick={onStartWizard} style={primaryBtn}>
+                        <Sparkles size={14} /> {t('compliance.hero_onboard_cta')}
+                    </button>
+                </div>
+            </div>
+        );
     }
 
     const openItems = (checks || [])
@@ -80,15 +118,36 @@ export default function OverviewPage({ overview, checks, running, onRunNow, onNa
                     <span style={{ fontSize: 12, color: 'var(--text-muted, #888)' }}>{openItems.length} {t('compliance.of')} {overview.overall.total}</span>
                 </div>
                 {openItems.length === 0 ? (
-                    <div style={{ padding: 20, textAlign: 'center', color: '#10b981', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-                        <CheckCircle2 size={28} />
-                        <div style={{ fontSize: 14, fontWeight: 600 }}>{t('compliance.all_clear')}</div>
-                    </div>
+                    overview.overall.score === 100
+                        ? (
+                            <div style={{
+                                padding: '28px 20px', textAlign: 'center',
+                                color: '#10b981',
+                                display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10,
+                                background: 'color-mix(in srgb, #10b981 8%, transparent)',
+                                borderRadius: 10,
+                                border: '1px solid #10b98133',
+                            }}>
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    <Sparkles size={18} />
+                                    <ShieldCheck size={32} />
+                                    <Sparkles size={18} />
+                                </div>
+                                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary, #fff)' }}>{t('compliance.all_clear_title')}</div>
+                                <div style={{ fontSize: 12, color: 'var(--text-muted, #aaa)' }}>{t('compliance.all_clear_subtitle')}</div>
+                            </div>
+                        )
+                        : (
+                            <div style={{ padding: 20, textAlign: 'center', color: '#10b981', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+                                <CheckCircle2 size={28} />
+                                <div style={{ fontSize: 14, fontWeight: 600 }}>{t('compliance.all_clear')}</div>
+                            </div>
+                        )
                 ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
                         {openItems.map(c => (
                             <button key={c.check_id} onClick={() => onNavigate && onNavigate(
-                                `admin/compliance/${c.regulation === 'GDPR' ? 'gdpr' : 'aia'}`
+                                `admin/compliance/${c.regulation === 'GDPR' ? 'gdpr' : 'aia'}/${encodeURIComponent(c.check_id)}`
                             )} style={openItemRow(c.status)}>
                                 <AlertTriangle size={16} style={{ color: c.status === 'fail' ? '#ef4444' : '#f59e0b', flexShrink: 0 }} />
                                 <div style={{ flex: 1, textAlign: 'left' }}>

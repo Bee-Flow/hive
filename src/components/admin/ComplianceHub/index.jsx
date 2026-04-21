@@ -5,6 +5,8 @@ import OverviewPage from './OverviewPage';
 import ChecksPage from './ChecksPage';
 import SettingsPage from './SettingsPage';
 import OnboardingWizard from './OnboardingWizard';
+import { ToastHost, showToast } from '../guardrails/Toast';
+import { CheckCardSkeleton } from './shared/Skeleton';
 
 const API = (import.meta.env.VITE_API_URL || '') + '/api/compliance';
 const OPTS = { credentials: 'include' };
@@ -22,7 +24,7 @@ async function fetchJson(url, init) {
     return r.json();
 }
 
-export default function ComplianceHub({ activeSection = 'overview', onNavigate }) {
+export default function ComplianceHub({ activeSection = 'overview', focusCheckId = null, onNavigate }) {
     const { t } = useTranslation();
     const VALID = SECTIONS.map(s => s.id);
     const active = VALID.includes(activeSection) ? activeSection : 'overview';
@@ -43,22 +45,29 @@ export default function ComplianceHub({ activeSection = 'overview', onNavigate }
             setOverview(o);
             setChecks(Array.isArray(c) ? c : []);
             if (!o?.onboarded) setShowWizard(true);
+            if (o?.first_scan_ran) {
+                showToast('success',
+                    t('compliance.toast_first_scan') || 'First compliance scan complete — review the score and open items below.');
+            }
         } catch (e) {
             console.error('[ComplianceHub] refresh error:', e.message);
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [t]);
 
     useEffect(() => { refresh(); }, [refresh]);
 
     const handleRunNow = async () => {
         setRunning(true);
         try {
-            await fetchJson(`${API}/checks/run`, { method: 'POST' });
+            const r = await fetchJson(`${API}/checks/run`, { method: 'POST' });
             await refresh();
+            showToast('success', t('compliance.toast_scan_complete', { score: r?.score?.score ?? '' }) ||
+                `Compliance scan complete (score: ${r?.score?.score ?? '—'}/100)`);
         } catch (e) {
             console.error('[ComplianceHub] run error:', e.message);
+            showToast('error', t('compliance.toast_scan_failed') || 'Scan failed — see server logs');
         } finally { setRunning(false); }
     };
 
@@ -67,27 +76,41 @@ export default function ComplianceHub({ activeSection = 'overview', onNavigate }
         try {
             await fetchJson(`${API}/checks/${encodeURIComponent(checkId)}/run`, { method: 'POST' });
             await refresh();
+            showToast('success', t('compliance.toast_check_rerun') || 'Check re-run complete');
         } catch (e) {
             console.error('[ComplianceHub] rerun error:', e.message);
+            showToast('error', t('compliance.toast_check_failed') || 'Could not re-run this check');
         } finally { setRerunningId(null); }
     };
 
     const handleSaveSettings = async (body) => {
-        const saved = await fetchJson(`${API}/settings`, {
-            method: 'PUT', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
-        await refresh();
-        return saved;
+        try {
+            const saved = await fetchJson(`${API}/settings`, {
+                method: 'PUT', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            await refresh();
+            showToast('success', t('compliance.toast_settings_saved') || 'Settings saved — running checks again…');
+            return saved;
+        } catch (e) {
+            showToast('error', t('compliance.toast_settings_failed') || 'Could not save settings');
+            throw e;
+        }
     };
 
     const handleFinishWizard = async (body) => {
-        await fetchJson(`${API}/settings/onboarded`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-        });
-        setShowWizard(false);
-        await refresh();
+        try {
+            await fetchJson(`${API}/settings/onboarded`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            setShowWizard(false);
+            await refresh();
+            showToast('success', t('compliance.toast_wizard_done') || 'Setup complete — your first compliance scan is running');
+        } catch (e) {
+            showToast('error', t('compliance.toast_wizard_failed') || 'Could not save setup — try again');
+            throw e;
+        }
     };
 
     const handleSectionClick = (id) => {
@@ -133,9 +156,7 @@ export default function ComplianceHub({ activeSection = 'overview', onNavigate }
                     </div>
                 </div>
                 <div style={styles.content}>
-                    {loading ? (
-                        <div style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted, #888)' }}>{t('compliance.loading')}</div>
-                    ) : !overview?.onboarded && !showWizard && active !== 'settings' ? (
+                    {!overview?.onboarded && !showWizard && active !== 'settings' && !loading ? (
                         <div style={banner}>
                             <div>
                                 <strong style={{ fontSize: 14, color: 'var(--text-primary, #fff)' }}>{t('compliance.banner_onboard_title')}</strong>
@@ -151,19 +172,24 @@ export default function ComplianceHub({ activeSection = 'overview', onNavigate }
 
                     {active === 'overview' && (
                         <OverviewPage overview={overview} checks={checks}
-                            running={running}
-                            onRunNow={handleRunNow} onNavigate={onNavigate} />
+                            running={running} loading={loading}
+                            onRunNow={handleRunNow} onNavigate={onNavigate}
+                            onStartWizard={() => setShowWizard(true)} />
                     )}
                     {active === 'gdpr' && (
-                        <ChecksPage checks={checks} regulation="GDPR"
-                            onNavigate={onNavigate} onRerun={handleRerun} rerunningId={rerunningId} />
+                        <ChecksPage checks={checks} regulation="GDPR" loading={loading}
+                            onNavigate={onNavigate} onRerun={handleRerun} rerunningId={rerunningId}
+                            focusCheckId={focusCheckId} />
                     )}
                     {active === 'aia' && (
-                        <ChecksPage checks={checks} regulation="AIA"
-                            onNavigate={onNavigate} onRerun={handleRerun} rerunningId={rerunningId} />
+                        <ChecksPage checks={checks} regulation="AIA" loading={loading}
+                            onNavigate={onNavigate} onRerun={handleRerun} rerunningId={rerunningId}
+                            focusCheckId={focusCheckId} />
                     )}
-                    {active === 'settings' && overview && (
-                        <SettingsPage settings={overview.settings} onSave={handleSaveSettings} />
+                    {active === 'settings' && (
+                        loading
+                            ? <CheckCardSkeleton count={3} />
+                            : <SettingsPage settings={overview?.settings} onSave={handleSaveSettings} />
                     )}
                 </div>
             </div>
@@ -176,8 +202,11 @@ export default function ComplianceHub({ activeSection = 'overview', onNavigate }
                 />
             )}
 
+            <ToastHost />
+
             <style>{`
                 @keyframes spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+                @keyframes dropdownIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: translateY(0); } }
             `}</style>
         </div>
     );

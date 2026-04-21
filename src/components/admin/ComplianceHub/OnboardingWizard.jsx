@@ -75,14 +75,29 @@ export default function OnboardingWizard({ initialSettings, onFinish, onSkip }) 
                     )}
                 </div>
 
-                {/* Progress */}
-                <div style={{ display: 'flex', gap: 4, marginBottom: 24 }}>
+                {/* Progress — circles + checkmarks, mirroring InitSetupWizard */}
+                <div style={{ display: 'flex', justifyContent: 'center', gap: 6, marginBottom: 24, alignItems: 'center' }}>
                     {steps.map((s, i) => (
-                        <div key={s.key} style={{
-                            flex: 1, height: 4, borderRadius: 2,
-                            background: i <= step ? '#10b981' : 'var(--border-default, rgba(255,255,255,0.1))',
-                            transition: 'background 0.2s',
-                        }} />
+                        <div key={s.key} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                            <div style={{
+                                width: 32, height: 32, borderRadius: '50%',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                fontSize: 13, fontWeight: 600,
+                                background: i <= step ? 'var(--accent-primary, #6366f1)' : 'var(--bg-tertiary, rgba(255,255,255,0.05))',
+                                color: i <= step ? '#fff' : 'var(--text-muted, #888)',
+                                boxShadow: i === step ? '0 0 0 3px color-mix(in srgb, var(--accent-primary, #6366f1) 18%, transparent)' : 'none',
+                                transition: 'all 0.2s',
+                            }}>
+                                {i < step ? <CheckCircle2 size={16} /> : i + 1}
+                            </div>
+                            {i < steps.length - 1 && (
+                                <div style={{
+                                    width: 28, height: 2, borderRadius: 1,
+                                    background: i < step ? 'var(--accent-primary, #6366f1)' : 'var(--border-default, rgba(255,255,255,0.1))',
+                                    transition: 'background 0.2s',
+                                }} />
+                            )}
+                        </div>
                     ))}
                 </div>
 
