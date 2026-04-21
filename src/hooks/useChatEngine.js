@@ -225,31 +225,68 @@ export default function useChatEngine({
                                 // Stamp the snapshot immediately so the timeline
                                 // stays pinned to this state after streaming ends
                                 // (before server persist round-trips).
-                                sessionSkillsSnapshot: { activatedSkillIds: [...snapIds] },
+                                sessionSkillsSnapshot: {
+                                    activatedSkillIds: [...snapIds],
+                                    completedSkillIds: [],
+                                    completions: [],
+                                },
                             }
                             : m
                     ));
                     onSessionSkillsChanged?.({
                         skills: data.skills,
                         activatedSkillIds: snapIds,
+                        completedSkillIds: [],
                     });
                 }
                 break;
             case 'session_skills_updated':
                 if (Array.isArray(data.skills)) {
                     const snapIds = Array.isArray(data.activatedSkillIds) ? data.activatedSkillIds : [];
+                    const completedIds = Array.isArray(data.completedSkillIds) ? data.completedSkillIds : null;
                     // Stamp the latest snapshot onto the in-flight assistant
                     // message so a post-stream view keeps the full state even
                     // before the server persists/reloads.
-                    setMessages(prev => prev.map(m =>
-                        m.id === assistantMsgId
-                            ? { ...m, sessionSkillsSnapshot: { activatedSkillIds: [...snapIds] } }
-                            : m
-                    ));
+                    setMessages(prev => prev.map(m => {
+                        if (m.id !== assistantMsgId) return m;
+                        const prevSnap = m.sessionSkillsSnapshot || {};
+                        return {
+                            ...m,
+                            sessionSkillsSnapshot: {
+                                ...prevSnap,
+                                activatedSkillIds: [...snapIds],
+                                ...(completedIds ? { completedSkillIds: [...completedIds] } : {}),
+                            },
+                        };
+                    }));
                     onSessionSkillsChanged?.({
                         skills: data.skills,
                         activatedSkillIds: snapIds,
+                        ...(completedIds ? { completedSkillIds: completedIds } : {}),
                     });
+                }
+                break;
+            case 'session_skill_completed':
+                // Per-step completion — append to the in-flight message's
+                // completions list so the timeline renders a "✓ Step — summary"
+                // row live as the pipeline walks.
+                if (data && data.skillId) {
+                    setMessages(prev => prev.map(m => {
+                        if (m.id !== assistantMsgId) return m;
+                        const prevSnap = m.sessionSkillsSnapshot || {};
+                        const prevCompletions = Array.isArray(prevSnap.completions) ? prevSnap.completions : [];
+                        const prevCompletedIds = Array.isArray(prevSnap.completedSkillIds) ? prevSnap.completedSkillIds : [];
+                        return {
+                            ...m,
+                            sessionSkillsSnapshot: {
+                                ...prevSnap,
+                                completions: [...prevCompletions, data],
+                                completedSkillIds: prevCompletedIds.includes(data.skillId)
+                                    ? prevCompletedIds
+                                    : [...prevCompletedIds, data.skillId],
+                            },
+                        };
+                    }));
                 }
                 break;
 

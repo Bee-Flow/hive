@@ -1,30 +1,27 @@
 /**
- * VoiceCallButton — Composer affordance that opens the Voice Chat modal.
+ * VoiceCallButton — Composer toggle that switches the InputArea into
+ * voice mode. No more modal overlay: voice UI lives embedded inside
+ * the composer (see VoiceInlinePanel) and completed turns flow into
+ * the real chat conversation as regular messages.
  *
  * Visibility rules (the button renders nothing unless ALL are true):
  *   1. The current user has the `voice_chat` beta feature enabled
  *      (admins and demo users always do).
- *   2. A Mistral API key is configured on the server (`/ai/config`
- *      returns `voiceChatReady: true`).
- *
- * Keeping both checks in the component (instead of elsewhere) means we
- * can show a helpful tooltip when the user is eligible but the key is
- * missing — instead of just hiding silently.
+ *   2. The server probe /ai/config reports `voiceChatReady: true`
+ *      (a Mistral API key is configured).
  */
 
-import React, { useEffect, useState, lazy, Suspense } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Phone } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 
-const VoiceCallModal = lazy(() => import('./VoiceCallModal'));
-
-export default function VoiceCallButton({ user, selectedAgent, agentName, className = '' }) {
-    // Resolve agent identity from either a full agent object or a loose name.
-    // InputArea passes `selectedAgent` when the composer is attached to one.
-    const resolvedAgentId = selectedAgent?.id || null;
-    const resolvedAgentName = selectedAgent?.name || agentName || null;
-    const [ready, setReady] = useState(null); // null = probing, false = hide, true = show
-    const [open, setOpen] = useState(false);
+export default function VoiceCallButton({
+    user,
+    voiceMode = false,
+    onToggleVoiceMode,
+    className = '',
+}) {
+    const [ready, setReady] = useState(null);
 
     const hasBetaFlag = !!(
         user?.isAdmin ||
@@ -50,31 +47,28 @@ export default function VoiceCallButton({ user, selectedAgent, agentName, classN
 
     if (!hasBetaFlag || !ready) return null;
 
+    const active = !!voiceMode;
+
     return (
-        <>
-            <button
-                type="button"
-                onClick={() => setOpen(true)}
-                className={`p-2 rounded-lg transition-colors text-[var(--text-tertiary)] hover:text-emerald-400 hover:bg-emerald-500/10 relative ${className}`}
-                title="Voice Chat (Beta) — talk with your assistant"
-                aria-label="Start voice chat"
-                data-testid="voice-chat-button"
-            >
-                <Phone className="w-5 h-5" />
-                <span className="absolute -top-1 -right-1 text-[8px] font-bold uppercase px-1 rounded-sm bg-amber-500/90 text-black leading-tight">
-                    β
-                </span>
-            </button>
-            {open && (
-                <Suspense fallback={null}>
-                    <VoiceCallModal
-                        open={open}
-                        onClose={() => setOpen(false)}
-                        agentId={resolvedAgentId}
-                        agentName={resolvedAgentName}
-                    />
-                </Suspense>
-            )}
-        </>
+        <button
+            type="button"
+            onClick={() => onToggleVoiceMode?.(!active)}
+            className={[
+                'p-2 rounded-lg transition-colors relative',
+                active
+                    ? 'text-emerald-400 bg-emerald-500/15'
+                    : 'text-[var(--text-tertiary)] hover:text-emerald-400 hover:bg-emerald-500/10',
+                className,
+            ].join(' ')}
+            title={active ? 'Exit voice mode' : 'Voice Chat (Beta) — talk with your assistant'}
+            aria-label={active ? 'Exit voice mode' : 'Start voice chat'}
+            aria-pressed={active}
+            data-testid="voice-chat-button"
+        >
+            <Phone className="w-5 h-5" />
+            <span className="absolute -top-1 -right-1 text-[8px] font-bold uppercase px-1 rounded-sm bg-amber-500/90 text-black leading-tight">
+                β
+            </span>
+        </button>
     );
 }

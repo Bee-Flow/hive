@@ -40,6 +40,8 @@ const MessageItem = ({
     isLastAssistant = false,
     sessionSkills = [],
     liveActivatedSkillIds = [],
+    liveCompletedSkillIds = null,
+    liveCompletions = null,
 }) => {
     const { t } = useTranslation();
     const [expandedBrainEntries, setExpandedBrainEntries] = useState({});
@@ -390,7 +392,7 @@ const MessageItem = ({
                     pipeline (bootstrap) OR changed its activation state vs the
                     previous assistant turn. Quiet turns get nothing. */}
                 {!isUser && !isTool && chatSource === 'direct' && Array.isArray(sessionSkills) && sessionSkills.length > 0 && (() => {
-                    // Determine which activation set to feed the timeline.
+                    // Determine which activation / completion sets to feed the timeline.
                     //  - Streaming / last assistant message: live state (fresh SSE updates).
                     //  - Any message carrying its own snapshot: use it.
                     //  - Otherwise: inherit the nearest prior snapshot (keeps older
@@ -398,35 +400,52 @@ const MessageItem = ({
                     const myIdx = allMessages.indexOf(msg);
                     const isLatestAssistant = myIdx === allMessages.map(m => m?.role === 'assistant').lastIndexOf(true);
                     const isLiveTarget = msg.isStreaming || isLatestAssistant;
-                    const ownSnapshot = msg.sessionSkillsSnapshot?.activatedSkillIds;
+                    const ownSnap = msg.sessionSkillsSnapshot || null;
                     let activated;
+                    let completedIds;
+                    let completions;
                     if (isLiveTarget && Array.isArray(liveActivatedSkillIds)) {
                         activated = liveActivatedSkillIds;
-                    } else if (Array.isArray(ownSnapshot)) {
-                        activated = ownSnapshot;
+                        completedIds = Array.isArray(liveCompletedSkillIds) ? liveCompletedSkillIds : (ownSnap?.completedSkillIds || null);
+                        completions = Array.isArray(liveCompletions) ? liveCompletions : (ownSnap?.completions || []);
+                    } else if (ownSnap) {
+                        activated = Array.isArray(ownSnap.activatedSkillIds) ? ownSnap.activatedSkillIds : [];
+                        completedIds = Array.isArray(ownSnap.completedSkillIds) ? ownSnap.completedSkillIds : null;
+                        completions = Array.isArray(ownSnap.completions) ? ownSnap.completions : [];
                     } else {
                         activated = [];
+                        completedIds = null;
+                        completions = [];
                     }
 
                     // Dedupe: only render on a non-bootstrap message if its
-                    // snapshot differs from the prior assistant message's.
-                    let prevSnap = [];
+                    // snapshot differs from the prior assistant message's
+                    // (activation OR completion state changed).
+                    let prevAct = [];
+                    let prevCompleted = [];
                     for (let i = myIdx - 1; i >= 0; i--) {
                         const m = allMessages[i];
-                        if (m?.role === 'assistant' && Array.isArray(m.sessionSkillsSnapshot?.activatedSkillIds)) {
-                            prevSnap = m.sessionSkillsSnapshot.activatedSkillIds;
+                        const snap = m?.sessionSkillsSnapshot;
+                        if (m?.role === 'assistant' && Array.isArray(snap?.activatedSkillIds)) {
+                            prevAct = snap.activatedSkillIds;
+                            prevCompleted = Array.isArray(snap.completedSkillIds) ? snap.completedSkillIds : [];
                             break;
                         }
                     }
-                    const sameAsPrev = prevSnap.length === activated.length
-                        && prevSnap.every(id => activated.includes(id));
+                    const sameActivation = prevAct.length === activated.length
+                        && prevAct.every(id => activated.includes(id));
+                    const currentCompleted = Array.isArray(completedIds) ? completedIds : [];
+                    const sameCompletion = prevCompleted.length === currentCompleted.length
+                        && prevCompleted.every(id => currentCompleted.includes(id));
                     const showForBootstrap = !!msg.sessionSkillsBootstrap;
-                    if (!showForBootstrap && sameAsPrev) return null;
+                    if (!showForBootstrap && sameActivation && sameCompletion) return null;
 
                     return (
                         <SessionSkillsTimeline
                             sessionSkills={sessionSkills}
                             activatedSkillIds={activated}
+                            completedSkillIds={completedIds}
+                            completions={completions}
                             bootstrap={msg.sessionSkillsBootstrap || null}
                         />
                     );

@@ -109,6 +109,7 @@ const AgentHub = ({
     const [activeSkillIds, setActiveSkillIds] = useState([]);
     const [directSessionSkills, setDirectSessionSkills] = useState([]);
     const [directActivatedSessionSkillIds, setDirectActivatedSessionSkillIds] = useState([]);
+    const [directCompletedSessionSkillIds, setDirectCompletedSessionSkillIds] = useState([]);
 
     // Hydrate user-scoped preferences once the user id is known.
     useEffect(() => {
@@ -172,11 +173,46 @@ const AgentHub = ({
             loadDirectConversations();
         }, [currentDirectConversation]),
         activeSkillIds,
-        onSessionSkillsChanged: useCallback(({ skills, activatedSkillIds }) => {
+        onSessionSkillsChanged: useCallback(({ skills, activatedSkillIds, completedSkillIds }) => {
             setDirectSessionSkills(Array.isArray(skills) ? skills : []);
             setDirectActivatedSessionSkillIds(Array.isArray(activatedSkillIds) ? activatedSkillIds : []);
+            if (Array.isArray(completedSkillIds)) {
+                setDirectCompletedSessionSkillIds(completedSkillIds);
+            }
         }, []),
     });
+
+    // Voice Chat (Beta) — completed voice turns flow up from the embedded
+    // VoiceInlinePanel and are injected into the chat conversation here so
+    // they render as regular MessageItem bubbles. Voice messages carry a
+    // `source: 'voice'` marker plus an optional `tools` array (chip data).
+    const handleVoiceTurnComplete = useCallback(({ user: userMsg, assistant: assistantMsg }) => {
+        if (!userMsg) return;
+        const timestamp = new Date().toISOString();
+        const newMessages = [{
+            id: generateMessageId(),
+            role: 'user',
+            content: userMsg.content || '',
+            attachments: [],
+            timestamp,
+            source: 'voice',
+        }];
+        if (assistantMsg) {
+            newMessages.push({
+                id: generateMessageId(),
+                role: 'assistant',
+                content: assistantMsg.content || '',
+                respondingAgentId: selectedAgent?.id || 'direct',
+                respondingAgentName: selectedAgent?.name || null,
+                respondingAgentAvatar: selectedAgent?.avatar || '🎙️',
+                timestamp,
+                source: 'voice',
+                voiceTools: Array.isArray(assistantMsg.tools) ? assistantMsg.tools : [],
+            });
+        }
+        setMessages(prev => [...prev, ...newMessages]);
+        shouldForceScrollRef.current = true;
+    }, [selectedAgent, setMessages]);
 
 
 
@@ -871,6 +907,7 @@ const AgentHub = ({
         setCurrentDirectConversation(null);
         setDirectSessionSkills([]);
         setDirectActivatedSessionSkillIds([]);
+        setDirectCompletedSessionSkillIds([]);
         setNotebookContent('');
         setNotebookSelection('');
         setShowNotebook(false);
@@ -892,6 +929,7 @@ const AgentHub = ({
                 setCurrentDirectConversation(data);
                 setDirectSessionSkills(Array.isArray(data.sessionSkills) ? data.sessionSkills : []);
                 setDirectActivatedSessionSkillIds(Array.isArray(data.activatedSessionSkillIds) ? data.activatedSessionSkillIds : []);
+                setDirectCompletedSessionSkillIds(Array.isArray(data.completedSessionSkillIds) ? data.completedSessionSkillIds : []);
                 // normalizeLoadedMessages handles both the deleted-placeholder
                 // marking AND lifting legacy string thinking into the canonical
                 // thinkingParts shape the UI expects.
@@ -1452,6 +1490,8 @@ const AgentHub = ({
                                                     activeSkillIds={activeSkillIds}
                                                     agentAttachedSkillIds={agentAttachedSkillIds}
                                                     onToggleSkill={handleToggleSkill}
+                                                    messages={messages}
+                                                    onVoiceTurnComplete={handleVoiceTurnComplete}
                                                 />
                                             </WelcomeScreen>
                                         </div>
@@ -1499,6 +1539,8 @@ const AgentHub = ({
                                             activeSkillIds={activeSkillIds}
                                             agentAttachedSkillIds={agentAttachedSkillIds}
                                             onToggleSkill={handleToggleSkill}
+                                            messages={messages}
+                                            onVoiceTurnComplete={handleVoiceTurnComplete}
                                         />
                                     </div>
                                 )}
@@ -1593,6 +1635,8 @@ const AgentHub = ({
                                                     directActivatedSessionSkillIds={directActivatedSessionSkillIds}
                                                     directConversationId={currentDirectConversation?.id}
                                                     onToggleSkill={handleToggleSkill}
+                                                    messages={messages}
+                                                    onVoiceTurnComplete={handleVoiceTurnComplete}
                                                 />
                                             </DirectChatWelcome>
                                         </div>
@@ -1611,6 +1655,7 @@ const AgentHub = ({
                                                     conversationId={currentDirectConversation?.id}
                                                     sessionSkills={directSessionSkills}
                                                     liveActivatedSkillIds={directActivatedSessionSkillIds}
+                                                    liveCompletedSkillIds={directCompletedSessionSkillIds}
                                                     chatSource="direct"
                                                     onRetry={retryMessage}
                                                     onEditMessage={editAndRegenerate}
@@ -1640,6 +1685,8 @@ const AgentHub = ({
                                             directActivatedSessionSkillIds={directActivatedSessionSkillIds}
                                             directConversationId={currentDirectConversation?.id}
                                             onToggleSkill={handleToggleSkill}
+                                            messages={messages}
+                                            onVoiceTurnComplete={handleVoiceTurnComplete}
                                         />
                                     </div>
                                 )}

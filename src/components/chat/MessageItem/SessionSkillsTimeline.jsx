@@ -76,6 +76,8 @@ function SkillNode({ skill, state, sessionSkillsById }) {
 export default function SessionSkillsTimeline({
     sessionSkills = [],
     activatedSkillIds = [],
+    completedSkillIds = null,  // explicit from server (null = fall back to activation-derived)
+    completions = [],          // [{skillId, skillName, summary, order, total, at}]
     bootstrap = null, // { state, skills } when this is the bootstrap message
 }) {
     const ordered = useMemo(
@@ -91,9 +93,15 @@ export default function SessionSkillsTimeline({
         [activatedSkillIds]
     );
     const completedSet = useMemo(
-        () => new Set(deriveCompletedSkillIds(sessionSkills, activatedSkillIds)),
-        [sessionSkills, activatedSkillIds]
+        () => Array.isArray(completedSkillIds)
+            ? new Set(completedSkillIds)
+            : new Set(deriveCompletedSkillIds(sessionSkills, activatedSkillIds)),
+        [sessionSkills, activatedSkillIds, completedSkillIds]
     );
+    const orderedCompletions = useMemo(() => {
+        if (!Array.isArray(completions) || completions.length === 0) return [];
+        return [...completions].sort((a, b) => (a.order || 0) - (b.order || 0) || (a.at || 0) - (b.at || 0));
+    }, [completions]);
 
     if (ordered.length === 0) return null;
 
@@ -162,6 +170,31 @@ export default function SessionSkillsTimeline({
                                 state={state}
                                 sessionSkillsById={sessionSkillsById}
                             />
+                        );
+                    })}
+                </div>
+            )}
+
+            {/* Per-step summaries — one row per complete_session_skill call.
+                Gives the user visible evidence each step produced output before
+                the final answer renders. */}
+            {!isPending && orderedCompletions.length > 0 && (
+                <div className="px-3 pb-3 pt-1 flex flex-col gap-1.5 border-t border-[var(--border-subtle)]">
+                    {orderedCompletions.map((c, idx) => {
+                        const name = c.skillName || sessionSkillsById.get(c.skillId)?.name || c.skillId;
+                        return (
+                            <div
+                                key={`${c.skillId}-${c.at || idx}`}
+                                className="flex items-start gap-2 text-[12px] leading-snug animate-in fade-in slide-in-from-top-1 duration-300"
+                            >
+                                <Check size={13} className="mt-0.5 flex-shrink-0 text-emerald-600" />
+                                <div className="min-w-0">
+                                    <span className="font-semibold text-[var(--text-primary)]">{name}</span>
+                                    {c.summary && (
+                                        <span className="text-[var(--text-secondary)]"> — {c.summary}</span>
+                                    )}
+                                </div>
+                            </div>
                         );
                     })}
                 </div>

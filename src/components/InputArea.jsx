@@ -13,6 +13,7 @@ import scopedStorage from '../utils/scopedStorage';
 import SkillsPopover from './skills/SkillsPopover';
 import ActiveSkillChips from './skills/ActiveSkillChips';
 import VoiceCallButton from './chat/Voice/VoiceCallButton';
+import VoiceInlinePanel from './chat/Voice/VoiceInlinePanel';
 
 // App definitions for the apps overlay
 const APP_DEFS = [
@@ -123,7 +124,21 @@ const InputArea = ({
     directActivatedSessionSkillIds = [],
     directConversationId = null,
     onToggleSkill,
+    // Voice mode wiring — parent passes its live messages list so voice
+    // turns use the real chat history as context, and injects completed
+    // turns back via onVoiceTurnComplete so they render as chat bubbles.
+    messages,
+    onVoiceTurnComplete,
 }) => {
+    const [voiceMode, setVoiceMode] = useState(false);
+    // Live-read accessor used by the voice hook — avoids stale closures
+    // over the `messages` prop while a turn is streaming.
+    const messagesRef = useRef(messages);
+    useEffect(() => { messagesRef.current = messages; }, [messages]);
+    const getHistoryForVoice = useCallback(() => messagesRef.current || [], []);
+    const handleVoiceTurn = useCallback((turn) => {
+        if (onVoiceTurnComplete) onVoiceTurnComplete(turn);
+    }, [onVoiceTurnComplete]);
     const [attachments, setAttachments] = useState([]);
     const [isDragOver, setIsDragOver] = useState(false);
     const [drivePickerOpen, setDrivePickerOpen] = useState(false);
@@ -703,6 +718,16 @@ const InputArea = ({
                         hasAttachments={attachments.length > 0}
                     />
 
+                    {voiceMode ? (
+                        <VoiceInlinePanel
+                            agentId={selectedAgent?.id || null}
+                            agentName={selectedAgent?.name || null}
+                            getHistory={getHistoryForVoice}
+                            onTurnComplete={handleVoiceTurn}
+                            onExit={() => setVoiceMode(false)}
+                            isMobile={isMobile}
+                        />
+                    ) : (
                     <div role="form" aria-label="Chat message input" data-testid="chat-input-form" className={`relative flex flex-col bg-[var(--bg-secondary)] rounded-2xl border border-[var(--border-subtle)] shadow-md transition-all focus-within:border-[var(--accent-primary)] focus-within:shadow-lg focus-within:shadow-[var(--accent-primary)]/10 ${(activeThreadParent || attachments.length > 0 || activeSkillIds.length > 0 || agentAttachedSkillIds.length > 0) ? 'rounded-t-none border-t-0' : ''} ${isDragOver ? 'border-[var(--accent-primary)] shadow-lg' : ''}`}>
 
                         {/* Hidden file input */}
@@ -866,10 +891,14 @@ const InputArea = ({
                                     <Globe className="w-5 h-5" />
                                 </button>
                                 )}
-                                {/* Voice Chat (Beta) — button self-gates on beta feature + Mistral key.
-                                    When an agent is selected, voice runs against that agent's
-                                    system prompt and tool restrictions. */}
-                                <VoiceCallButton user={user} selectedAgent={selectedAgent} />
+                                {/* Voice Chat (Beta) — toggles voiceMode. When active, the
+                                    composer is replaced by <VoiceInlinePanel>. Voice turns
+                                    flow into the chat as regular messages via onVoiceTurnComplete. */}
+                                <VoiceCallButton
+                                    user={user}
+                                    voiceMode={voiceMode}
+                                    onToggleVoiceMode={setVoiceMode}
+                                />
                                 {/* Skills Popover — gated by the `skills` beta feature.
                                     Matches the pattern used on the sidebar entry. */}
                                 {onToggleSkill && Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('skills') && (
@@ -1089,6 +1118,7 @@ const InputArea = ({
                             </div>
                         </div>
                     </div>
+                    )}
 
 
                     <div className="text-center mt-1.5 mb-0.5 select-none">

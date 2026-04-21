@@ -1,21 +1,25 @@
 /**
- * useVoiceSession — Realtime voice conversation hook (Beta v1.1).
+ * useVoiceSession — Realtime voice conversation hook (Beta v1.2).
  *
- * Turn-based streaming:
- *   1. Caller starts listening → MediaRecorder captures audio/webm;opus.
- *   2. Caller stops listening → hook POSTs the blob to /ai/voice/turn.
- *   3. Server SSE responds with:
- *        transcript → text deltas → (tool_use + tool_result)* → tts → done.
- *   4. Hook plays the TTS audio and appends transcript + reply + tool
- *      usage to history.
+ * This revision wires voice into the host chat instead of holding its own
+ * isolated history:
  *
- * The hook owns: microphone stream, recorder, audio playback, history
- * (incl. per-turn tool usage), transport errors, and a compact state
- * machine (idle → listening → thinking → speaking → idle). Components
- * only read state and call start/stop/hangup.
+ *   - `getHistory` (callback) is called per turn to obtain the chat's
+ *     current message list. Messages shown in the main chat become the
+ *     context for the voice turn without any duplication.
+ *   - `onTurnComplete({ user, assistant })` fires when a voice turn
+ *     lands. The host uses it to append the user + assistant messages
+ *     to the real chat conversation so they render as regular bubbles.
  *
- * Agent mode: pass { agentId, agentName } to connect() to run the voice
- * session against a specific agent's system prompt and tool set.
+ * What the hook still owns:
+ *   - microphone stream + recorder
+ *   - TTS audio playback
+ *   - state machine (idle → listening → thinking → speaking → idle)
+ *   - per-turn transient UI state (partial transcript, partial reply,
+ *     running tool chips) — consumed by the inline voice panel
+ *
+ * Agent mode: pass `{ agentId }` to `connect()` to run the voice session
+ * against a specific agent's system prompt and tool set.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -30,7 +34,6 @@ const STATES = {
 };
 
 function pickMimeType() {
-    // Safari still lags on Opus-in-WebM; fall back to mp4/aac if needed.
     const candidates = [
         'audio/webm;codecs=opus',
         'audio/webm',
@@ -45,16 +48,22 @@ function pickMimeType() {
     return '';
 }
 
-export default function useVoiceSession() {
+/**
+ * @param {Object} [options]
+ * @param {() => Array<{role:string, content:string}>} [options.getHistory]
+ *        Returns the host chat's current messages for use as LLM context.
+ *        Called just before each turn — always reads live state.
+ * @param {({user, assistant}) => void} [options.onTurnComplete]
+ *        Fires after a turn completes with the transcribed user message
+ *        and the assistant reply (incl. tool-use summaries). The host is
+ *        expected to append these to the chat conversation.
+ */
+export default function useVoiceSession({ getHistory, onTurnComplete } = {}) {
     const [state, setState] = useState(STATES.IDLE);
     const [session, setSession] = useState(null);
-    // history entries:
-    //   { role: 'user',      content }
-    //   { role: 'assistant', content, tools?: [{id,name,status,summary}] }
-    const [history, setHistory] = useState([]);
     const [partialReply, setPartialReply] = useState('');
     const [partialTranscript, setPartialTranscript] = useState('');
-    const [turnTools, setTurnTools] = useState([]); // per-turn, cleared on done
+    const [turnTools, setTurnTools] = useState([]);
     const [error, setError] = useState(null);
     const [notice, setNotice] = useState(null);
     const [latency, setLatency] = useState(null);
@@ -64,6 +73,13 @@ export default function useVoiceSession() {
     const chunksRef = useRef([]);
     const audioElRef = useRef(null);
     const abortRef = useRef(null);
+    const getHistoryRef = useRef(getHistory);
+    const onTurnCompleteRef = useRef(onTurnComplete);
+
+    // Keep callback refs fresh so that re-renders in the host don't require
+    // the hook to tear down its in-flight request.
+    useEffect(() => { getHistoryRef.current = getHistory; }, [getHistory]);
+    useEffect(() => { onTurnCompleteRef.current = onTurnComplete; }, [onTurnComplete]);
 
     const cleanup = useCallback(() => {
         try { recorderRef.current?.stop(); } catch (_) { /* noop */ }
@@ -78,7 +94,6 @@ export default function useVoiceSession() {
 
     useEffect(() => () => cleanup(), [cleanup]);
 
-    /** Provision a server-side voice session and acquire the microphone. */
     const connect = useCallback(async (opts = {}) => {
         setError(null);
         try {
@@ -117,7 +132,6 @@ export default function useVoiceSession() {
         }
     }, [cleanup]);
 
-    /** Start capturing the user's speech. */
     const startListening = useCallback(() => {
         if (!mediaStreamRef.current) {
             setError('Microphone not ready');
@@ -147,7 +161,6 @@ export default function useVoiceSession() {
         setState(STATES.LISTENING);
     }, [state]);
 
-    /** Stop capturing and submit the turn. */
     const stopListening = useCallback(async () => {
         const recorder = recorderRef.current;
         if (!recorder || recorder.state === 'inactive') return;
@@ -170,24 +183,22 @@ export default function useVoiceSession() {
         await submitTurn(blob, mimeType);
     }, []);
 
-    /** Send the recorded blob and stream the response. */
     const submitTurn = useCallback(async (blob, mimeType) => {
         setState(STATES.THINKING);
         setPartialReply('');
         setError(null);
-        // Keep prior `notice` visible until explicitly replaced — a "create a
-        // voice" hint should persist across turns until the admin fixes it.
+
+        // Pull the host chat's live message list and sanitize to the
+        // minimal { role, content } shape Mistral expects.
+        const hostHistory = (getHistoryRef.current?.() || [])
+            .filter(m => m && m.role && typeof m.content === 'string')
+            .filter(m => !m.isHidden && !m.isStreaming)
+            .map(({ role, content }) => ({ role, content }));
 
         const form = new FormData();
         const ext = (mimeType.split('/')[1] || 'webm').split(';')[0];
         form.append('audio', blob, `turn.${ext}`);
-        // Only the LLM-relevant history is sent back to the server. Tool
-        // chips in the UI come from per-turn SSE events; we don't replay
-        // them to the server since the tool-call/result pairs live inside
-        // the assistant `tool_calls`/tool messages on the server side of
-        // each turn's loop, not across turns.
-        const serverHistory = history.map(({ role, content }) => ({ role, content }));
-        form.append('history', JSON.stringify(serverHistory));
+        form.append('history', JSON.stringify(hostHistory));
         if (session?.model) form.append('model', session.model);
         if (session?.voice) form.append('voice', session.voice);
         if (session?.language) form.append('language', session.language);
@@ -219,14 +230,13 @@ export default function useVoiceSession() {
             return;
         }
 
-        // SSE parsing.
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
         let userText = '';
         let assistantText = '';
         let ttsPlayed = false;
-        const turnToolsLocal = []; // accumulate here, mirror to state for UI
+        const turnToolsLocal = [];
         const metrics = { sttMs: null, ttftMs: null, ttsMs: null };
 
         const upsertTool = (id, patch) => {
@@ -303,17 +313,21 @@ export default function useVoiceSession() {
                     setState(STATES.ERROR);
                     break;
                 case 'done':
-                    // Commit history: attach the completed tool list to the
-                    // assistant message so chips remain visible between turns.
-                    if (userText) {
+                    // Emit the completed turn to the host chat so the
+                    // messages appear as regular chat bubbles.
+                    if (userText && onTurnCompleteRef.current) {
                         const frozenTools = turnToolsLocal.map(t => ({ ...t }));
-                        setHistory(h => [
-                            ...h,
-                            { role: 'user', content: userText },
-                            ...(assistantText || frozenTools.length
-                                ? [{ role: 'assistant', content: assistantText, tools: frozenTools }]
-                                : []),
-                        ]);
+                        onTurnCompleteRef.current({
+                            user: { role: 'user', content: userText, source: 'voice' },
+                            assistant: assistantText || frozenTools.length
+                                ? {
+                                    role: 'assistant',
+                                    content: assistantText,
+                                    source: 'voice',
+                                    tools: frozenTools,
+                                }
+                                : null,
+                        });
                     }
                     setPartialTranscript('');
                     setPartialReply('');
@@ -345,9 +359,8 @@ export default function useVoiceSession() {
                 if (dataLines.length) dispatch(event, dataLines.join('\n'));
             }
         }
-    }, [history, session]);
+    }, [session]);
 
-    /** Decode and play a base64-encoded TTS audio clip inline. */
     const playTts = useCallback((b64, mime) => {
         try {
             const bin = atob(b64);
@@ -372,7 +385,6 @@ export default function useVoiceSession() {
         }
     }, []);
 
-    /** Skip the current TTS playback (barge-in). */
     const skipPlayback = useCallback(() => {
         if (audioElRef.current) {
             try { audioElRef.current.pause(); } catch (_) { /* noop */ }
@@ -381,12 +393,10 @@ export default function useVoiceSession() {
         setState(STATES.IDLE);
     }, []);
 
-    /** Tear everything down and return to a clean slate. */
     const hangup = useCallback(() => {
         cleanup();
         setState(STATES.IDLE);
         setSession(null);
-        setHistory([]);
         setPartialReply('');
         setPartialTranscript('');
         setTurnTools([]);
@@ -398,7 +408,6 @@ export default function useVoiceSession() {
         state,
         STATES,
         session,
-        history,
         partialReply,
         partialTranscript,
         turnTools,
