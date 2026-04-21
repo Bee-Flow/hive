@@ -12,6 +12,7 @@ import { API_BASE, authFetch } from '../utils/helpers';
 import scopedStorage from '../utils/scopedStorage';
 import SkillsPopover from './skills/SkillsPopover';
 import ActiveSkillChips from './skills/ActiveSkillChips';
+import VoiceCallButton from './chat/Voice/VoiceCallButton';
 
 // App definitions for the apps overlay
 const APP_DEFS = [
@@ -865,6 +866,8 @@ const InputArea = ({
                                     <Globe className="w-5 h-5" />
                                 </button>
                                 )}
+                                {/* Voice Chat (Beta) — button self-gates on beta feature + Mistral key. */}
+                                <VoiceCallButton user={user} agentName={selectedAgent?.name} />
                                 {/* Skills Popover — gated by the `skills` beta feature.
                                     Matches the pattern used on the sidebar entry. */}
                                 {onToggleSkill && Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('skills') && (
