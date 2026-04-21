@@ -1,42 +1,86 @@
 /**
  * VoiceCallModal — Beta voice chat UI.
  *
- * A minimal full-screen overlay with:
- *   - a prominent talk button (click to start, click again to send),
- *   - a live transcript of the current turn,
- *   - the assistant's streaming reply,
- *   - a small latency HUD (STT / LLM TTFT / TTS / total),
- *   - hangup.
+ * - Prominent talk button (click to start, click again to send).
+ * - Live transcript of the current turn.
+ * - Assistant's streaming reply.
+ * - Tool usage chips rendered inline between turns (running / done / error).
+ * - Compact latency HUD (STT / LLM TTFT / TTS / total).
+ * - Hangup.
  *
- * Auto-starts the session on mount. Closes on hangup.
+ * Auto-starts the session on mount. If an `agentId` is provided, the voice
+ * conversation runs against that agent's system prompt and tools.
  */
 
 import React, { useEffect, useState } from 'react';
-import { Mic, MicOff, PhoneOff, Loader2, Volume2, AlertTriangle, Info } from 'lucide-react';
+import {
+    Mic, MicOff, PhoneOff, Loader2, Volume2, AlertTriangle,
+    Info, Wrench, Check, X,
+} from 'lucide-react';
 import useVoiceSession from './useVoiceSession';
 
-export default function VoiceCallModal({ open, onClose, agentName }) {
+function ToolChip({ tool }) {
+    const running = tool.status === 'running';
+    const ok = tool.status === 'done';
+    const failed = tool.status === 'error';
+
+    const label = tool.name?.replace(/_/g, ' ') || 'tool';
+    const title = tool.summary
+        ? `${tool.name} — ${tool.summary}`
+        : tool.name || '';
+
+    const colorClasses = running
+        ? 'bg-blue-500/10 border-blue-500/30 text-blue-300'
+        : ok
+            ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-300'
+            : failed
+                ? 'bg-red-500/10 border-red-500/30 text-red-300'
+                : 'bg-[var(--bg-tertiary)] border-[var(--border-primary)] text-[var(--text-tertiary)]';
+
+    return (
+        <span
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border ${colorClasses}`}
+            title={title}
+        >
+            {running ? <Loader2 className="w-3 h-3 animate-spin" />
+                : ok ? <Check className="w-3 h-3" />
+                    : failed ? <X className="w-3 h-3" />
+                        : <Wrench className="w-3 h-3" />}
+            <span className="font-mono">{label}</span>
+            {tool.summary && (ok || failed) && (
+                <span className="opacity-70 ml-1 truncate max-w-[180px]">· {tool.summary}</span>
+            )}
+        </span>
+    );
+}
+
+export default function VoiceCallModal({ open, onClose, agentId, agentName }) {
     const voice = useVoiceSession();
     const [connecting, setConnecting] = useState(false);
 
-    // Auto-connect when the modal opens.
+    // Auto-connect when the modal opens. Pass the agent through so the server
+    // can resolve the right system prompt and tool restrictions.
     useEffect(() => {
         if (!open) return;
         setConnecting(true);
-        voice.connect()
-            .catch(() => { /* error is already in voice.error */ })
+        voice.connect({ agentId: agentId || null })
+            .catch(() => { /* error already surfaced via voice.error */ })
             .finally(() => setConnecting(false));
         return () => voice.hangup();
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [open]);
+    }, [open, agentId]);
 
     if (!open) return null;
 
-    const { state, STATES, history, partialReply, partialTranscript, error, notice, latency } = voice;
+    const {
+        state, STATES, history, partialReply, partialTranscript,
+        turnTools, error, notice, latency, session,
+    } = voice;
 
     const isListening = state === STATES.LISTENING;
     const isThinking = state === STATES.THINKING;
     const isSpeaking = state === STATES.SPEAKING;
+    const resolvedAgentName = agentName || session?.agentName || null;
 
     const toggleMic = async () => {
         if (isListening) {
@@ -58,7 +102,13 @@ export default function VoiceCallModal({ open, onClose, agentName }) {
         if (connecting) return 'Connecting…';
         if (error) return 'Error';
         if (isListening) return 'Listening — click mic to send';
-        if (isThinking) return 'Thinking…';
+        if (isThinking) {
+            const running = turnTools.filter(t => t.status === 'running');
+            if (running.length) {
+                return `Running ${running.map(t => t.name).join(', ')}…`;
+            }
+            return 'Thinking…';
+        }
         if (isSpeaking) return 'Speaking…';
         return 'Click the microphone to speak';
     };
@@ -77,7 +127,7 @@ export default function VoiceCallModal({ open, onClose, agentName }) {
                             Beta
                         </span>
                         <h2 className="text-lg font-semibold text-[var(--text-primary)]">
-                            Voice Chat{agentName ? ` — ${agentName}` : ''}
+                            Voice Chat{resolvedAgentName ? ` — ${resolvedAgentName}` : ''}
                         </h2>
                     </div>
                     <button
@@ -90,8 +140,8 @@ export default function VoiceCallModal({ open, onClose, agentName }) {
                 </div>
 
                 {/* Transcript area */}
-                <div className="min-h-[160px] max-h-[320px] overflow-y-auto rounded-lg bg-[var(--bg-primary)] border border-[var(--border-primary)] p-4 mb-4 text-sm space-y-3">
-                    {history.length === 0 && !partialTranscript && !partialReply && !error && (
+                <div className="min-h-[160px] max-h-[340px] overflow-y-auto rounded-lg bg-[var(--bg-primary)] border border-[var(--border-primary)] p-4 mb-4 text-sm space-y-3">
+                    {history.length === 0 && !partialTranscript && !partialReply && turnTools.length === 0 && !error && (
                         <p className="text-[var(--text-tertiary)] italic">
                             Start by clicking the microphone and saying hello. Keep replies short — this mode is tuned for natural spoken conversation.
                         </p>
@@ -100,12 +150,22 @@ export default function VoiceCallModal({ open, onClose, agentName }) {
                         <div key={i} className={m.role === 'user' ? 'text-[var(--text-primary)]' : 'text-[var(--accent-primary)]'}>
                             <span className="font-semibold mr-2">{m.role === 'user' ? 'You' : 'Assistant'}:</span>
                             {m.content}
+                            {m.role === 'assistant' && Array.isArray(m.tools) && m.tools.length > 0 && (
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                    {m.tools.map(t => <ToolChip key={t.id} tool={t} />)}
+                                </div>
+                            )}
                         </div>
                     ))}
                     {partialTranscript && state !== STATES.IDLE && (
                         <div className="text-[var(--text-primary)] opacity-70">
                             <span className="font-semibold mr-2">You:</span>
                             {partialTranscript}
+                        </div>
+                    )}
+                    {turnTools.length > 0 && (
+                        <div className="flex flex-wrap gap-1">
+                            {turnTools.map(t => <ToolChip key={t.id} tool={t} />)}
                         </div>
                     )}
                     {partialReply && (

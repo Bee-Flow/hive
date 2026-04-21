@@ -18,7 +18,11 @@ import { API_BASE, authFetch } from '../../../utils/helpers';
 
 const VoiceCallModal = lazy(() => import('./VoiceCallModal'));
 
-export default function VoiceCallButton({ user, agentName, className = '' }) {
+export default function VoiceCallButton({ user, selectedAgent, agentName, className = '' }) {
+    // Resolve agent identity from either a full agent object or a loose name.
+    // InputArea passes `selectedAgent` when the composer is attached to one.
+    const resolvedAgentId = selectedAgent?.id || null;
+    const resolvedAgentName = selectedAgent?.name || agentName || null;
     const [ready, setReady] = useState(null); // null = probing, false = hide, true = show
     const [open, setOpen] = useState(false);
 
@@ -63,7 +67,12 @@ export default function VoiceCallButton({ user, agentName, className = '' }) {
             </button>
             {open && (
                 <Suspense fallback={null}>
-                    <VoiceCallModal open={open} onClose={() => setOpen(false)} agentName={agentName} />
+                    <VoiceCallModal
+                        open={open}
+                        onClose={() => setOpen(false)}
+                        agentId={resolvedAgentId}
+                        agentName={resolvedAgentName}
+                    />
                 </Suspense>
             )}
         </>

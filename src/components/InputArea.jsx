@@ -866,8 +866,10 @@ const InputArea = ({
                                     <Globe className="w-5 h-5" />
                                 </button>
                                 )}
-                                {/* Voice Chat (Beta) — button self-gates on beta feature + Mistral key. */}
-                                <VoiceCallButton user={user} agentName={selectedAgent?.name} />
+                                {/* Voice Chat (Beta) — button self-gates on beta feature + Mistral key.
+                                    When an agent is selected, voice runs against that agent's
+                                    system prompt and tool restrictions. */}
+                                <VoiceCallButton user={user} selectedAgent={selectedAgent} />
                                 {/* Skills Popover — gated by the `skills` beta feature.
                                     Matches the pattern used on the sidebar entry. */}
                                 {onToggleSkill && Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('skills') && (

@@ -1,16 +1,21 @@
 /**
- * useVoiceSession — Realtime voice conversation hook (v1 Beta).
+ * useVoiceSession — Realtime voice conversation hook (Beta v1.1).
  *
  * Turn-based streaming:
  *   1. Caller starts listening → MediaRecorder captures audio/webm;opus.
  *   2. Caller stops listening → hook POSTs the blob to /ai/voice/turn.
- *   3. Server SSE responds with: transcript, text deltas, tts audio, done.
- *   4. Hook plays the TTS audio and appends transcript + reply to history.
+ *   3. Server SSE responds with:
+ *        transcript → text deltas → (tool_use + tool_result)* → tts → done.
+ *   4. Hook plays the TTS audio and appends transcript + reply + tool
+ *      usage to history.
  *
- * The hook owns: microphone stream, recorder, audio playback, history,
- * transport errors, and a compact state machine (idle → listening →
- * thinking → speaking → idle). Components only read state and call
- * start/stop/hangup.
+ * The hook owns: microphone stream, recorder, audio playback, history
+ * (incl. per-turn tool usage), transport errors, and a compact state
+ * machine (idle → listening → thinking → speaking → idle). Components
+ * only read state and call start/stop/hangup.
+ *
+ * Agent mode: pass { agentId, agentName } to connect() to run the voice
+ * session against a specific agent's system prompt and tool set.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -43,12 +48,16 @@ function pickMimeType() {
 export default function useVoiceSession() {
     const [state, setState] = useState(STATES.IDLE);
     const [session, setSession] = useState(null);
-    const [history, setHistory] = useState([]); // [{ role: 'user'|'assistant', content }]
+    // history entries:
+    //   { role: 'user',      content }
+    //   { role: 'assistant', content, tools?: [{id,name,status,summary}] }
+    const [history, setHistory] = useState([]);
     const [partialReply, setPartialReply] = useState('');
     const [partialTranscript, setPartialTranscript] = useState('');
+    const [turnTools, setTurnTools] = useState([]); // per-turn, cleared on done
     const [error, setError] = useState(null);
-    const [notice, setNotice] = useState(null); // non-blocking info (e.g. TTS degraded)
-    const [latency, setLatency] = useState(null); // { sttMs, ttftMs, ttsMs, totalMs }
+    const [notice, setNotice] = useState(null);
+    const [latency, setLatency] = useState(null);
 
     const mediaStreamRef = useRef(null);
     const recorderRef = useRef(null);
@@ -70,13 +79,17 @@ export default function useVoiceSession() {
     useEffect(() => () => cleanup(), [cleanup]);
 
     /** Provision a server-side voice session and acquire the microphone. */
-    const connect = useCallback(async () => {
+    const connect = useCallback(async (opts = {}) => {
         setError(null);
         try {
             const resp = await authFetch(`${API_BASE}/ai/voice/session`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({}),
+                body: JSON.stringify({
+                    agentId: opts.agentId || null,
+                    voice: opts.voice || null,
+                    language: opts.language || null,
+                }),
             });
             if (!resp.ok) {
                 const j = await resp.json().catch(() => ({}));
@@ -129,6 +142,8 @@ export default function useVoiceSession() {
         recorderRef.current = recorder;
         recorder.start();
         setPartialTranscript('');
+        setPartialReply('');
+        setTurnTools([]);
         setState(STATES.LISTENING);
     }, [state]);
 
@@ -137,7 +152,6 @@ export default function useVoiceSession() {
         const recorder = recorderRef.current;
         if (!recorder || recorder.state === 'inactive') return;
 
-        // Wait for the final 'dataavailable' before continuing.
         await new Promise((resolve) => {
             recorder.onstop = resolve;
             try { recorder.stop(); } catch (_) { resolve(); }
@@ -161,15 +175,24 @@ export default function useVoiceSession() {
         setState(STATES.THINKING);
         setPartialReply('');
         setError(null);
+        // Keep prior `notice` visible until explicitly replaced — a "create a
+        // voice" hint should persist across turns until the admin fixes it.
 
         const form = new FormData();
         const ext = (mimeType.split('/')[1] || 'webm').split(';')[0];
         form.append('audio', blob, `turn.${ext}`);
-        form.append('history', JSON.stringify(history));
+        // Only the LLM-relevant history is sent back to the server. Tool
+        // chips in the UI come from per-turn SSE events; we don't replay
+        // them to the server since the tool-call/result pairs live inside
+        // the assistant `tool_calls`/tool messages on the server side of
+        // each turn's loop, not across turns.
+        const serverHistory = history.map(({ role, content }) => ({ role, content }));
+        form.append('history', JSON.stringify(serverHistory));
         if (session?.model) form.append('model', session.model);
         if (session?.voice) form.append('voice', session.voice);
         if (session?.language) form.append('language', session.language);
         if (session?.systemPrompt) form.append('systemPrompt', session.systemPrompt);
+        if (session?.agentId) form.append('agentId', session.agentId);
 
         const controller = new AbortController();
         abortRef.current = controller;
@@ -196,14 +219,22 @@ export default function useVoiceSession() {
             return;
         }
 
-        // Parse the SSE response stream manually.
+        // SSE parsing.
         const reader = resp.body.getReader();
         const decoder = new TextDecoder();
         let buffer = '';
         let userText = '';
         let assistantText = '';
         let ttsPlayed = false;
+        const turnToolsLocal = []; // accumulate here, mirror to state for UI
         const metrics = { sttMs: null, ttftMs: null, ttsMs: null };
+
+        const upsertTool = (id, patch) => {
+            const idx = turnToolsLocal.findIndex(t => t.id === id);
+            if (idx === -1) turnToolsLocal.push({ id, ...patch });
+            else turnToolsLocal[idx] = { ...turnToolsLocal[idx], ...patch };
+            setTurnTools([...turnToolsLocal]);
+        };
 
         const dispatch = (event, dataRaw) => {
             let data = {};
@@ -215,7 +246,6 @@ export default function useVoiceSession() {
                     setPartialTranscript(userText);
                     break;
                 case 'no_speech':
-                    // User said nothing — return to idle without updating history.
                     break;
                 case 'text':
                     if (data.delta) {
@@ -223,8 +253,27 @@ export default function useVoiceSession() {
                         setPartialReply(assistantText);
                     }
                     break;
+                case 'tool_use':
+                    upsertTool(data.id, {
+                        name: data.name,
+                        input: data.input,
+                        status: 'running',
+                        round: data.round ?? 0,
+                    });
+                    break;
+                case 'tool_result':
+                    upsertTool(data.id, {
+                        name: data.name,
+                        status: data.ok ? 'done' : 'error',
+                        summary: data.summary || (data.ok ? 'ok' : 'failed'),
+                    });
+                    break;
                 case 'llm_done':
-                    metrics.ttftMs = data.ttftMs ?? metrics.ttftMs;
+                    if (Array.isArray(data.rounds) && data.rounds.length > 0) {
+                        metrics.ttftMs = data.rounds[0]?.ttftMs ?? null;
+                    } else if (data.ttftMs != null) {
+                        metrics.ttftMs = data.ttftMs;
+                    }
                     break;
                 case 'tts':
                     metrics.ttsMs = data.latencyMs ?? null;
@@ -234,10 +283,6 @@ export default function useVoiceSession() {
                     }
                     break;
                 case 'tts_unavailable':
-                    // TTS failure is a non-blocking notice — the turn still
-                    // succeeded (transcript + reply are displayed). Surface
-                    // it separately from a hard `error` so the modal UI
-                    // doesn't show the ERROR state under the mic.
                     if (data.reason === 'no_voice_configured') {
                         setNotice(
                             'Voxtral TTS needs a voice to speak with. ' +
@@ -258,20 +303,22 @@ export default function useVoiceSession() {
                     setState(STATES.ERROR);
                     break;
                 case 'done':
-                    // Commit history and clear the partial display fields so
-                    // they don't render duplicated alongside the new history rows.
+                    // Commit history: attach the completed tool list to the
+                    // assistant message so chips remain visible between turns.
                     if (userText) {
+                        const frozenTools = turnToolsLocal.map(t => ({ ...t }));
                         setHistory(h => [
                             ...h,
                             { role: 'user', content: userText },
-                            ...(assistantText ? [{ role: 'assistant', content: assistantText }] : []),
+                            ...(assistantText || frozenTools.length
+                                ? [{ role: 'assistant', content: assistantText, tools: frozenTools }]
+                                : []),
                         ]);
                     }
                     setPartialTranscript('');
                     setPartialReply('');
+                    setTurnTools([]);
                     setLatency({ ...metrics, totalMs: Date.now() - startedAt });
-                    // If TTS played we enter SPEAKING via the audio element's 'play'/'ended'
-                    // handlers. Otherwise go straight back to idle.
                     if (!ttsPlayed) setState(STATES.IDLE);
                     break;
                 default:
@@ -284,7 +331,6 @@ export default function useVoiceSession() {
             const { done, value } = await reader.read();
             if (done) break;
             buffer += decoder.decode(value, { stream: true });
-            // SSE frames are separated by blank lines.
             let idx;
             while ((idx = buffer.indexOf('\n\n')) !== -1) {
                 const frame = buffer.slice(0, idx);
@@ -343,7 +389,9 @@ export default function useVoiceSession() {
         setHistory([]);
         setPartialReply('');
         setPartialTranscript('');
+        setTurnTools([]);
         setError(null);
+        setNotice(null);
     }, [cleanup]);
 
     return {
@@ -353,6 +401,7 @@ export default function useVoiceSession() {
         history,
         partialReply,
         partialTranscript,
+        turnTools,
         error,
         notice,
         latency,
