@@ -47,6 +47,7 @@ export default function useVoiceSession() {
     const [partialReply, setPartialReply] = useState('');
     const [partialTranscript, setPartialTranscript] = useState('');
     const [error, setError] = useState(null);
+    const [notice, setNotice] = useState(null); // non-blocking info (e.g. TTS degraded)
     const [latency, setLatency] = useState(null); // { sttMs, ttftMs, ttsMs, totalMs }
 
     const mediaStreamRef = useRef(null);
@@ -233,7 +234,24 @@ export default function useVoiceSession() {
                     }
                     break;
                 case 'tts_unavailable':
-                    setError('Text-to-speech is not configured — showing transcript only.');
+                    // TTS failure is a non-blocking notice — the turn still
+                    // succeeded (transcript + reply are displayed). Surface
+                    // it separately from a hard `error` so the modal UI
+                    // doesn't show the ERROR state under the mic.
+                    if (data.reason === 'no_voice_configured') {
+                        setNotice(
+                            'Voxtral TTS needs a voice to speak with. ' +
+                            'Create one via POST /v1/audio/voices on api.mistral.ai, or add an ElevenLabs API key as a fallback. ' +
+                            'Showing transcript only for now.'
+                        );
+                    } else if (data.reason === 'tts_failed') {
+                        setNotice('Voice synthesis failed — showing transcript only. Check server logs for details.');
+                    } else {
+                        setNotice(
+                            'No text-to-speech provider is configured. ' +
+                            'Add a Voxtral voice on api.mistral.ai or an ElevenLabs API key in Admin → AI Config.'
+                        );
+                    }
                     break;
                 case 'error':
                     setError(data.message || 'Voice turn failed');
@@ -336,6 +354,7 @@ export default function useVoiceSession() {
         partialReply,
         partialTranscript,
         error,
+        notice,
         latency,
         connect,
         startListening,

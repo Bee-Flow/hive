@@ -12,7 +12,7 @@
  */
 
 import React, { useEffect, useState } from 'react';
-import { Mic, MicOff, PhoneOff, Loader2, Volume2, AlertTriangle } from 'lucide-react';
+import { Mic, MicOff, PhoneOff, Loader2, Volume2, AlertTriangle, Info } from 'lucide-react';
 import useVoiceSession from './useVoiceSession';
 
 export default function VoiceCallModal({ open, onClose, agentName }) {
@@ -32,7 +32,7 @@ export default function VoiceCallModal({ open, onClose, agentName }) {
 
     if (!open) return null;
 
-    const { state, STATES, history, partialReply, partialTranscript, error, latency } = voice;
+    const { state, STATES, history, partialReply, partialTranscript, error, notice, latency } = voice;
 
     const isListening = state === STATES.LISTENING;
     const isThinking = state === STATES.THINKING;
@@ -121,6 +121,12 @@ export default function VoiceCallModal({ open, onClose, agentName }) {
                     <div className="mb-4 flex items-start gap-2 text-sm rounded-lg bg-red-500/10 border border-red-500/30 text-red-400 p-3">
                         <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
                         <span>{error}</span>
+                    </div>
+                )}
+                {notice && !error && (
+                    <div className="mb-4 flex items-start gap-2 text-sm rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 p-3">
+                        <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                        <span>{notice}</span>
                     </div>
                 )}
 
