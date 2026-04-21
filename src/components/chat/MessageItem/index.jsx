@@ -11,7 +11,7 @@ import ImageLightbox from './ImageLightbox';
 import ToolOutput from './ToolOutput';
 import { SequentialThinking } from './ThinkingSteps';
 import { ThinkingPanel } from './ThinkingPanel';
-import SessionSkillsBootstrap from './SessionSkillsBootstrap';
+import SessionSkillsTimeline from './SessionSkillsTimeline';
 
 import TerminalProgress from './TerminalProgress';
 import TokenisedBadge from '../TokenisedBadge';
@@ -39,6 +39,7 @@ const MessageItem = ({
     modelTiers = {},
     isLastAssistant = false,
     sessionSkills = [],
+    liveActivatedSkillIds = [],
 }) => {
     const { t } = useTranslation();
     const [expandedBrainEntries, setExpandedBrainEntries] = useState({});
@@ -384,10 +385,41 @@ const MessageItem = ({
                 ${msg.isGuardrailViolation ? 'opacity-60 scale-95' : ''} 
                 ${msg.isDeleted ? 'opacity-50 italic' : ''}`}>
 
-                {/* Session-skill bootstrap — Standard tier auto-generated chat-local skills */}
-                {!isUser && !isTool && msg.sessionSkillsBootstrap && (
-                    <SessionSkillsBootstrap bootstrap={msg.sessionSkillsBootstrap} />
-                )}
+                {/* Session-skill pipeline timeline — Standard tier inline tracker.
+                    Renders when this assistant message either introduced the
+                    pipeline (bootstrap) OR changed its activation state vs the
+                    previous assistant turn. Quiet turns get nothing. */}
+                {!isUser && !isTool && chatSource === 'direct' && Array.isArray(sessionSkills) && sessionSkills.length > 0 && (() => {
+                    const isStreaming = msg.isStreaming || (isLastAssistant && (msg.role === 'assistant'));
+                    const ownSnapshot = msg.sessionSkillsSnapshot?.activatedSkillIds;
+                    const activated = isStreaming
+                        ? (Array.isArray(liveActivatedSkillIds) ? liveActivatedSkillIds : [])
+                        : (Array.isArray(ownSnapshot) ? ownSnapshot : []);
+
+                    // Dedupe: only render on a non-bootstrap message if its
+                    // snapshot differs from the prior assistant message's.
+                    const myIdx = allMessages.indexOf(msg);
+                    let prevSnap = [];
+                    for (let i = myIdx - 1; i >= 0; i--) {
+                        const m = allMessages[i];
+                        if (m?.role === 'assistant' && Array.isArray(m.sessionSkillsSnapshot?.activatedSkillIds)) {
+                            prevSnap = m.sessionSkillsSnapshot.activatedSkillIds;
+                            break;
+                        }
+                    }
+                    const sameAsPrev = prevSnap.length === activated.length
+                        && prevSnap.every(id => activated.includes(id));
+                    const showForBootstrap = !!msg.sessionSkillsBootstrap;
+                    if (!showForBootstrap && sameAsPrev) return null;
+
+                    return (
+                        <SessionSkillsTimeline
+                            sessionSkills={sessionSkills}
+                            activatedSkillIds={activated}
+                            bootstrap={msg.sessionSkillsBootstrap || null}
+                        />
+                    );
+                })()}
 
                 {/* Sequential Thinking — always at the top */}
                 {!isUser && !isTool && msg.thinkingSteps?.length > 0 && <SequentialThinking msg={msg} />}

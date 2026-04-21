@@ -1610,6 +1610,7 @@ const AgentHub = ({
                                                     allMessages={messages}
                                                     conversationId={currentDirectConversation?.id}
                                                     sessionSkills={directSessionSkills}
+                                                    liveActivatedSkillIds={directActivatedSessionSkillIds}
                                                     chatSource="direct"
                                                     onRetry={retryMessage}
                                                     onEditMessage={editAndRegenerate}
