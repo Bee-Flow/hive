@@ -208,6 +208,7 @@ export default function useChatEngine({
                 break;
             case 'session_skills_bootstrapped':
                 if (Array.isArray(data.skills)) {
+                    const snapIds = Array.isArray(data.activatedSkillIds) ? data.activatedSkillIds : [];
                     setMessages(prev => prev.map(m =>
                         m.id === assistantMsgId
                             ? {
@@ -221,20 +222,33 @@ export default function useChatEngine({
                                         icon: s.icon || '🧩',
                                     })),
                                 },
+                                // Stamp the snapshot immediately so the timeline
+                                // stays pinned to this state after streaming ends
+                                // (before server persist round-trips).
+                                sessionSkillsSnapshot: { activatedSkillIds: [...snapIds] },
                             }
                             : m
                     ));
                     onSessionSkillsChanged?.({
                         skills: data.skills,
-                        activatedSkillIds: Array.isArray(data.activatedSkillIds) ? data.activatedSkillIds : [],
+                        activatedSkillIds: snapIds,
                     });
                 }
                 break;
             case 'session_skills_updated':
                 if (Array.isArray(data.skills)) {
+                    const snapIds = Array.isArray(data.activatedSkillIds) ? data.activatedSkillIds : [];
+                    // Stamp the latest snapshot onto the in-flight assistant
+                    // message so a post-stream view keeps the full state even
+                    // before the server persists/reloads.
+                    setMessages(prev => prev.map(m =>
+                        m.id === assistantMsgId
+                            ? { ...m, sessionSkillsSnapshot: { activatedSkillIds: [...snapIds] } }
+                            : m
+                    ));
                     onSessionSkillsChanged?.({
                         skills: data.skills,
-                        activatedSkillIds: Array.isArray(data.activatedSkillIds) ? data.activatedSkillIds : [],
+                        activatedSkillIds: snapIds,
                     });
                 }
                 break;

@@ -390,15 +390,26 @@ const MessageItem = ({
                     pipeline (bootstrap) OR changed its activation state vs the
                     previous assistant turn. Quiet turns get nothing. */}
                 {!isUser && !isTool && chatSource === 'direct' && Array.isArray(sessionSkills) && sessionSkills.length > 0 && (() => {
-                    const isStreaming = msg.isStreaming || (isLastAssistant && (msg.role === 'assistant'));
+                    // Determine which activation set to feed the timeline.
+                    //  - Streaming / last assistant message: live state (fresh SSE updates).
+                    //  - Any message carrying its own snapshot: use it.
+                    //  - Otherwise: inherit the nearest prior snapshot (keeps older
+                    //    messages meaningful even before the per-turn snapshot shipped).
+                    const myIdx = allMessages.indexOf(msg);
+                    const isLatestAssistant = myIdx === allMessages.map(m => m?.role === 'assistant').lastIndexOf(true);
+                    const isLiveTarget = msg.isStreaming || isLatestAssistant;
                     const ownSnapshot = msg.sessionSkillsSnapshot?.activatedSkillIds;
-                    const activated = isStreaming
-                        ? (Array.isArray(liveActivatedSkillIds) ? liveActivatedSkillIds : [])
-                        : (Array.isArray(ownSnapshot) ? ownSnapshot : []);
+                    let activated;
+                    if (isLiveTarget && Array.isArray(liveActivatedSkillIds)) {
+                        activated = liveActivatedSkillIds;
+                    } else if (Array.isArray(ownSnapshot)) {
+                        activated = ownSnapshot;
+                    } else {
+                        activated = [];
+                    }
 
                     // Dedupe: only render on a non-bootstrap message if its
                     // snapshot differs from the prior assistant message's.
-                    const myIdx = allMessages.indexOf(msg);
                     let prevSnap = [];
                     for (let i = myIdx - 1; i >= 0; i--) {
                         const m = allMessages[i];
