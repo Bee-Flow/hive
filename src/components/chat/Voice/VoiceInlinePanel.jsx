@@ -1,21 +1,21 @@
 /**
- * VoiceInlinePanel — Embedded voice UI that replaces the textarea inside
- * the composer while voice mode is active.
+ * VoiceInlinePanel — Embedded, always-on voice UI (Beta v2).
  *
- * Design choices:
- *   - No overlay / no backdrop. The panel mounts inline inside InputArea
- *     so the host chat remains visible above it.
- *   - Completed voice turns do NOT render here — they flow up to the
- *     chat via `onTurnComplete` and render as regular MessageItem bubbles.
- *     This panel only shows the IN-FLIGHT turn: partial transcript,
- *     running tool chips, partial reply.
- *   - Matches the composer's rounded-2xl card so it feels like the same
- *     input surface, just a different mode.
+ * The mic is hot from the moment voice mode starts. A client-side VAD
+ * in useVoiceSession auto-detects utterance boundaries and submits each
+ * turn without any click. This panel is purely visual feedback:
+ *   - a live energy ring that pulses with mic activity,
+ *   - a status line that mirrors the hook's state machine,
+ *   - the in-flight transcript / reply / tool chips for the current turn,
+ *   - a single hangup button to exit voice mode.
+ *
+ * Completed voice turns do NOT render here — they flow up to the chat
+ * via onTurnComplete and appear as regular MessageItem bubbles.
  */
 
 import React, { useEffect, useState } from 'react';
 import {
-    Mic, MicOff, PhoneOff, Loader2, Volume2, AlertTriangle,
+    Mic, PhoneOff, Loader2, Volume2, AlertTriangle,
     Info, Wrench, Check, X,
 } from 'lucide-react';
 import useVoiceSession from './useVoiceSession';
@@ -53,6 +53,65 @@ function ToolChip({ tool }) {
     );
 }
 
+/**
+ * Live energy halo — pulses with mic amplitude. Cheap visual substitute
+ * for a waveform that costs ~no CPU and reads instantly.
+ */
+function LevelIndicator({ level, state, STATES, isMobile }) {
+    const isThinking = state === STATES.THINKING;
+    const isSpeaking = state === STATES.SPEAKING;
+    const isListening = state === STATES.LISTENING;
+    const isError = state === STATES.ERROR;
+
+    // Outer ring scales up to ~1.8× on loud input.
+    const ringScale = 1 + Math.min(0.8, level * 1.2);
+    // Core icon color reflects state.
+    const coreClasses = isError
+        ? 'bg-red-500 text-white'
+        : isThinking
+            ? 'bg-[var(--bg-tertiary)] text-[var(--text-tertiary)]'
+            : isSpeaking
+                ? 'bg-emerald-500 text-white'
+                : isListening
+                    ? 'bg-red-500 text-white'
+                    : 'bg-[var(--accent-primary)] text-white';
+
+    const size = isMobile ? 'w-12 h-12' : 'w-14 h-14';
+
+    return (
+        <div className="relative flex items-center justify-center shrink-0" style={{ width: isMobile ? 56 : 72, height: isMobile ? 56 : 72 }}>
+            {/* Outer pulsing ring — energy-driven */}
+            <span
+                className={`absolute inset-0 rounded-full transition-transform duration-75 ease-out ${
+                    isListening ? 'bg-red-500/25'
+                        : isSpeaking ? 'bg-emerald-500/25'
+                            : isThinking ? 'bg-blue-500/15'
+                                : 'bg-[var(--accent-primary)]/20'
+                }`}
+                style={{ transform: `scale(${ringScale})` }}
+            />
+            {/* Secondary steady ring */}
+            <span
+                className={`absolute inset-1 rounded-full ${
+                    isListening ? 'bg-red-500/40 animate-pulse'
+                        : isSpeaking ? 'bg-emerald-500/40 animate-pulse'
+                            : 'bg-[var(--accent-primary)]/30'
+                }`}
+            />
+            {/* Core */}
+            <div className={`relative ${size} rounded-full flex items-center justify-center ${coreClasses}`}>
+                {isThinking ? (
+                    <Loader2 className={isMobile ? 'w-5 h-5 animate-spin' : 'w-6 h-6 animate-spin'} />
+                ) : isSpeaking ? (
+                    <Volume2 className={isMobile ? 'w-5 h-5' : 'w-6 h-6'} />
+                ) : (
+                    <Mic className={isMobile ? 'w-5 h-5' : 'w-6 h-6'} />
+                )}
+            </div>
+        </div>
+    );
+}
+
 export default function VoiceInlinePanel({
     agentId = null,
     agentName = null,
@@ -64,7 +123,6 @@ export default function VoiceInlinePanel({
     const voice = useVoiceSession({ getHistory, onTurnComplete });
     const [connecting, setConnecting] = useState(false);
 
-    // Auto-connect on mount. Hangup on unmount releases the mic.
     useEffect(() => {
         setConnecting(true);
         voice.connect({ agentId: agentId || null })
@@ -76,24 +134,10 @@ export default function VoiceInlinePanel({
 
     const {
         state, STATES, partialReply, partialTranscript, turnTools,
-        error, notice, latency, session,
+        level, error, notice, latency, session,
     } = voice;
 
-    const isListening = state === STATES.LISTENING;
-    const isThinking = state === STATES.THINKING;
-    const isSpeaking = state === STATES.SPEAKING;
     const resolvedAgentName = agentName || session?.agentName || null;
-
-    const toggleMic = async () => {
-        if (isListening) {
-            await voice.stopListening();
-        } else if (state === STATES.IDLE || state === STATES.ERROR) {
-            voice.startListening();
-        } else if (isSpeaking) {
-            voice.skipPlayback();
-            voice.startListening();
-        }
-    };
 
     const handleHangup = () => {
         voice.hangup();
@@ -101,30 +145,30 @@ export default function VoiceInlinePanel({
     };
 
     const statusLabel = () => {
-        if (connecting) return 'Connecting…';
-        if (error) return 'Error — click the phone to exit.';
-        if (isListening) return 'Listening — click the mic to send.';
-        if (isThinking) {
-            const running = turnTools.filter(t => t.status === 'running');
-            if (running.length) return `Running ${running.map(t => t.name).join(', ')}…`;
-            return 'Thinking…';
+        if (connecting) return 'Connecting the line…';
+        if (error) return 'Error — tap the phone to exit.';
+        switch (state) {
+            case STATES.LISTENING: return 'Hearing you…';
+            case STATES.THINKING: {
+                const running = turnTools.filter(t => t.status === 'running');
+                return running.length
+                    ? `Running ${running.map(t => t.name).join(', ')}…`
+                    : 'Thinking…';
+            }
+            case STATES.SPEAKING: return 'Speaking — just start talking to interrupt.';
+            default: return 'Listening — just start speaking.';
         }
-        if (isSpeaking) return 'Speaking — click the mic to interrupt.';
-        return 'Click the microphone to speak.';
     };
 
-    const showLiveTurn =
-        !!partialTranscript ||
-        !!partialReply ||
-        turnTools.length > 0;
+    const showLiveTurn = !!partialTranscript || !!partialReply || turnTools.length > 0;
 
     return (
         <div
             className="relative flex flex-col bg-[var(--bg-secondary)] rounded-2xl border border-emerald-500/30 shadow-md ring-1 ring-emerald-500/10"
             role="region"
-            aria-label="Voice chat mode"
+            aria-label="Voice mode"
         >
-            {/* Header strip — shows we're in voice mode */}
+            {/* Header strip */}
             <div className="flex items-center justify-between px-4 py-2 border-b border-[var(--border-subtle)]">
                 <div className="flex items-center gap-2 text-xs">
                     <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wider bg-amber-500/15 text-amber-400 border border-amber-500/30">
@@ -133,7 +177,7 @@ export default function VoiceInlinePanel({
                     <span className="text-[var(--text-secondary)] font-medium">
                         Voice mode{resolvedAgentName ? ` — ${resolvedAgentName}` : ''}
                     </span>
-                    <span className="text-[var(--text-tertiary)] hidden sm:inline">· using chat history</span>
+                    <span className="text-[var(--text-tertiary)] hidden sm:inline">· live · using chat history</span>
                 </div>
                 <button
                     onClick={handleHangup}
@@ -145,7 +189,7 @@ export default function VoiceInlinePanel({
                 </button>
             </div>
 
-            {/* Live turn preview — transient, cleared on turn-complete */}
+            {/* Live turn preview */}
             {showLiveTurn && (
                 <div className="px-4 py-3 text-sm space-y-2 border-b border-[var(--border-subtle)]">
                     {partialTranscript && state !== STATES.IDLE && (
@@ -163,7 +207,9 @@ export default function VoiceInlinePanel({
                         <div className="text-[var(--accent-primary)]">
                             <span className="font-semibold mr-2">Assistant:</span>
                             {partialReply}
-                            {isThinking && <span className="inline-block w-2 h-4 bg-current ml-1 animate-pulse" />}
+                            {state === STATES.THINKING && (
+                                <span className="inline-block w-2 h-4 bg-current ml-1 animate-pulse" />
+                            )}
                         </div>
                     )}
                 </div>
@@ -183,40 +229,15 @@ export default function VoiceInlinePanel({
                 </div>
             )}
 
-            {/* Mic + status row */}
+            {/* Live energy indicator + status */}
             <div className={`flex items-center gap-4 ${isMobile ? 'px-3 py-3' : 'px-4 py-4'}`}>
-                <button
-                    onClick={toggleMic}
-                    disabled={connecting || isThinking}
-                    className={[
-                        'relative flex items-center justify-center rounded-full transition-all shrink-0',
-                        isMobile ? 'w-12 h-12' : 'w-14 h-14',
-                        isListening
-                            ? 'bg-red-500 text-white shadow-[0_0_0_6px_rgba(239,68,68,0.15)]'
-                            : isThinking
-                                ? 'bg-[var(--bg-tertiary)] text-[var(--text-tertiary)] cursor-not-allowed'
-                                : isSpeaking
-                                    ? 'bg-emerald-500 text-white'
-                                    : 'bg-[var(--accent-primary)] text-white hover:scale-105',
-                    ].join(' ')}
-                    aria-label={isListening ? 'Send voice turn' : 'Start recording'}
-                >
-                    {connecting || isThinking ? (
-                        <Loader2 className={isMobile ? 'w-5 h-5 animate-spin' : 'w-6 h-6 animate-spin'} />
-                    ) : isListening ? (
-                        <MicOff className={isMobile ? 'w-5 h-5' : 'w-6 h-6'} />
-                    ) : isSpeaking ? (
-                        <Volume2 className={isMobile ? 'w-5 h-5' : 'w-6 h-6'} />
-                    ) : (
-                        <Mic className={isMobile ? 'w-5 h-5' : 'w-6 h-6'} />
-                    )}
-                    {isListening && (
-                        <span className="absolute inset-0 rounded-full animate-ping bg-red-500/40" />
-                    )}
-                </button>
+                <LevelIndicator level={level} state={state} STATES={STATES} isMobile={isMobile} />
 
                 <div className="flex-1 min-w-0">
                     <p className="text-sm text-[var(--text-primary)] font-medium">{statusLabel()}</p>
+                    <p className="text-[11px] text-[var(--text-tertiary)] mt-0.5">
+                        The mic stays on. Just start speaking — I’ll pick it up automatically.
+                    </p>
                     {latency && (
                         <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] uppercase tracking-wider text-[var(--text-tertiary)]">
                             {latency.sttMs != null && <span>STT {latency.sttMs}ms</span>}
