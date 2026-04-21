@@ -240,7 +240,8 @@ export default function useVoiceSession() {
                     setState(STATES.ERROR);
                     break;
                 case 'done':
-                    // Commit history; the modal can still be showing partials.
+                    // Commit history and clear the partial display fields so
+                    // they don't render duplicated alongside the new history rows.
                     if (userText) {
                         setHistory(h => [
                             ...h,
@@ -248,6 +249,8 @@ export default function useVoiceSession() {
                             ...(assistantText ? [{ role: 'assistant', content: assistantText }] : []),
                         ]);
                     }
+                    setPartialTranscript('');
+                    setPartialReply('');
                     setLatency({ ...metrics, totalMs: Date.now() - startedAt });
                     // If TTS played we enter SPEAKING via the audio element's 'play'/'ended'
                     // handlers. Otherwise go straight back to idle.
