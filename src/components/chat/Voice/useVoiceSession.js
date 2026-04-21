@@ -87,6 +87,11 @@ export default function useVoiceSession({ getHistory, onTurnComplete } = {}) {
     const getHistoryRef = useRef(getHistory);
     const onTurnCompleteRef = useRef(onTurnComplete);
     const voiceActiveRef = useRef(false);           // true from connect() until hangup()
+    // Sticky language — Voxtral is unreliable at language detection on short
+    // utterances (a single Dutch word can be tagged as Italian). Once we get
+    // a detected language from the server, we pass it as a hint on every
+    // subsequent turn so STT stops oscillating.
+    const stickyLanguageRef = useRef(null);
 
     useEffect(() => { getHistoryRef.current = getHistory; }, [getHistory]);
     useEffect(() => { onTurnCompleteRef.current = onTurnComplete; }, [onTurnComplete]);
@@ -310,7 +315,9 @@ export default function useVoiceSession({ getHistory, onTurnComplete } = {}) {
         form.append('history', JSON.stringify(hostHistory));
         if (session?.model) form.append('model', session.model);
         if (session?.voice) form.append('voice', session.voice);
-        if (session?.language) form.append('language', session.language);
+        // Language precedence: sticky (first confirmed) > session override > auto-detect.
+        const langHint = stickyLanguageRef.current || session?.language || null;
+        if (langHint) form.append('language', langHint);
         if (session?.systemPrompt) form.append('systemPrompt', session.systemPrompt);
         if (session?.agentId) form.append('agentId', session.agentId);
 
@@ -366,6 +373,12 @@ export default function useVoiceSession({ getHistory, onTurnComplete } = {}) {
                     userText = data.text || '';
                     metrics.sttMs = data.latencyMs ?? null;
                     setPartialTranscript(userText);
+                    // Lock language on first non-empty transcription so future
+                    // turns don't flip between Dutch / Italian / etc. on short
+                    // utterances. Only promote to sticky on substantial text.
+                    if (!stickyLanguageRef.current && data.language && userText.length >= 8) {
+                        stickyLanguageRef.current = String(data.language).toLowerCase().slice(0, 2);
+                    }
                     break;
                 case 'no_speech':
                     break;
@@ -409,10 +422,16 @@ export default function useVoiceSession({ getHistory, onTurnComplete } = {}) {
                 case 'done':
                     if (userText && onTurnCompleteRef.current) {
                         const frozenTools = turnToolsLocal.map(t => ({ ...t }));
+                        // Prefer the server-cleaned text (JSON/code fragments
+                        // stripped) over the raw streaming buffer so the chat
+                        // bubble matches what TTS actually said.
+                        const finalAssistant = (typeof data.assistantText === 'string' && data.assistantText.trim())
+                            ? data.assistantText
+                            : assistantText;
                         onTurnCompleteRef.current({
                             user: { role: 'user', content: userText, source: 'voice' },
-                            assistant: assistantText || frozenTools.length
-                                ? { role: 'assistant', content: assistantText, source: 'voice', tools: frozenTools }
+                            assistant: finalAssistant || frozenTools.length
+                                ? { role: 'assistant', content: finalAssistant, source: 'voice', tools: frozenTools }
                                 : null,
                         });
                     }
@@ -482,6 +501,7 @@ export default function useVoiceSession({ getHistory, onTurnComplete } = {}) {
         setError(null);
         setNotice(null);
         setLevel(0);
+        stickyLanguageRef.current = null;
     }, [cleanup, setStateSync]);
 
     return {
