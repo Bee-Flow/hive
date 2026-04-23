@@ -1,4 +1,4 @@
-// Agent Capability Instructions
+// Agent Capability Instructionsdd
 
 const CAPABILITIES = {
     SMALL_APPS: {
@@ -8,7 +8,7 @@ const CAPABILITIES = {
 You can create small interactive applications using the component system. When asked to build a tool, game, or utility, generate a full HTML component.
 
 Example Structure:
-\`\`\`html-app
+\`\`\`html-app 
 <!DOCTYPE html>
 <html>
 <head>

@@ -226,7 +226,7 @@ const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
                 data-testid="search-overlay"
             >
                 {/* Header: icon + input + kbd + close */}
-                <div className="flex items-center gap-3 px-4 h-14 border-b border-[var(--border-subtle)]">
+                <div className="flex-shrink-0 flex items-center gap-3 px-4 h-14 border-b border-[var(--border-subtle)]">
                     <Search className="w-4 h-4 text-[var(--text-tertiary)] flex-shrink-0" />
                     <input
                         ref={inputRef}
@@ -262,7 +262,7 @@ const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
                 </div>
 
                 {/* Filter bar */}
-                <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)]/40 overflow-x-auto">
+                <div className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)]/40 overflow-x-auto">
                     <PillGroup
                         value={source}
                         onChange={setSource}
@@ -361,7 +361,7 @@ const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
                 </div>
 
                 {/* Footer */}
-                <div className="flex items-center justify-between px-4 h-9 border-t border-[var(--border-subtle)] bg-[var(--bg-secondary)]/30 text-[11px] text-[var(--text-tertiary)]">
+                <div className="flex-shrink-0 flex items-center justify-between px-4 h-9 border-t border-[var(--border-subtle)] bg-[var(--bg-secondary)]/30 text-[11px] text-[var(--text-tertiary)]">
                     <div className="flex items-center gap-3">
                         <KbdHint keys={['↑', '↓']} label="Navigate" />
                         <KbdHint keys={['↵']} label="Open" />
