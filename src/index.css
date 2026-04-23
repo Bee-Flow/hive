@@ -159,6 +159,10 @@ body,
     background: var(--text-secondary);
 }
 
+.hide-scrollbar::-webkit-scrollbar {
+    display: none;
+}
+
 /* Animations */
 @keyframes fadeIn {
     from {
