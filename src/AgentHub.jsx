@@ -1558,7 +1558,10 @@ const AgentHub = ({
                                         onSave={saveNotebook}
                                         onClose={() => setShowNotebook(false)}
                                         onSelectionChange={(text) => { setNotebookSelection(text); }}
-                                        onAskAI={(message) => { sendMessage(message, []); }}
+                                        onAskAI={(message) => {
+                                            console.log('[Notebook AI] AgentHub.onAskAI -> sendMessage, isLoading=', isLoading, 'mode=agent', 'agent=', selectedAgent?.id);
+                                            sendMessage(message, []);
+                                        }}
                                         onOpenInNotebook={notebooksEnabled ? handleOpenInNotebook : undefined}
                                         user={user}
                                         conversationId={currentConversation?.id}
@@ -1698,7 +1701,10 @@ const AgentHub = ({
                                         onSave={saveNotebook}
                                         onClose={() => setShowNotebook(false)}
                                         onSelectionChange={(text) => { setNotebookSelection(text); }}
-                                        onAskAI={(message) => { sendMessage(message, []); }}
+                                        onAskAI={(message) => {
+                                            console.log('[Notebook AI] AgentHub.onAskAI -> sendMessage, isLoading=', isLoading, 'mode=direct');
+                                            sendMessage(message, []);
+                                        }}
                                         onOpenInNotebook={notebooksEnabled ? handleOpenInNotebook : undefined}
                                         user={user}
                                         conversationId={currentDirectConversation?.id}

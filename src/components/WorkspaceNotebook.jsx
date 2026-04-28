@@ -175,7 +175,11 @@ export default function WorkspaceNotebook({
     // AI actions from bubble menu — builds the final user-visible message here
     // (single source of truth) so the chat-owner callback is just a thin send.
     const handleAIAction = useCallback((actionKey, selectedText, range, customQuery) => {
-        if (!onAskAI) return;
+        console.log('[Notebook AI] WorkspaceNotebook.handleAIAction:', { actionKey, hasOnAskAI: !!onAskAI, len: selectedText?.length });
+        if (!onAskAI) {
+            console.warn('[Notebook AI] aborted: onAskAI prop is missing in WorkspaceNotebook');
+            return;
+        }
         if (!selectedText || !selectedText.trim()) return;
 
         // Keep parent state in sync for the system-prompt context (separate
@@ -205,6 +209,7 @@ export default function WorkspaceNotebook({
         }
 
         const message = `> **Selected text:**\n${quoted}\n\n${instruction}`;
+        console.log('[Notebook AI] sending to chat, length:', message.length);
         onAskAI(message);
     }, [onAskAI, onSelectionChange]);
 

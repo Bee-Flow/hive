@@ -515,13 +515,28 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
         }
     }, [content, editor, resolveContentUrls]);
 
-    // Handle AI action on selected text
+    // Handle AI action on selected text. Reads the selection directly from the
+    // editor at click-time to avoid any React-state staleness, and logs each
+    // step so we can see in the browser console where the chain breaks if it
+    // does (TipTap v3 + React 19 portal events have been flaky in the wild).
     const handleAIAction = useCallback((actionKey, customQuery = null) => {
-        if (!editor) return;
+        console.log('[Notebook AI] button clicked:', actionKey);
+        if (!editor) {
+            console.warn('[Notebook AI] aborted: editor is not initialized');
+            return;
+        }
         const { from, to } = editor.state.selection;
         const selectedText = editor.state.doc.textBetween(from, to, ' ');
-        if (!selectedText.trim()) return;
-        onAIAction?.(actionKey, selectedText, { from, to }, customQuery);
+        console.log('[Notebook AI] selection:', { from, to, length: selectedText.length, hasOnAIAction: !!onAIAction });
+        if (!selectedText.trim()) {
+            console.warn('[Notebook AI] aborted: selection is empty');
+            return;
+        }
+        if (!onAIAction) {
+            console.warn('[Notebook AI] aborted: onAIAction prop is missing');
+            return;
+        }
+        onAIAction(actionKey, selectedText, { from, to }, customQuery);
         if (actionKey === 'ask') { setShowAskInput(false); setAskQuery(''); }
     }, [editor, onAIAction]);
 
@@ -787,7 +802,9 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
                             const Icon = action.icon;
                             return (
                             <button key={action.key}
-                                onMouseDown={e => { e.preventDefault(); handleAIAction(action.key); }}
+                                type="button"
+                                onMouseDown={e => e.preventDefault()}
+                                onClick={() => handleAIAction(action.key)}
                                 className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium transition-all hover:bg-[var(--bg-tertiary)]"
                                 style={{ color: 'var(--text-secondary)' }}
                             >
@@ -799,14 +816,19 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
                         <>
                             <div className="w-px h-4 mx-0.5" style={{ background: 'var(--border-subtle)' }} />
                             <button
-                                onMouseDown={e => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
+                                type="button"
+                                onMouseDown={e => e.preventDefault()}
+                                onClick={() => {
+                                    console.log('[Notebook AI] Ask AI button clicked');
+                                    if (!editor) return;
                                     // Capture the selection range + screen position NOW,
                                     // before the BubbleMenu unmounts and selection may clear.
                                     const { from, to } = editor.state.selection;
                                     const selectedText = editor.state.doc.textBetween(from, to, ' ');
-                                    if (!selectedText.trim()) return; // guard — no text, nothing to ask about
+                                    if (!selectedText.trim()) {
+                                        console.warn('[Notebook AI] Ask AI aborted: empty selection');
+                                        return;
+                                    }
                                     frozenSelectionRef.current = { from, to, selectedText };
 
                                     // Position the input portal above the selection. Clamp so it
