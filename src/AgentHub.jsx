@@ -1557,14 +1557,8 @@ const AgentHub = ({
                                         onChange={setNotebookContent}
                                         onSave={saveNotebook}
                                         onClose={() => setShowNotebook(false)}
-                                        onSelectionChange={(text) => {
-                                            setNotebookSelection(text);
-                                        }}
-                                        onAskAI={(prompt) => {
-                                            const sel = notebookSelection;
-                                            const msg = sel ? `> **Selected text:**\n> ${sel.split('\n').join('\n> ')}\n\n${prompt}` : prompt;
-                                            sendMessage(msg, []);
-                                        }}
+                                        onSelectionChange={(text) => { setNotebookSelection(text); }}
+                                        onAskAI={(message) => { sendMessage(message, []); }}
                                         onOpenInNotebook={notebooksEnabled ? handleOpenInNotebook : undefined}
                                         user={user}
                                         conversationId={currentConversation?.id}
@@ -1703,14 +1697,8 @@ const AgentHub = ({
                                         onChange={setNotebookContent}
                                         onSave={saveNotebook}
                                         onClose={() => setShowNotebook(false)}
-                                        onSelectionChange={(text) => {
-                                            setNotebookSelection(text);
-                                        }}
-                                        onAskAI={user?.featureFlags?.askAi !== false ? (prompt) => {
-                                            const sel = notebookSelection;
-                                            const msg = sel ? `> **Selected text:**\n> ${sel.split('\n').join('\n> ')}\n\n${prompt}` : prompt;
-                                            sendMessage(msg, []);
-                                        } : undefined}
+                                        onSelectionChange={(text) => { setNotebookSelection(text); }}
+                                        onAskAI={(message) => { sendMessage(message, []); }}
                                         onOpenInNotebook={notebooksEnabled ? handleOpenInNotebook : undefined}
                                         user={user}
                                         conversationId={currentDirectConversation?.id}

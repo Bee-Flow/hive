@@ -172,20 +172,40 @@ export default function WorkspaceNotebook({
         }, 1200);
     }, [onChange, onSave, getMarkdown, notebookId, ensureNotebook]);
 
-    // AI actions from bubble menu
+    // AI actions from bubble menu — builds the final user-visible message here
+    // (single source of truth) so the chat-owner callback is just a thin send.
     const handleAIAction = useCallback((actionKey, selectedText, range, customQuery) => {
         if (!onAskAI) return;
+        if (!selectedText || !selectedText.trim()) return;
+
+        // Keep parent state in sync for the system-prompt context (separate
+        // from message construction — AgentHub.getNotebookPayload reads this).
         onSelectionChange?.(selectedText);
 
-        let prompt;
+        const quoted = selectedText.split('\n').map(line => `> ${line}`).join('\n');
+
+        let instruction;
         switch (actionKey) {
-            case 'rewrite': prompt = `Rewrite this text in the notebook:\n> ${selectedText}`; break;
-            case 'shorten': prompt = `Make this text shorter in the notebook:\n> ${selectedText}`; break;
-            case 'expand':  prompt = `Expand and elaborate on this text in the notebook:\n> ${selectedText}`; break;
-            case 'ask':     prompt = customQuery || `About this text in the notebook: ${selectedText}`; break;
-            default:        prompt = `${actionKey}: ${selectedText}`;
+            case 'rewrite':
+                instruction = 'Please rewrite the selected text from the notebook above.';
+                break;
+            case 'shorten':
+                instruction = 'Please shorten the selected text from the notebook above.';
+                break;
+            case 'expand':
+                instruction = 'Please expand and elaborate on the selected text from the notebook above.';
+                break;
+            case 'ask': {
+                const q = (customQuery || '').trim();
+                instruction = q || 'Please answer questions about the selected text from the notebook above.';
+                break;
+            }
+            default:
+                instruction = `${actionKey}: please act on the selected text from the notebook above.`;
         }
-        onAskAI(prompt);
+
+        const message = `> **Selected text:**\n${quoted}\n\n${instruction}`;
+        onAskAI(message);
     }, [onAskAI, onSelectionChange]);
 
     // Copy
