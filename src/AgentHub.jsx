@@ -1460,7 +1460,6 @@ const AgentHub = ({
                     <KBDetailPage
                         kbId={activeKBId || null}
                         user={user}
-                        groups={Array.isArray(user?.groups) ? user.groups.map(g => typeof g === 'string' ? { id: g, name: g } : g) : []}
                         onClose={() => setActiveKBId(null)}
                         onSaved={() => { refreshKBs(); }}
                     />

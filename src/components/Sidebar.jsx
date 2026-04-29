@@ -250,7 +250,7 @@ const ConvRow = ({
             <div className="relative" ref={menuRef}>
                 <button
                     onClick={(e) => { e.stopPropagation(); setShowMenu(v => !v); }}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded transition-opacity flex-shrink-0"
+                    className="opacity-40 group-hover:opacity-100 p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded transition-opacity flex-shrink-0"
                     title="Options"
                     data-testid={`conv-options-${conv.id}`}
                 >
