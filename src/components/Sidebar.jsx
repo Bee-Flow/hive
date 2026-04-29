@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, PenLine, Sparkles, Mail, Ticket, BookOpen } from 'lucide-react';
-import { API_BASE } from '../utils/helpers';
+import { API_BASE, authFetch } from '../utils/helpers';
 import NotificationCenter from './NotificationCenter';
 import NavLink from './NavLink';
 
@@ -400,6 +400,7 @@ const Sidebar = ({
     onSelectAllChatsConversation,
     showSettings = false,
     showAgentDesigner = false,
+    showAITasks = false,
     showSkillsPanel = false,
     showTicketAssistant = false,
     // Legacy alias — callers passing showEmailKB still work for one release.
@@ -415,6 +416,7 @@ const Sidebar = ({
     const [agentsOpen, setAgentsOpen] = useState(() => readExpanded('agents', true));
     const [chatsOpen, setChatsOpen] = useState(() => readExpanded('chats', false));
     const [projectsOpen, setProjectsOpen] = useState(() => readExpanded('projects', true));
+    const [activeAITaskCount, setActiveAITaskCount] = useState(0);
     const profileRef = useRef(null);
 
     const toggleAgents = useCallback(() => setAgentsOpen(p => { writeExpanded('agents', !p); return !p; }), []);
@@ -428,6 +430,24 @@ const Sidebar = ({
         document.addEventListener('mousedown', close);
         return () => document.removeEventListener('mousedown', close);
     }, [showProfileMenu]);
+
+    // Lightweight active AI task count for the sidebar badge.
+    // Refreshed when the AI Tasks page is opened/closed, so create/edit/toggle
+    // actions there will refresh the count when the user returns.
+    useEffect(() => {
+        let cancelled = false;
+        const load = async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/api/ai-tasks`);
+                if (!res.ok || cancelled) return;
+                const data = await res.json();
+                const tasks = Array.isArray(data?.tasks) ? data.tasks : [];
+                setActiveAITaskCount(tasks.filter(t => t.isActive).length);
+            } catch { /* silent */ }
+        };
+        load();
+        return () => { cancelled = true; };
+    }, [showAITasks]);
 
     // On mobile, completely hide when closed (hamburger in header opens it)
     if (!isOpen && isMobile) return null;
@@ -732,6 +752,32 @@ const Sidebar = ({
                 </div>
             )}
 
+            {/* ── AI Tasks ── */}
+            {isOpen && (
+                <div className="px-1.5 pb-1">
+                    <button
+                        onClick={() => onNavigate && onNavigate('aiTasks')}
+                        className={`${ROW} ${showAITasks ? ROW_ACTIVE : ROW_IDLE}`}
+                        data-testid="sidebar-ai-tasks"
+                    >
+                        {showAITasks && <div className={ACCENT_BAR} />}
+                        <Bot className={`w-4 h-4 ${showAITasks ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
+                        <span className={`text-[13px] ${showAITasks ? TEXT_ACTIVE : TEXT_IDLE}`}>
+                            {t('sidebar.ai_tasks') || 'AI Tasks'}
+                        </span>
+                        {activeAITaskCount > 0 && (
+                            <span
+                                className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-md tabular-nums"
+                                style={{ background: 'rgba(139,92,246,0.1)', color: '#8b5cf6' }}
+                            >
+                                {activeAITaskCount}
+                            </span>
+                        )}
+                    </button>
+                </div>
+            )}
+            {isOpen && <div className="mx-3 my-0.5 border-t border-[var(--border-subtle)]" />}
+
             {/* ── Recent Chats ── */}
             <div className={`flex flex-col ${isOpen ? '' : 'hidden'}`}>
                 <div className="flex items-center justify-between px-3 h-9 select-none">
@@ -764,8 +810,15 @@ const Sidebar = ({
 
             </div>{/* ── End scrollable middle region ── */}
 
+            {/* ── Notifications row (own click target, separated from profile) ── */}
+            {isOpen && (
+                <div className="flex-shrink-0 px-1.5 pt-1.5 pb-0.5 border-t border-[var(--border-subtle)]">
+                    <NotificationCenter />
+                </div>
+            )}
+
             {/* ── Account footer ── */}
-            <div className={`flex-shrink-0 mt-auto border-t border-[var(--border-subtle)] relative ${isOpen ? '' : 'flex justify-center flex-shrink-0'}`} ref={profileRef}>
+            <div className={`flex-shrink-0 mt-auto relative ${isOpen ? 'border-t border-[var(--border-subtle)]' : 'flex justify-center flex-shrink-0 border-t border-[var(--border-subtle)]'}`} ref={profileRef}>
                 <div
                     onClick={() => setShowProfileMenu(v => !v)}
                     className={`flex items-center transition-colors cursor-pointer ${isOpen ? 'w-full gap-2.5 px-4 h-14 ' + (showProfileMenu ? 'bg-[var(--bg-tertiary)]' : 'hover:bg-[var(--bg-tertiary)]') : 'w-10 h-10 my-3 rounded-full justify-center hover:bg-[var(--bg-tertiary)]'}`}
@@ -794,9 +847,6 @@ const Sidebar = ({
                                 {user?.isDemo && (
                                     <span className="text-[9px] px-1 py-px rounded bg-amber-500/10 text-amber-600/70 font-medium flex-shrink-0">demo</span>
                                 )}
-                            </div>
-                            <div onClick={e => e.stopPropagation()} className="flex-shrink-0">
-                                <NotificationCenter />
                             </div>
                             <ChevronDown className={`w-4 h-4 flex-shrink-0 text-[var(--text-tertiary)] transition-transform duration-200 ${showProfileMenu ? 'rotate-180' : ''}`} />
                         </>

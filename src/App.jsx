@@ -27,6 +27,7 @@ const PAGE_ROUTES = {
     orgSettings: '/app/org-settings',
     settings: '/app/settings',
     agentDesigner: '/app/agent-designer',
+    aiTasks: '/app/ai-tasks',
     reports: '/app/reports',
     components: '/app/components',
     meetingNotes: '/app/meeting-notes',
@@ -66,6 +67,8 @@ function pageFromPath(pathname) {
     if (pathname === '/app/settings' || pathname.startsWith('/app/settings/')) return 'settings';
     // /app/agent-designer or /app/agent-designer/* → agentDesigner
     if (pathname === '/app/agent-designer' || pathname.startsWith('/app/agent-designer/')) return 'agentDesigner';
+    // /app/ai-tasks or /app/ai-tasks/* → aiTasks
+    if (pathname === '/app/ai-tasks' || pathname.startsWith('/app/ai-tasks/')) return 'aiTasks';
     // /app/notebooks/:id → notebooks page (must come before generic /app/*)
     if (pathname.startsWith('/app/notebooks')) return 'notebooks';
 
@@ -108,6 +111,12 @@ function parseOrgSettingsPath(pathname) {
 // Parse the agent id out of /app/agent-designer/{agentId} (trailing segments ignored).
 function parseAgentDesignerUrl(pathname) {
     const match = pathname.match(/^\/app\/agent-designer(?:\/([^/]+))?/);
+    return match?.[1] || null;
+}
+
+// Parse the task id out of /app/ai-tasks/{taskId} (or "new"). Trailing segments ignored.
+function parseAITasksUrl(pathname) {
+    const match = pathname.match(/^\/app\/ai-tasks(?:\/([^/]+))?/);
     return match?.[1] || null;
 }
 
@@ -164,6 +173,8 @@ function App() {
     const [showProfileMenu, setShowProfileMenu] = useState(false);
     const [showAgentDesigner, setShowAgentDesigner] = useState(() => pageFromPath(window.location.pathname) === 'agentDesigner');
     const [initialDesignerAgentId, setInitialDesignerAgentId] = useState(() => parseAgentDesignerUrl(window.location.pathname));
+    const [showAITasks, setShowAITasks] = useState(() => pageFromPath(window.location.pathname) === 'aiTasks');
+    const [initialAITaskId, setInitialAITaskId] = useState(() => parseAITasksUrl(window.location.pathname));
     // Settings panel is rendered inline inside AgentHub when showSettings is true.
     // Keep it in sync with the URL so /app/settings/* on hard-refresh opens the panel
     // and the browser's back/forward buttons toggle it.
@@ -280,6 +291,9 @@ function App() {
             const isDesigner = page === 'agentDesigner';
             setShowAgentDesigner(isDesigner);
             if (isDesigner) setInitialDesignerAgentId(parseAgentDesignerUrl(window.location.pathname));
+            const isAITasks = page === 'aiTasks';
+            setShowAITasks(isAITasks);
+            if (isAITasks) setInitialAITaskId(parseAITasksUrl(window.location.pathname));
             setShowNotebooks(page === 'notebooks');
         };
         window.addEventListener('popstate', handlePopState);
@@ -315,6 +329,7 @@ function App() {
             setShowAgentDesigner(true);
             setShowSettings(false);
             setShowSkillsPanel(false);
+            setShowAITasks(false);
             // Push the URL so /app/agent-designer[/{id}] is bookmarkable.
             const path = agentId ? `/app/agent-designer/${agentId}` : '/app/agent-designer';
             if (window.location.pathname !== path) {
@@ -323,11 +338,29 @@ function App() {
             setCurrentPage('agentDesigner');
             return;
         }
+        // AI Tasks renders inline in conversation area (same slot as Agent Designer)
+        if (page === 'aiTasks' || page.startsWith('aiTasks:')) {
+            const taskId = page.includes(':') ? page.split(':')[1] : null;
+            setInitialAITaskId(taskId);
+            setShowAITasks(true);
+            setShowSettings(false);
+            setShowAgentDesigner(false);
+            setShowSkillsPanel(false);
+            setShowEmailKB(false);
+            setShowNotebooks(false);
+            const path = taskId ? `/app/ai-tasks/${taskId}` : '/app/ai-tasks';
+            if (window.location.pathname !== path) {
+                window.history.pushState({ page: 'aiTasks' }, '', path);
+            }
+            setCurrentPage('aiTasks');
+            return;
+        }
         // Settings renders inline in conversation area
         if (page === 'settings' || page.startsWith('settings/')) {
             setShowSettings(true);
             setShowAgentDesigner(false);
             setShowSkillsPanel(false);
+            setShowAITasks(false);
             // Push the URL so the settings panel is bookmarkable / back-button aware.
             // Sub-path (e.g. 'settings/memory') is preserved as `/app/settings/memory`.
             const subPath = page === 'settings' ? '' : page.slice('settings'.length);
@@ -344,6 +377,7 @@ function App() {
             setShowSettings(false);
             setShowAgentDesigner(false);
             setShowEmailKB(false);
+            setShowAITasks(false);
             return;
         }
         // Ticket Assistant (formerly Email KB) renders inline in conversation area.
@@ -353,6 +387,7 @@ function App() {
             setShowSettings(false);
             setShowAgentDesigner(false);
             setShowSkillsPanel(false);
+            setShowAITasks(false);
             return;
         }
         // Support admin sub-paths like 'admin/ai-config' or 'admin/security/sso'
@@ -386,6 +421,7 @@ function App() {
             setShowAgentDesigner(false);
             setShowSkillsPanel(false);
             setShowEmailKB(false);
+            setShowAITasks(false);
             setCurrentPage('notebooks');
             setShowProfileMenu(false);
             const path = notebookId ? `/app/notebooks/${notebookId}` : '/app/notebooks';
@@ -678,7 +714,14 @@ function App() {
                 setCurrentPage('agents');
                 window.history.pushState({ page: 'agents' }, '', '/app');
             }
-        }} initialDesignerAgentId={initialDesignerAgentId} showSkillsPanel={showSkillsPanel} onCloseSkillsPanel={() => setShowSkillsPanel(false)} showEmailKB={showEmailKB} onCloseEmailKB={() => setShowEmailKB(false)} showNotebooks={showNotebooks && user?.featureFlags?.notebooks !== false} initialNotebookId={initialNotebookId} onNotebookChange={(id) => {
+        }} initialDesignerAgentId={initialDesignerAgentId} showAITasks={showAITasks} onCloseAITasks={() => {
+            setShowAITasks(false);
+            setInitialAITaskId(null);
+            if (window.location.pathname.startsWith('/app/ai-tasks')) {
+                setCurrentPage('agents');
+                window.history.pushState({ page: 'agents' }, '', '/app');
+            }
+        }} initialAITaskId={initialAITaskId} showSkillsPanel={showSkillsPanel} onCloseSkillsPanel={() => setShowSkillsPanel(false)} showEmailKB={showEmailKB} onCloseEmailKB={() => setShowEmailKB(false)} showNotebooks={showNotebooks && user?.featureFlags?.notebooks !== false} initialNotebookId={initialNotebookId} onNotebookChange={(id) => {
             setInitialNotebookId(id);
             const path = id ? `/app/notebooks/${id}` : '/app/notebooks';
             window.history.replaceState({ page: 'notebooks', notebookId: id }, '', path);

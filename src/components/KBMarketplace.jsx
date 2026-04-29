@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { ChevronDown, ChevronUp, X, Search, Heart, EyeOff, Pencil, BookOpen, Globe, Mail, FileText, Database, Plus } from 'lucide-react';
 import { useTranslation } from '../hooks/useTranslation';
 import scopedStorage from '../utils/scopedStorage';
@@ -128,18 +128,35 @@ const KBMarketplace = ({
     const [sortBy, setSortBy] = useState('top');
     const [recents, setRecents] = useState(() => scopedStorage.getJSON('kb_marketplace_recents', []));
 
+    // Only show categories that contain at least one KB the user can see.
+    const usedCategoryIds = useMemo(() => {
+        const ids = new Set();
+        for (const kb of kbs) if (kb.category_id) ids.add(kb.category_id);
+        return ids;
+    }, [kbs]);
+
     const CATEGORIES = useMemo(() => {
         const before = STATIC_CATEGORIES_BEFORE_KEYS.map(c => ({ key: c.key, label: t(c.tKey) || c.key }));
         const after = STATIC_CATEGORIES_AFTER_KEYS.map(c => ({ key: c.key, label: t(c.tKey) || c.key }));
-        const dynamicCats = categories.map(c => ({ key: `cat_${c.id}`, label: `${c.icon || ''} ${c.name}`.trim() }));
+        const dynamicCats = categories
+            .filter(c => usedCategoryIds.has(c.id))
+            .map(c => ({ key: `cat_${c.id}`, label: `${c.icon || ''} ${c.name}`.trim() }));
         return [...before, ...dynamicCats, ...after];
-    }, [categories, t]);
+    }, [categories, usedCategoryIds, t]);
 
     const TYPE_MAP = useMemo(() => {
         const map = {};
         categories.forEach(c => { map[`cat_${c.id}`] = c.name; });
         return map;
     }, [categories]);
+
+    // If the active category chip disappears (its category no longer has any KBs),
+    // fall back to 'all' so the user isn't stuck on an empty filter.
+    useEffect(() => {
+        if (!CATEGORIES.find(c => c.key === activeCategory)) {
+            setActiveCategory('all');
+        }
+    }, [CATEGORIES, activeCategory]);
 
     const handleSelect = useCallback((kb) => {
         const r = scopedStorage.getJSON('kb_marketplace_recents', []);

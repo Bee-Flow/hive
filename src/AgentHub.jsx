@@ -16,6 +16,7 @@ import DirectChatWelcome from './components/DirectChatWelcome';
 import ProjectModal from './components/ProjectModal';
 import AdvancedSettings from './pages/AdvancedSettings';
 import AgentDesigner from './components/admin/AgentDesigner';
+import AITasksDesigner from './components/admin/AITasksDesigner';
 import SkillsPanel from './components/SkillsPanel';
 import EmailKBSettings from './components/EmailKBSettings';
 import NotebooksPage from './pages/NotebooksPage';
@@ -32,6 +33,7 @@ const AgentHub = ({
     initialAgentId = null, initialConversationId = null, initialDirectConvId = null,
     showSettings = false, onCloseSettings,
     showAgentDesigner = false, onCloseAgentDesigner, initialDesignerAgentId = null,
+    showAITasks = false, onCloseAITasks, initialAITaskId = null,
     showSkillsPanel = false, onCloseSkillsPanel,
     showEmailKB = false, onCloseEmailKB,
     // Notebooks rendered inline (previously a standalone page at App level).
@@ -403,11 +405,11 @@ const AgentHub = ({
     // Close KB views when the user navigates to a chat (agent or direct).
     // Mirrors how the agent marketplace closes itself in handleSelectAgent etc.
     useEffect(() => {
-        if (showMarketplace || showSettings || showAgentDesigner || showSkillsPanel || showEmailKB) {
+        if (showMarketplace || showSettings || showAgentDesigner || showSkillsPanel || showEmailKB || showAITasks) {
             setShowKBStore(false);
             setActiveKBId(null);
         }
-    }, [showMarketplace, showSettings, showAgentDesigner, showSkillsPanel, showEmailKB]);
+    }, [showMarketplace, showSettings, showAgentDesigner, showSkillsPanel, showEmailKB, showAITasks]);
 
     // Persist KB favourites per-user via scopedStorage
     useEffect(() => {
@@ -653,6 +655,7 @@ const AgentHub = ({
         setDirectChatMode(false);
         if (onCloseSettings) onCloseSettings();
         if (onCloseAgentDesigner) onCloseAgentDesigner();
+        if (onCloseAITasks) onCloseAITasks();
 
         // Auto-start new chat — reset notebook only when switching agents
         setCurrentConversation({ id: null, title: 'New Chat', messages: [] });
@@ -988,6 +991,7 @@ const AgentHub = ({
         setActiveKBId(null);
         if (onCloseSettings) onCloseSettings();
         if (onCloseAgentDesigner) onCloseAgentDesigner();
+        if (onCloseAITasks) onCloseAITasks();
         scopedStorage.setItem('lastUsedMode', 'direct-chat');
         loadDirectConversations();
         loadModelTiers();
@@ -1050,6 +1054,7 @@ const AgentHub = ({
     const handleNewChat = () => {
         if (onCloseSettings) onCloseSettings();
         if (onCloseAgentDesigner) onCloseAgentDesigner();
+        if (onCloseAITasks) onCloseAITasks();
         if (onCloseSkillsPanel) onCloseSkillsPanel();
         if (onCloseEmailKB) onCloseEmailKB();
         setShowMarketplace(false);
@@ -1300,6 +1305,7 @@ const AgentHub = ({
                     // Close any open overlays
                     if (onCloseSettings) onCloseSettings();
                     if (onCloseAgentDesigner) onCloseAgentDesigner();
+                    if (onCloseAITasks) onCloseAITasks();
                     if (onCloseSkillsPanel) onCloseSkillsPanel();
         if (onCloseEmailKB) onCloseEmailKB();
                     setShowMarketplace(false);
@@ -1320,9 +1326,9 @@ const AgentHub = ({
                 }}
                 onDeleteConversation={handleDeleteConversation}
                 onSelectAgent={handleSelectAgent}
-                onOpenMarketplace={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); setShowKBStore(false); setActiveKBId(null); setShowMarketplace(true); }}
-                onOpenKBStore={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); setShowMarketplace(false); setActiveKBId(null); setShowKBStore(true); }}
-                onOpenSearch={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); setShowSearch(true); }}
+                onOpenMarketplace={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); if (onCloseAITasks) onCloseAITasks(); setShowKBStore(false); setActiveKBId(null); setShowMarketplace(true); }}
+                onOpenKBStore={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); if (onCloseAITasks) onCloseAITasks(); setShowMarketplace(false); setActiveKBId(null); setShowKBStore(true); }}
+                onOpenSearch={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); if (onCloseAITasks) onCloseAITasks(); setShowSearch(true); }}
                 hasPermission={hasPermission}
                 user={user}
                 onLogout={onLogout}
@@ -1330,6 +1336,7 @@ const AgentHub = ({
                 currentPage={currentPage}
                 showSettings={showSettings}
                 showAgentDesigner={showAgentDesigner}
+                showAITasks={showAITasks}
                 showSkillsPanel={showSkillsPanel}
                 showEmailKB={showEmailKB}
                 onDirectChat={handleDirectChat}
@@ -1339,6 +1346,7 @@ const AgentHub = ({
                     // Close any open overlays
                     if (onCloseSettings) onCloseSettings();
                     if (onCloseAgentDesigner) onCloseAgentDesigner();
+                    if (onCloseAITasks) onCloseAITasks();
                     if (onCloseSkillsPanel) onCloseSkillsPanel();
         if (onCloseEmailKB) onCloseEmailKB();
                     setShowMarketplace(false);
@@ -1376,6 +1384,7 @@ const AgentHub = ({
                     // Close any open overlays
                     if (onCloseSettings) onCloseSettings();
                     if (onCloseAgentDesigner) onCloseAgentDesigner();
+                    if (onCloseAITasks) onCloseAITasks();
                     if (onCloseSkillsPanel) onCloseSkillsPanel();
         if (onCloseEmailKB) onCloseEmailKB();
                     setShowMarketplace(false);
@@ -1427,6 +1436,9 @@ const AgentHub = ({
                         const perms = user?.permissions || [];
                         return perms.includes('all') || perms.includes(perm);
                     }} initialAgentId={initialDesignerAgentId} onClose={onCloseAgentDesigner} />
+                ) : showAITasks ? (
+                    /* AI Tasks designer rendered inline in conversation area */
+                    <AITasksDesigner initialTaskId={initialAITaskId} onClose={onCloseAITasks} />
                 ) : showSkillsPanel ? (
                     /* Skills panel rendered inline in conversation area */
                     <SkillsPanel
@@ -1829,7 +1841,7 @@ const AgentHub = ({
                             Select an agent from the marketplace to start chatting, or create your own custom AI assistant.
                         </p>
                         <button
-                            onClick={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); setShowMarketplace(true); }}
+                            onClick={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); if (onCloseAITasks) onCloseAITasks(); setShowMarketplace(true); }}
                             className="flex items-center gap-2 px-6 py-3 bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-white rounded-xl font-medium shadow-lg transition-all hover:scale-105"
                         >
                             <Sparkles className="w-5 h-5" />
