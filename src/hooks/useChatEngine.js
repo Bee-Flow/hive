@@ -284,28 +284,71 @@ export default function useChatEngine({
                         : m
                 ));
                 break;
-            // Forward the inner deepResearch events as a single bag on the
-            // message so the SwarmTimeline can render whichever sub-state
-            // the user cares about (sources count, sub-question progress).
-            // We don't unpack each event type here — keeps the engine slim.
-            case 'deep_research_research_plan':
-            case 'deep_research_research_summary':
-            case 'deep_research_outline_ready':
-            case 'deep_research_citations_registered':
-                setMessages(prev => prev.map(m =>
-                    m.id === assistantMsgId
-                        ? {
-                            ...m,
-                            swarm: {
-                                ...(m.swarm || {}),
-                                deepResearch: {
-                                    ...(m.swarm?.deepResearch || {}),
-                                    [event.replace(/^deep_research_/, '')]: data,
-                                },
-                            },
+            // Per-worker streaming events — researcher tokens flow into
+            // their own card; the synthesiser sends ordinary `content` so
+            // its tokens show up in the assistant message body directly.
+            case 'swarm_worker_started':
+                setMessages(prev => prev.map(m => {
+                    if (m.id !== assistantMsgId) return m;
+                    const workers = { ...(m.swarm?.workers || {}) };
+                    workers[data.workerId] = {
+                        workerId: data.workerId,
+                        role: data.role,
+                        name: data.name,
+                        tier: data.tier,
+                        modelId: data.modelId,
+                        status: 'running',
+                        content: '',
+                        tools: [],
+                        startedAt: Date.now(),
+                    };
+                    return { ...m, swarm: { ...(m.swarm || {}), workers } };
+                }));
+                break;
+            case 'swarm_worker_content':
+                setMessages(prev => prev.map(m => {
+                    if (m.id !== assistantMsgId) return m;
+                    const workers = { ...(m.swarm?.workers || {}) };
+                    const w = workers[data.workerId];
+                    if (!w) return m;
+                    workers[data.workerId] = { ...w, content: (w.content || '') + (data.delta || '') };
+                    return { ...m, swarm: { ...(m.swarm || {}), workers } };
+                }));
+                break;
+            case 'swarm_worker_tool':
+                setMessages(prev => prev.map(m => {
+                    if (m.id !== assistantMsgId) return m;
+                    const workers = { ...(m.swarm?.workers || {}) };
+                    const w = workers[data.workerId];
+                    if (!w) return m;
+                    const tools = Array.isArray(w.tools) ? [...w.tools] : [];
+                    if (data.status === 'start') {
+                        tools.push({ name: data.toolName, status: 'running', at: Date.now() });
+                    } else {
+                        const idx = [...tools].reverse().findIndex(t => t.name === data.toolName && t.status === 'running');
+                        if (idx >= 0) {
+                            const realIdx = tools.length - 1 - idx;
+                            tools[realIdx] = { ...tools[realIdx], status: data.status };
                         }
-                        : m
-                ));
+                    }
+                    workers[data.workerId] = { ...w, tools };
+                    return { ...m, swarm: { ...(m.swarm || {}), workers } };
+                }));
+                break;
+            case 'swarm_worker_completed':
+                setMessages(prev => prev.map(m => {
+                    if (m.id !== assistantMsgId) return m;
+                    const workers = { ...(m.swarm?.workers || {}) };
+                    const w = workers[data.workerId];
+                    if (!w) return m;
+                    workers[data.workerId] = {
+                        ...w,
+                        status: data.status || 'done',
+                        durationMs: data.durationMs || null,
+                        error: data.error || null,
+                    };
+                    return { ...m, swarm: { ...(m.swarm || {}), workers } };
+                }));
                 break;
 
             case 'session_skills_bootstrap_started':
