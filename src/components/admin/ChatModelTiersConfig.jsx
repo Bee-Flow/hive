@@ -401,14 +401,14 @@ const SearchableModelSelect = ({ value, label, groups, getModelMeta, onChange })
 const ChatModelTiersConfig = ({ allModels = [] }) => {
     const [config, setConfig] = useState({
         fast: { modelId: '', label: 'Fast' },
-        standard: { modelId: '', label: 'Standard (Direct)' },
+        standard: { modelId: '', label: 'Flow (Direct)' },
         thinking: { modelId: '', label: 'Thinking' },
         writer: { modelId: '', label: 'Writer' },
         pro: { modelId: '', label: 'Deep Thinking' }
     });
     const [euConfig, setEuConfig] = useState({
         fast: { modelId: '', label: 'Fast' },
-        standard: { modelId: '', label: 'Standard (Direct)' },
+        standard: { modelId: '', label: 'Flow (Direct)' },
         thinking: { modelId: '', label: 'Thinking' },
         writer: { modelId: '', label: 'Writer' },
         pro: { modelId: '', label: 'Deep Thinking' }

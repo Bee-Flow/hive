@@ -140,7 +140,7 @@ export const getToolIcon = (name) => {
         'sql_query': '🗄️', 'file_read': '📂', 'document_reader': '📄',
         'gmail_tool': '📧', 'calendar_tool': '📅',
         'sequentialthinking': '🧠', 'api_fetcher': '🔗',
-        'activate_skill': '🧩', 'activate_session_skill': '🧩', 'publish_session_skill_to_library': '⭐',
+        'activate_skill': '🧩', 'activate_session_skill': '🐝', 'complete_session_skill': '✅', 'publish_session_skill_to_library': '⭐',
     };
     return icons[name] || '🔧';
 };
