@@ -1,18 +1,27 @@
 import React, { useMemo, useRef, useEffect } from 'react';
-import { Check, Loader2, Lock, Puzzle } from 'lucide-react';
+import { Check, Loader2, Lock } from 'lucide-react';
 import { classifySessionSkill, deriveCompletedSkillIds } from '../../skills/sessionSkillState';
 
 /**
- * SessionSkillsTimeline — inline pipeline progress card that sits above the
- * assistant message body during a Standard-tier direct chat. Replaces the
- * static SessionSkillsBootstrap card while subsuming its "Created N skills"
- * headline (when the message carries `bootstrap` info).
+ * SessionSkillsTimeline — inline Flow progress card that sits above the
+ * assistant message body during a Flow-tier direct chat. Renders the
+ * "Created N stages" headline (when the message carries `bootstrap` info)
+ * plus a stepper of stage tiles and per-stage completion summaries.
  *
- * State per node comes from the v3 helpers (classifySessionSkill /
- * deriveCompletedSkillIds). When a node's state changes between renders we
- * briefly re-mount it so the Tailwind animate-in classes fire — the user
- * sees the pipeline tick forward live instead of just snapping.
+ * State per node comes from classifySessionSkill / deriveCompletedSkillIds.
+ * When a node's state changes between renders we briefly re-mount it so the
+ * Tailwind animate-in classes fire — the user sees the Flow tick forward
+ * live instead of just snapping.
  */
+
+const TIER_ICON = {
+    auto:     '🔀',
+    fast:     '⚡',
+    standard: '🐝',
+    thinking: '🧠',
+    writer:   '✍️',
+    pro:      '✨',
+};
 
 const STATE_ICON = {
     done: Check,
@@ -48,13 +57,18 @@ function SkillNode({ skill, state, sessionSkillsById }) {
             .map(id => sessionSkillsById.get(id).name)
         : [];
 
+    const tierIcon = skill.tier ? TIER_ICON[skill.tier] : null;
+    const tierTitle = skill.tier ? `Runs on ${skill.tier} tier` : null;
+    const baseTitle = state === 'waiting' && unmetDeps.length ? `Waiting on: ${unmetDeps.join(', ')}` : undefined;
+    const titleAttr = [baseTitle, tierTitle].filter(Boolean).join(' · ') || undefined;
+
     return (
         <div
             // Re-keying via the state token forces a fresh mount so the
             // animate-in classes get a chance to play on every transition.
             key={`${skill.id}-${state}`}
             className={`flex flex-col gap-1 px-2.5 py-2 rounded-lg border min-w-0 transition-colors ${STATE_TILE_CLASS[state]} ${justChanged ? 'animate-in fade-in zoom-in-95 duration-300' : ''}`}
-            title={state === 'waiting' && unmetDeps.length ? `Waiting on: ${unmetDeps.join(', ')}` : undefined}
+            title={titleAttr}
         >
             <div className="flex items-center gap-1.5">
                 <span className="w-5 h-5 rounded-md flex items-center justify-center bg-white/40 text-[10px] font-bold flex-shrink-0">
@@ -65,6 +79,14 @@ function SkillNode({ skill, state, sessionSkillsById }) {
                 <span className="text-[10px] font-semibold uppercase tracking-wide opacity-70">
                     {state === 'done' ? 'done' : state === 'active' ? 'active' : state === 'waiting' ? 'waiting' : 'ready'}
                 </span>
+                {tierIcon && (
+                    <span
+                        className="ml-auto text-[10px] leading-none flex-shrink-0 opacity-80"
+                        aria-label={tierTitle}
+                    >
+                        {tierIcon}
+                    </span>
+                )}
             </div>
             <div className={`text-[11.5px] leading-tight truncate ${STATE_LABEL_CLASS[state]}`}>
                 {skill.name}
@@ -129,30 +151,31 @@ export default function SessionSkillsTimeline({
             {/* Header — bootstrap intro OR a compact summary */}
             <div className="flex items-center gap-2 px-3 pt-2.5">
                 <span
-                    className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
+                    className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 text-base leading-none"
                     style={{ background: 'rgba(245,158,11,.15)' }}
+                    aria-hidden="true"
                 >
                     {isPending
                         ? <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
-                        : <Puzzle className="w-3.5 h-3.5 text-amber-500" />}
+                        : '🐝'}
                 </span>
                 <div className="flex-1 min-w-0">
                     {bootstrap ? (
                         <>
                             <div className="text-[12.5px] font-semibold leading-tight" style={{ color: 'var(--text-primary)' }}>
                                 {isPending
-                                    ? 'Preparing chat-local skills…'
-                                    : `Created ${ordered.length} chat-local skill${ordered.length === 1 ? '' : 's'} for this conversation`}
+                                    ? 'Preparing Flow stages…'
+                                    : `Created ${ordered.length} stage${ordered.length === 1 ? '' : 's'} for this conversation`}
                             </div>
                             {!isPending && (
                                 <div className="text-[10.5px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                                    Steps activate in order; each one updates live below.
+                                    Stages activate in order; each one updates live below.
                                 </div>
                             )}
                         </>
                     ) : (
                         <div className="text-[12.5px] font-semibold leading-tight" style={{ color: 'var(--text-primary)' }}>
-                            Pipeline · {doneCount === total ? `Done ${total}/${total}` : `${doneCount}/${total} done`}
+                            Flow · {doneCount === total ? `Done ${total}/${total}` : `${doneCount}/${total} done`}
                         </div>
                     )}
                 </div>

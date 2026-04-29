@@ -1,3 +1,8 @@
+/**
+ * @deprecated Superseded by ProjectsPage + ProjectDetailPage (rendered inline in
+ * the main view, no longer a modal overlay). Kept temporarily so we can verify
+ * the new flow before deletion. Not imported by AgentHub anymore.
+ */
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Plus, Trash2, Users, UserPlus, FolderOpen, Palette, Share2, Database, ChevronDown, ChevronRight, FileText, Globe, Upload, Paperclip, Brain } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';

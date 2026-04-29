@@ -589,8 +589,9 @@ const Sidebar = ({
                     { label: t('sidebar.new_chat') || 'New Chat', icon: PenLine, onClick: onDirectChat, active: directChatMode && !selectedAgent },
                     { label: t('sidebar.agents') || 'Agents', icon: Store, onClick: onOpenMarketplace, active: currentPage === 'marketplace' },
                     ...(onOpenKBStore ? [{ label: t('sidebar.knowledge_bases') || 'Knowledge Bases', icon: BookOpen, onClick: onOpenKBStore, active: currentPage === 'knowledgeBases' }] : []),
+                    { label: t('sidebar.ai_tasks') || 'AI Tasks', icon: Bot, onClick: () => onNavigate && onNavigate('aiTasks'), active: showAITasks, badge: activeAITaskCount },
                     { label: t('sidebar.search'), icon: Search, onClick: onOpenSearch, active: false, kbd: (typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)) ? '⌘K' : 'Ctrl+K' },
-                ].map(({ label, icon: Icon, onClick, active, primary, beta, kbd }) => (
+                ].map(({ label, icon: Icon, onClick, active, primary, beta, kbd, badge }) => (
                     <button
                         key={label}
                         onClick={onClick}
@@ -606,6 +607,14 @@ const Sidebar = ({
                         <Icon className={`${isOpen ? 'w-4 h-4' : 'w-5 h-5'} ${isOpen ? (active ? 'text-[var(--accent-primary)]' : 'text-[var(--text-tertiary)]') : ''}`} strokeWidth={active || primary ? 2.25 : 1.75} />
                         {isOpen && <span className={`text-[13px] ${active ? 'font-semibold text-black' : 'text-black'}`}>{label}</span>}
                         {isOpen && kbd && <kbd className="ml-auto inline-flex items-center px-1.5 py-0.5 rounded-md bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] text-[10px] font-medium text-[var(--text-tertiary)] group-hover:text-[var(--text-secondary)] transition-colors">{kbd}</kbd>}
+                        {isOpen && typeof badge === 'number' && badge > 0 && (
+                            <span
+                                className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-md tabular-nums"
+                                style={{ background: 'rgba(139,92,246,0.1)', color: '#8b5cf6' }}
+                            >
+                                {badge}
+                            </span>
+                        )}
                         {isOpen && primary === undefined && beta && <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>}
                     </button>
                 ))}
@@ -752,31 +761,6 @@ const Sidebar = ({
                 </div>
             )}
 
-            {/* ── AI Tasks ── */}
-            {isOpen && (
-                <div className="px-1.5 pb-1">
-                    <button
-                        onClick={() => onNavigate && onNavigate('aiTasks')}
-                        className={`${ROW} ${showAITasks ? ROW_ACTIVE : ROW_IDLE}`}
-                        data-testid="sidebar-ai-tasks"
-                    >
-                        {showAITasks && <div className={ACCENT_BAR} />}
-                        <Bot className={`w-4 h-4 ${showAITasks ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                        <span className={`text-[13px] ${showAITasks ? TEXT_ACTIVE : TEXT_IDLE}`}>
-                            {t('sidebar.ai_tasks') || 'AI Tasks'}
-                        </span>
-                        {activeAITaskCount > 0 && (
-                            <span
-                                className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-md tabular-nums"
-                                style={{ background: 'rgba(139,92,246,0.1)', color: '#8b5cf6' }}
-                            >
-                                {activeAITaskCount}
-                            </span>
-                        )}
-                    </button>
-                </div>
-            )}
-            {isOpen && <div className="mx-3 my-0.5 border-t border-[var(--border-subtle)]" />}
 
             {/* ── Recent Chats ── */}
             <div className={`flex flex-col ${isOpen ? '' : 'hidden'}`}>

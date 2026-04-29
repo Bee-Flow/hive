@@ -1,23 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-
-const TIER_META = {
-    auto: { icon: '🔀', label: 'Auto', desc: 'Optimal choice', color: '#6366f1' },
-    fast: { icon: '⚡', label: 'Fast', desc: 'Quick answers', color: '#10b981' },
-    standard: { icon: '🧩', label: 'Standard', desc: 'Direct chat with session skills', color: '#0ea5e9' },
-    thinking: { icon: '🧠', label: 'Think', desc: 'Complex problems', color: '#8b5cf6' },
-    writer: { icon: '✍️', label: 'Write', desc: 'Long-form content', color: '#ec4899' },
-    pro: { icon: '✨', label: 'Deep Thinking', desc: 'Advanced reasoning', color: '#f59e0b' }
-};
-
-// Build a TIER_META entry from a custom tier config the server returned.
-function customTierMeta(key, cfg) {
-    return {
-        icon: cfg?.icon || '✨',
-        label: cfg?.label || key.replace(/^custom:/, ''),
-        desc: cfg?.description || 'Custom tier',
-        color: '#eab308',
-    };
-}
+import { TIER_META, customTierMeta } from './tierMeta';
 
 const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection = 'up' }) => {
     const [open, setOpen] = useState(false);

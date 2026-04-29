@@ -13,7 +13,8 @@ import MessageItem from './components/chat/MessageItem';
 import MemoryPanel from './components/MemoryPanel';
 import WorkspaceNotebook from './components/WorkspaceNotebook';
 import DirectChatWelcome from './components/DirectChatWelcome';
-import ProjectModal from './components/ProjectModal';
+import ProjectsPage from './components/ProjectsPage';
+import ProjectDetailPage from './components/ProjectDetailPage';
 import AdvancedSettings from './pages/AdvancedSettings';
 import AgentDesigner from './components/admin/AgentDesigner';
 import AITasksDesigner from './components/admin/AITasksDesigner';
@@ -97,8 +98,9 @@ const AgentHub = ({
     // Projects State
     const [projects, setProjects] = useState([]);
     const [activeProject, setActiveProject] = useState(null);
-    const [showProjectModal, setShowProjectModal] = useState(false);
-    const [editingProject, setEditingProject] = useState(null);
+    const [showProjectsStore, setShowProjectsStore] = useState(false);
+    // null = closed, '' = create-new, otherwise an existing project id
+    const [activeProjectId, setActiveProjectId] = useState(null);
 
     // Conversation Labels State
     const [conversationLabels, setConversationLabels] = useState([]);
@@ -113,6 +115,8 @@ const AgentHub = ({
     const [activeSkillIds, setActiveSkillIds] = useState([]);
     const [directSessionSkills, setDirectSessionSkills] = useState([]);
     const [directActivatedSessionSkillIds, setDirectActivatedSessionSkillIds] = useState([]);
+    // Knowledge bases attached to the current direct chat (per-session, not persisted).
+    const [directChatKBIds, setDirectChatKBIds] = useState([]);
     const [directCompletedSessionSkillIds, setDirectCompletedSessionSkillIds] = useState([]);
 
     // Hydrate user-scoped preferences once the user id is known.
@@ -162,6 +166,7 @@ const AgentHub = ({
             getExtraPayload: () => ({
                 ...(Array.isArray(directSessionSkills) && directSessionSkills.length > 0 ? { sessionSkills: directSessionSkills } : {}),
                 ...(Array.isArray(directActivatedSessionSkillIds) && directActivatedSessionSkillIds.length > 0 ? { activatedSessionSkillIds: directActivatedSessionSkillIds } : {}),
+                ...(Array.isArray(directChatKBIds) && directChatKBIds.length > 0 ? { knowledgeBaseIds: directChatKBIds } : {}),
             }),
         } : undefined,
         activeProject,
@@ -402,12 +407,20 @@ const AgentHub = ({
         if (showKBStore) refreshKBs();
     }, [showKBStore, refreshKBs]);
 
-    // Close KB views when the user navigates to a chat (agent or direct).
+    // Lazy-load KBs the first time direct chat is active, so the input-area
+    // picker has data to show without forcing the user to open the store first.
+    useEffect(() => {
+        if (directChatMode && !kbsLoadedOnce) refreshKBs();
+    }, [directChatMode, kbsLoadedOnce, refreshKBs]);
+
+    // Close KB and Projects views when the user navigates to a chat (agent or direct).
     // Mirrors how the agent marketplace closes itself in handleSelectAgent etc.
     useEffect(() => {
         if (showMarketplace || showSettings || showAgentDesigner || showSkillsPanel || showEmailKB || showAITasks) {
             setShowKBStore(false);
             setActiveKBId(null);
+            setShowProjectsStore(false);
+            setActiveProjectId(null);
         }
     }, [showMarketplace, showSettings, showAgentDesigner, showSkillsPanel, showEmailKB, showAITasks]);
 
@@ -652,6 +665,8 @@ const AgentHub = ({
         setShowMarketplace(false);
         setShowKBStore(false);
         setActiveKBId(null);
+        setShowProjectsStore(false);
+        setActiveProjectId(null);
         setDirectChatMode(false);
         if (onCloseSettings) onCloseSettings();
         if (onCloseAgentDesigner) onCloseAgentDesigner();
@@ -989,6 +1004,8 @@ const AgentHub = ({
         setShowMarketplace(false);
         setShowKBStore(false);
         setActiveKBId(null);
+        setShowProjectsStore(false);
+        setActiveProjectId(null);
         if (onCloseSettings) onCloseSettings();
         if (onCloseAgentDesigner) onCloseAgentDesigner();
         if (onCloseAITasks) onCloseAITasks();
@@ -1060,6 +1077,8 @@ const AgentHub = ({
         setShowMarketplace(false);
         setShowKBStore(false);
         setActiveKBId(null);
+        setShowProjectsStore(false);
+        setActiveProjectId(null);
         if (directChatMode) {
             setCurrentDirectConversation(null);
             setMessages([]);
@@ -1311,6 +1330,8 @@ const AgentHub = ({
                     setShowMarketplace(false);
                     setShowKBStore(false);
                     setActiveKBId(null);
+                    setShowProjectsStore(false);
+                    setActiveProjectId(null);
                     // Switch agent if the conversation belongs to a different one
                     if (conv.agent_id && (!selectedAgent || selectedAgent.id !== conv.agent_id)) {
                         const agent = agents.find(a => a.id === conv.agent_id);
@@ -1326,8 +1347,8 @@ const AgentHub = ({
                 }}
                 onDeleteConversation={handleDeleteConversation}
                 onSelectAgent={handleSelectAgent}
-                onOpenMarketplace={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); if (onCloseAITasks) onCloseAITasks(); setShowKBStore(false); setActiveKBId(null); setShowMarketplace(true); }}
-                onOpenKBStore={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); if (onCloseAITasks) onCloseAITasks(); setShowMarketplace(false); setActiveKBId(null); setShowKBStore(true); }}
+                onOpenMarketplace={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); if (onCloseAITasks) onCloseAITasks(); setShowKBStore(false); setActiveKBId(null); setShowProjectsStore(false); setActiveProjectId(null); setShowMarketplace(true); }}
+                onOpenKBStore={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); if (onCloseAITasks) onCloseAITasks(); setShowMarketplace(false); setActiveKBId(null); setShowProjectsStore(false); setActiveProjectId(null); setShowKBStore(true); }}
                 onOpenSearch={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); if (onCloseAITasks) onCloseAITasks(); setShowSearch(true); }}
                 hasPermission={hasPermission}
                 user={user}
@@ -1352,6 +1373,8 @@ const AgentHub = ({
                     setShowMarketplace(false);
                     setShowKBStore(false);
                     setActiveKBId(null);
+                    setShowProjectsStore(false);
+                    setActiveProjectId(null);
                     // Ensure we're in direct chat mode
                     if (!directChatMode) {
                         setDirectChatMode(true);
@@ -1368,8 +1391,28 @@ const AgentHub = ({
                 projects={projects}
                 activeProject={activeProject}
                 onSelectProject={(p) => setActiveProject(p)}
-                onCreateProject={() => { setEditingProject(null); setShowProjectModal(true); }}
-                onEditProject={(p) => { setEditingProject(p); setShowProjectModal(true); }}
+                onCreateProject={() => {
+                    if (onCloseSettings) onCloseSettings();
+                    if (onCloseAgentDesigner) onCloseAgentDesigner();
+                    if (onCloseAITasks) onCloseAITasks();
+                    if (onCloseSkillsPanel) onCloseSkillsPanel();
+                    if (onCloseEmailKB) onCloseEmailKB();
+                    setShowMarketplace(false);
+                    setShowKBStore(false); setActiveKBId(null);
+                    setShowProjectsStore(true);
+                    setActiveProjectId('');
+                }}
+                onEditProject={(p) => {
+                    if (onCloseSettings) onCloseSettings();
+                    if (onCloseAgentDesigner) onCloseAgentDesigner();
+                    if (onCloseAITasks) onCloseAITasks();
+                    if (onCloseSkillsPanel) onCloseSkillsPanel();
+                    if (onCloseEmailKB) onCloseEmailKB();
+                    setShowMarketplace(false);
+                    setShowKBStore(false); setActiveKBId(null);
+                    setShowProjectsStore(true);
+                    setActiveProjectId(p.id);
+                }}
                 onMoveToProject={handleMoveToProject}
                 onRenameConversation={handleRenameConversation}
                 onPinConversation={handlePinConversation}
@@ -1487,6 +1530,34 @@ const AgentHub = ({
                         onToggleFavorite={handleToggleKBFavorite}
                         onClose={() => setShowKBStore(false)}
                         user={user}
+                    />
+                ) : (showProjectsStore && activeProjectId !== null) ? (
+                    /* Project detail / create page */
+                    <ProjectDetailPage
+                        projectId={activeProjectId || null}
+                        user={user}
+                        onClose={() => setActiveProjectId(null)}
+                        onSaved={(saved) => {
+                            loadProjects();
+                            // After creating a new project, switch to its edit view.
+                            if (activeProjectId === '' && saved?.id) {
+                                setActiveProjectId(saved.id);
+                            }
+                        }}
+                        onDeleted={(id) => {
+                            loadProjects();
+                            if (activeProject?.id === id) setActiveProject(null);
+                            setActiveProjectId(null);
+                        }}
+                    />
+                ) : showProjectsStore ? (
+                    /* Projects list / browse */
+                    <ProjectsPage
+                        projects={projects}
+                        user={user}
+                        onSelectProject={(p) => setActiveProjectId(p.id)}
+                        onCreateProject={() => setActiveProjectId('')}
+                        onClose={() => setShowProjectsStore(false)}
                     />
                 ) : selectedAgent ? (
                     <>
@@ -1749,6 +1820,9 @@ const AgentHub = ({
                                                     onToggleSkill={handleToggleSkill}
                                                     messages={messages}
                                                     onVoiceTurnComplete={handleVoiceTurnComplete}
+                                                    availableKBs={kbs}
+                                                    selectedKBIds={directChatKBIds}
+                                                    onChangeKBIds={setDirectChatKBIds}
                                                 />
                                             </DirectChatWelcome>
                                         </div>
@@ -1799,6 +1873,9 @@ const AgentHub = ({
                                             onToggleSkill={handleToggleSkill}
                                             messages={messages}
                                             onVoiceTurnComplete={handleVoiceTurnComplete}
+                                            availableKBs={kbs}
+                                            selectedKBIds={directChatKBIds}
+                                            onChangeKBIds={setDirectChatKBIds}
                                         />
                                     </div>
                                 )}
@@ -1875,15 +1952,6 @@ const AgentHub = ({
                     />
                 )
             }
-            {/* Project Modal */}
-            {showProjectModal && (
-                <ProjectModal
-                    project={editingProject}
-                    onClose={() => { setShowProjectModal(false); setEditingProject(null); }}
-                    onSaved={() => loadProjects()}
-                    onDeleted={() => { loadProjects(); if (activeProject?.id === editingProject?.id) setActiveProject(null); }}
-                />
-            )}
         </div >
     );
 };

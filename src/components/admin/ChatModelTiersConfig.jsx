@@ -90,7 +90,7 @@ const MODEL_META = {
 
 const TIERS = [
     { key: 'fast', icon: '⚡', label: 'Fast', desc: 'Quick responses for simple questions' },
-    { key: 'standard', icon: '🧩', label: 'Standard (Direct)', desc: 'Direct chat tier with per-chat session skills' },
+    { key: 'standard', icon: '🐝', label: 'Flow (Direct)', desc: 'Direct chat tier with per-chat orchestrated stages' },
     { key: 'thinking', icon: '🧠', label: 'Thinking', desc: 'Complex reasoning and analysis' },
     { key: 'writer', icon: '✍️', label: 'Writer', desc: 'Long-form content and reports' },
     { key: 'pro', icon: '✨', label: 'Deep Thinking', desc: 'Maximum quality output' }
@@ -422,12 +422,49 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
     const [euMessage, setEuMessage] = useState(null);
     const [expandedTier, setExpandedTier] = useState(null);
     const [expandedCustomId, setExpandedCustomId] = useState(null);
+    const [classifierModel, setClassifierModel] = useState('');
+    const [classifierSaving, setClassifierSaving] = useState(false);
+    const [classifierMessage, setClassifierMessage] = useState(null);
 
     useEffect(() => {
         loadConfig();
         loadEuConfig();
         loadCustomTiers();
+        loadClassifierModel();
     }, []);
+
+    const loadClassifierModel = async () => {
+        try {
+            const res = await authFetch(`${API_BASE}/ai/config/auto-classifier`);
+            if (res.ok) {
+                const data = await res.json();
+                setClassifierModel(typeof data.modelId === 'string' ? data.modelId : '');
+            }
+        } catch (e) { console.error('Failed to load classifier model:', e); }
+    };
+
+    const saveClassifierModel = async (next = classifierModel) => {
+        setClassifierSaving(true);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/config/auto-classifier`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ modelId: next || null }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setClassifierModel(typeof data.modelId === 'string' ? data.modelId : '');
+                setClassifierMessage({ type: 'success', text: 'Classifier model saved' });
+                setTimeout(() => setClassifierMessage(null), 3000);
+            } else {
+                const data = await res.json().catch(() => ({}));
+                setClassifierMessage({ type: 'error', text: data.error || 'Failed to save classifier model' });
+            }
+        } catch (e) {
+            setClassifierMessage({ type: 'error', text: 'Failed to save classifier model' });
+        }
+        setClassifierSaving(false);
+    };
 
     const loadConfig = async () => {
         try {
@@ -690,7 +727,7 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                                     onChange={val => updateFn(tier.key, 'bootstrapModelId', val || '')}
                                 />
                                 <p className="text-[10px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                                    Used once per direct chat to generate the chat-local skill set. Pick a small/fast model (e.g. Haiku) to cut bootstrap cost. Leave empty to reuse the main model.
+                                    Used once per direct chat to plan the conversation's Flow stages. Pick a small/fast model (e.g. Haiku) to cut planning cost. Leave empty to reuse the main model.
                                 </p>
                             </div>
                         );
@@ -1018,6 +1055,56 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                     style={{ background: 'var(--accent-primary)' }}
                 >
                     {saving ? 'Saving...' : 'Save Tier Configuration'}
+                </button>
+            </div>
+
+            {/* Auto-tier Classifier Model */}
+            <div className="p-4 sm:p-6 rounded-xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style={{ background: 'rgba(99, 102, 241, 0.15)' }}>🔀</div>
+                    <div>
+                        <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>Auto-tier Classifier Model</h3>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                            Picks the model used to classify Auto-tier prompts. Choose the cheapest, fastest model — classification only needs ~8 tokens of output. Defaults to the Fast tier model when unset.
+                        </p>
+                    </div>
+                </div>
+
+                {classifierMessage && (
+                    <div className={`mb-4 p-3 rounded-lg text-sm ${classifierMessage.type === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                        {classifierMessage.text}
+                    </div>
+                )}
+
+                <div className="rounded-xl border p-4" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)' }}>
+                    <label className="block text-[11px] font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                        Classifier model
+                    </label>
+                    {(() => {
+                        const selected = chatModels.find(m => m.id === classifierModel);
+                        const display = selected ? getDisplayName(selected) : null;
+                        const label = selected
+                            ? (display !== selected.id ? display : selected.id)
+                            : '— Use Fast tier model —';
+                        return (
+                            <SearchableModelSelect
+                                value={classifierModel || ''}
+                                label={label}
+                                groups={byProvider}
+                                getModelMeta={getModelMeta}
+                                onChange={val => setClassifierModel(val || '')}
+                            />
+                        );
+                    })()}
+                </div>
+
+                <button
+                    onClick={() => saveClassifierModel()}
+                    disabled={classifierSaving}
+                    className="mt-4 px-6 py-2.5 rounded-lg font-medium text-sm transition-all text-white hover:opacity-90 disabled:opacity-50"
+                    style={{ background: 'var(--accent-primary)' }}
+                >
+                    {classifierSaving ? 'Saving...' : 'Save Classifier Model'}
                 </button>
             </div>
 

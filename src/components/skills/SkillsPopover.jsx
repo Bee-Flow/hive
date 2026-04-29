@@ -131,7 +131,7 @@ export default function SkillsPopover({
     const handleRegenerateSessionSkills = async () => {
         if (!directConversationId || regenerating) return;
         if (sessionSkills.length > 0) {
-            const ok = window.confirm('Replace the current chat-local skills with a new set? Activated skills will reset.');
+            const ok = window.confirm('Replace the current Flow stages with a new set? Activated stages will reset.');
             if (!ok) return;
         }
         setRegenerating(true);
@@ -149,7 +149,7 @@ export default function SkillsPopover({
             if (Array.isArray(data.skills)) setSessionSkills(data.skills);
             setExpandedSessionSkillId(null);
         } catch (err) {
-            alert(err.message || 'Failed to regenerate session skills');
+            alert(err.message || 'Failed to regenerate Flow stages');
         } finally {
             setRegenerating(false);
         }
@@ -170,7 +170,7 @@ export default function SkillsPopover({
             if (Array.isArray(data.skills)) setSessionSkills(data.skills);
             if (expandedSessionSkillId === skillId) setExpandedSessionSkillId(null);
         } catch (err) {
-            alert(err.message || 'Failed to delete session skill');
+            alert(err.message || 'Failed to delete Flow stage');
         } finally {
             setDeletingSessionSkillId(null);
         }
@@ -192,7 +192,7 @@ export default function SkillsPopover({
             setImportedSessionSkillIds(prev => prev.includes(skillId) ? prev : [...prev, skillId]);
             await refresh();
         } catch (err) {
-            alert(err.message || 'Failed to import session skill');
+            alert(err.message || 'Failed to import Flow stage');
         } finally {
             setImportingSkillId(null);
         }
@@ -317,7 +317,7 @@ export default function SkillsPopover({
                                 <div className="flex items-center justify-between px-3 pb-1 gap-2">
                                     <div className="flex items-center gap-2 min-w-0">
                                         <div className="text-[11px] font-semibold uppercase tracking-wide truncate" style={{ color: 'var(--text-tertiary)' }}>
-                                            Chat-Local Skills
+                                            Flow Stages
                                         </div>
                                         {sessionProgress.total > 0 && (
                                             <span
@@ -337,7 +337,7 @@ export default function SkillsPopover({
                                             disabled={regenerating}
                                             className="flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded hover:bg-[var(--bg-tertiary)] transition-colors disabled:opacity-60 flex-shrink-0"
                                             style={{ color: 'var(--text-secondary)' }}
-                                            title="Regenerate the chat-local skill set"
+                                            title="Regenerate the Flow stages for this conversation"
                                         >
                                             <RefreshCw size={10} className={regenerating ? 'animate-spin' : ''} />
                                             {regenerating ? 'Regenerating…' : 'Regenerate'}
@@ -346,12 +346,12 @@ export default function SkillsPopover({
                                 </div>
                                 {directConversationId && filteredSessionSkills.length === 0 && (
                                     <div className="px-3 py-2 text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
-                                        No temporary skills yet for this direct chat.
+                                        No Flow stages yet for this direct chat.
                                     </div>
                                 )}
                                 {!directConversationId && (
                                     <div className="px-3 py-2 text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
-                                        Send the first message to generate temporary skills.
+                                        Send the first message to generate Flow stages.
                                     </div>
                                 )}
                                 {directConversationId && filteredSessionSkills.map(skill => {

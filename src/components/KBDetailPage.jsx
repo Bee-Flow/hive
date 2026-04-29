@@ -722,14 +722,14 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                             <>
                                                 <label className="cursor-pointer px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 hover:bg-[var(--bg-tertiary)]" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}>
                                                     <input type="file" accept=".pdf,.txt,.md,.docx,.csv" className="hidden" onChange={ingestFile} disabled={ingesting} />
-                                                    <Paperclip className="w-3.5 h-3.5" /> Upload file
+                                                    <Paperclip className="w-3.5 h-3.5" /> {t('kb_docs.upload_file')}
                                                 </label>
                                                 <button
                                                     onClick={ingestMode === 'url' ? ingestUrl : ingestText}
                                                     disabled={ingesting || (ingestMode === 'text' ? !textContent.trim() : !urlInput.trim())}
                                                     className="px-3 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-50 hover:brightness-110"
                                                     style={{ background: 'var(--accent-primary)' }}
-                                                >{ingesting ? 'Processing…' : 'Add'}</button>
+                                                >{ingesting ? t('kb_docs.processing') : t('kb_docs.add')}</button>
                                             </>
                                         )}
                                     </div>
@@ -740,7 +740,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                             <div>
                                 {docs.length === 0 ? (
                                     <div className="text-center py-10 text-xs rounded-xl border border-dashed" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-subtle)' }}>
-                                        No documents yet. Upload a file, paste text, add a URL, or ingest from n8n above.
+                                        {t('kb_docs.empty')}
                                     </div>
                                 ) : (
                                     <div className="space-y-1">
@@ -749,7 +749,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                                 <div className="flex items-center gap-2.5 min-w-0">
                                                     <span className="text-base flex-shrink-0">{sourceEmoji(doc.source_type)}</span>
                                                     <div className="min-w-0">
-                                                        <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{doc.title || 'Untitled'}</div>
+                                                        <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{doc.title || t('kb_detail.untitled')}</div>
                                                         <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                                                             {doc.chunk_count || 0} chunks · {formatDate(doc.created_at)}
                                                             {doc.source_uri && <span className="ml-1.5 truncate">· {doc.source_uri.replace(/^https?:\/\//, '').slice(0, 40)}</span>}
@@ -774,19 +774,19 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                         <div className="space-y-4">
                             {/* Icon + Name + Description */}
                             <div className="relative">
-                                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Icon</label>
+                                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t('kb_detail.icon_label')}</label>
                                 <div className="flex items-center gap-3">
                                     <div
                                         onClick={() => canManage && setShowIconPicker(v => !v)}
                                         className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl cursor-pointer transition-all overflow-hidden border"
                                         style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)' }}
-                                        title="Click to change icon"
+                                        title={t('kb_detail.icon_hint')}
                                     >
                                         {hasImageIcon ? <img src={icon} alt="" className="w-full h-full object-cover" /> : (icon || '📚')}
                                     </div>
                                     <div className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                        <p>Click to select an emoji or upload an image</p>
-                                        <p className="text-xs opacity-70">Supports emoji, PNG, JPG, or SVG (max 512KB)</p>
+                                        <p>{t('kb_detail.icon_hint')}</p>
+                                        <p className="text-xs opacity-70">{t('kb_detail.icon_supports')}</p>
                                     </div>
                                 </div>
 
@@ -834,25 +834,25 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                                 onClick={() => document.getElementById('kb-icon-upload')?.click()}
                                                 className="px-3 py-1 text-xs font-medium rounded-lg flex items-center gap-1.5 border hover:bg-[var(--bg-tertiary)] transition-colors"
                                                 style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}
-                                                title="Upload an image as icon"
-                                            >📷 Upload</button>
+                                                title={t('kb_detail.icon_hint')}
+                                            >📷 {t('kb_detail.upload')}</button>
                                             <button
                                                 onClick={() => setShowIconPicker(false)}
                                                 className="px-3 py-1 text-xs font-medium rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors"
                                                 style={{ color: 'var(--text-secondary)' }}
-                                            >Done</button>
+                                            >{t('kb_detail.done')}</button>
                                         </div>
                                     </div>
                                 )}
                             </div>
 
                             <div>
-                                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Name</label>
+                                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t('kb_detail.name_label')}</label>
                                 <input
                                     ref={nameRef}
                                     value={name}
                                     onChange={e => setName(e.target.value)}
-                                    placeholder="e.g. Product Documentation"
+                                    placeholder={t('kb_detail.name_placeholder')}
                                     disabled={!canManage}
                                     className="w-full px-3 py-2.5 rounded-xl text-sm border outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/30 disabled:opacity-60"
                                     style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
@@ -860,11 +860,11 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                             </div>
 
                             <div>
-                                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Description</label>
+                                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t('kb_detail.description_label')}</label>
                                 <textarea
                                     value={description}
                                     onChange={e => setDescription(e.target.value)}
-                                    placeholder="What's in this KB?"
+                                    placeholder={t('kb_detail.description_placeholder')}
                                     rows={2}
                                     disabled={!canManage}
                                     className="w-full px-3 py-2.5 rounded-xl text-sm border outline-none resize-none focus:ring-2 focus:ring-[var(--accent-primary)]/30 disabled:opacity-60"
@@ -873,11 +873,11 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                             </div>
 
                             <div>
-                                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Default Language</label>
+                                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t('kb_detail.lang_label')}</label>
                                 <input
                                     value={defaultLang}
                                     onChange={e => setDefaultLang(e.target.value)}
-                                    placeholder="en, nl, …"
+                                    placeholder={t('kb_detail.lang_placeholder')}
                                     disabled={!canManage}
                                     className="w-full px-3 py-2.5 rounded-xl text-sm border outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/30 disabled:opacity-60"
                                     style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
@@ -886,7 +886,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
 
                             {/* Category with inline create */}
                             <div>
-                                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Category</label>
+                                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t('kb_detail.category_label')}</label>
                                 <div className="flex items-center gap-2">
                                     {!showNewCategory ? (
                                         <>
@@ -897,7 +897,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                                 className="flex-1 px-3 py-2.5 rounded-xl text-sm border outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/30 disabled:opacity-60"
                                                 style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
                                             >
-                                                <option value="">Uncategorised</option>
+                                                <option value="">{t('kb_detail.category_uncategorised')}</option>
                                                 {categories.map(c => (
                                                     <option key={c.id} value={c.id}>{c.icon || '📚'} {c.name}</option>
                                                 ))}
@@ -908,7 +908,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                                     onClick={() => setShowNewCategory(true)}
                                                     className="p-2 rounded-lg border hover:bg-[var(--bg-tertiary)] transition-colors"
                                                     style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}
-                                                    title="Create new category"
+                                                    title={t('kb_detail.category_new_title')}
                                                 >
                                                     <Plus className="w-4 h-4" />
                                                 </button>
@@ -923,7 +923,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                                 onKeyDown={(e) => e.key === 'Enter' && handleCreateCategory()}
                                                 className="flex-1 px-3 py-2.5 rounded-xl text-sm border outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/30"
                                                 style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
-                                                placeholder="Category name..."
+                                                placeholder={t('kb_detail.category_new_placeholder')}
                                                 autoFocus
                                             />
                                             <button
@@ -931,7 +931,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                                 onClick={handleCreateCategory}
                                                 disabled={!newCategoryName.trim()}
                                                 className="px-3 py-2 rounded-lg text-xs font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition-colors disabled:opacity-40"
-                                            >Create</button>
+                                            >{t('kb_detail.create')}</button>
                                             <button
                                                 type="button"
                                                 onClick={() => { setShowNewCategory(false); setNewCategoryName(''); }}
@@ -946,15 +946,17 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                             {/* Sharing summary */}
                             {!isCreateMode && (
                                 <div className="p-3 rounded-xl border" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)' }}>
-                                    <h3 className="text-xs font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Sharing</h3>
+                                    <h3 className="text-xs font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{t('kb_detail.sharing')}</h3>
                                     <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                                         {organizationId
                                             ? (isPublished
-                                                ? (sharedGroups.length > 0
-                                                    ? `Published to ${sharedGroups.length} group${sharedGroups.length > 1 ? 's' : ''}.`
-                                                    : 'Published to the entire organisation.')
-                                                : 'Personal draft. Use the Publish button (top-right) to share.')
-                                            : 'Personal KB — only you can see it.'}
+                                                ? (sharedGroups.length > 1
+                                                    ? t('kb_detail.sharing_groups_plural', { count: sharedGroups.length })
+                                                    : (sharedGroups.length === 1
+                                                        ? t('kb_detail.sharing_groups', { count: sharedGroups.length })
+                                                        : t('kb_detail.sharing_org')))
+                                                : t('kb_detail.sharing_draft'))
+                                            : t('kb_detail.sharing_personal')}
                                     </div>
                                 </div>
                             )}
@@ -965,7 +967,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                         onClick={handleDeleteKB}
                                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-500 hover:bg-red-500/10"
                                     >
-                                        <Trash2 className="w-3.5 h-3.5" /> Delete KB
+                                        <Trash2 className="w-3.5 h-3.5" /> {t('kb_detail.delete_kb')}
                                     </button>
                                 )}
                                 <div className="ml-auto flex gap-2">
@@ -974,7 +976,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                             onClick={onClose}
                                             className="px-3 py-1.5 rounded-lg text-xs font-medium border hover:bg-[var(--bg-tertiary)]"
                                             style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}
-                                        >Cancel</button>
+                                        >{t('kb_detail.cancel')}</button>
                                     )}
                                     {canManage && (
                                         <button
@@ -982,7 +984,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                             disabled={saving || !name.trim()}
                                             className="px-4 py-1.5 rounded-lg text-xs font-semibold text-white disabled:opacity-50 hover:brightness-110"
                                             style={{ background: 'var(--accent-primary)' }}
-                                        >{saving ? 'Saving…' : (isCreateMode ? 'Create' : 'Save')}</button>
+                                        >{saving ? t('kb_detail.saving') : (isCreateMode ? t('kb_detail.create') : t('kb_detail.save'))}</button>
                                     )}
                                 </div>
                             </div>

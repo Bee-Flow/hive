@@ -14,6 +14,7 @@ import { ThinkingPanel } from './ThinkingPanel';
 import SessionSkillsTimeline from './SessionSkillsTimeline';
 
 import TerminalProgress from './TerminalProgress';
+import { tierLabel } from '../../tierMeta';
 import TokenisedBadge from '../TokenisedBadge';
 import EmailDraftCard from './EmailDraftCard';
 import CalendarDraftCard from './CalendarDraftCard';
@@ -674,7 +675,7 @@ const MessageItem = ({
                                         )}
                                         {msg.autoSelectedTier && (
                                             <span className="px-1.5 py-0.5 rounded-full" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
-                                                Auto → {msg.autoSelectedTier.charAt(0).toUpperCase() + msg.autoSelectedTier.slice(1)}
+                                                Auto → {tierLabel(msg.autoSelectedTier)}
                                             </span>
                                         )}
                                         {msg.tokenisationInfo?.count > 0 && (

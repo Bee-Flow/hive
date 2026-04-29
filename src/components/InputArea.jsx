@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Paperclip, X, StopCircle, MessageCircle, FileText, Image, File as FileIcon, FileSpreadsheet, ArrowUp, Sparkles, LayoutGrid, Globe } from 'lucide-react';
+import { Send, Paperclip, X, StopCircle, MessageCircle, FileText, Image, File as FileIcon, FileSpreadsheet, ArrowUp, Sparkles, LayoutGrid, Globe, BookOpen } from 'lucide-react';
 import ModelTierSelector from './ModelTierSelector';
 import EffortSelector from './EffortSelector';
 import GoogleDrivePicker from './chat/GoogleDrivePicker';
@@ -124,6 +124,10 @@ const InputArea = ({
     directActivatedSessionSkillIds = [],
     directConversationId = null,
     onToggleSkill,
+    // Direct-chat KB picker (only shown in direct mode).
+    availableKBs = [],
+    selectedKBIds = [],
+    onChangeKBIds,
     // Voice mode wiring — parent passes its live messages list so voice
     // turns use the real chat history as context, and injects completed
     // turns back via onVoiceTurnComplete so they render as chat bubbles.
@@ -155,6 +159,34 @@ const InputArea = ({
     const [webSearchEnabled, setWebSearchEnabled] = useState(() => {
         const v = scopedStorage.getItem('webSearchEnabled');
         return v === null ? true : v === 'true';
+    });
+    const [showKBPicker, setShowKBPicker] = useState(false);
+    const [kbPickerSearch, setKbPickerSearch] = useState('');
+    const kbPickerRef = useRef(null);
+
+    useEffect(() => {
+        if (!showKBPicker) return;
+        const onClick = (e) => {
+            if (kbPickerRef.current && !kbPickerRef.current.contains(e.target)) {
+                setShowKBPicker(false);
+            }
+        };
+        document.addEventListener('mousedown', onClick);
+        return () => document.removeEventListener('mousedown', onClick);
+    }, [showKBPicker]);
+
+    const toggleKBId = (id) => {
+        if (typeof onChangeKBIds !== 'function') return;
+        const next = selectedKBIds.includes(id)
+            ? selectedKBIds.filter(k => k !== id)
+            : [...selectedKBIds, id];
+        onChangeKBIds(next);
+    };
+
+    const filteredKBs = (availableKBs || []).filter(kb => {
+        if (!kbPickerSearch.trim()) return true;
+        const q = kbPickerSearch.toLowerCase();
+        return (kb.name || '').toLowerCase().includes(q) || (kb.description || '').toLowerCase().includes(q);
     });
     const [orgDisableSearchOnUpload, setOrgDisableSearchOnUpload] = useState(false);
     const [searchProviderConfig, setSearchProviderConfig] = useState('agent-search');
@@ -890,6 +922,99 @@ const InputArea = ({
                                 >
                                     <Globe className="w-5 h-5" />
                                 </button>
+                                )}
+                                {/* Knowledge Bases picker — only in direct mode. Lets the user
+                                    attach KBs they have access to so the backend grounds answers
+                                    on their content via /api/kb search. */}
+                                {directMode && typeof onChangeKBIds === 'function' && (
+                                    <div className="relative" ref={kbPickerRef}>
+                                        <button
+                                            onClick={() => setShowKBPicker(v => !v)}
+                                            className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${selectedKBIds.length > 0 ? 'text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20' : 'text-[var(--text-tertiary)] opacity-60 hover:opacity-90 hover:bg-[var(--bg-tertiary)]'}`}
+                                            title={selectedKBIds.length > 0 ? `${selectedKBIds.length} knowledge base${selectedKBIds.length > 1 ? 's' : ''} attached` : 'Attach knowledge bases'}
+                                            aria-label="Attach knowledge bases"
+                                            aria-pressed={selectedKBIds.length > 0}
+                                            data-testid="direct-kb-picker"
+                                            type="button"
+                                        >
+                                            <BookOpen className="w-5 h-5" />
+                                            {selectedKBIds.length > 0 && (
+                                                <span className="text-[10px] font-bold leading-none px-1 rounded bg-emerald-500 text-white">{selectedKBIds.length}</span>
+                                            )}
+                                        </button>
+
+                                        {showKBPicker && (
+                                            <div
+                                                className="absolute bottom-full left-0 mb-2 w-80 rounded-xl shadow-2xl z-50 overflow-hidden"
+                                                style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-default)' }}
+                                            >
+                                                <div className="p-3 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+                                                    <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Knowledge Bases</p>
+                                                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Pick one or more to ground this chat.</p>
+                                                </div>
+                                                <div className="px-3 py-2 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+                                                    <input
+                                                        type="text"
+                                                        value={kbPickerSearch}
+                                                        onChange={e => setKbPickerSearch(e.target.value)}
+                                                        placeholder="Search…"
+                                                        className="w-full px-2.5 py-1.5 rounded-md border text-xs outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/30"
+                                                        style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
+                                                    />
+                                                </div>
+                                                <div className="max-h-64 overflow-auto">
+                                                    {filteredKBs.length === 0 ? (
+                                                        <div className="px-3 py-6 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
+                                                            {availableKBs.length === 0
+                                                                ? 'No knowledge bases available. Create one in the Knowledge Bases section.'
+                                                                : 'No matches.'}
+                                                        </div>
+                                                    ) : (
+                                                        filteredKBs.map(kb => {
+                                                            const checked = selectedKBIds.includes(kb.id);
+                                                            const isOrg = !!kb.organization_id;
+                                                            return (
+                                                                <label
+                                                                    key={kb.id}
+                                                                    className="flex items-center gap-3 px-3 py-2 hover:bg-[var(--bg-tertiary)] cursor-pointer transition-colors"
+                                                                >
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={checked}
+                                                                        onChange={() => toggleKBId(kb.id)}
+                                                                        className="accent-[var(--accent-primary)] w-4 h-4 flex-shrink-0"
+                                                                    />
+                                                                    <span className="text-base flex-shrink-0">{kb.icon && (kb.icon.startsWith('data:') || kb.icon.startsWith('http')) ? (
+                                                                        <img src={kb.icon} alt="" className="w-5 h-5 rounded object-cover inline-block align-middle" />
+                                                                    ) : (kb.icon || '📚')}</span>
+                                                                    <div className="flex-1 min-w-0">
+                                                                        <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{kb.name}</p>
+                                                                        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                                                            {(kb.document_count || 0)} docs · {(kb.total_chunks || 0)} chunks
+                                                                            {isOrg && <span className="ml-1.5 px-1 py-0.5 rounded bg-blue-500/10 text-blue-500 font-medium text-[9px]">Org</span>}
+                                                                        </p>
+                                                                    </div>
+                                                                </label>
+                                                            );
+                                                        })
+                                                    )}
+                                                </div>
+                                                <div className="p-2 border-t flex items-center justify-between" style={{ borderColor: 'var(--border-subtle)' }}>
+                                                    <button
+                                                        onClick={() => onChangeKBIds([])}
+                                                        disabled={selectedKBIds.length === 0}
+                                                        className="px-2 py-1 rounded-md text-[11px] hover:bg-[var(--bg-tertiary)] disabled:opacity-40"
+                                                        style={{ color: 'var(--text-muted)' }}
+                                                    >Clear</button>
+                                                    <button
+                                                        onClick={() => setShowKBPicker(false)}
+                                                        className="px-3 py-1 rounded-md text-[11px] font-medium hover:bg-[var(--bg-tertiary)]"
+                                                        style={{ color: 'var(--text-secondary)' }}
+                                                    >Done</button>
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
                                 )}
                                 {/* Voice Chat (Beta) — toggles voiceMode. When active, the
                                     composer is replaced by <VoiceInlinePanel>. Voice turns
