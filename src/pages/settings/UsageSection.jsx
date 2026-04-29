@@ -127,15 +127,44 @@ const ListRow = ({ children, onClick, style: s }) => (
     </div>
 );
 
-const Avatar = ({ name, color }) => (
-    <div style={{
-        width: 26, height: 26, borderRadius: 99, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        flexShrink: 0, fontSize: 11, fontWeight: 700, color: '#fff',
-        background: `linear-gradient(135deg, ${color || 'var(--accent-primary)'}, ${color || 'var(--accent-primary)'}99)`,
-    }}>
-        {(name || '?')[0].toUpperCase()}
-    </div>
-);
+const Avatar = ({ user, name, color, size = 26 }) => {
+    const displayName = user?.display_name || name || '?';
+    const avatarType = user?.avatarType;
+    const avatar = user?.avatar;
+    const base = {
+        width: size, height: size, borderRadius: 99, flexShrink: 0,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+    };
+    if (avatarType === 'emoji' && avatar) {
+        return (
+            <div style={{
+                ...base, background: 'var(--bg-tertiary)',
+                border: '1px solid var(--border-default)',
+                fontSize: Math.round(size * 0.5), lineHeight: 1,
+            }}>
+                {avatar}
+            </div>
+        );
+    }
+    if (avatarType === 'url' && avatar) {
+        return (
+            <img
+                src={avatar}
+                alt={displayName}
+                style={{ ...base, objectFit: 'cover' }}
+            />
+        );
+    }
+    return (
+        <div style={{
+            ...base,
+            fontSize: Math.round(size * 0.42), fontWeight: 700, color: '#fff',
+            background: `linear-gradient(135deg, ${color || 'var(--accent-primary)'}, ${color || 'var(--accent-primary)'}99)`,
+        }}>
+            {displayName[0].toUpperCase()}
+        </div>
+    );
+};
 
 const IconBadge = ({ icon: Icon, color, size = 26 }) => (
     <div style={{
@@ -499,7 +528,7 @@ const UsageSection = () => {
                                 ) : data.users.slice(0, 8).map((u, i) => (
                                     <ListRow key={i} onClick={() => setFilterUser(u.user_id)}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
-                                            <Avatar name={u.display_name} color={getColor(i)} />
+                                            <Avatar user={u} color={getColor(i)} />
                                             <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
                                                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                     {u.display_name}
@@ -673,10 +702,14 @@ const UsageSection = () => {
                                     >
                                         <span style={{
                                             fontSize: 11, fontWeight: 600, color: 'var(--text-primary)',
-                                            overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                            cursor: 'pointer',
+                                            display: 'flex', alignItems: 'center', gap: 6,
+                                            overflow: 'hidden', whiteSpace: 'nowrap',
+                                            cursor: 'pointer', minWidth: 0,
                                         }} onClick={() => setFilterUser(row.user_id)}>
-                                            {row.display_name || row.user_id}
+                                            <Avatar user={row} color={getColor(i)} size={20} />
+                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {row.display_name || row.user_id}
+                                            </span>
                                         </span>
                                         <span style={{
                                             fontSize: 11, fontWeight: 600, color: getColor(i),
@@ -973,7 +1006,7 @@ const UsageSection = () => {
                                         return (
                                             <ListRow key={i}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
-                                                    <Avatar name={u.display_name} color={getColor(i + 5)} />
+                                                    <Avatar user={u} color={getColor(i + 5)} />
                                                     <div style={{ minWidth: 0, flex: 1 }}>
                                                         <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.display_name}</div>
                                                         <div style={{ display: 'flex', gap: 6, marginTop: 2, fontSize: 10, alignItems: 'center' }}>
@@ -1082,8 +1115,11 @@ const UsageSection = () => {
                                                     <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>
                                                         {new Date(ev.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}
                                                     </span>
-                                                    <span style={{ fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                                        {ev.display_name || ev.user_id || 'Unknown'}
+                                                    <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, color: 'var(--text-primary)', minWidth: 0 }}>
+                                                        <Avatar user={ev} color={getColor(i)} size={18} />
+                                                        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                            {ev.display_name || ev.user_id || 'Unknown'}
+                                                        </span>
                                                     </span>
                                                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
                                                         <span style={{ width: 6, height: 6, borderRadius: 99, background: tc }} />
@@ -1321,7 +1357,10 @@ const UsageSection = () => {
                                                         borderBottom: '1px solid var(--border-subtle)', fontSize: 11,
                                                     }}>
                                                         <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>{new Date(ev.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                                                        <span style={{ fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.display_name || ev.user_id || 'Unknown'}</span>
+                                                        <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, color: 'var(--text-primary)', minWidth: 0 }}>
+                                                            <Avatar user={ev} color={getColor(i)} size={18} />
+                                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.display_name || ev.user_id || 'Unknown'}</span>
+                                                        </span>
                                                         <span style={{ fontWeight: 600, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={ev.tool_name}>{ev.tool_name}</span>
                                                         <span style={{ fontWeight: 600, color: getColor(i), textTransform: 'capitalize' }}>{(ev.integration_type || '').replace(/_/g, ' ')}</span>
                                                         <span style={{ color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10 }} title={ev.server_endpoint}>{ev.server_endpoint || '—'}</span>

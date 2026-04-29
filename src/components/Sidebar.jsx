@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
-import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, PenLine, Sparkles, Mail, Ticket } from 'lucide-react';
+import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, PenLine, Sparkles, Mail, Ticket, BookOpen } from 'lucide-react';
 import { API_BASE } from '../utils/helpers';
 import NotificationCenter from './NotificationCenter';
 import NavLink from './NavLink';
@@ -373,7 +373,7 @@ const Sidebar = ({
     favorites = [], agents = [],
     groupedConversations, currentConversation,
     onSelectConversation, onDeleteConversation,
-    onSelectAgent, onOpenMarketplace, onOpenSearch,
+    onSelectAgent, onOpenMarketplace, onOpenSearch, onOpenKBStore,
     user, onLogout, onNavigate, currentPage,
     onDirectChat, directChatMode,
     directConversations = [],
@@ -567,7 +567,8 @@ const Sidebar = ({
             <nav aria-label="Main navigation" data-testid="main-navigation" className={`px-2 pt-4 flex-shrink-0 flex flex-col gap-2 ${isOpen ? '' : 'items-center'}`}>
                 {[
                     { label: t('sidebar.new_chat') || 'New Chat', icon: PenLine, onClick: onDirectChat, active: directChatMode && !selectedAgent },
-                    { label: t('sidebar.agent_store'), icon: Store, onClick: onOpenMarketplace, active: currentPage === 'marketplace' },
+                    { label: t('sidebar.agents') || 'Agents', icon: Store, onClick: onOpenMarketplace, active: currentPage === 'marketplace' },
+                    ...(onOpenKBStore ? [{ label: t('sidebar.knowledge_bases') || 'Knowledge Bases', icon: BookOpen, onClick: onOpenKBStore, active: currentPage === 'knowledgeBases' }] : []),
                     { label: t('sidebar.search'), icon: Search, onClick: onOpenSearch, active: false, kbd: (typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)) ? '⌘K' : 'Ctrl+K' },
                 ].map(({ label, icon: Icon, onClick, active, primary, beta, kbd }) => (
                     <button

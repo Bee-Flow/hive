@@ -2,6 +2,8 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { v4 as uuidv4 } from 'uuid';
 import AgentDesignerPanel from './components/AgentDesignerPanel';
 import AgentMarketplace from './components/AgentMarketplace';
+import KBMarketplace from './components/KBMarketplace';
+import KBDetailPage from './components/KBDetailPage';
 import SearchOverlay from './components/SearchOverlay';
 
 import Sidebar from './components/Sidebar';
@@ -238,6 +240,12 @@ const AgentHub = ({
     const [designMode, setDesignMode] = useState(false);
     const [createMode, setCreateMode] = useState(false);
     const [showMarketplace, setShowMarketplace] = useState(false);
+    const [showKBStore, setShowKBStore] = useState(false);
+    const [activeKBId, setActiveKBId] = useState(null); // null = closed, '' = create-new, otherwise an id
+    const [kbs, setKbs] = useState([]);
+    const [kbCategories, setKbCategories] = useState([]);
+    const [kbFavorites, setKbFavorites] = useState([]);
+    const [kbsLoadedOnce, setKbsLoadedOnce] = useState(false);
     const [showSearch, setShowSearch] = useState(false);
 
     const [showMemoryPanel, setShowMemoryPanel] = useState(false);
@@ -365,6 +373,67 @@ const AgentHub = ({
     useEffect(() => {
         if (showMarketplace) refreshAgents();
     }, [showMarketplace, refreshAgents]);
+
+    // ── Knowledge Bases ────────────────────────────────────────────────
+    const refreshKBs = useCallback(async () => {
+        try {
+            const [kbRes, catRes] = await Promise.all([
+                authFetch(`${API_BASE}/api/kb?t=${Date.now()}`, { cache: 'no-store' }),
+                authFetch(`${API_BASE}/api/kb/categories`),
+            ]);
+            if (kbRes.ok) {
+                const data = await kbRes.json();
+                setKbs(Array.isArray(data) ? data : []);
+            }
+            if (catRes.ok) {
+                const cats = await catRes.json();
+                setKbCategories(Array.isArray(cats) ? cats : []);
+            }
+            setKbsLoadedOnce(true);
+        } catch (err) {
+            console.error('Failed to refresh KBs', err);
+        }
+    }, []);
+
+    // Refresh KBs whenever the KB store opens
+    useEffect(() => {
+        if (showKBStore) refreshKBs();
+    }, [showKBStore, refreshKBs]);
+
+    // Close KB views when the user navigates to a chat (agent or direct).
+    // Mirrors how the agent marketplace closes itself in handleSelectAgent etc.
+    useEffect(() => {
+        if (showMarketplace || showSettings || showAgentDesigner || showSkillsPanel || showEmailKB) {
+            setShowKBStore(false);
+            setActiveKBId(null);
+        }
+    }, [showMarketplace, showSettings, showAgentDesigner, showSkillsPanel, showEmailKB]);
+
+    // Persist KB favourites per-user via scopedStorage
+    useEffect(() => {
+        if (!user?.id) return;
+        const stored = scopedStorage.getJSON('kb_favorites', []);
+        setKbFavorites(Array.isArray(stored) ? stored : []);
+    }, [user?.id]);
+
+    const handleToggleKBFavorite = useCallback((id) => {
+        setKbFavorites(prev => {
+            const next = prev.includes(id) ? prev.filter(k => k !== id) : [...prev, id];
+            scopedStorage.setJSON('kb_favorites', next);
+            return next;
+        });
+    }, []);
+
+    const handleUnpublishKB = useCallback(async (kbId) => {
+        try {
+            const res = await authFetch(`${API_BASE}/api/kb/${kbId}/publish`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ isPublished: false, sharedGroups: [] }),
+            });
+            if (res.ok) refreshKBs();
+        } catch (e) { console.error('Failed to unpublish KB', e); }
+    }, [refreshKBs]);
 
     // Load Agents and Handle Startup Logic
     useEffect(() => {
@@ -579,6 +648,8 @@ const AgentHub = ({
         setSelectedAgent(agent);
         setDesignMode(false);
         setShowMarketplace(false);
+        setShowKBStore(false);
+        setActiveKBId(null);
         setDirectChatMode(false);
         if (onCloseSettings) onCloseSettings();
         if (onCloseAgentDesigner) onCloseAgentDesigner();
@@ -913,6 +984,8 @@ const AgentHub = ({
         setShowNotebook(false);
         setNotebookLinkedId(null);
         setShowMarketplace(false);
+        setShowKBStore(false);
+        setActiveKBId(null);
         if (onCloseSettings) onCloseSettings();
         if (onCloseAgentDesigner) onCloseAgentDesigner();
         scopedStorage.setItem('lastUsedMode', 'direct-chat');
@@ -980,6 +1053,8 @@ const AgentHub = ({
         if (onCloseSkillsPanel) onCloseSkillsPanel();
         if (onCloseEmailKB) onCloseEmailKB();
         setShowMarketplace(false);
+        setShowKBStore(false);
+        setActiveKBId(null);
         if (directChatMode) {
             setCurrentDirectConversation(null);
             setMessages([]);
@@ -1228,6 +1303,8 @@ const AgentHub = ({
                     if (onCloseSkillsPanel) onCloseSkillsPanel();
         if (onCloseEmailKB) onCloseEmailKB();
                     setShowMarketplace(false);
+                    setShowKBStore(false);
+                    setActiveKBId(null);
                     // Switch agent if the conversation belongs to a different one
                     if (conv.agent_id && (!selectedAgent || selectedAgent.id !== conv.agent_id)) {
                         const agent = agents.find(a => a.id === conv.agent_id);
@@ -1243,7 +1320,8 @@ const AgentHub = ({
                 }}
                 onDeleteConversation={handleDeleteConversation}
                 onSelectAgent={handleSelectAgent}
-                onOpenMarketplace={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); setShowMarketplace(true); }}
+                onOpenMarketplace={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); setShowKBStore(false); setActiveKBId(null); setShowMarketplace(true); }}
+                onOpenKBStore={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); setShowMarketplace(false); setActiveKBId(null); setShowKBStore(true); }}
                 onOpenSearch={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); setShowSearch(true); }}
                 hasPermission={hasPermission}
                 user={user}
@@ -1264,6 +1342,8 @@ const AgentHub = ({
                     if (onCloseSkillsPanel) onCloseSkillsPanel();
         if (onCloseEmailKB) onCloseEmailKB();
                     setShowMarketplace(false);
+                    setShowKBStore(false);
+                    setActiveKBId(null);
                     // Ensure we're in direct chat mode
                     if (!directChatMode) {
                         setDirectChatMode(true);
@@ -1299,6 +1379,8 @@ const AgentHub = ({
                     if (onCloseSkillsPanel) onCloseSkillsPanel();
         if (onCloseEmailKB) onCloseEmailKB();
                     setShowMarketplace(false);
+                    setShowKBStore(false);
+                    setActiveKBId(null);
                     if (conv._source === 'direct') {
                         // Switch to direct chat mode and open the conversation
                         if (!directChatMode) {
@@ -1371,6 +1453,28 @@ const AgentHub = ({
                         onClose={() => setShowMarketplace(false)}
                         onUnpublish={handleUnpublishAgent}
                         onEditAgent={(agent) => { setShowMarketplace(false); onNavigate(agent ? `agentDesigner:${agent.id}` : 'agentDesigner'); }}
+                        user={user}
+                    />
+                ) : (showKBStore && activeKBId !== null) ? (
+                    /* KB detail / create page */
+                    <KBDetailPage
+                        kbId={activeKBId || null}
+                        user={user}
+                        groups={Array.isArray(user?.groups) ? user.groups.map(g => typeof g === 'string' ? { id: g, name: g } : g) : []}
+                        onClose={() => setActiveKBId(null)}
+                        onSaved={() => { refreshKBs(); }}
+                    />
+                ) : showKBStore ? (
+                    /* KB Marketplace */
+                    <KBMarketplace
+                        kbs={kbs}
+                        categories={kbCategories}
+                        favorites={kbFavorites}
+                        onSelectKB={(kb) => setActiveKBId(kb.id)}
+                        onEditKB={(kb) => setActiveKBId(kb ? kb.id : '')}
+                        onUnpublishKB={handleUnpublishKB}
+                        onToggleFavorite={handleToggleKBFavorite}
+                        onClose={() => setShowKBStore(false)}
                         user={user}
                     />
                 ) : selectedAgent ? (
