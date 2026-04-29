@@ -11,9 +11,11 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
         return () => document.removeEventListener('mousedown', handler);
     }, []);
 
-    // Preserve ordering: auto, fast, standard, thinking, writer, pro, then custom tiers
-    // the server included (filtered server-side by group + task-type permissions).
-    const standardKeys = ['auto', 'fast', 'standard', 'thinking', 'writer', 'pro'];
+    // Preserve ordering: auto, fast, standard (Flow), swarm, thinking, writer, pro,
+    // then custom tiers (filtered server-side by group + task-type permissions
+    // and beta-feature gates — Flow + Swarm only appear when their respective
+    // beta features are granted to the caller's org).
+    const standardKeys = ['auto', 'fast', 'standard', 'swarm', 'thinking', 'writer', 'pro'];
     const customKeys = Object.keys(tiers).filter(k => k.startsWith('custom:'));
     const tierKeys = [...standardKeys, ...customKeys];
 

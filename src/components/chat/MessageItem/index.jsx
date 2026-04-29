@@ -12,6 +12,7 @@ import ToolOutput from './ToolOutput';
 import { SequentialThinking } from './ThinkingSteps';
 import { ThinkingPanel } from './ThinkingPanel';
 import SessionSkillsTimeline from './SessionSkillsTimeline';
+import SwarmTimeline from './SwarmTimeline';
 
 import TerminalProgress from './TerminalProgress';
 import { tierLabel } from '../../tierMeta';
@@ -387,6 +388,14 @@ const MessageItem = ({
                     } 
                 ${msg.isGuardrailViolation ? 'opacity-60 scale-95' : ''} 
                 ${msg.isDeleted ? 'opacity-50 italic' : ''}`}>
+
+                {/* Swarm tier inline tracker — phase progress + clarifier
+                    questions + deep-research metadata. Renders when this
+                    assistant message carries swarm state (set by useChatEngine
+                    via swarm_* SSE events). */}
+                {!isUser && !isTool && chatSource === 'direct' && msg.swarm && (
+                    <SwarmTimeline swarm={msg.swarm} />
+                )}
 
                 {/* Session-skill pipeline timeline — Standard tier inline tracker.
                     Renders when this assistant message either introduced the

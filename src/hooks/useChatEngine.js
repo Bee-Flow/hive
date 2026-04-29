@@ -197,6 +197,117 @@ export default function useChatEngine({
                 break;
             }
 
+            // ── Swarm tier (Deep Research) ──────────────────────────────
+            case 'swarm_started':
+                setMessages(prev => prev.map(m =>
+                    m.id === assistantMsgId
+                        ? {
+                            ...m,
+                            swarm: {
+                                state: 'running',
+                                swarmId: data.swarmId,
+                                swarmName: data.swarmName,
+                                phases: Array.isArray(data.phases) ? data.phases : [],
+                                phaseStates: {},
+                                depth: data.depth || null,
+                                startedAt: Date.now(),
+                            },
+                        }
+                        : m
+                ));
+                break;
+            case 'swarm_phase_started':
+                setMessages(prev => prev.map(m =>
+                    m.id === assistantMsgId
+                        ? {
+                            ...m,
+                            swarm: {
+                                ...(m.swarm || {}),
+                                activePhaseId: data.phaseId,
+                                phaseStates: {
+                                    ...(m.swarm?.phaseStates || {}),
+                                    [data.phaseId]: { status: 'active', message: data.message || null, startedAt: Date.now() },
+                                },
+                            },
+                        }
+                        : m
+                ));
+                break;
+            case 'swarm_phase_completed':
+                setMessages(prev => prev.map(m => {
+                    if (m.id !== assistantMsgId) return m;
+                    const prev2 = m.swarm?.phaseStates?.[data.phaseId] || {};
+                    return {
+                        ...m,
+                        swarm: {
+                            ...(m.swarm || {}),
+                            phaseStates: {
+                                ...(m.swarm?.phaseStates || {}),
+                                [data.phaseId]: { ...prev2, status: 'done', durationMs: data.durationMs || null },
+                            },
+                        },
+                    };
+                }));
+                break;
+            case 'swarm_clarification_required':
+                // The swarm asked the user a follow-up question. Surface it
+                // on the in-flight assistant message; the chat UI renders
+                // these inline so the user can answer in the next turn.
+                setMessages(prev => prev.map(m =>
+                    m.id === assistantMsgId
+                        ? {
+                            ...m,
+                            swarm: {
+                                ...(m.swarm || {}),
+                                state: 'awaiting_clarification',
+                                clarification: {
+                                    questions: Array.isArray(data?.questions) ? data.questions : [],
+                                    refinedQuery: data?.refinedQuery || null,
+                                },
+                            },
+                        }
+                        : m
+                ));
+                break;
+            case 'swarm_completed':
+                setMessages(prev => prev.map(m =>
+                    m.id === assistantMsgId
+                        ? {
+                            ...m,
+                            swarm: {
+                                ...(m.swarm || {}),
+                                state: data?.paused ? 'awaiting_clarification' : 'done',
+                                durationMs: data?.durationMs || null,
+                                error: data?.error || null,
+                            },
+                        }
+                        : m
+                ));
+                break;
+            // Forward the inner deepResearch events as a single bag on the
+            // message so the SwarmTimeline can render whichever sub-state
+            // the user cares about (sources count, sub-question progress).
+            // We don't unpack each event type here — keeps the engine slim.
+            case 'deep_research_research_plan':
+            case 'deep_research_research_summary':
+            case 'deep_research_outline_ready':
+            case 'deep_research_citations_registered':
+                setMessages(prev => prev.map(m =>
+                    m.id === assistantMsgId
+                        ? {
+                            ...m,
+                            swarm: {
+                                ...(m.swarm || {}),
+                                deepResearch: {
+                                    ...(m.swarm?.deepResearch || {}),
+                                    [event.replace(/^deep_research_/, '')]: data,
+                                },
+                            },
+                        }
+                        : m
+                ));
+                break;
+
             case 'session_skills_bootstrap_started':
                 // Tag the in-flight assistant message so MessageItem can show a
                 // "Preparing chat-local skills…" status above the reply.

@@ -91,6 +91,7 @@ const MODEL_META = {
 const TIERS = [
     { key: 'fast', icon: '⚡', label: 'Fast', desc: 'Quick responses for simple questions' },
     { key: 'standard', icon: '🐝', iconSrc: '/BeeFlow-logo-Icon-2026.svg', label: 'Flow (Direct)', desc: 'Direct chat tier with per-chat orchestrated stages' },
+    { key: 'swarm', icon: '🐝🐝', iconSrc: '/BeeFlow-logo-Icon-2026.svg', label: 'Swarm (Direct)', desc: 'Direct chat tier that runs a multi-agent swarm (Deep Research) and synthesises one answer' },
     { key: 'thinking', icon: '🧠', label: 'Thinking', desc: 'Complex reasoning and analysis' },
     { key: 'writer', icon: '✍️', label: 'Writer', desc: 'Long-form content and reports' },
     { key: 'pro', icon: '✨', label: 'Deep Thinking', desc: 'Maximum quality output' }
@@ -402,6 +403,7 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
     const [config, setConfig] = useState({
         fast: { modelId: '', label: 'Fast' },
         standard: { modelId: '', label: 'Flow (Direct)' },
+        swarm: { modelId: '', label: 'Swarm (Direct)' },
         thinking: { modelId: '', label: 'Thinking' },
         writer: { modelId: '', label: 'Writer' },
         pro: { modelId: '', label: 'Deep Thinking' }
@@ -409,6 +411,7 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
     const [euConfig, setEuConfig] = useState({
         fast: { modelId: '', label: 'Fast' },
         standard: { modelId: '', label: 'Flow (Direct)' },
+        swarm: { modelId: '', label: 'Swarm (Direct)' },
         thinking: { modelId: '', label: 'Thinking' },
         writer: { modelId: '', label: 'Writer' },
         pro: { modelId: '', label: 'Deep Thinking' }

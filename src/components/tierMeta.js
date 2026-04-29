@@ -8,6 +8,7 @@ export const TIER_META = {
     auto: { icon: '🔀', label: 'Auto', desc: 'Optimal choice', color: '#6366f1' },
     fast: { icon: '⚡', label: 'Fast', desc: 'Quick answers', color: '#10b981' },
     standard: { icon: '🐝', iconSrc: '/BeeFlow-logo-Icon-2026.svg', label: 'Flow', desc: 'Multi-stage orchestration', color: '#f59e0b' },
+    swarm: { icon: '🐝🐝', iconSrc: '/BeeFlow-logo-Icon-2026.svg', label: 'Swarm', desc: 'Parallel agents, synthesised answer', color: '#10b981' },
     thinking: { icon: '🧠', label: 'Think', desc: 'Complex problems', color: '#8b5cf6' },
     writer: { icon: '✍️', label: 'Write', desc: 'Long-form content', color: '#ec4899' },
     deep_thinking: { icon: '✨', label: 'Deep Thinking', desc: 'Advanced reasoning', color: '#f59e0b' },
