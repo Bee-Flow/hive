@@ -90,7 +90,7 @@ const MODEL_META = {
 
 const TIERS = [
     { key: 'fast', icon: '⚡', label: 'Fast', desc: 'Quick responses for simple questions' },
-    { key: 'standard', icon: '🐝', label: 'Flow (Direct)', desc: 'Direct chat tier with per-chat orchestrated stages' },
+    { key: 'standard', icon: '🐝', iconSrc: '/BeeFlow-logo-Icon-2026.svg', label: 'Flow (Direct)', desc: 'Direct chat tier with per-chat orchestrated stages' },
     { key: 'thinking', icon: '🧠', label: 'Thinking', desc: 'Complex reasoning and analysis' },
     { key: 'writer', icon: '✍️', label: 'Writer', desc: 'Long-form content and reports' },
     { key: 'pro', icon: '✨', label: 'Deep Thinking', desc: 'Maximum quality output' }
@@ -683,7 +683,9 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
             <div key={tier.key} className="rounded-xl border overflow-hidden" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)' }}>
                 <div className="p-4">
                     <div className="flex items-center gap-3 mb-3">
-                        <span className="text-xl">{tier.icon}</span>
+                        {tier.iconSrc
+                            ? <img src={tier.iconSrc} alt="" className="w-6 h-6 object-contain" />
+                            : <span className="text-xl">{tier.icon}</span>}
                         <div className="flex-1">
                             <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{tier.label}</span>
                             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{tier.desc}</p>

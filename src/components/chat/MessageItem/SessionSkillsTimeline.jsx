@@ -151,13 +151,13 @@ export default function SessionSkillsTimeline({
             {/* Header — bootstrap intro OR a compact summary */}
             <div className="flex items-center gap-2 px-3 pt-2.5">
                 <span
-                    className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 text-base leading-none"
+                    className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0"
                     style={{ background: 'rgba(245,158,11,.15)' }}
                     aria-hidden="true"
                 >
                     {isPending
                         ? <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
-                        : '🐝'}
+                        : <img src="/BeeFlow-logo-Icon-2026.svg" alt="" className="w-4 h-4 object-contain" />}
                 </span>
                 <div className="flex-1 min-w-0">
                     {bootstrap ? (

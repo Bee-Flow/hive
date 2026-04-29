@@ -38,7 +38,9 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
                 title="Select model tier"
                 data-testid="model-tier-trigger"
             >
-                <span>{currentMeta.icon}</span>
+                {currentMeta.iconSrc
+                    ? <img src={currentMeta.iconSrc} alt="" className="w-4 h-4 object-contain" />
+                    : <span>{currentMeta.icon}</span>}
                 <span>{currentMeta.label}</span>
                 <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ opacity: 0.5 }}>
                     <path d="M2 4L5 7L8 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -87,7 +89,11 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
                                 onMouseEnter={e => { if (!isSelected) e.target.style.background = 'var(--bg-tertiary)'; }}
                                 onMouseLeave={e => { if (!isSelected) e.target.style.background = 'transparent'; }}
                             >
-                                <span style={{ fontSize: '18px', width: '24px', textAlign: 'center' }}>{meta.icon}</span>
+                                <span style={{ fontSize: '18px', width: '24px', textAlign: 'center', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                    {meta.iconSrc
+                                        ? <img src={meta.iconSrc} alt="" style={{ width: '20px', height: '20px', objectFit: 'contain' }} />
+                                        : meta.icon}
+                                </span>
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{ fontSize: '13px', fontWeight: 600 }}>{meta.label}</div>
                                     <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
