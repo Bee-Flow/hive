@@ -769,21 +769,37 @@ export default function useChatEngine({
             if (isDirectMode) {
                 // Direct chat mode — post to custom endpoint or /ai/chat/direct/stream
                 url = directMode.customEndpoint ? `${API_BASE}${directMode.customEndpoint}` : `${API_BASE}/ai/chat/direct/stream`;
-                // Build history: use historyOverride when provided (edit/retry), otherwise
-                // read the current messages via ref — avoids churning `sendMessage`'s
-                // identity on every new message appended during streaming.
-                const sourceMessages = historyOverride || messagesRef.current;
-                const history = sourceMessages.filter(m => (m.role === 'user' || m.role === 'assistant') && m.content?.trim()).map(m => ({
-                    role: m.role,
-                    content: m.content,
-                    ...(m.attachments && m.attachments.length > 0 ? { attachments: m.attachments.map(a => ({ name: a.name, type: a.type })) } : {})
-                }));
+                // History rule:
+                //   - Edit/retry flow: send `historyOverride` so the server can
+                //     truncate the conversation to the edit point.
+                //   - Brand-new conversation (no conversationId): send the
+                //     current in-memory history so the very first turn has it.
+                //   - Persisted conversation, no override: send NO history.
+                //     The server loads from `conversation_messages` instead,
+                //     which is the durable source of truth and avoids drift
+                //     (stripped tool messages, page-reload gaps, etc).
+                let history;
+                if (historyOverride) {
+                    history = historyOverride.filter(m => (m.role === 'user' || m.role === 'assistant') && m.content?.trim()).map(m => ({
+                        role: m.role,
+                        content: m.content,
+                        ...(m.attachments && m.attachments.length > 0 ? { attachments: m.attachments.map(a => ({ name: a.name, type: a.type })) } : {})
+                    }));
+                } else if (!currentConversation?.id) {
+                    history = messagesRef.current.filter(m => (m.role === 'user' || m.role === 'assistant') && m.content?.trim()).map(m => ({
+                        role: m.role,
+                        content: m.content,
+                        ...(m.attachments && m.attachments.length > 0 ? { attachments: m.attachments.map(a => ({ name: a.name, type: a.type })) } : {})
+                    }));
+                } else {
+                    history = undefined;
+                }
                 payload = {
                     message: text,
                     conversationId: currentConversation?.id,
                     modelTier: overrideTier || directMode.modelTier || 'fast',
                     attachments,
-                    history,
+                    ...(history !== undefined ? { history } : {}),
                     ...getNotebookPayload?.(),
                     ...(directMode.systemPrompt ? { systemPrompt: directMode.systemPrompt } : {}),
                     imageGenSettings: scopedStorage.getJSON('imageGenSettings', {}),
