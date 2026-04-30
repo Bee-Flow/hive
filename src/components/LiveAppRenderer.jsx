@@ -1,5 +1,63 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { API_BASE, authFetch } from '../utils/helpers';
+
+// Script injected into every rendered iframe so it can report its
+// content height back to the parent. The parent uses this to grow the
+// iframe to its content and avoid an inner scrollbar.
+const AUTO_RESIZE_SCRIPT = `
+<script>
+(function () {
+  var lastHeight = 0;
+  function send() {
+    var h = Math.max(
+      document.documentElement ? document.documentElement.scrollHeight : 0,
+      document.body ? document.body.scrollHeight : 0,
+      document.body ? document.body.offsetHeight : 0
+    );
+    if (h && Math.abs(h - lastHeight) > 1) {
+      lastHeight = h;
+      parent.postMessage({ type: 'beeflow-iframe-resize', height: h }, '*');
+    }
+  }
+  function start() {
+    send();
+    window.addEventListener('load', send);
+    window.addEventListener('resize', send);
+    if (window.ResizeObserver && document.body) {
+      try { new ResizeObserver(send).observe(document.body); } catch (e) {}
+    }
+    if (window.MutationObserver && document.body) {
+      try {
+        new MutationObserver(send).observe(document.body, {
+          childList: true, subtree: true, attributes: true, characterData: true
+        });
+      } catch (e) {}
+    }
+    document.querySelectorAll('img').forEach(function (img) {
+      if (!img.complete) img.addEventListener('load', send);
+    });
+    setTimeout(send, 50);
+    setTimeout(send, 250);
+    setTimeout(send, 1000);
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
+})();
+<\/script>`;
+
+function injectAutoResize(html) {
+    if (!html) return html;
+    if (/<\/body\s*>/i.test(html)) {
+        return html.replace(/<\/body\s*>/i, AUTO_RESIZE_SCRIPT + '</body>');
+    }
+    if (/<\/html\s*>/i.test(html)) {
+        return html.replace(/<\/html\s*>/i, AUTO_RESIZE_SCRIPT + '</html>');
+    }
+    return html + AUTO_RESIZE_SCRIPT;
+}
 
 /**
  * LiveAppRenderer - Renders HTML/JS code in a sandboxed iframe
@@ -13,6 +71,20 @@ const LiveAppRenderer = ({ code, language = 'html', title = 'App Preview' }) => 
     const [publishForm, setPublishForm] = useState({ name: '', description: '' });
     const [publishing, setPublishing] = useState(false);
     const [publishSuccess, setPublishSuccess] = useState(false);
+    const [contentHeight, setContentHeight] = useState(0);
+    const iframeRef = useRef(null);
+
+    // Listen for height updates posted from the iframe.
+    useEffect(() => {
+        const handleMessage = (event) => {
+            if (!event.data || event.data.type !== 'beeflow-iframe-resize') return;
+            if (iframeRef.current && event.source !== iframeRef.current.contentWindow) return;
+            const h = Number(event.data.height);
+            if (Number.isFinite(h) && h > 0) setContentHeight(h);
+        };
+        window.addEventListener('message', handleMessage);
+        return () => window.removeEventListener('message', handleMessage);
+    }, []);
 
     // Close overlay on escape key
     useEffect(() => {
@@ -34,29 +106,29 @@ const LiveAppRenderer = ({ code, language = 'html', title = 'App Preview' }) => 
         // If it's already full HTML, use it directly
         if (code.trim().toLowerCase().startsWith('<!doctype') ||
             code.trim().toLowerCase().startsWith('<html')) {
-            return code;
+            return injectAutoResize(code);
         }
 
         // Wrap JavaScript in HTML
         if (language === 'javascript' || language === 'js') {
-            return `<!DOCTYPE html>
+            return injectAutoResize(`<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
+        html, body { overflow: hidden; }
+        body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             padding: 16px;
             background: #1a1a2e;
             color: #eee;
-            min-height: 100vh;
         }
-        button { 
-            padding: 8px 16px; 
-            border-radius: 8px; 
-            border: none; 
+        button {
+            padding: 8px 16px;
+            border-radius: 8px;
+            border: none;
             background: linear-gradient(135deg, #8b5cf6, #6366f1);
             color: white;
             cursor: pointer;
@@ -64,9 +136,9 @@ const LiveAppRenderer = ({ code, language = 'html', title = 'App Preview' }) => 
             transition: all 0.2s;
         }
         button:hover { transform: scale(1.02); }
-        input, select { 
-            padding: 8px 12px; 
-            border-radius: 8px; 
+        input, select {
+            padding: 8px 12px;
+            border-radius: 8px;
             border: 1px solid #333;
             background: #16162a;
             color: #eee;
@@ -79,30 +151,36 @@ const LiveAppRenderer = ({ code, language = 'html', title = 'App Preview' }) => 
     <div id="app"></div>
     <script>${code}</script>
 </body>
-</html>`;
+</html>`);
         }
 
         // Wrap HTML snippet in full document
-        return `<!DOCTYPE html>
+        return injectAutoResize(`<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { 
+        html, body { overflow: hidden; }
+        body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             background: #1a1a2e;
             color: #eee;
-            min-height: 100vh;
         }
     </style>
 </head>
 <body>
     ${code}
 </body>
-</html>`;
+</html>`);
     }, [code, language]);
+
+    // Reset measured height when content changes so we don't briefly show
+    // the old (possibly larger) height before the new doc reports back.
+    useEffect(() => {
+        setContentHeight(0);
+    }, [iframeContent]);
 
     // Use srcDoc instead of a blob: URL — blob: URLs are blocked by the
     // CSP's default-src 'self' fallback (frame-src is not explicitly set).
@@ -159,9 +237,16 @@ const LiveAppRenderer = ({ code, language = 'html', title = 'App Preview' }) => 
                     ) : (
                         <div className="relative">
                             <iframe
+                                ref={iframeRef}
                                 srcDoc={iframeContent}
-                                className="w-full border-0"
-                                style={{ minHeight: '600px', height: 'auto', background: 'white' }}
+                                className="w-full border-0 block"
+                                style={{
+                                    height: contentHeight ? `${contentHeight}px` : '600px',
+                                    background: 'white',
+                                    transition: 'height 120ms ease-out',
+                                    overflow: 'hidden'
+                                }}
+                                scrolling="no"
                                 sandbox="allow-scripts allow-forms allow-popups allow-same-origin"
                                 title={title}
                             />
