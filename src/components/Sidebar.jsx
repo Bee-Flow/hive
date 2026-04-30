@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
-import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, PenLine, Sparkles, Mail, Ticket, BookOpen } from 'lucide-react';
+import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, PenLine, Sparkles, Mail, Ticket, BookOpen, Globe } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 import NotificationCenter from './NotificationCenter';
 import NavLink from './NavLink';
@@ -942,6 +942,20 @@ const Sidebar = ({
                                     {currentPage === 'notebooks' && <div className={ACCENT_BAR} />}
                                     <FileText className={`w-4 h-4 ${currentPage === 'notebooks' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
                                     <span className={`text-[13px] ${currentPage === 'notebooks' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.notebooks')}</span>
+                                </NavLink>
+                            )}
+
+                            {!isMobile && user?.featureFlags?.webpages !== false && (user?.permissions?.includes('all') || user?.permissions?.includes('use_webpages')) && (
+                                <NavLink
+                                    href="/webpages"
+                                    onClick={() => setShowProfileMenu(false)}
+                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('webpages'); }}
+                                    className={`${ROW} ${currentPage === 'webpages' ? ROW_ACTIVE : ROW_IDLE}`}
+                                    style={{ textDecoration: 'none', color: 'inherit' }}
+                                >
+                                    {currentPage === 'webpages' && <div className={ACCENT_BAR} />}
+                                    <Globe className={`w-4 h-4 ${currentPage === 'webpages' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
+                                    <span className={`text-[13px] ${currentPage === 'webpages' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.webpages')}</span>
                                 </NavLink>
                             )}
 

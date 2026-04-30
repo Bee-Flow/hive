@@ -33,6 +33,7 @@ const PAGE_ROUTES = {
     meetingNotes: '/app/meeting-notes',
     templates: '/app/templates',
     notebooks: '/app/notebooks',
+    webpages: '/app/webpages',
     ticketAssistant: '/ticket-assistant',
 };
 
@@ -71,6 +72,8 @@ function pageFromPath(pathname) {
     if (pathname === '/app/ai-tasks' || pathname.startsWith('/app/ai-tasks/')) return 'aiTasks';
     // /app/notebooks/:id → notebooks page (must come before generic /app/*)
     if (pathname.startsWith('/app/notebooks')) return 'notebooks';
+    // /app/webpages/:id → webpages page
+    if (pathname.startsWith('/app/webpages')) return 'webpages';
 
     // /app/a/:shortId or /app/agent/:id → agents page
     if (pathname.startsWith('/app/a/') || pathname.startsWith('/app/agent/')) return 'agents';
@@ -142,6 +145,12 @@ function parseNotebookUrl(pathname) {
     return match ? match[1] : null;
 }
 
+// Extract webpage ID from URL: /app/webpages/:id
+function parseWebpageUrl(pathname) {
+    const match = pathname.match(/^\/app\/webpages\/([a-zA-Z0-9_-]+)/);
+    return match ? match[1] : null;
+}
+
 // Root wrapper — handles embed route before App's hooks
 function AppRoot() {
     const chatMatch = window.location.pathname.match(/^\/chat\/([a-zA-Z0-9-]+)/);
@@ -157,6 +166,7 @@ function App() {
     const [adminPath, setAdminPath] = useState(() => parseAdminPath(window.location.pathname));
     const [orgSettingsPath, setOrgSettingsPath] = useState(() => parseOrgSettingsPath(window.location.pathname));
     const [initialNotebookId, setInitialNotebookId] = useState(() => parseNotebookUrl(window.location.pathname));
+    const [initialWebpageId, setInitialWebpageId] = useState(() => parseWebpageUrl(window.location.pathname));
     const [user, setUser] = useState(null);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
 
@@ -186,6 +196,7 @@ function App() {
     // Hard-refreshes on /app/notebooks and /app/notebooks/:id still land the
     // user on the notebook via `initialNotebookId` parsed by pageFromPath.
     const [showNotebooks, setShowNotebooks] = useState(() => pageFromPath(window.location.pathname) === 'notebooks');
+    const [showWebpages, setShowWebpages] = useState(() => pageFromPath(window.location.pathname) === 'webpages');
     const [encryptionState, setEncryptionState] = useState(null); // null | 'setup' | 'pin' | { recoveryKey: string }
     const [noOrganization, setNoOrganization] = useState(false);
     const [pendingApproval, setPendingApproval] = useState(false);
@@ -286,6 +297,7 @@ function App() {
             setAdminPath(parseAdminPath(window.location.pathname));
             setOrgSettingsPath(parseOrgSettingsPath(window.location.pathname));
             setInitialNotebookId(parseNotebookUrl(window.location.pathname));
+            setInitialWebpageId(parseWebpageUrl(window.location.pathname));
             // Sync inline-rendered panels with the URL so back/forward opens or closes them.
             setShowSettings(page === 'settings');
             const isDesigner = page === 'agentDesigner';
@@ -295,6 +307,7 @@ function App() {
             setShowAITasks(isAITasks);
             if (isAITasks) setInitialAITaskId(parseAITasksUrl(window.location.pathname));
             setShowNotebooks(page === 'notebooks');
+            setShowWebpages(page === 'webpages');
         };
         window.addEventListener('popstate', handlePopState);
         return () => window.removeEventListener('popstate', handlePopState);
@@ -417,6 +430,7 @@ function App() {
             const notebookId = page.startsWith('notebooks/') ? page.slice('notebooks/'.length) : null;
             setInitialNotebookId(notebookId);
             setShowNotebooks(true);
+            setShowWebpages(false);
             setShowSettings(false);
             setShowAgentDesigner(false);
             setShowSkillsPanel(false);
@@ -427,6 +441,25 @@ function App() {
             const path = notebookId ? `/app/notebooks/${notebookId}` : '/app/notebooks';
             if (window.location.pathname !== path) {
                 window.history.pushState({ page: 'notebooks', notebookId }, '', path);
+            }
+            return;
+        }
+        // Webpages — same inline-render pattern as notebooks.
+        if (page === 'webpages' || page.startsWith('webpages/')) {
+            const webpageId = page.startsWith('webpages/') ? page.slice('webpages/'.length) : null;
+            setInitialWebpageId(webpageId);
+            setShowWebpages(true);
+            setShowNotebooks(false);
+            setShowSettings(false);
+            setShowAgentDesigner(false);
+            setShowSkillsPanel(false);
+            setShowEmailKB(false);
+            setShowAITasks(false);
+            setCurrentPage('webpages');
+            setShowProfileMenu(false);
+            const path = webpageId ? `/app/webpages/${webpageId}` : '/app/webpages';
+            if (window.location.pathname !== path) {
+                window.history.pushState({ page: 'webpages', webpageId }, '', path);
             }
             return;
         }
@@ -731,6 +764,17 @@ function App() {
             // Mirror the Settings / Agent Designer close pattern — rewrite the
             // URL back to the app root so /app/notebooks doesn't linger.
             if (window.location.pathname.startsWith('/app/notebooks')) {
+                setCurrentPage('agents');
+                window.history.pushState({ page: 'agents' }, '', '/app');
+            }
+        }} showWebpages={showWebpages && user?.featureFlags?.webpages !== false} initialWebpageId={initialWebpageId} onWebpageChange={(id) => {
+            setInitialWebpageId(id);
+            const path = id ? `/app/webpages/${id}` : '/app/webpages';
+            window.history.replaceState({ page: 'webpages', webpageId: id }, '', path);
+        }} onCloseWebpages={() => {
+            setShowWebpages(false);
+            setInitialWebpageId(null);
+            if (window.location.pathname.startsWith('/app/webpages')) {
                 setCurrentPage('agents');
                 window.history.pushState({ page: 'agents' }, '', '/app');
             }

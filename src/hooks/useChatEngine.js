@@ -30,6 +30,8 @@ export default function useChatEngine({
     onNotebookDocUpdate,
     onNotebookSourceAdded,
     onNotebookThemeUpdate,
+    onWebpageDocUpdate,
+    onWebpageSourceAdded,
     activeSkillIds,
     onSessionSkillsChanged,
 }) {
@@ -61,6 +63,12 @@ export default function useChatEngine({
 
     const onNotebookThemeUpdateRef = useRef(onNotebookThemeUpdate);
     useEffect(() => { onNotebookThemeUpdateRef.current = onNotebookThemeUpdate; }, [onNotebookThemeUpdate]);
+
+    const onWebpageDocUpdateRef = useRef(onWebpageDocUpdate);
+    useEffect(() => { onWebpageDocUpdateRef.current = onWebpageDocUpdate; }, [onWebpageDocUpdate]);
+
+    const onWebpageSourceAddedRef = useRef(onWebpageSourceAdded);
+    useEffect(() => { onWebpageSourceAddedRef.current = onWebpageSourceAdded; }, [onWebpageSourceAdded]);
 
     // Cleanup abort controller on unmount
     useEffect(() => {
@@ -695,6 +703,15 @@ export default function useChatEngine({
 
             case 'notebook_source_added':
                 onNotebookSourceAddedRef.current?.(data.source);
+                break;
+
+            // Webpage-specific events (file: 'html'|'css'|'js', content: string)
+            case 'webpage_doc_update':
+                onWebpageDocUpdateRef.current?.({ file: data.file, content: data.content, title: data.title });
+                break;
+
+            case 'webpage_source_added':
+                onWebpageSourceAddedRef.current?.(data.source);
                 break;
 
             case 'slides_source_added':

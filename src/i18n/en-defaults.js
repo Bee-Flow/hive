@@ -297,6 +297,7 @@ const EN_DEFAULTS = {
     "sidebar.admin": "Admin",
     "sidebar.agents": "Agents",
     "sidebar.notebooks": "Notebooks",
+    "sidebar.webpages": "Webpages",
     "sidebar.templates": "Templates",
     "sidebar.meetings": "Meetings",
     "sidebar.today": "Today",

@@ -21,6 +21,7 @@ import AITasksDesigner from './components/admin/AITasksDesigner';
 import SkillsPanel from './components/SkillsPanel';
 import EmailKBSettings from './components/EmailKBSettings';
 import NotebooksPage from './pages/NotebooksPage';
+import WebpagesPage from './pages/WebpagesPage';
 import useChatEngine from './hooks/useChatEngine';
 import { useViewport } from './hooks/useViewport';
 
@@ -39,6 +40,8 @@ const AgentHub = ({
     showEmailKB = false, onCloseEmailKB,
     // Notebooks rendered inline (previously a standalone page at App level).
     showNotebooks = false, onCloseNotebooks, initialNotebookId = null, onNotebookChange,
+    // Webpages — same inline pattern as notebooks.
+    showWebpages = false, onCloseWebpages, initialWebpageId = null, onWebpageChange,
 }) => {
     // Permission helper - checks if user has a specific permission
     const hasPermission = (perm) => {
@@ -1469,6 +1472,14 @@ const AgentHub = ({
                         onBack={onCloseNotebooks}
                         initialNotebookId={initialNotebookId}
                         onNotebookChange={onNotebookChange}
+                    />
+                ) : showWebpages ? (
+                    /* Webpages — same inline-render pattern as notebooks. */
+                    <WebpagesPage
+                        user={user}
+                        onBack={onCloseWebpages}
+                        initialWebpageId={initialWebpageId}
+                        onWebpageChange={onWebpageChange}
                     />
                 ) : showSettings ? (
                     /* Settings rendered inline in conversation area — Open WebUI style */
