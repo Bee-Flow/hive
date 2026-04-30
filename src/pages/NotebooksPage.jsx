@@ -160,6 +160,11 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     const [signSending, setSignSending] = useState(false);
     const [signRequestConfigured, setSignRequestConfigured] = useState(false);
 
+    // Nextcloud export state
+    const [nextcloudConfigured, setNextcloudConfigured] = useState(false);
+    const [nextcloudExporting, setNextcloudExporting] = useState(false);
+    const [nextcloudToast, setNextcloudToast] = useState(null);
+
     // Layout states
     const [leftPanelOpen, setLeftPanelOpen] = useState(true);
     const [rightPanelWidth, setRightPanelWidth] = useState(320);
@@ -328,6 +333,14 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
         authFetch(`${API_BASE}/ai/user-settings`)
             .then(r => r.ok ? r.json() : {})
             .then(data => setSignRequestConfigured(!!data.hasSignRequestConfig))
+            .catch(() => {});
+    }, []);
+
+    /* ── Check Nextcloud config ──────────────────────────────── */
+    useEffect(() => {
+        authFetch(`${API_BASE}/auth/app-password-status`)
+            .then(r => r.ok ? r.json() : {})
+            .then(data => setNextcloudConfigured(!!data.hasAppPassword))
             .catch(() => {});
     }, []);
 
@@ -790,6 +803,35 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
         }
     }, [selected, getExportContent, authFetch]);
 
+    /* ── Export to Nextcloud (PDF → WebDAV) ──────────────────── */
+    const handleNextcloudExport = useCallback(async () => {
+        let content = getExportContent();
+        if (!selected || !content) return;
+        setNextcloudExporting(true);
+        setNextcloudToast(null);
+        try {
+            content = await embedImagesAsBase64(content);
+            const res = await authFetch(`${API_BASE}/api/notebooks/${selected.id}/export/nextcloud`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ content, title: selected.name }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || `Upload failed (${res.status})`);
+            setNextcloudToast({
+                type: 'success',
+                message: `Saved to Nextcloud: ${data.path}`,
+                folderUrl: data.folderUrl || null,
+            });
+            setTimeout(() => setNextcloudToast(null), 6000);
+        } catch (e) {
+            console.error('[Notebooks] Nextcloud export failed:', e);
+            setError(e.message);
+        } finally {
+            setNextcloudExporting(false);
+        }
+    }, [selected, getExportContent, authFetch]);
+
     /* ── Create notebook ─────────────────────────────────────── */
     const handleCreate = async () => {
         const name = newName.trim();
@@ -1033,7 +1075,9 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                         }}
                         signRequestConfigured={signRequestConfigured}
                         onSignRequest={() => setSignModalOpen(true)}
-
+                        nextcloudConfigured={nextcloudConfigured}
+                        onNextcloudExport={handleNextcloudExport}
+                        nextcloudExporting={nextcloudExporting}
                     />
                 </div>
 
@@ -1043,6 +1087,18 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                         <AlertCircle className="w-3.5 h-3.5 shrink-0" />
                         <span className="flex-1">{error}</span>
                         <button onClick={() => setError(null)} className="font-bold text-sm leading-none">&times;</button>
+                    </div>
+                )}
+
+                {/* ── Nextcloud success toast ── */}
+                {nextcloudToast && (
+                    <div className="mx-4 mt-2 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs"
+                        style={{ background: 'rgba(0,130,201,0.08)', borderColor: 'rgba(0,130,201,0.25)', color: '#0082C9', animation: 'slideDown .2s ease-out' }}>
+                        <span className="flex-1">{nextcloudToast.message}</span>
+                        {nextcloudToast.folderUrl && (
+                            <a href={nextcloudToast.folderUrl} target="_blank" rel="noopener noreferrer" className="underline font-medium">Open folder</a>
+                        )}
+                        <button onClick={() => setNextcloudToast(null)} className="font-bold text-sm leading-none">&times;</button>
                     </div>
                 )}
 

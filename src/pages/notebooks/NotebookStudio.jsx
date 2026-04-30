@@ -103,7 +103,7 @@ function DropdownMenu({ group, onSelect, generating, disabled }) {
     );
 }
 
-export default function NotebookStudio({ onGenerate, generating, onExport, exporting, hasContent, readySourceCount, generationCount = 0, onHistoryClick, onSignRequest, signRequestConfigured }) {
+export default function NotebookStudio({ onGenerate, generating, onExport, exporting, hasContent, readySourceCount, generationCount = 0, onHistoryClick, onSignRequest, signRequestConfigured, nextcloudConfigured, onNextcloudExport, nextcloudExporting }) {
     const disabled = readySourceCount === 0;
     const groups = STUDIO_GROUPS;
 
@@ -146,6 +146,19 @@ export default function NotebookStudio({ onGenerate, generating, onExport, expor
                         title="Send for Signing (SignRequest)"
                     >
                         <PenTool className="w-4 h-4 text-green-500" />
+                    </button>
+                )}
+                {nextcloudConfigured && (
+                    <button
+                        disabled={!hasContent || !!exporting || !!nextcloudExporting}
+                        onClick={onNextcloudExport}
+                        className="p-1.5 rounded-lg hover:bg-black/5 text-[var(--text-secondary)] disabled:opacity-40 transition-colors"
+                        title="Save PDF to Nextcloud"
+                    >
+                        {nextcloudExporting
+                            ? <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#0082C9' }} />
+                            : <svg viewBox="0 0 32 32" fill="none" className="w-4 h-4"><path d="M11.5 11.2c-2 0-3.7 1.4-4.2 3.3a3.5 3.5 0 1 0 0 3 4.4 4.4 0 0 0 7 1.7l1.5-1.4 1.6 1.4a4.4 4.4 0 0 0 7-1.7 3.5 3.5 0 1 0 0-3 4.4 4.4 0 0 0-7-1.7l-1.6 1.4-1.5-1.4a4.4 4.4 0 0 0-2.8-1.6zm0 2.2a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8zm9 0a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8z" fill="#0082C9" /></svg>
+                        }
                     </button>
                 )}
                 {generationCount > 0 && (
