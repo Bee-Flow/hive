@@ -248,6 +248,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
     const [statuses, setStatuses] = useState({
         hasFirefliesKey: false, hasYouTrackConfig: false, hasGammaKey: false,
         hasN8nConfig: false, linkedInConnected: false, linkedInName: null, hasLinkedInConfig: false,
+        hasNextcloudAppPassword: false, isNextcloudUser: false,
     });
     // User-scoped: these are personal "which agent do I start on?" preferences.
     const [defaultAgentMode, setDefaultAgentMode] = useState(() => scopedStorage.getItem('defaultAgentMode') || 'last-used');
@@ -281,11 +282,16 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
             const liRes = await authFetch(`${API_BASE}/api/integrations/linkedin/status`);
             if (liRes.ok) { const d = await liRes.json(); setStatuses(p => ({ ...p, linkedInConnected: !!d.connected, linkedInName: d.name })); }
         } catch (e) { }
+        try {
+            const ncRes = await authFetch(`${API_BASE}/auth/app-password-status`);
+            if (ncRes.ok) { const d = await ncRes.json(); setStatuses(p => ({ ...p, hasNextcloudAppPassword: !!d.hasAppPassword, isNextcloudUser: !!d.isNextcloudUser })); }
+        } catch (e) { }
     };
     const handleIntegrationSaved = (key) => {
         const keyMap = { fireflies: 'hasFirefliesKey', youtrack: 'hasYouTrackConfig', gamma: 'hasGammaKey' };
         if (keyMap[key]) setStatuses(p => ({ ...p, [keyMap[key]]: true }));
         if (key === 'linkedin') fetchSettingsStatuses();
+        if (key === 'nextcloud') fetchSettingsStatuses();
     };
     const handleClose = () => {
         if (onClose) onClose();

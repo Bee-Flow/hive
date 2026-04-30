@@ -485,6 +485,103 @@ const GitHubIntegration = ({ onSaved, last }) => {
     );
 };
 
+// ── Nextcloud ─────────────────────────────────────────────────────────────────
+// Stores a username + app password used by Nextcloud-aware components for
+// WebDAV / OCS Basic auth. Manually-generated app passwords (Nextcloud
+// Settings → Security → Devices & sessions) are recommended over OAuth-minted
+// ones, which inherit the access-token TTL (~10 min).
+const NextcloudIntegration = ({ hasNextcloudAppPassword, isNextcloudUser, onSaved, last }) => {
+    const { t } = useTranslation();
+    const [username, setUsername] = useState('');
+    const [password, setPassword] = useState('');
+    const [saving, setSaving] = useState(false);
+    const [disconnecting, setDisconnecting] = useState(false);
+    const [autoCreating, setAutoCreating] = useState(false);
+    const [notice, setNotice] = useState(null);
+
+    const save = async () => {
+        if (!username.trim() || !password.trim()) return;
+        setSaving(true); setNotice(null);
+        try {
+            const res = await authFetch(`${API_BASE}/auth/save-app-password`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username: username.trim(), password: password.trim() }),
+            });
+            if (res.ok) { onSaved(); setUsername(''); setPassword(''); }
+            else { const err = await res.json().catch(() => ({})); setNotice(err.error || 'Failed to save'); }
+        } catch (e) { console.error(e); setNotice(e.message); }
+        setSaving(false);
+    };
+
+    const autoCreate = async () => {
+        setAutoCreating(true); setNotice(null);
+        try {
+            const res = await authFetch(`${API_BASE}/auth/create-app-password`, { method: 'POST' });
+            const data = await res.json().catch(() => ({}));
+            if (res.ok) {
+                onSaved();
+                if (data.warning) setNotice(data.warning);
+            } else {
+                setNotice(data.error || 'Failed to create app password');
+            }
+        } catch (e) { console.error(e); setNotice(e.message); }
+        setAutoCreating(false);
+    };
+
+    const handleDisconnect = async () => {
+        setDisconnecting(true);
+        try {
+            const res = await authFetch(`${API_BASE}/auth/app-password`, { method: 'DELETE' });
+            if (res.ok) onSaved();
+        } catch (e) { console.error(e); }
+        setDisconnecting(false);
+    };
+
+    return (
+        <IntegrationRow
+            last={last}
+            connected={hasNextcloudAppPassword}
+            name="Nextcloud"
+            description={hasNextcloudAppPassword ? 'App password saved — files & WebDAV available to agents' : 'Connect Nextcloud for file/WebDAV access in chat'}
+            icon={<svg viewBox="0 0 32 32" fill="none" style={{ width: '20px', height: '20px' }}><circle cx="16" cy="16" r="16" fill="#0082C9" /><path d="M11.5 11.2c-2 0-3.7 1.4-4.2 3.3a3.5 3.5 0 1 0 0 3 4.4 4.4 0 0 0 7 1.7l1.5-1.4 1.6 1.4a4.4 4.4 0 0 0 7-1.7 3.5 3.5 0 1 0 0-3 4.4 4.4 0 0 0-7-1.7l-1.6 1.4-1.5-1.4a4.4 4.4 0 0 0-2.8-1.6zm0 2.2a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8zm9 0a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8z" fill="white" /></svg>}
+        >
+            <div className="space-y-2">
+                <input
+                    type="text"
+                    value={username}
+                    onChange={e => setUsername(e.target.value)}
+                    placeholder={hasNextcloudAppPassword ? '••••••••' : 'Nextcloud username (uid)'}
+                    className="w-full px-3 py-2 rounded-lg border outline-none text-[13px] focus:border-[var(--accent-primary)] transition-colors"
+                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                />
+                <ApiKeyField
+                    placeholder={hasNextcloudAppPassword ? '••••••••••••••••' : 'App password'}
+                    value={password}
+                    onChange={e => setPassword(e.target.value)}
+                    onSave={save}
+                    saving={saving}
+                    hint={<>Generate at <strong>Nextcloud → Settings → Security → Devices &amp; sessions</strong>. App passwords created here last indefinitely; auto-creation via OAuth is short-lived.</>}
+                    t={t}
+                />
+                {isNextcloudUser && (
+                    <button
+                        onClick={autoCreate}
+                        disabled={autoCreating}
+                        className="px-4 py-2 rounded-lg text-[13px] font-medium transition-opacity disabled:opacity-50"
+                        style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border-default)' }}
+                    >
+                        {autoCreating ? '…' : 'Auto-create from OAuth session (short-lived)'}
+                    </button>
+                )}
+                {notice && (
+                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{notice}</p>
+                )}
+                {hasNextcloudAppPassword && <DisconnectButton onDisconnect={handleDisconnect} disconnecting={disconnecting} t={t} />}
+            </div>
+        </IntegrationRow>
+    );
+};
+
 // ── MCP Servers ───────────────────────────────────────────────────────────────
 const McpCredentialsSection = ({ onSaved }) => {
     const { t } = useTranslation();
@@ -561,9 +658,10 @@ const IntegrationsSection = ({ statuses, onSaved, enabledIntegrations, isOrgAdmi
     const showLinkedIn = isEnabled('linkedin');
     const showGitHub = isEnabled('github');
     const showWhatsApp = isEnabled('whatsapp');
+    const showNextcloud = isEnabled('nextcloud');
     const showMcp = !enabledIntegrations || enabledIntegrations.some(id => id.startsWith('mcp:'));
 
-    const productivityItems = [showFireflies, showYouTrack, showSignRequest, showGamma].filter(Boolean).length;
+    const productivityItems = [showFireflies, showYouTrack, showSignRequest, showGamma, showNextcloud].filter(Boolean).length;
     const socialItems = [showLinkedIn, showWhatsApp].filter(Boolean).length;
     const devItems = [showGitHub].filter(Boolean).length;
 
@@ -574,10 +672,11 @@ const IntegrationsSection = ({ statuses, onSaved, enabledIntegrations, isOrgAdmi
                 <div className="space-y-1.5">
                     <GroupLabel>{t('settings.integrations_productivity')}</GroupLabel>
                     <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
-                        {showFireflies && <FirefliesIntegration hasFirefliesKey={statuses.hasFirefliesKey} onSaved={() => onSaved('fireflies')} last={!showYouTrack && !showSignRequest && !showGamma} />}
-                        {showYouTrack && <YouTrackIntegration hasYouTrackConfig={statuses.hasYouTrackConfig} onSaved={() => onSaved('youtrack')} last={!showSignRequest && !showGamma} />}
-                        {showSignRequest && <SignRequestIntegration hasSignRequestConfig={statuses.hasSignRequestConfig} onSaved={() => onSaved('signrequest')} last={!showGamma} />}
-                        {showGamma && <GammaIntegration hasGammaKey={statuses.hasGammaKey} onSaved={() => onSaved('gamma')} last />}
+                        {showFireflies && <FirefliesIntegration hasFirefliesKey={statuses.hasFirefliesKey} onSaved={() => onSaved('fireflies')} last={!showYouTrack && !showSignRequest && !showGamma && !showNextcloud} />}
+                        {showYouTrack && <YouTrackIntegration hasYouTrackConfig={statuses.hasYouTrackConfig} onSaved={() => onSaved('youtrack')} last={!showSignRequest && !showGamma && !showNextcloud} />}
+                        {showSignRequest && <SignRequestIntegration hasSignRequestConfig={statuses.hasSignRequestConfig} onSaved={() => onSaved('signrequest')} last={!showGamma && !showNextcloud} />}
+                        {showGamma && <GammaIntegration hasGammaKey={statuses.hasGammaKey} onSaved={() => onSaved('gamma')} last={!showNextcloud} />}
+                        {showNextcloud && <NextcloudIntegration hasNextcloudAppPassword={statuses.hasNextcloudAppPassword} isNextcloudUser={statuses.isNextcloudUser} onSaved={() => onSaved('nextcloud')} last />}
                     </div>
                 </div>
             )}
