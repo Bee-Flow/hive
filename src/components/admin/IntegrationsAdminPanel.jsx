@@ -43,6 +43,10 @@ const ALL_INTEGRATIONS = [
     { id: 'linkedin', label: 'LinkedIn', description: 'Post to LinkedIn', category: 'Third-Party' },
     { id: 'github', label: 'GitHub', description: 'Repository management, view code', category: 'Third-Party' },
     { id: 'nextcloud', label: 'Nextcloud', description: 'Files & WebDAV (list, search, read, upload, share)', category: 'Third-Party' },
+    { id: 'nextcloud-calendar', label: 'Nextcloud Calendar', description: 'CalDAV — list, search, create, update, delete events', category: 'Third-Party' },
+    { id: 'nextcloud-contacts', label: 'Nextcloud Contacts', description: 'CardDAV — list, search, create, update, delete contacts', category: 'Third-Party' },
+    { id: 'nextcloud-deck', label: 'Nextcloud Deck', description: 'Kanban — boards, stacks, cards, labels, comments', category: 'Third-Party' },
+    { id: 'nextcloud-notifications', label: 'Nextcloud Notifications', description: 'List and dismiss Nextcloud notifications', category: 'Third-Party' },
 ];
 
 export default function IntegrationsAdminPanel({ activeSection: activeProp = 'features', onNavigate }) {
