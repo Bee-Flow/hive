@@ -945,7 +945,7 @@ const Sidebar = ({
                                 </NavLink>
                             )}
 
-                            {!isMobile && user?.featureFlags?.webpages !== false && (user?.permissions?.includes('all') || user?.permissions?.includes('use_webpages')) && (
+                            {!isMobile && (user?.permissions?.includes('all') || (user?.permissions?.includes('use_webpages') && user?.betaFeatures?.includes('webpages'))) && (
                                 <NavLink
                                     href="/webpages"
                                     onClick={() => setShowProfileMenu(false)}

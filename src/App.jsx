@@ -767,7 +767,7 @@ function App() {
                 setCurrentPage('agents');
                 window.history.pushState({ page: 'agents' }, '', '/app');
             }
-        }} showWebpages={showWebpages && user?.featureFlags?.webpages !== false} initialWebpageId={initialWebpageId} onWebpageChange={(id) => {
+        }} showWebpages={showWebpages && (user?.betaFeatures?.includes('webpages') || user?.permissions?.includes('all'))} initialWebpageId={initialWebpageId} onWebpageChange={(id) => {
             setInitialWebpageId(id);
             const path = id ? `/app/webpages/${id}` : '/app/webpages';
             window.history.replaceState({ page: 'webpages', webpageId: id }, '', path);
