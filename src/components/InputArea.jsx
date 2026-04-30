@@ -926,7 +926,7 @@ const InputArea = ({
                                 {/* Knowledge Bases picker — only in direct mode. Lets the user
                                     attach KBs they have access to so the backend grounds answers
                                     on their content via /api/kb search. */}
-                                {directMode && typeof onChangeKBIds === 'function' && (
+                                {directMode && typeof onChangeKBIds === 'function' && (user?.isAdmin || (user?.permissions || []).includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('knowledge_bases_beta'))) && (
                                     <div className="relative" ref={kbPickerRef}>
                                         <button
                                             onClick={() => setShowKBPicker(v => !v)}
