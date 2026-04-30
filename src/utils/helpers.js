@@ -18,6 +18,25 @@ export const API_BASE = getApiBase();
 
 export const generateMessageId = () => uuidv4();
 
+// Embedded-iframe session token. When BeeFlow runs inside another origin (e.g.
+// Nextcloud), Chrome's storage partitioning keeps the session cookie set by the
+// OAuth popup out of the iframe's reach. As a fallback the OAuth flow deposits
+// a token here (see LoginPage popup pickup); we forward it as X-Session-Token
+// on every request, and server/index.js merges it into req.session.
+const SESSION_TOKEN_KEY = 'bf_session_token';
+
+export const setSessionToken = (token) => {
+    try {
+        if (token) sessionStorage.setItem(SESSION_TOKEN_KEY, token);
+        else sessionStorage.removeItem(SESSION_TOKEN_KEY);
+    } catch (_) { /* sessionStorage may be unavailable in private mode */ }
+};
+
+export const getSessionToken = () => {
+    try { return sessionStorage.getItem(SESSION_TOKEN_KEY); }
+    catch (_) { return null; }
+};
+
 export const authFetch = async (url, options = {}) => {
     const defaultOptions = {
         credentials: 'include',
@@ -31,6 +50,14 @@ export const authFetch = async (url, options = {}) => {
     // Merge headers if provided
     if (options.headers) {
         finalOptions.headers = { ...options.headers };
+    }
+
+    // Embedded-iframe fallback: attach session token if we have one. Browser
+    // cookies may be blocked here by storage partitioning, but the server's
+    // X-Session-Token middleware will rebuild req.session from this.
+    const sessionToken = getSessionToken();
+    if (sessionToken) {
+        finalOptions.headers = { ...(finalOptions.headers || {}), 'X-Session-Token': sessionToken };
     }
 
     const response = await fetch(url, finalOptions);

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import { AlertCircle, Globe } from 'lucide-react';
-import { API_BASE, authFetch } from '../utils/helpers';
+import { API_BASE, authFetch, setSessionToken } from '../utils/helpers';
 import { opaqueLogin } from '../lib/opaque';
 import InitSetupWizard from '../components/InitSetupWizard';
 
@@ -362,18 +362,56 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
     // /auth/user to detect when login completes.
     const pollTimerRef = useRef(null);
 
-    const openOAuthPopup = useCallback((url) => {
+    // Open the OAuth flow in a popup. In embedded mode (BeeFlow iframed under
+    // Nextcloud / etc.), Chrome's storage partitioning blocks the iframe from
+    // ever seeing the popup's session cookie — so polling /auth/user always
+    // returns unauthenticated. We bridge that with a pickup token: the iframe
+    // mints a random id, hands it to the popup via the URL, the OAuth callback
+    // deposits a session token under that id, and we poll /auth/login-pickup
+    // (no cookie required) to retrieve it. The token is then stashed in
+    // sessionStorage and travels on every authFetch as X-Session-Token.
+    const openOAuthPopup = useCallback((urlBase) => {
         const w = 520, h = 650;
         const left = window.screenX + (window.outerWidth - w) / 2;
         const top = window.screenY + (window.outerHeight - h) / 2;
-        // noopener severs the opener chain — Google won't see the iframe context
-        const popup = window.open(url, 'beeflow_oauth',
+
+        // Generate pickup id; append to URL so the OAuth callback can deposit
+        // a token under it.
+        const pickupId = (window.crypto && window.crypto.randomUUID)
+            ? window.crypto.randomUUID()
+            : Math.random().toString(36).slice(2) + Date.now().toString(36);
+        const sep = urlBase.includes('?') ? '&' : '?';
+        const url = `${urlBase}${sep}pickup=${encodeURIComponent(pickupId)}`;
+
+        // noopener severs the opener chain — Google won't see the iframe context.
+        window.open(url, 'beeflow_oauth',
             `width=${w},height=${h},left=${left},top=${top},noopener,noreferrer`);
 
-        // Poll for auth completion since we can't use postMessage with noopener
         if (pollTimerRef.current) clearInterval(pollTimerRef.current);
         pollTimerRef.current = setInterval(async () => {
             try {
+                // Try the pickup channel first (works even when 3rd-party
+                // cookies are blocked).
+                const pickRes = await fetch(`${API_BASE}/auth/login-pickup?id=${encodeURIComponent(pickupId)}`, {
+                    credentials: 'include',
+                });
+                if (pickRes.ok) {
+                    const pickData = await pickRes.json();
+                    if (pickData.sessionToken) {
+                        setSessionToken(pickData.sessionToken);
+                        clearInterval(pollTimerRef.current);
+                        pollTimerRef.current = null;
+                        // Now fetch the user with the token in place.
+                        const userRes = await authFetch(`${API_BASE}/auth/user`);
+                        if (userRes.ok) {
+                            const data = await userRes.json();
+                            if (data.authenticated && data.user) return onLogin(data.user);
+                        }
+                    }
+                }
+
+                // Fallback: cookie-based check (works in non-embedded mode or
+                // when the browser allows 3rd-party cookies).
                 const res = await authFetch(`${API_BASE}/auth/user`);
                 if (res.ok) {
                     const data = await res.json();

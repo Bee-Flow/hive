@@ -16,7 +16,7 @@ import DlpPreviewModal from './components/DlpPreviewModal';
 
 import { LogOut, User, Shield, Settings, ChevronDown } from 'lucide-react';
 
-import { API_BASE, authFetch } from './utils/helpers';
+import { API_BASE, authFetch, setSessionToken } from './utils/helpers';
 import scopedStorage from './utils/scopedStorage';
 
 // ── Route mapping ──────────────────────────────────────────────
@@ -516,6 +516,9 @@ function App() {
         // Device-level keys (theme, locale) are not touched.
         if (prevUserId) scopedStorage.clearUser(prevUserId);
         scopedStorage.setCurrentUser(null);
+        // Drop the embedded-iframe pickup token so a logged-out iframe doesn't
+        // keep replaying it on subsequent requests.
+        setSessionToken(null);
         setUser(null);
         setIsAuthenticated(false);
         navigateToPage('agents');
