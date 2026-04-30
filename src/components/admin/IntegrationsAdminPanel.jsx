@@ -47,6 +47,11 @@ const ALL_INTEGRATIONS = [
     { id: 'nextcloud-contacts', label: 'Nextcloud Contacts', description: 'CardDAV — list, search, create, update, delete contacts', category: 'Third-Party' },
     { id: 'nextcloud-deck', label: 'Nextcloud Deck', description: 'Kanban — boards, stacks, cards, labels, comments', category: 'Third-Party' },
     { id: 'nextcloud-notifications', label: 'Nextcloud Notifications', description: 'List and dismiss Nextcloud notifications', category: 'Third-Party' },
+    { id: 'nextcloud-talk', label: 'Nextcloud Talk', description: 'Chat rooms, messages, reactions', category: 'Third-Party' },
+    { id: 'nextcloud-tasks', label: 'Nextcloud Tasks', description: 'VTODO via CalDAV — list, create, update, complete, delete tasks', category: 'Third-Party' },
+    { id: 'nextcloud-notes', label: 'Nextcloud Notes', description: 'Plain-text / markdown notes — list, search, create, update, delete', category: 'Third-Party' },
+    { id: 'nextcloud-activity', label: 'Nextcloud Activity', description: 'Read-only feed of recent file changes, shares, mentions', category: 'Third-Party' },
+    { id: 'nextcloud-status', label: 'Nextcloud User Status', description: 'Get / set / clear the user\'s availability and custom message', category: 'Third-Party' },
 ];
 
 export default function IntegrationsAdminPanel({ activeSection: activeProp = 'features', onNavigate }) {
