@@ -494,6 +494,8 @@ export function SortableTable({ columns, data, onRowClick, emptyText = 'No data'
 // ── Model / Agent Rows (lightweight) ────────────────────────────────────────
 
 export function ModelRow({ model: m, index, maxTokens, cost }) {
+    const cached = m.cached_tokens || 0;
+    const reasoning = m.reasoning_tokens || 0;
     return (
         <div style={{
             display: 'flex', alignItems: 'center', gap: '10px',
@@ -508,6 +510,12 @@ export function ModelRow({ model: m, index, maxTokens, cost }) {
                     {shortModel(m.model || 'unknown')}
                 </div>
                 <InOutBar input={m.prompt_tokens} output={m.completion_tokens} height={3} style={{ marginTop: '4px', maxWidth: '120px' }} />
+                {(cached > 0 || reasoning > 0) && (
+                    <div style={{ fontSize: '10px', color: 'var(--text-muted, #888)', marginTop: '2px', display: 'flex', gap: '8px' }}>
+                        {cached > 0 && <span title="Cached input tokens">💾 {fmt(cached)}</span>}
+                        {reasoning > 0 && <span title="Reasoning / thinking tokens (billed at output rate)">🧠 {fmt(reasoning)}</span>}
+                    </div>
+                )}
             </div>
             <div style={{ textAlign: 'right', flexShrink: 0 }}>
                 <div style={{ fontSize: '12px', fontWeight: 600, color: COLORS.green }}>{fmt(m.total_tokens)}</div>

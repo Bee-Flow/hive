@@ -1,6 +1,6 @@
 import React, { useMemo } from 'react';
 import {
-    Zap, BarChart3, Clock, DollarSign, Cpu, Bot, Wrench, TrendingUp
+    Zap, BarChart3, Clock, DollarSign, Cpu, Bot, Wrench, TrendingUp, Database, Brain
 } from 'lucide-react';
 import {
     fmt, fmtCost, fmtDuration, COLORS, MODEL_COLORS,
@@ -57,6 +57,23 @@ export function OverviewPage({
                     deltaLabel={deltas?.latency != null ? (deltas.latency > 0 ? 'slower' : 'faster') : deltaLabel}
                 />
             </div>
+            {/* ── Cache & reasoning row (only render if either is non-zero) ── */}
+            {((summary?.total_cached_tokens || 0) > 0 || (summary?.total_reasoning_tokens || 0) > 0) && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '1.5rem' }}>
+                    <MetricCard
+                        icon={Database} label="Cached Tokens" color={COLORS.green}
+                        value={fmt(summary?.total_cached_tokens || 0)}
+                        deltaLabel={(summary?.total_cache_creation_tokens || 0) > 0
+                            ? `+ ${fmt(summary.total_cache_creation_tokens)} written`
+                            : 'cache hits'}
+                    />
+                    <MetricCard
+                        icon={Brain} label="Reasoning Tokens" color={COLORS.primary}
+                        value={fmt(summary?.total_reasoning_tokens || 0)}
+                        deltaLabel="o-series / thinking"
+                    />
+                </div>
+            )}
 
             {/* ── Timeline Charts ── */}
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px', marginBottom: '1.25rem' }}>
