@@ -588,7 +588,7 @@ const Sidebar = ({
                 {[
                     { label: t('sidebar.new_chat') || 'New Chat', icon: PenLine, onClick: onDirectChat, active: directChatMode && !selectedAgent },
                     { label: t('sidebar.agents') || 'Agents', icon: Store, onClick: onOpenMarketplace, active: currentPage === 'marketplace' },
-                    ...(onOpenKBStore ? [{ label: t('sidebar.knowledge_bases') || 'Knowledge Bases', icon: BookOpen, onClick: onOpenKBStore, active: currentPage === 'knowledgeBases' }] : []),
+                    ...(onOpenKBStore ? [{ label: t('sidebar.knowledge_bases') || 'Knowledge Bases', icon: BookOpen, onClick: onOpenKBStore, active: currentPage === 'knowledgeBases', beta: Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('knowledge_bases_beta') }] : []),
                     { label: t('sidebar.ai_tasks') || 'AI Tasks', icon: Bot, onClick: () => onNavigate && onNavigate('aiTasks'), active: showAITasks, badge: activeAITaskCount },
                     { label: t('sidebar.search'), icon: Search, onClick: onOpenSearch, active: false, kbd: (typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)) ? '⌘K' : 'Ctrl+K' },
                 ].map(({ label, icon: Icon, onClick, active, primary, beta, kbd, badge }) => (
