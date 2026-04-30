@@ -42,6 +42,7 @@ const ALL_INTEGRATIONS = [
     { id: 'n8n', label: 'n8n', description: 'Workflow automation', category: 'Third-Party' },
     { id: 'linkedin', label: 'LinkedIn', description: 'Post to LinkedIn', category: 'Third-Party' },
     { id: 'github', label: 'GitHub', description: 'Repository management, view code', category: 'Third-Party' },
+    { id: 'nextcloud', label: 'Nextcloud', description: 'Files & WebDAV (list, search, read, upload, share)', category: 'Third-Party' },
 ];
 
 export default function IntegrationsAdminPanel({ activeSection: activeProp = 'features', onNavigate }) {
