@@ -736,7 +736,7 @@ const MessageItem = ({
                                                     {/* Raw-payload transparency — only renders when the org opted in
                                                         via Privacy Shield → Show raw payload. Lets the user verify the
                                                         actual strings sent to and received from the LLM. */}
-                                                    {(info.tokenizedPrompt || info.rawResponse) && (() => {
+                                                    {(info.tokenizedPrompt || info.rawResponse || info.tokenMap) && (() => {
                                                         // Find the previous user message so we can show the "Original"
                                                         // (the user's own typed text that never left their browser).
                                                         let originalUserMsg = '';
@@ -774,10 +774,44 @@ const MessageItem = ({
                                                                 </div>
                                                             );
                                                         };
+                                                        const TokenMapRow = ({ tokenMap }) => {
+                                                            const [revealed, setRevealed] = React.useState(false);
+                                                            const entries = tokenMap ? Object.entries(tokenMap) : [];
+                                                            if (entries.length === 0) return null;
+                                                            const allText = entries.map(([t, v]) => `${t}\t${v}`).join('\n');
+                                                            return (
+                                                                <div className="mt-2">
+                                                                    <div className="flex items-center gap-2 mb-1">
+                                                                        <span className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-tertiary)' }}>Token mapping</span>
+                                                                        <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>· {entries.length} item{entries.length === 1 ? '' : 's'}</span>
+                                                                        {!revealed && (
+                                                                            <button onClick={() => setRevealed(true)} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-primary)', color: 'var(--accent-primary)' }}>
+                                                                                Click to reveal
+                                                                            </button>
+                                                                        )}
+                                                                        <button onClick={() => copy(allText)} className="ml-auto text-[10px] px-1.5 py-0.5 rounded hover:bg-[var(--bg-primary)]" style={{ color: 'var(--text-tertiary)' }} title="Copy">
+                                                                            Copy
+                                                                        </button>
+                                                                    </div>
+                                                                    <div className="px-2.5 py-1.5 rounded text-[11px] leading-relaxed font-mono" style={{ background: 'var(--bg-primary)', maxHeight: '180px', overflow: 'auto' }}>
+                                                                        {entries.map(([token, value]) => (
+                                                                            <div key={token} className="flex gap-2 items-baseline">
+                                                                                <code className="shrink-0" style={{ color: 'var(--accent-primary)' }}>{token}</code>
+                                                                                <span style={{ color: 'var(--text-tertiary)' }}>→</span>
+                                                                                <span className="break-all" style={{ color: revealed ? 'var(--text-primary)' : 'transparent', textShadow: revealed ? 'none' : '0 0 8px var(--text-tertiary)' }}>
+                                                                                    {revealed ? value : '•'.repeat(Math.min(24, (value || '').length))}
+                                                                                </span>
+                                                                            </div>
+                                                                        ))}
+                                                                    </div>
+                                                                </div>
+                                                            );
+                                                        };
                                                         return (
                                                             <div className="mt-3 pt-2 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
                                                                 <Row label="Original message" text={originalUserMsg} hint="stays on your device" revealable />
                                                                 <Row label="Sent to AI" text={info.tokenizedPrompt} hint={info.provider ? `via ${info.provider}` : undefined} />
+                                                                <TokenMapRow tokenMap={info.tokenMap} />
                                                                 <Row label="AI's raw response" text={info.rawResponse} hint={info.rawTruncated ? 'truncated' : undefined} />
                                                                 <Row label="What you saw" text={shownResponse} hint="tokens restored" />
                                                             </div>

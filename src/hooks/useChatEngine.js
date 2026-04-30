@@ -816,6 +816,16 @@ export default function useChatEngine({
                     : m));
                 break;
             }
+            case 'privacy_token_map': {
+                // Explicit { token: realValue } mapping. Server-gated by org `showRawPayload`.
+                // Lets the privacy panel render an exact "[name_1] → Gerard" table.
+                const incoming = data?.tokenMap || {};
+                if (Object.keys(incoming).length === 0) break;
+                setMessages(prev => prev.map(m => m.id === assistantMsgId
+                    ? { ...m, tokenisationInfo: { ...(m.tokenisationInfo || {}), tokenMap: { ...(m.tokenisationInfo?.tokenMap || {}), ...incoming } } }
+                    : m));
+                break;
+            }
             case 'dlp_blocked': {
                 window.dispatchEvent(new CustomEvent('beeflow:dlp_blocked', { detail: data }));
                 const reason = data?.reason || 'policy';
