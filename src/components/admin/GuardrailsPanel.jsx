@@ -59,6 +59,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     const [orgPiiCategories, setOrgPiiCategories] = useState([]);
     const [orgPiiConfidenceThreshold, setOrgPiiConfidenceThreshold] = useState(0.7);
     const [orgPiiAction, setOrgPiiAction] = useState('block');
+    const [orgShowRawPayload, setOrgShowRawPayload] = useState(false);
 
     // DLP (Data Loss Prevention) state
     const [dlpEnabled, setDlpEnabled] = useState(false);
@@ -216,6 +217,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 setOrgPiiCategories(loaded);
                 setOrgPiiConfidenceThreshold(data.piiDetectionConfidenceThreshold ?? 0.7);
                 setOrgPiiAction(data.piiDetectionAction || 'block');
+                setOrgShowRawPayload(!!data.showRawPayload);
                 // DLP
                 setDlpEnabled(!!data.dlpEnabled);
                 setDlpScope(data.dlpScope === 'all' ? 'all' : 'external');
@@ -263,6 +265,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                     piiDetectionCategories: orgPiiCategories,
                     piiDetectionConfidenceThreshold: orgPiiConfidenceThreshold,
                     piiDetectionAction: orgPiiAction,
+                    showRawPayload: orgShowRawPayload,
                     // DLP
                     dlpEnabled,
                     dlpScope,
@@ -987,6 +990,28 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                                 {t('dlp.action_footnote', 'Admins who want the user to choose per-message can enable the separate DLP gate (Ask mode) below.')}
                                                             </p>
                                                         </div>
+
+                                                        {/* Transparency toggle — show original / tokenised / raw / mapping in chat */}
+                                                        {orgPiiAction === 'tokenize' && (
+                                                            <div className="p-4 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
+                                                                <label className="flex items-start gap-3 cursor-pointer">
+                                                                    <input
+                                                                        type="checkbox"
+                                                                        checked={orgShowRawPayload}
+                                                                        onChange={(e) => setOrgShowRawPayload(e.target.checked)}
+                                                                        className="mt-0.5 w-4 h-4 rounded border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0"
+                                                                    />
+                                                                    <span className="flex-1">
+                                                                        <span className="text-xs font-medium block" style={{ color: 'var(--text-primary)' }}>
+                                                                            🔍 Show raw payload &amp; token mapping
+                                                                        </span>
+                                                                        <span className="text-[10px] block mt-1 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                                                                            Adds a transparency section to the &ldquo;How I got this answer&rdquo; panel showing the user&apos;s original message, the tokenised text sent to the AI, the AI&apos;s raw (still-tokenised) reply, and an explicit <code className="px-1 rounded" style={{ background: 'var(--bg-primary)' }}>[name_1] → Gerard</code> mapping. Real values are revealed only on click. Visible to anyone who can open the conversation.
+                                                                        </span>
+                                                                    </span>
+                                                                </label>
+                                                            </div>
+                                                        )}
 
                                                         {/* PII Categories */}
                                                         <div>
