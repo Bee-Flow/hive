@@ -129,8 +129,36 @@ const AgentHub = ({
         if (storedMode) setChatHistoryMode(storedMode);
         const storedSkills = scopedStorage.getJSON('activeSkillIds', null);
         if (Array.isArray(storedSkills)) setActiveSkillIds(storedSkills);
-        const storedFavs = scopedStorage.getJSON('agentFavorites', null);
-        if (Array.isArray(storedFavs)) setFavorites(storedFavs);
+
+        // Agent favorites: load from server, with one-time migration of any
+        // legacy localStorage favorites that haven't made it to the DB yet.
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/agents/favorites`);
+                if (!res.ok) return;
+                const serverFavs = await res.json();
+                const legacy = scopedStorage.getJSON('agentFavorites', null);
+                if (Array.isArray(legacy) && legacy.length && Array.isArray(serverFavs) && serverFavs.length === 0) {
+                    const bulkRes = await authFetch(`${API_BASE}/agents/favorites/bulk`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ agentIds: legacy }),
+                    });
+                    if (bulkRes.ok) {
+                        const merged = await bulkRes.json();
+                        if (!cancelled) setFavorites(Array.isArray(merged) ? merged : []);
+                        scopedStorage.removeItem('agentFavorites');
+                        return;
+                    }
+                }
+                if (!cancelled) setFavorites(Array.isArray(serverFavs) ? serverFavs : []);
+                if (Array.isArray(legacy)) scopedStorage.removeItem('agentFavorites');
+            } catch (e) {
+                console.warn('[AgentHub] Failed to load agent favorites from server:', e);
+            }
+        })();
+        return () => { cancelled = true; };
     }, [user?.id]);
 
     // Chat engine hook — owns messages, isLoading, sendMessage, stopGenerating
@@ -427,19 +455,55 @@ const AgentHub = ({
         }
     }, [showMarketplace, showSettings, showAgentDesigner, showSkillsPanel, showEmailKB, showAITasks]);
 
-    // Persist KB favourites per-user via scopedStorage
+    // KB favourites: load from server, with one-time migration of any legacy
+    // localStorage favorites left over from the client-side implementation.
     useEffect(() => {
         if (!user?.id) return;
-        const stored = scopedStorage.getJSON('kb_favorites', []);
-        setKbFavorites(Array.isArray(stored) ? stored : []);
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/api/kb/favorites`);
+                if (!res.ok) return;
+                const serverFavs = await res.json();
+                const legacy = scopedStorage.getJSON('kb_favorites', null);
+                if (Array.isArray(legacy) && legacy.length && Array.isArray(serverFavs) && serverFavs.length === 0) {
+                    const bulkRes = await authFetch(`${API_BASE}/api/kb/favorites/bulk`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ kbIds: legacy }),
+                    });
+                    if (bulkRes.ok) {
+                        const merged = await bulkRes.json();
+                        if (!cancelled) setKbFavorites(Array.isArray(merged) ? merged : []);
+                        scopedStorage.removeItem('kb_favorites');
+                        return;
+                    }
+                }
+                if (!cancelled) setKbFavorites(Array.isArray(serverFavs) ? serverFavs : []);
+                if (Array.isArray(legacy)) scopedStorage.removeItem('kb_favorites');
+            } catch (e) {
+                console.warn('[AgentHub] Failed to load KB favorites from server:', e);
+            }
+        })();
+        return () => { cancelled = true; };
     }, [user?.id]);
 
-    const handleToggleKBFavorite = useCallback((id) => {
+    const handleToggleKBFavorite = useCallback(async (id) => {
+        let prevSnapshot = null;
         setKbFavorites(prev => {
-            const next = prev.includes(id) ? prev.filter(k => k !== id) : [...prev, id];
-            scopedStorage.setJSON('kb_favorites', next);
-            return next;
+            prevSnapshot = prev;
+            return prev.includes(id) ? prev.filter(k => k !== id) : [...prev, id];
         });
+        const wasFav = Array.isArray(prevSnapshot) && prevSnapshot.includes(id);
+        try {
+            const res = await authFetch(`${API_BASE}/api/kb/${id}/favorite`, {
+                method: wasFav ? 'DELETE' : 'PUT',
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        } catch (e) {
+            console.error('[AgentHub] Failed to toggle KB favorite:', e);
+            if (Array.isArray(prevSnapshot)) setKbFavorites(prevSnapshot);
+        }
     }, []);
 
     const handleUnpublishKB = useCallback(async (kbId) => {
@@ -1180,12 +1244,19 @@ const AgentHub = ({
         return Object.entries(groups).filter(([_, list]) => list.length > 0);
     };
 
-    const handleToggleFavorite = (id) => {
-        const newFavs = favorites.includes(id)
-            ? favorites.filter(f => f !== id)
-            : [...favorites, id];
+    const handleToggleFavorite = async (id) => {
+        const wasFav = favorites.includes(id);
+        const newFavs = wasFav ? favorites.filter(f => f !== id) : [...favorites, id];
         setFavorites(newFavs);
-        scopedStorage.setJSON('agentFavorites', newFavs);
+        try {
+            const res = await authFetch(`${API_BASE}/agents/${id}/favorite`, {
+                method: wasFav ? 'DELETE' : 'PUT',
+            });
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        } catch (e) {
+            console.error('[AgentHub] Failed to toggle agent favorite:', e);
+            setFavorites(favorites);
+        }
     };
 
     const handleUnpublishAgent = async (agentId) => {
