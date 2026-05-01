@@ -15,6 +15,7 @@ import useTranslation from './useTranslation';
  * @param {Function} opts.onConversationCreated - Called when stream creates/updates a conversation
  * @param {Function} opts.getNotebookPayload - Returns { notebookspaceContent, notebookspaceSelection } if notebook is open
  * @param {Function} opts.onNotebookUpdate - Called with new workspace content from stream
+ * @param {Function} opts.onGammaPreview - Called with Gamma generation/preview data from Gamma tool results
  * @param {Object} opts.directMode - { enabled: boolean, modelTier: string }
  * @param {Function} opts.onDirectConversationCreated - Called with { conversationId, title } for direct chats
  */
@@ -32,6 +33,7 @@ export default function useChatEngine({
     onNotebookThemeUpdate,
     onWebpageDocUpdate,
     onWebpageSourceAdded,
+    onGammaPreview,
     activeSkillIds,
     onSessionSkillsChanged,
 }) {
@@ -68,6 +70,29 @@ export default function useChatEngine({
 
     const onWebpageSourceAddedRef = useRef(onWebpageSourceAdded);
     useEffect(() => { onWebpageSourceAddedRef.current = onWebpageSourceAdded; }, [onWebpageSourceAdded]);
+
+    const onGammaPreviewRef = useRef(onGammaPreview);
+    useEffect(() => { onGammaPreviewRef.current = onGammaPreview; }, [onGammaPreview]);
+
+    const extractGammaPreview = (toolName, result) => {
+        if (!toolName?.startsWith?.('gamma_')) return null;
+        let parsed = result;
+        if (typeof parsed === 'string') {
+            try { parsed = JSON.parse(parsed); } catch { return null; }
+        }
+        if (!parsed || typeof parsed !== 'object' || parsed.error) return null;
+        if (!parsed.generationId && !parsed.gammaUrl) return null;
+        return {
+            generationId: parsed.generationId || null,
+            status: parsed.status || (parsed.gammaUrl ? 'completed' : 'pending'),
+            gammaId: parsed.gammaId || null,
+            gammaUrl: parsed.gammaUrl || null,
+            exportUrl: parsed.exportUrl || null,
+            templateGammaId: parsed.templateGammaId || null,
+            templateUrl: parsed.templateUrl || null,
+            sourceTool: toolName,
+        };
+    };
 
     // Cleanup abort controller on unmount
     useEffect(() => {
@@ -475,6 +500,10 @@ export default function useChatEngine({
                 break;
 
             case 'tool_end':
+                {
+                    const gammaPreview = extractGammaPreview(data.name, data.result);
+                    if (gammaPreview) onGammaPreviewRef.current?.(gammaPreview);
+                }
                 setMessages(prev => prev.map(m => {
                     if (m.id === assistantMsgId) {
                         const trs = m.toolResults || [];

@@ -12,6 +12,7 @@ import WelcomeScreen from './components/WelcomeScreen';
 import MessageItem from './components/chat/MessageItem';
 import MemoryPanel from './components/MemoryPanel';
 import WorkspaceNotebook from './components/WorkspaceNotebook';
+import GammaPreviewPanel from './components/GammaPreviewPanel';
 import DirectChatWelcome from './components/DirectChatWelcome';
 import ProjectsPage from './components/ProjectsPage';
 import ProjectDetailPage from './components/ProjectDetailPage';
@@ -89,6 +90,21 @@ const AgentHub = ({
     const [notebookSelection, setNotebookSelection] = useState('');
     const [showNotebook, setShowNotebook] = useState(false);
     const [notebookLinkedId, setNotebookLinkedId] = useState(null);
+    const [showGammaPreview, setShowGammaPreview] = useState(false);
+    const [gammaPreview, setGammaPreview] = useState(null);
+
+    const toggleNotebookPanel = useCallback(() => {
+        setShowNotebook(prev => {
+            const next = !prev;
+            if (next) setShowGammaPreview(false);
+            return next;
+        });
+    }, []);
+
+    const closeSidePreview = useCallback(() => {
+        setShowNotebook(false);
+        setShowGammaPreview(false);
+    }, []);
 
     // Direct Chat State
     const [directChatMode, setDirectChatMode] = useState(() => window.innerWidth < 768);
@@ -97,6 +113,11 @@ const AgentHub = ({
     const [directConversations, setDirectConversations] = useState([]);
     const [currentDirectConversation, setCurrentDirectConversation] = useState(null);
     const [chatInput, setChatInput] = useState('');
+
+    useEffect(() => {
+        setShowGammaPreview(false);
+        setGammaPreview(null);
+    }, [directChatMode]);
 
     // Projects State
     const [projects, setProjects] = useState([]);
@@ -188,8 +209,15 @@ const AgentHub = ({
         onNotebookUpdate: useCallback((content) => {
             // On mobile, silently ignore notebook writes from AI
             if (window.innerWidth < 768) return;
+            setShowGammaPreview(false);
             setNotebookContent(content);
             if (content) setShowNotebook(true);
+        }, []),
+        onGammaPreview: useCallback((preview) => {
+            if (window.innerWidth < 768) return;
+            setGammaPreview(prev => ({ ...(prev || {}), ...preview }));
+            setShowNotebook(false);
+            setShowGammaPreview(true);
         }, []),
         directMode: directChatMode ? {
             enabled: true,
@@ -1700,7 +1728,7 @@ const AgentHub = ({
                             <div className="flex items-center gap-2">
                                 {!isMobile && notebooksEnabled && (
                                     <button
-                                        onClick={() => setShowNotebook(prev => !prev)}
+                                        onClick={toggleNotebookPanel}
                                         className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors border text-xs font-medium ${showNotebook ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] border-[var(--accent-primary)]/30' : 'bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-[var(--border-subtle)]'}`}
                                         title={showNotebook ? 'Close Notebook' : 'Open Notebook'}
                                     >
@@ -1792,10 +1820,10 @@ const AgentHub = ({
                             </div>
 
                             {/* Notebook Pane — split on desktop, drawer on compact */}
-                            {!isMobile && notebooksEnabled && showNotebook && isCompact && (
-                                <div className="fixed inset-0 bg-black/30 z-20 animate-in fade-in duration-200" onClick={() => setShowNotebook(false)} aria-hidden="true" />
+                            {!isMobile && (showNotebook || showGammaPreview) && isCompact && (
+                                <div className="fixed inset-0 bg-black/30 z-20 animate-in fade-in duration-200" onClick={closeSidePreview} aria-hidden="true" />
                             )}
-                            {!isMobile && notebooksEnabled && showNotebook && (
+                            {!isMobile && notebooksEnabled && showNotebook && !showGammaPreview && (
                                 <div className={notebookWrapperClass}>
                                     <WorkspaceNotebook
                                         content={notebookContent}
@@ -1812,6 +1840,15 @@ const AgentHub = ({
                                         conversationId={currentConversation?.id}
                                         existingNotebookId={notebookLinkedId}
                                         onNotebookIdChange={setNotebookLinkedId}
+                                    />
+                                </div>
+                            )}
+                            {!isMobile && showGammaPreview && (
+                                <div className={notebookWrapperClass}>
+                                    <GammaPreviewPanel
+                                        preview={gammaPreview}
+                                        onClose={() => setShowGammaPreview(false)}
+                                        onUpdate={setGammaPreview}
                                     />
                                 </div>
                             )}
@@ -1836,7 +1873,7 @@ const AgentHub = ({
                                 <div className="flex items-center gap-2">
                                     {!isMobile && notebooksEnabled && (
                                         <button
-                                            onClick={() => setShowNotebook(prev => !prev)}
+                                            onClick={toggleNotebookPanel}
                                             className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors border text-xs font-medium ${showNotebook ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] border-[var(--accent-primary)]/30' : 'bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-[var(--border-subtle)]'}`}
                                             title={showNotebook ? 'Close Notebook' : 'Open Notebook'}
                                         >
@@ -1939,10 +1976,10 @@ const AgentHub = ({
                             </div>
 
                             {/* Notebook Pane — split on desktop, drawer on compact */}
-                            {!isMobile && notebooksEnabled && showNotebook && isCompact && (
-                                <div className="fixed inset-0 bg-black/30 z-20 animate-in fade-in duration-200" onClick={() => setShowNotebook(false)} aria-hidden="true" />
+                            {!isMobile && (showNotebook || showGammaPreview) && isCompact && (
+                                <div className="fixed inset-0 bg-black/30 z-20 animate-in fade-in duration-200" onClick={closeSidePreview} aria-hidden="true" />
                             )}
-                            {!isMobile && notebooksEnabled && showNotebook && (
+                            {!isMobile && notebooksEnabled && showNotebook && !showGammaPreview && (
                                 <div className={notebookWrapperClass}>
                                     <WorkspaceNotebook
                                         content={notebookContent}
@@ -1959,6 +1996,15 @@ const AgentHub = ({
                                         conversationId={currentDirectConversation?.id}
                                         existingNotebookId={notebookLinkedId}
                                         onNotebookIdChange={setNotebookLinkedId}
+                                    />
+                                </div>
+                            )}
+                            {!isMobile && showGammaPreview && (
+                                <div className={notebookWrapperClass}>
+                                    <GammaPreviewPanel
+                                        preview={gammaPreview}
+                                        onClose={() => setShowGammaPreview(false)}
+                                        onUpdate={setGammaPreview}
                                     />
                                 </div>
                             )}
