@@ -25,6 +25,7 @@ function toGammaEmbedUrl(url) {
 export default function GammaPreviewPanel({ preview, onClose, onUpdate }) {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
+    const [iframeFailed, setIframeFailed] = useState(false);
     const generationId = preview?.generationId || '';
     const status = (preview?.status || (generationId ? 'pending' : '')).toLowerCase();
     const gammaUrl = preview?.gammaUrl || '';
@@ -32,6 +33,8 @@ export default function GammaPreviewPanel({ preview, onClose, onUpdate }) {
     const isReady = embedUrl && (!generationId || ['completed', 'complete', 'succeeded', 'done'].includes(status));
     const isFailed = ['failed', 'error'].includes(status);
     const isPending = generationId && !isReady && !isFailed;
+    const cannotEmbed = gammaUrl && !embedUrl && !isPending && !isFailed;
+    const showIframe = isReady && !iframeFailed;
 
     const refreshStatus = async () => {
         if (!generationId) return;
@@ -61,6 +64,10 @@ export default function GammaPreviewPanel({ preview, onClose, onUpdate }) {
         }
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [generationId, status]);
+
+    useEffect(() => {
+        setIframeFailed(false);
+    }, [embedUrl]);
 
     return (
         <section className="flex flex-col h-full bg-[var(--bg-primary)] border-l border-[var(--border-subtle)]">
@@ -106,13 +113,14 @@ export default function GammaPreviewPanel({ preview, onClose, onUpdate }) {
             </header>
 
             <div className="flex-1 min-h-0 bg-[var(--bg-primary)]">
-                {isReady ? (
+                {showIframe ? (
                     <iframe
                         title="Gamma preview"
                         src={embedUrl}
                         className="w-full h-full border-0 bg-white"
                         allow="fullscreen"
                         allowFullScreen
+                        onError={() => setIframeFailed(true)}
                     />
                 ) : (
                     <div className="h-full flex items-center justify-center p-6">
@@ -121,14 +129,20 @@ export default function GammaPreviewPanel({ preview, onClose, onUpdate }) {
                                 <RefreshCw className="w-6 h-6 mx-auto mb-4 animate-spin text-[var(--text-tertiary)]" />
                             )}
                             <div className="text-sm font-semibold text-[var(--text-primary)] mb-2">
-                                {isFailed ? 'Gamma generation failed' : 'Gamma is being generated'}
+                                {isFailed
+                                    ? 'Gamma generation failed'
+                                    : cannotEmbed || iframeFailed
+                                        ? 'Gamma cannot be embedded yet'
+                                        : 'Gamma is being generated'}
                             </div>
                             <p className="text-sm text-[var(--text-secondary)] leading-relaxed">
                                 {isFailed
                                     ? (preview?.error || 'Gamma reported a failed generation.')
-                                    : 'The preview will appear here as soon as Gamma reports the generation is complete.'}
+                                    : cannotEmbed || iframeFailed
+                                        ? 'Open it in Gamma and make sure Share -> Embed -> Allow public access is enabled.'
+                                        : 'The preview will appear here as soon as Gamma reports the generation is complete.'}
                             </p>
-                            {gammaUrl && !isReady && (
+                            {gammaUrl && !showIframe && (
                                 <a
                                     href={gammaUrl}
                                     target="_blank"
