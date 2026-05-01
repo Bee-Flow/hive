@@ -1,0 +1,47 @@
+/* VS Code Dark+ / Light+ theme tokens for the Webpages IDE shell.
+   Applied via data-vscode-theme="dark|light" on the IDE root element.
+   Only affects elements inside the IDE shell — the host app keeps its own theme. */
+
+[data-vscode-theme="dark"] {
+    --vsc-editor-bg:       #1e1e1e;
+    --vsc-sidebar-bg:      #252526;
+    --vsc-actbar-bg:       #333333;
+    --vsc-statusbar-bg:    #007acc;
+    --vsc-statusbar-fg:    #ffffff;
+    --vsc-fg:              #cccccc;
+    --vsc-fg-muted:        #858585;
+    --vsc-accent:          #007acc;
+    --vsc-tab-active-bg:   #1e1e1e;
+    --vsc-tab-inactive-bg: #2d2d2d;
+    --vsc-tab-active-fg:   #ffffff;
+    --vsc-tab-inactive-fg: #969696;
+    --vsc-border:          #3c3c3c;
+    --vsc-actbar-icon:     #858585;
+    --vsc-actbar-icon-active: #ffffff;
+    --vsc-input-bg:        #3c3c3c;
+    --vsc-hover-bg:        rgba(255,255,255,0.06);
+    --vsc-file-active-bg:  #37373d;
+    --vsc-scrollbar:       rgba(121,121,121,0.4);
+}
+
+[data-vscode-theme="light"] {
+    --vsc-editor-bg:       #ffffff;
+    --vsc-sidebar-bg:      #f3f3f3;
+    --vsc-actbar-bg:       #2c2c2c;
+    --vsc-statusbar-bg:    #007acc;
+    --vsc-statusbar-fg:    #ffffff;
+    --vsc-fg:              #1e1e1e;
+    --vsc-fg-muted:        #616161;
+    --vsc-accent:          #0066b8;
+    --vsc-tab-active-bg:   #ffffff;
+    --vsc-tab-inactive-bg: #ececec;
+    --vsc-tab-active-fg:   #1e1e1e;
+    --vsc-tab-inactive-fg: #616161;
+    --vsc-border:          #e7e7e7;
+    --vsc-actbar-icon:     #858585;
+    --vsc-actbar-icon-active: #ffffff;
+    --vsc-input-bg:        #ffffff;
+    --vsc-hover-bg:        rgba(0,0,0,0.04);
+    --vsc-file-active-bg:  #e8e8e8;
+    --vsc-scrollbar:       rgba(100,100,100,0.3);
+}

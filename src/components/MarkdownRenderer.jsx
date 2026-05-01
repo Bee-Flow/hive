@@ -23,15 +23,14 @@ import ruby from 'highlight.js/lib/languages/ruby';
 import php from 'highlight.js/lib/languages/php';
 import markdown from 'highlight.js/lib/languages/markdown';
 import 'highlight.js/styles/github-dark.min.css';
-import LiveAppRenderer from './LiveAppRenderer';
 import PageRenderer from './PageRenderer';
 import ResearchRenderer from './ResearchRenderer';
 import TestReportRenderer from './TestReportRenderer';
 import QuoteRenderer from './QuoteRenderer';
 import VegaLiteRenderer from './VegaLiteRenderer';
 import MapEmbedRenderer from './MapEmbedRenderer';
-import BuildingIndicator from './BuildingIndicator';
 import MermaidRenderer from './MermaidRenderer';
+import WebpageLinkCard from './WebpageLinkCard';
 
 // Register languages
 hljs.registerLanguage('python', python);
@@ -314,28 +313,7 @@ const MarkdownRenderer = ({ content, className = '', isLoading = false, ...props
         // Guard: ensure text is a string
         if (typeof text !== 'string') return null;
 
-        const appLanguages = ['html-app', 'js-app', 'app', 'html-live', 'javascript-app'];
-
-        for (const lang of appLanguages) {
-            const openPattern = new RegExp('```' + lang + '\\s*\\n', 'g');
-            const matches = text.match(openPattern);
-            if (matches) {
-                // Count opening tags
-                const openCount = matches.length;
-                // Count closing tags after the opening
-                const lastOpenIndex = text.lastIndexOf('```' + lang);
-                const afterOpen = text.slice(lastOpenIndex + lang.length + 3);
-                const closeMatches = afterOpen.match(/```/g);
-                const closeCount = closeMatches ? closeMatches.length : 0;
-
-                if (openCount > closeCount) {
-                    // Extract the partial code (everything after the opening tag)
-                    const codeStart = lastOpenIndex + lang.length + 4; // +4 for "```" + newline
-                    const partialCode = text.slice(codeStart);
-                    return { language: lang, partialCode };
-                }
-            }
-        }
+        // html-app blocks are no longer used — the Webpages feature replaced them.
         return null;
     };
 
@@ -655,44 +633,6 @@ const MarkdownRenderer = ({ content, className = '', isLoading = false, ...props
                             }
                         }
 
-                        // Check if this is an app code block (html-app, js-app, app)
-                        const isApp = language === 'html-app' ||
-                            language === 'js-app' ||
-                            language === 'app' ||
-                            language === 'html-live' ||
-                            language === 'javascript-app';
-
-                        // Only auto-render plain `html` blocks as a live app when the content
-                        // is a complete, interactive document (has a document root AND JavaScript).
-                        // This prevents plain HTML/CSS styling examples from being rendered
-                        // as broken live previews.
-                        const looksLikeApp = !inline && (
-                            (codeString.includes('<!DOCTYPE') || codeString.includes('<html')) &&
-                            codeString.includes('<script')  // Must have JS to be worth live-rendering
-                        );
-
-                        if (!inline && (isApp || (language === 'html' && looksLikeApp))) {
-                            // Check if HTML looks complete (has closing tags)
-                            const isComplete = codeString.includes('</html>') ||
-                                codeString.includes('</body>') ||
-                                (codeString.includes('</div>') && codeString.trim().endsWith('>'));
-
-                            // If the code block is incomplete, don't render anything here
-                            // The loading indicator will be shown at the bottom via unclosedBlock detection
-                            if (!isComplete || unclosedBlock) {
-                                // Return null - the BuildingIndicator at bottom handles the UX
-                                return null;
-                            }
-
-                            return (
-                                <LiveAppRenderer
-                                    code={codeString}
-                                    language={language.replace('-app', '').replace('-live', '')}
-                                    title={language.includes('app') ? 'Interactive App' : 'HTML Preview'}
-                                />
-                            );
-                        }
-
                         return inline ? (
                             <code className="inline-code" {...props}>
                                 {children}
@@ -705,6 +645,11 @@ const MarkdownRenderer = ({ content, className = '', isLoading = false, ...props
                     },
                     // Links — anchor links scroll within message, external open in new tab
                     a({ node, children, href, ...props }) {
+                        // Webpage links render as a clickable card instead of a plain anchor
+                        if (href && /^\/app\/webpages\/[a-zA-Z0-9_-]+$/.test(href)) {
+                            const label = typeof children === 'string' ? children : (Array.isArray(children) ? children.join('') : String(href));
+                            return <WebpageLinkCard href={href} label={label} />;
+                        }
                         if (href && href.startsWith('#')) {
                             return (
                                 <a
@@ -802,13 +747,6 @@ const MarkdownRenderer = ({ content, className = '', isLoading = false, ...props
                 {cleanContent}
             </ReactMarkdown>
 
-            {/* Show AI-powered loading indicator when an html-app code block is unclosed */}
-            {unclosedBlock && (
-                <BuildingIndicator
-                    code={unclosedBlock.partialCode}
-                    language={unclosedBlock.language}
-                />
-            )}
         </div>
     );
 };

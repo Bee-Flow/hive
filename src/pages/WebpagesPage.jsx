@@ -1,15 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
     ArrowLeft, Plus, Trash2, Loader2, AlertCircle, Search,
-    X, ChevronRight, Pencil, Download, Globe, History,
-    PanelLeft, FileCode2, Save, Check,
+    X, Pencil, Globe, FileCode2, Check,
 } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 import useChatEngine from '../hooks/useChatEngine';
-import WebpageEditor from './webpages/WebpageEditor';
-import WebpagePreview from './webpages/WebpagePreview';
-import WebpageChat from './webpages/WebpageChat';
-import WebpageSources from './webpages/WebpageSources';
+import WebpageIDE from './webpages/WebpageIDE';
 import downloadWebpageZip from '../utils/downloadWebpageZip';
 
 function timeAgo(dateStr) {
@@ -45,9 +41,12 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
     const [versions, setVersions] = useState([]);
     const [showVersions, setShowVersions] = useState(false);
 
-    const [html, setHtml] = useState('');
-    const [css, setCss] = useState('');
-    const [js, setJs] = useState('');
+    const [html, setHtmlState] = useState('');
+    const [css, setCssState] = useState('');
+    const [js, setJsState] = useState('');
+    const setHtml = (v) => { htmlRef.current = v; setHtmlState(v); };
+    const setCss  = (v) => { cssRef.current  = v; setCssState(v); };
+    const setJs   = (v) => { jsRef.current   = v; setJsState(v); };
     const [activeFile, setActiveFile] = useState('html');
 
     const [loading, setLoading] = useState(true);
@@ -64,6 +63,10 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
     const saveTimerRef = useRef(null);
     const lastSavedSnapshotRef = useRef({ html: '', css: '', js: '' });
     const skipNextSaveRef = useRef(false); // set when we load a webpage so we don't fire a phantom save
+    // Refs so persist() doesn't need html/css/js as useCallback deps (avoids the debounce reset loop)
+    const htmlRef = useRef('');
+    const cssRef = useRef('');
+    const jsRef = useRef('');
 
     // Layout
     const [leftOpen, setLeftOpen] = useState(true);
@@ -170,12 +173,13 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
             const { webpage, sources: srcs, files } = await api(`/${id}`);
             setSelected(webpage);
             setSources(srcs || []);
-            setHtml(files?.html || '');
-            setCss(files?.css || '');
-            setJs(files?.js || '');
-            setActiveFile(files?.html ? 'html' : files?.css ? 'css' : 'html');
+            const fHtml = files?.html || '', fCss = files?.css || '', fJs = files?.js || '';
+            setHtml(fHtml);
+            setCss(fCss);
+            setJs(fJs);
+            setActiveFile(fHtml ? 'html' : fCss ? 'css' : 'html');
             setChatMessages([]);
-            lastSavedSnapshotRef.current = { html: files?.html || '', css: files?.css || '', js: files?.js || '' };
+            lastSavedSnapshotRef.current = { html: fHtml, css: fCss, js: fJs };
             skipNextSaveRef.current = true;
             onWebpageChange?.(id);
         } catch (err) {
@@ -195,7 +199,8 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
     /* ── Save (debounced) ────────────────────────────────────── */
     const persist = useCallback(async () => {
         if (!selected) return;
-        const snapshot = { html, css, js };
+        // Read current values from refs so persist() is stable (no html/css/js deps)
+        const snapshot = { html: htmlRef.current, css: cssRef.current, js: jsRef.current };
         const last = lastSavedSnapshotRef.current;
         if (snapshot.html === last.html && snapshot.css === last.css && snapshot.js === last.js) return;
         setSaveState('saving');
@@ -213,7 +218,7 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
             console.error('[Webpages] Save failed:', err);
             setSaveState('error');
         }
-    }, [selected, html, css, js]);
+    }, [selected]); // stable — html/css/js read via refs at call time
 
     useEffect(() => {
         if (!selected) return;
@@ -224,7 +229,7 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
         saveTimerRef.current = setTimeout(() => persist(), 1500);
         return () => saveTimerRef.current && clearTimeout(saveTimerRef.current);
-    }, [html, css, js, persist, selected]);
+    }, [html, css, js, selected]); // persist excluded — intentionally stable
 
     // Cmd/Ctrl+S → flush
     useEffect(() => {
@@ -491,114 +496,48 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
         );
     }
 
-    /* ── Editor view ─────────────────────────────────────────── */
+    /* ── Editor view (VS Code IDE shell) ────────────────────────── */
     return (
-        <div className="flex h-full" style={{ background: 'var(--bg-secondary)' }}>
-            {/* Sources panel */}
-            <div className="shrink-0 border-r flex flex-col"
-                 style={{ width: sourcesWidth, borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}>
-                <WebpageSources
-                    webpageId={selected.id}
+        <div className="relative flex flex-col h-full">
+            {/* Back-to-list header */}
+            <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b"
+                 style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}>
+                <button onClick={handleClose} className="p-1 rounded-md hover:bg-white/40" title="Back to list">
+                    <ArrowLeft className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+                </button>
+                <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{selected.name}</span>
+            </div>
+
+            {/* IDE shell — fills the rest of the height */}
+            <div className="flex-1 min-h-0">
+                <WebpageIDE
+                    selected={selected}
+                    html={html} css={css} js={js}
+                    onHtmlChange={setHtml}
+                    onCssChange={setCss}
+                    onJsChange={setJs}
                     sources={sources}
                     onSourcesChange={setSources}
-                />
-            </div>
-            {/* Resize handle */}
-            <div
-                onMouseDown={() => {
-                    sourcesDragRef.current = true;
-                    document.body.style.cursor = 'col-resize';
-                    document.body.style.userSelect = 'none';
-                }}
-                className="shrink-0 w-1 cursor-col-resize hover:bg-blue-300/30 transition-colors"
-                style={{ background: 'transparent' }}
-            />
-
-            {/* Center: editor + preview */}
-            <div className="flex-1 flex flex-col min-w-0">
-                {/* Header */}
-                <div className="shrink-0 px-3 py-2 border-b flex items-center gap-2" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}>
-                    <button onClick={handleClose} className="p-1 rounded-md hover:bg-white/40" title="Back to list">
-                        <ArrowLeft className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
-                    </button>
-                    <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{selected.name}</div>
-                    </div>
-                    <SaveIndicator state={saveState} lastSavedAt={lastSavedAt} />
-                    <button
-                        onClick={() => setShowVersions(v => !v)}
-                        className="px-2 py-1 rounded-md text-[11px] flex items-center gap-1 hover:bg-white/40"
-                        style={{ color: 'var(--text-secondary)' }}
-                        title="Version history"
-                    >
-                        <History className="w-3.5 h-3.5" /> Versions
-                    </button>
-                    <button
-                        onClick={handleDownloadZip}
-                        className="px-2.5 py-1 rounded-md text-[11px] font-medium flex items-center gap-1 hover:opacity-90"
-                        style={{ background: 'var(--accent-primary)', color: 'white' }}
-                        title="Download as ZIP"
-                    >
-                        <Download className="w-3.5 h-3.5" /> Download zip
-                    </button>
-                </div>
-
-                {/* Editor + Preview split */}
-                <div className="flex-1 grid min-h-0" style={{ gridTemplateRows: '1fr 1fr' }}>
-                    <div className="min-h-0">
-                        <WebpageEditor
-                            activeFile={activeFile}
-                            onActiveFileChange={setActiveFile}
-                            html={html}
-                            css={css}
-                            js={js}
-                            onChange={(file, value) => {
-                                if (file === 'html') setHtml(value);
-                                else if (file === 'css') setCss(value);
-                                else if (file === 'js') setJs(value);
-                            }}
-                            sizes={{
-                                html: new Blob([html]).size,
-                                css: new Blob([css]).size,
-                                js: new Blob([js]).size,
-                            }}
-                        />
-                    </div>
-                    <div className="min-h-0 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
-                        <WebpagePreview html={html} css={css} js={js} />
-                    </div>
-                </div>
-            </div>
-
-            {/* Resize handle */}
-            <div
-                onMouseDown={() => {
-                    rightDragRef.current = true;
-                    document.body.style.cursor = 'col-resize';
-                    document.body.style.userSelect = 'none';
-                }}
-                className="shrink-0 w-1 cursor-col-resize hover:bg-blue-300/30 transition-colors"
-            />
-
-            {/* Right: AI chat */}
-            <div className="shrink-0 flex flex-col"
-                 style={{ width: rightWidth, background: 'var(--bg-primary)', borderLeft: '1px solid var(--border-subtle)' }}>
-                <WebpageChat
-                    messages={chatMessages}
-                    isLoading={chatLoading}
-                    onSend={(text, attachments) => sendChatMessage(text, attachments)}
-                    onStop={stopChatGenerating}
-                    onRetry={retryChatMessage}
-                    onEdit={editAndRegenerateChat}
+                    chatMessages={chatMessages}
+                    chatLoading={chatLoading}
+                    onChatSend={(text, attachments) => sendChatMessage(text, attachments)}
+                    onChatStop={stopChatGenerating}
+                    onChatRetry={retryChatMessage}
+                    onChatEdit={editAndRegenerateChat}
                     modelTiers={modelTiers}
                     selectedTier={selectedTier}
                     onTierChange={setSelectedTier}
+                    saveState={saveState}
+                    lastSavedAt={lastSavedAt}
+                    onVersionsClick={() => setShowVersions(true)}
+                    onDownload={handleDownloadZip}
+                    user={user}
                 />
             </div>
 
             {/* Versions overlay */}
             {showVersions && (
-                <div className="absolute inset-0 z-40 flex items-start justify-center pt-20" style={{ background: 'rgba(0,0,0,0.4)' }}
+                <div className="absolute inset-0 z-40 flex items-start justify-center pt-20" style={{ background: 'rgba(0,0,0,0.5)' }}
                      onClick={() => setShowVersions(false)}>
                     <div onClick={(e) => e.stopPropagation()}
                          className="rounded-xl border shadow-2xl p-4 w-[480px] max-h-[70vh] overflow-y-auto"
@@ -637,6 +576,7 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
     );
 }
 
+// eslint-disable-next-line no-unused-vars
 function SaveIndicator({ state, lastSavedAt }) {
     if (state === 'saving') {
         return (

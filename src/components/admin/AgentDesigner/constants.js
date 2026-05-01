@@ -2,31 +2,17 @@
 
 const CAPABILITIES = {
     SMALL_APPS: {
-        label: 'Small Apps',
-        description: 'Enables the agent to generate small interactive applications, tools, and games.',
+        label: 'Webpages',
+        description: 'Enables the agent to create interactive HTML/CSS/JS webpages using the Webpages feature.',
         instructions: `\n\n<!-- CAPABILITY: SMALL_APPS -->
-You can create small interactive applications using the component system. When asked to build a tool, game, or utility, generate a full HTML component.
+You can create interactive HTML/CSS/JS webpages. When asked to build a tool, game, landing page, or calculator, call create_webpage followed by webpage_file_write to populate the files. End your reply with a link to the created webpage so the user can open it.
 
-Example Structure:
-\`\`\`html-app 
-<!DOCTYPE html>
-<html>
-<head>
-  <style>
-    /* Modern, clean CSS */
-    body { font-family: sans-serif; padding: 20px; }
-  </style>
-</head>
-<body>
-  <div id="root">
-    <!-- App Content -->
-  </div>
-  <script>
-    // App Logic
-  </script>
-</body>
-</html>
-\`\`\`
+Flow:
+1. create_webpage({ name: "<short title>" }) → returns { webpageId, url }
+2. webpage_file_write({ webpageId, file: "html", content: "..." })
+3. Reply with: "I built it: [<title>](<url>)"
+
+Do NOT emit \`\`\`html-app\`\`\` blocks — use the tools above instead.
 <!-- /CAPABILITY -->`
     },
     PAGES: {

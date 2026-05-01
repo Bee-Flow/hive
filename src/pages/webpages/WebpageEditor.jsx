@@ -1,7 +1,17 @@
-import React, { Suspense, lazy, useEffect, useRef } from 'react';
+import React, { Suspense, lazy, useEffect, useRef, useState } from 'react';
 import { Code, Palette, Cpu } from 'lucide-react';
 
-const MonacoEditor = lazy(() => import('@monaco-editor/react').then(m => ({ default: m.default })));
+const MonacoEditor = lazy(() =>
+    import('@monaco-editor/react')
+        .then(m => {
+            if (!m.default) throw new Error('Monaco default export missing');
+            return { default: m.default };
+        })
+        .catch(err => {
+            console.error('[WebpageEditor] Monaco failed to load:', err);
+            return { default: null };
+        })
+);
 
 const SLOTS = [
     { id: 'html', label: 'index.html', language: 'html', icon: Code },
@@ -13,13 +23,15 @@ export default function WebpageEditor({
     activeFile, onActiveFileChange,
     html, css, js,
     onChange, sizes,
+    theme = 'light',
+    onCursorChange,
 }) {
     const valuesByFile = { html, css, js };
     const editorRef = useRef(null);
+    const [monacoFailed, setMonacoFailed] = useState(false);
 
-    // Configure Monaco to be more permissive about the user's HTML/JS — no
-    // schema lookups, no annoying validations on AI-generated code.
     const handleMount = (editor, monaco) => {
+        if (!editor) { setMonacoFailed(true); return; }
         editorRef.current = editor;
         try {
             monaco.languages.html.htmlDefaults.setOptions({
@@ -33,6 +45,11 @@ export default function WebpageEditor({
                 noSyntaxValidation: false,
             });
         } catch (_) {}
+        if (onCursorChange) {
+            editor.onDidChangeCursorPosition(e => {
+                onCursorChange({ line: e.position.lineNumber, col: e.position.column });
+            });
+        }
     };
 
     return (
@@ -68,29 +85,42 @@ export default function WebpageEditor({
             </div>
 
             <div className="flex-1 min-h-0">
-                <Suspense fallback={<div className="p-4 text-xs" style={{ color: 'var(--text-tertiary)' }}>Loading editor…</div>}>
-                    <MonacoEditor
-                        height="100%"
-                        language={SLOTS.find(s => s.id === activeFile)?.language || 'html'}
+                {monacoFailed ? (
+                    <textarea
+                        className="w-full h-full p-3 text-xs font-mono resize-none outline-none"
+                        style={{ background: theme === 'dark' ? '#1e1e1e' : '#fff', color: theme === 'dark' ? '#ccc' : '#1e1e1e' }}
                         value={valuesByFile[activeFile] || ''}
-                        onChange={(v) => onChange(activeFile, v ?? '')}
-                        onMount={handleMount}
-                        theme="vs-light"
-                        options={{
-                            minimap: { enabled: false },
-                            fontSize: 13,
-                            wordWrap: 'on',
-                            scrollBeyondLastLine: false,
-                            automaticLayout: true,
-                            tabSize: 2,
-                            insertSpaces: true,
-                            renderWhitespace: 'selection',
-                            formatOnPaste: true,
-                            formatOnType: false,
-                            quickSuggestions: { other: true, comments: false, strings: false },
-                        }}
+                        onChange={(e) => onChange(activeFile, e.target.value)}
+                        spellCheck={false}
                     />
-                </Suspense>
+                ) : (
+                    <Suspense fallback={<div className="p-4 text-xs" style={{ color: 'var(--text-tertiary)' }}>Loading editor…</div>}>
+                        <MonacoEditor
+                            height="100%"
+                            language={SLOTS.find(s => s.id === activeFile)?.language || 'html'}
+                            value={valuesByFile[activeFile] || ''}
+                            onChange={(v) => onChange(activeFile, v ?? '')}
+                            onMount={(editor, monaco) => {
+                                if (!editor) { setMonacoFailed(true); return; }
+                                handleMount(editor, monaco);
+                            }}
+                            theme={theme === 'dark' ? 'vs-dark' : 'vs-light'}
+                            options={{
+                                minimap: { enabled: false },
+                                fontSize: 13,
+                                wordWrap: 'on',
+                                scrollBeyondLastLine: false,
+                                automaticLayout: true,
+                                tabSize: 2,
+                                insertSpaces: true,
+                                renderWhitespace: 'selection',
+                                formatOnPaste: true,
+                                formatOnType: false,
+                                quickSuggestions: { other: true, comments: false, strings: false },
+                            }}
+                        />
+                    </Suspense>
+                )}
             </div>
         </div>
     );
