@@ -25,16 +25,17 @@ ENV VITE_BUILD_SHA=$VITE_BUILD_SHA
 # Build the app
 RUN npm run build
 
-# Strip .map files from the image. Sourcemaps are generated via
-# vite build.sourcemap:'hidden' for CI artifact upload (see workflow), but
-# must never be served to clients.
-RUN find /app/dist -name '*.map' -type f -delete
+# Sourcemaps export stage — CI extracts .map files from here as a build
+# artifact for decoding minified stack traces. Maps never reach the nginx image.
+FROM scratch AS sourcemaps
+COPY --from=build /app/dist/assets/*.map /
 
 # Production stage
 FROM nginx:alpine
 
-# Copy built assets from build stage
+# Copy built assets and strip sourcemaps so they are never served to clients.
 COPY --from=build /app/dist /usr/share/nginx/html
+RUN find /usr/share/nginx/html -name '*.map' -type f -delete
 
 # Copy custom nginx config template
 # Nginx's docker entrypoint automatically runs envsubst on files in /templates
