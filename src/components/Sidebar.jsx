@@ -920,7 +920,7 @@ const Sidebar = ({
                                 </NavLink>
                             )}
                         </div>
-                        {!isMobile && (user?.permissions?.includes('all') || (user?.permissions?.includes('use_webpages') && user?.betaFeatures?.includes('webpages'))) && (
+                        {!isMobile && (user?.permissions?.includes('all') || user?.betaFeatures?.includes('webpages')) && (
                             <div className="border-t border-[var(--border-subtle)] p-1">
                                 <NavLink
                                     href="/webpages"

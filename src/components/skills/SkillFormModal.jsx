@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Sparkles, X, Users, Lock, Zap } from 'lucide-react';
+import { API_BASE, authFetch } from '../../utils/helpers';
 
 export const ICONS = ['⚡', '🎯', '📝', '📧', '📊', '🔍', '💡', '🚀', '🎨', '🤝', '📋', '🏆', '🔧', '⚙️', '🌟', '💬', '📞', '🖊️', '🗂️', '🔑'];
 export const INSTRUCTION_LIMIT = 4000;
@@ -14,6 +15,7 @@ const emptyForm = () => ({
     icon: '⚡',
     isShared: false,
     dynamicActivation: false,
+    sharedGroups: [],
 });
 
 const TABS = [
@@ -34,7 +36,7 @@ function CharCount({ value, limit }) {
     );
 }
 
-export default function SkillFormModal({ skill, onSave, onCancel, saving }) {
+export default function SkillFormModal({ skill, onSave, onCancel, saving, groups = [], orgId = null, user = null }) {
     const [form, setForm] = useState(() => skill ? {
         name: skill.name || '',
         description: skill.description || '',
@@ -45,7 +47,28 @@ export default function SkillFormModal({ skill, onSave, onCancel, saving }) {
         icon: skill.icon || '⚡',
         isShared: skill.isShared ?? false,
         dynamicActivation: skill.dynamicActivation ?? false,
+        sharedGroups: Array.isArray(skill.sharedGroups) ? skill.sharedGroups : [],
     } : emptyForm());
+    // Auto-fetch groups if not supplied by parent
+    const [fetchedGroups, setFetchedGroups] = useState(null);
+    useEffect(() => {
+        if (groups && groups.length > 0) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/auth/groups`);
+                if (!cancelled && res.ok) setFetchedGroups(await res.json());
+            } catch (_) { /* non-fatal */ }
+        })();
+        return () => { cancelled = true; };
+    }, [groups]);
+    const effectiveGroups = (groups && groups.length > 0) ? groups : (fetchedGroups || []);
+    const effectiveOrgId = orgId || user?.organizationId || null;
+    const orgGroups = effectiveGroups.filter(g => !effectiveOrgId || g.organizationId === effectiveOrgId);
+    const toggleGroup = (gid) => setForm(f => {
+        const cur = f.sharedGroups || [];
+        return { ...f, sharedGroups: cur.includes(gid) ? cur.filter(x => x !== gid) : [...cur, gid] };
+    });
     const [showIconPicker, setShowIconPicker] = useState(false);
     const [activeTab, setActiveTab] = useState('instructions');
 
@@ -168,6 +191,29 @@ export default function SkillFormModal({ skill, onSave, onCancel, saving }) {
                     />
                 </div>
 
+                {/* Sharing scope (groups) — only when shared and groups exist for the org */}
+                {form.isShared && orgGroups.length > 0 && (
+                    <div className="px-6 pb-3 pt-1 border-t flex-shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
+                        <label className="text-[11px] mb-1.5 block" style={{ color: 'var(--text-tertiary)' }}>
+                            Share with specific groups (leave empty for all org members)
+                        </label>
+                        <div className="space-y-1 max-h-32 overflow-auto">
+                            {orgGroups.map(group => (
+                                <label key={group.id} className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-[var(--bg-tertiary)] cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={(form.sharedGroups || []).includes(group.id)}
+                                        onChange={() => toggleGroup(group.id)}
+                                        className="rounded"
+                                    />
+                                    <span className="text-[13px]" style={{ color: 'var(--text-primary)' }}>{group.name}</span>
+                                    {group.description && <span className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>— {group.description}</span>}
+                                </label>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
                 {/* Footer */}
                 <div className="flex items-center justify-between px-6 py-4 border-t flex-shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
                     <button
@@ -176,9 +222,16 @@ export default function SkillFormModal({ skill, onSave, onCancel, saving }) {
                             ? 'border-blue-500/40 bg-blue-500/10 text-blue-500'
                             : 'border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'
                             }`}
+                        title={form.isShared && (form.sharedGroups || []).length > 0
+                            ? `Shared with ${form.sharedGroups.length} group(s)`
+                            : (form.isShared ? 'Shared with all org members' : 'Only visible to you')}
                     >
                         {form.isShared ? <Users size={14} /> : <Lock size={14} />}
-                        {form.isShared ? 'Shared with org' : 'Private'}
+                        {form.isShared
+                            ? ((form.sharedGroups || []).length > 0
+                                ? `Shared (${form.sharedGroups.length} group${form.sharedGroups.length === 1 ? '' : 's'})`
+                                : 'Shared with org')
+                            : 'Private'}
                     </button>
 
                     <div className="flex gap-2">

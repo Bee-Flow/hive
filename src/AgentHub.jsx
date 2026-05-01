@@ -82,9 +82,9 @@ const AgentHub = ({
     const [conversations, setConversations] = useState([]);
     const [currentConversation, setCurrentConversation] = useState(null);
     // Sidebar defaults to its full-width state only on true desktops (>=1280).
-    // On small laptops (768-1279) we default to the icon-rail mode so the chat
-    // pane has room to breathe. The user can still toggle it open.
-    const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 1280);
+    // Default to expanded on anything wider than a tablet; only small screens
+    // start in icon-rail mode. The user can still toggle it.
+    const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
     const [notebookContent, setNotebookContent] = useState('');
     const [notebookLastFetchedId, setNotebookLastFetchedId] = useState(null);
     const [notebookSelection, setNotebookSelection] = useState('');

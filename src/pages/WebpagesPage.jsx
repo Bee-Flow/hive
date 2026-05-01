@@ -33,7 +33,7 @@ async function api(path, opts = {}) {
 }
 
 export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpageChange }) {
-    const canUseWebpages = !!(user?.permissions?.includes('all') || user?.permissions?.includes('use_webpages'));
+    const canUseWebpages = !!(user?.permissions?.includes('all') || user?.betaFeatures?.includes('webpages'));
 
     const [webpages, setWebpages] = useState([]);
     const [selected, setSelected] = useState(null); // metadata row

@@ -176,6 +176,7 @@ export default function AgentSkillsTab({ user, attachedSkillIds = [], onChangeAt
                     onSave={handleSave}
                     onCancel={() => { setShowForm(false); setEditingSkill(null); }}
                     saving={saving}
+                    user={user}
                 />
             )}
         </div>

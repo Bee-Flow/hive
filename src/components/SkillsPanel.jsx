@@ -64,6 +64,7 @@ export default function SkillsPanel({ user, onClose, activeSkillIds = [], onTogg
                     onSave={handleSave}
                     onCancel={() => { setShowForm(false); setEditingSkill(null); }}
                     saving={saving}
+                    user={user}
                 />
             )}
         </>

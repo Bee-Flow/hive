@@ -475,6 +475,7 @@ export default function SkillsPopover({
                     onSave={handleCreate}
                     onCancel={() => setShowForm(false)}
                     saving={saving}
+                    user={user}
                 />
             )}
         </div>
