@@ -40,9 +40,6 @@ const formatDate = (dateStr) => {
     return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
 };
 
-const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform);
-const modKey = isMac ? '⌘' : 'Ctrl';
-
 const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
     const [query, setQuery] = useState('');
     const [results, setResults] = useState([]);
@@ -249,9 +246,6 @@ const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
                             <X className="w-3.5 h-3.5" />
                         </button>
                     )}
-                    <kbd className="hidden sm:inline-flex items-center px-1.5 py-0.5 rounded-md bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] text-[10px] font-medium text-[var(--text-tertiary)]">
-                        {modKey}K
-                    </kbd>
                     <button
                         onClick={onClose}
                         className="p-1.5 rounded-md hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] transition-colors"
@@ -364,16 +358,11 @@ const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
                 </div>
 
                 {/* Footer */}
-                <div className="flex-shrink-0 flex items-center justify-between px-4 h-9 border-t border-[var(--border-subtle)] bg-[var(--bg-secondary)]/30 text-[11px] text-[var(--text-tertiary)]">
-                    <div className="flex items-center gap-3">
-                        <KbdHint keys={['↑', '↓']} label="Navigate" />
-                        <KbdHint keys={['↵']} label="Open" />
-                        <KbdHint keys={['Esc']} label="Close" />
-                    </div>
-                    {query.length >= 2 && (
+                {query.length >= 2 && (
+                    <div className="flex-shrink-0 flex items-center justify-end px-4 h-9 border-t border-[var(--border-subtle)] bg-[var(--bg-secondary)]/30 text-[11px] text-[var(--text-tertiary)]">
                         <span>{sortedResults.length} result{sortedResults.length === 1 ? '' : 's'}</span>
-                    )}
-                </div>
+                    </div>
+                )}
             </div>
         </div>
     );
@@ -513,17 +502,6 @@ const EmptyState = ({ title, hint, action }) => (
             </button>
         )}
     </div>
-);
-
-const KbdHint = ({ keys, label }) => (
-    <span className="inline-flex items-center gap-1">
-        {keys.map(k => (
-            <kbd key={k} className="inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] text-[10px] font-medium text-[var(--text-secondary)]">
-                {k}
-            </kbd>
-        ))}
-        <span>{label}</span>
-    </span>
 );
 
 export default SearchOverlay;

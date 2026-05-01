@@ -1,31 +1,41 @@
 import React from 'react';
-import { TextField, TextArea, Toggle, IconField, ImageField, RepeatableList } from './fields';
+import { TextField, Toggle, IconField, ImageField, RepeatableList } from './fields';
 
-// Each editor receives:
-//   data:     this section's slice of the content tree
-//   onChange: (next) => set the slice
-// Editors should be tolerant of missing keys (data may come from defaults
-// or from a freshly-added locale with `{}`).
+/**
+ * Section editors — only structural controls live here. Text content
+ * (titles, leads, body copy, button labels, list-item text) is edited
+ * directly by clicking on it in the live preview iframe.
+ *
+ * What you'll find in here:
+ *   - Repeatable lists (add / remove / reorder items)
+ *   - Icon pickers
+ *   - Image uploads
+ *   - URL / href fields
+ *   - Per-element toggles (e.g. gradient text, social platform)
+ */
 
 const set = (data, key, value) => ({ ...(data || {}), [key]: value });
+const InlineHint = ({ children }) => (
+    <p className="text-xs text-[var(--text-muted)] italic mb-3 leading-relaxed">
+        ✎ {children}
+    </p>
+);
 
 // ── Header ───────────────────────────────────────────────────────────────
 export function HeaderEditor({ data = {}, onChange }) {
     return (
         <>
-            <TextField label="Logo text" value={data.logoText} onChange={(v) => onChange(set(data, 'logoText', v))} />
-            <TextField label="Login button label" value={data.loginLabel} onChange={(v) => onChange(set(data, 'loginLabel', v))} />
-            <TextField label="CTA button label" value={data.ctaLabel} onChange={(v) => onChange(set(data, 'ctaLabel', v))} />
-            <TextField label="CTA href" value={data.ctaHref} onChange={(v) => onChange(set(data, 'ctaHref', v))} hint="Defaults to /app" />
+            <InlineHint>Click the logo, login button, or CTA in the preview to edit their text.</InlineHint>
+            <TextField label="CTA destination URL" value={data.ctaHref} onChange={(v) => onChange(set(data, 'ctaHref', v))} hint="Defaults to /app" />
             <RepeatableList
                 label="Nav links"
                 items={data.navLinks || []}
                 onChange={(v) => onChange(set(data, 'navLinks', v))}
-                makeNew={() => ({ label: '', href: '#' })}
+                makeNew={() => ({ label: 'New link', href: '#' })}
                 renderItem={(item, update) => (
                     <>
-                        <TextField label="Label" value={item.label} onChange={(v) => update({ ...item, label: v })} />
-                        <TextField label="Href"  value={item.href}  onChange={(v) => update({ ...item, href: v })} />
+                        <TextField label="Label (preview also editable)" value={item.label} onChange={(v) => update({ ...item, label: v })} />
+                        <TextField label="Href" value={item.href} onChange={(v) => update({ ...item, href: v })} />
                     </>
                 )}
             />
@@ -41,37 +51,32 @@ export function HeroEditor({ data = {}, onChange }) {
     const mockup = data.mockup || {};
     return (
         <>
-            <TextField label="Eyebrow" value={data.eyebrow} onChange={(v) => onChange(set(data, 'eyebrow', v))} />
+            <InlineHint>Click any text in the hero — eyebrow, title, lead, badge, CTA labels, chat bubbles — to edit it inline.</InlineHint>
+
             <RepeatableList
-                label="Title parts (toggle gradient per part)"
+                label="Title segments"
                 items={data.titleParts || []}
                 onChange={(v) => onChange(set(data, 'titleParts', v))}
                 makeNew={() => ({ text: '', gradient: false })}
                 renderItem={(item, update) => (
-                    <>
-                        <TextField label="Text" value={item.text} onChange={(v) => update({ ...item, text: v })} />
-                        <Toggle label="Gradient fill" value={!!item.gradient} onChange={(v) => update({ ...item, gradient: v })} />
-                    </>
+                    <Toggle label="Gradient fill" value={!!item.gradient} onChange={(v) => update({ ...item, gradient: v })} />
                 )}
+                addLabel="Add segment"
             />
-            <TextArea label="Lead paragraph" value={data.lead} onChange={(v) => onChange(set(data, 'lead', v))} />
 
             <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
                 <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Badge</div>
-                <TextField label="Badge text" value={badge.text} onChange={(v) => onChange(set(data, 'badge', { ...badge, text: v }))} />
-                <IconField label="Badge icon" value={badge.icon} onChange={(v) => onChange(set(data, 'badge', { ...badge, icon: v }))} />
+                <IconField label="Icon" value={badge.icon} onChange={(v) => onChange(set(data, 'badge', { ...badge, icon: v }))} />
             </div>
 
             <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
                 <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Primary CTA</div>
-                <TextField label="Label" value={primary.label} onChange={(v) => onChange(set(data, 'primaryCta', { ...primary, label: v }))} />
-                <TextField label="Href"  value={primary.href}  onChange={(v) => onChange(set(data, 'primaryCta', { ...primary, href: v }))} hint="Defaults to /app" />
+                <TextField label="Destination URL" value={primary.href} onChange={(v) => onChange(set(data, 'primaryCta', { ...primary, href: v }))} hint="Defaults to /app" />
             </div>
 
             <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
                 <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Secondary CTA</div>
-                <TextField label="Label" value={secondary.label} onChange={(v) => onChange(set(data, 'secondaryCta', { ...secondary, label: v }))} />
-                <TextField label="Href"  value={secondary.href}  onChange={(v) => onChange(set(data, 'secondaryCta', { ...secondary, href: v }))} />
+                <TextField label="Destination URL" value={secondary.href} onChange={(v) => onChange(set(data, 'secondaryCta', { ...secondary, href: v }))} />
             </div>
 
             <RepeatableList
@@ -80,16 +85,14 @@ export function HeroEditor({ data = {}, onChange }) {
                 onChange={(v) => onChange(set(data, 'mockup', { ...mockup, chatBubbles: v }))}
                 makeNew={() => ({ role: 'user', text: '' })}
                 renderItem={(item, update) => (
-                    <>
-                        <FieldSelect
-                            label="Role"
-                            value={item.role}
-                            options={[{ value: 'user', label: 'User' }, { value: 'ai', label: 'AI' }]}
-                            onChange={(v) => update({ ...item, role: v })}
-                        />
-                        <TextArea label="Text" value={item.text} onChange={(v) => update({ ...item, text: v })} rows={2} />
-                    </>
+                    <FieldSelect
+                        label="Speaker"
+                        value={item.role}
+                        options={[{ value: 'user', label: 'User' }, { value: 'ai', label: 'AI' }]}
+                        onChange={(v) => update({ ...item, role: v })}
+                    />
                 )}
+                addLabel="Add bubble"
             />
         </>
     );
@@ -99,18 +102,16 @@ export function HeroEditor({ data = {}, onChange }) {
 export function SocialProofEditor({ data = {}, onChange }) {
     return (
         <>
-            <TextField label="Eyebrow" value={data.eyebrow} onChange={(v) => onChange(set(data, 'eyebrow', v))} />
+            <InlineHint>Click the eyebrow text to edit it. Logos with no image fall back to text — click the placeholder to rename.</InlineHint>
             <RepeatableList
                 label="Logos"
                 items={data.logos || []}
                 onChange={(v) => onChange(set(data, 'logos', v))}
-                makeNew={() => ({ src: '', alt: '' })}
+                makeNew={() => ({ src: '', alt: 'New logo' })}
                 renderItem={(item, update) => (
-                    <>
-                        <ImageField label="Logo image" value={item.src} onChange={(v) => update({ ...item, src: v })} />
-                        <TextField label="Alt / fallback text" value={item.alt} onChange={(v) => update({ ...item, alt: v })} />
-                    </>
+                    <ImageField label="Logo image (optional)" value={item.src} onChange={(v) => update({ ...item, src: v })} />
                 )}
+                addLabel="Add logo"
             />
         </>
     );
@@ -120,22 +121,16 @@ export function SocialProofEditor({ data = {}, onChange }) {
 export function FeaturesEditor({ data = {}, onChange }) {
     return (
         <>
-            <TextField label="Eyebrow" value={data.eyebrow} onChange={(v) => onChange(set(data, 'eyebrow', v))} />
-            <TextField label="Title"   value={data.title}   onChange={(v) => onChange(set(data, 'title', v))} />
-            <TextArea  label="Lead"    value={data.lead}    onChange={(v) => onChange(set(data, 'lead', v))} />
+            <InlineHint>Eyebrow, title, lead, and each card's title / body / tag are editable directly in the preview.</InlineHint>
             <RepeatableList
                 label="Feature cards"
                 items={data.items || []}
                 onChange={(v) => onChange(set(data, 'items', v))}
-                makeNew={() => ({ icon: '', title: '', body: '', techTag: '' })}
+                makeNew={() => ({ icon: 'Sparkles', title: 'New feature', body: '', techTag: '' })}
                 renderItem={(item, update) => (
-                    <>
-                        <IconField label="Icon" value={item.icon} onChange={(v) => update({ ...item, icon: v })} />
-                        <TextField label="Title" value={item.title} onChange={(v) => update({ ...item, title: v })} />
-                        <TextArea  label="Body"  value={item.body}  onChange={(v) => update({ ...item, body: v })} />
-                        <TextField label="Tech tag (optional)" value={item.techTag} onChange={(v) => update({ ...item, techTag: v })} />
-                    </>
+                    <IconField label="Icon" value={item.icon} onChange={(v) => update({ ...item, icon: v })} />
                 )}
+                addLabel="Add card"
             />
         </>
     );
@@ -145,22 +140,14 @@ export function FeaturesEditor({ data = {}, onChange }) {
 export function StepsEditor({ data = {}, onChange }) {
     return (
         <>
-            <TextField label="Eyebrow" value={data.eyebrow} onChange={(v) => onChange(set(data, 'eyebrow', v))} />
-            <TextField label="Title"   value={data.title}   onChange={(v) => onChange(set(data, 'title', v))} />
-            <TextArea  label="Lead"    value={data.lead}    onChange={(v) => onChange(set(data, 'lead', v))} />
+            <InlineHint>Click any step's number, title, body, or example in the preview to edit it.</InlineHint>
             <RepeatableList
                 label="Steps"
                 items={data.items || []}
                 onChange={(v) => onChange(set(data, 'items', v))}
-                makeNew={() => ({ number: '', title: '', body: '', example: '' })}
-                renderItem={(item, update) => (
-                    <>
-                        <TextField label="Number / badge" value={item.number} onChange={(v) => update({ ...item, number: v })} />
-                        <TextField label="Title" value={item.title} onChange={(v) => update({ ...item, title: v })} />
-                        <TextArea  label="Body"  value={item.body}  onChange={(v) => update({ ...item, body: v })} />
-                        <TextField label="Example (optional, italic)" value={item.example} onChange={(v) => update({ ...item, example: v })} />
-                    </>
-                )}
+                makeNew={() => ({ number: '', title: 'New step', body: '', example: '' })}
+                renderItem={() => null}
+                addLabel="Add step"
             />
         </>
     );
@@ -170,31 +157,26 @@ export function StepsEditor({ data = {}, onChange }) {
 export function SecurityEditor({ data = {}, onChange }) {
     return (
         <>
-            <TextField label="Eyebrow" value={data.eyebrow} onChange={(v) => onChange(set(data, 'eyebrow', v))} />
-            <TextField label="Title"   value={data.title}   onChange={(v) => onChange(set(data, 'title', v))} />
-            <TextArea  label="Lead"    value={data.lead}    onChange={(v) => onChange(set(data, 'lead', v))} />
+            <InlineHint>Click any card's title, summary, or detail bullet in the preview to edit. Click a card body to expand it.</InlineHint>
             <RepeatableList
                 label="Security cards"
                 items={data.cards || []}
                 onChange={(v) => onChange(set(data, 'cards', v))}
-                makeNew={() => ({ icon: '', title: '', summary: '', details: [] })}
+                makeNew={() => ({ icon: 'ShieldCheck', title: 'New card', summary: '', details: [] })}
                 renderItem={(item, update) => (
                     <>
                         <IconField label="Icon" value={item.icon} onChange={(v) => update({ ...item, icon: v })} />
-                        <TextField label="Title" value={item.title} onChange={(v) => update({ ...item, title: v })} />
-                        <TextArea  label="Summary" value={item.summary} onChange={(v) => update({ ...item, summary: v })} />
                         <RepeatableList
-                            label="Details (revealed on click)"
+                            label="Detail bullets"
                             items={item.details || []}
                             onChange={(v) => update({ ...item, details: v })}
-                            makeNew={() => ''}
-                            renderItem={(d, updD) => (
-                                <TextField label="" value={d} onChange={(v) => updD(v)} />
-                            )}
+                            makeNew={() => 'New detail'}
+                            renderItem={() => null}
                             addLabel="Add detail"
                         />
                     </>
                 )}
+                addLabel="Add card"
             />
         </>
     );
@@ -204,32 +186,25 @@ export function SecurityEditor({ data = {}, onChange }) {
 export function IntegrationsEditor({ data = {}, onChange }) {
     return (
         <>
-            <TextField label="Eyebrow" value={data.eyebrow} onChange={(v) => onChange(set(data, 'eyebrow', v))} />
-            <TextField label="Title"   value={data.title}   onChange={(v) => onChange(set(data, 'title', v))} />
-            <TextArea  label="Lead"    value={data.lead}    onChange={(v) => onChange(set(data, 'lead', v))} />
+            <InlineHint>Category headings and tool names are editable in the preview.</InlineHint>
             <RepeatableList
                 label="Categories"
                 items={data.categories || []}
                 onChange={(v) => onChange(set(data, 'categories', v))}
-                makeNew={() => ({ heading: '', items: [] })}
+                makeNew={() => ({ heading: 'New category', items: [] })}
                 renderItem={(cat, updateCat) => (
-                    <>
-                        <TextField label="Heading" value={cat.heading} onChange={(v) => updateCat({ ...cat, heading: v })} />
-                        <RepeatableList
-                            label="Items"
-                            items={cat.items || []}
-                            onChange={(v) => updateCat({ ...cat, items: v })}
-                            makeNew={() => ({ icon: '', label: '' })}
-                            renderItem={(it, updIt) => (
-                                <>
-                                    <IconField label="Icon" value={it.icon} onChange={(v) => updIt({ ...it, icon: v })} />
-                                    <TextField label="Label" value={it.label} onChange={(v) => updIt({ ...it, label: v })} />
-                                </>
-                            )}
-                            addLabel="Add item"
-                        />
-                    </>
+                    <RepeatableList
+                        label="Tools"
+                        items={cat.items || []}
+                        onChange={(v) => updateCat({ ...cat, items: v })}
+                        makeNew={() => ({ icon: 'Plug', label: 'Tool' })}
+                        renderItem={(it, updIt) => (
+                            <IconField label="Icon" value={it.icon} onChange={(v) => updIt({ ...it, icon: v })} />
+                        )}
+                        addLabel="Add tool"
+                    />
                 )}
+                addLabel="Add category"
             />
         </>
     );
@@ -239,29 +214,23 @@ export function IntegrationsEditor({ data = {}, onChange }) {
 export function ArchitectureEditor({ data = {}, onChange }) {
     return (
         <>
-            <TextField label="Eyebrow" value={data.eyebrow} onChange={(v) => onChange(set(data, 'eyebrow', v))} />
-            <TextField label="Title"   value={data.title}   onChange={(v) => onChange(set(data, 'title', v))} />
-            <TextArea  label="Lead"    value={data.lead}    onChange={(v) => onChange(set(data, 'lead', v))} />
+            <InlineHint>Click layer labels and tags in the preview to edit them.</InlineHint>
             <RepeatableList
                 label="Layers"
                 items={data.layers || []}
                 onChange={(v) => onChange(set(data, 'layers', v))}
-                makeNew={() => ({ label: '', tags: [] })}
+                makeNew={() => ({ label: 'New layer', tags: [] })}
                 renderItem={(layer, updateLayer) => (
-                    <>
-                        <TextField label="Label" value={layer.label} onChange={(v) => updateLayer({ ...layer, label: v })} />
-                        <RepeatableList
-                            label="Tags"
-                            items={layer.tags || []}
-                            onChange={(v) => updateLayer({ ...layer, tags: v })}
-                            makeNew={() => ''}
-                            renderItem={(t, updT) => (
-                                <TextField label="" value={t} onChange={(v) => updT(v)} />
-                            )}
-                            addLabel="Add tag"
-                        />
-                    </>
+                    <RepeatableList
+                        label="Tags"
+                        items={layer.tags || []}
+                        onChange={(v) => updateLayer({ ...layer, tags: v })}
+                        makeNew={() => 'tag'}
+                        renderItem={() => null}
+                        addLabel="Add tag"
+                    />
                 )}
+                addLabel="Add layer"
             />
         </>
     );
@@ -271,19 +240,14 @@ export function ArchitectureEditor({ data = {}, onChange }) {
 export function TechStatsEditor({ data = {}, onChange }) {
     return (
         <>
-            <TextField label="Eyebrow" value={data.eyebrow} onChange={(v) => onChange(set(data, 'eyebrow', v))} />
-            <TextField label="Title"   value={data.title}   onChange={(v) => onChange(set(data, 'title', v))} />
+            <InlineHint>Click any number or label in the preview to edit it.</InlineHint>
             <RepeatableList
                 label="Stats"
                 items={data.stats || []}
                 onChange={(v) => onChange(set(data, 'stats', v))}
-                makeNew={() => ({ number: '', label: '' })}
-                renderItem={(item, update) => (
-                    <>
-                        <TextField label="Number" value={item.number} onChange={(v) => update({ ...item, number: v })} />
-                        <TextField label="Label"  value={item.label}  onChange={(v) => update({ ...item, label: v })} />
-                    </>
-                )}
+                makeNew={() => ({ number: '0', label: 'New metric' })}
+                renderItem={() => null}
+                addLabel="Add stat"
             />
         </>
     );
@@ -294,47 +258,35 @@ export function CTAEditor({ data = {}, onChange }) {
     const button = data.button || {};
     return (
         <>
-            <TextField label="Title" value={data.title} onChange={(v) => onChange(set(data, 'title', v))} />
-            <TextArea  label="Lead"  value={data.lead}  onChange={(v) => onChange(set(data, 'lead', v))} />
-            <TextField label="Button label" value={button.label} onChange={(v) => onChange(set(data, 'button', { ...button, label: v }))} />
-            <TextField label="Button href"  value={button.href}  onChange={(v) => onChange(set(data, 'button', { ...button, href: v }))} hint="Defaults to /app" />
+            <InlineHint>Title, lead, and button label are editable in the preview.</InlineHint>
+            <TextField label="Button destination URL" value={button.href} onChange={(v) => onChange(set(data, 'button', { ...button, href: v }))} hint="Defaults to /app" />
         </>
     );
 }
 
 // ── Footer ──────────────────────────────────────────────────────────────
 export function FooterEditor({ data = {}, onChange }) {
-    const brand = data.brand || {};
     return (
         <>
-            <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
-                <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Brand block</div>
-                <TextField label="Logo text" value={brand.logoText} onChange={(v) => onChange(set(data, 'brand', { ...brand, logoText: v }))} />
-                <TextArea  label="Blurb"     value={brand.blurb}    onChange={(v) => onChange(set(data, 'brand', { ...brand, blurb: v }))} />
-            </div>
+            <InlineHint>Brand text, blurb, column headings, link labels, and the copyright line are all editable in the preview.</InlineHint>
             <RepeatableList
                 label="Columns"
                 items={data.columns || []}
                 onChange={(v) => onChange(set(data, 'columns', v))}
-                makeNew={() => ({ heading: '', links: [] })}
+                makeNew={() => ({ heading: 'New column', links: [] })}
                 renderItem={(col, updateCol) => (
-                    <>
-                        <TextField label="Heading" value={col.heading} onChange={(v) => updateCol({ ...col, heading: v })} />
-                        <RepeatableList
-                            label="Links"
-                            items={col.links || []}
-                            onChange={(v) => updateCol({ ...col, links: v })}
-                            makeNew={() => ({ label: '', href: '#' })}
-                            renderItem={(l, updL) => (
-                                <>
-                                    <TextField label="Label" value={l.label} onChange={(v) => updL({ ...l, label: v })} />
-                                    <TextField label="Href"  value={l.href}  onChange={(v) => updL({ ...l, href: v })} />
-                                </>
-                            )}
-                            addLabel="Add link"
-                        />
-                    </>
+                    <RepeatableList
+                        label="Links"
+                        items={col.links || []}
+                        onChange={(v) => updateCol({ ...col, links: v })}
+                        makeNew={() => ({ label: 'New link', href: '#' })}
+                        renderItem={(l, updL) => (
+                            <TextField label="Href" value={l.href} onChange={(v) => updL({ ...l, href: v })} />
+                        )}
+                        addLabel="Add link"
+                    />
                 )}
+                addLabel="Add column"
             />
             <RepeatableList
                 label="Social links"
@@ -357,13 +309,12 @@ export function FooterEditor({ data = {}, onChange }) {
                         <TextField label="URL" value={s.href} onChange={(v) => updS({ ...s, href: v })} />
                     </>
                 )}
+                addLabel="Add social"
             />
-            <TextField label="Copyright" value={data.copyright} onChange={(v) => onChange(set(data, 'copyright', v))} />
         </>
     );
 }
 
-// Local select used by Hero + Footer.
 function FieldSelect({ value, onChange, options, label }) {
     return (
         <div className="flex flex-col gap-1.5 mb-3">
@@ -379,19 +330,18 @@ function FieldSelect({ value, onChange, options, label }) {
     );
 }
 
-// Section editor lookup table — used by the panel.
 export const SECTION_EDITORS = {
-    header:       { component: HeaderEditor,       label: 'Header' },
-    hero:         { component: HeroEditor,         label: 'Hero' },
-    socialProof:  { component: SocialProofEditor,  label: 'Social proof' },
-    features:     { component: FeaturesEditor,     label: 'Features' },
-    steps:        { component: StepsEditor,        label: 'How it works' },
-    security:     { component: SecurityEditor,     label: 'Security' },
-    integrations: { component: IntegrationsEditor, label: 'Integrations' },
-    architecture: { component: ArchitectureEditor, label: 'Architecture' },
-    techStats:    { component: TechStatsEditor,    label: 'Stats' },
-    cta:          { component: CTAEditor,          label: 'Call to action' },
-    footer:       { component: FooterEditor,       label: 'Footer' },
+    header:       { component: HeaderEditor,       label: 'Header',          icon: 'PanelTop' },
+    hero:         { component: HeroEditor,         label: 'Hero',            icon: 'Megaphone' },
+    socialProof:  { component: SocialProofEditor,  label: 'Social proof',    icon: 'Users' },
+    features:     { component: FeaturesEditor,     label: 'Features',        icon: 'Sparkles' },
+    steps:        { component: StepsEditor,        label: 'How it works',    icon: 'ListOrdered' },
+    security:     { component: SecurityEditor,     label: 'Security',        icon: 'ShieldCheck' },
+    integrations: { component: IntegrationsEditor, label: 'Integrations',    icon: 'Plug' },
+    architecture: { component: ArchitectureEditor, label: 'Architecture',    icon: 'Boxes' },
+    techStats:    { component: TechStatsEditor,    label: 'Stats',           icon: 'BarChart3' },
+    cta:          { component: CTAEditor,          label: 'Call to action',  icon: 'Target' },
+    footer:       { component: FooterEditor,       label: 'Footer',          icon: 'PanelBottom' },
 };
 
 export const SECTION_ORDER = [

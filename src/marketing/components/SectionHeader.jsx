@@ -1,11 +1,44 @@
 import React from 'react';
+import EditableText from './EditableText';
 
-export default function SectionHeader({ eyebrow, title, lead }) {
+/**
+ * Section eyebrow + headline + lead. Pass a `pathPrefix` (e.g. "features")
+ * and each piece becomes a click-to-edit text node in preview mode.
+ */
+export default function SectionHeader({ pathPrefix, eyebrow, title, lead }) {
     return (
         <div className="section-header reveal">
-            {eyebrow ? <span className="label">{eyebrow}</span> : null}
-            {title  ? <h2 className="headline-lg">{title}</h2>  : null}
-            {lead   ? <p className="body-lg">{lead}</p>          : null}
+            {(eyebrow || pathPrefix) ? (
+                <EditableText
+                    as="span"
+                    path={`${pathPrefix}.eyebrow`}
+                    placeholder="Eyebrow"
+                    className="label"
+                >
+                    {eyebrow || ''}
+                </EditableText>
+            ) : null}
+            {(title || pathPrefix) ? (
+                <EditableText
+                    as="h2"
+                    path={`${pathPrefix}.title`}
+                    placeholder="Section title"
+                    className="headline-lg"
+                >
+                    {title || ''}
+                </EditableText>
+            ) : null}
+            {(lead || pathPrefix) ? (
+                <EditableText
+                    as="p"
+                    path={`${pathPrefix}.lead`}
+                    multiline
+                    placeholder="Lead paragraph (optional)"
+                    className="body-lg"
+                >
+                    {lead || ''}
+                </EditableText>
+            ) : null}
         </div>
     );
 }

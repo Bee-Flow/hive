@@ -743,6 +743,114 @@
 .marketing-root .reveal-delay-5 { transition-delay: 0.5s; }
 .marketing-root .reveal-delay-6 { transition-delay: 0.6s; }
 
+/* ── Inline-edit affordances (preview mode only) ─────────────────────── */
+.marketing-root .cms-editable {
+    outline: 1px dashed transparent;
+    outline-offset: 3px;
+    border-radius: 3px;
+    cursor: text;
+    transition: outline-color 0.15s ease, background-color 0.15s ease;
+    position: relative;
+}
+.marketing-root .cms-editable:hover {
+    outline-color: rgba(245, 166, 35, 0.5);
+    background-color: rgba(245, 166, 35, 0.06);
+}
+.marketing-root .cms-editable:focus,
+.marketing-root .cms-editable[contenteditable="true"]:focus-visible {
+    outline: 2px solid var(--accent);
+    background-color: rgba(245, 166, 35, 0.1);
+}
+.marketing-root .cms-editable[data-cms-empty="true"]::before {
+    content: attr(data-cms-placeholder);
+    color: var(--text-muted);
+    font-style: italic;
+    pointer-events: none;
+}
+.marketing-root .cms-editable[data-cms-empty="true"]:focus::before {
+    display: none;
+}
+
+/* Section frame + hover toolbar */
+.marketing-root .cms-section-frame {
+    position: relative;
+    transition: outline-color 0.15s ease;
+}
+.marketing-root .cms-section-frame::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    outline: 0 solid transparent;
+    outline-offset: -2px;
+    transition: outline 0.15s ease;
+}
+.marketing-root .cms-section-frame:hover::after {
+    outline: 2px solid rgba(245, 166, 35, 0.4);
+}
+.marketing-root .cms-section-frame.cms-section-active::after {
+    outline: 2px solid var(--accent);
+}
+.marketing-root .cms-section-hidden {
+    opacity: 0.5;
+    filter: grayscale(0.4);
+}
+
+.marketing-root .cms-section-toolbar {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    z-index: 50;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 4px 4px 10px;
+    background: rgba(12, 18, 32, 0.95);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-sm);
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(8px);
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: opacity 0.18s ease, transform 0.18s ease;
+    pointer-events: none;
+    font-family: 'Inter', sans-serif;
+}
+.marketing-root .cms-section-frame:hover .cms-section-toolbar,
+.marketing-root .cms-section-frame:focus-within .cms-section-toolbar {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+.marketing-root .cms-section-toolbar .cms-section-name {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--accent);
+    padding-right: 6px;
+    border-right: 1px solid var(--border-subtle);
+    margin-right: 2px;
+}
+.marketing-root .cms-section-toolbar button {
+    padding: 5px 10px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s ease, color 0.15s ease;
+}
+.marketing-root .cms-section-toolbar button:hover {
+    background: rgba(245, 166, 35, 0.12);
+    color: var(--accent-light);
+}
+
+/* Make the fixed header non-fixed in preview so toolbars don't overlap */
+.marketing-root.cms-preview .header { position: absolute; }
+
 /* ── Animations ───────────────────────────────────────────────────────── */
 @keyframes orbFloat {
     0%, 100% { transform: translate(0, 0) scale(1); }

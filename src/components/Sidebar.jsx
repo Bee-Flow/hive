@@ -425,6 +425,17 @@ const Sidebar = ({
     const toggleChats = useCallback(() => setChatsOpen(p => { writeExpanded('chats', !p); return !p; }), []);
     const toggleProjects = useCallback(() => setProjectsOpen(p => { writeExpanded('projects', !p); return !p; }), []);
 
+    // When the chat list has scrolled, clicking a workspace header should bring
+    // the section back into view rather than just toggling its (already-open)
+    // stored state. Otherwise fall through to the normal toggle.
+    const handleWorkspaceHeaderClick = useCallback((toggle, currentlyStoredOpen) => {
+        if (chatScrolled && currentlyStoredOpen && scrollRegionRef.current) {
+            scrollRegionRef.current.scrollTo({ top: 0, behavior: 'smooth' });
+            return;
+        }
+        toggle();
+    }, [chatScrolled]);
+
     // Close profile menu on outside click
     useEffect(() => {
         if (!showProfileMenu) return;
@@ -680,13 +691,13 @@ const Sidebar = ({
                 const collapsed = isOpen && !isMobile && chatScrolled;
 
                 return (
-                    <nav aria-label="Main navigation" data-testid="main-navigation" className={`px-2 pt-4 flex-shrink-0 flex flex-col gap-2 ${isOpen ? '' : 'items-center'}`}>
+                    <nav aria-label="Main navigation" data-testid="main-navigation" className={`px-2 pt-3 flex-shrink-0 flex flex-col gap-1 ${isOpen ? '' : 'items-center'}`}>
                         {coreNav.map(renderRow)}
                         {secondaryNav.length > 0 && (
                             <div
                                 className="overflow-hidden transition-all duration-200 ease-out"
                                 style={{
-                                    maxHeight: collapsed ? '48px' : `${secondaryNav.length * 44 + 8}px`,
+                                    maxHeight: collapsed ? '44px' : `${secondaryNav.length * 40 + 8}px`,
                                     opacity: 1,
                                 }}
                             >
@@ -695,7 +706,7 @@ const Sidebar = ({
                                         {secondaryNav.map(renderIcon)}
                                     </div>
                                 ) : (
-                                    <div className={`flex flex-col gap-2 ${isOpen ? '' : 'items-center'}`} data-testid="secondary-nav-expanded">
+                                    <div className={`flex flex-col gap-1 ${isOpen ? '' : 'items-center'}`} data-testid="secondary-nav-expanded">
                                         {secondaryNav.map(renderRow)}
                                     </div>
                                 )}
@@ -728,23 +739,33 @@ const Sidebar = ({
             <div ref={scrollRegionRef} className={`flex-1 min-h-0 flex flex-col overflow-y-auto custom-scrollbar ${isOpen ? '' : ''}`}>
 
             {/* ── Projects ── */}
-            {isOpen && user?.featureFlags?.projects !== false && projects.length > 0 && (
+            {isOpen && user?.featureFlags?.projects !== false && projects.length > 0 && (() => {
+                const showBody = projectsOpen && !chatScrolled;
+                return (
                 <div className="mt-1">
-                    <div className={SECTION_HDR} onClick={toggleProjects}>
-                        <span className={SECTION_LBL}>{t('sidebar.projects')}</span>
+                    <div
+                        className={`flex items-center justify-between px-3 cursor-pointer select-none ${chatScrolled ? 'h-7' : 'h-9'}`}
+                        onClick={() => handleWorkspaceHeaderClick(toggleProjects, projectsOpen)}
+                    >
+                        <span className={`${SECTION_LBL} ${chatScrolled ? 'text-[12px] text-[var(--text-tertiary)] font-semibold' : ''}`}>
+                            {t('sidebar.projects')}
+                            {chatScrolled && <span className="ml-1.5 text-[var(--text-tertiary)] font-normal">({projects.length})</span>}
+                        </span>
                         <div className="flex items-center gap-1">
-                            <button
-                                onClick={(e) => { e.stopPropagation(); onCreateProject?.(); }}
-                                className="p-0.5 rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] transition-colors"
-                                title="New Project"
-                            >
-                                <Plus className="w-3.5 h-3.5" />
-                            </button>
-                            <ChevronDown className={`w-3.5 h-3.5 text-[var(--text-tertiary)] transition-transform duration-200 ${projectsOpen ? '' : '-rotate-90'}`} />
+                            {!chatScrolled && (
+                                <button
+                                    onClick={(e) => { e.stopPropagation(); onCreateProject?.(); }}
+                                    className="p-0.5 rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-tertiary)] hover:text-[var(--accent-primary)] transition-colors"
+                                    title="New Project"
+                                >
+                                    <Plus className="w-3.5 h-3.5" />
+                                </button>
+                            )}
+                            <ChevronDown className={`w-3.5 h-3.5 text-[var(--text-tertiary)] transition-transform duration-200 ${showBody ? '' : '-rotate-90'}`} />
                         </div>
                     </div>
 
-                    {projectsOpen && (
+                    {showBody && (
                         <div className="px-1.5 pb-1 space-y-0.5">
 
                             {projects.map(p => {
@@ -777,7 +798,8 @@ const Sidebar = ({
                     )}
                     <div className="mx-3 my-0.5 border-t border-[var(--border-subtle)]" />
                 </div>
-            )}
+                );
+            })()}
 
             {/* ── New Project (when no projects yet) ── */}
             {isOpen && user?.featureFlags?.projects !== false && projects.length === 0 && (
@@ -792,20 +814,30 @@ const Sidebar = ({
                 </div>
             )}
 
-            {/* ── Divider ── */}
-            <div className="mx-3 my-1.5 border-t border-[var(--border-subtle)]" />
+            {/* ── Divider ── (only when My Agents is visible below) */}
+            {isOpen && favoriteAgents.length > 0 && (
+                <div className="mx-3 my-1.5 border-t border-[var(--border-subtle)]" />
+            )}
 
-            {/* ── My Agents ── */}
-            {isOpen && (
+            {/* ── My Agents ── (only when there are favorites) */}
+            {isOpen && favoriteAgents.length > 0 && (() => {
+                const showBody = agentsOpen && !chatScrolled;
+                return (
                 <div>
-                    <div className={SECTION_HDR} onClick={toggleAgents}>
-                        <span className={SECTION_LBL}>{t('sidebar.my_agents')}</span>
-                        <ChevronDown className={`w-3.5 h-3.5 text-[var(--text-tertiary)] transition-transform duration-200 ${agentsOpen ? '' : '-rotate-90'}`} />
+                    <div
+                        className={`flex items-center justify-between px-3 cursor-pointer select-none ${chatScrolled ? 'h-7' : 'h-9'}`}
+                        onClick={() => handleWorkspaceHeaderClick(toggleAgents, agentsOpen)}
+                    >
+                        <span className={`${SECTION_LBL} ${chatScrolled ? 'text-[12px] text-[var(--text-tertiary)] font-semibold' : ''}`}>
+                            {t('sidebar.my_agents')}
+                            {chatScrolled && <span className="ml-1.5 text-[var(--text-tertiary)] font-normal">({favoriteAgents.length})</span>}
+                        </span>
+                        <ChevronDown className={`w-3.5 h-3.5 text-[var(--text-tertiary)] transition-transform duration-200 ${showBody ? '' : '-rotate-90'}`} />
                     </div>
 
-                    {agentsOpen && (
+                    {showBody && (
                         <div className="px-1.5 pb-1">
-                            {favoriteAgents.length > 0 ? favoriteAgents.map(agent => {
+                            {favoriteAgents.map(agent => {
                                 const sel = selectedAgent?.id === agent.id;
                                 const initials = (agent.name?.[0]?.toUpperCase() || '?');
                                 const hasImageAvatar = agent.avatar && (agent.avatar.startsWith('data:') || agent.avatar.startsWith('http'));
@@ -835,16 +867,13 @@ const Sidebar = ({
                                         </button>
                                     </button>
                                 );
-                            }) : (
-                                <button onClick={onOpenMarketplace} className={`${ROW} ${ROW_IDLE} text-[var(--text-tertiary)]`}>
-                                    <span className="text-[13px]">{t('sidebar.discover_agents')}</span>
-                                </button>
-                            )}
+                            })}
                         </div>
                     )}
                     <div className="mx-3 my-0.5 border-t border-[var(--border-subtle)]" />
                 </div>
-            )}
+                );
+            })()}
 
 
             {/* ── Recent Chats ── */}

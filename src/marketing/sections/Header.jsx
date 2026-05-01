@@ -1,5 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import Button from '../components/Button';
+import EditableText from '../components/EditableText';
+import SectionFrame from '../components/SectionFrame';
+
+const isPreview = () =>
+    typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).has('preview');
+
+// In preview mode, anchor clicks should not jump-scroll inside the iframe;
+// they'd take the admin's focus away from what they were editing.
+const navHandler = (e) => {
+    if (isPreview()) e.preventDefault();
+};
 
 export default function Header({ data }) {
     const [scrolled, setScrolled] = useState(false);
@@ -17,21 +29,38 @@ export default function Header({ data }) {
     const initials = (data.logoText || 'B').slice(0, 1).toUpperCase();
 
     return (
-        <>
+        <SectionFrame id="header" name="Header" enabled={data.enabled}>
             <header className={`header ${scrolled ? 'scrolled' : ''}`}>
                 <div className="header-inner">
-                    <a href="#" className="header-logo">
+                    <a href="#" className="header-logo" onClick={navHandler}>
                         <div className="logo-tile">{initials}</div>
-                        <span>{data.logoText}<span className="logo-dot">.</span></span>
+                        <span>
+                            <EditableText path="header.logoText" placeholder="Logo">
+                                {data.logoText || ''}
+                            </EditableText>
+                            <span className="logo-dot">.</span>
+                        </span>
                     </a>
                     <nav className="header-nav">
                         {(data.navLinks || []).map((link, i) => (
-                            <a key={i} href={link.href}>{link.label}</a>
+                            <a key={i} href={link.href} onClick={navHandler}>
+                                <EditableText path={`header.navLinks.${i}.label`} placeholder="Link">
+                                    {link.label || ''}
+                                </EditableText>
+                            </a>
                         ))}
                     </nav>
                     <div className="header-actions">
-                        <Button variant="login" href="/app">{data.loginLabel || 'Log in'}</Button>
-                        <Button variant="primary" href={data.ctaHref || '/app'}>{data.ctaLabel || 'Get started'}</Button>
+                        <Button variant="login" href="/app">
+                            <EditableText path="header.loginLabel" placeholder="Log in">
+                                {data.loginLabel || 'Log in'}
+                            </EditableText>
+                        </Button>
+                        <Button variant="primary" href={data.ctaHref || '/app'}>
+                            <EditableText path="header.ctaLabel" placeholder="Get started">
+                                {data.ctaLabel || 'Get started'}
+                            </EditableText>
+                        </Button>
                         <button
                             type="button"
                             aria-label="Toggle menu"
@@ -46,11 +75,13 @@ export default function Header({ data }) {
             <div className={`mobile-nav ${mobileOpen ? 'active' : ''}`}>
                 <div className="mobile-nav-inner">
                     {(data.navLinks || []).map((link, i) => (
-                        <a key={i} href={link.href} onClick={() => setMobileOpen(false)}>{link.label}</a>
+                        <a key={i} href={link.href} onClick={(e) => { navHandler(e); setMobileOpen(false); }}>
+                            {link.label}
+                        </a>
                     ))}
-                    <a href="/app">{data.loginLabel || 'Log in'}</a>
+                    <a href="/app" onClick={navHandler}>{data.loginLabel || 'Log in'}</a>
                 </div>
             </div>
-        </>
+        </SectionFrame>
     );
 }
