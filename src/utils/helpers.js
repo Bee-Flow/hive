@@ -142,6 +142,12 @@ export const TOOL_NAME_MAP = {
     'activate_skill': 'Activating skill',
     'activate_session_skill': 'Activating chat skill',
     'publish_session_skill_to_library': 'Saving skill to library',
+    'gamma_create_presentation': 'Gamma Create',
+    'gamma_create_from_template': 'Gamma Template',
+    'gamma_revise_as_new': 'Gamma Revise as New',
+    'gamma_get_generation_status': 'Gamma Status',
+    'gamma_list_themes': 'Gamma Themes',
+    'gamma_list_folders': 'Gamma Folders',
 };
 
 /**
@@ -168,6 +174,9 @@ export const getToolIcon = (name) => {
         'gmail_tool': '📧', 'calendar_tool': '📅',
         'sequentialthinking': '🧠', 'api_fetcher': '🔗',
         'activate_skill': '🧩', 'activate_session_skill': '🐝', 'complete_session_skill': '✅', 'publish_session_skill_to_library': '⭐',
+        'gamma_create_presentation': '📊', 'gamma_create_from_template': '📊',
+        'gamma_revise_as_new': '📊', 'gamma_get_generation_status': '⏱️',
+        'gamma_list_themes': '🎨', 'gamma_list_folders': '📁',
     };
     return icons[name] || '🔧';
 };
