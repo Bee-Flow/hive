@@ -1717,7 +1717,64 @@ const EN_DEFAULTS = {
     "compliance.toast_check_failed": "Could not re-run this check",
     "compliance.toast_wizard_done": "Setup complete — your first compliance scan is running",
     "compliance.toast_wizard_failed": "Could not save setup — try again",
-    "compliance.toast_first_scan": "First compliance scan complete — review the score and open items below."
+    "compliance.toast_first_scan": "First compliance scan complete — review the score and open items below.",
+
+    // ── Agent Wizard ─────────────────────────────────────────────
+    "agent_wizard.sidebar_link": "Create agent with AI",
+    "agent_wizard.title": "Create a new agent",
+    "agent_wizard.back": "Back",
+    "agent_wizard.start_over": "Start over",
+    "agent_wizard.placeholder_initial": "Build an agent that answers questions in Slack, ChatGPT and other chats based on the documentation I provide.",
+    "agent_wizard.placeholder_describe": "Describe what the agent should do",
+    "agent_wizard.thinking": "Thinking…",
+    "agent_wizard.intro": "Here is a draft for the agent I can build for you. Let me know if you'd like changes — otherwise I'll get started.",
+    "agent_wizard.example_qna_title": "Teamchat Q&A",
+    "agent_wizard.example_qna_sub": "Answer questions in team chat apps using your documentation",
+    "agent_wizard.example_planner_title": "Morning Planner",
+    "agent_wizard.example_planner_sub": "Plan my day from my calendar, tasks and open threads",
+    "agent_wizard.example_bug_title": "Bug Triage",
+    "agent_wizard.example_bug_sub": "Score incoming bugs, set priorities and log them in the team tracker",
+
+    // Plan card
+    "agent_wizard.plan_label": "Agent plan",
+    "agent_wizard.channels": "Channels",
+    "agent_wizard.capabilities": "Capabilities",
+    "agent_wizard.adjust": "Request changes",
+    "agent_wizard.build": "Start building",
+    "agent_wizard.busy": "Working…",
+    "agent_wizard.adjust_prompt": "What changes?",
+    "agent_wizard.channel.chatgpt": "Reply to messages in ChatGPT",
+    "agent_wizard.channel.slack": "Reply to messages in Slack",
+    "agent_wizard.channel.teams": "Reply to messages in Teams",
+    "agent_wizard.channel.discord": "Reply to messages in Discord",
+    "agent_wizard.channel.email": "Reply to emails",
+
+    // Builder split view
+    "agent_wizard.builder.save_saving": "Saving…",
+    "agent_wizard.builder.save_saved": "Saved",
+    "agent_wizard.builder.save_error": "Save failed",
+    "agent_wizard.builder.publish": "Create",
+    "agent_wizard.builder.name_placeholder": "Agent name",
+    "agent_wizard.builder.channels": "Channels",
+    "agent_wizard.builder.channel_chatgpt_label": "ChatGPT",
+    "agent_wizard.builder.channel_chatgpt_sub": "Customize and share your agent",
+    "agent_wizard.builder.channel_slack_label": "Slack",
+    "agent_wizard.builder.channel_slack_sub": "Use your agent in Slack",
+    "agent_wizard.builder.browse_apps": "Browse apps",
+    "agent_wizard.builder.add_skill": "Add skill",
+    "agent_wizard.builder.upload_files": "Upload files",
+    "agent_wizard.builder.memory": "Memory",
+    "agent_wizard.builder.memory_on": "Memory · on",
+    "agent_wizard.builder.skills": "Skills",
+    "agent_wizard.builder.instructions": "Instructions",
+    "agent_wizard.builder.instructions_placeholder": "Give your agent instructions on how it should behave.",
+    "agent_wizard.builder.chat_placeholder": "Ask away, @ for context",
+    "agent_wizard.builder.avatar_prompt": "Avatar emoji",
+    "agent_wizard.builder.publish_failed": "Publish failed: {error}",
+
+    // Skill picker
+    "agent_wizard.skills.search": "Search skills",
+    "agent_wizard.skills.empty": "No skills found. Create one in Admin → Skills."
 };
 
 export default EN_DEFAULTS;

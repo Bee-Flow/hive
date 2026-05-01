@@ -1,12 +1,13 @@
 import React from 'react';
 import { MessageCircle, Slack, BookOpen, FileText, Search, Mail, Users } from 'lucide-react';
+import useTranslation from '../../../hooks/useTranslation';
 
-const CHANNEL_META = {
-    chatgpt: { label: 'Reageer op berichten in ChatGPT', icon: <MessageCircle size={16} /> },
-    slack: { label: 'Reageer op berichten in Slack', icon: <Slack size={16} /> },
-    teams: { label: 'Reageer op berichten in Teams', icon: <Users size={16} /> },
-    discord: { label: 'Reageer op berichten in Discord', icon: <MessageCircle size={16} /> },
-    email: { label: 'Reageer op e-mails', icon: <Mail size={16} /> },
+const CHANNEL_ICONS = {
+    chatgpt: <MessageCircle size={16} />,
+    slack: <Slack size={16} />,
+    teams: <Users size={16} />,
+    discord: <MessageCircle size={16} />,
+    email: <Mail size={16} />,
 };
 
 const CAPABILITY_ICONS = [
@@ -15,24 +16,27 @@ const CAPABILITY_ICONS = [
     <Search size={16} key="s" />,
 ];
 
-export default function PlanCard({ plan, onAdjust, onBuild, busy }) {
+export default function PlanCard({ plan, onAdjust, onBuild, busy, t: tOverride }) {
+    const { t: tHook } = useTranslation();
+    const t = tOverride || tHook;
     if (!plan) return null;
     return (
         <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-secondary)] p-6 max-w-xl">
-            <div className="text-xs uppercase tracking-wide text-[var(--accent)] mb-1">Agentplan</div>
+            <div className="text-xs uppercase tracking-wide text-[var(--accent)] mb-1">{t('agent_wizard.plan_label')}</div>
             <h3 className="text-lg font-semibold text-[var(--text-primary)]">{plan.name}</h3>
             <p className="text-sm text-[var(--text-secondary)] mt-2 leading-relaxed">{plan.description}</p>
 
             {plan.channels?.length > 0 && (
                 <div className="mt-5">
-                    <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-2">Kanalen</div>
+                    <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-2">{t('agent_wizard.channels')}</div>
                     <div className="divide-y divide-[var(--border-default)] border-t border-b border-[var(--border-default)]">
                         {plan.channels.map((c) => {
-                            const meta = CHANNEL_META[c] || { label: c, icon: <MessageCircle size={16} /> };
+                            const icon = CHANNEL_ICONS[c] || <MessageCircle size={16} />;
+                            const label = t(`agent_wizard.channel.${c}`) || c;
                             return (
                                 <div key={c} className="flex items-center gap-3 py-2.5 text-sm text-[var(--text-primary)]">
-                                    <span className="text-[var(--text-secondary)]">{meta.icon}</span>
-                                    <span>{meta.label}</span>
+                                    <span className="text-[var(--text-secondary)]">{icon}</span>
+                                    <span>{label}</span>
                                 </div>
                             );
                         })}
@@ -42,7 +46,7 @@ export default function PlanCard({ plan, onAdjust, onBuild, busy }) {
 
             {plan.capabilities?.length > 0 && (
                 <div className="mt-5">
-                    <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-2">Mogelijkheden</div>
+                    <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-2">{t('agent_wizard.capabilities')}</div>
                     <div className="divide-y divide-[var(--border-default)] border-t border-b border-[var(--border-default)]">
                         {plan.capabilities.map((cap, i) => (
                             <div key={i} className="flex items-center gap-3 py-2.5 text-sm text-[var(--text-primary)]">
@@ -61,7 +65,7 @@ export default function PlanCard({ plan, onAdjust, onBuild, busy }) {
                     disabled={busy}
                     className="px-4 py-2 rounded-full text-sm border border-[var(--border-default)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] disabled:opacity-50"
                 >
-                    Vragen om aanpassingen
+                    {t('agent_wizard.adjust')}
                 </button>
                 <button
                     type="button"
@@ -69,7 +73,7 @@ export default function PlanCard({ plan, onAdjust, onBuild, busy }) {
                     disabled={busy}
                     className="px-4 py-2 rounded-full text-sm bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-50"
                 >
-                    {busy ? 'Bezig…' : 'Begin met bouwen'}
+                    {busy ? t('agent_wizard.busy') : t('agent_wizard.build')}
                 </button>
             </div>
         </div>

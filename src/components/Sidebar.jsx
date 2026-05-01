@@ -916,7 +916,7 @@ const Sidebar = ({
                                 >
                                     {currentPage === 'agentWizard' && <div className={ACCENT_BAR} />}
                                     <Sparkles className={`w-4 h-4 ${currentPage === 'agentWizard' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'agentWizard' ? TEXT_ACTIVE : TEXT_IDLE}`}>Agent maken met AI</span>
+                                    <span className={`text-[13px] ${currentPage === 'agentWizard' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('agent_wizard.sidebar_link')}</span>
                                 </NavLink>
                             )}
                             {!isMobile && (

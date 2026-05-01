@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, ArrowUp, MessageCircle, Calendar, Tag } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
+import useTranslation from '../../../hooks/useTranslation';
 import MarkdownRenderer from '../../MarkdownRenderer';
 import ModelTierSelector from '../../ModelTierSelector';
 import PlanCard from './PlanCard';
 import BuilderSplit from './BuilderSplit';
 
-const EXAMPLE_PROMPTS = [
-    { icon: <MessageCircle size={16} />, title: 'Teamchat Q&A', sub: 'Beantwoord vragen in teamchat-apps met de aangeleverde documentatie' },
-    { icon: <Calendar size={16} />, title: 'Ochtendplanner', sub: 'Mijn dag plannen vanuit mijn agenda, taken en open threads' },
-    { icon: <Tag size={16} />, title: 'Bugtriage', sub: 'Beoordeel binnenkomende bugs, stel prioriteiten en leg ze vast in de teamtracker' },
-];
-
 export default function AgentWizard({ user, onClose, onPublished }) {
+    const { t, locale } = useTranslation();
+    const examples = [
+        { icon: <MessageCircle size={16} />, title: t('agent_wizard.example_qna_title'), sub: t('agent_wizard.example_qna_sub') },
+        { icon: <Calendar size={16} />, title: t('agent_wizard.example_planner_title'), sub: t('agent_wizard.example_planner_sub') },
+        { icon: <Tag size={16} />, title: t('agent_wizard.example_bug_title'), sub: t('agent_wizard.example_bug_sub') },
+    ];
     const [stage, setStage] = useState('landing'); // landing | review | builder
     const [prompt, setPrompt] = useState('');
     const [plan, setPlan] = useState(null);
@@ -42,7 +43,7 @@ export default function AgentWizard({ user, onClose, onPublished }) {
             const res = await authFetch(`${API_BASE}/agents/wizard/draft`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: text, modelTier: tier }),
+                body: JSON.stringify({ prompt: text, modelTier: tier, locale }),
             });
             if (!res.ok) throw new Error(await res.text());
             const { plan: draft } = await res.json();
@@ -65,7 +66,7 @@ export default function AgentWizard({ user, onClose, onPublished }) {
             const res = await authFetch(`${API_BASE}/agents/wizard/refine`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, plan, refinement, modelTier: tier }),
+                body: JSON.stringify({ prompt, plan, refinement, modelTier: tier, locale }),
             });
             if (!res.ok) throw new Error(await res.text());
             const { plan: updated } = await res.json();
@@ -104,6 +105,8 @@ export default function AgentWizard({ user, onClose, onPublished }) {
                 agent={agent}
                 plan={plan}
                 history={history}
+                tier={tier}
+                locale={locale}
                 onBack={() => setStage('review')}
                 onPublished={(updated) => {
                     if (onPublished) onPublished(updated);
@@ -117,14 +120,14 @@ export default function AgentWizard({ user, onClose, onPublished }) {
         <div className="flex flex-col h-full bg-[var(--bg-primary)]">
             <div className="flex items-center justify-between px-6 py-4">
                 <button onClick={onClose} className="flex items-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
-                    <ArrowLeft size={16} /> Terug
+                    <ArrowLeft size={16} /> {t('agent_wizard.back')}
                 </button>
                 {stage === 'review' && (
                     <button
                         onClick={() => { setStage('landing'); setPlan(null); setHistory([]); setPrompt(''); }}
                         className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                     >
-                        Leeg starten
+                        {t('agent_wizard.start_over')}
                     </button>
                 )}
             </div>
@@ -132,7 +135,7 @@ export default function AgentWizard({ user, onClose, onPublished }) {
             {stage === 'landing' && (
                 <div className="flex-1 flex flex-col items-center justify-center px-6">
                     <img src="/BeeFlow-logo-Icon-2026.svg" alt="Bee Flow" className="w-16 h-16 mb-4" />
-                    <h1 className="text-2xl font-semibold text-[var(--text-primary)] mb-8">Een nieuwe agent maken</h1>
+                    <h1 className="text-2xl font-semibold text-[var(--text-primary)] mb-8">{t('agent_wizard.title')}</h1>
                     <PromptInput
                         value={prompt}
                         onChange={setPrompt}
@@ -141,10 +144,11 @@ export default function AgentWizard({ user, onClose, onPublished }) {
                         tiers={tiers}
                         tier={tier}
                         onTierChange={setTier}
+                        placeholder={t('agent_wizard.placeholder_initial')}
                     />
                     {error && <div className="mt-4 text-sm text-red-500 max-w-xl">{error}</div>}
                     <div className="mt-8 w-full max-w-xl space-y-1">
-                        {EXAMPLE_PROMPTS.map((ex) => (
+                        {examples.map((ex) => (
                             <button
                                 key={ex.title}
                                 onClick={() => submitPrompt(`${ex.title}: ${ex.sub}`)}
@@ -175,13 +179,14 @@ export default function AgentWizard({ user, onClose, onPublished }) {
                                 return (
                                     <div key={i}>
                                         <div className="text-sm text-[var(--text-secondary)] mb-3 prose prose-sm max-w-none">
-                                            <MarkdownRenderer content={`Hier is een opzet voor de agent die ik voor je kan bouwen. Laat het me weten als je nog aanpassingen hebt, dan ga ik aan de slag!`} />
+                                            <MarkdownRenderer content={t('agent_wizard.intro')} />
                                         </div>
                                         <PlanCard
                                             plan={m.plan}
                                             busy={busy || !isLatest}
+                                            t={t}
                                             onAdjust={() => {
-                                                const v = window.prompt('Welke aanpassingen?');
+                                                const v = window.prompt(t('agent_wizard.adjust_prompt'));
                                                 if (v) refine(v);
                                             }}
                                             onBuild={isLatest ? commitAndBuild : undefined}
@@ -191,7 +196,7 @@ export default function AgentWizard({ user, onClose, onPublished }) {
                             }
                             return null;
                         })}
-                        {busy && <div className="text-sm text-[var(--text-tertiary)]">Aan het denken…</div>}
+                        {busy && <div className="text-sm text-[var(--text-tertiary)]">{t('agent_wizard.thinking')}</div>}
                         {error && <div className="text-sm text-red-500">{error}</div>}
                     </div>
                     <div className="w-full max-w-xl mt-8 sticky bottom-4">
@@ -200,7 +205,7 @@ export default function AgentWizard({ user, onClose, onPublished }) {
                             onChange={setPrompt}
                             onSubmit={() => { refine(prompt); setPrompt(''); }}
                             busy={busy}
-                            placeholder="Beschrijf wat de agent moet doen"
+                            placeholder={t('agent_wizard.placeholder_describe')}
                             tiers={tiers}
                             tier={tier}
                             onTierChange={setTier}
@@ -220,7 +225,7 @@ function PromptInput({ value, onChange, onSubmit, busy, placeholder, tiers, tier
                 onChange={(e) => onChange(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSubmit(); } }}
                 rows={2}
-                placeholder={placeholder || 'Bouw een agent die vragen beantwoordt in Slack, ChatGPT en andere chats op basis van de documentatie die ik aanlever.'}
+                placeholder={placeholder}
                 className="w-full bg-transparent outline-none text-sm text-[var(--text-primary)] placeholder-[var(--text-tertiary)] resize-none"
                 disabled={busy}
             />

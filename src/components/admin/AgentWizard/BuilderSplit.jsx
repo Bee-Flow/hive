@@ -1,16 +1,17 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Plus, MessageCircle, Slack, Sparkles, Upload, Brain, AppWindow, ArrowLeft, X, Search } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
+import useTranslation from '../../../hooks/useTranslation';
 import PlanCard from './PlanCard';
 
-const CHANNELS = [
-    { id: 'chatgpt', label: 'ChatGPT', sub: 'Je agent aanpassen en delen', icon: <MessageCircle size={18} /> },
-    { id: 'slack', label: 'Slack', sub: 'Gebruik je agent in Slack', icon: <Slack size={18} /> },
-];
-
-export default function BuilderSplit({ agent: initialAgent, plan, history, onBack, onPublished }) {
+export default function BuilderSplit({ agent: initialAgent, plan, history, tier, locale, onBack, onPublished }) {
+    const { t } = useTranslation();
+    const channelOptions = [
+        { id: 'chatgpt', label: t('agent_wizard.builder.channel_chatgpt_label'), sub: t('agent_wizard.builder.channel_chatgpt_sub'), icon: <MessageCircle size={18} /> },
+        { id: 'slack', label: t('agent_wizard.builder.channel_slack_label'), sub: t('agent_wizard.builder.channel_slack_sub'), icon: <Slack size={18} /> },
+    ];
     const [agent, setAgent] = useState(initialAgent);
-    const [name, setName] = useState(initialAgent?.name || plan?.name || 'Naam van agent');
+    const [name, setName] = useState(initialAgent?.name || plan?.name || t('agent_wizard.builder.name_placeholder'));
     const [avatar, setAvatar] = useState(plan?.avatar || initialAgent?.config?.avatar || '🤖');
     const [instructions, setInstructions] = useState(initialAgent?.system_prompt || plan?.systemPrompt || '');
     const [channels, setChannels] = useState(plan?.channels || ['chatgpt']);
@@ -101,6 +102,8 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, onBac
                     prompt: chat[0]?.content || '',
                     plan: { name, description: agent?.description || '', avatar, channels, capabilities: plan?.capabilities || [], systemPrompt: instructions },
                     refinement: text,
+                    modelTier: tier,
+                    locale,
                 }),
             });
             if (!res.ok) throw new Error(await res.text());
@@ -137,7 +140,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, onBac
             if (onPublished) onPublished(updated);
         } catch (err) {
             console.error('Publish failed:', err);
-            alert('Publiceren mislukt: ' + err.message);
+            alert(t('agent_wizard.builder.publish_failed', { error: err.message }));
         } finally {
             setPublishing(false);
         }
@@ -149,12 +152,12 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, onBac
             <aside className="w-[380px] flex-shrink-0 border-r border-[var(--border-default)] flex flex-col">
                 <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-default)]">
                     <button onClick={onBack} className="flex items-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
-                        <ArrowLeft size={16} /> Terug
+                        <ArrowLeft size={16} /> {t('agent_wizard.back')}
                     </button>
                     <span className="text-xs text-[var(--text-tertiary)]">
-                        {savingState === 'saving' && 'Opslaan…'}
-                        {savingState === 'saved' && 'Opgeslagen'}
-                        {savingState === 'error' && 'Opslaan mislukt'}
+                        {savingState === 'saving' && t('agent_wizard.builder.save_saving')}
+                        {savingState === 'saved' && t('agent_wizard.builder.save_saved')}
+                        {savingState === 'error' && t('agent_wizard.builder.save_error')}
                     </span>
                 </div>
                 <div ref={chatScrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
@@ -182,7 +185,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, onBac
                             value={chatInput}
                             onChange={(e) => setChatInput(e.target.value)}
                             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleRefine(); } }}
-                            placeholder="Vraag maar raak, @ voor context"
+                            placeholder={t('agent_wizard.builder.chat_placeholder')}
                             className="flex-1 bg-transparent outline-none text-sm text-[var(--text-primary)] placeholder-[var(--text-tertiary)]"
                             disabled={chatBusy}
                         />
@@ -205,7 +208,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, onBac
                         disabled={publishing}
                         className="px-5 py-2 rounded-full bg-[var(--accent)] text-white text-sm font-medium hover:opacity-90 disabled:opacity-50"
                     >
-                        {publishing ? 'Bezig…' : 'Maken'}
+                        {publishing ? t('agent_wizard.busy') : t('agent_wizard.builder.publish')}
                     </button>
                 </div>
 
@@ -213,7 +216,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, onBac
                     <div className="flex items-start gap-4 mb-6">
                         <button
                             onClick={() => {
-                                const v = window.prompt('Avatar emoji', avatar);
+                                const v = window.prompt(t('agent_wizard.builder.avatar_prompt'), avatar);
                                 if (v) updateAvatar(v.trim().slice(0, 4));
                             }}
                             className="w-14 h-14 rounded-full bg-[var(--bg-secondary)] border border-[var(--border-default)] text-2xl flex items-center justify-center hover:bg-[var(--bg-tertiary)]"
@@ -225,14 +228,14 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, onBac
                             value={name}
                             onChange={(e) => updateName(e.target.value)}
                             className="flex-1 text-2xl font-semibold bg-transparent outline-none text-[var(--text-primary)] border-b border-transparent focus:border-[var(--border-default)] py-1"
-                            placeholder="Naam van agent"
+                            placeholder={t('agent_wizard.builder.name_placeholder')}
                         />
                     </div>
 
                     <div className="mb-8">
-                        <div className="text-sm text-[var(--text-secondary)] mb-2">Kanalen</div>
+                        <div className="text-sm text-[var(--text-secondary)] mb-2">{t('agent_wizard.builder.channels')}</div>
                         <div className="grid grid-cols-2 gap-3">
-                            {CHANNELS.map(ch => {
+                            {channelOptions.map(ch => {
                                 const active = channels.includes(ch.id);
                                 return (
                                     <button
@@ -252,14 +255,14 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, onBac
                     </div>
 
                     <div className="flex flex-wrap gap-2 mb-8 relative">
-                        <ActionPill icon={<AppWindow size={14} />} label="Bladeren door apps" onClick={() => {
+                        <ActionPill icon={<AppWindow size={14} />} label={t('agent_wizard.builder.browse_apps')} onClick={() => {
                             window.open('/app/admin/integrations', '_blank');
                         }} />
-                        <ActionPill icon={<Sparkles size={14} />} label="Skill toevoegen" onClick={() => setSkillPickerOpen(v => !v)} active={skillPickerOpen} />
-                        <ActionPill icon={<Upload size={14} />} label="Bestanden uploaden" onClick={() => {
+                        <ActionPill icon={<Sparkles size={14} />} label={t('agent_wizard.builder.add_skill')} onClick={() => setSkillPickerOpen(v => !v)} active={skillPickerOpen} />
+                        <ActionPill icon={<Upload size={14} />} label={t('agent_wizard.builder.upload_files')} onClick={() => {
                             if (agent?.id) window.open(`/app/agent-designer/${agent.id}`, '_blank');
                         }} />
-                        <ActionPill icon={<Brain size={14} />} label={`Geheugen${memoryEnabled ? ' • aan' : ''}`} onClick={toggleMemory} active={memoryEnabled} />
+                        <ActionPill icon={<Brain size={14} />} label={memoryEnabled ? t('agent_wizard.builder.memory_on') : t('agent_wizard.builder.memory')} onClick={toggleMemory} active={memoryEnabled} />
 
                         {skillPickerOpen && (
                             <SkillPicker
@@ -268,6 +271,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, onBac
                                 search={skillSearch}
                                 onSearch={setSkillSearch}
                                 onClose={() => setSkillPickerOpen(false)}
+                                t={t}
                                 onToggle={(name) => {
                                     const next = skills.includes(name) ? skills.filter(s => s !== name) : [...skills, name];
                                     setSkills(next);
@@ -279,7 +283,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, onBac
 
                     {skills.length > 0 && (
                         <div className="mb-8">
-                            <div className="text-sm text-[var(--text-secondary)] mb-2">Skills</div>
+                            <div className="text-sm text-[var(--text-secondary)] mb-2">{t('agent_wizard.builder.skills')}</div>
                             <div className="flex flex-wrap gap-2">
                                 {skills.map((s, i) => (
                                     <span key={i} className="px-3 py-1 rounded-full bg-[var(--bg-secondary)] border border-[var(--border-default)] text-sm text-[var(--text-primary)]">{s}</span>
@@ -289,12 +293,12 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, onBac
                     )}
 
                     <div>
-                        <div className="text-sm text-[var(--text-secondary)] mb-2">Instructies</div>
+                        <div className="text-sm text-[var(--text-secondary)] mb-2">{t('agent_wizard.builder.instructions')}</div>
                         <textarea
                             value={instructions}
                             onChange={(e) => updateInstructions(e.target.value)}
                             rows={10}
-                            placeholder="Geef je agent instructies over hoe deze moet werken."
+                            placeholder={t('agent_wizard.builder.instructions_placeholder')}
                             className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)] resize-y"
                         />
                     </div>
@@ -304,7 +308,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, onBac
     );
 }
 
-function SkillPicker({ available, selected, search, onSearch, onClose, onToggle }) {
+function SkillPicker({ available, selected, search, onSearch, onClose, onToggle, t }) {
     const filtered = (available || []).filter(s =>
         !search || (s.name || '').toLowerCase().includes(search.toLowerCase())
     );
@@ -316,7 +320,7 @@ function SkillPicker({ available, selected, search, onSearch, onClose, onToggle 
                     autoFocus
                     value={search}
                     onChange={(e) => onSearch(e.target.value)}
-                    placeholder="Vaardigheden zoeken"
+                    placeholder={t('agent_wizard.skills.search')}
                     className="flex-1 bg-transparent outline-none text-sm text-[var(--text-primary)] placeholder-[var(--text-tertiary)]"
                 />
                 <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={14} /></button>
@@ -324,7 +328,7 @@ function SkillPicker({ available, selected, search, onSearch, onClose, onToggle 
             <div className="max-h-64 overflow-y-auto divide-y divide-[var(--border-default)]">
                 {filtered.length === 0 && (
                     <div className="text-xs text-[var(--text-tertiary)] py-3 text-center">
-                        Geen vaardigheden gevonden. Maak ze aan via Admin → Skills.
+                        {t('agent_wizard.skills.empty')}
                     </div>
                 )}
                 {filtered.map((s) => {
