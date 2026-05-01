@@ -99,6 +99,7 @@ export default function WebpageIDE({
     chatMessages, chatLoading,
     onChatSend, onChatStop, onChatRetry, onChatEdit,
     onPlanApprove, onPlanReject,
+    onNewChat,
     onSelectionAttach,
     attachedSelection, onSelectionClear,
     modelTiers, selectedTier, onTierChange,
@@ -280,6 +281,7 @@ export default function WebpageIDE({
                         onTierChange={onTierChange}
                         onPlanApprove={onPlanApprove}
                         onPlanReject={onPlanReject}
+                        onNewChat={onNewChat}
                         attachedSelection={attachedSelection}
                         onSelectionClear={onSelectionClear}
                     />

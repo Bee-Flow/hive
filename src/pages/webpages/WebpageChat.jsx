@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { MousePointer2, X } from 'lucide-react';
+import { MousePointer2, X, Plus } from 'lucide-react';
 import MessageItem from '../../components/chat/MessageItem';
 import InputArea from '../../components/InputArea';
 import WebpageDiffCard from '../../components/WebpageDiffCard';
@@ -14,7 +14,7 @@ import WebpagePlanCard from '../../components/WebpagePlanCard';
 export default function WebpageChat({
     messages, isLoading, onSend, onStop, onRetry, onEdit,
     modelTiers, selectedTier, onTierChange,
-    onPlanApprove, onPlanReject,
+    onPlanApprove, onPlanReject, onNewChat,
     attachedSelection, onSelectionClear,
     placeholder = 'Describe the webpage you want…',
 }) {
@@ -39,6 +39,28 @@ export default function WebpageChat({
                 <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--vsc-fg-muted)', letterSpacing: '0.06em' }}>
                     AI Chat
                 </span>
+                <span className="flex-1" />
+                {onNewChat && (
+                    <button
+                        type="button"
+                        onClick={() => {
+                            if (messages.length === 0) return;
+                            if (window.confirm('Start a new chat? The current conversation will be cleared.')) {
+                                onNewChat();
+                            }
+                        }}
+                        className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] hover:opacity-100 transition-opacity"
+                        style={{
+                            color: 'var(--vsc-fg-muted)',
+                            opacity: messages.length === 0 ? 0.4 : 0.8,
+                            cursor: messages.length === 0 ? 'default' : 'pointer',
+                        }}
+                        disabled={messages.length === 0}
+                        title={messages.length === 0 ? 'No conversation to clear' : 'Start a new chat'}
+                    >
+                        <Plus size={11} /> New chat
+                    </button>
+                )}
             </div>
 
             <div ref={containerRef} className="flex-1 overflow-y-auto custom-scrollbar px-3 py-3 space-y-3">

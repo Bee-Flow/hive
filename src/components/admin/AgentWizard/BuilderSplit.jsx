@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Plus, MessageCircle, Slack, Sparkles, Upload, Brain, AppWindow, ArrowLeft, X, Search } from 'lucide-react';
+import { Send, Plus, Sparkles, Upload, Brain, AppWindow, ArrowLeft, X, Search } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import useTranslation from '../../../hooks/useTranslation';
 import { INTEGRATION_CATALOG } from '../AgentDesigner/integrations';
@@ -8,16 +8,11 @@ import PlanCard from './PlanCard';
 
 export default function BuilderSplit({ agent: initialAgent, plan, history, tier, locale, onBack, onPublished }) {
     const { t } = useTranslation();
-    const channelOptions = [
-        { id: 'chatgpt', label: t('agent_wizard.builder.channel_chatgpt_label'), sub: t('agent_wizard.builder.channel_chatgpt_sub'), icon: <MessageCircle size={18} /> },
-        { id: 'slack', label: t('agent_wizard.builder.channel_slack_label'), sub: t('agent_wizard.builder.channel_slack_sub'), icon: <Slack size={18} /> },
-    ];
 
     const [agent, setAgent] = useState(initialAgent);
     const [name, setName] = useState(initialAgent?.name || plan?.name || t('agent_wizard.builder.name_placeholder'));
     const [avatar, setAvatar] = useState(initialAgent?.config?.avatar || plan?.avatar || '🤖');
     const [instructions, setInstructions] = useState(initialAgent?.system_prompt || plan?.systemPrompt || '');
-    const [channels, setChannels] = useState(initialAgent?.config?.wizard?.channels || plan?.channels || ['chatgpt']);
 
     // Canonical config fields (round-trip with AgentEditorUI)
     const [memoryEnabled, setMemoryEnabled] = useState(!!initialAgent?.config?.memoryEnabled);
@@ -48,88 +43,123 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
     }, [chat]);
 
-    // Lazy-load skills + integration status on first picker open
+    // Eager-load on mount so badge counts ("Browse apps · 7") reflect what
+    // the user is actually allowed to use, not the full catalog.
     useEffect(() => {
-        if (!skillPickerOpen || allSkills !== null) return;
+        let cancelled = false;
         (async () => {
             try {
-                const res = await authFetch(`${API_BASE}/api/skills`);
-                setAllSkills(res.ok ? await res.json() : []);
-            } catch (_) { setAllSkills([]); }
-        })();
-    }, [skillPickerOpen, allSkills]);
-
-    useEffect(() => {
-        if (!appsPickerOpen || integrationStatus !== null) return;
-        (async () => {
-            try {
-                const res = await authFetch(`${API_BASE}/ai/user-settings`);
-                if (res.ok) setIntegrationStatus(await res.json());
-                else setIntegrationStatus({});
-            } catch (_) { setIntegrationStatus({}); }
-        })();
-    }, [appsPickerOpen, integrationStatus]);
-
-    // Debounced auto-save: writes the canonical config shape so the agent round-trips
-    // cleanly into AgentEditorUI ([components/admin/AgentEditorUI.jsx]).
-    const saveTimer = useRef(null);
-    const queueSave = useCallback((patch) => {
-        if (!agent?.id) return;
-        setSavingState('saving');
-        clearTimeout(saveTimer.current);
-        saveTimer.current = setTimeout(async () => {
-            try {
-                const res = await authFetch(`${API_BASE}/agents/${agent.id}`, {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(patch),
-                });
-                if (!res.ok) throw new Error(await res.text());
-                const updated = await res.json();
-                setAgent(updated);
-                setSavingState('saved');
-            } catch (err) {
-                console.error('Auto-save failed:', err);
-                setSavingState('error');
+                const [skillsRes, statusRes] = await Promise.all([
+                    authFetch(`${API_BASE}/api/skills`),
+                    authFetch(`${API_BASE}/ai/user-settings`),
+                ]);
+                if (cancelled) return;
+                setAllSkills(skillsRes.ok ? await skillsRes.json() : []);
+                setIntegrationStatus(statusRes.ok ? await statusRes.json() : {});
+            } catch (_) {
+                if (!cancelled) {
+                    setAllSkills([]);
+                    setIntegrationStatus({});
+                }
             }
-        }, 600);
-    }, [agent?.id]);
+        })();
+        return () => { cancelled = true; };
+    }, []);
 
-    const saveConfig = useCallback((patch) => {
-        const nextConfig = { ...(agent?.config || {}), ...patch };
-        queueSave({ config: nextConfig });
-    }, [agent?.config, queueSave]);
+    // ── Save pipeline ─────────────────────────────────────────────
+    // The PUT /agents/:id endpoint writes columns from whatever it receives
+    // and falls back to NULL for description / systemPrompt when absent.
+    // So every save MUST send the full canonical state. We keep the latest
+    // values in a ref to coalesce rapid edits without stale closures.
+    const stateRef = useRef({
+        name,
+        description: initialAgent?.description || plan?.description || '',
+        systemPrompt: instructions,
+        config: { ...(initialAgent?.config || {}) },
+    });
+    // Keep description in sync if initialAgent updates after mount
+    useEffect(() => { stateRef.current.name = name; }, [name]);
+    useEffect(() => { stateRef.current.systemPrompt = instructions; }, [instructions]);
 
-    const updateName = (v) => { setName(v); queueSave({ name: v }); };
-    const updateAvatar = (v) => { setAvatar(v); saveConfig({ avatar: v }); };
-    const updateInstructions = (v) => { setInstructions(v); queueSave({ systemPrompt: v }); };
-    const toggleChannel = (id) => {
-        const next = channels.includes(id) ? channels.filter(c => c !== id) : [...channels, id];
-        setChannels(next);
-        saveConfig({ wizard: { ...(agent?.config?.wizard || {}), channels: next } });
-    };
+    const agentIdRef = useRef(agent?.id);
+    useEffect(() => { agentIdRef.current = agent?.id; }, [agent?.id]);
+
+    const saveTimer = useRef(null);
+    const inflight = useRef(null);
+
+    const flush = useCallback(async () => {
+        const id = agentIdRef.current;
+        if (!id) return;
+        if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+        const snapshot = {
+            name: stateRef.current.name,
+            description: stateRef.current.description,
+            systemPrompt: stateRef.current.systemPrompt,
+            config: { ...stateRef.current.config },
+        };
+        try {
+            const res = await authFetch(`${API_BASE}/agents/${id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(snapshot),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            const updated = await res.json();
+            setAgent(updated);
+            // Refresh ref from server so subsequent saves merge against canonical state
+            stateRef.current = {
+                name: updated.name || snapshot.name,
+                description: updated.description || snapshot.description,
+                systemPrompt: updated.system_prompt || snapshot.systemPrompt,
+                config: updated.config || snapshot.config,
+            };
+            setSavingState('saved');
+        } catch (err) {
+            console.error('Auto-save failed:', err);
+            setSavingState('error');
+        }
+    }, []);
+
+    const queueSave = useCallback(() => {
+        if (!agentIdRef.current) return;
+        setSavingState('saving');
+        if (saveTimer.current) clearTimeout(saveTimer.current);
+        saveTimer.current = setTimeout(() => { saveTimer.current = null; flush(); }, 600);
+    }, [flush]);
+
+    const patchConfig = useCallback((patch) => {
+        stateRef.current.config = { ...stateRef.current.config, ...patch };
+        queueSave();
+    }, [queueSave]);
+
+    const updateName = (v) => { setName(v); stateRef.current.name = v; queueSave(); };
+    const updateAvatar = (v) => { setAvatar(v); patchConfig({ avatar: v }); };
+    const updateInstructions = (v) => { setInstructions(v); stateRef.current.systemPrompt = v; queueSave(); };
     const toggleMemory = () => {
         const next = !memoryEnabled;
         setMemoryEnabled(next);
-        saveConfig({ memoryEnabled: next });
+        patchConfig({ memoryEnabled: next });
     };
     const toggleSkill = (id) => {
         const next = attachedSkillIds.includes(id) ? attachedSkillIds.filter(x => x !== id) : [...attachedSkillIds, id];
         setAttachedSkillIds(next);
-        saveConfig({ attachedSkillIds: next });
+        patchConfig({ attachedSkillIds: next });
     };
     const toggleIntegration = (id, available) => {
+        // null in state = "all enabled by default" (matches AgentDesigner contract).
+        // First user toggle materializes the list to the currently-available set
+        // and removes/adds the chosen id from there.
         const baseList = enabledIntegrations || available.map(a => a.id);
         const next = baseList.includes(id) ? baseList.filter(x => x !== id) : [...baseList, id];
         setEnabledIntegrations(next);
-        saveConfig({ enabledIntegrations: next });
+        patchConfig({ enabledIntegrations: next });
     };
     const onKnowledgeBaseIdsChange = (next) => {
         setKnowledgeBaseIds(next);
-        saveConfig({ knowledge_base_ids: next });
+        patchConfig({ knowledge_base_ids: next });
     };
-    const onStrictKnowledgeChange = (v) => { setStrictKnowledge(v); saveConfig({ strictKnowledge: v }); };
-    const onIncludeSourceReferencesChange = (v) => { setIncludeSourceReferences(v); saveConfig({ includeSourceReferences: v }); };
+    const onStrictKnowledgeChange = (v) => { setStrictKnowledge(v); patchConfig({ strictKnowledge: v }); };
+    const onIncludeSourceReferencesChange = (v) => { setIncludeSourceReferences(v); patchConfig({ includeSourceReferences: v }); };
 
     const handleRefine = async () => {
         const text = chatInput.trim();
@@ -143,7 +173,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     prompt: chat[0]?.content || '',
-                    plan: { name, description: agent?.description || '', avatar, channels, capabilities: plan?.capabilities || [], systemPrompt: instructions },
+                    plan: { name, description: agent?.description || '', avatar, capabilities: plan?.capabilities || [], systemPrompt: instructions },
                     refinement: text,
                     modelTier: tier,
                     locale,
@@ -154,7 +184,6 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
             setName(updated.name);
             setAvatar(updated.avatar || avatar);
             setInstructions(updated.systemPrompt || instructions);
-            setChannels(updated.channels || channels);
             queueSave({
                 name: updated.name,
                 description: updated.description,
@@ -162,7 +191,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 config: {
                     ...(agent?.config || {}),
                     avatar: updated.avatar || avatar,
-                    wizard: { channels: updated.channels, capabilities: updated.capabilities, suggestedSkills: updated.suggestedSkills },
+                    wizard: { capabilities: updated.capabilities, suggestedSkills: updated.suggestedSkills },
                 },
             });
             setChat(prev => [...prev, { role: 'plan', plan: updated }]);

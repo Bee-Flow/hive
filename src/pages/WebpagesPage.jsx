@@ -42,13 +42,20 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
     const [versions, setVersions] = useState([]);
     const [showVersions, setShowVersions] = useState(false);
 
-    const [html, setHtmlState] = useState('');
-    const [css, setCssState] = useState('');
-    const [js, setJsState] = useState('');
-    const setHtml = (v) => { htmlRef.current = v; setHtmlState(v); };
-    const setCss  = (v) => { cssRef.current  = v; setCssState(v); };
-    const setJs   = (v) => { jsRef.current   = v; setJsState(v); };
-    const [activeFile, setActiveFile] = useState('html');
+    const [html, setHtml] = useState('');
+    const [css, setCss] = useState('');
+    const [js, setJs] = useState('');
+
+    // Refs that mirror html/css/js so the debounced persist() callback can be
+    // stable (no html/css/js in its deps) — read the live value at call time.
+    // Sync via useEffect so the ref tracks state regardless of which code path
+    // mutates it.
+    const htmlRef = useRef('');
+    const cssRef  = useRef('');
+    const jsRef   = useRef('');
+    useEffect(() => { htmlRef.current = html; }, [html]);
+    useEffect(() => { cssRef.current  = css;  }, [css]);
+    useEffect(() => { jsRef.current   = js;   }, [js]);
 
     const [loading, setLoading] = useState(true);
     const [creating, setCreating] = useState(false);
@@ -64,10 +71,11 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
     const saveTimerRef = useRef(null);
     const lastSavedSnapshotRef = useRef({ html: '', css: '', js: '' });
     const skipNextSaveRef = useRef(false); // set when we load a webpage so we don't fire a phantom save
-    // Refs so persist() doesn't need html/css/js as useCallback deps (avoids the debounce reset loop)
-    const htmlRef = useRef('');
-    const cssRef = useRef('');
-    const jsRef = useRef('');
+    // Chat-history dirty tracking — the JSON-stringified version of the last
+    // chat we know is in the DB. Compared in the debounced chat-save effect
+    // so we only PUT when something actually changed.
+    const lastSavedChatRef = useRef('[]');
+    const chatSaveTimerRef = useRef(null);
 
     // Layout
     const [leftOpen, setLeftOpen] = useState(true);
@@ -296,15 +304,19 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
     /* ── Load a webpage (deep-link or click) ─────────────────── */
     const loadWebpage = useCallback(async (id) => {
         try {
-            const { webpage, sources: srcs, files } = await api(`/${id}`);
+            const { webpage, sources: srcs, files, chatMessages: persistedChat } = await api(`/${id}`);
             setSelected(webpage);
             setSources(srcs || []);
             const fHtml = files?.html || '', fCss = files?.css || '', fJs = files?.js || '';
             setHtml(fHtml);
             setCss(fCss);
             setJs(fJs);
-            setActiveFile(fHtml ? 'html' : fCss ? 'css' : 'html');
-            setChatMessages([]);
+            // Restore the per-webpage chat history so the user keeps context
+            // across refreshes. Fresh empty array if the webpage has none yet.
+            setChatMessages(Array.isArray(persistedChat) ? persistedChat : []);
+            // Mark the loaded chat as already-saved so the debounced chat-save
+            // effect doesn't immediately re-PUT it back to the server.
+            lastSavedChatRef.current = JSON.stringify(Array.isArray(persistedChat) ? persistedChat : []);
             lastSavedSnapshotRef.current = { html: fHtml, css: fCss, js: fJs };
             skipNextSaveRef.current = true;
             onWebpageChange?.(id);
@@ -369,6 +381,49 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
     }, [persist, selected]);
+
+    /* ── Persist chat history per webpage ──────────────────────
+     * The chat is the source of truth on the client. Whenever it changes
+     * AND we're not mid-stream (chatLoading=false), we debounce-save the
+     * full message array to the server. Skips the no-op case where the
+     * chat matches what we last persisted (loadWebpage hydrates this ref).
+     */
+    useEffect(() => {
+        if (!selected) return;
+        // Don't save mid-stream — wait for the assistant turn to settle so
+        // we save the final shape rather than the partial streaming state.
+        if (chatLoading) return;
+        const serialized = JSON.stringify(chatMessages || []);
+        if (serialized === lastSavedChatRef.current) return;
+
+        if (chatSaveTimerRef.current) clearTimeout(chatSaveTimerRef.current);
+        chatSaveTimerRef.current = setTimeout(async () => {
+            try {
+                await api(`/${selected.id}/chat`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ messages: chatMessages || [] }),
+                });
+                lastSavedChatRef.current = serialized;
+            } catch (err) {
+                console.warn('[Webpages] Chat save failed:', err.message);
+            }
+        }, 800);
+        return () => chatSaveTimerRef.current && clearTimeout(chatSaveTimerRef.current);
+    }, [chatMessages, chatLoading, selected]);
+
+    /* ── New Chat — clear local state + DELETE on the server ── */
+    const handleNewChat = useCallback(async () => {
+        if (!selected) return;
+        setChatMessages([]);
+        // Mark the empty array as "saved" so the debounced effect doesn't
+        // also fire a PUT a moment later — DELETE is enough.
+        lastSavedChatRef.current = '[]';
+        try {
+            await api(`/${selected.id}/chat`, { method: 'DELETE' });
+        } catch (err) {
+            console.warn('[Webpages] Chat clear failed:', err.message);
+        }
+    }, [selected, setChatMessages]);
 
     /* ── Versions ────────────────────────────────────────────── */
     const fetchVersions = useCallback(async () => {
@@ -658,6 +713,7 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                     onChatEdit={editAndRegenerateChat}
                     onPlanApprove={handlePlanApprove}
                     onPlanReject={handlePlanReject}
+                    onNewChat={handleNewChat}
                     onSelectionAttach={handleSelectionAttach}
                     attachedSelection={attachedSelection}
                     onSelectionClear={handleSelectionClear}
