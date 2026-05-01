@@ -7,7 +7,7 @@ import ModelTierSelector from '../../ModelTierSelector';
 import PlanCard from './PlanCard';
 import BuilderSplit from './BuilderSplit';
 
-export default function AgentWizard({ user, onClose, onPublished }) {
+export default function AgentWizard({ user, onClose, onPublished, onSwitchToManual }) {
     const { t, locale } = useTranslation();
     const examples = [
         { icon: <MessageCircle size={16} />, title: t('agent_wizard.example_qna_title'), sub: t('agent_wizard.example_qna_sub') },
@@ -118,18 +118,24 @@ export default function AgentWizard({ user, onClose, onPublished }) {
 
     return (
         <div className="flex flex-col h-full bg-[var(--bg-primary)]">
-            <div className="flex items-center justify-between px-6 py-4">
-                <button onClick={onClose} className="flex items-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
-                    <ArrowLeft size={16} /> {t('agent_wizard.back')}
-                </button>
-                {stage === 'review' && (
+            <div className="flex items-center justify-between px-6 py-3 border-b border-[var(--border-default)]">
+                <div className="text-sm font-semibold text-[var(--text-primary)]">{t('agent_wizard.title')}</div>
+                <div className="flex items-center gap-3">
+                    {stage === 'review' && (
+                        <button
+                            onClick={() => { setStage('landing'); setPlan(null); setHistory([]); setPrompt(''); }}
+                            className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                        >
+                            {t('agent_wizard.start_over')}
+                        </button>
+                    )}
                     <button
-                        onClick={() => { setStage('landing'); setPlan(null); setHistory([]); setPrompt(''); }}
+                        onClick={() => (onSwitchToManual || onClose) && (onSwitchToManual || onClose)()}
                         className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                     >
-                        {t('agent_wizard.start_over')}
+                        {t('agent_wizard.switch_manual')}
                     </button>
-                )}
+                </div>
             </div>
 
             {stage === 'landing' && (

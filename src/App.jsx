@@ -800,18 +800,6 @@ function App() {
             return <ComponentBuilder onBack={() => navigateToPage('agents')} />;
         }
 
-        if (currentPage === 'agentWizard') {
-            return (
-                <AgentWizard
-                    user={user}
-                    onClose={() => navigateToPage('agents')}
-                    onPublished={(agent) => {
-                        if (agent?.id) navigateToPage(`agentDesigner:${agent.id}`);
-                        else navigateToPage('agents');
-                    }}
-                />
-            );
-        }
 
 
         if (currentPage === 'meetingNotes') {
@@ -842,7 +830,13 @@ function App() {
                 setCurrentPage('agents');
                 window.history.pushState({ page: 'agents' }, '', '/app');
             }
-        }} initialDesignerAgentId={initialDesignerAgentId} showAITasks={showAITasks} onCloseAITasks={() => {
+        }} initialDesignerAgentId={initialDesignerAgentId} showAgentWizard={showAgentWizard} onCloseAgentWizard={() => {
+            setShowAgentWizard(false);
+            if (window.location.pathname.startsWith('/app/agent-wizard')) {
+                setCurrentPage('agents');
+                window.history.pushState({ page: 'agents' }, '', '/app');
+            }
+        }} showAITasks={showAITasks} onCloseAITasks={() => {
             setShowAITasks(false);
             setInitialAITaskId(null);
             if (window.location.pathname.startsWith('/app/ai-tasks')) {

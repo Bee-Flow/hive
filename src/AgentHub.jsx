@@ -18,6 +18,7 @@ import ProjectsPage from './components/ProjectsPage';
 import ProjectDetailPage from './components/ProjectDetailPage';
 import AdvancedSettings from './pages/AdvancedSettings';
 import AgentDesigner from './components/admin/AgentDesigner';
+import AgentWizard from './components/admin/AgentWizard';
 import AITasksDesigner from './components/admin/AITasksDesigner';
 import SkillsPanel from './components/SkillsPanel';
 import EmailKBSettings from './components/EmailKBSettings';
@@ -36,6 +37,7 @@ const AgentHub = ({
     initialAgentId = null, initialConversationId = null, initialDirectConvId = null,
     showSettings = false, onCloseSettings,
     showAgentDesigner = false, onCloseAgentDesigner, initialDesignerAgentId = null,
+    showAgentWizard = false, onCloseAgentWizard,
     showAITasks = false, onCloseAITasks, initialAITaskId = null,
     showSkillsPanel = false, onCloseSkillsPanel,
     showEmailKB = false, onCloseEmailKB,
@@ -475,13 +477,13 @@ const AgentHub = ({
     // Close KB and Projects views when the user navigates to a chat (agent or direct).
     // Mirrors how the agent marketplace closes itself in handleSelectAgent etc.
     useEffect(() => {
-        if (showMarketplace || showSettings || showAgentDesigner || showSkillsPanel || showEmailKB || showAITasks) {
+        if (showMarketplace || showSettings || showAgentDesigner || showAgentWizard || showSkillsPanel || showEmailKB || showAITasks) {
             setShowKBStore(false);
             setActiveKBId(null);
             setShowProjectsStore(false);
             setActiveProjectId(null);
         }
-    }, [showMarketplace, showSettings, showAgentDesigner, showSkillsPanel, showEmailKB, showAITasks]);
+    }, [showMarketplace, showSettings, showAgentDesigner, showAgentWizard, showSkillsPanel, showEmailKB, showAITasks]);
 
     // KB favourites: load from server, with one-time migration of any legacy
     // localStorage favorites left over from the client-side implementation.
@@ -1568,6 +1570,20 @@ const AgentHub = ({
                         const perms = user?.permissions || [];
                         return perms.includes('all') || perms.includes(perm);
                     }} initialAgentId={initialDesignerAgentId} onClose={onCloseAgentDesigner} />
+                ) : showAgentWizard ? (
+                    /* AI Wizard rendered inline (same shell as AgentDesigner) */
+                    <AgentWizard
+                        user={user}
+                        onClose={onCloseAgentWizard}
+                        onSwitchToManual={() => {
+                            if (onCloseAgentWizard) onCloseAgentWizard();
+                            if (onNavigate) onNavigate('agentDesigner');
+                        }}
+                        onPublished={(agent) => {
+                            if (onCloseAgentWizard) onCloseAgentWizard();
+                            if (agent?.id && onNavigate) onNavigate(`agentDesigner:${agent.id}`);
+                        }}
+                    />
                 ) : showAITasks ? (
                     /* AI Tasks designer rendered inline in conversation area */
                     <AITasksDesigner initialTaskId={initialAITaskId} onClose={onCloseAITasks} modelTiers={modelTiers} />

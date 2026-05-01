@@ -1724,6 +1724,7 @@ const EN_DEFAULTS = {
     "agent_wizard.title": "Create a new agent",
     "agent_wizard.back": "Back",
     "agent_wizard.start_over": "Start over",
+    "agent_wizard.switch_manual": "Manual editor",
     "agent_wizard.placeholder_initial": "Build an agent that answers questions in Slack and other chats based on the documentation I provide.",
     "agent_wizard.placeholder_describe": "Describe what the agent should do",
     "agent_wizard.thinking": "Thinking…",
