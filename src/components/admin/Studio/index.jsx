@@ -1,18 +1,19 @@
 import React from 'react';
-import { Bot, Sparkles, ListChecks } from 'lucide-react';
+import { Bot, Sparkles, ListChecks, BookOpen } from 'lucide-react';
 import useTranslation from '../../../hooks/useTranslation';
 import AgentStudio from '../AgentStudio';
 import AITasksDesigner from '../AITasksDesigner';
 import SkillsStudio from './SkillsStudio';
+import KBsStudio from './KBsStudio';
 
-// Unified Studio: a single shell that hosts the Agents editor, the Skills
-// editor, and the AI Tasks scheduler. Each sub-section uses the same
-// list-on-left + editor-on-right layout pioneered by the Agents wizard.
+// Unified Studio: a single shell hosting Agents, Skills, Knowledge Bases, and AI Tasks.
+// All sections share a sidebar-list + editor-right split layout.
 export default function Studio({
     user,
-    section = 'agents',     // 'agents' | 'skills' | 'aiTasks'
+    section = 'agents',     // 'agents' | 'skills' | 'knowledge' | 'aiTasks'
     initialAgentId = null,
     initialSkillId = null,
+    initialKbId = null,
     initialTaskId = null,
     onClose,
     onNavigate,
@@ -22,14 +23,16 @@ export default function Studio({
     const { t } = useTranslation();
 
     const tabs = [
-        { id: 'agents', label: t('studio.tab.agents'), icon: <Bot size={14} /> },
-        { id: 'skills', label: t('studio.tab.skills'), icon: <Sparkles size={14} /> },
-        { id: 'aiTasks', label: t('studio.tab.ai_tasks'), icon: <ListChecks size={14} /> },
+        { id: 'agents',    label: t('studio.tab.agents'),    icon: <Bot size={14} /> },
+        { id: 'skills',    label: t('studio.tab.skills'),    icon: <Sparkles size={14} /> },
+        { id: 'knowledge', label: t('studio.tab.knowledge'), icon: <BookOpen size={14} /> },
+        { id: 'aiTasks',   label: t('studio.tab.ai_tasks'),  icon: <ListChecks size={14} /> },
     ];
 
     const switchTo = (id) => {
         if (!onNavigate) return;
-        onNavigate(`studio/${id === 'aiTasks' ? 'ai-tasks' : id}`);
+        const seg = id === 'aiTasks' ? 'ai-tasks' : id;
+        onNavigate(`studio/${seg}`);
     };
 
     return (
@@ -43,7 +46,7 @@ export default function Studio({
                             key={tab.id}
                             onClick={() => switchTo(tab.id)}
                             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition ${active
-                                ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)]'
+                                ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)] font-medium'
                                 : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}
                         >
                             {tab.icon}
@@ -68,6 +71,14 @@ export default function Studio({
                     <SkillsStudio
                         user={user}
                         initialSkillId={initialSkillId}
+                        onNavigate={onNavigate}
+                        hasPermission={hasPermission}
+                    />
+                )}
+                {section === 'knowledge' && (
+                    <KBsStudio
+                        user={user}
+                        initialKbId={initialKbId}
                         onNavigate={onNavigate}
                         hasPermission={hasPermission}
                     />

@@ -1726,6 +1726,7 @@ const EN_DEFAULTS = {
     "studio.sidebar_link": "Studio",
     "studio.tab.agents": "Agents",
     "studio.tab.skills": "Skills",
+    "studio.tab.knowledge": "Knowledge",
     "studio.tab.ai_tasks": "AI Tasks",
 
     // Skills Studio

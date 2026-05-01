@@ -1573,6 +1573,7 @@ const AgentHub = ({
                         section={studioRoute.section}
                         initialAgentId={studioRoute.section === 'agents' ? studioRoute.id : null}
                         initialSkillId={studioRoute.section === 'skills' ? studioRoute.id : null}
+                        initialKbId={studioRoute.section === 'knowledge' ? studioRoute.id : null}
                         initialTaskId={studioRoute.section === 'aiTasks' ? studioRoute.id : null}
                         onClose={onCloseStudio}
                         onNavigate={onNavigate}

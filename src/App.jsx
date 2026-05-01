@@ -129,12 +129,15 @@ function parseAgentDesignerUrl(pathname) {
     return match?.[1] || null;
 }
 
-// Parse /app/studio/{section}/{id?} → { section: 'agents'|'skills'|'aiTasks', id?: string }
+// Parse /app/studio/{section}/{id?} → { section: 'agents'|'skills'|'aiTasks'|'knowledge', id?: string }
 function parseStudioUrl(pathname) {
     const m = pathname.match(/^\/app\/studio(?:\/([^/]+))?(?:\/([^/]+))?/);
     const seg = m?.[1] || 'agents';
     const id = m?.[2] || null;
-    const section = seg === 'ai-tasks' ? 'aiTasks' : (seg === 'skills' ? 'skills' : 'agents');
+    const section = seg === 'ai-tasks' ? 'aiTasks'
+        : seg === 'skills' ? 'skills'
+        : seg === 'knowledge' ? 'knowledge'
+        : 'agents';
     return { section, id };
 }
 
@@ -433,8 +436,8 @@ function App() {
             setCurrentPage('agentDesignerAdvanced');
             return;
         }
-        // Unified Studio — Agents / Skills / AI Tasks under one shell.
-        // Accepts: 'studio', 'studio/agents', 'studio/skills', 'studio/ai-tasks',
+        // Unified Studio — Agents / Skills / AI Tasks / Knowledge Bases under one shell.
+        // Accepts: 'studio', 'studio/agents', 'studio/skills', 'studio/ai-tasks', 'studio/knowledge',
         // and 'studio/<section>/<id>' for deep links.
         if (page === 'studio' || page.startsWith('studio/') || page.startsWith('studio:')) {
             // Normalise: 'studio:agents:<id>' or 'studio/agents/<id>'.
@@ -442,7 +445,10 @@ function App() {
             const parts = raw.split(/[/:]/).filter(Boolean);
             const sectionRaw = parts[0] || 'agents';
             const id = parts[1] || null;
-            const section = sectionRaw === 'ai-tasks' ? 'aiTasks' : (sectionRaw === 'skills' ? 'skills' : 'agents');
+            const section = sectionRaw === 'ai-tasks' ? 'aiTasks'
+                : sectionRaw === 'skills' ? 'skills'
+                : sectionRaw === 'knowledge' ? 'knowledge'
+                : 'agents';
             const pathSegment = section === 'aiTasks' ? 'ai-tasks' : section;
             const path = id ? `/app/studio/${pathSegment}/${id}` : `/app/studio/${pathSegment}`;
             setStudioRoute({ section, id });
@@ -467,6 +473,7 @@ function App() {
             setShowSettings(false);
             setShowSkillsPanel(false);
             setShowAITasks(false);
+            setShowStudio(false);
             if (window.location.pathname !== '/app/agent-wizard') {
                 window.history.pushState({ page: 'agentWizard' }, '', '/app/agent-wizard');
             }
@@ -481,6 +488,7 @@ function App() {
             setShowSettings(false);
             setShowSkillsPanel(false);
             setShowAITasks(false);
+            setShowStudio(false);
             // Push the URL so /app/agent-designer[/{id}] is bookmarkable.
             const path = agentId ? `/app/agent-designer/${agentId}` : '/app/agent-designer';
             if (window.location.pathname !== path) {
@@ -499,6 +507,7 @@ function App() {
             setShowSkillsPanel(false);
             setShowEmailKB(false);
             setShowNotebooks(false);
+            setShowStudio(false);
             const path = taskId ? `/app/ai-tasks/${taskId}` : '/app/ai-tasks';
             if (window.location.pathname !== path) {
                 window.history.pushState({ page: 'aiTasks' }, '', path);
@@ -512,6 +521,7 @@ function App() {
             setShowAgentDesigner(false);
             setShowSkillsPanel(false);
             setShowAITasks(false);
+            setShowStudio(false);
             // Push the URL so the settings panel is bookmarkable / back-button aware.
             // Sub-path (e.g. 'settings/memory') is preserved as `/app/settings/memory`.
             const subPath = page === 'settings' ? '' : page.slice('settings'.length);
@@ -529,6 +539,7 @@ function App() {
             setShowAgentDesigner(false);
             setShowEmailKB(false);
             setShowAITasks(false);
+            setShowStudio(false);
             return;
         }
         // Ticket Assistant (formerly Email KB) renders inline in conversation area.
@@ -539,6 +550,7 @@ function App() {
             setShowAgentDesigner(false);
             setShowSkillsPanel(false);
             setShowAITasks(false);
+            setShowStudio(false);
             return;
         }
         // Support admin sub-paths like 'admin/ai-config' or 'admin/security/sso'
@@ -548,6 +560,7 @@ function App() {
             setCurrentPage('admin');
             setAdminPath(parseAdminPath(path));
             setShowProfileMenu(false);
+            setShowStudio(false);
             window.history.pushState({ page: 'admin' }, '', path);
             return;
         }
@@ -557,6 +570,7 @@ function App() {
             const path = '/app/' + subPage;
             setCurrentPage('orgSettings');
             setOrgSettingsPath(parseOrgSettingsPath(path));
+            setShowStudio(false);
             setShowProfileMenu(false);
             window.history.pushState({ page: 'orgSettings' }, '', path);
             return;
@@ -574,6 +588,7 @@ function App() {
             setShowSkillsPanel(false);
             setShowEmailKB(false);
             setShowAITasks(false);
+            setShowStudio(false);
             setCurrentPage('notebooks');
             setShowProfileMenu(false);
             const path = notebookId ? `/app/notebooks/${notebookId}` : '/app/notebooks';
@@ -593,6 +608,7 @@ function App() {
             setShowSkillsPanel(false);
             setShowEmailKB(false);
             setShowAITasks(false);
+            setShowStudio(false);
             setCurrentPage('webpages');
             setShowProfileMenu(false);
             const path = webpageId ? `/app/webpages/${webpageId}` : '/app/webpages';
@@ -603,6 +619,7 @@ function App() {
         }
         setCurrentPage(page);
         setShowProfileMenu(false);
+        setShowStudio(false);
         const path = PAGE_ROUTES[page] || '/';
         window.history.pushState({ page }, '', path);
     }, []);
