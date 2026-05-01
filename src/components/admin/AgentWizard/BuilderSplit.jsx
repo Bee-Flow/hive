@@ -1,8 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Plus, Sparkles, Upload, Brain, AppWindow, ArrowLeft, X, Search, ChevronDown, ChevronRight, Image as ImageIcon, Globe, BookOpen } from 'lucide-react';
+import { Send, Plus, Sparkles, Upload, Brain, AppWindow, ArrowLeft, X, Search, ChevronDown, ChevronRight, Image as ImageIcon, Globe, BookOpen, Paperclip, LayoutGrid, ArrowUp, Puzzle as PuzzlePiece } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import useTranslation from '../../../hooks/useTranslation';
 import ModelTierSelector from '../../ModelTierSelector';
+import VersionHistory from '../../VersionHistory';
 import { INTEGRATION_CATALOG } from '../AgentDesigner/integrations';
 import PlanCard from './PlanCard';
 
@@ -89,18 +90,29 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     }, [chat]);
 
     // Eager-load on mount so badge counts ("Browse apps · 7") reflect what
-    // the user is actually allowed to use, not the full catalog.
+    // the user is actually allowed to use, not the full catalog. Also pull
+    // the data needed by the inline collapsible sections (categories for the
+    // category dropdown, org groups for publishing, tiers for the model picker).
     useEffect(() => {
         let cancelled = false;
         (async () => {
             try {
-                const [skillsRes, statusRes] = await Promise.all([
+                const [skillsRes, statusRes, catsRes, groupsRes, tiersRes] = await Promise.all([
                     authFetch(`${API_BASE}/api/skills`),
                     authFetch(`${API_BASE}/ai/user-settings`),
+                    authFetch(`${API_BASE}/agents/categories`),
+                    authFetch(`${API_BASE}/auth/groups`),
+                    authFetch(`${API_BASE}/ai/config/chat-models`),
                 ]);
                 if (cancelled) return;
                 setAllSkills(skillsRes.ok ? await skillsRes.json() : []);
                 setIntegrationStatus(statusRes.ok ? await statusRes.json() : {});
+                setCategories(catsRes.ok ? await catsRes.json() : []);
+                setOrgGroups(groupsRes.ok ? await groupsRes.json() : []);
+                setTiers(tiersRes.ok ? await tiersRes.json() : {});
+                if (initialAgent?.model && initialAgent.model.startsWith('tier:')) {
+                    setSelectedTier(initialAgent.model.slice('tier:'.length));
+                }
             } catch (_) {
                 if (!cancelled) {
                     setAllSkills([]);
@@ -120,11 +132,14 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         name,
         description: initialAgent?.description || plan?.description || '',
         systemPrompt: instructions,
+        model: initialAgent?.model || '',
+        categoryId: initialAgent?.category_id || null,
+        embedEnabled: initialAgent?.embed_enabled === 1 || initialAgent?.embed_enabled === true,
         config: { ...(initialAgent?.config || {}) },
     });
-    // Keep description in sync if initialAgent updates after mount
     useEffect(() => { stateRef.current.name = name; }, [name]);
     useEffect(() => { stateRef.current.systemPrompt = instructions; }, [instructions]);
+    useEffect(() => { stateRef.current.description = description; }, [description]);
 
     const agentIdRef = useRef(agent?.id);
     useEffect(() => { agentIdRef.current = agent?.id; }, [agent?.id]);
@@ -149,6 +164,9 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
             name: stateRef.current.name,
             description: stateRef.current.description,
             systemPrompt: stateRef.current.systemPrompt,
+            model: stateRef.current.model,
+            categoryId: stateRef.current.categoryId,
+            embedEnabled: stateRef.current.embedEnabled,
             config: { ...stateRef.current.config },
         };
         try {
@@ -164,6 +182,9 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 name: updated.name || snapshot.name,
                 description: updated.description || snapshot.description,
                 systemPrompt: updated.system_prompt || snapshot.systemPrompt,
+                model: updated.model || snapshot.model,
+                categoryId: updated.category_id || snapshot.categoryId,
+                embedEnabled: updated.embed_enabled === 1 || updated.embed_enabled === true,
                 config: updated.config || snapshot.config,
             };
             setSavingState('saved');
@@ -257,6 +278,112 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     const onStrictKnowledgeChange = (v) => { setStrictKnowledge(v); patchConfig({ strictKnowledge: v }); };
     const onIncludeSourceReferencesChange = (v) => { setIncludeSourceReferences(v); patchConfig({ includeSourceReferences: v }); };
 
+    // Identity / model / category — typed fields debounce, dropdowns/toggles immediate.
+    const updateDescription = (v) => { setDescription(v); stateRef.current.description = v; queueSave(false); };
+    const updateModel = (tierName) => {
+        const v = tierName ? `tier:${tierName}` : '';
+        setModel(v);
+        setSelectedTier(tierName);
+        stateRef.current.config = stateRef.current.config; // no-op; model is top-level not config
+        // model is a top-level column on the agent — write through stateRef so the
+        // canonical PUT picks it up (the snapshot already merges all top-level fields).
+        // Use a manual flush via the queue so it lands immediately.
+        const id = agentIdRef.current;
+        if (!id) return;
+        // Stash the new model on stateRef so flush() picks it up; queueSave dirties.
+        stateRef.current.model = v;
+        dirtyRef.current = true;
+        queueSave(true);
+    };
+    const updateCategory = (id) => { setCategoryId(id); stateRef.current.categoryId = id; dirtyRef.current = true; queueSave(true); };
+
+    // Behavior toggles
+    const toggleAllowCopy = () => {
+        const next = !allowCopy;
+        setAllowCopy(next);
+        patchConfig({ allowCopy: next });
+    };
+    const toggleDisableExternalTools = () => {
+        const next = !disableExternalTools;
+        setDisableExternalTools(next);
+        patchConfig({ disableExternalTools: next });
+    };
+    const toggleEmbedEnabled = () => {
+        const next = !embedEnabled;
+        setEmbedEnabled(next);
+        // embed_enabled is a top-level column on the agent table.
+        stateRef.current.embedEnabled = next;
+        dirtyRef.current = true;
+        queueSave(true);
+    };
+
+    // Publishing — uses the dedicated PATCH /agents/:id/publish endpoint instead
+    // of the canonical PUT, since publish state lives in a column the regular
+    // update path doesn't touch.
+    const callPublish = async (next, groups) => {
+        const id = agentIdRef.current;
+        if (!id) return;
+        try {
+            const res = await authFetch(`${API_BASE}/agents/${id}/publish`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ isPublished: next, sharedGroups: groups }),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            setIsPublished(next);
+            setSharedGroups(groups);
+        } catch (err) {
+            console.error('Publish toggle failed:', err);
+            alert(err.message);
+        }
+    };
+    const togglePublishedToOrg = () => {
+        // "Publish to entire organisation" → empty sharedGroups.
+        callPublish(!isPublished, []);
+    };
+    const togglePublishGroup = (gid) => {
+        const next = sharedGroups.includes(gid) ? sharedGroups.filter(x => x !== gid) : [...sharedGroups, gid];
+        // Setting any group implies published=true.
+        callPublish(true, next);
+    };
+
+    // Knowledge — link / unlink an existing KB into the agent's array.
+    const toggleKbLink = (kbId) => {
+        const next = knowledgeBaseIds.includes(kbId)
+            ? knowledgeBaseIds.filter(x => x !== kbId)
+            : [...knowledgeBaseIds, kbId];
+        setKnowledgeBaseIds(next);
+        patchConfig({ knowledge_base_ids: next });
+    };
+    const [allKbs, setAllKbs] = useState([]);
+    const refreshKbs = useCallback(async () => {
+        try {
+            const res = await authFetch(`${API_BASE}/api/kb`);
+            if (res.ok) setAllKbs(await res.json());
+        } catch (_) { /* ignore */ }
+    }, []);
+    useEffect(() => { refreshKbs(); }, [refreshKbs]);
+    const createKb = async (name, description) => {
+        try {
+            const res = await authFetch(`${API_BASE}/api/kb`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, description }),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            const created = await res.json();
+            await refreshKbs();
+            // Auto-link the new KB.
+            const next = [...knowledgeBaseIds, created.id];
+            setKnowledgeBaseIds(next);
+            patchConfig({ knowledge_base_ids: next });
+            return created;
+        } catch (err) {
+            alert(err.message);
+            return null;
+        }
+    };
+
     // Flush on blur for typed fields — guarantees the change lands as soon
     // as the user leaves the field, even if they click immediately to nav away.
     const flushNow = () => { if (dirtyRef.current) flush(); };
@@ -275,7 +402,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     prompt: chat[0]?.content || '',
                     plan: { name, description: agent?.description || '', avatar, capabilities: plan?.capabilities || [], systemPrompt: instructions },
                     refinement: text,
-                    modelTier: tier,
+                    modelTier: selectedTier || tier || 'fast',
                     locale,
                 }),
             });
@@ -366,23 +493,75 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     })}
                 </div>
                 <div className="p-3 border-t border-[var(--border-default)]">
-                    <div className="flex items-center gap-2 rounded-full border border-[var(--border-default)] bg-[var(--bg-secondary)] px-4 py-2">
-                        <Plus size={16} className="text-[var(--text-tertiary)]" />
-                        <input
+                    {/* Visual parity with direct chat InputArea: textarea on top,
+                        action icon row + tier pill + send on the bottom. The icons
+                        open the same wizard pickers when relevant; placeholder
+                        icons (paperclip / globe) are visual-only for parity. */}
+                    <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-secondary)] px-4 pt-3 pb-2">
+                        <textarea
                             value={chatInput}
                             onChange={(e) => setChatInput(e.target.value)}
                             onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleRefine(); } }}
                             placeholder={t('agent_wizard.builder.chat_placeholder')}
-                            className="flex-1 bg-transparent outline-none text-sm text-[var(--text-primary)] placeholder-[var(--text-tertiary)]"
+                            className="w-full bg-transparent outline-none text-sm text-[var(--text-primary)] placeholder-[var(--text-tertiary)] resize-none"
+                            rows={1}
                             disabled={chatBusy}
                         />
-                        <button
-                            onClick={handleRefine}
-                            disabled={chatBusy || !chatInput.trim()}
-                            className="w-8 h-8 rounded-full bg-[var(--text-primary)] text-[var(--bg-primary)] flex items-center justify-center disabled:opacity-30"
-                        >
-                            <Send size={14} />
-                        </button>
+                        <div className="flex items-center justify-between mt-2">
+                            <div className="flex items-center gap-1 text-[var(--text-tertiary)]">
+                                <button
+                                    onClick={() => setKnowledgeOpen(true)}
+                                    className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                                    title={t('agent_wizard.builder.upload_files')}
+                                >
+                                    <Paperclip size={16} />
+                                </button>
+                                <button
+                                    className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors opacity-60 cursor-default"
+                                    title="Web"
+                                    type="button"
+                                >
+                                    <Globe size={16} />
+                                </button>
+                                <button
+                                    onClick={() => setKnowledgeOpen(true)}
+                                    className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
+                                    title={t('agent_wizard.builder.upload_files')}
+                                >
+                                    <BookOpen size={16} />
+                                </button>
+                                <button
+                                    onClick={() => setSkillPickerOpen(v => !v)}
+                                    className={`p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors ${skillPickerOpen ? 'text-[var(--accent)]' : ''}`}
+                                    title={t('agent_wizard.builder.add_skill')}
+                                >
+                                    <PuzzlePiece size={16} />
+                                </button>
+                                <button
+                                    onClick={() => setAppsPickerOpen(v => !v)}
+                                    className={`p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors ${appsPickerOpen ? 'text-[var(--accent)]' : ''}`}
+                                    title={t('agent_wizard.builder.browse_apps')}
+                                >
+                                    <LayoutGrid size={16} />
+                                </button>
+                            </div>
+                            <div className="flex items-center gap-2">
+                                <ModelTierSelector
+                                    tiers={tiers || {}}
+                                    value={selectedTier}
+                                    onChange={(v) => setSelectedTier(v)}
+                                    dropDirection="up"
+                                />
+                                <button
+                                    onClick={handleRefine}
+                                    disabled={chatBusy || !chatInput.trim()}
+                                    className="w-8 h-8 rounded-full bg-[var(--text-primary)] text-[var(--bg-primary)] flex items-center justify-center disabled:opacity-30"
+                                    title={t('agent_wizard.builder.send') || 'Send'}
+                                >
+                                    {chatBusy ? <span className="text-xs">…</span> : <ArrowUp size={14} />}
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 </div>
             </aside>
@@ -406,15 +585,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
 
                 <div className="max-w-3xl mx-auto px-8 py-8">
                     <div className="flex items-start gap-4 mb-6">
-                        <button
-                            onClick={() => {
-                                const v = window.prompt(t('agent_wizard.builder.avatar_prompt'), avatar);
-                                if (v) updateAvatar(v.trim().slice(0, 4));
-                            }}
-                            className="w-14 h-14 rounded-full bg-[var(--bg-secondary)] border border-[var(--border-default)] text-2xl flex items-center justify-center hover:bg-[var(--bg-tertiary)]"
-                        >
-                            {avatar}
-                        </button>
+                        <AvatarPicker t={t} avatar={avatar} onChange={updateAvatar} />
                         <input
                             value={name}
                             onChange={(e) => updateName(e.target.value)}
@@ -544,6 +715,168 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                             placeholder={t('agent_wizard.builder.instructions_placeholder')}
                             className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)] resize-y"
                         />
+                    </div>
+
+                    {/* ── Inline collapsible sections — full parity with the legacy Agent Designer ── */}
+                    <div className="mt-8 space-y-2">
+                        <CollapsibleSection
+                            title={t('agent_wizard.section.identity')}
+                            open={openSection === 'identity'}
+                            onToggle={() => toggleSection('identity')}
+                        >
+                            <div className="space-y-4">
+                                <Field label={t('agent_wizard.field.role_description')}>
+                                    <input
+                                        value={description}
+                                        onChange={(e) => updateDescription(e.target.value)}
+                                        onBlur={flushNow}
+                                        placeholder={t('agent_wizard.field.role_description_placeholder')}
+                                        className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+                                    />
+                                </Field>
+                                <Field label={t('agent_wizard.field.category')}>
+                                    <select
+                                        value={categoryId || ''}
+                                        onChange={(e) => updateCategory(e.target.value || null)}
+                                        className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+                                    >
+                                        <option value="">{t('agent_wizard.field.category_none')}</option>
+                                        {categories.map(c => (
+                                            <option key={c.id} value={c.id}>{c.name}</option>
+                                        ))}
+                                    </select>
+                                </Field>
+                                <Field label={t('agent_wizard.field.model')}>
+                                    <ModelTierSelector
+                                        tiers={tiers || {}}
+                                        value={selectedTier}
+                                        onChange={(v) => updateModel(v)}
+                                    />
+                                </Field>
+                            </div>
+                        </CollapsibleSection>
+
+                        <CollapsibleSection
+                            title={t('agent_wizard.section.knowledge')}
+                            open={openSection === 'knowledge'}
+                            onToggle={() => toggleSection('knowledge')}
+                        >
+                            <div className="space-y-3">
+                                <ToggleRow
+                                    label={t('agent_wizard.knowledge.strict_label')}
+                                    help={t('agent_wizard.knowledge.strict_help')}
+                                    checked={strictKnowledge}
+                                    onChange={onStrictKnowledgeChange}
+                                />
+                                <ToggleRow
+                                    label={t('agent_wizard.knowledge.sources_label')}
+                                    help={t('agent_wizard.knowledge.sources_help')}
+                                    checked={includeSourceReferences}
+                                    onChange={onIncludeSourceReferencesChange}
+                                />
+                                <KbList
+                                    t={t}
+                                    kbs={allKbs}
+                                    linkedIds={knowledgeBaseIds}
+                                    onToggle={toggleKbLink}
+                                    onCreate={createKb}
+                                />
+                            </div>
+                        </CollapsibleSection>
+
+                        <CollapsibleSection
+                            title={t('agent_wizard.section.behavior')}
+                            open={openSection === 'behavior'}
+                            onToggle={() => toggleSection('behavior')}
+                        >
+                            <div className="space-y-3">
+                                <ToggleRow
+                                    label={t('agent_wizard.behavior.allow_copy_label')}
+                                    help={t('agent_wizard.behavior.allow_copy_help')}
+                                    checked={allowCopy}
+                                    onChange={() => toggleAllowCopy()}
+                                />
+                                <ToggleRow
+                                    label={t('agent_wizard.behavior.disable_external_label')}
+                                    help={t('agent_wizard.behavior.disable_external_help')}
+                                    checked={disableExternalTools}
+                                    onChange={() => toggleDisableExternalTools()}
+                                />
+                                <ToggleRow
+                                    label={t('agent_wizard.behavior.embed_label')}
+                                    help={t('agent_wizard.behavior.embed_help')}
+                                    checked={embedEnabled}
+                                    onChange={() => toggleEmbedEnabled()}
+                                />
+                                {embedEnabled && agent?.id && (
+                                    <div className="text-xs text-[var(--text-tertiary)] pl-1">
+                                        {t('agent_wizard.behavior.embed_url')}: <code className="text-[var(--text-primary)]">/chat/{agent.id}</code>
+                                    </div>
+                                )}
+                            </div>
+                        </CollapsibleSection>
+
+                        <CollapsibleSection
+                            title={t('agent_wizard.section.publishing')}
+                            open={openSection === 'publishing'}
+                            onToggle={() => toggleSection('publishing')}
+                        >
+                            <div className="space-y-3">
+                                <ToggleRow
+                                    label={t('agent_wizard.publishing.published_label')}
+                                    help={t('agent_wizard.publishing.published_help')}
+                                    checked={isPublished}
+                                    onChange={togglePublishedToOrg}
+                                />
+                                {isPublished && (
+                                    <Field label={t('agent_wizard.publishing.groups')}>
+                                        {orgGroups.length === 0 && (
+                                            <div className="text-xs text-[var(--text-tertiary)]">{t('agent_wizard.publishing.no_groups')}</div>
+                                        )}
+                                        <div className="space-y-1">
+                                            {orgGroups.map(g => {
+                                                const checked = sharedGroups.includes(g.id);
+                                                return (
+                                                    <label key={g.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                                                        <input type="checkbox" checked={checked} onChange={() => togglePublishGroup(g.id)} />
+                                                        <span className="text-[var(--text-primary)]">{g.name}</span>
+                                                    </label>
+                                                );
+                                            })}
+                                        </div>
+                                    </Field>
+                                )}
+                            </div>
+                        </CollapsibleSection>
+
+                        {agent?.id && (
+                            <CollapsibleSection
+                                title={t('agent_wizard.section.versions')}
+                                open={openSection === 'versions'}
+                                onToggle={() => toggleSection('versions')}
+                            >
+                                <VersionHistory
+                                    agentId={agent.id}
+                                    onRestore={async () => {
+                                        // After a version is restored, re-fetch the agent so all
+                                        // local state and stateRef rehydrate from the canonical row.
+                                        try {
+                                            const res = await authFetch(`${API_BASE}/agents/${agent.id}`);
+                                            if (res.ok) {
+                                                const fresh = await res.json();
+                                                setAgent(fresh);
+                                                setName(fresh.name || '');
+                                                setDescription(fresh.description || '');
+                                                setInstructions(fresh.system_prompt || '');
+                                                setAvatar(fresh.avatar || fresh.config?.avatar || '🤖');
+                                                setModel(fresh.model || '');
+                                                if (fresh.model && fresh.model.startsWith('tier:')) setSelectedTier(fresh.model.slice(5));
+                                            }
+                                        } catch (_) { /* ignore */ }
+                                    }}
+                                />
+                            </CollapsibleSection>
+                        )}
                     </div>
                 </div>
             </main>
@@ -873,5 +1206,198 @@ function ActionPill({ icon, label, onClick, active }) {
         >
             {icon}{label}
         </button>
+    );
+}
+
+// Avatar picker — emoji input + image upload.
+// Supports emoji glyph or data:/http URL (rendered as <img>). Mirrors the
+// behaviour of [AgentDesigner/sections/IdentitySection.jsx:127-146].
+function AvatarPicker({ avatar, onChange, t }) {
+    const [open, setOpen] = useState(false);
+    const fileRef = useRef(null);
+    const [emojiInput, setEmojiInput] = useState(
+        avatar && (avatar.startsWith('data:') || avatar.startsWith('http')) ? '' : (avatar || '🤖')
+    );
+    const isImage = avatar && (avatar.startsWith('data:') || avatar.startsWith('http'));
+    const onFile = (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        if (file.size > 512 * 1024) { alert(t('agent_wizard.avatar.too_large') || 'Image must be under 512KB'); return; }
+        const reader = new FileReader();
+        reader.onload = (ev) => { onChange(ev.target.result); setOpen(false); };
+        reader.readAsDataURL(file);
+        e.target.value = '';
+    };
+    return (
+        <div className="relative">
+            <button
+                onClick={() => setOpen(v => !v)}
+                className="w-14 h-14 rounded-full bg-[var(--bg-secondary)] border border-[var(--border-default)] text-2xl flex items-center justify-center overflow-hidden hover:bg-[var(--bg-tertiary)]"
+                title={t('agent_wizard.avatar.title') || 'Avatar'}
+            >
+                {isImage
+                    ? <img src={avatar} alt="" className="w-full h-full object-cover" />
+                    : <span>{avatar || '🤖'}</span>}
+            </button>
+            {open && (
+                <div className="absolute z-20 top-full left-0 mt-2 w-72 rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-lg p-3">
+                    <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-2">
+                        {t('agent_wizard.avatar.title') || 'Avatar'}
+                    </div>
+                    <div className="flex items-center gap-2 mb-3">
+                        <input
+                            type="text"
+                            value={emojiInput}
+                            onChange={(e) => {
+                                const v = e.target.value.slice(-2) || '🤖';
+                                setEmojiInput(v);
+                                onChange(v);
+                            }}
+                            maxLength={2}
+                            placeholder="🤖"
+                            className="w-16 text-center text-xl bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg py-1"
+                        />
+                        <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif" className="hidden" onChange={onFile} />
+                        <button
+                            onClick={() => fileRef.current?.click()}
+                            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-[var(--border-default)] hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)]"
+                        >
+                            📷 {t('agent_wizard.avatar.upload') || 'Upload'}
+                        </button>
+                    </div>
+                    {isImage && (
+                        <button
+                            onClick={() => { onChange('🤖'); setEmojiInput('🤖'); }}
+                            className="text-xs text-[var(--text-tertiary)] hover:text-red-500"
+                        >
+                            {t('agent_wizard.avatar.reset') || 'Remove image'}
+                        </button>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function CollapsibleSection({ title, open, onToggle, children }) {
+    return (
+        <div className="border border-[var(--border-default)] rounded-xl overflow-hidden">
+            <button
+                onClick={onToggle}
+                className="w-full flex items-center justify-between px-4 py-3 bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] transition text-left"
+            >
+                <span className="text-sm font-medium text-[var(--text-primary)]">{title}</span>
+                {open ? <ChevronDown size={16} className="text-[var(--text-tertiary)]" /> : <ChevronRight size={16} className="text-[var(--text-tertiary)]" />}
+            </button>
+            {open && <div className="px-4 py-4 border-t border-[var(--border-default)] bg-[var(--bg-primary)]">{children}</div>}
+        </div>
+    );
+}
+
+function Field({ label, children }) {
+    return (
+        <div>
+            <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">{label}</div>
+            {children}
+        </div>
+    );
+}
+
+function ToggleRow({ label, help, checked, onChange }) {
+    return (
+        <label className="flex items-start gap-3 cursor-pointer">
+            <input
+                type="checkbox"
+                checked={!!checked}
+                onChange={(e) => onChange(e.target.checked)}
+                className="mt-1"
+            />
+            <div className="flex-1">
+                <div className="text-sm text-[var(--text-primary)]">{label}</div>
+                {help && <div className="text-xs text-[var(--text-tertiary)]">{help}</div>}
+            </div>
+        </label>
+    );
+}
+
+function KbList({ kbs, linkedIds, onToggle, onCreate, t }) {
+    const [creating, setCreating] = useState(false);
+    const [name, setName] = useState('');
+    const [description, setDescription] = useState('');
+    const [busy, setBusy] = useState(false);
+    const submit = async () => {
+        if (!name.trim() || busy) return;
+        setBusy(true);
+        const created = await onCreate(name.trim(), description.trim());
+        setBusy(false);
+        if (created) { setName(''); setDescription(''); setCreating(false); }
+    };
+    return (
+        <div>
+            <div className="flex items-center justify-between mb-2">
+                <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)]">
+                    {t('agent_wizard.knowledge.kbs')} ({kbs.length})
+                </div>
+                <button
+                    onClick={() => setCreating(v => !v)}
+                    className="text-xs text-[var(--accent)] hover:underline"
+                >
+                    + {t('agent_wizard.knowledge.create_kb')}
+                </button>
+            </div>
+            {creating && (
+                <div className="mb-3 p-3 rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] space-y-2">
+                    <input
+                        autoFocus
+                        value={name}
+                        onChange={(e) => setName(e.target.value)}
+                        placeholder={t('agent_wizard.knowledge.kb_name')}
+                        className="w-full bg-[var(--bg-primary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+                    />
+                    <input
+                        value={description}
+                        onChange={(e) => setDescription(e.target.value)}
+                        placeholder={t('agent_wizard.knowledge.kb_description')}
+                        className="w-full bg-[var(--bg-primary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
+                    />
+                    <div className="flex justify-end gap-2">
+                        <button onClick={() => setCreating(false)} className="px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+                            {t('agent_studio.cancel')}
+                        </button>
+                        <button onClick={submit} disabled={!name.trim() || busy} className="px-3 py-1.5 rounded-full text-xs bg-[var(--accent)] text-white disabled:opacity-50">
+                            {busy ? '…' : t('agent_wizard.knowledge.create_kb')}
+                        </button>
+                    </div>
+                </div>
+            )}
+            {kbs.length === 0 && (
+                <div className="text-xs text-[var(--text-tertiary)] py-2">{t('agent_wizard.knowledge.no_kbs')}</div>
+            )}
+            <div className="divide-y divide-[var(--border-default)] border-t border-b border-[var(--border-default)]">
+                {kbs.map(kb => {
+                    const linked = linkedIds.includes(kb.id);
+                    return (
+                        <div key={kb.id} className="flex items-center gap-3 py-2 px-1">
+                            <div className="flex-1 min-w-0">
+                                <div className="text-sm text-[var(--text-primary)] truncate">{kb.name}</div>
+                                {(kb.docs_count != null || kb.doc_count != null) && (
+                                    <div className="text-[11px] text-[var(--text-tertiary)]">
+                                        {(kb.docs_count ?? kb.doc_count ?? 0)} docs
+                                    </div>
+                                )}
+                            </div>
+                            <button
+                                onClick={() => onToggle(kb.id)}
+                                className={`px-3 py-1 rounded-full text-xs border transition ${linked
+                                    ? 'border-[var(--accent)] text-[var(--accent)] bg-[var(--bg-secondary)]'
+                                    : 'border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}
+                            >
+                                {linked ? `✓ ${t('agent_wizard.knowledge.linked')}` : `+ ${t('agent_wizard.knowledge.link')}`}
+                            </button>
+                        </div>
+                    );
+                })}
+            </div>
+        </div>
     );
 }
