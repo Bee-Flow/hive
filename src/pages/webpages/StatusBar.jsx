@@ -41,14 +41,16 @@ export default function StatusBar({
 
             <span style={{ opacity: 0.4 }}>|</span>
 
-            {/* Cursor */}
-            <span>Ln {cursor?.line ?? 1}, Col {cursor?.col ?? 1}</span>
-
-            {/* Language */}
-            <span>{LANG_LABELS[activeFile] ?? 'HTML'}</span>
-
-            {/* File size */}
-            <span>{fmtSize(fileSize ?? 0)}</span>
+            {/* Cursor / file metadata — hidden when no file is open */}
+            {activeFile ? (
+                <>
+                    <span>Ln {cursor?.line ?? 1}, Col {cursor?.col ?? 1}</span>
+                    <span>{LANG_LABELS[activeFile] ?? 'HTML'}</span>
+                    <span>{fmtSize(fileSize ?? 0)}</span>
+                </>
+            ) : (
+                <span style={{ opacity: 0.85 }}>Preview · click a file to edit</span>
+            )}
 
             {/* Spacer */}
             <span className="flex-1" />

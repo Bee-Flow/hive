@@ -124,6 +124,23 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
     // planExecution authorisation. Cleared after the round-trip starts.
     const [pendingPlanExecution, setPendingPlanExecution] = useState(null);
 
+    // Preview-iframe selection chip — set when the user highlights rendered
+    // content in the preview. Surfaces above the chat input as a removable
+    // pill. On send, getExtraPayload converts it into the server's existing
+    // `webpageSelection: { text, file, action? }` contract. Single-shot —
+    // cleared automatically after the send.
+    const [attachedSelection, setAttachedSelection] = useState(null);
+    const handleSelectionAttach = useCallback((selection) => {
+        if (!selection || !selection.text) return;
+        setAttachedSelection({
+            text: selection.text,
+            tagName: selection.tagName || null,
+            className: selection.className || null,
+            elementId: selection.elementId || null,
+        });
+    }, []);
+    const handleSelectionClear = useCallback(() => setAttachedSelection(null), []);
+
     const { messages: chatMessages, setMessages: setChatMessages, isLoading: chatLoading,
         sendMessage: sendChatMessage, stopGenerating: stopChatGenerating,
         retryMessage: retryChatMessage, editAndRegenerate: editAndRegenerateChat,
@@ -148,9 +165,18 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                 if (pendingPlanExecution) {
                     base.planExecution = pendingPlanExecution;
                 }
+                if (attachedSelection) {
+                    // The server's webpageSelection contract expects { text, file, action? }.
+                    // Preview-iframe selections come from rendered HTML, so we tag
+                    // file='html' and let the AI find the matching source there.
+                    base.webpageSelection = {
+                        text: attachedSelection.text,
+                        file: 'html',
+                    };
+                }
                 return base;
             },
-        }), [selectedTier, selected?.id, html, css, js, pendingPlanExecution]),
+        }), [selectedTier, selected?.id, html, css, js, pendingPlanExecution, attachedSelection]),
         onDirectConversationCreated: useCallback(() => {}, []),
         // Webpage-specific SSE events — useChatEngine forwards them via these callbacks.
         onWebpageDocUpdate: useCallback((data) => {
@@ -620,12 +646,21 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                     onSourcesChange={setSources}
                     chatMessages={chatMessages}
                     chatLoading={chatLoading}
-                    onChatSend={(text, attachments) => sendChatMessage(text, attachments)}
+                    onChatSend={(text, attachments) => {
+                        sendChatMessage(text, attachments);
+                        // Single-shot: clear the attached selection after the
+                        // first send so the next message doesn't carry it
+                        // unless the user picks a new one.
+                        if (attachedSelection) setAttachedSelection(null);
+                    }}
                     onChatStop={stopChatGenerating}
                     onChatRetry={retryChatMessage}
                     onChatEdit={editAndRegenerateChat}
                     onPlanApprove={handlePlanApprove}
                     onPlanReject={handlePlanReject}
+                    onSelectionAttach={handleSelectionAttach}
+                    attachedSelection={attachedSelection}
+                    onSelectionClear={handleSelectionClear}
                     modelTiers={modelTiers}
                     selectedTier={selectedTier}
                     onTierChange={setSelectedTier}

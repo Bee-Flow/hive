@@ -1,4 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
+import { MousePointer2, X } from 'lucide-react';
 import MessageItem from '../../components/chat/MessageItem';
 import InputArea from '../../components/InputArea';
 import WebpageDiffCard from '../../components/WebpageDiffCard';
@@ -14,6 +15,7 @@ export default function WebpageChat({
     messages, isLoading, onSend, onStop, onRetry, onEdit,
     modelTiers, selectedTier, onTierChange,
     onPlanApprove, onPlanReject,
+    attachedSelection, onSelectionClear,
     placeholder = 'Describe the webpage you want…',
 }) {
     const endRef = useRef(null);
@@ -94,6 +96,34 @@ export default function WebpageChat({
             </div>
 
             <div className="shrink-0 px-2 py-2 border-t" style={{ borderColor: 'var(--vsc-border)' }}>
+                {attachedSelection && (
+                    <div
+                        className="mb-1.5 flex items-start gap-1.5 px-2 py-1 rounded-md text-[11px]"
+                        style={{
+                            background: 'rgba(99,102,241,0.10)',
+                            border: '1px solid rgba(99,102,241,0.35)',
+                            color: 'var(--text-primary)',
+                        }}
+                        title="This selection will be sent with your next message so the AI knows what you mean by 'this'."
+                    >
+                        <MousePointer2 size={11} className="mt-0.5 shrink-0" style={{ color: 'var(--accent-primary)' }} />
+                        <div className="flex-1 min-w-0">
+                            <div className="text-[10px] uppercase tracking-wider font-semibold" style={{ color: 'var(--accent-primary)', opacity: 0.85 }}>
+                                Selection from preview{attachedSelection.tagName ? ` · <${attachedSelection.tagName}>` : ''}
+                            </div>
+                            <div className="truncate">
+                                {attachedSelection.text.length > 140 ? attachedSelection.text.slice(0, 140) + '…' : attachedSelection.text}
+                            </div>
+                        </div>
+                        <button
+                            onClick={onSelectionClear}
+                            className="shrink-0 p-0.5 rounded hover:bg-black/10"
+                            title="Remove selection"
+                        >
+                            <X size={11} />
+                        </button>
+                    </div>
+                )}
                 <InputArea
                     input={chatInput}
                     setInput={setChatInput}

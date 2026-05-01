@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { RefreshCw, ExternalLink } from 'lucide-react';
 import composeWebpageDocument from '../../utils/composeWebpageDocument';
 
@@ -11,13 +11,36 @@ import composeWebpageDocument from '../../utils/composeWebpageDocument';
  *  • the host app's CSS / JS can never reach into the preview
  *  • parent.location, document.cookie, fetch() to the host app all fail
  */
-export default function WebpagePreview({ html, css, js }) {
+export default function WebpagePreview({ html, css, js, onSelectionAttach }) {
     const [refreshKey, setRefreshKey] = useState(0);
 
+    // The composed doc embeds a small script that posts user selections back
+    // to the parent. Only enable the bridge when the parent supplied a
+    // callback — keeps the iframe minimal everywhere else.
+    const bridgeOn = typeof onSelectionAttach === 'function';
+
     const srcDoc = useMemo(
-        () => composeWebpageDocument({ html, css, js }),
-        [html, css, js]
+        () => composeWebpageDocument({ html, css, js }, { selectionBridge: bridgeOn }),
+        [html, css, js, bridgeOn]
     );
+
+    useEffect(() => {
+        if (!bridgeOn) return;
+        const handler = (event) => {
+            const data = event?.data;
+            if (!data || data.__beeflowWebpageSelection !== true) return;
+            const text = typeof data.text === 'string' ? data.text.trim() : '';
+            if (!text) return;
+            onSelectionAttach({
+                text,
+                tagName: data.tagName || null,
+                className: data.className || null,
+                elementId: data.elementId || null,
+            });
+        };
+        window.addEventListener('message', handler);
+        return () => window.removeEventListener('message', handler);
+    }, [bridgeOn, onSelectionAttach]);
 
     const openInNewTab = () => {
         // A blob: URL with a unique opaque origin — gives the user a full-window

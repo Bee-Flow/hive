@@ -99,6 +99,8 @@ export default function WebpageIDE({
     chatMessages, chatLoading,
     onChatSend, onChatStop, onChatRetry, onChatEdit,
     onPlanApprove, onPlanReject,
+    onSelectionAttach,
+    attachedSelection, onSelectionClear,
     modelTiers, selectedTier, onTierChange,
     // Save
     saveState, lastSavedAt,
@@ -123,8 +125,13 @@ export default function WebpageIDE({
     // Active pane in sidebar
     const [sidebarPane, setSidebarPane] = useState('files');
 
-    // Active editor file
-    const [activeFile, setActiveFile] = useState('html');
+    // Active editor file. null = editor hidden (preview takes the full center
+    // column). Clicking a file in the explorer or a tab opens the editor.
+    const [activeFile, setActiveFile] = useState(null);
+    const editorOpen = activeFile !== null;
+
+    const openFile = (file) => setActiveFile(file);
+    const closeEditor = () => setActiveFile(null);
 
     // Cursor position (from Monaco)
     const [cursor, setCursor] = useState({ line: 1, col: 1 });
@@ -169,7 +176,7 @@ export default function WebpageIDE({
                     {sidebarPane === 'files' && (
                         <FileExplorer
                             activeFile={activeFile}
-                            onFileSelect={setActiveFile}
+                            onFileSelect={openFile}
                             dirtyFiles={dirtyFiles}
                         />
                     )}
@@ -205,38 +212,47 @@ export default function WebpageIDE({
 
                 {/* Center: editor + preview stacked */}
                 <div className="flex flex-col flex-1 min-w-0 min-h-0" ref={centerRef}>
-                    {/* Tab strip */}
-                    <EditorTabs activeFile={activeFile} onSelect={setActiveFile} dirtyFiles={dirtyFiles} />
-
-                    {/* Editor */}
-                    <div style={{ flex: `0 0 ${editorPct}%`, minHeight: 0, overflow: 'hidden' }}>
-                        <WebpageEditor
+                    {/* Tabs only render when an editor is open. Closing the
+                        last tab returns to preview-only. */}
+                    {editorOpen && (
+                        <EditorTabs
                             activeFile={activeFile}
-                            onActiveFileChange={setActiveFile}
-                            html={html}
-                            css={css}
-                            js={js}
-                            onChange={handleFileChange}
-                            theme={theme}
-                            onCursorChange={setCursor}
-                            sizes={{
-                                html: new Blob([html]).size,
-                                css: new Blob([css]).size,
-                                js: new Blob([js]).size,
-                            }}
+                            onSelect={openFile}
+                            onClose={closeEditor}
+                            dirtyFiles={dirtyFiles}
                         />
-                    </div>
+                    )}
 
-                    {/* Editor/Preview resize handle */}
-                    <div
-                        onMouseDown={onEditorPreviewDrag}
-                        className="shrink-0 h-1 cursor-row-resize"
-                        style={{ background: 'var(--vsc-border)' }}
-                    />
+                    {editorOpen && (
+                        <>
+                            {/* Editor */}
+                            <div style={{ flex: `0 0 ${editorPct}%`, minHeight: 0, overflow: 'hidden' }}>
+                                <WebpageEditor
+                                    activeFile={activeFile}
+                                    html={html}
+                                    css={css}
+                                    js={js}
+                                    onChange={handleFileChange}
+                                    theme={theme}
+                                    onCursorChange={setCursor}
+                                />
+                            </div>
 
-                    {/* Preview */}
+                            {/* Editor/Preview resize handle */}
+                            <div
+                                onMouseDown={onEditorPreviewDrag}
+                                className="shrink-0 h-1 cursor-row-resize"
+                                style={{ background: 'var(--vsc-border)' }}
+                            />
+                        </>
+                    )}
+
+                    {/* Preview — always visible, full height when no editor is open */}
                     <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
-                        <WebpagePreview html={html} css={css} js={js} />
+                        <WebpagePreview
+                            html={html} css={css} js={js}
+                            onSelectionAttach={onSelectionAttach}
+                        />
                     </div>
                 </div>
 
@@ -264,6 +280,8 @@ export default function WebpageIDE({
                         onTierChange={onTierChange}
                         onPlanApprove={onPlanApprove}
                         onPlanReject={onPlanReject}
+                        attachedSelection={attachedSelection}
+                        onSelectionClear={onSelectionClear}
                     />
                 </div>
             </div>

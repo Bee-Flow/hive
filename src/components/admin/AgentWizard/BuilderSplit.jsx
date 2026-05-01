@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Plus, MessageCircle, Slack, Sparkles, Upload, Brain, AppWindow, ArrowLeft } from 'lucide-react';
+import { Send, Plus, MessageCircle, Slack, Sparkles, Upload, Brain, AppWindow, ArrowLeft, X, Search } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import PlanCard from './PlanCard';
 
@@ -19,6 +19,10 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, onBac
     const [savingState, setSavingState] = useState('idle'); // idle | saving | saved | error
     const [publishing, setPublishing] = useState(false);
 
+    const [skillPickerOpen, setSkillPickerOpen] = useState(false);
+    const [availableSkills, setAvailableSkills] = useState([]);
+    const [skillSearch, setSkillSearch] = useState('');
+
     const [chat, setChat] = useState(history || []);
     const [chatInput, setChatInput] = useState('');
     const [chatBusy, setChatBusy] = useState(false);
@@ -27,6 +31,20 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, onBac
     useEffect(() => {
         if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
     }, [chat]);
+
+    useEffect(() => {
+        if (!skillPickerOpen) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/api/skills`);
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!cancelled) setAvailableSkills(Array.isArray(data) ? data : []);
+            } catch (_) { /* skills feature may be disabled */ }
+        })();
+        return () => { cancelled = true; };
+    }, [skillPickerOpen]);
 
     // Debounced auto-save
     const saveTimer = useRef(null);
@@ -233,18 +251,30 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, onBac
                         </div>
                     </div>
 
-                    <div className="flex flex-wrap gap-2 mb-8">
-                        <ActionPill icon={<AppWindow size={14} />} label="Bladeren door apps" onClick={() => alert('App browser komt eraan')} />
-                        <ActionPill icon={<Sparkles size={14} />} label="Skill toevoegen" onClick={() => {
-                            const v = window.prompt('Skill naam');
-                            if (v) {
-                                const next = [...skills, v.trim()];
-                                setSkills(next);
-                                queueSave({ config: { ...(agent?.config || {}), wizard: { ...(agent?.config?.wizard || {}), suggestedSkills: next.map(n => ({ name: n })) } } });
-                            }
+                    <div className="flex flex-wrap gap-2 mb-8 relative">
+                        <ActionPill icon={<AppWindow size={14} />} label="Bladeren door apps" onClick={() => {
+                            window.open('/app/admin/integrations', '_blank');
                         }} />
-                        <ActionPill icon={<Upload size={14} />} label="Bestanden uploaden" onClick={() => alert('Upload via Kennis-paneel — open de agent na "Maken".')} />
+                        <ActionPill icon={<Sparkles size={14} />} label="Skill toevoegen" onClick={() => setSkillPickerOpen(v => !v)} active={skillPickerOpen} />
+                        <ActionPill icon={<Upload size={14} />} label="Bestanden uploaden" onClick={() => {
+                            if (agent?.id) window.open(`/app/agent-designer/${agent.id}`, '_blank');
+                        }} />
                         <ActionPill icon={<Brain size={14} />} label={`Geheugen${memoryEnabled ? ' • aan' : ''}`} onClick={toggleMemory} active={memoryEnabled} />
+
+                        {skillPickerOpen && (
+                            <SkillPicker
+                                available={availableSkills}
+                                selected={skills}
+                                search={skillSearch}
+                                onSearch={setSkillSearch}
+                                onClose={() => setSkillPickerOpen(false)}
+                                onToggle={(name) => {
+                                    const next = skills.includes(name) ? skills.filter(s => s !== name) : [...skills, name];
+                                    setSkills(next);
+                                    queueSave({ config: { ...(agent?.config || {}), wizard: { ...(agent?.config?.wizard || {}), suggestedSkills: next.map(n => ({ name: n })) } } });
+                                }}
+                            />
+                        )}
                     </div>
 
                     {skills.length > 0 && (
@@ -270,6 +300,53 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, onBac
                     </div>
                 </div>
             </main>
+        </div>
+    );
+}
+
+function SkillPicker({ available, selected, search, onSearch, onClose, onToggle }) {
+    const filtered = (available || []).filter(s =>
+        !search || (s.name || '').toLowerCase().includes(search.toLowerCase())
+    );
+    return (
+        <div className="absolute z-20 top-full left-0 mt-2 w-[420px] rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-lg p-3">
+            <div className="flex items-center gap-2 mb-2">
+                <Search size={14} className="text-[var(--text-tertiary)]" />
+                <input
+                    autoFocus
+                    value={search}
+                    onChange={(e) => onSearch(e.target.value)}
+                    placeholder="Vaardigheden zoeken"
+                    className="flex-1 bg-transparent outline-none text-sm text-[var(--text-primary)] placeholder-[var(--text-tertiary)]"
+                />
+                <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={14} /></button>
+            </div>
+            <div className="max-h-64 overflow-y-auto divide-y divide-[var(--border-default)]">
+                {filtered.length === 0 && (
+                    <div className="text-xs text-[var(--text-tertiary)] py-3 text-center">
+                        Geen vaardigheden gevonden. Maak ze aan via Admin → Skills.
+                    </div>
+                )}
+                {filtered.map((s) => {
+                    const checked = selected.includes(s.name);
+                    return (
+                        <button
+                            key={s.id || s.name}
+                            onClick={() => onToggle(s.name)}
+                            className="w-full flex items-center gap-3 py-2 text-left hover:bg-[var(--bg-secondary)] rounded-lg px-2"
+                        >
+                            <span className="text-base">{s.icon || '✨'}</span>
+                            <div className="flex-1 min-w-0">
+                                <div className="text-sm text-[var(--text-primary)] truncate">{s.name}</div>
+                                {s.description && <div className="text-xs text-[var(--text-tertiary)] truncate">{s.description}</div>}
+                            </div>
+                            <span className={`w-4 h-4 rounded-sm border flex items-center justify-center ${checked ? 'bg-[var(--accent)] border-[var(--accent)] text-white' : 'border-[var(--border-default)]'}`}>
+                                {checked && '✓'}
+                            </span>
+                        </button>
+                    );
+                })}
+            </div>
         </div>
     );
 }

@@ -7,7 +7,7 @@ const TABS = [
     { id: 'js',   label: 'script.js',  Icon: Cpu },
 ];
 
-export default function EditorTabs({ activeFile, onSelect, dirtyFiles = {} }) {
+export default function EditorTabs({ activeFile, onSelect, onClose, dirtyFiles = {} }) {
     return (
         <div
             className="flex items-end shrink-0 overflow-x-auto"
@@ -17,10 +17,9 @@ export default function EditorTabs({ activeFile, onSelect, dirtyFiles = {} }) {
                 const isActive = id === activeFile;
                 const isDirty = !!dirtyFiles[id];
                 return (
-                    <button
+                    <div
                         key={id}
-                        onClick={() => onSelect(id)}
-                        className="flex items-center gap-1.5 px-3 h-full text-[12px] shrink-0 transition-colors border-r relative"
+                        className="flex items-center h-full shrink-0 transition-colors border-r relative"
                         style={{
                             background: isActive ? 'var(--vsc-tab-active-bg)' : 'var(--vsc-tab-inactive-bg)',
                             color: isActive ? 'var(--vsc-tab-active-fg)' : 'var(--vsc-tab-inactive-fg)',
@@ -28,16 +27,31 @@ export default function EditorTabs({ activeFile, onSelect, dirtyFiles = {} }) {
                             borderTop: isActive ? '1px solid var(--vsc-accent)' : '1px solid transparent',
                         }}
                     >
-                        <Icon size={13} />
-                        <span>{label}</span>
-                        {isDirty && (
-                            <span
-                                className="w-2 h-2 rounded-full"
-                                style={{ background: 'var(--vsc-fg-muted)' }}
-                                title="Unsaved"
-                            />
+                        <button
+                            onClick={() => onSelect(id)}
+                            className="flex items-center gap-1.5 pl-3 pr-2 h-full text-[12px]"
+                            style={{ color: 'inherit' }}
+                        >
+                            <Icon size={13} />
+                            <span>{label}</span>
+                            {isDirty && (
+                                <span
+                                    className="w-2 h-2 rounded-full"
+                                    style={{ background: 'var(--vsc-fg-muted)' }}
+                                    title="Unsaved"
+                                />
+                            )}
+                        </button>
+                        {isActive && onClose && (
+                            <button
+                                onClick={onClose}
+                                className="flex items-center justify-center h-full pr-2 opacity-60 hover:opacity-100"
+                                title="Close editor (return to preview)"
+                            >
+                                <X size={12} />
+                            </button>
                         )}
-                    </button>
+                    </div>
                 );
             })}
         </div>
