@@ -382,17 +382,6 @@ const AgentDesigner = ({
                     </p>
                   </div>
                   <div className="flex items-center gap-3">
-                    {!systemMode && selectedAgent && hasPermission("manage_agents") && (
-                      <button
-                        onClick={() => { window.history.pushState({ page: 'agentWizard' }, '', '/app/agent-wizard'); window.dispatchEvent(new PopStateEvent('popstate')); }}
-                        className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 border text-[var(--text-secondary)] bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)]"
-                        style={{ borderColor: "var(--border-default)" }}
-                        title="Refine this agent with AI"
-                      >
-                        <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3l1.9 5.8L20 11l-6.1 2.2L12 19l-1.9-5.8L4 11l6.1-2.2L12 3z"/></svg>
-                        Refine with AI
-                      </button>
-                    )}
                     {!systemMode && selectedAgent && (
                       <>
                         {/* Publish Menu Toggle or Current State */}

@@ -1,7 +1,8 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Plus, Sparkles, Upload, Brain, AppWindow, ArrowLeft, X, Search } from 'lucide-react';
+import { Send, Plus, Sparkles, Upload, Brain, AppWindow, ArrowLeft, X, Search, ChevronDown, ChevronRight, Image as ImageIcon, Globe, BookOpen } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import useTranslation from '../../../hooks/useTranslation';
+import ModelTierSelector from '../../ModelTierSelector';
 import { INTEGRATION_CATALOG } from '../AgentDesigner/integrations';
 import PlanCard from './PlanCard';
 
@@ -10,8 +11,24 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
 
     const [agent, setAgent] = useState(initialAgent);
     const [name, setName] = useState(initialAgent?.name || plan?.name || t('agent_wizard.builder.name_placeholder'));
-    const [avatar, setAvatar] = useState(initialAgent?.config?.avatar || plan?.avatar || '🤖');
+    const [avatar, setAvatar] = useState(initialAgent?.avatar || initialAgent?.config?.avatar || plan?.avatar || '🤖');
+    const [description, setDescription] = useState(initialAgent?.description || plan?.description || '');
     const [instructions, setInstructions] = useState(initialAgent?.system_prompt || plan?.systemPrompt || '');
+    const [model, setModel] = useState(initialAgent?.model || '');
+    const [categoryId, setCategoryId] = useState(initialAgent?.category_id || null);
+    const [starterPrompts, setStarterPrompts] = useState(() => {
+        const sp = initialAgent?.starter_prompts;
+        if (Array.isArray(sp)) return sp;
+        if (typeof sp === 'string') { try { return JSON.parse(sp); } catch (_) { return []; } }
+        return [];
+    });
+    const [isPublished, setIsPublished] = useState(initialAgent?.is_published === 1 || initialAgent?.is_published === true);
+    const [sharedGroups, setSharedGroups] = useState(() => {
+        const g = initialAgent?.shared_groups;
+        if (Array.isArray(g)) return g;
+        if (typeof g === 'string') { try { return JSON.parse(g); } catch (_) { return []; } }
+        return [];
+    });
 
     // Canonical config fields (round-trip with AgentEditorUI)
     const [memoryEnabled, setMemoryEnabled] = useState(!!initialAgent?.config?.memoryEnabled);
@@ -22,8 +39,33 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     const [knowledgeBaseIds, setKnowledgeBaseIds] = useState(initialAgent?.config?.knowledge_base_ids || []);
     const [strictKnowledge, setStrictKnowledge] = useState(!!initialAgent?.config?.strictKnowledge);
     const [includeSourceReferences, setIncludeSourceReferences] = useState(!!initialAgent?.config?.includeSourceReferences);
+    // Behavior toggles
+    const [allowCopy, setAllowCopy] = useState(initialAgent?.config?.allowCopy !== false);
+    const [embedEnabled, setEmbedEnabled] = useState(initialAgent?.embed_enabled === 1 || initialAgent?.embed_enabled === true);
+    const [threadsEnabled, setThreadsEnabled] = useState(initialAgent?.threads_enabled !== 0 && initialAgent?.threads_enabled !== false);
+    const [workspaceEnabled, setWorkspaceEnabled] = useState(initialAgent?.workspace_enabled === 1 || initialAgent?.workspace_enabled === true);
+    const [disableExternalTools, setDisableExternalTools] = useState(initialAgent?.config?.disableExternalTools === true);
+    // Guardrails
+    const [enableGuardrails, setEnableGuardrails] = useState(initialAgent?.config?.enableGuardrails === true);
+    const [llamaGuardEnabled, setLlamaGuardEnabled] = useState(initialAgent?.config?.llamaGuardEnabled === true);
+    const [webSearchGuardEnabled, setWebSearchGuardEnabled] = useState(initialAgent?.config?.webSearchGuardEnabled === true);
+    // Bubble widget (subset of most-used)
+    const [bubbleColor, setBubbleColor] = useState(initialAgent?.config?.bubbleColor || '#6366F1');
+    const [bubblePosition, setBubblePosition] = useState(initialAgent?.config?.bubblePosition || 'bottom-right');
+
+    // Tier (for chat input)
+    const [tiers, setTiers] = useState({});
+    const [selectedTier, setSelectedTier] = useState('fast');
+
+    // Categories + groups (for selectors)
+    const [categories, setCategories] = useState([]);
+    const [orgGroups, setOrgGroups] = useState([]);
 
     const [savingState, setSavingState] = useState('idle');
+
+    // Section open/closed state for the inline accordion.
+    const [openSection, setOpenSection] = useState(null); // 'identity'|'model'|'knowledge'|'behavior'|'publishing'|'guardrails'|'embed'|null
+    const toggleSection = (s) => setOpenSection(prev => prev === s ? null : s);
 
     // Loaded once for pickers
     const [allSkills, setAllSkills] = useState(null);          // null = not loaded, [] = loaded but empty

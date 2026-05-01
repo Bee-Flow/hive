@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Plus, Sparkles, Settings2, Trash2 } from 'lucide-react';
+import { Plus, Sparkles, Trash2 } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import useTranslation from '../../../hooks/useTranslation';
 import AgentWizard from '../AgentWizard';
@@ -80,11 +80,6 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
             if (selectedAgent?.id === a.id) { setSelectedAgent(null); setMode('idle'); }
             await fetchAgents();
         } catch (err) { alert(err.message); }
-    };
-
-    const openAdvanced = () => {
-        if (!selectedAgent?.id || !onNavigate) return;
-        onNavigate(`agentDesignerAdvanced:${selectedAgent.id}`);
     };
 
     return (
@@ -174,22 +169,11 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
                         agent={selectedAgent}
                         plan={null}
                         history={[]}
-                        tier={'fast'}
-                        locale={undefined}
                         onBack={() => { setSelectedAgent(null); setMode('idle'); }}
                         onPublished={async (updated) => {
                             await fetchAgents();
                             if (updated) setSelectedAgent(updated);
                         }}
-                        rightHeaderExtras={
-                            <button
-                                onClick={openAdvanced}
-                                className="px-3 py-1.5 rounded-full text-xs border border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] flex items-center gap-1.5"
-                                title={t('agent_studio.advanced_settings')}
-                            >
-                                <Settings2 size={13} /> {t('agent_studio.advanced')}
-                            </button>
-                        }
                     />
                 )}
             </section>
