@@ -44,5 +44,12 @@ export default function useAutomationApi() {
 }
 
 async function safeText(r) {
-    try { const j = await r.json(); return j.error || JSON.stringify(j); } catch { return r.statusText; }
+    try {
+        const j = await r.json();
+        // Surface validator details so the user can see WHY the definition is rejected.
+        if (j.error && Array.isArray(j.details) && j.details.length) {
+            return `${j.error}: ${j.details.join('; ')}`;
+        }
+        return j.error || JSON.stringify(j);
+    } catch { return r.statusText; }
 }
