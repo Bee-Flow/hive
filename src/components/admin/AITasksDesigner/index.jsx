@@ -57,7 +57,7 @@ const STATUS_COLORS = {
     error: { bg: 'rgba(239,68,68,0.08)', color: '#ef4444', label: '❌ Error' },
 };
 
-export default function AITasksDesigner({ initialTaskId = null, onClose, modelTiers = {}, embedded = false }) {
+export default function AITasksDesigner({ initialTaskId = null, onClose, modelTiers = {}, embedded = false, user = null }) {
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(false);
     const [maxTasks, setMaxTasks] = useState(10);
@@ -376,6 +376,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                             <BuilderShell
                                 automationId={builderAutomationId || null}
                                 onBack={() => { setBuilderAutomationId(null); setOpeningBuilder(false); }}
+                                user={user}
                             />
                         )}
                     </div>

@@ -89,6 +89,7 @@ export default function Studio({
                         onClose={onClose}
                         modelTiers={modelTiers}
                         embedded={true}
+                        user={user}
                     />
                 )}
             </div>

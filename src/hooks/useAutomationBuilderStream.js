@@ -33,7 +33,7 @@ export default function useAutomationBuilderStream(initial = {}) {
         setState(s => ({ ...s, messages: [], draft: null, summary: '', dryRun: null, steps: [], finalizedId: null, error: null }));
     }, []);
 
-    const send = useCallback(async ({ message, modelTier = 'fast', timezone, history }) => {
+    const send = useCallback(async ({ message, modelTier = 'auto', timezone, history, attachments = [], webSearchEnabled = true, disabledMedia = {} }) => {
         if (abortRef.current) {
             try { abortRef.current.abort(); } catch {}
         }
@@ -58,6 +58,9 @@ export default function useAutomationBuilderStream(initial = {}) {
                     builderSessionId: state.builderSessionId,
                     automationId: state.automationId,
                     history: (history || state.messages.filter(m => m.role === 'user' || m.role === 'assistant').map(m => ({ role: m.role, content: m.content }))).slice(-20),
+                    attachments: Array.isArray(attachments) ? attachments : [],
+                    webSearchEnabled: !!webSearchEnabled,
+                    disabledMedia: disabledMedia || {},
                 }),
                 signal: ac.signal,
             });
