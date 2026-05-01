@@ -24,7 +24,6 @@ import php from 'highlight.js/lib/languages/php';
 import markdown from 'highlight.js/lib/languages/markdown';
 import 'highlight.js/styles/github-dark.min.css';
 import LiveAppRenderer from './LiveAppRenderer';
-import FormRenderer from './FormRenderer';
 import PageRenderer from './PageRenderer';
 import ResearchRenderer from './ResearchRenderer';
 import TestReportRenderer from './TestReportRenderer';
@@ -265,7 +264,7 @@ const CollapsibleCodeBlock = ({ className, children, ...props }) => {
     );
 };
 
-const MarkdownRenderer = ({ content, className = '', onFormSubmit, formId, isFormSubmitted, savedFormData = {}, isLoading = false, ...props }) => {
+const MarkdownRenderer = ({ content, className = '', isLoading = false, ...props }) => {
     // Throttle content updates to prevent flickering during streaming
     const THROTTLE_MS = 150;
     const [renderContent, setRenderContent] = useState(content);
@@ -386,7 +385,7 @@ const MarkdownRenderer = ({ content, className = '', onFormSubmit, formId, isFor
                 components={{
                     // Code blocks with syntax highlighting style
                     code({ node, inline, className, children, ...props }) {
-                        // Match language tag including hyphens (e.g., json-form, html-app)
+                        // Match language tag including hyphens (e.g., html-app)
                         const match = /language-([\w-]+)/.exec(className || '');
                         const language = match ? match[1] : '';
                         const codeString = String(children).replace(/\n$/, '');
@@ -400,43 +399,6 @@ const MarkdownRenderer = ({ content, className = '', onFormSubmit, formId, isFor
 
                         if (!inline && isWorkspace) {
                             return null; // Hidden — workspace tool handles display
-                        }
-
-                        // Check if this is a form code block
-                        const isForm = language === 'json-form' ||
-                            language === 'form' ||
-                            language === 'form-json';
-
-                        if (!inline && isForm) {
-                            // While streaming, show loading — don't attempt partial JSON renders
-                            if (isLoading) {
-                                return (
-                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
-                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
-                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Creating form...</span>
-                                    </div>
-                                );
-                            }
-                            try {
-                                JSON.parse(codeString);
-                                return (
-                                    <FormRenderer
-                                        code={codeString}
-                                        title="Form"
-                                        onSubmit={onFormSubmit}
-                                        initialSubmitted={isFormSubmitted}
-                                        initialFormData={savedFormData}
-                                    />
-                                );
-                            } catch {
-                                // Form JSON is incomplete - show loading indicator
-                                return (
-                                    <div className="my-2 flex items-center gap-3 p-4 rounded-xl" style={{ background: 'var(--bg-tertiary)' }}>
-                                        <div className="w-5 h-5 border-2 border-t-transparent rounded-full animate-spin" style={{ borderColor: 'var(--accent-primary)', borderTopColor: 'transparent' }} />
-                                        <span className="text-sm" style={{ color: 'var(--text-muted)' }}>Creating form...</span>
-                                    </div>
-                                );
-                            }
                         }
 
                         // Check if this is a page code block

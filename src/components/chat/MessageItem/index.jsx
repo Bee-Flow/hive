@@ -4,7 +4,6 @@ import useTranslation from '../../../hooks/useTranslation';
 import { Copy, Check, Bot, ChevronDown, Send, ThumbsUp, ThumbsDown, RefreshCw, Pencil, Download, FileText, MoreHorizontal } from 'lucide-react';
 import MarkdownRenderer from '../../MarkdownRenderer';
 import MapEmbedRenderer from '../../MapEmbedRenderer';
-import FormRenderer from '../../FormRenderer';
 import { API_BASE, authFetch, getToolLabel, getToolIcon } from '../../../utils/helpers';
 import AudioPlayerInline from './AudioPlayer';
 import ImageLightbox from './ImageLightbox';
@@ -30,8 +29,6 @@ const MessageItem = ({
     msg,
     selectedAgent,
     onCopy,
-    handleFormSubmit,
-    isFormSubmitted,
     allMessages = [],
     conversationId,
     agentId,
@@ -968,25 +965,6 @@ const MessageItem = ({
                         </div>
                         );
                     })()
-                )}
-
-                {/* Forms */}
-                {msg.form && (
-                    <div className="mt-4 bg-[var(--bg-primary)] rounded-lg p-4 border border-[var(--border-subtle)] w-full">
-                        <FormRenderer
-                            code={msg.form}
-                            onSubmit={(data) => {
-                                handleFormSubmit?.(msg, { text: data.text || "Form Submitted", formData: data.formData }, `form-${msg.id || idx}`);
-                            }}
-                            initialSubmitted={isFormSubmitted || !!msg.savedFormData}
-                            initialFormData={msg.savedFormData || {}}
-                        />
-                        {isFormSubmitted && (
-                            <div className="mt-3 text-xs text-green-500 flex items-center gap-1 font-medium bg-green-500/10 p-2 rounded">
-                                <Check className="w-3 h-3" /> Form Submitted Successfully
-                            </div>
-                        )}
-                    </div>
                 )}
 
                 {/* Attachments */}

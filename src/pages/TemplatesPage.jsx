@@ -67,7 +67,7 @@ export default function TemplatesPage({ user, onBack }) {
     const chatContainerRef = useRef(null);
 
     // useChatEngine — routes through dedicated template chat endpoint
-    const { messages: chatMessages, setMessages: setChatMessages, isLoading: chatLoading, sendMessage: sendChatMessage, stopGenerating: stopChatGenerating, retryMessage: retryChatMessage, editAndRegenerate: editAndRegenerateChat, submittedFormIds, setSubmittedFormIds } = useChatEngine({
+    const { messages: chatMessages, setMessages: setChatMessages, isLoading: chatLoading, sendMessage: sendChatMessage, stopGenerating: stopChatGenerating, retryMessage: retryChatMessage, editAndRegenerate: editAndRegenerateChat } = useChatEngine({
         selectedAgent: null,
         currentConversation: null,
         onConversationCreated: useCallback(() => {}, []),
@@ -681,15 +681,6 @@ export default function TemplatesPage({ user, onBack }) {
                                                     msg={msg}
                                                     selectedAgent={{ name: 'Template Assistant', avatar: '📝' }}
                                                     onCopy={(txt) => navigator.clipboard.writeText(txt)}
-                                                    handleFormSubmit={(formMsg, data, formId) => {
-                                                        setSubmittedFormIds(prev => new Set([...prev, formId]));
-                                                        // Build a readable message with form data values
-                                                        const formDataText = data.formData
-                                                            ? Object.entries(data.formData).map(([k, v]) => `${k}: ${v}`).join('\n')
-                                                            : data.text;
-                                                        sendChatMessage(`Form submitted:\n${formDataText}`);
-                                                    }}
-                                                    isFormSubmitted={submittedFormIds.has(`form-${msg.id || idx}`)}
                                                     allMessages={chatMessages}
                                                     chatSource="direct"
                                                     onRetry={retryChatMessage}

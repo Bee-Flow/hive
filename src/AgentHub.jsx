@@ -134,7 +134,7 @@ const AgentHub = ({
     }, [user?.id]);
 
     // Chat engine hook — owns messages, isLoading, sendMessage, stopGenerating
-    const { messages, setMessages, isLoading, sendMessage, stopGenerating, retryMessage, editAndRegenerate, submittedFormIds, setSubmittedFormIds } = useChatEngine({
+    const { messages, setMessages, isLoading, sendMessage, stopGenerating, retryMessage, editAndRegenerate } = useChatEngine({
         selectedAgent,
         currentConversation: directChatMode ? currentDirectConversation : currentConversation,
         onConversationCreated: useCallback((conversationId) => {
@@ -1160,27 +1160,6 @@ const AgentHub = ({
         selectConversation(result.agent_id, result.id);
     };
 
-    const handleFormSubmit = (msg, formSubmission, formKey) => {
-        setSubmittedFormIds(prev => new Set([...prev, formKey]));
-
-        setMessages(prev => prev.map(m =>
-            m.id === msg.id ? { ...m, savedFormData: formSubmission.formData } : m
-        ));
-
-        // Persist form data in background (don't block)
-        if (currentConversation?.id && selectedAgent) {
-            authFetch(`${API_BASE}/agents/${selectedAgent.id}/conversations/${currentConversation.id}/form-data`, {
-                method: 'PATCH',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ messageId: msg.id, formData: formSubmission.formData })
-            }).catch(err => console.error("Failed to persist form data", err));
-        }
-
-        // Populate the input field with the form answers so the user can send it
-        const messageText = formSubmission.text || 'Form submitted';
-        setChatInput(messageText);
-    };
-
     const getGroupedConversations = () => {
         const groups = { Today: [], Yesterday: [], 'Last 30 Days': [], Older: [] };
 
@@ -1701,8 +1680,6 @@ const AgentHub = ({
                                                     msg={msg}
                                                     selectedAgent={selectedAgent}
                                                     onCopy={(txt) => navigator.clipboard.writeText(txt)}
-                                                    handleFormSubmit={handleFormSubmit}
-                                                    isFormSubmitted={submittedFormIds.has(`form-${msg.id || idx}`)}
                                                     allMessages={messages}
                                                     conversationId={currentConversation?.id}
                                                     agentId={selectedAgent?.id}
@@ -1846,8 +1823,6 @@ const AgentHub = ({
                                                     msg={msg}
                                                     selectedAgent={{ name: 'AI', avatar: '💬' }}
                                                     onCopy={(txt) => navigator.clipboard.writeText(txt)}
-                                                    handleFormSubmit={handleFormSubmit}
-                                                    isFormSubmitted={submittedFormIds.has(`form-${msg.id || idx}`)}
                                                     allMessages={messages}
                                                     conversationId={currentDirectConversation?.id}
                                                     sessionSkills={directSessionSkills}

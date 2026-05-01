@@ -38,7 +38,6 @@ export default function useChatEngine({
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
     const [abortController, setAbortController] = useState(null);
-    const [submittedFormIds, setSubmittedFormIds] = useState(new Set());
 
     // Keep a ref in sync with messages so `sendMessage` can read the current
     // conversation without listing `messages` in its dep array. With `messages`
@@ -1181,7 +1180,5 @@ export default function useChatEngine({
         stopGenerating,
         retryMessage,
         editAndRegenerate,
-        submittedFormIds,
-        setSubmittedFormIds,
     };
 }

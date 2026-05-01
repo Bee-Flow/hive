@@ -248,7 +248,6 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     const { messages: chatMessages, setMessages: setChatMessages, isLoading: chatLoading,
         sendMessage: sendChatMessage, stopGenerating: stopChatGenerating,
         retryMessage: retryChatMessage, editAndRegenerate: editAndRegenerateChat,
-        submittedFormIds, setSubmittedFormIds
     } = useChatEngine({
         selectedAgent: null,
         currentConversation: null,
@@ -1179,8 +1178,6 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                                 modelTiers={modelTiers}
                                 selectedTier={selectedTier}
                                 onTierChange={setSelectedTier}
-                                submittedFormIds={submittedFormIds}
-                                setSubmittedFormIds={setSubmittedFormIds}
                                 onInsertToDocument={handleInsertToDocument}
                                 onCitationClick={(source) => setCitationSource(source)}
                             />

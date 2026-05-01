@@ -11,7 +11,6 @@ import InputArea from '../../components/InputArea';
 export default function WebpageChat({
     messages, isLoading, onSend, onStop, onRetry, onEdit,
     modelTiers, selectedTier, onTierChange,
-    submittedFormIds, setSubmittedFormIds,
     placeholder = 'Describe the webpage you want…',
 }) {
     const endRef = useRef(null);
@@ -27,13 +26,6 @@ export default function WebpageChat({
         navigator.clipboard.writeText(content).catch(() => {});
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
-    };
-
-    const handleFormSubmit = (msg, formSubmission, formKey) => {
-        if (setSubmittedFormIds) {
-            setSubmittedFormIds(prev => new Set([...prev, formKey]));
-        }
-        setChatInput(formSubmission.text || 'Form submitted');
     };
 
     return (
@@ -67,8 +59,6 @@ export default function WebpageChat({
                             idx={idx}
                             isUser={msg.role === 'user'}
                             onCopy={handleCopy}
-                            handleFormSubmit={handleFormSubmit}
-                            isFormSubmitted={submittedFormIds?.has(`form-${msg.id || idx}`)}
                             allMessages={messages}
                             modelTiers={modelTiers || {}}
                             onRetry={onRetry}

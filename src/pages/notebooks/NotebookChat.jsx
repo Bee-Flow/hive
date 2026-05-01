@@ -7,7 +7,6 @@ import InputArea from '../../components/InputArea';
 export default function NotebookChat({
     messages, isLoading, onSend, onStop, onRetry, onEdit,
     modelTiers, selectedTier, onTierChange,
-    submittedFormIds, setSubmittedFormIds,
     onInsertToDocument, kbSourcesLookup, onCitationClick,
 }) {
     const endRef = useRef(null);
@@ -24,13 +23,6 @@ export default function NotebookChat({
         navigator.clipboard.writeText(content).catch(() => {});
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
-    };
-
-    const handleFormSubmit = (msg, formSubmission, formKey) => {
-        if (setSubmittedFormIds) {
-            setSubmittedFormIds(prev => new Set([...prev, formKey]));
-        }
-        setChatInput(formSubmission.text || 'Form submitted');
     };
 
     return (
@@ -66,8 +58,6 @@ export default function NotebookChat({
                             idx={idx}
                             isUser={msg.role === 'user'}
                             onCopy={handleCopy}
-                            handleFormSubmit={handleFormSubmit}
-                            isFormSubmitted={submittedFormIds?.has(`form-${msg.id || idx}`)}
                             allMessages={messages}
                             modelTiers={modelTiers || {}}
                             onRetry={onRetry}

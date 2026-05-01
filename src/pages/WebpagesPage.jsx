@@ -114,7 +114,6 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
     const { messages: chatMessages, setMessages: setChatMessages, isLoading: chatLoading,
         sendMessage: sendChatMessage, stopGenerating: stopChatGenerating,
         retryMessage: retryChatMessage, editAndRegenerate: editAndRegenerateChat,
-        submittedFormIds, setSubmittedFormIds,
     } = useChatEngine({
         selectedAgent: null,
         currentConversation: null,
@@ -594,8 +593,6 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                     modelTiers={modelTiers}
                     selectedTier={selectedTier}
                     onTierChange={setSelectedTier}
-                    submittedFormIds={submittedFormIds}
-                    setSubmittedFormIds={setSubmittedFormIds}
                 />
             </div>
 

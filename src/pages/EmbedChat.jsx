@@ -22,7 +22,6 @@ const EmbedChat = ({ agentId }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [isStreaming, setIsStreaming] = useState(false);
     const [error, setError] = useState(null);
-    const [submittedFormIds, setSubmittedFormIds] = useState(new Set());
     // InputArea expects input/setInput as controlled props.
     const [input, setInput] = useState('');
     const messagesEndRef = useRef(null);
@@ -493,11 +492,6 @@ const EmbedChat = ({ agentId }) => {
         }
     };
 
-    const handleFormSubmit = (formId, formData) => {
-        setSubmittedFormIds(prev => new Set([...prev, formId]));
-        sendMessage(`Form submitted: ${JSON.stringify(formData)}`);
-    };
-
     // Loading state
     if (isLoading) {
         return (
@@ -578,8 +572,6 @@ const EmbedChat = ({ agentId }) => {
                                 msg={msg}
                                 selectedAgent={agent}
                                 onCopy={(txt) => navigator.clipboard.writeText(txt)}
-                                handleFormSubmit={handleFormSubmit}
-                                isFormSubmitted={submittedFormIds.has(`form-${msg.id || idx}`)}
                             />
                         ))}
                         <div ref={messagesEndRef} />

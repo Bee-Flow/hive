@@ -383,10 +383,6 @@ const AIComponentDesigner = ({ onComponentCreated, onClose }) => {
 
     const handleAutoFix = (msg) => sendMessage(`The previous operation failed with error: "${msg}". Please investigate, search for documentation if needed, and fix the issue.`, true);
     const handleOutputsSelected = (o) => sendMessage(`I have configured the outputs. The schema is: ${JSON.stringify(o, null, 2)}\n\nPlease use the 'update_component_outputs' tool to save this configuration.`, true);
-    const handleFormSubmit = async (d) => {
-        if (!d?.text) return;
-        sendMessage(d.text, true);
-    };
 
     const handleClearChat = async () => {
         try {
@@ -473,7 +469,7 @@ const AIComponentDesigner = ({ onComponentCreated, onClose }) => {
                     }}>
                     <div className="text-[12.5px] leading-[1.5] markdown-content compact-chat"
                         style={{ color: isUser ? '#fff' : 'var(--text-primary)' }}>
-                        <MarkdownRenderer content={msg.content} onFormSubmit={handleFormSubmit} />
+                        <MarkdownRenderer content={msg.content} />
                     </div>
                     {/* Output Selector */}
                     {msg.toolCalls?.some(t => t.name === 'configure_outputs_interaction') && (() => {
