@@ -32,6 +32,10 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
 
     // Canonical config fields (round-trip with AgentEditorUI)
     const [memoryEnabled, setMemoryEnabled] = useState(!!initialAgent?.config?.memoryEnabled);
+    // When per-agent memory is enabled, this flag controls whether the agent
+    // also reads from the user's general memory. Default true (read but don't
+    // write to general memory). False = fully isolated bucket.
+    const [useGeneralMemory, setUseGeneralMemory] = useState(initialAgent?.config?.useGeneralMemory !== false);
     const [attachedSkillIds, setAttachedSkillIds] = useState(initialAgent?.config?.attachedSkillIds || []);
     const [enabledIntegrations, setEnabledIntegrations] = useState(
         initialAgent?.config?.enabledIntegrations === undefined ? null : initialAgent.config.enabledIntegrations
@@ -229,6 +233,11 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         const next = !memoryEnabled;
         setMemoryEnabled(next);
         patchConfig({ memoryEnabled: next });
+    };
+    const toggleUseGeneralMemory = () => {
+        const next = !useGeneralMemory;
+        setUseGeneralMemory(next);
+        patchConfig({ useGeneralMemory: next });
     };
     const toggleSkill = (id) => {
         const next = attachedSkillIds.includes(id) ? attachedSkillIds.filter(x => x !== id) : [...attachedSkillIds, id];
@@ -486,6 +495,26 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                             />
                         )}
                     </div>
+
+                    {memoryEnabled && (
+                        <div className="mb-8 p-3 rounded-xl border border-[var(--border-default)] bg-[var(--bg-secondary)]">
+                            <div className="text-xs text-[var(--text-secondary)] mb-2">
+                                {t('agent_wizard.builder.memory_explainer')}
+                            </div>
+                            <label className="flex items-start gap-3 cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={useGeneralMemory}
+                                    onChange={toggleUseGeneralMemory}
+                                    className="mt-1"
+                                />
+                                <div>
+                                    <div className="text-sm text-[var(--text-primary)]">{t('agent_wizard.builder.memory_use_general_label')}</div>
+                                    <div className="text-xs text-[var(--text-tertiary)]">{t('agent_wizard.builder.memory_use_general_help')}</div>
+                                </div>
+                            </label>
+                        </div>
+                    )}
 
                     {attachedSkillIds.length > 0 && (
                         <div className="mb-8">
