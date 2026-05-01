@@ -13,6 +13,7 @@ import LoginPage from './pages/LoginPage';
 import EncryptionSetup from './pages/EncryptionSetup';
 import EmbedChat from './pages/EmbedChat';
 import DlpPreviewModal from './components/DlpPreviewModal';
+import ProductWebsite from './marketing/ProductWebsite';
 
 import { LogOut, User, Shield, Settings, ChevronDown } from 'lucide-react';
 
@@ -157,7 +158,66 @@ function AppRoot() {
     if (chatMatch) {
         return <EmbedChat agentId={chatMatch[1]} />;
     }
+    // Root-path marketing-site gate: when the CMS is enabled, intercept "/"
+    // and render the public product website. When disabled, replace the URL
+    // with /app so the login form lives there. Anything else falls through
+    // to the regular app shell.
+    if (window.location.pathname === '/' || window.location.pathname === '') {
+        return <RootPathGate />;
+    }
     return <App />;
+}
+
+function RootPathGate() {
+    // null = still fetching, false = disabled (redirect happening),
+    // object = { content } when CMS is enabled (or in preview mode).
+    const [cms, setCms] = React.useState(null);
+    const isPreview = new URLSearchParams(window.location.search).has('preview');
+
+    React.useEffect(() => {
+        let cancelled = false;
+        const params = new URLSearchParams(window.location.search);
+        const locale = (params.get('locale') || (navigator.language || 'en').split('-')[0]).toLowerCase();
+
+        // Preview mode: always render the marketing site so the admin's iframe
+        // shows something even when the public site is still disabled. Pull
+        // defaults from the admin endpoint so the page isn't empty before the
+        // first postMessage arrives.
+        if (isPreview) {
+            fetch(`${API_BASE}/api/cms/admin`, { credentials: 'include' })
+                .then(r => r.ok ? r.json() : null)
+                .catch(() => null)
+                .then(data => {
+                    if (cancelled) return;
+                    setCms({ content: data?.defaults || {} });
+                });
+            return;
+        }
+
+        fetch(`${API_BASE}/api/cms/site?locale=${encodeURIComponent(locale)}`)
+            .then(r => r.ok ? r.json() : { enabled: false })
+            .catch(() => ({ enabled: false }))
+            .then(data => {
+                if (cancelled) return;
+                if (data?.enabled) {
+                    setCms({ content: data.content || {} });
+                } else {
+                    // Marketing site disabled — redirect "/" to "/app" so the
+                    // login form lives at a stable URL. Use replaceState so
+                    // back-button doesn't loop.
+                    window.history.replaceState(null, '', '/app');
+                    setCms(false);
+                }
+            });
+        return () => { cancelled = true; };
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    if (cms === null) {
+        // Brief blank screen while we ask the server. Avoids flashing login.
+        return <div style={{ background: '#06090F', minHeight: '100vh' }} />;
+    }
+    if (cms === false) return <App />;
+    return <ProductWebsite content={cms.content} />;
 }
 
 

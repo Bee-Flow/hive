@@ -11,6 +11,7 @@ import ComplianceHub from '../components/admin/ComplianceHub';
 import SubscriptionsPanel from '../components/admin/SubscriptionsPanel';
 import LanguagesPanel from '../components/admin/LanguagesPanel';
 import AppearanceAdminPanel from '../components/admin/AppearanceAdminPanel';
+import ProductWebsitePanel from '../components/admin/ProductWebsite/ProductWebsitePanel';
 
 
 const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
@@ -35,6 +36,7 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
         { id: 'subscriptions', label: t('admin.tab_subscriptions'), perm: ['admin_subscriptions'], superAdminOnly: true },
         { id: 'appearance', label: t('admin.tab_appearance'), perm: ['admin_ai_config'], superAdminOnly: true },
         { id: 'languages', label: t('admin.tab_languages'), perm: ['admin_ai_config'], superAdminOnly: true },
+        { id: 'product-website', label: t('admin.tab_product_website'), perm: ['admin_ai_config'], superAdminOnly: true },
     ];
 
     // If current tab isn't allowed, fall back to the first tab the user has access to
@@ -184,6 +186,10 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                     ) : activeTab === 'languages' ? (
                         <div className="absolute inset-0 overflow-hidden">
                             <LanguagesPanel />
+                        </div>
+                    ) : activeTab === 'product-website' ? (
+                        <div className="absolute inset-0">
+                            <ProductWebsitePanel />
                         </div>
                     ) : null}
             </div>
