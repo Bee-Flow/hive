@@ -31,9 +31,22 @@ export default function AutomationList({ onOpenBuilder }) {
         await api.deleteAutomation(a.id);
         refresh();
     };
+    const [runStatus, setRunStatus] = useState({}); // automationId -> { state, message }
+
     const runNow = async (a) => {
-        await api.run(a.id);
-        // Quick visual confirmation; runs surface in run history.
+        setRunStatus(s => ({ ...s, [a.id]: { state: 'running' } }));
+        try {
+            const r = await api.run(a.id);
+            const summary = r?.run?.summary || (r?.pending ? 'Started — check history' : 'Done');
+            const status = r?.run?.status || (r?.pending ? 'pending' : 'success');
+            setRunStatus(s => ({ ...s, [a.id]: { state: status, message: summary } }));
+            // Refresh the list so lastStatus updates.
+            refresh();
+            // Auto-clear after 6s.
+            setTimeout(() => setRunStatus(s => { const c = { ...s }; delete c[a.id]; return c; }), 6000);
+        } catch (e) {
+            setRunStatus(s => ({ ...s, [a.id]: { state: 'error', message: e.message } }));
+        }
     };
 
     return (
@@ -71,6 +84,21 @@ export default function AutomationList({ onOpenBuilder }) {
                                 {a.scheduleCron ? ` · ${a.scheduleCron} (${a.scheduleTz})` : ''}
                                 {a.lastStatus ? ` · last: ${a.lastStatus}` : ''}
                             </div>
+                            {runStatus[a.id] && (
+                                <div style={{
+                                    fontSize: 12,
+                                    marginTop: 4,
+                                    padding: '4px 8px',
+                                    borderRadius: 6,
+                                    background: runStatus[a.id].state === 'running' ? '#fef3c7'
+                                        : runStatus[a.id].state === 'success' ? '#dcfce7'
+                                        : runStatus[a.id].state === 'error' ? '#fee2e2'
+                                        : '#e5e7eb',
+                                    color: runStatus[a.id].state === 'error' ? '#991b1b' : '#374151',
+                                }}>
+                                    {runStatus[a.id].state === 'running' ? 'Running…' : runStatus[a.id].message}
+                                </div>
+                            )}
                         </div>
                         <button onClick={() => toggle(a)} title={a.isActive ? 'Deactivate' : 'Activate'} style={iconBtn}>
                             {a.isActive ? <Pause size={16} /> : <Play size={16} />}
