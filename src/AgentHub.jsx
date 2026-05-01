@@ -19,6 +19,7 @@ import ProjectDetailPage from './components/ProjectDetailPage';
 import AdvancedSettings from './pages/AdvancedSettings';
 import AgentDesigner from './components/admin/AgentDesigner';
 import AgentStudio from './components/admin/AgentStudio';
+import Studio from './components/admin/Studio';
 import AITasksDesigner from './components/admin/AITasksDesigner';
 import SkillsPanel from './components/SkillsPanel';
 import EmailKBSettings from './components/EmailKBSettings';
@@ -38,6 +39,7 @@ const AgentHub = ({
     showSettings = false, onCloseSettings,
     showAgentDesigner = false, onCloseAgentDesigner, initialDesignerAgentId = null,
     showAgentWizard = false, onCloseAgentWizard,
+    showStudio = false, studioRoute = { section: 'agents', id: null }, onCloseStudio,
     showAITasks = false, onCloseAITasks, initialAITaskId = null,
     showSkillsPanel = false, onCloseSkillsPanel,
     showEmailKB = false, onCloseEmailKB,
@@ -477,13 +479,13 @@ const AgentHub = ({
     // Close KB and Projects views when the user navigates to a chat (agent or direct).
     // Mirrors how the agent marketplace closes itself in handleSelectAgent etc.
     useEffect(() => {
-        if (showMarketplace || showSettings || showAgentDesigner || showAgentWizard || showSkillsPanel || showEmailKB || showAITasks) {
+        if (showMarketplace || showSettings || showAgentDesigner || showAgentWizard || showStudio || showSkillsPanel || showEmailKB || showAITasks) {
             setShowKBStore(false);
             setActiveKBId(null);
             setShowProjectsStore(false);
             setActiveProjectId(null);
         }
-    }, [showMarketplace, showSettings, showAgentDesigner, showAgentWizard, showSkillsPanel, showEmailKB, showAITasks]);
+    }, [showMarketplace, showSettings, showAgentDesigner, showAgentWizard, showStudio, showSkillsPanel, showEmailKB, showAITasks]);
 
     // KB favourites: load from server, with one-time migration of any legacy
     // localStorage favorites left over from the client-side implementation.
@@ -1564,6 +1566,22 @@ const AgentHub = ({
                 ) : showSettings ? (
                     /* Settings rendered inline in conversation area — Open WebUI style */
                     <AdvancedSettings onBack={null} onNavigate={onNavigate} onLogout={onLogout} user={user} onClose={onCloseSettings} />
+                ) : showStudio ? (
+                    /* Unified Studio: Agents / Skills / AI Tasks under one shell. */
+                    <Studio
+                        user={user}
+                        section={studioRoute.section}
+                        initialAgentId={studioRoute.section === 'agents' ? studioRoute.id : null}
+                        initialSkillId={studioRoute.section === 'skills' ? studioRoute.id : null}
+                        initialTaskId={studioRoute.section === 'aiTasks' ? studioRoute.id : null}
+                        onClose={onCloseStudio}
+                        onNavigate={onNavigate}
+                        modelTiers={modelTiers}
+                        hasPermission={(perm) => {
+                            const perms = user?.permissions || [];
+                            return perms.includes('all') || perms.includes(perm);
+                        }}
+                    />
                 ) : showAgentDesigner ? (
                     /* Unified Agent Studio: list + wizard split layout. Replaces the
                        legacy AgentDesigner as the primary editor. The legacy form

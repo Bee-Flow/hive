@@ -10,6 +10,7 @@ import TemplatesPage from './pages/TemplatesPage';
 
 import AgentDesigner from './components/admin/AgentDesigner';
 import AgentWizard from './components/admin/AgentWizard';
+import Studio from './components/admin/Studio';
 import LoginPage from './pages/LoginPage';
 import EncryptionSetup from './pages/EncryptionSetup';
 import EmbedChat from './pages/EmbedChat';
@@ -31,6 +32,7 @@ const PAGE_ROUTES = {
     agentDesigner: '/app/agent-designer',
     agentDesignerAdvanced: '/app/agent-designer-advanced',
     agentWizard: '/app/agent-wizard',
+    studio: '/app/studio',
     aiTasks: '/app/ai-tasks',
     reports: '/app/reports',
     components: '/app/components',
@@ -76,6 +78,8 @@ function pageFromPath(pathname) {
     if (pathname === '/app/agent-designer' || pathname.startsWith('/app/agent-designer/')) return 'agentDesigner';
     // /app/agent-wizard → agentWizard
     if (pathname === '/app/agent-wizard' || pathname.startsWith('/app/agent-wizard/')) return 'agentWizard';
+    // /app/studio (and sub-sections) → unified Studio
+    if (pathname === '/app/studio' || pathname.startsWith('/app/studio/')) return 'studio';
     // /app/ai-tasks or /app/ai-tasks/* → aiTasks
     if (pathname === '/app/ai-tasks' || pathname.startsWith('/app/ai-tasks/')) return 'aiTasks';
     // /app/notebooks/:id → notebooks page (must come before generic /app/*)
@@ -123,6 +127,15 @@ function parseOrgSettingsPath(pathname) {
 function parseAgentDesignerUrl(pathname) {
     const match = pathname.match(/^\/app\/agent-designer(?:-advanced)?(?:\/([^/]+))?/);
     return match?.[1] || null;
+}
+
+// Parse /app/studio/{section}/{id?} → { section: 'agents'|'skills'|'aiTasks', id?: string }
+function parseStudioUrl(pathname) {
+    const m = pathname.match(/^\/app\/studio(?:\/([^/]+))?(?:\/([^/]+))?/);
+    const seg = m?.[1] || 'agents';
+    const id = m?.[2] || null;
+    const section = seg === 'ai-tasks' ? 'aiTasks' : (seg === 'skills' ? 'skills' : 'agents');
+    return { section, id };
 }
 
 // Parse the task id out of /app/ai-tasks/{taskId} (or "new"). Trailing segments ignored.
@@ -250,6 +263,8 @@ function App() {
     const [showProfileMenu, setShowProfileMenu] = useState(false);
     const [showAgentDesigner, setShowAgentDesigner] = useState(() => pageFromPath(window.location.pathname) === 'agentDesigner');
     const [showAgentWizard, setShowAgentWizard] = useState(() => pageFromPath(window.location.pathname) === 'agentWizard');
+    const [showStudio, setShowStudio] = useState(() => pageFromPath(window.location.pathname) === 'studio');
+    const [studioRoute, setStudioRoute] = useState(() => parseStudioUrl(window.location.pathname));
     const [initialDesignerAgentId, setInitialDesignerAgentId] = useState(() => parseAgentDesignerUrl(window.location.pathname));
     const [showAITasks, setShowAITasks] = useState(() => pageFromPath(window.location.pathname) === 'aiTasks');
     const [initialAITaskId, setInitialAITaskId] = useState(() => parseAITasksUrl(window.location.pathname));
@@ -371,6 +386,9 @@ function App() {
             const isDesigner = page === 'agentDesigner';
             setShowAgentDesigner(isDesigner);
             setShowAgentWizard(page === 'agentWizard');
+            const isStudio = page === 'studio';
+            setShowStudio(isStudio);
+            if (isStudio) setStudioRoute(parseStudioUrl(window.location.pathname));
             if (isDesigner) setInitialDesignerAgentId(parseAgentDesignerUrl(window.location.pathname));
             const isAITasks = page === 'aiTasks';
             setShowAITasks(isAITasks);
@@ -413,6 +431,33 @@ function App() {
                 window.history.pushState({ page: 'agentDesignerAdvanced' }, '', path);
             }
             setCurrentPage('agentDesignerAdvanced');
+            return;
+        }
+        // Unified Studio — Agents / Skills / AI Tasks under one shell.
+        // Accepts: 'studio', 'studio/agents', 'studio/skills', 'studio/ai-tasks',
+        // and 'studio/<section>/<id>' for deep links.
+        if (page === 'studio' || page.startsWith('studio/') || page.startsWith('studio:')) {
+            // Normalise: 'studio:agents:<id>' or 'studio/agents/<id>'.
+            const raw = page.replace(/^studio[/:]?/, '');
+            const parts = raw.split(/[/:]/).filter(Boolean);
+            const sectionRaw = parts[0] || 'agents';
+            const id = parts[1] || null;
+            const section = sectionRaw === 'ai-tasks' ? 'aiTasks' : (sectionRaw === 'skills' ? 'skills' : 'agents');
+            const pathSegment = section === 'aiTasks' ? 'ai-tasks' : section;
+            const path = id ? `/app/studio/${pathSegment}/${id}` : `/app/studio/${pathSegment}`;
+            setStudioRoute({ section, id });
+            setShowStudio(true);
+            setShowAgentDesigner(false);
+            setShowAgentWizard(false);
+            setShowSettings(false);
+            setShowSkillsPanel(false);
+            setShowAITasks(false);
+            setShowNotebooks(false);
+            setShowWebpages(false);
+            if (window.location.pathname !== path) {
+                window.history.pushState({ page: 'studio' }, '', path);
+            }
+            setCurrentPage('studio');
             return;
         }
         // Agent Wizard — full-page guided creation flow
@@ -862,6 +907,12 @@ function App() {
         }} initialDesignerAgentId={initialDesignerAgentId} showAgentWizard={showAgentWizard} onCloseAgentWizard={() => {
             setShowAgentWizard(false);
             if (window.location.pathname.startsWith('/app/agent-wizard')) {
+                setCurrentPage('agents');
+                window.history.pushState({ page: 'agents' }, '', '/app');
+            }
+        }} showStudio={showStudio} studioRoute={studioRoute} onCloseStudio={() => {
+            setShowStudio(false);
+            if (window.location.pathname.startsWith('/app/studio')) {
                 setCurrentPage('agents');
                 window.history.pushState({ page: 'agents' }, '', '/app');
             }

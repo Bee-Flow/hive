@@ -891,32 +891,18 @@ const Sidebar = ({
                                 </NavLink>
                             )}
 
-                            {!isMobile && (user?.isAdmin || user?.permissions?.includes('all') || user?.permissions?.includes('org_admin') || user?.permissions?.some?.(p => p.startsWith?.('admin_')) || user?.orgRole === 'admin' || user?.orgRole === 'org_admin') && (
+                            {!isMobile && (user?.isAdmin || user?.permissions?.includes('all') || user?.permissions?.includes('manage_agents') || user?.permissions?.includes('manage_skills') || user?.orgRole === 'admin' || user?.orgRole === 'org_admin') && (
                                 <NavLink
-                                    href="/agents"
+                                    href="/app/studio"
                                     onClick={() => setShowProfileMenu(false)}
-                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('agentDesigner'); }}
-                                    className={`${ROW} ${showAgentDesigner ? ROW_ACTIVE : ROW_IDLE}`}
+                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('studio'); }}
+                                    className={`${ROW} ${currentPage === 'studio' ? ROW_ACTIVE : ROW_IDLE}`}
                                     style={{ textDecoration: 'none', color: 'inherit' }}
-                                    data-testid="profile-menu-agents"
+                                    data-testid="profile-menu-studio"
                                 >
-                                    {showAgentDesigner && <div className={ACCENT_BAR} />}
-                                    <Bot className={`w-4 h-4 ${showAgentDesigner ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${showAgentDesigner ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.agents')}</span>
-                                </NavLink>
-                            )}
-                            {!isMobile && (user?.isAdmin || user?.permissions?.includes('all') || user?.permissions?.includes('manage_agents') || user?.orgRole === 'admin' || user?.orgRole === 'org_admin') && (
-                                <NavLink
-                                    href="/app/agent-wizard"
-                                    onClick={() => setShowProfileMenu(false)}
-                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('agentWizard'); }}
-                                    className={`${ROW} ${currentPage === 'agentWizard' ? ROW_ACTIVE : ROW_IDLE}`}
-                                    style={{ textDecoration: 'none', color: 'inherit' }}
-                                    data-testid="profile-menu-agent-wizard"
-                                >
-                                    {currentPage === 'agentWizard' && <div className={ACCENT_BAR} />}
-                                    <Sparkles className={`w-4 h-4 ${currentPage === 'agentWizard' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'agentWizard' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('agent_wizard.sidebar_link')}</span>
+                                    {currentPage === 'studio' && <div className={ACCENT_BAR} />}
+                                    <Bot className={`w-4 h-4 ${currentPage === 'studio' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
+                                    <span className={`text-[13px] ${currentPage === 'studio' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('studio.sidebar_link')}</span>
                                 </NavLink>
                             )}
                             {!isMobile && (

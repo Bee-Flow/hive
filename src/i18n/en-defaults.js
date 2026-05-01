@@ -1722,6 +1722,38 @@ const EN_DEFAULTS = {
     // ── Agent Wizard ─────────────────────────────────────────────
     "agent_wizard.sidebar_link": "Create agent with AI",
 
+    // Unified Studio (Agents + Skills + AI Tasks)
+    "studio.sidebar_link": "Studio",
+    "studio.tab.agents": "Agents",
+    "studio.tab.skills": "Skills",
+    "studio.tab.ai_tasks": "AI Tasks",
+
+    // Skills Studio
+    "skills_studio.title": "Skills",
+    "skills_studio.create": "Create skill",
+    "skills_studio.untitled": "Untitled skill",
+    "skills_studio.empty": "No skills yet — create one with the + button.",
+    "skills_studio.empty_title": "Create your first skill",
+    "skills_studio.empty_help": "Skills are reusable instruction packs you can attach to any agent. Create one to define how an agent should behave in a specific situation.",
+    "skills_studio.delete_title": "Delete skill",
+    "skills_studio.delete_confirm": "Delete skill \"{name}\"? Agents that use it will lose this behavior.",
+    "skills_studio.field.name_placeholder": "Skill name",
+    "skills_studio.field.description": "Description",
+    "skills_studio.field.description_placeholder": "Short summary of what this skill does",
+    "skills_studio.field.instructions": "Instructions",
+    "skills_studio.field.instructions_placeholder": "When and how the agent should use this skill (max 4000 chars)",
+    "skills_studio.field.workflow": "Workflow",
+    "skills_studio.field.workflow_placeholder": "Step-by-step process the agent should follow (optional)",
+    "skills_studio.field.rules": "Rules",
+    "skills_studio.field.rules_placeholder": "Hard rules and constraints (optional)",
+    "skills_studio.field.examples": "Examples",
+    "skills_studio.field.examples_placeholder": "Concrete examples of input/output (optional)",
+    "skills_studio.field.shared_label": "Share with organization",
+    "skills_studio.field.shared_help": "Other users in your org can attach this skill to their agents.",
+    "skills_studio.field.dynamic_label": "Dynamic activation",
+    "skills_studio.field.dynamic_help": "When on, the agent decides at runtime whether to apply this skill based on the user message.",
+    "skills_studio.field.shared_groups": "Visible to groups",
+
     "agent_studio.title": "Agents",
     "agent_studio.title_system": "System Agents",
     "agent_studio.create_with_ai": "Create with AI",
