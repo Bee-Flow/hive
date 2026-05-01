@@ -28,6 +28,12 @@ const SORT_OPTIONS = [
 
 const isImageIcon = (i) => typeof i === 'string' && (i.startsWith('data:') || i.startsWith('http'));
 
+const dominantSourceType = (kb) => {
+    // Without per-source counts, fall back to 'file' as default
+    if (!kb.dominant_source) return 'file';
+    return kb.dominant_source;
+};
+
 const formatNum = (n) => {
     const v = Number(n) || 0;
     if (v >= 1000) return (v / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
