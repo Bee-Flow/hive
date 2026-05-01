@@ -331,6 +331,7 @@ const EN_DEFAULTS = {
     "sidebar.remove_from_project": "Remove from project",
     "sidebar.admin_dashboard": "Admin Dashboard",
     "sidebar.meeting_notes": "Meeting Notes",
+    "sidebar.skills": "Skills",
     "sidebar.sign_out": "Sign Out",
     "chat.input_placeholder": "Type a message...",
     "chat.send": "Send",

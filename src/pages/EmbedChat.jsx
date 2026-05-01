@@ -370,12 +370,6 @@ const EmbedChat = ({ agentId }) => {
                                         m.id === assistantMsgId ? { ...m, thinking: (m.thinking || '') + data.text } : m
                                     ));
                                 }
-                            } else if (currentEvent === 'orchestrator_thinking') {
-                                if (data.text) {
-                                    setMessages(prev => prev.map(m =>
-                                        m.id === assistantMsgId ? { ...m, orchestratorThinking: (m.orchestratorThinking || '') + data.text } : m
-                                    ));
-                                }
                             } else if (currentEvent === 'email_draft') {
                                 const draftKey = JSON.stringify({ to: data.to, subject: data.subject, body: data.body });
                                 setMessages(prev => prev.map(m => {

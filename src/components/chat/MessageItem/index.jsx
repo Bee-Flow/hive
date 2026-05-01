@@ -660,7 +660,7 @@ const MessageItem = ({
 
                 {/* How I got this answer — comprehensive collapsed section */}
                 {!isUser && !isTool && !msg.isStreaming && msg.content && (
-                    (msg.thinking || msg.orchestratorThinking || msg.toolHistory?.length > 0 || msg.autoSelectedTier || msg.kbSources?.length > 0 || msg.tokenisationInfo?.count > 0) && (() => {
+                    (msg.thinking || msg.toolHistory?.length > 0 || msg.autoSelectedTier || msg.kbSources?.length > 0 || msg.tokenisationInfo?.count > 0) && (() => {
                         const visibleTools = msg.toolHistory?.filter(t => t.name !== 'sequentialthinking') || [];
                         const totalMs = visibleTools.reduce((acc, t) => acc + (t.endTime && t.startTime ? t.endTime - t.startTime : 0), 0);
                         const totalSec = totalMs > 0 ? (totalMs / 1000).toFixed(1) : null;
@@ -825,20 +825,6 @@ const MessageItem = ({
                                     {/* Reasoning is now rendered by <ThinkingPanel /> above the
                                         message content — auto-collapses to "Thought for Ns" after
                                         streaming completes, so it's no longer duplicated here. */}
-
-                                    {/* Orchestrator Thinking */}
-                                    {msg.orchestratorThinking && (
-                                        <details className="group/orch">
-                                            <summary className="flex items-center gap-2 cursor-pointer text-[11px] px-2 py-1.5 rounded-lg select-none list-none [&::-webkit-details-marker]:hidden transition-colors hover:bg-[var(--bg-tertiary)]" style={{ color: 'var(--text-secondary)' }}>
-                                                <span className="text-xs">🎯</span>
-                                                <span className="font-medium">Orchestrator Thinking</span>
-                                                <svg className="w-2.5 h-2.5 transition-transform group-open/orch:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
-                                            </summary>
-                                            <div className="mt-1 px-3 py-2 rounded-lg text-xs whitespace-pre-wrap leading-relaxed max-h-[300px] overflow-y-auto custom-scrollbar" style={{ fontStyle: 'italic', opacity: 0.8, color: 'var(--text-secondary)', background: 'var(--bg-tertiary)' }}>
-                                                {msg.orchestratorThinking}
-                                            </div>
-                                        </details>
-                                    )}
 
                                     {/* Sequential Thinking reference */}
                                     {msg.thinkingSteps?.length > 0 && (

@@ -86,7 +86,7 @@ export default function useChatEngine({
         const { assistantMsgId, userMsgId, activeIdRef, contentRef } = ids;
 
         // DEBUG: log non-content events to help debug LinkedIn draft issue
-        if (event !== 'content' && event !== 'thinking' && event !== 'orchestrator_thinking') {
+        if (event !== 'content' && event !== 'thinking') {
             console.log('[SSE Event]', event, data);
         }
 
@@ -168,17 +168,6 @@ export default function useChatEngine({
                         );
                         return { ...m, thinkingParts: parts, thinkingEndedAt: Date.now() };
                     }));
-                }
-                break;
-
-            case 'orchestrator_thinking':
-                if (data.text) {
-                    setMessages(prev => prev.map(m =>
-                        m.id === activeIdRef.current ? {
-                            ...m,
-                            orchestratorThinking: (m.orchestratorThinking || '') + data.text
-                        } : m
-                    ));
                 }
                 break;
 

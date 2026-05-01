@@ -417,7 +417,9 @@ const Sidebar = ({
     const [chatsOpen, setChatsOpen] = useState(() => readExpanded('chats', false));
     const [projectsOpen, setProjectsOpen] = useState(() => readExpanded('projects', true));
     const [activeAITaskCount, setActiveAITaskCount] = useState(0);
+    const [chatScrolled, setChatScrolled] = useState(false);
     const profileRef = useRef(null);
+    const scrollRegionRef = useRef(null);
 
     const toggleAgents = useCallback(() => setAgentsOpen(p => { writeExpanded('agents', !p); return !p; }), []);
     const toggleChats = useCallback(() => setChatsOpen(p => { writeExpanded('chats', !p); return !p; }), []);
@@ -448,6 +450,16 @@ const Sidebar = ({
         load();
         return () => { cancelled = true; };
     }, [showAITasks]);
+
+    // Fold the secondary nav into a compact icon row once the chat list scrolls.
+    useEffect(() => {
+        const el = scrollRegionRef.current;
+        if (!el) return;
+        const onScroll = () => setChatScrolled(el.scrollTop > 12);
+        onScroll();
+        el.addEventListener('scroll', onScroll, { passive: true });
+        return () => el.removeEventListener('scroll', onScroll);
+    }, [isOpen, isMobile]);
 
     // On mobile, completely hide when closed (hamburger in header opens it)
     if (!isOpen && isMobile) return null;
@@ -584,16 +596,40 @@ const Sidebar = ({
             </div>
 
             {/* ── Nav rows ── */}
-            <nav aria-label="Main navigation" data-testid="main-navigation" className={`px-2 pt-4 flex-shrink-0 flex flex-col gap-2 ${isOpen ? '' : 'items-center'}`}>
-                {[
-                    { label: t('sidebar.new_chat') || 'New Chat', icon: PenLine, onClick: onDirectChat, active: directChatMode && !selectedAgent },
-                    { label: t('sidebar.agents') || 'Agents', icon: Store, onClick: onOpenMarketplace, active: currentPage === 'marketplace' },
-                    ...(onOpenKBStore && (user?.isAdmin || (user?.permissions || []).includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('knowledge_bases_beta'))) ? [{ label: t('sidebar.knowledge_bases') || 'Knowledge Bases', icon: BookOpen, onClick: onOpenKBStore, active: currentPage === 'knowledgeBases', beta: true }] : []),
-                    { label: t('sidebar.ai_tasks') || 'AI Tasks', icon: Bot, onClick: () => onNavigate && onNavigate('aiTasks'), active: showAITasks, badge: activeAITaskCount },
-                    { label: t('sidebar.search'), icon: Search, onClick: onOpenSearch, active: false, kbd: (typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)) ? '⌘K' : 'Ctrl+K' },
-                ].map(({ label, icon: Icon, onClick, active, primary, beta, kbd, badge }) => (
+            {(() => {
+                const isAdminLike = user?.isAdmin || (user?.permissions || []).includes('all');
+                const betaFeatures = Array.isArray(user?.betaFeatures) ? user.betaFeatures : [];
+                const permissions = user?.permissions || [];
+                const featureFlags = user?.featureFlags || {};
+
+                const coreNav = [
+                    { key: 'new-chat', label: t('sidebar.new_chat') || 'New Chat', icon: PenLine, onClick: onDirectChat, active: directChatMode && !selectedAgent },
+                    { key: 'agents', label: t('sidebar.agents') || 'Agents', icon: Store, onClick: onOpenMarketplace, active: currentPage === 'marketplace' },
+                    { key: 'search', label: t('sidebar.search'), icon: Search, onClick: onOpenSearch, active: false, kbd: (typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)) ? '⌘K' : 'Ctrl+K' },
+                ];
+
+                const secondaryNav = [
+                    { key: 'ai-tasks', label: t('sidebar.ai_tasks') || 'AI Tasks', icon: Bot, onClick: () => onNavigate && onNavigate('aiTasks'), active: showAITasks, badge: activeAITaskCount },
+                    ...(onOpenKBStore && (isAdminLike || betaFeatures.includes('knowledge_bases_beta'))
+                        ? [{ key: 'kb', label: t('sidebar.knowledge_bases') || 'Knowledge Bases', icon: BookOpen, onClick: onOpenKBStore, active: currentPage === 'knowledgeBases', beta: true }]
+                        : []),
+                    ...(!isMobile && featureFlags.meeting_notes !== false && (isAdminLike || betaFeatures.includes('meeting_notes'))
+                        ? [{ key: 'meeting-notes', label: t('sidebar.meeting_notes') || 'Meeting Notes', icon: Mic, onClick: () => onNavigate && onNavigate('meetingNotes'), active: currentPage === 'meetingNotes', beta: true }]
+                        : []),
+                    ...(!isMobile && betaFeatures.includes('skills')
+                        ? [{ key: 'skills', label: t('sidebar.skills') || 'Skills', icon: Sparkles, onClick: () => onNavigate && onNavigate('skills'), active: currentPage === 'skills' || showSkillsPanel, beta: true }]
+                        : []),
+                    ...(!isMobile && (betaFeatures.includes('itil_ticket_assistant') || betaFeatures.includes('email_knowledge_base'))
+                        ? [{ key: 'ticket-assistant', label: t('ticket_assistant.sidebar_label') || 'Ticket Assistant', icon: Ticket, onClick: () => onNavigate && onNavigate('ticketAssistant'), active: showTicketAssistant, beta: true }]
+                        : []),
+                    ...(!isMobile && featureFlags.notebooks !== false && featureFlags.notebooksMenu !== false && (permissions.includes('all') || permissions.includes('use_notebooks'))
+                        ? [{ key: 'notebooks', label: t('sidebar.notebooks') || 'Notebooks', icon: FileText, onClick: () => onNavigate && onNavigate('notebooks'), active: currentPage === 'notebooks' }]
+                        : []),
+                ];
+
+                const renderRow = ({ key, label, icon: Icon, onClick, active, primary, beta, kbd, badge }) => (
                     <button
-                        key={label}
+                        key={key}
                         onClick={onClick}
                         className={`group relative flex items-center ${isOpen
                             ? ROW + ' ' + (active ? ROW_ACTIVE : ROW_IDLE)
@@ -617,8 +653,57 @@ const Sidebar = ({
                         )}
                         {isOpen && primary === undefined && beta && <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>}
                     </button>
-                ))}
-            </nav>
+                );
+
+                const renderIcon = ({ key, label, icon: Icon, onClick, active, badge }) => (
+                    <button
+                        key={key}
+                        onClick={onClick}
+                        title={label}
+                        aria-label={label}
+                        aria-current={active ? 'page' : undefined}
+                        data-testid={`nav-icon-${label.toLowerCase().replace(/\s+/g, '-')}`}
+                        className={`relative w-9 h-9 rounded-lg flex items-center justify-center transition-all ${active ? 'bg-[var(--accent-primary)]/15 text-[var(--accent-primary)]' : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]'}`}
+                    >
+                        <Icon className="w-4 h-4" strokeWidth={active ? 2.25 : 1.75} />
+                        {typeof badge === 'number' && badge > 0 && (
+                            <span
+                                className="absolute -top-0.5 -right-0.5 min-w-[14px] h-[14px] text-[9px] font-bold px-1 rounded-full tabular-nums flex items-center justify-center"
+                                style={{ background: '#8b5cf6', color: 'white' }}
+                            >
+                                {badge}
+                            </span>
+                        )}
+                    </button>
+                );
+
+                const collapsed = isOpen && !isMobile && chatScrolled;
+
+                return (
+                    <nav aria-label="Main navigation" data-testid="main-navigation" className={`px-2 pt-4 flex-shrink-0 flex flex-col gap-2 ${isOpen ? '' : 'items-center'}`}>
+                        {coreNav.map(renderRow)}
+                        {secondaryNav.length > 0 && (
+                            <div
+                                className="overflow-hidden transition-all duration-200 ease-out"
+                                style={{
+                                    maxHeight: collapsed ? '48px' : `${secondaryNav.length * 44 + 8}px`,
+                                    opacity: 1,
+                                }}
+                            >
+                                {collapsed ? (
+                                    <div className="flex flex-wrap gap-1 px-1 pt-1" data-testid="secondary-nav-collapsed">
+                                        {secondaryNav.map(renderIcon)}
+                                    </div>
+                                ) : (
+                                    <div className={`flex flex-col gap-2 ${isOpen ? '' : 'items-center'}`} data-testid="secondary-nav-expanded">
+                                        {secondaryNav.map(renderRow)}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </nav>
+                );
+            })()}
 
             {/* ── Favorite Agents (Narrow Mode) ── */}
             {!isOpen && favoriteAgents.length > 0 && (
@@ -640,7 +725,7 @@ const Sidebar = ({
             )}
 
             {/* ── Scrollable middle region (Projects + My Agents + Chats) ── */}
-            <div className={`flex-1 min-h-0 flex flex-col overflow-y-auto custom-scrollbar ${isOpen ? '' : ''}`}>
+            <div ref={scrollRegionRef} className={`flex-1 min-h-0 flex flex-col overflow-y-auto custom-scrollbar ${isOpen ? '' : ''}`}>
 
             {/* ── Projects ── */}
             {isOpen && user?.featureFlags?.projects !== false && projects.length > 0 && (
@@ -888,64 +973,8 @@ const Sidebar = ({
                                 </NavLink>
                             )}
                         </div>
-                        <div className="border-t border-[var(--border-subtle)] p-1">
-                            {!isMobile && user?.featureFlags?.meeting_notes !== false && (user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('meeting_notes'))) && (
-                                <NavLink
-                                    href="/meeting-notes"
-                                    onClick={() => setShowProfileMenu(false)}
-                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('meetingNotes'); }}
-                                    className={`${ROW} ${currentPage === 'meetingNotes' ? ROW_ACTIVE : ROW_IDLE}`}
-                                    style={{ textDecoration: 'none', color: 'inherit' }}
-                                >
-                                    {currentPage === 'meetingNotes' && <div className={ACCENT_BAR} />}
-                                    <Mic className={`w-4 h-4 ${currentPage === 'meetingNotes' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'meetingNotes' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.meeting_notes')}</span>
-                                    <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
-                                </NavLink>
-                            )}
-                            {!isMobile && (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('skills')) && (
-                                <NavLink
-                                    href="/skills"
-                                    onClick={() => setShowProfileMenu(false)}
-                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('skills'); }}
-                                    className={`${ROW} ${currentPage === 'skills' || showSkillsPanel ? ROW_ACTIVE : ROW_IDLE}`}
-                                    style={{ textDecoration: 'none', color: 'inherit' }}
-                                >
-                                    {(currentPage === 'skills' || showSkillsPanel) && <div className={ACCENT_BAR} />}
-                                    <Sparkles className={`w-4 h-4 ${currentPage === 'skills' || showSkillsPanel ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'skills' || showSkillsPanel ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.skills') || 'Skills'}</span>
-                                    <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
-                                </NavLink>
-                            )}
-                            {!isMobile && (Array.isArray(user?.betaFeatures) && (user.betaFeatures.includes('itil_ticket_assistant') || user.betaFeatures.includes('email_knowledge_base'))) && (
-                                <NavLink
-                                    href="/ticket-assistant"
-                                    onClick={() => setShowProfileMenu(false)}
-                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('ticketAssistant'); }}
-                                    className={`${ROW} ${showTicketAssistant ? ROW_ACTIVE : ROW_IDLE}`}
-                                    style={{ textDecoration: 'none', color: 'inherit' }}
-                                >
-                                    {showTicketAssistant && <div className={ACCENT_BAR} />}
-                                    <Ticket className={`w-4 h-4 ${showTicketAssistant ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${showTicketAssistant ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('ticket_assistant.sidebar_label') || 'Ticket Assistant'}</span>
-                                    <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>
-                                </NavLink>
-                            )}
-                            {!isMobile && user?.featureFlags?.notebooks !== false && user?.featureFlags?.notebooksMenu !== false && (user?.permissions?.includes('all') || user?.permissions?.includes('use_notebooks')) && (
-                                <NavLink
-                                    href="/notebooks"
-                                    onClick={() => setShowProfileMenu(false)}
-                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('notebooks'); }}
-                                    className={`${ROW} ${currentPage === 'notebooks' ? ROW_ACTIVE : ROW_IDLE}`}
-                                    style={{ textDecoration: 'none', color: 'inherit' }}
-                                >
-                                    {currentPage === 'notebooks' && <div className={ACCENT_BAR} />}
-                                    <FileText className={`w-4 h-4 ${currentPage === 'notebooks' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'notebooks' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.notebooks')}</span>
-                                </NavLink>
-                            )}
-
-                            {!isMobile && (user?.permissions?.includes('all') || (user?.permissions?.includes('use_webpages') && user?.betaFeatures?.includes('webpages'))) && (
+                        {!isMobile && (user?.permissions?.includes('all') || (user?.permissions?.includes('use_webpages') && user?.betaFeatures?.includes('webpages'))) && (
+                            <div className="border-t border-[var(--border-subtle)] p-1">
                                 <NavLink
                                     href="/webpages"
                                     onClick={() => setShowProfileMenu(false)}
@@ -957,9 +986,8 @@ const Sidebar = ({
                                     <Globe className={`w-4 h-4 ${currentPage === 'webpages' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
                                     <span className={`text-[13px] ${currentPage === 'webpages' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.webpages')}</span>
                                 </NavLink>
-                            )}
-
-                        </div>
+                            </div>
+                        )}
                         <div className="border-t border-[var(--border-subtle)] p-1">
                             <button onClick={onLogout} className={`${ROW} ${ROW_IDLE} group/so`} data-testid="sidebar-signout">
                                 <LogOut className="w-4 h-4 text-red-400 group-hover/so:text-red-500 transition-colors" strokeWidth={1.75} />

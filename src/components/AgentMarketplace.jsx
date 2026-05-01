@@ -100,12 +100,6 @@ const AgentCard = React.memo(({ agentId, name, avatar, description, typeLabel, i
                 </p>
             </div>
         </div>
-
-        <div className="mt-auto pt-2">
-            <span className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>
-                {typeLabel}
-            </span>
-        </div>
     </div>
 ));
 
