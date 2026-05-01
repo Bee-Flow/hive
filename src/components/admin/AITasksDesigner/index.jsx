@@ -4,6 +4,8 @@ import { API_BASE, authFetch } from '../../../utils/helpers';
 import MarkdownRenderer from '../../MarkdownRenderer';
 import ModelTierSelector from '../../ModelTierSelector';
 import { tierLabel } from '../../tierMeta';
+import AutomationList from './Builder/AutomationList';
+import BuilderShell from './Builder/BuilderShell';
 
 const REPEAT_OPTIONS = [
     { value: '',          label: 'One-time (no repeat)' },
@@ -62,6 +64,10 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
     const [resultModal, setResultModal] = useState(null);
     const [pendingDeleteTask, setPendingDeleteTask] = useState(null);
 
+    // Sub-tab: prompt tasks (legacy) or automations (new conversational builder)
+    const [subTab, setSubTab] = useState('prompt'); // 'prompt' | 'automations'
+    const [builderAutomationId, setBuilderAutomationId] = useState(null); // null = list, string = open builder
+    const [openingBuilder, setOpeningBuilder] = useState(false);
     // Editor view state — null means list/idle view
     const [editingTaskId, setEditingTaskId] = useState(null); // string = edit, 'new' = create
     const [title, setTitle] = useState('');
@@ -341,7 +347,45 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
 
     // ── Embedded split layout (inside Studio) ────────────────────────────────
     if (embedded) {
+        const subTabBar = (
+            <div className="flex items-center gap-1 px-3 py-2 border-b border-[var(--border-default)]">
+                <button
+                    onClick={() => { setSubTab('prompt'); setBuilderAutomationId(null); }}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold ${subTab === 'prompt' ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}
+                >
+                    Prompt Tasks
+                </button>
+                <button
+                    onClick={() => { setSubTab('automations'); }}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1 ${subTab === 'automations' ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}
+                >
+                    <Sparkles size={12} /> Automations
+                </button>
+            </div>
+        );
+
+        if (subTab === 'automations') {
+            return (
+                <div className="flex flex-col h-full bg-[var(--bg-primary)]">
+                    {subTabBar}
+                    <div className="flex-1 min-h-0">
+                        {builderAutomationId === null && !openingBuilder && (
+                            <AutomationList onOpenBuilder={(id) => { setBuilderAutomationId(id || ''); }} />
+                        )}
+                        {(builderAutomationId !== null || openingBuilder) && (
+                            <BuilderShell
+                                automationId={builderAutomationId || null}
+                                onBack={() => { setBuilderAutomationId(null); setOpeningBuilder(false); }}
+                            />
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
         return (
+          <div className="flex flex-col h-full bg-[var(--bg-primary)]">
+            {subTabBar}
             <div className="flex h-full bg-[var(--bg-primary)]">
                 {/* Sidebar */}
                 <aside className="w-64 flex-shrink-0 border-r border-[var(--border-default)] flex flex-col">
@@ -498,6 +542,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                 {resultModalEl}
                 {styles}
             </div>
+          </div>
         );
     }
 
