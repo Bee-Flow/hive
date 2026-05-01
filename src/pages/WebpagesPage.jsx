@@ -8,6 +8,7 @@ import useChatEngine from '../hooks/useChatEngine';
 import WebpageIDE from './webpages/WebpageIDE';
 import downloadWebpageZip from '../utils/downloadWebpageZip';
 import computeWebpageDiff from '../utils/computeWebpageDiff';
+import scopedStorage from '../utils/scopedStorage';
 
 function timeAgo(dateStr) {
     const d = new Date(dateStr);
@@ -41,6 +42,12 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
     const [sources, setSources] = useState([]);
     const [versions, setVersions] = useState([]);
     const [showVersions, setShowVersions] = useState(false);
+
+    // Extra files (multi-file projects) — array of file metadata, plus a map
+    // of path → content for text files / dataUrl for binaries. Hydrated on
+    // load and kept in sync via webpage_extra_update / _deleted SSE events.
+    const [extraFiles, setExtraFiles] = useState([]);
+    const [extraContents, setExtraContents] = useState({}); // path → { content?, dataUrl?, mimeType, isText }
 
     const [html, setHtml] = useState('');
     const [css, setCss] = useState('');
@@ -115,6 +122,19 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
     const [modelTiers, setModelTiers] = useState({});
     const [selectedTier, setSelectedTier] = useState('fast');
 
+    /* ── Chat mode (ask / auto / plan) — persisted per user ─── */
+    const [chatMode, setChatMode] = useState(() => {
+        try {
+            const stored = scopedStorage.getItem('webpages_chat_mode');
+            return ['ask', 'auto', 'plan'].includes(stored) ? stored : 'auto';
+        } catch { return 'auto'; }
+    });
+    const handleChatModeChange = useCallback((mode) => {
+        if (!['ask', 'auto', 'plan'].includes(mode)) return;
+        setChatMode(mode);
+        try { scopedStorage.setItem('webpages_chat_mode', mode); } catch {}
+    }, []);
+
     useEffect(() => {
         authFetch(`${API_BASE}/ai/config/chat-models`)
             .then(r => r.ok ? r.json() : {})
@@ -169,6 +189,7 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                     htmlContent: html,
                     cssContent: css,
                     jsContent: js,
+                    chatMode,
                 };
                 if (pendingPlanExecution) {
                     base.planExecution = pendingPlanExecution;
@@ -184,7 +205,7 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                 }
                 return base;
             },
-        }), [selectedTier, selected?.id, html, css, js, pendingPlanExecution, attachedSelection]),
+        }), [selectedTier, selected?.id, html, css, js, chatMode, pendingPlanExecution, attachedSelection]),
         onDirectConversationCreated: useCallback(() => {}, []),
         // Webpage-specific SSE events — useChatEngine forwards them via these callbacks.
         onWebpageDocUpdate: useCallback((data) => {
@@ -230,6 +251,40 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
         }, []),
         onWebpageSourceAdded: useCallback((source) => {
             setSources(prev => [...prev, source]);
+        }, []),
+        // Multi-file: a tool just created or updated an extra file. Refetch
+        // its content so the preview can inline it. Update the metadata list.
+        onWebpageExtraUpdate: useCallback(async (data) => {
+            const { path, meta } = data || {};
+            if (!path || !selected?.id) return;
+            setExtraFiles(prev => {
+                const idx = prev.findIndex(f => f.path === path);
+                if (idx >= 0) {
+                    const next = [...prev];
+                    next[idx] = { ...prev[idx], ...meta };
+                    return next;
+                }
+                return [...prev, meta];
+            });
+            try {
+                const r = await api(`/${selected.id}/files?path=${encodeURIComponent(path)}`);
+                setExtraContents(prev => ({
+                    ...prev,
+                    [path]: r?.contentBase64
+                        ? { mimeType: meta?.mimeType, isText: false, dataUrl: `data:${meta?.mimeType};base64,${r.contentBase64}` }
+                        : { mimeType: meta?.mimeType, isText: true, content: r?.content || '' },
+                }));
+            } catch (_) { /* ignore single-file fetch failures */ }
+        }, [selected?.id]),
+        onWebpageExtraDeleted: useCallback((data) => {
+            const path = data?.path;
+            if (!path) return;
+            setExtraFiles(prev => prev.filter(f => f.path !== path));
+            setExtraContents(prev => {
+                const next = { ...prev };
+                delete next[path];
+                return next;
+            });
         }, []),
     });
 
@@ -304,7 +359,7 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
     /* ── Load a webpage (deep-link or click) ─────────────────── */
     const loadWebpage = useCallback(async (id) => {
         try {
-            const { webpage, sources: srcs, files, chatMessages: persistedChat } = await api(`/${id}`);
+            const { webpage, sources: srcs, files, chatMessages: persistedChat, extraFiles: extras } = await api(`/${id}`);
             setSelected(webpage);
             setSources(srcs || []);
             const fHtml = files?.html || '', fCss = files?.css || '', fJs = files?.js || '';
@@ -314,12 +369,36 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
             // Restore the per-webpage chat history so the user keeps context
             // across refreshes. Fresh empty array if the webpage has none yet.
             setChatMessages(Array.isArray(persistedChat) ? persistedChat : []);
-            // Mark the loaded chat as already-saved so the debounced chat-save
-            // effect doesn't immediately re-PUT it back to the server.
             lastSavedChatRef.current = JSON.stringify(Array.isArray(persistedChat) ? persistedChat : []);
             lastSavedSnapshotRef.current = { html: fHtml, css: fCss, js: fJs };
             skipNextSaveRef.current = true;
             onWebpageChange?.(id);
+
+            // Hydrate extra files: metadata first, then fetch each file's
+            // content so the preview can inline them. Best-effort — preview
+            // works without them, just won't have inlined assets.
+            const extrasList = Array.isArray(extras) ? extras : [];
+            setExtraFiles(extrasList);
+            const contents = {};
+            await Promise.all(extrasList.map(async (meta) => {
+                try {
+                    const r = await api(`/${id}/files?path=${encodeURIComponent(meta.path)}`);
+                    if (r?.contentBase64) {
+                        contents[meta.path] = {
+                            mimeType: meta.mimeType,
+                            isText: false,
+                            dataUrl: `data:${meta.mimeType};base64,${r.contentBase64}`,
+                        };
+                    } else {
+                        contents[meta.path] = {
+                            mimeType: meta.mimeType,
+                            isText: true,
+                            content: r?.content || '',
+                        };
+                    }
+                } catch (_) { /* ignore single-file failures */ }
+            }));
+            setExtraContents(contents);
         } catch (err) {
             setError(err.message);
         }
@@ -511,8 +590,13 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
         // Flush any pending edits before zipping so the zip matches what's saved.
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
         await persist().catch(() => {});
-        await downloadWebpageZip({ name: selected.name, html, css, js });
-    }, [selected, html, css, js, persist]);
+        await downloadWebpageZip({
+            name: selected.name,
+            html, css, js,
+            extraFiles,
+            extraContents,
+        });
+    }, [selected, html, css, js, extraFiles, extraContents, persist]);
 
     const handleClose = () => {
         if (saveTimerRef.current) {
@@ -697,6 +781,8 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                     onHtmlChange={setHtml}
                     onCssChange={setCss}
                     onJsChange={setJs}
+                    extraFiles={extraFiles}
+                    extraContents={extraContents}
                     sources={sources}
                     onSourcesChange={setSources}
                     chatMessages={chatMessages}
@@ -714,6 +800,8 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                     onPlanApprove={handlePlanApprove}
                     onPlanReject={handlePlanReject}
                     onNewChat={handleNewChat}
+                    chatMode={chatMode}
+                    onChatModeChange={handleChatModeChange}
                     onSelectionAttach={handleSelectionAttach}
                     attachedSelection={attachedSelection}
                     onSelectionClear={handleSelectionClear}

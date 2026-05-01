@@ -94,12 +94,14 @@ export default function WebpageIDE({
     selected,
     html, css, js,
     onHtmlChange, onCssChange, onJsChange,
+    extraFiles = [], extraContents = {},
     sources, onSourcesChange,
     // Chat
     chatMessages, chatLoading,
     onChatSend, onChatStop, onChatRetry, onChatEdit,
     onPlanApprove, onPlanReject,
     onNewChat,
+    chatMode, onChatModeChange,
     onSelectionAttach,
     attachedSelection, onSelectionClear,
     modelTiers, selectedTier, onTierChange,
@@ -123,8 +125,14 @@ export default function WebpageIDE({
         try { scopedStorage.setItem('webpages_theme', next); } catch {}
     };
 
-    // Active pane in sidebar
-    const [sidebarPane, setSidebarPane] = useState('files');
+    // Active pane in sidebar — starts null so the sidebar is collapsed and the
+    // preview takes full width. Clicking an activity-bar icon expands; clicking
+    // the same icon again collapses.
+    const [sidebarPane, setSidebarPane] = useState(null);
+    const handleActivityBarSelect = (id) => {
+        setSidebarPane(prev => (prev === id ? null : id));
+    };
+    const sidebarOpen = sidebarPane !== null;
 
     // Active editor file. null = editor hidden (preview takes the full center
     // column). Clicking a file in the explorer or a tab opens the editor.
@@ -167,49 +175,60 @@ export default function WebpageIDE({
             <div className="flex flex-1 min-h-0">
 
                 {/* Activity bar */}
-                <ActivityBar active={sidebarPane} onSelect={setSidebarPane} />
+                <ActivityBar active={sidebarPane} onSelect={handleActivityBarSelect} />
 
-                {/* Sidebar */}
-                <div
-                    className="flex flex-col shrink-0 overflow-hidden"
-                    style={{ width: sidebarWidth, borderRight: '1px solid var(--vsc-border)', background: 'var(--vsc-sidebar-bg)' }}
-                >
-                    {sidebarPane === 'files' && (
-                        <FileExplorer
-                            activeFile={activeFile}
-                            onFileSelect={openFile}
-                            dirtyFiles={dirtyFiles}
-                        />
-                    )}
-                    {sidebarPane === 'sources' && (
-                        <WebpageSources
-                            webpageId={selected.id}
-                            sources={sources}
-                            onSourcesChange={onSourcesChange}
-                        />
-                    )}
-                    {sidebarPane === 'history' && (
+                {/* Sidebar — only mounted when a pane is selected. Click the
+                    same activity-bar icon again to collapse. */}
+                {sidebarOpen && (
+                    <>
                         <div
-                            className="flex items-center justify-center h-full text-[12px]"
-                            style={{ color: 'var(--vsc-fg-muted)' }}
+                            className="flex flex-col shrink-0 overflow-hidden"
+                            style={{ width: sidebarWidth, borderRight: '1px solid var(--vsc-border)', background: 'var(--vsc-sidebar-bg)' }}
                         >
-                            <button
-                                onClick={onVersionsClick}
-                                className="px-3 py-1.5 rounded text-[12px]"
-                                style={{ background: 'var(--vsc-accent)', color: '#fff' }}
-                            >
-                                Open version history
-                            </button>
+                            {sidebarPane === 'files' && (
+                                <FileExplorer
+                                    activeFile={activeFile}
+                                    onFileSelect={(file) => {
+                                        // Primary slot: 'html' | 'css' | 'js'  — opens Monaco.
+                                        // Extra file (object): selecting it does nothing
+                                        // editor-wise yet (the AI manages extras via tools).
+                                        if (typeof file === 'string') openFile(file);
+                                    }}
+                                    dirtyFiles={dirtyFiles}
+                                    extraFiles={extraFiles}
+                                />
+                            )}
+                            {sidebarPane === 'sources' && (
+                                <WebpageSources
+                                    webpageId={selected.id}
+                                    sources={sources}
+                                    onSourcesChange={onSourcesChange}
+                                />
+                            )}
+                            {sidebarPane === 'history' && (
+                                <div
+                                    className="flex items-center justify-center h-full text-[12px]"
+                                    style={{ color: 'var(--vsc-fg-muted)' }}
+                                >
+                                    <button
+                                        onClick={onVersionsClick}
+                                        className="px-3 py-1.5 rounded text-[12px]"
+                                        style={{ background: 'var(--vsc-accent)', color: '#fff' }}
+                                    >
+                                        Open version history
+                                    </button>
+                                </div>
+                            )}
                         </div>
-                    )}
-                </div>
 
-                {/* Sidebar resize handle */}
-                <div
-                    onMouseDown={onSidebarDrag}
-                    className="shrink-0 w-1 cursor-col-resize"
-                    style={{ background: 'transparent' }}
-                />
+                        {/* Sidebar resize handle (only when sidebar is open) */}
+                        <div
+                            onMouseDown={onSidebarDrag}
+                            className="shrink-0 w-1 cursor-col-resize"
+                            style={{ background: 'transparent' }}
+                        />
+                    </>
+                )}
 
                 {/* Center: editor + preview stacked */}
                 <div className="flex flex-col flex-1 min-w-0 min-h-0" ref={centerRef}>
@@ -252,6 +271,8 @@ export default function WebpageIDE({
                     <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
                         <WebpagePreview
                             html={html} css={css} js={js}
+                            extraFiles={extraFiles}
+                            extraContents={extraContents}
                             onSelectionAttach={onSelectionAttach}
                         />
                     </div>
@@ -282,6 +303,8 @@ export default function WebpageIDE({
                         onPlanApprove={onPlanApprove}
                         onPlanReject={onPlanReject}
                         onNewChat={onNewChat}
+                        chatMode={chatMode}
+                        onChatModeChange={onChatModeChange}
                         attachedSelection={attachedSelection}
                         onSelectionClear={onSelectionClear}
                     />

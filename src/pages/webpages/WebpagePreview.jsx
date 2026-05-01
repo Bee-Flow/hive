@@ -11,7 +11,7 @@ import composeWebpageDocument from '../../utils/composeWebpageDocument';
  *  • the host app's CSS / JS can never reach into the preview
  *  • parent.location, document.cookie, fetch() to the host app all fail
  */
-export default function WebpagePreview({ html, css, js, onSelectionAttach }) {
+export default function WebpagePreview({ html, css, js, extraFiles = [], extraContents = {}, onSelectionAttach }) {
     const [refreshKey, setRefreshKey] = useState(0);
 
     // The composed doc embeds a small script that posts user selections back
@@ -19,9 +19,17 @@ export default function WebpagePreview({ html, css, js, onSelectionAttach }) {
     // callback — keeps the iframe minimal everywhere else.
     const bridgeOn = typeof onSelectionAttach === 'function';
 
+    // Merge metadata + content into a single shape composeWebpageDocument expects.
+    const extras = useMemo(() => extraFiles.map(f => {
+        const c = extraContents[f.path];
+        return c
+            ? { path: f.path, isText: c.isText, mimeType: c.mimeType, content: c.content, dataUrl: c.dataUrl }
+            : { path: f.path, isText: f.isText, mimeType: f.mimeType };
+    }), [extraFiles, extraContents]);
+
     const srcDoc = useMemo(
-        () => composeWebpageDocument({ html, css, js }, { selectionBridge: bridgeOn }),
-        [html, css, js, bridgeOn]
+        () => composeWebpageDocument({ html, css, js }, { selectionBridge: bridgeOn, extraFiles: extras }),
+        [html, css, js, extras, bridgeOn]
     );
 
     useEffect(() => {

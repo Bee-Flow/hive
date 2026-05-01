@@ -4,6 +4,7 @@ import MessageItem from '../../components/chat/MessageItem';
 import InputArea from '../../components/InputArea';
 import WebpageDiffCard from '../../components/WebpageDiffCard';
 import WebpagePlanCard from '../../components/WebpagePlanCard';
+import WebpageChatModePicker from '../../components/WebpageChatModePicker';
 
 /**
  * AI chat panel scoped to a single webpage. Mirrors NotebookChat — receives
@@ -15,6 +16,7 @@ export default function WebpageChat({
     messages, isLoading, onSend, onStop, onRetry, onEdit,
     modelTiers, selectedTier, onTierChange,
     onPlanApprove, onPlanReject, onNewChat,
+    chatMode = 'auto', onChatModeChange,
     attachedSelection, onSelectionClear,
     placeholder = 'Describe the webpage you want…',
 }) {
@@ -40,6 +42,9 @@ export default function WebpageChat({
                     AI Chat
                 </span>
                 <span className="flex-1" />
+                {onChatModeChange && (
+                    <WebpageChatModePicker value={chatMode} onChange={onChatModeChange} />
+                )}
                 {onNewChat && (
                     <button
                         type="button"

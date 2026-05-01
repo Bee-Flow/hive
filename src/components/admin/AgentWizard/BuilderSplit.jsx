@@ -84,12 +84,21 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     useEffect(() => { agentIdRef.current = agent?.id; }, [agent?.id]);
 
     const saveTimer = useRef(null);
-    const inflight = useRef(null);
+    const inflightRef = useRef(false);
+    const dirtyRef = useRef(false);
 
     const flush = useCallback(async () => {
         const id = agentIdRef.current;
         if (!id) return;
         if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+        // Serialize: if a save is in progress, wait for it before issuing another.
+        // This prevents lost updates when the user changes things rapidly.
+        while (inflightRef.current) {
+            await new Promise(r => setTimeout(r, 50));
+        }
+        if (!dirtyRef.current) return;
+        dirtyRef.current = false;
+        inflightRef.current = true;
         const snapshot = {
             name: stateRef.current.name,
             description: stateRef.current.description,
@@ -105,7 +114,6 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
             if (!res.ok) throw new Error(await res.text());
             const updated = await res.json();
             setAgent(updated);
-            // Refresh ref from server so subsequent saves merge against canonical state
             stateRef.current = {
                 name: updated.name || snapshot.name,
                 description: updated.description || snapshot.description,
@@ -116,24 +124,65 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         } catch (err) {
             console.error('Auto-save failed:', err);
             setSavingState('error');
+            // Mark dirty again so a retry happens on next change.
+            dirtyRef.current = true;
+        } finally {
+            inflightRef.current = false;
+            // If something was changed while we were saving, schedule another flush.
+            if (dirtyRef.current) flush();
         }
     }, []);
 
-    const queueSave = useCallback(() => {
+    const queueSave = useCallback((immediate = false) => {
         if (!agentIdRef.current) return;
+        dirtyRef.current = true;
         setSavingState('saving');
         if (saveTimer.current) clearTimeout(saveTimer.current);
-        saveTimer.current = setTimeout(() => { saveTimer.current = null; flush(); }, 600);
+        if (immediate) {
+            saveTimer.current = null;
+            flush();
+        } else {
+            // Short debounce — keystrokes settle quickly, but we still want
+            // unfocused changes (toggles) to land near-instantly via `immediate`.
+            saveTimer.current = setTimeout(() => { saveTimer.current = null; flush(); }, 350);
+        }
     }, [flush]);
 
-    const patchConfig = useCallback((patch) => {
+    // Save before the user navigates away. sendBeacon-style fallback ensures
+    // a quick toggle right before close still reaches the server.
+    useEffect(() => {
+        const onBeforeUnload = () => {
+            if (saveTimer.current && agentIdRef.current && dirtyRef.current) {
+                clearTimeout(saveTimer.current);
+                saveTimer.current = null;
+                const snapshot = {
+                    name: stateRef.current.name,
+                    description: stateRef.current.description,
+                    systemPrompt: stateRef.current.systemPrompt,
+                    config: stateRef.current.config,
+                };
+                try {
+                    navigator.sendBeacon(
+                        `${API_BASE}/agents/${agentIdRef.current}`,
+                        new Blob([JSON.stringify(snapshot)], { type: 'application/json' })
+                    );
+                } catch (_) { /* ignore */ }
+            }
+        };
+        window.addEventListener('beforeunload', onBeforeUnload);
+        return () => window.removeEventListener('beforeunload', onBeforeUnload);
+    }, []);
+
+    const patchConfig = useCallback((patch, { immediate = true } = {}) => {
         stateRef.current.config = { ...stateRef.current.config, ...patch };
-        queueSave();
+        queueSave(immediate);
     }, [queueSave]);
 
-    const updateName = (v) => { setName(v); stateRef.current.name = v; queueSave(); };
+    // Typing: debounced.
+    const updateName = (v) => { setName(v); stateRef.current.name = v; queueSave(false); };
+    const updateInstructions = (v) => { setInstructions(v); stateRef.current.systemPrompt = v; queueSave(false); };
+    // Discrete actions: save immediately so a quick navigation still persists.
     const updateAvatar = (v) => { setAvatar(v); patchConfig({ avatar: v }); };
-    const updateInstructions = (v) => { setInstructions(v); stateRef.current.systemPrompt = v; queueSave(); };
     const toggleMemory = () => {
         const next = !memoryEnabled;
         setMemoryEnabled(next);
@@ -145,9 +194,6 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         patchConfig({ attachedSkillIds: next });
     };
     const toggleIntegration = (id, available) => {
-        // null in state = "all enabled by default" (matches AgentDesigner contract).
-        // First user toggle materializes the list to the currently-available set
-        // and removes/adds the chosen id from there.
         const baseList = enabledIntegrations || available.map(a => a.id);
         const next = baseList.includes(id) ? baseList.filter(x => x !== id) : [...baseList, id];
         setEnabledIntegrations(next);
@@ -159,6 +205,10 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     };
     const onStrictKnowledgeChange = (v) => { setStrictKnowledge(v); patchConfig({ strictKnowledge: v }); };
     const onIncludeSourceReferencesChange = (v) => { setIncludeSourceReferences(v); patchConfig({ includeSourceReferences: v }); };
+
+    // Flush on blur for typed fields — guarantees the change lands as soon
+    // as the user leaves the field, even if they click immediately to nav away.
+    const flushNow = () => { if (dirtyRef.current) flush(); };
 
     const handleRefine = async () => {
         const text = chatInput.trim();
@@ -200,13 +250,13 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         }
     };
 
-    // Flush any pending debounced save, then close.
+    // Flush any pending or in-flight save, then close.
     const handleDone = async () => {
         if (saveTimer.current) {
             clearTimeout(saveTimer.current);
             saveTimer.current = null;
-            await flush();
         }
+        if (dirtyRef.current || inflightRef.current) await flush();
         if (onPublished) onPublished(agent);
     };
 
@@ -316,6 +366,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                         <input
                             value={name}
                             onChange={(e) => updateName(e.target.value)}
+                            onBlur={flushNow}
                             className="flex-1 text-2xl font-semibold bg-transparent outline-none text-[var(--text-primary)] border-b border-transparent focus:border-[var(--border-default)] py-1"
                             placeholder={t('agent_wizard.builder.name_placeholder')}
                         />
@@ -416,6 +467,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                         <textarea
                             value={instructions}
                             onChange={(e) => updateInstructions(e.target.value)}
+                            onBlur={flushNow}
                             rows={10}
                             placeholder={t('agent_wizard.builder.instructions_placeholder')}
                             className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)] resize-y"

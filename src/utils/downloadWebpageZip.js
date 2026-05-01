@@ -1,13 +1,19 @@
 import JSZip from 'jszip';
 
 /**
- * Build a zip with `index.html`, `style.css`, and (optionally) `script.js`,
- * then trigger a browser download. The HTML is rewritten to reference the
+ * Build a zip with `index.html`, `style.css`, `script.js`, and any extra
+ * files in the project (preserving their relative paths and folders), then
+ * trigger a browser download. The HTML is rewritten to reference the
  * sibling CSS/JS files via <link> and <script> tags (idempotent — already-
  * present references aren't double-added) so the extracted folder Just Works
  * when the user opens index.html directly from disk.
+ *
+ * extraFiles: array of metadata { path, isText, mimeType, ... }
+ * extraContents: map of path → { content?, dataUrl?, isText, mimeType }
+ *   Text files come as a string; binary files come as a base64 data URL we
+ *   decode back to bytes for the zip.
  */
-export async function downloadWebpageZip({ name, html, css, js }) {
+export async function downloadWebpageZip({ name, html, css, js, extraFiles = [], extraContents = {} }) {
     const zip = new JSZip();
 
     let outHtml = html && html.trim()
@@ -35,6 +41,22 @@ export async function downloadWebpageZip({ name, html, css, js }) {
     zip.file('index.html', outHtml);
     if (css) zip.file('style.css', css);
     if (js) zip.file('script.js', js);
+
+    // Add every extra file at its declared path. JSZip auto-creates folders.
+    for (const meta of extraFiles) {
+        const c = extraContents[meta.path];
+        if (!c) continue;
+        if (c.isText && typeof c.content === 'string') {
+            zip.file(meta.path, c.content);
+        } else if (c.dataUrl && typeof c.dataUrl === 'string') {
+            // Strip the "data:<mime>;base64," prefix and decode.
+            const commaIdx = c.dataUrl.indexOf(',');
+            if (commaIdx > 0) {
+                const base64 = c.dataUrl.slice(commaIdx + 1);
+                zip.file(meta.path, base64, { base64: true });
+            }
+        }
+    }
 
     const blob = await zip.generateAsync({ type: 'blob' });
 

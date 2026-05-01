@@ -33,6 +33,8 @@ export default function useChatEngine({
     onNotebookThemeUpdate,
     onWebpageDocUpdate,
     onWebpageSourceAdded,
+    onWebpageExtraUpdate,
+    onWebpageExtraDeleted,
     onGammaPreview,
     activeSkillIds,
     onSessionSkillsChanged,
@@ -70,6 +72,12 @@ export default function useChatEngine({
 
     const onWebpageSourceAddedRef = useRef(onWebpageSourceAdded);
     useEffect(() => { onWebpageSourceAddedRef.current = onWebpageSourceAdded; }, [onWebpageSourceAdded]);
+
+    const onWebpageExtraUpdateRef = useRef(onWebpageExtraUpdate);
+    useEffect(() => { onWebpageExtraUpdateRef.current = onWebpageExtraUpdate; }, [onWebpageExtraUpdate]);
+
+    const onWebpageExtraDeletedRef = useRef(onWebpageExtraDeleted);
+    useEffect(() => { onWebpageExtraDeletedRef.current = onWebpageExtraDeleted; }, [onWebpageExtraDeleted]);
 
     const onGammaPreviewRef = useRef(onGammaPreview);
     useEffect(() => { onGammaPreviewRef.current = onGammaPreview; }, [onGammaPreview]);
@@ -729,6 +737,15 @@ export default function useChatEngine({
 
             case 'webpage_source_added':
                 onWebpageSourceAddedRef.current?.(data.source);
+                break;
+
+            // Multi-file events: extra-file create/update or delete.
+            case 'webpage_extra_update':
+                onWebpageExtraUpdateRef.current?.({ path: data.path, meta: data.meta });
+                break;
+
+            case 'webpage_extra_deleted':
+                onWebpageExtraDeletedRef.current?.({ path: data.path });
                 break;
 
             // Webpage plan proposal — attach to the in-flight assistant message
