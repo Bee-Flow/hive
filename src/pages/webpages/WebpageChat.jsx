@@ -1,6 +1,8 @@
 import React, { useRef, useEffect, useState } from 'react';
 import MessageItem from '../../components/chat/MessageItem';
 import InputArea from '../../components/InputArea';
+import WebpageDiffCard from '../../components/WebpageDiffCard';
+import WebpagePlanCard from '../../components/WebpagePlanCard';
 
 /**
  * AI chat panel scoped to a single webpage. Mirrors NotebookChat — receives
@@ -11,6 +13,7 @@ import InputArea from '../../components/InputArea';
 export default function WebpageChat({
     messages, isLoading, onSend, onStop, onRetry, onEdit,
     modelTiers, selectedTier, onTierChange,
+    onPlanApprove, onPlanReject,
     placeholder = 'Describe the webpage you want…',
 }) {
     const endRef = useRef(null);
@@ -63,6 +66,28 @@ export default function WebpageChat({
                             onRetry={onRetry}
                             onEditMessage={onEdit}
                         />
+                        {msg.webpagePlan && (
+                            <div className="mt-1 ml-1">
+                                <WebpagePlanCard
+                                    plan={msg.webpagePlan.plan}
+                                    planId={msg.webpagePlan.planId}
+                                    status={msg.webpagePlan.status || 'pending'}
+                                    onApprove={onPlanApprove}
+                                    onReject={onPlanReject}
+                                />
+                            </div>
+                        )}
+                        {Array.isArray(msg.webpageEdits) && msg.webpageEdits.length > 0 && (
+                            <div className="mt-1 ml-1">
+                                {msg.webpageEdits.map((edit, ei) => (
+                                    <WebpageDiffCard
+                                        key={`${idx}-${ei}-${edit.file}`}
+                                        file={edit.file}
+                                        diff={edit.diff}
+                                    />
+                                ))}
+                            </div>
+                        )}
                     </div>
                 ))}
                 <div ref={endRef} />

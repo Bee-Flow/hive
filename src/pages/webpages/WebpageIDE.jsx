@@ -98,6 +98,7 @@ export default function WebpageIDE({
     // Chat
     chatMessages, chatLoading,
     onChatSend, onChatStop, onChatRetry, onChatEdit,
+    onPlanApprove, onPlanReject,
     modelTiers, selectedTier, onTierChange,
     // Save
     saveState, lastSavedAt,
@@ -261,6 +262,8 @@ export default function WebpageIDE({
                         modelTiers={modelTiers}
                         selectedTier={selectedTier}
                         onTierChange={onTierChange}
+                        onPlanApprove={onPlanApprove}
+                        onPlanReject={onPlanReject}
                     />
                 </div>
             </div>

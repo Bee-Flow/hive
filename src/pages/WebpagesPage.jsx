@@ -7,6 +7,7 @@ import { API_BASE, authFetch } from '../utils/helpers';
 import useChatEngine from '../hooks/useChatEngine';
 import WebpageIDE from './webpages/WebpageIDE';
 import downloadWebpageZip from '../utils/downloadWebpageZip';
+import computeWebpageDiff from '../utils/computeWebpageDiff';
 
 function timeAgo(dateStr) {
     const d = new Date(dateStr);
@@ -114,6 +115,15 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
     }, []);
 
     /* ── Chat engine wiring ──────────────────────────────────── */
+    // Ref bridge so the SSE callback (closed over once at hook init) can call
+    // the latest setChatMessages without recreating the callback every render.
+    const setChatMessagesRef = useRef(null);
+
+    // Plan approval state — set when the user clicks "Approve & build" on a
+    // plan card; read by getExtraPayload so the next chat send carries the
+    // planExecution authorisation. Cleared after the round-trip starts.
+    const [pendingPlanExecution, setPendingPlanExecution] = useState(null);
+
     const { messages: chatMessages, setMessages: setChatMessages, isLoading: chatLoading,
         sendMessage: sendChatMessage, stopGenerating: stopChatGenerating,
         retryMessage: retryChatMessage, editAndRegenerate: editAndRegenerateChat,
@@ -129,26 +139,116 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
             customEndpoint: selected ? '/ai/chat/webpage/stream' : undefined,
             getExtraPayload: () => {
                 if (!selected) return {};
-                return {
+                const base = {
                     webpageId: selected.id,
                     htmlContent: html,
                     cssContent: css,
                     jsContent: js,
                 };
+                if (pendingPlanExecution) {
+                    base.planExecution = pendingPlanExecution;
+                }
+                return base;
             },
-        }), [selectedTier, selected?.id, html, css, js]),
+        }), [selectedTier, selected?.id, html, css, js, pendingPlanExecution]),
         onDirectConversationCreated: useCallback(() => {}, []),
         // Webpage-specific SSE events — useChatEngine forwards them via these callbacks.
         onWebpageDocUpdate: useCallback((data) => {
-            const { file, content } = data || {};
-            if (file === 'html') setHtml(content || '');
-            else if (file === 'css') setCss(content || '');
-            else if (file === 'js') setJs(content || '');
+            const { file, content, title } = data || {};
+            if (!file) return;
+            const next = content || '';
+
+            // Capture before-state from refs so the diff is computed against
+            // exactly what was on screen the moment the SSE arrived.
+            const before = file === 'html' ? htmlRef.current
+                         : file === 'css'  ? cssRef.current
+                         : file === 'js'   ? jsRef.current
+                         : '';
+
+            const diff = computeWebpageDiff(before, next);
+
+            // Apply the change to editor state.
+            if (file === 'html') setHtml(next);
+            else if (file === 'css') setCss(next);
+            else if (file === 'js') setJs(next);
+
+            // Attach a diff entry to the most recent assistant message so the
+            // chat panel can render a diff card below the AI's reply.
+            const updateMessages = setChatMessagesRef.current;
+            if (typeof updateMessages === 'function' && diff.summary !== 'no change') {
+                updateMessages(prev => {
+                    if (!prev || prev.length === 0) return prev;
+                    // Find latest assistant message (walk from end)
+                    for (let i = prev.length - 1; i >= 0; i--) {
+                        if (prev[i].role === 'assistant') {
+                            const msg = prev[i];
+                            const edits = Array.isArray(msg.webpageEdits) ? msg.webpageEdits : [];
+                            return [
+                                ...prev.slice(0, i),
+                                { ...msg, webpageEdits: [...edits, { file, title: title || file, diff }] },
+                                ...prev.slice(i + 1),
+                            ];
+                        }
+                    }
+                    return prev;
+                });
+            }
         }, []),
         onWebpageSourceAdded: useCallback((source) => {
             setSources(prev => [...prev, source]);
         }, []),
     });
+
+    // Bind the ref so the SSE callback above can mutate the chat-message list.
+    setChatMessagesRef.current = setChatMessages;
+
+    /* ── Plan approval handlers ─────────────────────────────── */
+    const handlePlanApprove = useCallback((planId) => {
+        if (!planId) return;
+        // Flip the matching plan card to approved status
+        setChatMessages(prev => prev.map(m => (
+            m.webpagePlan && m.webpagePlan.planId === planId
+                ? { ...m, webpagePlan: { ...m.webpagePlan, status: 'approved' } }
+                : m
+        )));
+        // Stage the planExecution payload for the next chat send and trigger it.
+        setPendingPlanExecution({ planId, action: 'execute' });
+        // Defer to the next tick so React has flushed the pendingPlanExecution
+        // state before getExtraPayload reads it.
+        setTimeout(() => {
+            sendChatMessage('Approved — please build the plan.', []);
+            // Clear the staging state once the request has been kicked off; the
+            // server has already received it, and we don't want it to leak
+            // into the next user turn.
+            setTimeout(() => setPendingPlanExecution(null), 100);
+        }, 0);
+    }, [sendChatMessage, setChatMessages]);
+
+    const handlePlanReject = useCallback((planId) => {
+        if (!planId) return;
+        setChatMessages(prev => prev.map(m => (
+            m.webpagePlan && m.webpagePlan.planId === planId
+                ? { ...m, webpagePlan: { ...m.webpagePlan, status: 'rejected' } }
+                : m
+        )));
+    }, [setChatMessages]);
+
+    // After a build round-trip finishes (chat goes idle), flip any plan card
+    // currently in "approved" state to "executed" so the user sees the ✓.
+    useEffect(() => {
+        if (chatLoading) return;
+        setChatMessages(prev => {
+            let changed = false;
+            const next = prev.map(m => {
+                if (m.webpagePlan && m.webpagePlan.status === 'approved') {
+                    changed = true;
+                    return { ...m, webpagePlan: { ...m.webpagePlan, status: 'executed' } };
+                }
+                return m;
+            });
+            return changed ? next : prev;
+        });
+    }, [chatLoading, setChatMessages]);
 
     /* ── Fetch webpages list ─────────────────────────────────── */
     const didAutoSelect = useRef(false);
@@ -524,6 +624,8 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                     onChatStop={stopChatGenerating}
                     onChatRetry={retryChatMessage}
                     onChatEdit={editAndRegenerateChat}
+                    onPlanApprove={handlePlanApprove}
+                    onPlanReject={handlePlanReject}
                     modelTiers={modelTiers}
                     selectedTier={selectedTier}
                     onTierChange={setSelectedTier}

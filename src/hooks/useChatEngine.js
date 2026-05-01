@@ -731,6 +731,29 @@ export default function useChatEngine({
                 onWebpageSourceAddedRef.current?.(data.source);
                 break;
 
+            // Webpage plan proposal — attach to the in-flight assistant message
+            // so the chat can render an approval card. The user will click
+            // Approve/Reject and the plan card flips status; on Approve a new
+            // chat send is fired with planExecution: { planId, action: 'execute' }.
+            case 'webpage_plan_proposed':
+                if (data && data.planId && data.plan) {
+                    const planEntry = { planId: data.planId, plan: data.plan, status: 'pending' };
+                    setMessages(prev => {
+                        if (!prev || prev.length === 0) return prev;
+                        for (let i = prev.length - 1; i >= 0; i--) {
+                            if (prev[i].role === 'assistant') {
+                                return [
+                                    ...prev.slice(0, i),
+                                    { ...prev[i], webpagePlan: planEntry },
+                                    ...prev.slice(i + 1),
+                                ];
+                            }
+                        }
+                        return prev;
+                    });
+                }
+                break;
+
             case 'slides_source_added':
                 onNotebookSourceAddedRef.current?.(data.source);
                 break;

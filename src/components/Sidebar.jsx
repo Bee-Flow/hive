@@ -905,6 +905,20 @@ const Sidebar = ({
                                     <span className={`text-[13px] ${showAgentDesigner ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.agents')}</span>
                                 </NavLink>
                             )}
+                            {!isMobile && (user?.isAdmin || user?.permissions?.includes('all') || user?.permissions?.includes('manage_agents') || user?.orgRole === 'admin' || user?.orgRole === 'org_admin') && (
+                                <NavLink
+                                    href="/app/agent-wizard"
+                                    onClick={() => setShowProfileMenu(false)}
+                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('agentWizard'); }}
+                                    className={`${ROW} ${currentPage === 'agentWizard' ? ROW_ACTIVE : ROW_IDLE}`}
+                                    style={{ textDecoration: 'none', color: 'inherit' }}
+                                    data-testid="profile-menu-agent-wizard"
+                                >
+                                    {currentPage === 'agentWizard' && <div className={ACCENT_BAR} />}
+                                    <Sparkles className={`w-4 h-4 ${currentPage === 'agentWizard' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
+                                    <span className={`text-[13px] ${currentPage === 'agentWizard' ? TEXT_ACTIVE : TEXT_IDLE}`}>Agent maken met AI</span>
+                                </NavLink>
+                            )}
                             {!isMobile && (
                                 <NavLink
                                     href="/settings"

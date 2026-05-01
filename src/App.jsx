@@ -9,6 +9,7 @@ import TemplatesPage from './pages/TemplatesPage';
 // NotebooksPage is imported by AgentHub now — it renders inline in the main content area.
 
 import AgentDesigner from './components/admin/AgentDesigner';
+import AgentWizard from './components/admin/AgentWizard';
 import LoginPage from './pages/LoginPage';
 import EncryptionSetup from './pages/EncryptionSetup';
 import EmbedChat from './pages/EmbedChat';
@@ -28,6 +29,7 @@ const PAGE_ROUTES = {
     orgSettings: '/app/org-settings',
     settings: '/app/settings',
     agentDesigner: '/app/agent-designer',
+    agentWizard: '/app/agent-wizard',
     aiTasks: '/app/ai-tasks',
     reports: '/app/reports',
     components: '/app/components',
@@ -69,6 +71,8 @@ function pageFromPath(pathname) {
     if (pathname === '/app/settings' || pathname.startsWith('/app/settings/')) return 'settings';
     // /app/agent-designer or /app/agent-designer/* → agentDesigner
     if (pathname === '/app/agent-designer' || pathname.startsWith('/app/agent-designer/')) return 'agentDesigner';
+    // /app/agent-wizard → agentWizard
+    if (pathname === '/app/agent-wizard' || pathname.startsWith('/app/agent-wizard/')) return 'agentWizard';
     // /app/ai-tasks or /app/ai-tasks/* → aiTasks
     if (pathname === '/app/ai-tasks' || pathname.startsWith('/app/ai-tasks/')) return 'aiTasks';
     // /app/notebooks/:id → notebooks page (must come before generic /app/*)
@@ -242,6 +246,7 @@ function App() {
     const [serverAvailable, setServerAvailable] = useState(null); // null=unknown, true=ok, false=down
     const [showProfileMenu, setShowProfileMenu] = useState(false);
     const [showAgentDesigner, setShowAgentDesigner] = useState(() => pageFromPath(window.location.pathname) === 'agentDesigner');
+    const [showAgentWizard, setShowAgentWizard] = useState(() => pageFromPath(window.location.pathname) === 'agentWizard');
     const [initialDesignerAgentId, setInitialDesignerAgentId] = useState(() => parseAgentDesignerUrl(window.location.pathname));
     const [showAITasks, setShowAITasks] = useState(() => pageFromPath(window.location.pathname) === 'aiTasks');
     const [initialAITaskId, setInitialAITaskId] = useState(() => parseAITasksUrl(window.location.pathname));
@@ -362,6 +367,7 @@ function App() {
             setShowSettings(page === 'settings');
             const isDesigner = page === 'agentDesigner';
             setShowAgentDesigner(isDesigner);
+            setShowAgentWizard(page === 'agentWizard');
             if (isDesigner) setInitialDesignerAgentId(parseAgentDesignerUrl(window.location.pathname));
             const isAITasks = page === 'aiTasks';
             setShowAITasks(isAITasks);
@@ -393,6 +399,19 @@ function App() {
         if (page === '/' || page === 'home') {
             setCurrentPage('agents');
             window.history.pushState({}, '', '/app');
+            return;
+        }
+        // Agent Wizard — full-page guided creation flow
+        if (page === 'agentWizard') {
+            setShowAgentWizard(true);
+            setShowAgentDesigner(false);
+            setShowSettings(false);
+            setShowSkillsPanel(false);
+            setShowAITasks(false);
+            if (window.location.pathname !== '/app/agent-wizard') {
+                window.history.pushState({ page: 'agentWizard' }, '', '/app/agent-wizard');
+            }
+            setCurrentPage('agentWizard');
             return;
         }
         // Agent Designer renders inline in conversation area
@@ -779,6 +798,19 @@ function App() {
 
         if (currentPage === 'components') {
             return <ComponentBuilder onBack={() => navigateToPage('agents')} />;
+        }
+
+        if (currentPage === 'agentWizard') {
+            return (
+                <AgentWizard
+                    user={user}
+                    onClose={() => navigateToPage('agents')}
+                    onPublished={(agent) => {
+                        if (agent?.id) navigateToPage(`agentDesigner:${agent.id}`);
+                        else navigateToPage('agents');
+                    }}
+                />
+            );
         }
 
 
