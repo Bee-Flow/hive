@@ -29,27 +29,6 @@ Example Structure:
 \`\`\`
 <!-- /CAPABILITY -->`
     },
-    FORMS: {
-        label: 'Forms',
-        description: 'Enables the agent to create interactive forms for data collection.',
-        instructions: `\n\n<!-- CAPABILITY: FORMS -->
-You can create interactive forms to collect user data. When asked to collect information, generate a JSON object with the strict \`json-form\` language tag.
-
-Supported field types: text, textarea, select, checkbox, radio, number, date, time, email.
-
-Example Structure:
-\`\`\`json-form
-{
-  "description": "Please provide your details",
-  "submitLabel": "Save Profile",
-  "fields": [
-    { "name": "fullName", "type": "text", "label": "Full Name", "required": true },
-    { "name": "role", "type": "select", "label": "Role", "options": ["User", "Admin"] }
-  ]
-}
-\`\`\`
-<!-- /CAPABILITY -->`
-    },
     PAGES: {
         label: 'Full Pages',
         description: 'Enables the agent to render full-page layouts for reports and dashboards.',

@@ -259,7 +259,7 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
     }, [selected?.id, selected?.transcript, selected?.fullText]);
 
     // useChatEngine — exact same as DirectChat
-    const { messages: chatMessages, setMessages: setChatMessages, isLoading: chatLoading, sendMessage: sendChatMessage, stopGenerating: stopChatGenerating, retryMessage: retryChatMessage, editAndRegenerate: editAndRegenerateChat, submittedFormIds, setSubmittedFormIds } = useChatEngine({
+    const { messages: chatMessages, setMessages: setChatMessages, isLoading: chatLoading, sendMessage: sendChatMessage, stopGenerating: stopChatGenerating, retryMessage: retryChatMessage, editAndRegenerate: editAndRegenerateChat } = useChatEngine({
         selectedAgent: null,
         currentConversation: null,
         onConversationCreated: useCallback(() => {}, []),
