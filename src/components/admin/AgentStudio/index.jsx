@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Plus, Sparkles, Trash2 } from 'lucide-react';
+import { Plus, Trash2, X } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import useTranslation from '../../../hooks/useTranslation';
 import AgentWizard from '../AgentWizard';
@@ -18,6 +18,9 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
     // mode: 'idle' (no agent + show wizard landing), 'wizard' (creating with AI),
     //       'edit' (editing selected agent in BuilderSplit)
     const [mode, setMode] = useState('idle');
+    const [pendingDelete, setPendingDelete] = useState(null);
+    const [deleting, setDeleting] = useState(false);
+    const [deleteError, setDeleteError] = useState(null);
 
     const fetchAgents = useCallback(async () => {
         setLoading(true);
@@ -37,8 +40,6 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
         const found = agents.find(a => a.id === initialAgentId);
         if (found) { setSelectedAgent(found); setMode('edit'); }
     }, [initialAgentId, agents]);
-
-    const startWizard = () => { setSelectedAgent(null); setMode('wizard'); };
 
     const createEmpty = async () => {
         try {
@@ -71,15 +72,29 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
 
     const selectAgent = (a) => { setSelectedAgent(a); setMode('edit'); };
 
-    const deleteAgent = async (a) => {
+    // Open the in-app confirmation modal. The actual delete happens in confirmDelete().
+    const requestDelete = (a) => {
         if (!a?.id) return;
-        if (!window.confirm(t('agent_studio.delete_confirm', { name: a.name }))) return;
+        setDeleteError(null);
+        setPendingDelete(a);
+    };
+
+    const confirmDelete = async () => {
+        const a = pendingDelete;
+        if (!a?.id || deleting) return;
+        setDeleting(true);
+        setDeleteError(null);
         try {
             const res = await authFetch(`${API_BASE}/agents/${a.id}`, { method: 'DELETE' });
             if (!res.ok) throw new Error(await res.text());
             if (selectedAgent?.id === a.id) { setSelectedAgent(null); setMode('idle'); }
             await fetchAgents();
-        } catch (err) { alert(err.message); }
+            setPendingDelete(null);
+        } catch (err) {
+            setDeleteError(err.message);
+        } finally {
+            setDeleting(false);
+        }
     };
 
     return (
@@ -89,22 +104,13 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
                 <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
                     <span className="text-sm font-semibold text-[var(--text-primary)]">{systemMode ? t('agent_studio.title_system') : t('agent_studio.title')}</span>
                     {!systemMode && hasPermission('manage_agents') && (
-                        <div className="flex items-center gap-1">
-                            <button
-                                onClick={startWizard}
-                                title={t('agent_studio.create_with_ai')}
-                                className="px-2 py-1 rounded-lg hover:bg-[var(--bg-secondary)] flex items-center gap-1 text-[11px] text-[var(--text-tertiary)]"
-                            >
-                                <Sparkles size={14} /> AI
-                            </button>
-                            <button
-                                onClick={createEmpty}
-                                title={t('agent_studio.create_empty')}
-                                className="p-1 rounded-lg hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)]"
-                            >
-                                <Plus size={16} />
-                            </button>
-                        </div>
+                        <button
+                            onClick={createEmpty}
+                            title={t('agent_studio.create_empty')}
+                            className="p-1 rounded-lg hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)]"
+                        >
+                            <Plus size={16} />
+                        </button>
                     )}
                 </div>
                 <div className="flex-1 overflow-y-auto p-1.5">
@@ -124,7 +130,7 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
                                 <span className="truncate flex-1">{a.name}</span>
                                 {!systemMode && hasPermission('manage_agents') && (
                                     <button
-                                        onClick={(e) => { e.stopPropagation(); deleteAgent(a); }}
+                                        onClick={(e) => { e.stopPropagation(); requestDelete(a); }}
                                         className="opacity-0 group-hover:opacity-100 text-[var(--text-tertiary)] hover:text-red-500"
                                         title={t('agent_studio.delete')}
                                     >
@@ -139,22 +145,10 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
 
             {/* Content */}
             <section className="flex-1 min-w-0 flex flex-col">
-                {mode === 'idle' && (
+                {(mode === 'idle' || mode === 'wizard') && (
                     <AgentWizard
                         user={user}
                         onClose={onClose}
-                        onSwitchToManual={createEmpty}
-                        onPublished={async (newAgent) => {
-                            await fetchAgents();
-                            if (newAgent?.id) { setSelectedAgent(newAgent); setMode('edit'); }
-                            else setMode('idle');
-                        }}
-                    />
-                )}
-                {mode === 'wizard' && (
-                    <AgentWizard
-                        user={user}
-                        onClose={() => setMode('idle')}
                         onSwitchToManual={createEmpty}
                         onPublished={async (newAgent) => {
                             await fetchAgents();
@@ -177,6 +171,51 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
                     />
                 )}
             </section>
+
+            {pendingDelete && (
+                <div
+                    className="fixed inset-0 z-[1000] bg-black/50 flex items-center justify-center p-4"
+                    onClick={() => !deleting && setPendingDelete(null)}
+                >
+                    <div
+                        className="bg-[var(--bg-primary)] rounded-xl w-full max-w-md shadow-xl border border-[var(--border-default)]"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-start justify-between px-5 py-4 border-b border-[var(--border-default)]">
+                            <div className="text-sm font-semibold text-[var(--text-primary)]">{t('agent_studio.delete_title')}</div>
+                            <button
+                                onClick={() => !deleting && setPendingDelete(null)}
+                                className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+                                disabled={deleting}
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="px-5 py-4 text-sm text-[var(--text-secondary)]">
+                            {t('agent_studio.delete_confirm', { name: pendingDelete.name })}
+                        </div>
+                        {deleteError && (
+                            <div className="px-5 pb-2 text-xs text-red-500">{deleteError}</div>
+                        )}
+                        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-[var(--border-default)]">
+                            <button
+                                onClick={() => setPendingDelete(null)}
+                                disabled={deleting}
+                                className="px-4 py-2 rounded-full text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] disabled:opacity-50"
+                            >
+                                {t('agent_studio.cancel')}
+                            </button>
+                            <button
+                                onClick={confirmDelete}
+                                disabled={deleting}
+                                className="px-4 py-2 rounded-full text-sm bg-red-500 text-white hover:bg-red-600 disabled:opacity-50"
+                            >
+                                {deleting ? '…' : t('agent_studio.delete')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

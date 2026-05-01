@@ -1729,7 +1729,9 @@ const EN_DEFAULTS = {
     "agent_studio.empty": "No agents yet — create one with AI or start empty.",
     "agent_studio.untitled": "Untitled agent",
     "agent_studio.delete": "Delete",
+    "agent_studio.delete_title": "Delete agent",
     "agent_studio.delete_confirm": "Delete agent \"{name}\"? This cannot be undone.",
+    "agent_studio.cancel": "Cancel",
     "agent_studio.advanced": "Advanced",
     "agent_studio.advanced_settings": "Advanced settings (guardrails, sharing, embed)",
 
