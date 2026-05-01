@@ -439,20 +439,59 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                                 New AI Task
                             </button>
                         </div>
-                    ) : (
-                        <EditorView
-                            title={title} setTitle={setTitle}
-                            prompt={prompt} setPrompt={setPrompt}
-                            date={date} setDate={setDate}
-                            time={time} setTime={setTime}
-                            repeatInterval={repeatInterval} setRepeatInterval={setRepeatInterval}
-                            tier={tier} setTier={setTier}
-                            modelTiers={modelTiers}
-                            canSave={canSave} isNewMode={isNewMode}
-                            onSave={saveTask} onCancel={resetForm}
-                            nextRunPreview={nextRunPreview}
-                        />
-                    )}
+                    ) : (() => {
+                        const currentTask = editingTaskId !== 'new'
+                            ? tasks.find(t => t.id === editingTaskId) || null
+                            : null;
+                        return (
+                            <>
+                                {/* Task action bar for existing tasks */}
+                                {currentTask && (
+                                    <div className="flex items-center gap-2 px-6 pt-5 pb-1 flex-wrap">
+                                        <button
+                                            onClick={() => runTaskNow(currentTask.id)}
+                                            disabled={currentTask.lastStatus === 'running'}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-50"
+                                            style={{ background: 'rgba(139,92,246,0.08)', color: '#8b5cf6' }}
+                                        >
+                                            <Play size={12} /> Run Now
+                                        </button>
+                                        <button
+                                            onClick={() => toggleTask(currentTask.id)}
+                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold"
+                                            style={{
+                                                background: currentTask.isActive ? 'rgba(245,158,11,0.08)' : 'rgba(34,197,94,0.08)',
+                                                color: currentTask.isActive ? '#f59e0b' : '#22c55e',
+                                            }}
+                                        >
+                                            {currentTask.isActive ? <><Pause size={12} /> Pause</> : <><Play size={12} /> Resume</>}
+                                        </button>
+                                        {currentTask.lastResult && (
+                                            <button
+                                                onClick={() => setResultModal({ title: currentTask.title, content: currentTask.lastResult })}
+                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold"
+                                                style={{ background: 'rgba(34,197,94,0.08)', color: '#22c55e' }}
+                                            >
+                                                View last result ↗
+                                            </button>
+                                        )}
+                                    </div>
+                                )}
+                                <EditorView
+                                    title={title} setTitle={setTitle}
+                                    prompt={prompt} setPrompt={setPrompt}
+                                    date={date} setDate={setDate}
+                                    time={time} setTime={setTime}
+                                    repeatInterval={repeatInterval} setRepeatInterval={setRepeatInterval}
+                                    tier={tier} setTier={setTier}
+                                    modelTiers={modelTiers}
+                                    canSave={canSave} isNewMode={isNewMode}
+                                    onSave={saveTask} onCancel={resetForm}
+                                    nextRunPreview={nextRunPreview}
+                                />
+                            </>
+                        );
+                    })()}
                 </section>
 
                 {deleteModal}

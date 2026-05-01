@@ -9,9 +9,9 @@ const INSTRUCTION_LIMIT = 4000;
 
 const TABS = [
     { id: 'instructions', label: 'Instructions', hint: 'What should the AI do? Be specific and detailed.', placeholder: 'e.g. When asked to summarize a meeting, extract all key decisions, action items with owners, and open questions...' },
-    { id: 'workflow', label: 'Workflow', hint: 'Step-by-step process to follow.', placeholder: 'e.g.\n1. Read the transcript\n2. Extract action items\n3. List decisions made\n4. Output in structured format...' },
-    { id: 'rules', label: 'Rules', hint: "Tone, format rules, dos and don'ts.", placeholder: 'e.g.\n- Always use bullet points\n- Keep summaries under 300 words\n- Highlight action items in bold...' },
-    { id: 'examples', label: 'Examples', hint: 'Example outputs or input/output pairs.', placeholder: 'e.g. Input: "Meeting transcript..."\nOutput: "## Summary\n..."' },
+    { id: 'workflow',     label: 'Workflow',     hint: 'Step-by-step process to follow.',                placeholder: 'e.g.\n1. Read the transcript\n2. Extract action items\n3. List decisions made\n4. Output in structured format...' },
+    { id: 'rules',        label: 'Rules',        hint: "Tone, format rules, dos and don'ts.",            placeholder: 'e.g.\n- Always use bullet points\n- Keep summaries under 300 words\n- Highlight action items in bold...' },
+    { id: 'examples',     label: 'Examples',     hint: 'Example outputs or input/output pairs.',         placeholder: 'e.g. Input: "Meeting transcript..."\nOutput: "## Summary\n..."' },
 ];
 
 export default function SkillsStudio({ user, initialSkillId = null, onNavigate, hasPermission = () => true }) {
@@ -22,8 +22,10 @@ export default function SkillsStudio({ user, initialSkillId = null, onNavigate, 
     const [selected, setSelected] = useState(null);
     const [pendingDelete, setPendingDelete] = useState(null);
     const [deleting, setDeleting] = useState(false);
-    const [savingState, setSavingState] = useState('idle');
     const [orgGroups, setOrgGroups] = useState([]);
+
+    // Guard so the URL-based auto-select only fires once on initial load.
+    const didAutoSelect = useRef(false);
 
     const fetchSkills = useCallback(async () => {
         setLoading(true);
@@ -35,6 +37,7 @@ export default function SkillsStudio({ user, initialSkillId = null, onNavigate, 
     }, []);
 
     useEffect(() => { fetchSkills(); }, [fetchSkills]);
+
     useEffect(() => {
         (async () => {
             try {
@@ -44,10 +47,11 @@ export default function SkillsStudio({ user, initialSkillId = null, onNavigate, 
         })();
     }, []);
 
+    // Auto-select skill from URL — only on initial load, not on every list refresh.
     useEffect(() => {
-        if (!initialSkillId || skills.length === 0) return;
+        if (didAutoSelect.current || !initialSkillId || skills.length === 0) return;
         const found = skills.find(s => s.id === initialSkillId);
-        if (found) setSelected(found);
+        if (found) { setSelected(found); didAutoSelect.current = true; }
     }, [initialSkillId, skills]);
 
     const createEmpty = async () => {
@@ -157,12 +161,7 @@ export default function SkillsStudio({ user, initialSkillId = null, onNavigate, 
                         skill={selected}
                         orgGroups={orgGroups}
                         user={user}
-                        savingState={savingState}
-                        setSavingState={setSavingState}
-                        onSaved={async (updated) => {
-                            await fetchSkills();
-                            if (updated) setSelected(updated);
-                        }}
+                        onRefreshList={fetchSkills}
                     />
                 )}
             </section>
@@ -226,7 +225,8 @@ function EmptyState({ t, onCreate }) {
     );
 }
 
-function SkillEditor({ t, skill, orgGroups, user, savingState, setSavingState, onSaved }) {
+// SkillEditor is fully self-contained: savingState is local, no parent re-renders from saving.
+function SkillEditor({ t, skill, orgGroups, user, onRefreshList }) {
     const [name, setName] = useState(skill.name || '');
     const [description, setDescription] = useState(skill.description || '');
     const [instructions, setInstructions] = useState(skill.instructions || '');
@@ -239,12 +239,18 @@ function SkillEditor({ t, skill, orgGroups, user, savingState, setSavingState, o
     const [sharedGroups, setSharedGroups] = useState(Array.isArray(skill.sharedGroups) ? skill.sharedGroups : []);
     const [showIconPicker, setShowIconPicker] = useState(false);
     const [activeTab, setActiveTab] = useState('instructions');
+    // savingState is LOCAL — no parent re-renders when it changes
+    const [savingState, setSavingState] = useState('idle');
 
     const effectiveOrgId = user?.organizationId || null;
     const orgFilteredGroups = orgGroups.filter(g => !effectiveOrgId || g.organizationId === effectiveOrgId);
 
-    const stateRef = useRef({ name, description, instructions, workflow, rules, examples, icon, isShared, dynamicActivation, sharedGroups });
-    useEffect(() => { stateRef.current = { name, description, instructions, workflow, rules, examples, icon, isShared, dynamicActivation, sharedGroups }; });
+    // stateRef holds the latest field values for the debounced/immediate flush.
+    // We update it manually in every setter so it's always in sync — no useEffect lag.
+    const stateRef = useRef({
+        name, description, instructions, workflow, rules, examples,
+        icon, isShared, dynamicActivation, sharedGroups,
+    });
 
     const saveTimer = useRef(null);
     const inflightRef = useRef(false);
@@ -263,9 +269,9 @@ function SkillEditor({ t, skill, orgGroups, user, savingState, setSavingState, o
                 body: JSON.stringify(stateRef.current),
             });
             if (!res.ok) throw new Error(await res.text());
-            const updated = await res.json();
             setSavingState('saved');
-            if (onSaved) onSaved(updated);
+            // Refresh the sidebar list in background — no setSelected, no re-mount.
+            if (onRefreshList) onRefreshList();
         } catch (err) {
             setSavingState('error');
             console.error('Skill save failed:', err);
@@ -273,7 +279,7 @@ function SkillEditor({ t, skill, orgGroups, user, savingState, setSavingState, o
         } finally {
             inflightRef.current = false;
         }
-    }, [skill.id, onSaved, setSavingState]);
+    }, [skill.id, onRefreshList]);
 
     const queue = useCallback((immediate = false) => {
         if (!skill.id) return;
@@ -282,35 +288,53 @@ function SkillEditor({ t, skill, orgGroups, user, savingState, setSavingState, o
         if (saveTimer.current) clearTimeout(saveTimer.current);
         if (immediate) { saveTimer.current = null; flush(); }
         else saveTimer.current = setTimeout(() => { saveTimer.current = null; flush(); }, 350);
-    }, [skill.id, flush, setSavingState]);
+    }, [skill.id, flush]);
 
     const flushNow = () => { if (dirtyRef.current) flush(); };
 
-    const updateName = (v) => { setName(v); queue(false); };
-    const updateDescription = (v) => { setDescription(v); queue(false); };
-    const updateIcon = (v) => { setIcon(v); queue(true); };
-    const toggleShared = () => { setIsShared(v => !v); queue(true); };
-    const toggleDynamic = () => { setDynamicActivation(v => !v); queue(true); };
-    const toggleGroup = (gid) => {
-        setSharedGroups(prev => {
-            const next = prev.includes(gid) ? prev.filter(x => x !== gid) : [...prev, gid];
-            return next;
-        });
-        queue(true);
-    };
+    // Text field updaters — stateRef updated synchronously, save debounced.
+    const updateName = (v) => { setName(v); stateRef.current.name = v; queue(false); };
+    const updateDescription = (v) => { setDescription(v); stateRef.current.description = v; queue(false); };
 
     const updateTabField = (tabId, value) => {
         if (tabId === 'instructions') {
             if (value.length > INSTRUCTION_LIMIT) return;
             setInstructions(value);
+            stateRef.current.instructions = value;
         } else if (tabId === 'workflow') {
             setWorkflow(value);
+            stateRef.current.workflow = value;
         } else if (tabId === 'rules') {
             setRules(value);
+            stateRef.current.rules = value;
         } else if (tabId === 'examples') {
             setExamples(value);
+            stateRef.current.examples = value;
         }
         queue(false);
+    };
+
+    // Immediate-save updaters — stateRef updated BEFORE flush to avoid staleness.
+    const updateIcon = (v) => { setIcon(v); stateRef.current.icon = v; queue(true); };
+    const toggleShared = () => {
+        const next = !isShared;
+        setIsShared(next);
+        stateRef.current.isShared = next;
+        queue(true);
+    };
+    const toggleDynamic = () => {
+        const next = !dynamicActivation;
+        setDynamicActivation(next);
+        stateRef.current.dynamicActivation = next;
+        queue(true);
+    };
+    const toggleGroup = (gid) => {
+        setSharedGroups(prev => {
+            const next = prev.includes(gid) ? prev.filter(x => x !== gid) : [...prev, gid];
+            stateRef.current.sharedGroups = next;
+            return next;
+        });
+        queue(true);
     };
 
     const tabFieldValue = (tabId) => {
@@ -326,7 +350,7 @@ function SkillEditor({ t, skill, orgGroups, user, savingState, setSavingState, o
     return (
         <div
             className="flex flex-col h-full"
-            style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)' }}
+            style={{ background: 'var(--bg-secondary)' }}
         >
             {/* Header: icon + name + description + save status */}
             <div
@@ -434,7 +458,7 @@ function SkillEditor({ t, skill, orgGroups, user, savingState, setSavingState, o
                 />
             </div>
 
-            {/* Sharing section */}
+            {/* Group sharing (only when shared and org has groups) */}
             {isShared && orgFilteredGroups.length > 0 && (
                 <div className="px-6 pb-3 pt-1 border-t flex-shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
                     <label className="text-[11px] mb-1.5 block" style={{ color: 'var(--text-tertiary)' }}>
@@ -467,13 +491,10 @@ function SkillEditor({ t, skill, orgGroups, user, savingState, setSavingState, o
                         ? 'border-blue-500/40 bg-blue-500/10 text-blue-500'
                         : 'border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'
                         }`}
-                    title={isShared && (sharedGroups || []).length > 0
-                        ? `Shared with ${sharedGroups.length} group(s)`
-                        : (isShared ? 'Shared with all org members' : 'Only visible to you')}
                 >
                     {isShared ? <Users size={14} /> : <Lock size={14} />}
                     {isShared
-                        ? ((sharedGroups || []).length > 0
+                        ? (sharedGroups.length > 0
                             ? `Shared (${sharedGroups.length} group${sharedGroups.length === 1 ? '' : 's'})`
                             : 'Shared with org')
                         : 'Private'}
@@ -485,7 +506,6 @@ function SkillEditor({ t, skill, orgGroups, user, savingState, setSavingState, o
                         ? 'border-[var(--accent-primary)]/40 bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]'
                         : 'border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'
                         }`}
-                    title={t('skills_studio.field.dynamic_help')}
                 >
                     {t('skills_studio.field.dynamic_label')}
                 </button>

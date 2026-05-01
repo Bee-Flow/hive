@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
-import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, PenLine, Sparkles, Mail, Ticket, BookOpen, Globe } from 'lucide-react';
+import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, PenLine, Sparkles, Mail, Ticket, BookOpen, Globe, LayoutGrid } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 import NotificationCenter from './NotificationCenter';
 import NavLink from './NavLink';
@@ -557,15 +557,11 @@ const Sidebar = ({
 
     const secondaryNav = [
         { key: 'agents', label: t('sidebar.agents') || 'Agents', icon: Store, onClick: onOpenMarketplace, active: currentPage === 'marketplace' },
-        { key: 'ai-tasks', label: t('sidebar.ai_tasks') || 'AI Tasks', icon: Bot, onClick: () => onNavigate && onNavigate('aiTasks'), active: showAITasks, badge: activeAITaskCount },
-        ...(onOpenKBStore && (_isAdminLike || _betaFeatures.includes('knowledge_bases_beta'))
-            ? [{ key: 'kb', label: t('sidebar.knowledge_bases') || 'Knowledge Bases', icon: BookOpen, onClick: onOpenKBStore, active: currentPage === 'knowledgeBases', beta: true }]
+        ...(!isMobile && (_isAdminLike || _permissions.includes('manage_agents') || _permissions.includes('manage_skills') || user?.orgRole === 'admin' || user?.orgRole === 'org_admin')
+            ? [{ key: 'studio', label: t('studio.sidebar_link') || 'Studio', icon: LayoutGrid, onClick: () => onNavigate && onNavigate('studio'), active: currentPage === 'studio' }]
             : []),
         ...(!isMobile && _featureFlags.meeting_notes !== false && (_isAdminLike || _betaFeatures.includes('meeting_notes'))
             ? [{ key: 'meeting-notes', label: t('sidebar.meeting_notes') || 'Meeting Notes', icon: Mic, onClick: () => onNavigate && onNavigate('meetingNotes'), active: currentPage === 'meetingNotes', beta: true }]
-            : []),
-        ...(!isMobile && _betaFeatures.includes('skills')
-            ? [{ key: 'skills', label: t('sidebar.skills') || 'Skills', icon: Sparkles, onClick: () => onNavigate && onNavigate('skills'), active: currentPage === 'skills' || showSkillsPanel, beta: true }]
             : []),
         ...(!isMobile && (_betaFeatures.includes('itil_ticket_assistant') || _betaFeatures.includes('email_knowledge_base'))
             ? [{ key: 'ticket-assistant', label: t('ticket_assistant.sidebar_label') || 'Ticket Assistant', icon: Ticket, onClick: () => onNavigate && onNavigate('ticketAssistant'), active: showTicketAssistant, beta: true }]
@@ -891,20 +887,6 @@ const Sidebar = ({
                                 </NavLink>
                             )}
 
-                            {!isMobile && (user?.isAdmin || user?.permissions?.includes('all') || user?.permissions?.includes('manage_agents') || user?.permissions?.includes('manage_skills') || user?.orgRole === 'admin' || user?.orgRole === 'org_admin') && (
-                                <NavLink
-                                    href="/app/studio"
-                                    onClick={() => setShowProfileMenu(false)}
-                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('studio'); }}
-                                    className={`${ROW} ${currentPage === 'studio' ? ROW_ACTIVE : ROW_IDLE}`}
-                                    style={{ textDecoration: 'none', color: 'inherit' }}
-                                    data-testid="profile-menu-studio"
-                                >
-                                    {currentPage === 'studio' && <div className={ACCENT_BAR} />}
-                                    <Bot className={`w-4 h-4 ${currentPage === 'studio' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'studio' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('studio.sidebar_link')}</span>
-                                </NavLink>
-                            )}
                             {!isMobile && (
                                 <NavLink
                                     href="/settings"
