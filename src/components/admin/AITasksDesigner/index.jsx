@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Bot, Plus, Play, Pause, Pencil, Trash2, Clock, Repeat, X, Sparkles, Zap, ArrowLeft, Check } from 'lucide-react';
+import { Bot, Plus, Play, Pause, Pencil, Trash2, Clock, Repeat, X, Sparkles, ArrowLeft, Check } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import MarkdownRenderer from '../../MarkdownRenderer';
 import ModelTierSelector from '../../ModelTierSelector';
@@ -55,13 +55,14 @@ const STATUS_COLORS = {
     error: { bg: 'rgba(239,68,68,0.08)', color: '#ef4444', label: '❌ Error' },
 };
 
-export default function AITasksDesigner({ initialTaskId = null, onClose, modelTiers = {} }) {
+export default function AITasksDesigner({ initialTaskId = null, onClose, modelTiers = {}, embedded = false }) {
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(false);
     const [maxTasks, setMaxTasks] = useState(10);
     const [resultModal, setResultModal] = useState(null);
+    const [pendingDeleteTask, setPendingDeleteTask] = useState(null);
 
-    // Editor view state — null means list view
+    // Editor view state — null means list/idle view
     const [editingTaskId, setEditingTaskId] = useState(null); // string = edit, 'new' = create
     const [title, setTitle] = useState('');
     const [prompt, setPrompt] = useState('');
@@ -87,14 +88,12 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
         fetchTasks();
     }, [fetchTasks]);
 
-    // Open editor for a specific task ID passed via URL on mount
     useEffect(() => {
         if (!initialTaskId) return;
         if (initialTaskId === 'new') {
             startNewTask();
             return;
         }
-        // Wait until tasks are loaded, then populate the editor
         if (tasks.length === 0) return;
         const task = tasks.find(t => t.id === initialTaskId);
         if (task) startEditTask(task);
@@ -165,10 +164,17 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
         } catch (err) { console.error('Toggle AI task failed:', err); }
     };
 
-    const deleteTask = async (id) => {
+    const requestDeleteTask = (task) => {
+        setPendingDeleteTask(task);
+    };
+
+    const confirmDeleteTask = async () => {
+        if (!pendingDeleteTask) return;
         try {
-            await authFetch(`${API_BASE}/api/ai-tasks/${id}`, { method: 'DELETE' });
-            setTasks(prev => prev.filter(t => t.id !== id));
+            await authFetch(`${API_BASE}/api/ai-tasks/${pendingDeleteTask.id}`, { method: 'DELETE' });
+            setTasks(prev => prev.filter(t => t.id !== pendingDeleteTask.id));
+            if (editingTaskId === pendingDeleteTask.id) resetForm();
+            setPendingDeleteTask(null);
         } catch (err) { console.error('Delete AI task failed:', err); }
     };
 
@@ -192,7 +198,6 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
     const isNewMode = editingTaskId === 'new';
     const canSave = title.trim() && prompt.trim() && date && time;
 
-    // Compute a friendly preview of when the task will next run
     const nextRunPreview = useMemo(() => {
         if (!date || !time) return null;
         try {
@@ -202,6 +207,262 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
         }
     }, [date, time]);
 
+    const deleteModal = pendingDeleteTask && (
+        <div
+            className="fixed inset-0 z-[1000] bg-black/50 flex items-center justify-center p-4"
+            onClick={() => setPendingDeleteTask(null)}
+        >
+            <div
+                className="bg-[var(--bg-primary)] rounded-xl w-full max-w-md shadow-xl border border-[var(--border-default)]"
+                onClick={(e) => e.stopPropagation()}
+            >
+                <div className="flex items-start justify-between px-5 py-4 border-b border-[var(--border-default)]">
+                    <div className="text-sm font-semibold text-[var(--text-primary)]">Delete AI Task</div>
+                    <button onClick={() => setPendingDeleteTask(null)} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
+                        <X size={18} />
+                    </button>
+                </div>
+                <div className="px-5 py-4 text-sm text-[var(--text-secondary)]">
+                    Delete "<strong>{pendingDeleteTask.title}</strong>"? This cannot be undone.
+                </div>
+                <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-[var(--border-default)]">
+                    <button
+                        onClick={() => setPendingDeleteTask(null)}
+                        className="px-4 py-2 rounded-full text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        onClick={confirmDeleteTask}
+                        className="px-4 py-2 rounded-full text-sm bg-red-500 text-white hover:bg-red-600"
+                    >
+                        Delete
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+
+    const resultModalEl = resultModal && (
+        <div
+            onClick={() => setResultModal(null)}
+            style={{
+                position: 'fixed', inset: 0, zIndex: 2000,
+                background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
+                animation: 'aiTaskResultBgIn 0.2s ease',
+            }}
+        >
+            <div
+                onClick={(e) => e.stopPropagation()}
+                style={{
+                    width: '100%', maxWidth: 720, maxHeight: '85vh',
+                    background: 'var(--bg-card, #ffffff)', borderRadius: 20,
+                    boxShadow: '0 25px 80px rgba(0,0,0,0.25), 0 8px 24px rgba(0,0,0,0.12)',
+                    display: 'flex', flexDirection: 'column', overflow: 'hidden',
+                    animation: 'aiTaskResultIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
+                    border: '1px solid var(--border-subtle, rgba(0,0,0,0.06))',
+                }}
+            >
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '16px 20px',
+                    borderBottom: '1px solid var(--border-subtle, rgba(0,0,0,0.06))',
+                    background: 'linear-gradient(135deg, rgba(139,92,246,0.04), rgba(99,102,241,0.02))',
+                }}>
+                    <div style={{
+                        width: 36, height: 36, borderRadius: 10,
+                        background: 'rgba(139,92,246,0.08)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        border: '1px solid rgba(139,92,246,0.15)', flexShrink: 0,
+                    }}>
+                        <Bot style={{ width: 18, height: 18, color: '#8b5cf6' }} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{
+                            fontSize: 15, fontWeight: 700, color: 'var(--text-primary, #0f172a)',
+                            lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                        }}>{resultModal.title}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted, #94a3b8)', fontWeight: 500, marginTop: 2 }}>
+                            AI Task Result
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => openInDirectChat(resultModal.title, resultModal.content)}
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: 6,
+                            padding: '8px 14px', borderRadius: 10,
+                            fontSize: 13, fontWeight: 600,
+                            border: 'none', cursor: 'pointer',
+                            background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
+                            color: '#fff', boxShadow: '0 2px 8px rgba(139,92,246,0.3)',
+                            flexShrink: 0,
+                        }}
+                    >
+                        💬 Discuss in Chat
+                    </button>
+                    <button
+                        onClick={() => setResultModal(null)}
+                        style={{
+                            background: 'none', border: 'none', cursor: 'pointer',
+                            padding: 6, borderRadius: 8,
+                            color: 'var(--text-muted, #94a3b8)', flexShrink: 0,
+                        }}
+                    >
+                        <X style={{ width: 18, height: 18 }} />
+                    </button>
+                </div>
+                <div style={{
+                    flex: 1, overflowY: 'auto',
+                    padding: '20px 24px',
+                    fontSize: 14, lineHeight: 1.7,
+                    color: 'var(--text-primary, #0f172a)',
+                }}>
+                    <MarkdownRenderer content={resultModal.content} />
+                </div>
+            </div>
+        </div>
+    );
+
+    const styles = (
+        <style>{`
+            @keyframes aiTaskFadeIn {
+                from { opacity: 0; transform: translateY(4px); }
+                to { opacity: 1; transform: translateY(0); }
+            }
+            @keyframes aiTaskSpin { to { transform: rotate(360deg); } }
+            @keyframes aiTaskResultBgIn { from { opacity: 0; } to { opacity: 1; } }
+            @keyframes aiTaskResultIn {
+                from { opacity: 0; transform: translateY(12px) scale(0.96); }
+                to { opacity: 1; transform: translateY(0) scale(1); }
+            }
+        `}</style>
+    );
+
+    // ── Embedded split layout (inside Studio) ────────────────────────────────
+    if (embedded) {
+        return (
+            <div className="flex h-full bg-[var(--bg-primary)]">
+                {/* Sidebar */}
+                <aside className="w-64 flex-shrink-0 border-r border-[var(--border-default)] flex flex-col">
+                    <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                            <span className="text-sm font-semibold text-[var(--text-primary)]">AI Tasks</span>
+                            <span className="text-xs text-[var(--text-tertiary)]">{tasks.length}/{maxTasks}</span>
+                        </div>
+                        <button
+                            onClick={startNewTask}
+                            disabled={tasks.length >= maxTasks}
+                            title="New AI Task"
+                            className="p-1 rounded-lg hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] disabled:opacity-50"
+                        >
+                            <Plus size={16} />
+                        </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto p-1.5">
+                        {loading && tasks.length === 0 && (
+                            <div className="text-xs text-[var(--text-tertiary)] p-3">…</div>
+                        )}
+                        {!loading && tasks.length === 0 && (
+                            <div className="text-xs text-[var(--text-tertiary)] p-4 text-center">
+                                No AI tasks yet
+                            </div>
+                        )}
+                        {tasks.map((task) => {
+                            const sel = editingTaskId === task.id;
+                            const statusColor = (STATUS_COLORS[task.lastStatus] || STATUS_COLORS.pending).color;
+                            return (
+                                <div
+                                    key={task.id}
+                                    onClick={() => startEditTask(task)}
+                                    className={`group flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer text-sm transition ${sel ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}
+                                >
+                                    <span
+                                        className="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-px"
+                                        style={{ background: statusColor, opacity: task.isActive ? 1 : 0.35 }}
+                                    />
+                                    <span className="truncate flex-1">{task.title}</span>
+                                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); runTaskNow(task.id); }}
+                                            title="Run now"
+                                            className="p-1 rounded text-[var(--text-tertiary)] hover:text-[#8b5cf6]"
+                                            disabled={task.lastStatus === 'running'}
+                                        >
+                                            <Play size={11} />
+                                        </button>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); toggleTask(task.id); }}
+                                            title={task.isActive ? 'Pause' : 'Resume'}
+                                            className="p-1 rounded text-[var(--text-tertiary)] hover:text-amber-500"
+                                        >
+                                            {task.isActive ? <Pause size={11} /> : <Play size={11} />}
+                                        </button>
+                                        <button
+                                            onClick={(e) => { e.stopPropagation(); requestDeleteTask(task); }}
+                                            title="Delete"
+                                            className="p-1 rounded text-[var(--text-tertiary)] hover:text-red-500"
+                                        >
+                                            <Trash2 size={11} />
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </aside>
+
+                {/* Content */}
+                <section className="flex-1 min-w-0 overflow-y-auto">
+                    {!editing ? (
+                        <div className="h-full flex flex-col items-center justify-center px-6 py-12">
+                            <div
+                                className="w-16 h-16 rounded-2xl mb-4 flex items-center justify-center"
+                                style={{ background: 'rgba(139,92,246,0.08)' }}
+                            >
+                                <Bot size={28} style={{ color: '#8b5cf6', opacity: 0.6 }} />
+                            </div>
+                            <div className="text-lg font-semibold text-[var(--text-primary)] mb-2">
+                                Schedule AI Tasks
+                            </div>
+                            <div className="text-sm text-[var(--text-tertiary)] mb-6 max-w-sm text-center leading-relaxed">
+                                Automate recurring AI workflows — weekly digests, reports, lead summaries.
+                                Results land in your notifications when ready.
+                            </div>
+                            <button
+                                onClick={startNewTask}
+                                disabled={tasks.length >= maxTasks}
+                                className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold text-white disabled:opacity-50"
+                                style={{ background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)' }}
+                            >
+                                <Plus size={15} />
+                                New AI Task
+                            </button>
+                        </div>
+                    ) : (
+                        <EditorView
+                            title={title} setTitle={setTitle}
+                            prompt={prompt} setPrompt={setPrompt}
+                            date={date} setDate={setDate}
+                            time={time} setTime={setTime}
+                            repeatInterval={repeatInterval} setRepeatInterval={setRepeatInterval}
+                            tier={tier} setTier={setTier}
+                            modelTiers={modelTiers}
+                            canSave={canSave} isNewMode={isNewMode}
+                            onSave={saveTask} onCancel={resetForm}
+                            nextRunPreview={nextRunPreview}
+                        />
+                    )}
+                </section>
+
+                {deleteModal}
+                {resultModalEl}
+                {styles}
+            </div>
+        );
+    }
+
+    // ── Legacy standalone layout ─────────────────────────────────────────────
     return (
         <div className="flex-1 flex flex-col h-full bg-[var(--bg-primary)] overflow-hidden">
             {/* Header */}
@@ -271,7 +532,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                         modelTiers={modelTiers}
                         onEdit={startEditTask}
                         onToggle={toggleTask}
-                        onDelete={deleteTask}
+                        onRequestDelete={requestDeleteTask}
                         onRunNow={runTaskNow}
                         onOpenResult={(data) => setResultModal(data)}
                         onCreate={startNewTask}
@@ -280,105 +541,14 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                 )}
             </div>
 
-            {/* Result Modal */}
-            {resultModal && (
-                <div
-                    onClick={() => setResultModal(null)}
-                    style={{
-                        position: 'fixed', inset: 0, zIndex: 2000,
-                        background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24,
-                        animation: 'aiTaskResultBgIn 0.2s ease',
-                    }}
-                >
-                    <div
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                            width: '100%', maxWidth: 720, maxHeight: '85vh',
-                            background: 'var(--bg-card, #ffffff)', borderRadius: 20,
-                            boxShadow: '0 25px 80px rgba(0,0,0,0.25), 0 8px 24px rgba(0,0,0,0.12)',
-                            display: 'flex', flexDirection: 'column', overflow: 'hidden',
-                            animation: 'aiTaskResultIn 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-                            border: '1px solid var(--border-subtle, rgba(0,0,0,0.06))',
-                        }}
-                    >
-                        <div style={{
-                            display: 'flex', alignItems: 'center', gap: 10,
-                            padding: '16px 20px',
-                            borderBottom: '1px solid var(--border-subtle, rgba(0,0,0,0.06))',
-                            background: 'linear-gradient(135deg, rgba(139,92,246,0.04), rgba(99,102,241,0.02))',
-                        }}>
-                            <div style={{
-                                width: 36, height: 36, borderRadius: 10,
-                                background: 'rgba(139,92,246,0.08)',
-                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                border: '1px solid rgba(139,92,246,0.15)', flexShrink: 0,
-                            }}>
-                                <Bot style={{ width: 18, height: 18, color: '#8b5cf6' }} />
-                            </div>
-                            <div style={{ flex: 1, minWidth: 0 }}>
-                                <div style={{
-                                    fontSize: 15, fontWeight: 700, color: 'var(--text-primary, #0f172a)',
-                                    lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                                }}>{resultModal.title}</div>
-                                <div style={{ fontSize: 11, color: 'var(--text-muted, #94a3b8)', fontWeight: 500, marginTop: 2 }}>
-                                    AI Task Result
-                                </div>
-                            </div>
-                            <button
-                                onClick={() => openInDirectChat(resultModal.title, resultModal.content)}
-                                style={{
-                                    display: 'flex', alignItems: 'center', gap: 6,
-                                    padding: '8px 14px', borderRadius: 10,
-                                    fontSize: 13, fontWeight: 600,
-                                    border: 'none', cursor: 'pointer',
-                                    background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
-                                    color: '#fff', boxShadow: '0 2px 8px rgba(139,92,246,0.3)',
-                                    flexShrink: 0,
-                                }}
-                            >
-                                💬 Discuss in Chat
-                            </button>
-                            <button
-                                onClick={() => setResultModal(null)}
-                                style={{
-                                    background: 'none', border: 'none', cursor: 'pointer',
-                                    padding: 6, borderRadius: 8,
-                                    color: 'var(--text-muted, #94a3b8)', flexShrink: 0,
-                                }}
-                            >
-                                <X style={{ width: 18, height: 18 }} />
-                            </button>
-                        </div>
-                        <div style={{
-                            flex: 1, overflowY: 'auto',
-                            padding: '20px 24px',
-                            fontSize: 14, lineHeight: 1.7,
-                            color: 'var(--text-primary, #0f172a)',
-                        }}>
-                            <MarkdownRenderer content={resultModal.content} />
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            <style>{`
-                @keyframes aiTaskFadeIn {
-                    from { opacity: 0; transform: translateY(4px); }
-                    to { opacity: 1; transform: translateY(0); }
-                }
-                @keyframes aiTaskSpin { to { transform: rotate(360deg); } }
-                @keyframes aiTaskResultBgIn { from { opacity: 0; } to { opacity: 1; } }
-                @keyframes aiTaskResultIn {
-                    from { opacity: 0; transform: translateY(12px) scale(0.96); }
-                    to { opacity: 1; transform: translateY(0) scale(1); }
-                }
-            `}</style>
+            {deleteModal}
+            {resultModalEl}
+            {styles}
         </div>
     );
 }
 
-function ListView({ loading, activeTasks, inactiveTasks, modelTiers, onEdit, onToggle, onDelete, onRunNow, onOpenResult, onCreate, canCreate }) {
+function ListView({ loading, activeTasks, inactiveTasks, modelTiers, onEdit, onToggle, onRequestDelete, onRunNow, onOpenResult, onCreate, canCreate }) {
     if (loading && activeTasks.length === 0 && inactiveTasks.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-[var(--text-muted)] text-[13px]">
@@ -429,7 +599,7 @@ function ListView({ loading, activeTasks, inactiveTasks, modelTiers, onEdit, onT
                     <div className="space-y-2 mb-6">
                         {activeTasks.map((t, i) => (
                             <TaskCard key={t.id} task={t} index={i} modelTiers={modelTiers}
-                                onEdit={onEdit} onToggle={onToggle} onDelete={onDelete}
+                                onEdit={onEdit} onToggle={onToggle} onRequestDelete={onRequestDelete}
                                 onRunNow={onRunNow} onOpenResult={onOpenResult} />
                         ))}
                     </div>
@@ -443,7 +613,7 @@ function ListView({ loading, activeTasks, inactiveTasks, modelTiers, onEdit, onT
                     <div className="space-y-2">
                         {inactiveTasks.map((t, i) => (
                             <TaskCard key={t.id} task={t} index={i} modelTiers={modelTiers}
-                                onEdit={onEdit} onToggle={onToggle} onDelete={onDelete}
+                                onEdit={onEdit} onToggle={onToggle} onRequestDelete={onRequestDelete}
                                 onRunNow={onRunNow} onOpenResult={onOpenResult} />
                         ))}
                     </div>
@@ -453,7 +623,7 @@ function ListView({ loading, activeTasks, inactiveTasks, modelTiers, onEdit, onT
     );
 }
 
-function TaskCard({ task, index, modelTiers, onEdit, onToggle, onDelete, onRunNow, onOpenResult }) {
+function TaskCard({ task, index, modelTiers, onEdit, onToggle, onRequestDelete, onRunNow, onOpenResult }) {
     const t = task;
     const status = STATUS_COLORS[t.lastStatus] || STATUS_COLORS.pending;
     const tierShort = tierLabel(t.modelTier, modelTiers);
@@ -549,9 +719,7 @@ function TaskCard({ task, index, modelTiers, onEdit, onToggle, onDelete, onRunNo
                     </div>
                 </div>
                 <button
-                    onClick={() => {
-                        if (window.confirm(`Delete "${t.title}"?`)) onDelete(t.id);
-                    }}
+                    onClick={() => onRequestDelete(t)}
                     className="opacity-0 group-hover:opacity-60 hover:!opacity-100 transition-opacity p-1.5 rounded-md text-[var(--text-muted)] hover:text-red-500 hover:bg-red-50"
                     title="Delete task"
                 >

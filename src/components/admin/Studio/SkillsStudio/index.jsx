@@ -1,18 +1,25 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Plus, Trash2, X, Sparkles } from 'lucide-react';
+import { Plus, Trash2, X, Sparkles, Users, Lock } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../../utils/helpers';
 import useTranslation from '../../../../hooks/useTranslation';
 
-// Inline skill editor — same fields as the legacy SkillFormModal but mounted
-// inside the Studio's split layout (list left, editor right). Auto-saves.
-const ICONS = ['⚡','✨','🔮','🎯','📊','📋','📝','💡','🛠️','🔧','📚','🧠','🚀','⭐','🎨','🔍','📈','💬','🤖','🎪'];
+// Same icons as SkillFormModal for consistency
+const ICONS = ['⚡', '🎯', '📝', '📧', '📊', '🔍', '💡', '🚀', '🎨', '🤝', '📋', '🏆', '🔧', '⚙️', '🌟', '💬', '📞', '🖊️', '🗂️', '🔑'];
+const INSTRUCTION_LIMIT = 4000;
+
+const TABS = [
+    { id: 'instructions', label: 'Instructions', hint: 'What should the AI do? Be specific and detailed.', placeholder: 'e.g. When asked to summarize a meeting, extract all key decisions, action items with owners, and open questions...' },
+    { id: 'workflow', label: 'Workflow', hint: 'Step-by-step process to follow.', placeholder: 'e.g.\n1. Read the transcript\n2. Extract action items\n3. List decisions made\n4. Output in structured format...' },
+    { id: 'rules', label: 'Rules', hint: "Tone, format rules, dos and don'ts.", placeholder: 'e.g.\n- Always use bullet points\n- Keep summaries under 300 words\n- Highlight action items in bold...' },
+    { id: 'examples', label: 'Examples', hint: 'Example outputs or input/output pairs.', placeholder: 'e.g. Input: "Meeting transcript..."\nOutput: "## Summary\n..."' },
+];
 
 export default function SkillsStudio({ user, initialSkillId = null, onNavigate, hasPermission = () => true }) {
     const { t } = useTranslation();
 
     const [skills, setSkills] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [selected, setSelected] = useState(null); // currently-edited skill
+    const [selected, setSelected] = useState(null);
     const [pendingDelete, setPendingDelete] = useState(null);
     const [deleting, setDeleting] = useState(false);
     const [savingState, setSavingState] = useState('idle');
@@ -37,7 +44,6 @@ export default function SkillsStudio({ user, initialSkillId = null, onNavigate, 
         })();
     }, []);
 
-    // Auto-select skill from URL
     useEffect(() => {
         if (!initialSkillId || skills.length === 0) return;
         const found = skills.find(s => s.id === initialSkillId);
@@ -53,6 +59,9 @@ export default function SkillsStudio({ user, initialSkillId = null, onNavigate, 
                     name: t('skills_studio.untitled'),
                     description: '',
                     instructions: '',
+                    workflow: '',
+                    rules: '',
+                    examples: '',
                     icon: '⚡',
                     isShared: false,
                     dynamicActivation: false,
@@ -147,6 +156,7 @@ export default function SkillsStudio({ user, initialSkillId = null, onNavigate, 
                         t={t}
                         skill={selected}
                         orgGroups={orgGroups}
+                        user={user}
                         savingState={savingState}
                         setSavingState={setSavingState}
                         onSaved={async (updated) => {
@@ -201,20 +211,22 @@ export default function SkillsStudio({ user, initialSkillId = null, onNavigate, 
 function EmptyState({ t, onCreate }) {
     return (
         <div className="h-full flex flex-col items-center justify-center px-6 py-12">
-            <Sparkles size={32} className="text-[var(--text-tertiary)] mb-4" />
+            <Sparkles size={32} className="mb-4" style={{ color: 'var(--accent-primary)', opacity: 0.5 }} />
             <div className="text-lg font-semibold text-[var(--text-primary)] mb-2">{t('skills_studio.empty_title')}</div>
-            <div className="text-sm text-[var(--text-tertiary)] mb-6 max-w-md text-center">{t('skills_studio.empty_help')}</div>
+            <div className="text-sm text-[var(--text-tertiary)] mb-6 max-w-md text-center leading-relaxed">{t('skills_studio.empty_help')}</div>
             <button
                 onClick={onCreate}
-                className="px-5 py-2 rounded-full bg-[var(--accent)] text-white text-sm font-medium hover:opacity-90"
+                className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold text-white"
+                style={{ background: 'var(--accent-primary)' }}
             >
+                <Plus size={15} />
                 {t('skills_studio.create')}
             </button>
         </div>
     );
 }
 
-function SkillEditor({ t, skill, orgGroups, savingState, setSavingState, onSaved }) {
+function SkillEditor({ t, skill, orgGroups, user, savingState, setSavingState, onSaved }) {
     const [name, setName] = useState(skill.name || '');
     const [description, setDescription] = useState(skill.description || '');
     const [instructions, setInstructions] = useState(skill.instructions || '');
@@ -226,6 +238,10 @@ function SkillEditor({ t, skill, orgGroups, savingState, setSavingState, onSaved
     const [dynamicActivation, setDynamicActivation] = useState(!!skill.dynamicActivation);
     const [sharedGroups, setSharedGroups] = useState(Array.isArray(skill.sharedGroups) ? skill.sharedGroups : []);
     const [showIconPicker, setShowIconPicker] = useState(false);
+    const [activeTab, setActiveTab] = useState('instructions');
+
+    const effectiveOrgId = user?.organizationId || null;
+    const orgFilteredGroups = orgGroups.filter(g => !effectiveOrgId || g.organizationId === effectiveOrgId);
 
     const stateRef = useRef({ name, description, instructions, workflow, rules, examples, icon, isShared, dynamicActivation, sharedGroups });
     useEffect(() => { stateRef.current = { name, description, instructions, workflow, rules, examples, icon, isShared, dynamicActivation, sharedGroups }; });
@@ -272,10 +288,6 @@ function SkillEditor({ t, skill, orgGroups, savingState, setSavingState, onSaved
 
     const updateName = (v) => { setName(v); queue(false); };
     const updateDescription = (v) => { setDescription(v); queue(false); };
-    const updateInstructions = (v) => { setInstructions(v); queue(false); };
-    const updateWorkflow = (v) => { setWorkflow(v); queue(false); };
-    const updateRules = (v) => { setRules(v); queue(false); };
-    const updateExamples = (v) => { setExamples(v); queue(false); };
     const updateIcon = (v) => { setIcon(v); queue(true); };
     const toggleShared = () => { setIsShared(v => !v); queue(true); };
     const toggleDynamic = () => { setDynamicActivation(v => !v); queue(true); };
@@ -287,139 +299,196 @@ function SkillEditor({ t, skill, orgGroups, savingState, setSavingState, onSaved
         queue(true);
     };
 
+    const updateTabField = (tabId, value) => {
+        if (tabId === 'instructions') {
+            if (value.length > INSTRUCTION_LIMIT) return;
+            setInstructions(value);
+        } else if (tabId === 'workflow') {
+            setWorkflow(value);
+        } else if (tabId === 'rules') {
+            setRules(value);
+        } else if (tabId === 'examples') {
+            setExamples(value);
+        }
+        queue(false);
+    };
+
+    const tabFieldValue = (tabId) => {
+        if (tabId === 'instructions') return instructions;
+        if (tabId === 'workflow') return workflow;
+        if (tabId === 'rules') return rules;
+        if (tabId === 'examples') return examples;
+        return '';
+    };
+
+    const currentTab = TABS.find(t => t.id === activeTab);
+
     return (
-        <div className="max-w-3xl mx-auto px-8 py-8">
-            <div className="flex items-center justify-end mb-4">
-                <span className="text-xs text-[var(--text-tertiary)]">
-                    {savingState === 'saving' && t('agent_wizard.builder.save_saving')}
-                    {savingState === 'saved' && t('agent_wizard.builder.save_saved')}
-                    {savingState === 'error' && t('agent_wizard.builder.save_error')}
-                </span>
+        <div
+            className="flex flex-col h-full"
+            style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)' }}
+        >
+            {/* Header: icon + name + description + save status */}
+            <div
+                className="flex items-center gap-3 px-6 pt-5 pb-4 border-b flex-shrink-0"
+                style={{ borderColor: 'var(--border-subtle)' }}
+            >
+                <div className="relative flex-shrink-0">
+                    <button
+                        onClick={() => setShowIconPicker(v => !v)}
+                        title="Choose icon"
+                        className="w-11 h-11 rounded-xl border-[1.5px] flex items-center justify-center text-[22px] transition-colors hover:bg-[var(--bg-tertiary)]"
+                        style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)' }}
+                    >
+                        {icon}
+                    </button>
+                    {showIconPicker && (
+                        <div
+                            className="absolute top-[52px] left-0 z-10 p-2 rounded-xl border shadow-xl grid grid-cols-5 gap-1 w-[180px]"
+                            style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)' }}
+                        >
+                            {ICONS.map(ic => (
+                                <button
+                                    key={ic}
+                                    onClick={() => { updateIcon(ic); setShowIconPicker(false); }}
+                                    className={`w-8 h-8 rounded-lg flex items-center justify-center text-[18px] transition-colors ${icon === ic ? 'bg-[var(--accent-primary)]/15' : 'hover:bg-[var(--bg-tertiary)]'}`}
+                                >
+                                    {ic}
+                                </button>
+                            ))}
+                        </div>
+                    )}
+                </div>
+
+                <div className="flex-1 min-w-0">
+                    <input
+                        value={name}
+                        onChange={e => updateName(e.target.value)}
+                        onBlur={flushNow}
+                        placeholder={t('skills_studio.field.name_placeholder')}
+                        className="w-full text-base font-bold bg-transparent outline-none border-none"
+                        style={{ color: 'var(--text-primary)' }}
+                    />
+                    <input
+                        value={description}
+                        onChange={e => updateDescription(e.target.value)}
+                        onBlur={flushNow}
+                        placeholder={t('skills_studio.field.description_placeholder')}
+                        className="w-full text-[13px] bg-transparent outline-none border-none mt-0.5"
+                        style={{ color: 'var(--text-secondary)' }}
+                    />
+                </div>
+
+                <div className="flex-shrink-0">
+                    <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                        {savingState === 'saving' && t('agent_wizard.builder.save_saving')}
+                        {savingState === 'saved' && t('agent_wizard.builder.save_saved')}
+                        {savingState === 'error' && t('agent_wizard.builder.save_error')}
+                    </span>
+                </div>
             </div>
 
-            <div className="flex items-start gap-4 mb-6 relative">
-                <button
-                    onClick={() => setShowIconPicker(v => !v)}
-                    className="w-14 h-14 rounded-full bg-[var(--bg-secondary)] border border-[var(--border-default)] text-2xl flex items-center justify-center hover:bg-[var(--bg-tertiary)]"
-                >
-                    {icon}
-                </button>
-                {showIconPicker && (
-                    <div className="absolute top-16 left-0 z-10 p-2 rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-xl grid grid-cols-5 gap-1 w-[200px]">
-                        {ICONS.map(ic => (
-                            <button
-                                key={ic}
-                                onClick={() => { updateIcon(ic); setShowIconPicker(false); }}
-                                className={`w-8 h-8 rounded-lg flex items-center justify-center text-[18px] transition ${icon === ic ? 'bg-[var(--accent)]/15' : 'hover:bg-[var(--bg-tertiary)]'}`}
-                            >
-                                {ic}
-                            </button>
-                        ))}
-                    </div>
-                )}
-                <input
-                    value={name}
-                    onChange={(e) => updateName(e.target.value)}
+            {/* Tab bar */}
+            <div className="flex border-b px-6 flex-shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
+                {TABS.map(tab => (
+                    <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id)}
+                        className={`px-3.5 py-2.5 text-[13px] transition-all -mb-px border-b-2 ${activeTab === tab.id
+                            ? 'font-semibold border-[var(--accent-primary)] text-[var(--accent-primary)]'
+                            : 'font-normal border-transparent text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                            }`}
+                    >
+                        {tab.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* Tab body */}
+            <div className="flex-1 overflow-auto px-6 py-4">
+                <div className="flex items-center justify-between mb-1.5">
+                    <span className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>
+                        {currentTab.hint}
+                    </span>
+                    {activeTab === 'instructions' && (
+                        <span
+                            className={`text-[11px] tabular-nums ${instructions.length / INSTRUCTION_LIMIT > 0.9 ? 'text-red-500' : instructions.length / INSTRUCTION_LIMIT > 0.75 ? 'text-amber-500' : ''}`}
+                            style={instructions.length / INSTRUCTION_LIMIT <= 0.75 ? { color: 'var(--text-tertiary)' } : undefined}
+                        >
+                            {INSTRUCTION_LIMIT - instructions.length} left
+                        </span>
+                    )}
+                </div>
+                <textarea
+                    value={tabFieldValue(activeTab)}
+                    onChange={e => updateTabField(activeTab, e.target.value)}
                     onBlur={flushNow}
-                    placeholder={t('skills_studio.field.name_placeholder')}
-                    className="flex-1 text-2xl font-semibold bg-transparent outline-none text-[var(--text-primary)] border-b border-transparent focus:border-[var(--border-default)] py-1"
+                    placeholder={currentTab.placeholder}
+                    className="w-full min-h-[200px] text-[13px] leading-relaxed rounded-xl border-[1.5px] p-3.5 resize-y outline-none transition-colors focus:border-[var(--accent-primary)]"
+                    style={{
+                        color: 'var(--text-primary)',
+                        background: 'var(--bg-tertiary)',
+                        borderColor: 'var(--border-subtle)',
+                        fontFamily: 'inherit',
+                    }}
                 />
             </div>
 
-            <div className="space-y-5">
-                <div>
-                    <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">{t('skills_studio.field.description')}</div>
-                    <input
-                        value={description}
-                        onChange={(e) => updateDescription(e.target.value)}
-                        onBlur={flushNow}
-                        placeholder={t('skills_studio.field.description_placeholder')}
-                        className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
-                    />
-                </div>
-
-                <div>
-                    <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">{t('skills_studio.field.instructions')}</div>
-                    <textarea
-                        value={instructions}
-                        onChange={(e) => updateInstructions(e.target.value)}
-                        onBlur={flushNow}
-                        rows={6}
-                        placeholder={t('skills_studio.field.instructions_placeholder')}
-                        className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)] resize-y"
-                    />
-                </div>
-
-                <div>
-                    <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">{t('skills_studio.field.workflow')}</div>
-                    <textarea
-                        value={workflow}
-                        onChange={(e) => updateWorkflow(e.target.value)}
-                        onBlur={flushNow}
-                        rows={4}
-                        placeholder={t('skills_studio.field.workflow_placeholder')}
-                        className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)] resize-y"
-                    />
-                </div>
-
-                <div>
-                    <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">{t('skills_studio.field.rules')}</div>
-                    <textarea
-                        value={rules}
-                        onChange={(e) => updateRules(e.target.value)}
-                        onBlur={flushNow}
-                        rows={3}
-                        placeholder={t('skills_studio.field.rules_placeholder')}
-                        className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)] resize-y"
-                    />
-                </div>
-
-                <div>
-                    <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">{t('skills_studio.field.examples')}</div>
-                    <textarea
-                        value={examples}
-                        onChange={(e) => updateExamples(e.target.value)}
-                        onBlur={flushNow}
-                        rows={3}
-                        placeholder={t('skills_studio.field.examples_placeholder')}
-                        className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)] resize-y"
-                    />
-                </div>
-
-                <div className="space-y-3 pt-3 border-t border-[var(--border-default)]">
-                    <label className="flex items-start gap-3 cursor-pointer">
-                        <input type="checkbox" checked={isShared} onChange={toggleShared} className="mt-1" />
-                        <div>
-                            <div className="text-sm text-[var(--text-primary)]">{t('skills_studio.field.shared_label')}</div>
-                            <div className="text-xs text-[var(--text-tertiary)]">{t('skills_studio.field.shared_help')}</div>
-                        </div>
+            {/* Sharing section */}
+            {isShared && orgFilteredGroups.length > 0 && (
+                <div className="px-6 pb-3 pt-1 border-t flex-shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
+                    <label className="text-[11px] mb-1.5 block" style={{ color: 'var(--text-tertiary)' }}>
+                        {t('skills_studio.field.shared_groups')} (leave empty for all org members)
                     </label>
-                    <label className="flex items-start gap-3 cursor-pointer">
-                        <input type="checkbox" checked={dynamicActivation} onChange={toggleDynamic} className="mt-1" />
-                        <div>
-                            <div className="text-sm text-[var(--text-primary)]">{t('skills_studio.field.dynamic_label')}</div>
-                            <div className="text-xs text-[var(--text-tertiary)]">{t('skills_studio.field.dynamic_help')}</div>
-                        </div>
-                    </label>
-                </div>
-
-                {isShared && orgGroups.length > 0 && (
-                    <div>
-                        <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">{t('skills_studio.field.shared_groups')}</div>
-                        <div className="space-y-1">
-                            {orgGroups.map(g => (
-                                <label key={g.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                                    <input
-                                        type="checkbox"
-                                        checked={sharedGroups.includes(g.id)}
-                                        onChange={() => toggleGroup(g.id)}
-                                    />
-                                    <span className="text-[var(--text-primary)]">{g.name}</span>
-                                </label>
-                            ))}
-                        </div>
+                    <div className="space-y-1 max-h-32 overflow-auto">
+                        {orgFilteredGroups.map(group => (
+                            <label key={group.id} className="flex items-center gap-2 px-2 py-1 rounded-lg hover:bg-[var(--bg-tertiary)] cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={sharedGroups.includes(group.id)}
+                                    onChange={() => toggleGroup(group.id)}
+                                    className="rounded"
+                                />
+                                <span className="text-[13px]" style={{ color: 'var(--text-primary)' }}>{group.name}</span>
+                                {group.description && (
+                                    <span className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>— {group.description}</span>
+                                )}
+                            </label>
+                        ))}
                     </div>
-                )}
+                </div>
+            )}
+
+            {/* Footer: sharing toggle + dynamic activation */}
+            <div className="flex items-center justify-between px-6 py-4 border-t flex-shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
+                <button
+                    onClick={toggleShared}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border-[1.5px] text-[13px] font-medium transition-all ${isShared
+                        ? 'border-blue-500/40 bg-blue-500/10 text-blue-500'
+                        : 'border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'
+                        }`}
+                    title={isShared && (sharedGroups || []).length > 0
+                        ? `Shared with ${sharedGroups.length} group(s)`
+                        : (isShared ? 'Shared with all org members' : 'Only visible to you')}
+                >
+                    {isShared ? <Users size={14} /> : <Lock size={14} />}
+                    {isShared
+                        ? ((sharedGroups || []).length > 0
+                            ? `Shared (${sharedGroups.length} group${sharedGroups.length === 1 ? '' : 's'})`
+                            : 'Shared with org')
+                        : 'Private'}
+                </button>
+
+                <button
+                    onClick={toggleDynamic}
+                    className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border-[1.5px] text-[13px] font-medium transition-all ${dynamicActivation
+                        ? 'border-[var(--accent-primary)]/40 bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]'
+                        : 'border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'
+                        }`}
+                    title={t('skills_studio.field.dynamic_help')}
+                >
+                    {t('skills_studio.field.dynamic_label')}
+                </button>
             </div>
         </div>
     );

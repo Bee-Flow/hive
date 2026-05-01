@@ -77,6 +77,7 @@ export default function Studio({
                         initialTaskId={initialTaskId}
                         onClose={onClose}
                         modelTiers={modelTiers}
+                        embedded={true}
                     />
                 )}
             </div>
