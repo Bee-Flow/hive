@@ -29,11 +29,10 @@ export default function WebpageChat({
     };
 
     return (
-        <div className="flex flex-col h-full">
-            <div className="shrink-0 px-3 py-2 border-b flex items-center gap-2" style={{ borderColor: 'var(--border-subtle)' }}>
-                <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>💬 AI Chat</span>
-                <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
-                    Build & refine your webpage
+        <div className="flex flex-col h-full" style={{ background: 'var(--vsc-editor-bg)', color: 'var(--vsc-fg)' }}>
+            <div className="shrink-0 px-3 py-1.5 border-b flex items-center gap-2" style={{ borderColor: 'var(--vsc-border)' }}>
+                <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--vsc-fg-muted)', letterSpacing: '0.06em' }}>
+                    AI Chat
                 </span>
             </div>
 
@@ -69,7 +68,7 @@ export default function WebpageChat({
                 <div ref={endRef} />
             </div>
 
-            <div className="shrink-0 px-2 py-2 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+            <div className="shrink-0 px-2 py-2 border-t" style={{ borderColor: 'var(--vsc-border)' }}>
                 <InputArea
                     input={chatInput}
                     setInput={setChatInput}

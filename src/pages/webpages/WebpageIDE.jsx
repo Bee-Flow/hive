@@ -108,9 +108,10 @@ export default function WebpageIDE({
     // User (unused here but kept for API symmetry)
     user, // eslint-disable-line no-unused-vars
 }) {
-    // Theme — persisted via scopedStorage (already namespaced by current user)
+    // Theme — persisted via scopedStorage (already namespaced by current user).
+    // Defaults to light so the IDE blends with the host app's light theme.
     const [theme, setTheme] = useState(() => {
-        try { return scopedStorage.getItem('webpages_theme') || 'dark'; } catch { return 'dark'; }
+        try { return scopedStorage.getItem('webpages_theme') || 'light'; } catch { return 'light'; }
     });
     const toggleTheme = () => {
         const next = theme === 'dark' ? 'light' : 'dark';
@@ -151,7 +152,7 @@ export default function WebpageIDE({
         <div
             data-vscode-theme={theme}
             className="flex flex-col"
-            style={{ height: '100%', width: '100%', overflow: 'hidden', fontFamily: 'var(--font-mono, monospace)' }}
+            style={{ height: '100%', width: '100%', overflow: 'hidden' }}
         >
             {/* Main body: activity bar + sidebar + center + chat */}
             <div className="flex flex-1 min-h-0">
