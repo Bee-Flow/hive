@@ -1754,6 +1754,7 @@ const EN_DEFAULTS = {
     "agent_wizard.builder.save_saved": "Saved",
     "agent_wizard.builder.save_error": "Save failed",
     "agent_wizard.builder.publish": "Create",
+    "agent_wizard.builder.done": "Done",
     "agent_wizard.builder.name_placeholder": "Agent name",
     "agent_wizard.builder.channels": "Channels",
     "agent_wizard.builder.channel_chatgpt_label": "ChatGPT",

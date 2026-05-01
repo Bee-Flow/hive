@@ -2,6 +2,8 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Send, Plus, MessageCircle, Slack, Sparkles, Upload, Brain, AppWindow, ArrowLeft, X, Search } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import useTranslation from '../../../hooks/useTranslation';
+import { INTEGRATION_CATALOG } from '../AgentDesigner/integrations';
+import KnowledgePanel from '../../KnowledgePanel';
 import PlanCard from './PlanCard';
 
 export default function BuilderSplit({ agent: initialAgent, plan, history, tier, locale, onBack, onPublished }) {
@@ -10,18 +12,31 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         { id: 'chatgpt', label: t('agent_wizard.builder.channel_chatgpt_label'), sub: t('agent_wizard.builder.channel_chatgpt_sub'), icon: <MessageCircle size={18} /> },
         { id: 'slack', label: t('agent_wizard.builder.channel_slack_label'), sub: t('agent_wizard.builder.channel_slack_sub'), icon: <Slack size={18} /> },
     ];
+
     const [agent, setAgent] = useState(initialAgent);
     const [name, setName] = useState(initialAgent?.name || plan?.name || t('agent_wizard.builder.name_placeholder'));
-    const [avatar, setAvatar] = useState(plan?.avatar || initialAgent?.config?.avatar || '🤖');
+    const [avatar, setAvatar] = useState(initialAgent?.config?.avatar || plan?.avatar || '🤖');
     const [instructions, setInstructions] = useState(initialAgent?.system_prompt || plan?.systemPrompt || '');
-    const [channels, setChannels] = useState(plan?.channels || ['chatgpt']);
-    const [memoryEnabled, setMemoryEnabled] = useState(false);
-    const [skills, setSkills] = useState(plan?.suggestedSkills?.map(s => s.name) || []);
-    const [savingState, setSavingState] = useState('idle'); // idle | saving | saved | error
-    const [publishing, setPublishing] = useState(false);
+    const [channels, setChannels] = useState(initialAgent?.config?.wizard?.channels || plan?.channels || ['chatgpt']);
 
+    // Canonical config fields (round-trip with AgentEditorUI)
+    const [memoryEnabled, setMemoryEnabled] = useState(!!initialAgent?.config?.memoryEnabled);
+    const [attachedSkillIds, setAttachedSkillIds] = useState(initialAgent?.config?.attachedSkillIds || []);
+    const [enabledIntegrations, setEnabledIntegrations] = useState(
+        initialAgent?.config?.enabledIntegrations === undefined ? null : initialAgent.config.enabledIntegrations
+    );
+    const [knowledgeBaseIds, setKnowledgeBaseIds] = useState(initialAgent?.config?.knowledge_base_ids || []);
+    const [strictKnowledge, setStrictKnowledge] = useState(!!initialAgent?.config?.strictKnowledge);
+    const [includeSourceReferences, setIncludeSourceReferences] = useState(!!initialAgent?.config?.includeSourceReferences);
+
+    const [savingState, setSavingState] = useState('idle');
+
+    // Loaded once for pickers
+    const [allSkills, setAllSkills] = useState(null);          // null = not loaded, [] = loaded but empty
+    const [integrationStatus, setIntegrationStatus] = useState(null);
     const [skillPickerOpen, setSkillPickerOpen] = useState(false);
-    const [availableSkills, setAvailableSkills] = useState([]);
+    const [appsPickerOpen, setAppsPickerOpen] = useState(false);
+    const [knowledgeOpen, setKnowledgeOpen] = useState(false);
     const [skillSearch, setSkillSearch] = useState('');
 
     const [chat, setChat] = useState(history || []);
@@ -33,21 +48,30 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
     }, [chat]);
 
+    // Lazy-load skills + integration status on first picker open
     useEffect(() => {
-        if (!skillPickerOpen) return;
-        let cancelled = false;
+        if (!skillPickerOpen || allSkills !== null) return;
         (async () => {
             try {
                 const res = await authFetch(`${API_BASE}/api/skills`);
-                if (!res.ok) return;
-                const data = await res.json();
-                if (!cancelled) setAvailableSkills(Array.isArray(data) ? data : []);
-            } catch (_) { /* skills feature may be disabled */ }
+                setAllSkills(res.ok ? await res.json() : []);
+            } catch (_) { setAllSkills([]); }
         })();
-        return () => { cancelled = true; };
-    }, [skillPickerOpen]);
+    }, [skillPickerOpen, allSkills]);
 
-    // Debounced auto-save
+    useEffect(() => {
+        if (!appsPickerOpen || integrationStatus !== null) return;
+        (async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/ai/user-settings`);
+                if (res.ok) setIntegrationStatus(await res.json());
+                else setIntegrationStatus({});
+            } catch (_) { setIntegrationStatus({}); }
+        })();
+    }, [appsPickerOpen, integrationStatus]);
+
+    // Debounced auto-save: writes the canonical config shape so the agent round-trips
+    // cleanly into AgentEditorUI ([components/admin/AgentEditorUI.jsx]).
     const saveTimer = useRef(null);
     const queueSave = useCallback((patch) => {
         if (!agent?.id) return;
@@ -71,22 +95,41 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         }, 600);
     }, [agent?.id]);
 
+    const saveConfig = useCallback((patch) => {
+        const nextConfig = { ...(agent?.config || {}), ...patch };
+        queueSave({ config: nextConfig });
+    }, [agent?.config, queueSave]);
+
     const updateName = (v) => { setName(v); queueSave({ name: v }); };
-    const updateAvatar = (v) => {
-        setAvatar(v);
-        queueSave({ config: { ...(agent?.config || {}), avatar: v } });
-    };
+    const updateAvatar = (v) => { setAvatar(v); saveConfig({ avatar: v }); };
     const updateInstructions = (v) => { setInstructions(v); queueSave({ systemPrompt: v }); };
     const toggleChannel = (id) => {
         const next = channels.includes(id) ? channels.filter(c => c !== id) : [...channels, id];
         setChannels(next);
-        queueSave({ config: { ...(agent?.config || {}), wizard: { ...(agent?.config?.wizard || {}), channels: next } } });
+        saveConfig({ wizard: { ...(agent?.config?.wizard || {}), channels: next } });
     };
     const toggleMemory = () => {
         const next = !memoryEnabled;
         setMemoryEnabled(next);
-        queueSave({ config: { ...(agent?.config || {}), wizard: { ...(agent?.config?.wizard || {}), memoryEnabled: next } } });
+        saveConfig({ memoryEnabled: next });
     };
+    const toggleSkill = (id) => {
+        const next = attachedSkillIds.includes(id) ? attachedSkillIds.filter(x => x !== id) : [...attachedSkillIds, id];
+        setAttachedSkillIds(next);
+        saveConfig({ attachedSkillIds: next });
+    };
+    const toggleIntegration = (id, available) => {
+        const baseList = enabledIntegrations || available.map(a => a.id);
+        const next = baseList.includes(id) ? baseList.filter(x => x !== id) : [...baseList, id];
+        setEnabledIntegrations(next);
+        saveConfig({ enabledIntegrations: next });
+    };
+    const onKnowledgeBaseIdsChange = (next) => {
+        setKnowledgeBaseIds(next);
+        saveConfig({ knowledge_base_ids: next });
+    };
+    const onStrictKnowledgeChange = (v) => { setStrictKnowledge(v); saveConfig({ strictKnowledge: v }); };
+    const onIncludeSourceReferencesChange = (v) => { setIncludeSourceReferences(v); saveConfig({ includeSourceReferences: v }); };
 
     const handleRefine = async () => {
         const text = chatInput.trim();
@@ -116,7 +159,11 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 name: updated.name,
                 description: updated.description,
                 systemPrompt: updated.systemPrompt,
-                config: { ...(agent?.config || {}), avatar: updated.avatar || avatar, wizard: { channels: updated.channels, capabilities: updated.capabilities, suggestedSkills: updated.suggestedSkills, memoryEnabled } },
+                config: {
+                    ...(agent?.config || {}),
+                    avatar: updated.avatar || avatar,
+                    wizard: { channels: updated.channels, capabilities: updated.capabilities, suggestedSkills: updated.suggestedSkills },
+                },
             });
             setChat(prev => [...prev, { role: 'plan', plan: updated }]);
         } catch (err) {
@@ -126,25 +173,36 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         }
     };
 
-    const handlePublish = async () => {
-        if (!agent?.id) return;
-        setPublishing(true);
-        try {
-            const res = await authFetch(`${API_BASE}/agents/${agent.id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ config: { ...(agent?.config || {}), published: true } }),
-            });
-            if (!res.ok) throw new Error(await res.text());
-            const updated = await res.json();
-            if (onPublished) onPublished(updated);
-        } catch (err) {
-            console.error('Publish failed:', err);
-            alert(t('agent_wizard.builder.publish_failed', { error: err.message }));
-        } finally {
-            setPublishing(false);
+    // Flush any pending debounced save, then close.
+    const handleDone = async () => {
+        if (saveTimer.current) {
+            clearTimeout(saveTimer.current);
+            saveTimer.current = null;
         }
+        if (onPublished) onPublished(agent);
     };
+
+    // Filter integration catalog by org/credential gating (mirrors ToolsSection.jsx).
+    const availableIntegrations = (() => {
+        if (!integrationStatus) return INTEGRATION_CATALOG;
+        const status = integrationStatus;
+        return INTEGRATION_CATALOG.filter(item => {
+            const orgEnabled = status.orgEnabledIntegrations;
+            if (orgEnabled && !orgEnabled.includes(item.id)) return false;
+            if (item.group === 'google') return !!status.isGoogleUser;
+            if (item.id === 'fireflies') return !!status.hasFirefliesKey;
+            if (item.id === 'youtrack') return !!status.hasYouTrackConfig;
+            if (item.id === 'gamma') return !!status.hasGammaKey;
+            if (item.id === 'n8n') return !!status.hasN8nConfig;
+            if (item.id === 'linkedin') return !!status.hasLinkedInConfig || !!status.linkedInConnected;
+            return true;
+        });
+    })();
+
+    const skillNamesById = new Map((allSkills || []).map(s => [s.id, s]));
+    const enabledIntegrationCount = enabledIntegrations === null
+        ? availableIntegrations.length
+        : enabledIntegrations.filter(id => availableIntegrations.some(a => a.id === id)).length;
 
     return (
         <div className="flex h-full bg-[var(--bg-primary)]">
@@ -170,7 +228,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                             );
                         }
                         if (m.role === 'plan') {
-                            return <div key={i}><PlanCard plan={m.plan} onAdjust={() => {}} onBuild={() => {}} busy /></div>;
+                            return <div key={i}><PlanCard plan={m.plan} onAdjust={() => { }} onBuild={() => { }} busy /></div>;
                         }
                         if (m.role === 'error') {
                             return <div key={i} className="text-xs text-red-500">{m.content}</div>;
@@ -203,12 +261,16 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
             {/* Right config panel */}
             <main className="flex-1 overflow-y-auto">
                 <div className="flex items-center justify-end gap-3 px-6 py-3 border-b border-[var(--border-default)]">
+                    <span className="text-xs text-[var(--text-tertiary)]">
+                        {savingState === 'saving' && t('agent_wizard.builder.save_saving')}
+                        {savingState === 'saved' && t('agent_wizard.builder.save_saved')}
+                        {savingState === 'error' && t('agent_wizard.builder.save_error')}
+                    </span>
                     <button
-                        onClick={handlePublish}
-                        disabled={publishing}
-                        className="px-5 py-2 rounded-full bg-[var(--accent)] text-white text-sm font-medium hover:opacity-90 disabled:opacity-50"
+                        onClick={handleDone}
+                        className="px-5 py-2 rounded-full bg-[var(--accent)] text-white text-sm font-medium hover:opacity-90"
                     >
-                        {publishing ? t('agent_wizard.busy') : t('agent_wizard.builder.publish')}
+                        {t('agent_wizard.builder.done')}
                     </button>
                 </div>
 
@@ -220,7 +282,6 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 if (v) updateAvatar(v.trim().slice(0, 4));
                             }}
                             className="w-14 h-14 rounded-full bg-[var(--bg-secondary)] border border-[var(--border-default)] text-2xl flex items-center justify-center hover:bg-[var(--bg-tertiary)]"
-                            title="Avatar wijzigen"
                         >
                             {avatar}
                         </button>
@@ -255,39 +316,66 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     </div>
 
                     <div className="flex flex-wrap gap-2 mb-8 relative">
-                        <ActionPill icon={<AppWindow size={14} />} label={t('agent_wizard.builder.browse_apps')} onClick={() => {
-                            window.open('/app/admin/integrations', '_blank');
-                        }} />
-                        <ActionPill icon={<Sparkles size={14} />} label={t('agent_wizard.builder.add_skill')} onClick={() => setSkillPickerOpen(v => !v)} active={skillPickerOpen} />
-                        <ActionPill icon={<Upload size={14} />} label={t('agent_wizard.builder.upload_files')} onClick={() => {
-                            if (agent?.id) window.open(`/app/agent-designer/${agent.id}`, '_blank');
-                        }} />
-                        <ActionPill icon={<Brain size={14} />} label={memoryEnabled ? t('agent_wizard.builder.memory_on') : t('agent_wizard.builder.memory')} onClick={toggleMemory} active={memoryEnabled} />
+                        <ActionPill
+                            icon={<AppWindow size={14} />}
+                            label={`${t('agent_wizard.builder.browse_apps')} · ${enabledIntegrationCount}`}
+                            onClick={() => setAppsPickerOpen(v => !v)}
+                            active={appsPickerOpen}
+                        />
+                        <ActionPill
+                            icon={<Sparkles size={14} />}
+                            label={`${t('agent_wizard.builder.add_skill')} · ${attachedSkillIds.length}`}
+                            onClick={() => setSkillPickerOpen(v => !v)}
+                            active={skillPickerOpen}
+                        />
+                        <ActionPill
+                            icon={<Upload size={14} />}
+                            label={`${t('agent_wizard.builder.upload_files')} · ${knowledgeBaseIds.length}`}
+                            onClick={() => setKnowledgeOpen(true)}
+                        />
+                        <ActionPill
+                            icon={<Brain size={14} />}
+                            label={memoryEnabled ? t('agent_wizard.builder.memory_on') : t('agent_wizard.builder.memory')}
+                            onClick={toggleMemory}
+                            active={memoryEnabled}
+                        />
 
                         {skillPickerOpen && (
                             <SkillPicker
-                                available={availableSkills}
-                                selected={skills}
+                                t={t}
+                                skills={allSkills || []}
+                                selectedIds={attachedSkillIds}
                                 search={skillSearch}
                                 onSearch={setSkillSearch}
                                 onClose={() => setSkillPickerOpen(false)}
+                                onToggle={toggleSkill}
+                            />
+                        )}
+                        {appsPickerOpen && (
+                            <AppsPicker
                                 t={t}
-                                onToggle={(name) => {
-                                    const next = skills.includes(name) ? skills.filter(s => s !== name) : [...skills, name];
-                                    setSkills(next);
-                                    queueSave({ config: { ...(agent?.config || {}), wizard: { ...(agent?.config?.wizard || {}), suggestedSkills: next.map(n => ({ name: n })) } } });
-                                }}
+                                items={availableIntegrations}
+                                enabled={enabledIntegrations}
+                                onClose={() => setAppsPickerOpen(false)}
+                                onToggle={(id) => toggleIntegration(id, availableIntegrations)}
                             />
                         )}
                     </div>
 
-                    {skills.length > 0 && (
+                    {attachedSkillIds.length > 0 && (
                         <div className="mb-8">
                             <div className="text-sm text-[var(--text-secondary)] mb-2">{t('agent_wizard.builder.skills')}</div>
                             <div className="flex flex-wrap gap-2">
-                                {skills.map((s, i) => (
-                                    <span key={i} className="px-3 py-1 rounded-full bg-[var(--bg-secondary)] border border-[var(--border-default)] text-sm text-[var(--text-primary)]">{s}</span>
-                                ))}
+                                {attachedSkillIds.map((id) => {
+                                    const s = skillNamesById.get(id);
+                                    return (
+                                        <span key={id} className="px-3 py-1 rounded-full bg-[var(--bg-secondary)] border border-[var(--border-default)] text-sm text-[var(--text-primary)] flex items-center gap-2">
+                                            <span>{s?.icon || '✨'}</span>
+                                            <span>{s?.name || id}</span>
+                                            <button onClick={() => toggleSkill(id)} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={12} /></button>
+                                        </span>
+                                    );
+                                })}
                             </div>
                         </div>
                     )}
@@ -304,12 +392,27 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     </div>
                 </div>
             </main>
+
+            {knowledgeOpen && agent?.id && (
+                <KnowledgeModal onClose={() => setKnowledgeOpen(false)}>
+                    <KnowledgePanel
+                        agentId={agent.id}
+                        API_BASE={API_BASE}
+                        knowledgeBaseIds={knowledgeBaseIds}
+                        onKnowledgeBaseIdsChange={onKnowledgeBaseIdsChange}
+                        strictKnowledge={strictKnowledge}
+                        onStrictKnowledgeChange={onStrictKnowledgeChange}
+                        includeSourceReferences={includeSourceReferences}
+                        onIncludeSourceReferencesChange={onIncludeSourceReferencesChange}
+                    />
+                </KnowledgeModal>
+            )}
         </div>
     );
 }
 
-function SkillPicker({ available, selected, search, onSearch, onClose, onToggle, t }) {
-    const filtered = (available || []).filter(s =>
+function SkillPicker({ skills, selectedIds, search, onSearch, onClose, onToggle, t }) {
+    const filtered = (skills || []).filter(s =>
         !search || (s.name || '').toLowerCase().includes(search.toLowerCase())
     );
     return (
@@ -332,11 +435,11 @@ function SkillPicker({ available, selected, search, onSearch, onClose, onToggle,
                     </div>
                 )}
                 {filtered.map((s) => {
-                    const checked = selected.includes(s.name);
+                    const checked = selectedIds.includes(s.id);
                     return (
                         <button
-                            key={s.id || s.name}
-                            onClick={() => onToggle(s.name)}
+                            key={s.id}
+                            onClick={() => onToggle(s.id)}
                             className="w-full flex items-center gap-3 py-2 text-left hover:bg-[var(--bg-secondary)] rounded-lg px-2"
                         >
                             <span className="text-base">{s.icon || '✨'}</span>
@@ -350,6 +453,54 @@ function SkillPicker({ available, selected, search, onSearch, onClose, onToggle,
                         </button>
                     );
                 })}
+            </div>
+        </div>
+    );
+}
+
+function AppsPicker({ items, enabled, onClose, onToggle, t }) {
+    const isSelected = (id) => enabled === null ? true : enabled.includes(id);
+    return (
+        <div className="absolute z-20 top-full left-0 mt-2 w-[480px] rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-lg p-3">
+            <div className="flex items-center justify-between mb-2 px-1">
+                <div className="text-sm font-medium text-[var(--text-primary)]">{t('agent_wizard.builder.browse_apps')}</div>
+                <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={14} /></button>
+            </div>
+            <div className="max-h-72 overflow-y-auto grid grid-cols-2 gap-2">
+                {items.length === 0 && (
+                    <div className="col-span-2 text-xs text-[var(--text-tertiary)] py-3 text-center">—</div>
+                )}
+                {items.map((item) => {
+                    const selected = isSelected(item.id);
+                    return (
+                        <button
+                            key={item.id}
+                            onClick={() => onToggle(item.id)}
+                            className={`flex items-center gap-3 p-2.5 rounded-lg border text-left transition ${selected ? 'border-[var(--accent)] bg-[var(--bg-secondary)]' : 'border-[var(--border-default)] bg-[var(--bg-secondary)] opacity-60 hover:opacity-100'}`}
+                        >
+                            <div className="w-7 h-7 rounded flex items-center justify-center flex-shrink-0">
+                                {item.iconSvg}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                                <div className="text-sm text-[var(--text-primary)] truncate">{item.label}</div>
+                                <div className="text-[10px] text-[var(--text-tertiary)] truncate">{item.description}</div>
+                            </div>
+                        </button>
+                    );
+                })}
+            </div>
+        </div>
+    );
+}
+
+function KnowledgeModal({ children, onClose }) {
+    return (
+        <div className="fixed inset-0 z-[1000] bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
+            <div className="bg-[var(--bg-primary)] rounded-xl w-full max-w-4xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+                <div className="flex items-center justify-end px-4 py-2 border-b border-[var(--border-default)]">
+                    <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={18} /></button>
+                </div>
+                <div className="p-4">{children}</div>
             </div>
         </div>
     );
