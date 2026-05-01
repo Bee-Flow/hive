@@ -1,6 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { ArrowLeft, ArrowUp, MessageCircle, Calendar, Tag } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
+import MarkdownRenderer from '../../MarkdownRenderer';
+import ModelTierSelector from '../../ModelTierSelector';
 import PlanCard from './PlanCard';
 import BuilderSplit from './BuilderSplit';
 
@@ -18,6 +20,17 @@ export default function AgentWizard({ user, onClose, onPublished }) {
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
     const [agent, setAgent] = useState(null);
+    const [tiers, setTiers] = useState({});
+    const [tier, setTier] = useState('fast');
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/ai/config/tiers-for-user?taskType=direct_chat`);
+                if (res.ok) setTiers(await res.json());
+            } catch (_) { /* ignore */ }
+        })();
+    }, []);
 
     const submitPrompt = async (text) => {
         if (!text.trim() || busy) return;
@@ -29,7 +42,7 @@ export default function AgentWizard({ user, onClose, onPublished }) {
             const res = await authFetch(`${API_BASE}/agents/wizard/draft`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt: text, modelTier: 'fast' }),
+                body: JSON.stringify({ prompt: text, modelTier: tier }),
             });
             if (!res.ok) throw new Error(await res.text());
             const { plan: draft } = await res.json();
@@ -52,7 +65,7 @@ export default function AgentWizard({ user, onClose, onPublished }) {
             const res = await authFetch(`${API_BASE}/agents/wizard/refine`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, plan, refinement }),
+                body: JSON.stringify({ prompt, plan, refinement, modelTier: tier }),
             });
             if (!res.ok) throw new Error(await res.text());
             const { plan: updated } = await res.json();
@@ -118,9 +131,17 @@ export default function AgentWizard({ user, onClose, onPublished }) {
 
             {stage === 'landing' && (
                 <div className="flex-1 flex flex-col items-center justify-center px-6">
-                    <div className="text-5xl mb-4">🐝</div>
+                    <img src="/BeeFlow-logo-Icon-2026.svg" alt="Bee Flow" className="w-16 h-16 mb-4" />
                     <h1 className="text-2xl font-semibold text-[var(--text-primary)] mb-8">Een nieuwe agent maken</h1>
-                    <PromptInput value={prompt} onChange={setPrompt} onSubmit={() => submitPrompt(prompt)} busy={busy} />
+                    <PromptInput
+                        value={prompt}
+                        onChange={setPrompt}
+                        onSubmit={() => submitPrompt(prompt)}
+                        busy={busy}
+                        tiers={tiers}
+                        tier={tier}
+                        onTierChange={setTier}
+                    />
                     {error && <div className="mt-4 text-sm text-red-500 max-w-xl">{error}</div>}
                     <div className="mt-8 w-full max-w-xl space-y-1">
                         {EXAMPLE_PROMPTS.map((ex) => (
@@ -153,9 +174,9 @@ export default function AgentWizard({ user, onClose, onPublished }) {
                                 const isLatest = i === history.length - 1;
                                 return (
                                     <div key={i}>
-                                        <p className="text-sm text-[var(--text-secondary)] mb-3">
-                                            Hier is een opzet voor de agent die ik voor je kan bouwen. Laat het me weten als je nog aanpassingen hebt, dan ga ik aan de slag!
-                                        </p>
+                                        <div className="text-sm text-[var(--text-secondary)] mb-3 prose prose-sm max-w-none">
+                                            <MarkdownRenderer content={`Hier is een opzet voor de agent die ik voor je kan bouwen. Laat het me weten als je nog aanpassingen hebt, dan ga ik aan de slag!`} />
+                                        </div>
                                         <PlanCard
                                             plan={m.plan}
                                             busy={busy || !isLatest}
@@ -180,6 +201,9 @@ export default function AgentWizard({ user, onClose, onPublished }) {
                             onSubmit={() => { refine(prompt); setPrompt(''); }}
                             busy={busy}
                             placeholder="Beschrijf wat de agent moet doen"
+                            tiers={tiers}
+                            tier={tier}
+                            onTierChange={setTier}
                         />
                     </div>
                 </div>
@@ -188,7 +212,7 @@ export default function AgentWizard({ user, onClose, onPublished }) {
     );
 }
 
-function PromptInput({ value, onChange, onSubmit, busy, placeholder }) {
+function PromptInput({ value, onChange, onSubmit, busy, placeholder, tiers, tier, onTierChange }) {
     return (
         <div className="w-full max-w-xl rounded-2xl border border-[var(--border-default)] bg-[var(--bg-secondary)] px-4 py-3">
             <textarea
@@ -200,7 +224,10 @@ function PromptInput({ value, onChange, onSubmit, busy, placeholder }) {
                 className="w-full bg-transparent outline-none text-sm text-[var(--text-primary)] placeholder-[var(--text-tertiary)] resize-none"
                 disabled={busy}
             />
-            <div className="flex items-center justify-end mt-1">
+            <div className="flex items-center justify-between mt-1 gap-2">
+                {onTierChange ? (
+                    <ModelTierSelector tiers={tiers || {}} value={tier} onChange={onTierChange} dropDirection="up" />
+                ) : <span />}
                 <button
                     onClick={onSubmit}
                     disabled={busy || !value.trim()}
