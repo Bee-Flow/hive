@@ -2,6 +2,24 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Bot, Plus, Play, Pause, Pencil, Trash2, Clock, Repeat, X, Sparkles, Zap, ArrowLeft, Check } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import MarkdownRenderer from '../../MarkdownRenderer';
+import ModelTierSelector from '../../ModelTierSelector';
+import { tierLabel } from '../../tierMeta';
+
+const REPEAT_OPTIONS = [
+    { value: '',          label: 'One-time (no repeat)' },
+    { value: 'daily',     label: 'Daily' },
+    { value: 'weekdays',  label: 'Weekdays (Mon–Fri)' },
+    { value: 'weekly',    label: 'Weekly' },
+    { value: 'biweekly',  label: 'Every 2 weeks' },
+    { value: 'monthly',   label: 'Monthly' },
+    { value: 'quarterly', label: 'Every 3 months' },
+    { value: 'yearly',    label: 'Yearly' },
+];
+
+function repeatLabel(value) {
+    const opt = REPEAT_OPTIONS.find(o => o.value === (value || ''));
+    return opt ? opt.label : value;
+}
 
 function timeAgo(dateStr) {
     if (!dateStr) return '';
@@ -37,13 +55,7 @@ const STATUS_COLORS = {
     error: { bg: 'rgba(239,68,68,0.08)', color: '#ef4444', label: '❌ Error' },
 };
 
-const TIER_LABELS = {
-    fast: '⚡ Fast (quick lookups)',
-    smart: '🧠 Smart (analysis)',
-    thinking: '💎 Thinking (deep research)',
-};
-
-export default function AITasksDesigner({ initialTaskId = null, onClose }) {
+export default function AITasksDesigner({ initialTaskId = null, onClose, modelTiers = {} }) {
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(false);
     const [maxTasks, setMaxTasks] = useState(10);
@@ -56,7 +68,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose }) {
     const [date, setDate] = useState('');
     const [time, setTime] = useState('');
     const [repeatInterval, setRepeatInterval] = useState('weekly');
-    const [tier, setTier] = useState('fast');
+    const [tier, setTier] = useState('auto');
 
     const fetchTasks = useCallback(async () => {
         setLoading(true);
@@ -91,7 +103,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose }) {
 
     const resetForm = () => {
         setTitle(''); setPrompt(''); setDate(''); setTime('');
-        setRepeatInterval('weekly'); setTier('fast');
+        setRepeatInterval('weekly'); setTier('auto');
         setEditingTaskId(null);
     };
 
@@ -111,8 +123,8 @@ export default function AITasksDesigner({ initialTaskId = null, onClose }) {
         } else {
             setDate(''); setTime('');
         }
-        setRepeatInterval(task.repeatInterval || 'weekly');
-        setTier(task.modelTier || 'fast');
+        setRepeatInterval(task.repeatInterval || '');
+        setTier(task.modelTier || 'auto');
     };
 
     const saveTask = async () => {
@@ -246,6 +258,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose }) {
                         time={time} setTime={setTime}
                         repeatInterval={repeatInterval} setRepeatInterval={setRepeatInterval}
                         tier={tier} setTier={setTier}
+                        modelTiers={modelTiers}
                         canSave={canSave} isNewMode={isNewMode}
                         onSave={saveTask} onCancel={resetForm}
                         nextRunPreview={nextRunPreview}
@@ -255,6 +268,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose }) {
                         loading={loading}
                         activeTasks={activeTasks}
                         inactiveTasks={inactiveTasks}
+                        modelTiers={modelTiers}
                         onEdit={startEditTask}
                         onToggle={toggleTask}
                         onDelete={deleteTask}
@@ -364,7 +378,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose }) {
     );
 }
 
-function ListView({ loading, activeTasks, inactiveTasks, onEdit, onToggle, onDelete, onRunNow, onOpenResult, onCreate, canCreate }) {
+function ListView({ loading, activeTasks, inactiveTasks, modelTiers, onEdit, onToggle, onDelete, onRunNow, onOpenResult, onCreate, canCreate }) {
     if (loading && activeTasks.length === 0 && inactiveTasks.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-20 text-[var(--text-muted)] text-[13px]">
@@ -414,7 +428,7 @@ function ListView({ loading, activeTasks, inactiveTasks, onEdit, onToggle, onDel
                     </div>
                     <div className="space-y-2 mb-6">
                         {activeTasks.map((t, i) => (
-                            <TaskCard key={t.id} task={t} index={i}
+                            <TaskCard key={t.id} task={t} index={i} modelTiers={modelTiers}
                                 onEdit={onEdit} onToggle={onToggle} onDelete={onDelete}
                                 onRunNow={onRunNow} onOpenResult={onOpenResult} />
                         ))}
@@ -428,7 +442,7 @@ function ListView({ loading, activeTasks, inactiveTasks, onEdit, onToggle, onDel
                     </div>
                     <div className="space-y-2">
                         {inactiveTasks.map((t, i) => (
-                            <TaskCard key={t.id} task={t} index={i}
+                            <TaskCard key={t.id} task={t} index={i} modelTiers={modelTiers}
                                 onEdit={onEdit} onToggle={onToggle} onDelete={onDelete}
                                 onRunNow={onRunNow} onOpenResult={onOpenResult} />
                         ))}
@@ -439,10 +453,10 @@ function ListView({ loading, activeTasks, inactiveTasks, onEdit, onToggle, onDel
     );
 }
 
-function TaskCard({ task, index, onEdit, onToggle, onDelete, onRunNow, onOpenResult }) {
+function TaskCard({ task, index, modelTiers, onEdit, onToggle, onDelete, onRunNow, onOpenResult }) {
     const t = task;
     const status = STATUS_COLORS[t.lastStatus] || STATUS_COLORS.pending;
-    const tierShort = { fast: '⚡ Fast', smart: '🧠 Smart', thinking: '💎 Thinking' }[t.modelTier] || t.modelTier;
+    const tierShort = tierLabel(t.modelTier, modelTiers);
 
     return (
         <div
@@ -473,7 +487,7 @@ function TaskCard({ task, index, onEdit, onToggle, onDelete, onRunNow, onOpenRes
                         {t.repeatInterval && (
                             <span className="text-[10px] px-2 py-0.5 rounded-md font-semibold inline-flex items-center gap-1" style={{ background: 'rgba(139,92,246,0.06)', color: '#8b5cf6' }}>
                                 <Repeat className="w-2.5 h-2.5" />
-                                {t.repeatInterval}
+                                {repeatLabel(t.repeatInterval)}
                             </span>
                         )}
                         <span className="text-[10px] px-2 py-0.5 rounded-md font-semibold text-[var(--text-muted)]" style={{ background: 'rgba(0,0,0,0.04)' }}>
@@ -552,6 +566,7 @@ function EditorView({
     title, setTitle, prompt, setPrompt,
     date, setDate, time, setTime,
     repeatInterval, setRepeatInterval, tier, setTier,
+    modelTiers,
     canSave, isNewMode, onSave, onCancel, nextRunPreview,
 }) {
     return (
@@ -625,25 +640,21 @@ function EditorView({
                                 className="w-full px-3.5 py-2.5 rounded-xl border bg-[var(--bg-card)] text-[13px] text-[var(--text-primary)] outline-none focus:border-[#8b5cf6] transition-colors cursor-pointer"
                                 style={{ borderColor: 'var(--border-subtle, rgba(0,0,0,0.08))' }}
                             >
-                                <option value="daily">Daily</option>
-                                <option value="weekly">Weekly</option>
-                                <option value="monthly">Monthly</option>
+                                {REPEAT_OPTIONS.map(opt => (
+                                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                                ))}
                             </select>
                         </div>
                         <div>
                             <label className="block text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1.5">
                                 Model tier
                             </label>
-                            <select
+                            <ModelTierSelector
+                                tiers={modelTiers || {}}
                                 value={tier}
-                                onChange={e => setTier(e.target.value)}
-                                className="w-full px-3.5 py-2.5 rounded-xl border bg-[var(--bg-card)] text-[13px] text-[var(--text-primary)] outline-none focus:border-[#8b5cf6] transition-colors cursor-pointer"
-                                style={{ borderColor: 'var(--border-subtle, rgba(0,0,0,0.08))' }}
-                            >
-                                {Object.entries(TIER_LABELS).map(([k, v]) => (
-                                    <option key={k} value={k}>{v}</option>
-                                ))}
-                            </select>
+                                onChange={setTier}
+                                dropDirection="down"
+                            />
                         </div>
                     </div>
 
@@ -681,7 +692,7 @@ function EditorView({
                                 {nextRunPreview}
                             </div>
                             <div className="text-[11px] text-[var(--text-muted)] mt-1">
-                                Then repeats {repeatInterval}.
+                                {repeatInterval ? `Then repeats: ${repeatLabel(repeatInterval).toLowerCase()}.` : 'Runs once, then stops.'}
                             </div>
                         </div>
                     )}
@@ -691,7 +702,7 @@ function EditorView({
                         </div>
                         <ul className="text-[12px] text-[var(--text-secondary)] space-y-2 leading-relaxed list-disc pl-4">
                             <li>Be specific: tell the AI exactly what output format you want.</li>
-                            <li>Use <strong>Fast</strong> for quick lookups, <strong>Smart</strong> for analysis, <strong>Thinking</strong> for deep research.</li>
+                            <li>Pick a model tier — hover the picker for what each one's best at.</li>
                             <li>Results appear in Notifications and stay accessible for 30 days.</li>
                             <li>Pause a task any time — it won't run again until resumed.</li>
                         </ul>

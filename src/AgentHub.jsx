@@ -1492,7 +1492,7 @@ const AgentHub = ({
                     }} initialAgentId={initialDesignerAgentId} onClose={onCloseAgentDesigner} />
                 ) : showAITasks ? (
                     /* AI Tasks designer rendered inline in conversation area */
-                    <AITasksDesigner initialTaskId={initialAITaskId} onClose={onCloseAITasks} />
+                    <AITasksDesigner initialTaskId={initialAITaskId} onClose={onCloseAITasks} modelTiers={modelTiers} />
                 ) : showSkillsPanel ? (
                     /* Skills panel rendered inline in conversation area */
                     <SkillsPanel

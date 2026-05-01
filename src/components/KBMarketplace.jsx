@@ -26,11 +26,7 @@ const SORT_OPTIONS = [
     { key: 'az', label: 'Alphabetical' },
 ];
 
-const dominantSourceType = (kb) => {
-    // Without per-source counts, fall back to 'file' as default
-    if (!kb.dominant_source) return 'file';
-    return kb.dominant_source;
-};
+const isImageIcon = (i) => typeof i === 'string' && (i.startsWith('data:') || i.startsWith('http'));
 
 const formatNum = (n) => {
     const v = Number(n) || 0;
@@ -81,9 +77,11 @@ const KBCard = React.memo(({ kbId, name, icon, description, categoryLabel, isPub
         <div className="flex items-start gap-3">
             <div
                 className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 overflow-hidden"
-                style={{ background: 'var(--bg-tertiary)', color: 'var(--accent-primary)', fontSize: icon ? '1.2rem' : undefined }}
+                style={{ background: 'var(--bg-tertiary)', color: 'var(--accent-primary)', fontSize: icon && !isImageIcon(icon) ? '1.2rem' : undefined }}
             >
-                {icon ? icon : <BookOpen className="w-5 h-5" />}
+                {isImageIcon(icon)
+                    ? <img src={icon} alt="" className="w-full h-full object-cover" />
+                    : (icon || <BookOpen className="w-5 h-5" />)}
             </div>
             <div className="flex-1 min-w-0 pr-16">
                 <h3 className="font-semibold text-[13px] truncate" style={{ color: 'var(--text-primary)' }} title={name}>{name}</h3>
