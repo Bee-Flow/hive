@@ -1,14 +1,6 @@
 import React from 'react';
-import { MessageCircle, Slack, BookOpen, FileText, Search, Mail, Users } from 'lucide-react';
+import { BookOpen, FileText, Search } from 'lucide-react';
 import useTranslation from '../../../hooks/useTranslation';
-
-const CHANNEL_ICONS = {
-    chatgpt: <MessageCircle size={16} />,
-    slack: <Slack size={16} />,
-    teams: <Users size={16} />,
-    discord: <MessageCircle size={16} />,
-    email: <Mail size={16} />,
-};
 
 const CAPABILITY_ICONS = [
     <BookOpen size={16} key="b" />,
@@ -25,24 +17,6 @@ export default function PlanCard({ plan, onAdjust, onBuild, busy, t: tOverride }
             <div className="text-xs uppercase tracking-wide text-[var(--accent)] mb-1">{t('agent_wizard.plan_label')}</div>
             <h3 className="text-lg font-semibold text-[var(--text-primary)]">{plan.name}</h3>
             <p className="text-sm text-[var(--text-secondary)] mt-2 leading-relaxed">{plan.description}</p>
-
-            {plan.channels?.length > 0 && (
-                <div className="mt-5">
-                    <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-2">{t('agent_wizard.channels')}</div>
-                    <div className="divide-y divide-[var(--border-default)] border-t border-b border-[var(--border-default)]">
-                        {plan.channels.map((c) => {
-                            const icon = CHANNEL_ICONS[c] || <MessageCircle size={16} />;
-                            const label = t(`agent_wizard.channel.${c}`) || c;
-                            return (
-                                <div key={c} className="flex items-center gap-3 py-2.5 text-sm text-[var(--text-primary)]">
-                                    <span className="text-[var(--text-secondary)]">{icon}</span>
-                                    <span>{label}</span>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
 
             {plan.capabilities?.length > 0 && (
                 <div className="mt-5">
