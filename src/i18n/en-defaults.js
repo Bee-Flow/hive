@@ -1721,6 +1721,18 @@ const EN_DEFAULTS = {
 
     // ── Agent Wizard ─────────────────────────────────────────────
     "agent_wizard.sidebar_link": "Create agent with AI",
+
+    "agent_studio.title": "Agents",
+    "agent_studio.title_system": "System Agents",
+    "agent_studio.create_with_ai": "Create with AI",
+    "agent_studio.create_empty": "Create empty agent",
+    "agent_studio.empty": "No agents yet — create one with AI or start empty.",
+    "agent_studio.untitled": "Untitled agent",
+    "agent_studio.delete": "Delete",
+    "agent_studio.delete_confirm": "Delete agent \"{name}\"? This cannot be undone.",
+    "agent_studio.advanced": "Advanced",
+    "agent_studio.advanced_settings": "Advanced settings (guardrails, sharing, embed)",
+
     "agent_wizard.title": "Create a new agent",
     "agent_wizard.back": "Back",
     "agent_wizard.start_over": "Start over",

@@ -3,11 +3,12 @@ import { CheckCircle2, X, Loader2, ChevronRight, FileCode2, Palette, Cpu, Sparkl
 
 const FILE_ICON = { html: FileCode2, css: Palette, js: Cpu };
 const FILE_LABEL = { html: 'index.html', css: 'style.css', js: 'script.js' };
-const ACTION_LABEL = { create: 'Create', rewrite: 'Rewrite', partial_edit: 'Edit' };
+const ACTION_LABEL = { edit: 'Edit', create: 'Create', rewrite: 'Rewrite', partial_edit: 'Edit' };
 const ACTION_TONE = {
+    edit: { bg: 'rgba(234,179,8,0.16)', fg: 'rgb(133,77,14)' },
+    partial_edit: { bg: 'rgba(234,179,8,0.16)', fg: 'rgb(133,77,14)' },
     create: { bg: 'rgba(22,163,74,0.12)', fg: 'rgb(22,101,52)' },
     rewrite: { bg: 'rgba(2,132,199,0.12)', fg: 'rgb(7,89,133)' },
-    partial_edit: { bg: 'rgba(234,179,8,0.16)', fg: 'rgb(133,77,14)' },
 };
 
 /**

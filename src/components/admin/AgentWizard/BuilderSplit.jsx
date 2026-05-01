@@ -5,7 +5,7 @@ import useTranslation from '../../../hooks/useTranslation';
 import { INTEGRATION_CATALOG } from '../AgentDesigner/integrations';
 import PlanCard from './PlanCard';
 
-export default function BuilderSplit({ agent: initialAgent, plan, history, tier, locale, onBack, onPublished }) {
+export default function BuilderSplit({ agent: initialAgent, plan, history, tier, locale, onBack, onPublished, rightHeaderExtras = null }) {
     const { t } = useTranslation();
 
     const [agent, setAgent] = useState(initialAgent);
@@ -344,6 +344,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                         {savingState === 'saved' && t('agent_wizard.builder.save_saved')}
                         {savingState === 'error' && t('agent_wizard.builder.save_error')}
                     </span>
+                    {rightHeaderExtras}
                     <button
                         onClick={handleDone}
                         className="px-5 py-2 rounded-full bg-[var(--accent)] text-white text-sm font-medium hover:opacity-90"

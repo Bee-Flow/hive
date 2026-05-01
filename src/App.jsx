@@ -29,6 +29,7 @@ const PAGE_ROUTES = {
     orgSettings: '/app/org-settings',
     settings: '/app/settings',
     agentDesigner: '/app/agent-designer',
+    agentDesignerAdvanced: '/app/agent-designer-advanced',
     agentWizard: '/app/agent-wizard',
     aiTasks: '/app/ai-tasks',
     reports: '/app/reports',
@@ -69,7 +70,9 @@ function pageFromPath(pathname) {
     if (pathname === '/org-settings' || pathname.startsWith('/org-settings/')) return 'orgSettings';
     // /app/settings or /app/settings/* → settings
     if (pathname === '/app/settings' || pathname.startsWith('/app/settings/')) return 'settings';
-    // /app/agent-designer or /app/agent-designer/* → agentDesigner
+    // /app/agent-designer-advanced or /app/agent-designer-advanced/* → agentDesignerAdvanced (legacy form)
+    if (pathname === '/app/agent-designer-advanced' || pathname.startsWith('/app/agent-designer-advanced/')) return 'agentDesignerAdvanced';
+    // /app/agent-designer or /app/agent-designer/* → agentDesigner (unified studio)
     if (pathname === '/app/agent-designer' || pathname.startsWith('/app/agent-designer/')) return 'agentDesigner';
     // /app/agent-wizard → agentWizard
     if (pathname === '/app/agent-wizard' || pathname.startsWith('/app/agent-wizard/')) return 'agentWizard';
@@ -118,7 +121,7 @@ function parseOrgSettingsPath(pathname) {
 
 // Parse the agent id out of /app/agent-designer/{agentId} (trailing segments ignored).
 function parseAgentDesignerUrl(pathname) {
-    const match = pathname.match(/^\/app\/agent-designer(?:\/([^/]+))?/);
+    const match = pathname.match(/^\/app\/agent-designer(?:-advanced)?(?:\/([^/]+))?/);
     return match?.[1] || null;
 }
 
@@ -399,6 +402,17 @@ function App() {
         if (page === '/' || page === 'home') {
             setCurrentPage('agents');
             window.history.pushState({}, '', '/app');
+            return;
+        }
+        // Legacy Agent Designer (advanced form) — guardrails, embed, bubble widget, sharing
+        if (page === 'agentDesignerAdvanced' || page.startsWith('agentDesignerAdvanced:')) {
+            const agentId = page.includes(':') ? page.split(':')[1] : null;
+            setInitialDesignerAgentId(agentId);
+            const path = agentId ? `/app/agent-designer-advanced/${agentId}` : '/app/agent-designer-advanced';
+            if (window.location.pathname !== path) {
+                window.history.pushState({ page: 'agentDesignerAdvanced' }, '', path);
+            }
+            setCurrentPage('agentDesignerAdvanced');
             return;
         }
         // Agent Wizard — full-page guided creation flow
@@ -798,6 +812,21 @@ function App() {
 
         if (currentPage === 'components') {
             return <ComponentBuilder onBack={() => navigateToPage('agents')} />;
+        }
+
+        if (currentPage === 'agentDesignerAdvanced') {
+            return (
+                <AgentDesigner
+                    onBack={null}
+                    initialAgentId={initialDesignerAgentId}
+                    user={user}
+                    onClose={() => navigateToPage(initialDesignerAgentId ? `agentDesigner:${initialDesignerAgentId}` : 'agentDesigner')}
+                    hasPermission={(perm) => {
+                        const perms = user?.permissions || [];
+                        return perms.includes('all') || perms.includes(perm);
+                    }}
+                />
+            );
         }
 
 

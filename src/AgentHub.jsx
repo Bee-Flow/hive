@@ -18,7 +18,7 @@ import ProjectsPage from './components/ProjectsPage';
 import ProjectDetailPage from './components/ProjectDetailPage';
 import AdvancedSettings from './pages/AdvancedSettings';
 import AgentDesigner from './components/admin/AgentDesigner';
-import AgentWizard from './components/admin/AgentWizard';
+import AgentStudio from './components/admin/AgentStudio';
 import AITasksDesigner from './components/admin/AITasksDesigner';
 import SkillsPanel from './components/SkillsPanel';
 import EmailKBSettings from './components/EmailKBSettings';
@@ -1565,23 +1565,31 @@ const AgentHub = ({
                     /* Settings rendered inline in conversation area — Open WebUI style */
                     <AdvancedSettings onBack={null} onNavigate={onNavigate} onLogout={onLogout} user={user} onClose={onCloseSettings} />
                 ) : showAgentDesigner ? (
-                    /* Agent Designer rendered inline in conversation area */
-                    <AgentDesigner onBack={null} hasPermission={(perm) => {
-                        const perms = user?.permissions || [];
-                        return perms.includes('all') || perms.includes(perm);
-                    }} initialAgentId={initialDesignerAgentId} onClose={onCloseAgentDesigner} />
-                ) : showAgentWizard ? (
-                    /* AI Wizard rendered inline (same shell as AgentDesigner) */
-                    <AgentWizard
+                    /* Unified Agent Studio: list + wizard split layout. Replaces the
+                       legacy AgentDesigner as the primary editor. The legacy form
+                       (advanced settings: guardrails, embed, bubble widget, sharing)
+                       is still reachable via "Advanced" inside the studio. */
+                    <AgentStudio
                         user={user}
-                        onClose={onCloseAgentWizard}
-                        onSwitchToManual={() => {
-                            if (onCloseAgentWizard) onCloseAgentWizard();
-                            if (onNavigate) onNavigate('agentDesigner');
+                        initialAgentId={initialDesignerAgentId}
+                        onClose={onCloseAgentDesigner}
+                        onNavigate={onNavigate}
+                        hasPermission={(perm) => {
+                            const perms = user?.permissions || [];
+                            return perms.includes('all') || perms.includes(perm);
                         }}
-                        onPublished={(agent) => {
-                            if (onCloseAgentWizard) onCloseAgentWizard();
-                            if (agent?.id && onNavigate) onNavigate(`agentDesigner:${agent.id}`);
+                    />
+                ) : showAgentWizard ? (
+                    /* /app/agent-wizard kept as a deep link — same studio, opens in
+                       wizard (chat) mode for fresh creation. */
+                    <AgentStudio
+                        user={user}
+                        initialAgentId={null}
+                        onClose={onCloseAgentWizard}
+                        onNavigate={onNavigate}
+                        hasPermission={(perm) => {
+                            const perms = user?.permissions || [];
+                            return perms.includes('all') || perms.includes(perm);
                         }}
                     />
                 ) : showAITasks ? (
