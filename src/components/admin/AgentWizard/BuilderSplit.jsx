@@ -4,6 +4,7 @@ import { API_BASE, authFetch } from '../../../utils/helpers';
 import useTranslation from '../../../hooks/useTranslation';
 import ModelTierSelector from '../../ModelTierSelector';
 import VersionHistory from '../../VersionHistory';
+import MarkdownRenderer from '../../MarkdownRenderer';
 import { INTEGRATION_CATALOG } from '../AgentDesigner/integrations';
 import PlanCard from './PlanCard';
 
@@ -79,6 +80,8 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     const [appsPickerOpen, setAppsPickerOpen] = useState(false);
     const [knowledgeOpen, setKnowledgeOpen] = useState(false);
     const [skillSearch, setSkillSearch] = useState('');
+    const [instructionsEditing, setInstructionsEditing] = useState(false);
+    const instructionsTextareaRef = useRef(null);
 
     const [chat, setChat] = useState(history || []);
     const [chatInput, setChatInput] = useState('');
@@ -140,6 +143,14 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     useEffect(() => { stateRef.current.name = name; }, [name]);
     useEffect(() => { stateRef.current.systemPrompt = instructions; }, [instructions]);
     useEffect(() => { stateRef.current.description = description; }, [description]);
+    useEffect(() => {
+        if (instructionsEditing && instructionsTextareaRef.current) {
+            const el = instructionsTextareaRef.current;
+            el.focus();
+            const len = el.value.length;
+            el.setSelectionRange(len, len);
+        }
+    }, [instructionsEditing]);
 
     const agentIdRef = useRef(agent?.id);
     useEffect(() => { agentIdRef.current = agent?.id; }, [agent?.id]);
@@ -577,20 +588,20 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     {rightHeaderExtras}
                     <button
                         onClick={handleDone}
-                        className="px-5 py-2 rounded-full bg-[var(--accent)] text-white text-sm font-medium hover:opacity-90"
+                        className="px-6 py-2 rounded-full bg-[var(--accent)] text-white text-sm font-semibold hover:opacity-90 transition shadow-sm"
                     >
                         {t('agent_wizard.builder.done')}
                     </button>
                 </div>
 
-                <div className="max-w-3xl mx-auto px-8 py-8">
-                    <div className="flex items-start gap-4 mb-6">
+                <div className="max-w-3xl mx-auto px-8 pt-10 pb-8">
+                    <div className="flex flex-col items-start gap-4 mb-10">
                         <AvatarPicker t={t} avatar={avatar} onChange={updateAvatar} />
                         <input
                             value={name}
                             onChange={(e) => updateName(e.target.value)}
                             onBlur={flushNow}
-                            className="flex-1 text-2xl font-semibold bg-transparent outline-none text-[var(--text-primary)] border-b border-transparent focus:border-[var(--border-default)] py-1"
+                            className="w-full text-3xl font-semibold bg-transparent outline-none text-[var(--text-primary)] border-b border-transparent focus:border-[var(--border-default)] py-1 -ml-1 px-1 rounded"
                             placeholder={t('agent_wizard.builder.name_placeholder')}
                         />
                     </div>
@@ -598,19 +609,22 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     <div className="flex flex-wrap gap-2 mb-8 relative">
                         <ActionPill
                             icon={<AppWindow size={14} />}
-                            label={`${t('agent_wizard.builder.browse_apps')} · ${enabledIntegrationCount}`}
+                            label={t('agent_wizard.builder.browse_apps')}
+                            count={enabledIntegrationCount}
                             onClick={() => setAppsPickerOpen(v => !v)}
                             active={appsPickerOpen}
                         />
                         <ActionPill
                             icon={<Sparkles size={14} />}
-                            label={`${t('agent_wizard.builder.add_skill')} · ${attachedSkillIds.length}`}
+                            label={t('agent_wizard.builder.add_skill')}
+                            count={attachedSkillIds.length}
                             onClick={() => setSkillPickerOpen(v => !v)}
                             active={skillPickerOpen}
                         />
                         <ActionPill
                             icon={<Upload size={14} />}
-                            label={`${t('agent_wizard.builder.upload_files')} · ${knowledgeBaseIds.length}`}
+                            label={t('agent_wizard.builder.upload_files')}
+                            count={knowledgeBaseIds.length}
                             onClick={() => setKnowledgeOpen(true)}
                         />
                         <ActionPill
@@ -706,19 +720,39 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     )}
 
                     <div>
-                        <div className="text-sm text-[var(--text-secondary)] mb-2">{t('agent_wizard.builder.instructions')}</div>
-                        <textarea
-                            value={instructions}
-                            onChange={(e) => updateInstructions(e.target.value)}
-                            onBlur={flushNow}
-                            rows={10}
-                            placeholder={t('agent_wizard.builder.instructions_placeholder')}
-                            className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-xl px-4 py-3 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)] resize-y"
-                        />
+                        <div className="text-sm text-[var(--text-secondary)] mb-3">{t('agent_wizard.builder.instructions')}</div>
+                        {instructionsEditing ? (
+                            <textarea
+                                ref={instructionsTextareaRef}
+                                value={instructions}
+                                onChange={(e) => updateInstructions(e.target.value)}
+                                onBlur={() => { flushNow(); setInstructionsEditing(false); }}
+                                rows={Math.max(10, (instructions.match(/\n/g) || []).length + 2)}
+                                placeholder={t('agent_wizard.builder.instructions_placeholder')}
+                                className="w-full bg-transparent border border-[var(--border-default)] rounded-xl px-4 py-3 text-[15px] leading-7 text-[var(--text-primary)] outline-none focus:border-[var(--accent)] resize-y font-mono"
+                            />
+                        ) : (
+                            <div
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => setInstructionsEditing(true)}
+                                onFocus={() => setInstructionsEditing(true)}
+                                className="instructions-view min-h-[12rem] px-1 py-2 cursor-text rounded-lg hover:bg-[var(--bg-secondary)]/40 transition"
+                                title={t('agent_wizard.builder.instructions_edit_hint') || 'Click to edit'}
+                            >
+                                {instructions ? (
+                                    <MarkdownRenderer content={instructions} />
+                                ) : (
+                                    <div className="text-[var(--text-tertiary)] text-[15px] leading-7">
+                                        {t('agent_wizard.builder.instructions_placeholder')}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                     </div>
 
                     {/* ── Inline collapsible sections — full parity with the legacy Agent Designer ── */}
-                    <div className="mt-8 space-y-2">
+                    <div className="mt-10">
                         <CollapsibleSection
                             title={t('agent_wizard.section.identity')}
                             open={openSection === 'identity'}
@@ -1198,13 +1232,19 @@ function FilesUploadModal({ t, agent, knowledgeBaseIds, onKnowledgeBaseIdsChange
     );
 }
 
-function ActionPill({ icon, label, onClick, active }) {
+function ActionPill({ icon, label, count, onClick, active }) {
     return (
         <button
             onClick={onClick}
-            className={`flex items-center gap-2 px-3 py-2 rounded-full text-sm border transition ${active ? 'border-[var(--accent)] text-[var(--accent)] bg-[var(--bg-secondary)]' : 'border-[var(--border-default)] text-[var(--text-primary)] bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)]'}`}
+            className={`group flex items-center gap-2 pl-3.5 pr-3 py-2 rounded-full text-sm border transition shadow-sm hover:shadow ${active ? 'border-[var(--accent)] text-[var(--accent)] bg-[var(--bg-secondary)]' : 'border-[var(--border-default)] text-[var(--text-primary)] bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)]'}`}
         >
-            {icon}{label}
+            <span className="text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]">{icon}</span>
+            <span>{label}</span>
+            {(count !== undefined && count !== null) && (
+                <span className={`ml-1 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full text-[11px] font-medium ${active ? 'bg-[var(--accent)] text-white' : 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)]'}`}>
+                    {count}
+                </span>
+            )}
         </button>
     );
 }
@@ -1232,7 +1272,7 @@ function AvatarPicker({ avatar, onChange, t }) {
         <div className="relative">
             <button
                 onClick={() => setOpen(v => !v)}
-                className="w-14 h-14 rounded-full bg-[var(--bg-secondary)] border border-[var(--border-default)] text-2xl flex items-center justify-center overflow-hidden hover:bg-[var(--bg-tertiary)]"
+                className="w-16 h-16 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-default)] text-3xl flex items-center justify-center overflow-hidden hover:bg-[var(--bg-tertiary)] transition"
                 title={t('agent_wizard.avatar.title') || 'Avatar'}
             >
                 {isImage
@@ -1281,15 +1321,18 @@ function AvatarPicker({ avatar, onChange, t }) {
 
 function CollapsibleSection({ title, open, onToggle, children }) {
     return (
-        <div className="border border-[var(--border-default)] rounded-xl overflow-hidden">
+        <div className="border-t border-[var(--border-default)] first:border-t-0">
             <button
                 onClick={onToggle}
-                className="w-full flex items-center justify-between px-4 py-3 bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] transition text-left"
+                className="w-full flex items-center justify-between px-1 py-4 hover:opacity-80 transition text-left"
             >
-                <span className="text-sm font-medium text-[var(--text-primary)]">{title}</span>
-                {open ? <ChevronDown size={16} className="text-[var(--text-tertiary)]" /> : <ChevronRight size={16} className="text-[var(--text-tertiary)]" />}
+                <span className="text-[15px] font-medium text-[var(--text-primary)]">{title}</span>
+                <ChevronRight
+                    size={18}
+                    className={`text-[var(--text-tertiary)] transition-transform ${open ? 'rotate-90' : ''}`}
+                />
             </button>
-            {open && <div className="px-4 py-4 border-t border-[var(--border-default)] bg-[var(--bg-primary)]">{children}</div>}
+            {open && <div className="px-1 pb-5">{children}</div>}
         </div>
     );
 }
