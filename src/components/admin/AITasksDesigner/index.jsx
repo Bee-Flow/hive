@@ -347,6 +347,20 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
 
     // ── Embedded split layout (inside Studio) ────────────────────────────────
     if (embedded) {
+        // Hide the "Automations" sub-tab unless the user's org has the
+        // 'automations' beta feature enabled (or the user is a super-admin).
+        const automationsAllowed = !!(
+            user?.isAdmin
+            || (user?.permissions || []).includes('all')
+            || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('automations'))
+        );
+
+        // If the saved sub-tab is 'automations' but the feature is off, snap back.
+        if (subTab === 'automations' && !automationsAllowed) {
+            // setState in render is OK only when guarded — use effect-equivalent.
+            setTimeout(() => setSubTab('prompt'), 0);
+        }
+
         const subTabBar = (
             <div className="flex items-center gap-1 px-3 py-2 border-b border-[var(--border-default)]">
                 <button
@@ -355,16 +369,18 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                 >
                     Prompt Tasks
                 </button>
-                <button
-                    onClick={() => { setSubTab('automations'); }}
-                    className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1 ${subTab === 'automations' ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}
-                >
-                    <Sparkles size={12} /> Automations
-                </button>
+                {automationsAllowed && (
+                    <button
+                        onClick={() => { setSubTab('automations'); }}
+                        className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1 ${subTab === 'automations' ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}
+                    >
+                        <Sparkles size={12} /> Automations
+                    </button>
+                )}
             </div>
         );
 
-        if (subTab === 'automations') {
+        if (subTab === 'automations' && automationsAllowed) {
             return (
                 <div className="flex flex-col h-full bg-[var(--bg-primary)]">
                     {subTabBar}
