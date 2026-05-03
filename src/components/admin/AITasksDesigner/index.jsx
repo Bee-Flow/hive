@@ -79,6 +79,9 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
     const [time, setTime] = useState('');
     const [repeatInterval, setRepeatInterval] = useState('weekly');
     const [tier, setTier] = useState('auto');
+    const [agentId, setAgentId] = useState('');
+    const [agents, setAgents] = useState([]);
+    const routinesAllowed = Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('agent_routines');
 
     // Editing-signal: only the Automations builder requests fullscreen chrome
     // collapse. Editing a regular routine keeps the Studio top-tabs visible
@@ -107,6 +110,18 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
         fetchTasks();
     }, [fetchTasks]);
 
+    // Load the user's own agents so a routine can be (re)assigned to one. Only
+    // fetch when the beta is enabled — otherwise the selector stays hidden.
+    useEffect(() => {
+        if (!routinesAllowed) return;
+        (async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/agents/all`);
+                if (res.ok) setAgents(await res.json());
+            } catch { /* silent */ }
+        })();
+    }, [routinesAllowed]);
+
     useEffect(() => {
         if (!initialTaskId) return;
         if (initialTaskId === 'new') {
@@ -116,11 +131,6 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
         if (tasks.length === 0) return;
         const task = tasks.find(t => t.id === initialTaskId);
         if (!task) return;
-        // Agent routines live in the agent editor — redirect deep links there.
-        if (task.agentId && onNavigate) {
-            onNavigate(`studio/agents/${task.agentId}`);
-            return;
-        }
         startEditTask(task);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [initialTaskId, tasks.length]);
@@ -128,6 +138,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
     const resetForm = () => {
         setTitle(''); setPrompt(''); setDate(''); setTime('');
         setRepeatInterval('weekly'); setTier('auto');
+        setAgentId('');
         setEditingTaskId(null);
     };
 
@@ -149,6 +160,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
         }
         setRepeatInterval(task.repeatInterval || '');
         setTier(task.modelTier || 'auto');
+        setAgentId(task.agentId || '');
     };
 
     const saveTask = async () => {
@@ -161,6 +173,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
             repeatInterval: repeatInterval || null,
             modelTier: tier,
             timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+            ...(routinesAllowed ? { agentId: agentId || null } : {}),
         };
         try {
             const isNew = editingTaskId === 'new';
@@ -453,23 +466,12 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
                             const sel = editingTaskId === task.id;
                             const statusColor = (STATUS_COLORS[task.lastStatus] || STATUS_COLORS.pending).color;
                             const isAgentRoutine = !!task.agentId;
-                            // Agent routines edit in the agent editor, not inline — that's
-                            // where the rest of the agent context lives, and where the
-                            // routine modal already exists. Inline edit stays for legacy
-                            // user-scoped tasks (no agent) that have no other home.
-                            const handleClick = () => {
-                                if (isAgentRoutine && onNavigate) {
-                                    onNavigate(`studio/agents/${task.agentId}`);
-                                } else {
-                                    startEditTask(task);
-                                }
-                            };
                             return (
                                 <div
                                     key={task.id}
-                                    onClick={handleClick}
+                                    onClick={() => startEditTask(task)}
                                     className={`group flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer text-sm transition ${sel ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}
-                                    title={isAgentRoutine ? `Agent routine — opens ${task.agentName || 'agent'} editor` : undefined}
+                                    title={isAgentRoutine ? `Routine for ${task.agentName || 'agent'}` : undefined}
                                 >
                                     <span
                                         className="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-px"
@@ -587,6 +589,8 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
                                     repeatInterval={repeatInterval} setRepeatInterval={setRepeatInterval}
                                     tier={tier} setTier={setTier}
                                     modelTiers={modelTiers}
+                                    agentId={agentId} setAgentId={setAgentId}
+                                    agents={agents} routinesAllowed={routinesAllowed}
                                     canSave={canSave} isNewMode={isNewMode}
                                     onSave={saveTask} onCancel={resetForm}
                                     nextRunPreview={nextRunPreview}
@@ -662,6 +666,8 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
                         repeatInterval={repeatInterval} setRepeatInterval={setRepeatInterval}
                         tier={tier} setTier={setTier}
                         modelTiers={modelTiers}
+                        agentId={agentId} setAgentId={setAgentId}
+                        agents={agents} routinesAllowed={routinesAllowed}
                         canSave={canSave} isNewMode={isNewMode}
                         onSave={saveTask} onCancel={resetForm}
                         nextRunPreview={nextRunPreview}
@@ -877,6 +883,7 @@ function EditorView({
     date, setDate, time, setTime,
     repeatInterval, setRepeatInterval, tier, setTier,
     modelTiers,
+    agentId, setAgentId, agents = [], routinesAllowed = false,
     canSave, isNewMode, onSave, onCancel, nextRunPreview,
 }) {
     return (
@@ -911,6 +918,32 @@ function EditorView({
                             style={{ borderColor: 'var(--border-subtle, rgba(0,0,0,0.08))', fontFamily: 'inherit' }}
                         />
                     </div>
+
+                    {routinesAllowed && setAgentId && (
+                        <div>
+                            <label className="block text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1.5">
+                                Run as agent
+                            </label>
+                            <select
+                                value={agentId || ''}
+                                onChange={e => setAgentId(e.target.value)}
+                                className="w-full px-3.5 py-2.5 rounded-xl border bg-[var(--bg-card)] text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)] transition-colors cursor-pointer"
+                                style={{ borderColor: 'var(--border-subtle, rgba(0,0,0,0.08))' }}
+                            >
+                                <option value="">— No agent (general prompt) —</option>
+                                {agents.map(a => (
+                                    <option key={a.id} value={a.id}>
+                                        {(a.avatar || a.config?.avatar || '🤖') + '  ' + (a.name || '(untitled)')}
+                                    </option>
+                                ))}
+                            </select>
+                            <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
+                                {agentId
+                                    ? 'The prompt runs through this agent — it can use the agent\'s skills, knowledge, and integrations.'
+                                    : 'No agent selected — the prompt runs as a generic LLM call without agent skills.'}
+                            </div>
+                        </div>
+                    )}
 
                     <div className="grid grid-cols-2 gap-3">
                         <div>
