@@ -639,7 +639,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     const initialRefinementFiredRef = useRef(false);
     useEffect(() => {
         if (initialRefinementFiredRef.current) return;
-        if (!initialRefinement || !initialRefinement.trim()) return;
+        if (typeof initialRefinement !== 'string' || !initialRefinement.trim()) return;
         initialRefinementFiredRef.current = true;
         handleRefine(initialRefinement);
         // eslint-disable-next-line react-hooks/exhaustive-deps

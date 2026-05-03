@@ -38,6 +38,47 @@ export default function AgentWizard({ user, onClose, onPublished, onSwitchToManu
         })();
     }, []);
 
+    // Instant editor flow: clicking send on the landing screen creates an
+    // empty placeholder agent and jumps straight into BuilderSplit. The
+    // user's prompt is handed in as `initialRefinement` so the AI plan
+    // generation happens inside the builder's chat — no separate "review"
+    // step, no `/wizard/draft` round-trip on the landing screen.
+    const submitPromptInstant = async (text) => {
+        const trimmed = (text || '').toString().trim();
+        if (!trimmed || busy) return;
+        setBusy(true);
+        setError(null);
+        try {
+            const res = await authFetch(`${API_BASE}/agents`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: t('agent_studio.untitled') || 'Untitled',
+                    description: '',
+                    systemPrompt: '',
+                    config: {
+                        avatar: '🤖',
+                        enabledIntegrations: [],
+                        knowledge_base_ids: [],
+                        attachedSkillIds: [],
+                        memoryEnabled: false,
+                    },
+                }),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            const newAgent = await res.json();
+            setAgent(newAgent);
+            setPendingRefinement(trimmed);
+            setStage('builder');
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setBusy(false);
+        }
+    };
+
+    // Legacy review-stage flow kept for any caller that still wants the
+    // PlanCard preview. Not reachable from the landing screen anymore.
     const submitPrompt = async (text) => {
         if (!text.trim() || busy) return;
         setBusy(true);
@@ -162,7 +203,7 @@ export default function AgentWizard({ user, onClose, onPublished, onSwitchToManu
                     <PromptInput
                         value={prompt}
                         onChange={setPrompt}
-                        onSubmit={() => submitPrompt(prompt)}
+                        onSubmit={() => submitPromptInstant(prompt)}
                         busy={busy}
                         tiers={tiers}
                         tier={tier}
@@ -174,7 +215,7 @@ export default function AgentWizard({ user, onClose, onPublished, onSwitchToManu
                         {examples.map((ex) => (
                             <button
                                 key={ex.title}
-                                onClick={() => submitPrompt(`${ex.title}: ${ex.sub}`)}
+                                onClick={() => submitPromptInstant(`${ex.title}: ${ex.sub}`)}
                                 className="flex items-center gap-3 w-full text-left px-3 py-2.5 rounded-lg hover:bg-[var(--bg-secondary)] transition"
                             >
                                 <span className="text-[var(--text-tertiary)]">{ex.icon}</span>
