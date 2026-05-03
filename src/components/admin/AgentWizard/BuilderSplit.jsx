@@ -651,10 +651,15 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     };
 
     // Filter integration catalog by org/credential gating (mirrors ToolsSection.jsx).
+    // `agent-search` (Web Search) is a built-in platform capability with no
+    // per-org credentials — bypass the org-enabled gate so every agent can opt
+    // into it.
+    const ALWAYS_AVAILABLE = new Set(['agent-search']);
     const availableIntegrations = (() => {
         if (!integrationStatus) return INTEGRATION_CATALOG;
         const status = integrationStatus;
         return INTEGRATION_CATALOG.filter(item => {
+            if (ALWAYS_AVAILABLE.has(item.id)) return true;
             const orgEnabled = status.orgEnabledIntegrations;
             if (orgEnabled && !orgEnabled.includes(item.id)) return false;
             if (item.group === 'google') return !!status.isGoogleUser;

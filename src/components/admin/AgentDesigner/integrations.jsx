@@ -70,7 +70,7 @@ export const INTEGRATION_CATALOG = [
         iconSvg: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="3" y="3" width="18" height="18" rx="3" fill="url(#el_g1)" /><path d="M8 7v10M11 7v10M14 9v6" stroke="white" strokeWidth="2" strokeLinecap="round" /><defs><linearGradient id="el_g1" x1="3" y1="3" x2="21" y2="21" gradientUnits="userSpaceOnUse"><stop stopColor="#6366F1" /><stop offset="1" stopColor="#EC4899" /></linearGradient></defs></svg>
     },
     {
-        id: 'web-search', label: 'Web Search', group: 'platform', description: 'Search the internet',
+        id: 'agent-search', label: 'Web Search', group: 'platform', description: 'Search the internet',
         iconSvg: <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="11" cy="11" r="7" stroke="#6366F1" strokeWidth="2" fill="none" /><line x1="16.5" y1="16.5" x2="21" y2="21" stroke="#6366F1" strokeWidth="2" strokeLinecap="round" /><circle cx="11" cy="11" r="3" stroke="#6366F1" strokeWidth="1.5" fill="rgba(99,102,241,0.1)" /></svg>
     },
     {

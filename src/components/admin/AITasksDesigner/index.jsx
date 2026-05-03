@@ -435,7 +435,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
         return (
           <div className="flex flex-col h-full bg-[var(--bg-primary)]">
             {!automationEditing && subTabBar}
-            <div className="flex h-full bg-[var(--bg-primary)]">
+            <div className="flex flex-1 min-h-0 bg-[var(--bg-primary)]">
                 {/* Sidebar — always visible so the user keeps the routine list
                     in view while editing a single routine. */}
                 <aside className="w-64 flex-shrink-0 border-r border-[var(--border-default)] flex flex-col">
