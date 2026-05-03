@@ -71,6 +71,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     // Categories + groups (for selectors)
     const [categories, setCategories] = useState([]);
     const [orgGroups, setOrgGroups] = useState([]);
+    const [automations, setAutomations] = useState([]);
 
     const [savingState, setSavingState] = useState('idle');
 
@@ -128,12 +129,13 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         let cancelled = false;
         (async () => {
             try {
-                const [skillsRes, statusRes, catsRes, groupsRes, tiersRes] = await Promise.all([
+                const [skillsRes, statusRes, catsRes, groupsRes, tiersRes, autosRes] = await Promise.all([
                     authFetch(`${API_BASE}/api/skills`),
                     authFetch(`${API_BASE}/ai/user-settings`),
                     authFetch(`${API_BASE}/agents/categories`),
                     authFetch(`${API_BASE}/auth/groups`),
                     authFetch(`${API_BASE}/ai/config/chat-models`),
+                    authFetch(`${API_BASE}/automation`).catch(() => ({ ok: false })),
                 ]);
                 if (cancelled) return;
                 setAllSkills(skillsRes.ok ? await skillsRes.json() : []);
@@ -141,6 +143,12 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 setCategories(catsRes.ok ? await catsRes.json() : []);
                 setOrgGroups(groupsRes.ok ? await groupsRes.json() : []);
                 setTiers(tiersRes.ok ? await tiersRes.json() : {});
+                if (autosRes.ok) {
+                    try {
+                        const data = await autosRes.json();
+                        setAutomations(Array.isArray(data?.automations) ? data.automations : []);
+                    } catch (_) { setAutomations([]); }
+                }
                 if (initialAgent?.model && initialAgent.model.startsWith('tier:')) {
                     setSelectedTier(initialAgent.model.slice('tier:'.length));
                 }
@@ -804,11 +812,12 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 t={t}
                                 skills={allSkills || []}
                                 selectedIds={attachedSkillIds}
+                                automations={automations}
                                 search={skillSearch}
                                 onSearch={setSkillSearch}
                                 onClose={() => setSkillPickerOpen(false)}
                                 onToggle={toggleSkill}
-                                onCreate={async ({ name: skillName, description: skillDesc, instructions: skillInstr }) => {
+                                onCreate={async ({ name: skillName, description: skillDesc, instructions: skillInstr, automationId: skillAutomationId }) => {
                                     try {
                                         const res = await authFetch(`${API_BASE}/api/skills`, {
                                             method: 'POST',
@@ -818,6 +827,11 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                                 description: skillDesc,
                                                 instructions: skillInstr,
                                                 isShared: false,
+                                                // When the skill is linked to an automation,
+                                                // mark it dynamic-activation so the agent calls
+                                                // it on demand instead of injecting a body.
+                                                dynamicActivation: !!skillAutomationId,
+                                                automationId: skillAutomationId || null,
                                             }),
                                         });
                                         if (!res.ok) throw new Error(await res.text());
@@ -918,11 +932,12 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     );
 }
 
-function SkillPicker({ skills, selectedIds, search, onSearch, onClose, onToggle, onCreate, t }) {
+function SkillPicker({ skills, selectedIds, automations = [], search, onSearch, onClose, onToggle, onCreate, t }) {
     const [creating, setCreating] = useState(false);
     const [newName, setNewName] = useState('');
     const [newDesc, setNewDesc] = useState('');
     const [newInstr, setNewInstr] = useState('');
+    const [newAutomationId, setNewAutomationId] = useState('');
     const [busy, setBusy] = useState(false);
     const filtered = (skills || []).filter(s =>
         !search || (s.name || '').toLowerCase().includes(search.toLowerCase())
@@ -931,10 +946,15 @@ function SkillPicker({ skills, selectedIds, search, onSearch, onClose, onToggle,
     const submit = async () => {
         if (!newName.trim() || busy) return;
         setBusy(true);
-        const created = await onCreate({ name: newName.trim(), description: newDesc.trim(), instructions: newInstr.trim() });
+        const created = await onCreate({
+            name: newName.trim(),
+            description: newDesc.trim(),
+            instructions: newInstr.trim(),
+            automationId: newAutomationId || null,
+        });
         setBusy(false);
         if (created) {
-            setNewName(''); setNewDesc(''); setNewInstr(''); setCreating(false);
+            setNewName(''); setNewDesc(''); setNewInstr(''); setNewAutomationId(''); setCreating(false);
         }
     };
 
@@ -975,7 +995,14 @@ function SkillPicker({ skills, selectedIds, search, onSearch, onClose, onToggle,
                                 >
                                     <span className="text-base">{s.icon || '✨'}</span>
                                     <div className="flex-1 min-w-0">
-                                        <div className="text-sm text-[var(--text-primary)] truncate">{s.name}</div>
+                                        <div className="text-sm text-[var(--text-primary)] truncate flex items-center gap-1.5">
+                                            {s.name}
+                                            {s.automationId && (
+                                                <span title={t('agent_wizard.skills.linked_automation') || 'Linked to an automation'} className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] flex items-center gap-1">
+                                                    <Sparkles size={10} /> Flow
+                                                </span>
+                                            )}
+                                        </div>
                                         {s.description && <div className="text-xs text-[var(--text-tertiary)] truncate">{s.description}</div>}
                                     </div>
                                     <span className={`w-4 h-4 rounded-sm border flex items-center justify-center ${checked ? 'bg-[var(--accent)] border-[var(--accent)] text-white' : 'border-[var(--border-default)]'}`}>
@@ -1006,13 +1033,37 @@ function SkillPicker({ skills, selectedIds, search, onSearch, onClose, onToggle,
                         placeholder={t('agent_wizard.skills.field_description')}
                         className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
                     />
-                    <textarea
-                        value={newInstr}
-                        onChange={(e) => setNewInstr(e.target.value)}
-                        rows={4}
-                        placeholder={t('agent_wizard.skills.field_instructions')}
-                        className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)] resize-y"
-                    />
+                    {!newAutomationId && (
+                        <textarea
+                            value={newInstr}
+                            onChange={(e) => setNewInstr(e.target.value)}
+                            rows={4}
+                            placeholder={t('agent_wizard.skills.field_instructions')}
+                            className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)] resize-y"
+                        />
+                    )}
+                    {automations && automations.length > 0 && (
+                        <div className="space-y-1">
+                            <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)]">
+                                {t('agent_wizard.skills.linked_automation_label') || 'Linked automation (optional)'}
+                            </div>
+                            <select
+                                value={newAutomationId}
+                                onChange={(e) => setNewAutomationId(e.target.value)}
+                                className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)] cursor-pointer"
+                            >
+                                <option value="">{t('agent_wizard.skills.linked_automation_none') || '— No automation, use instructions above —'}</option>
+                                {automations.map(a => (
+                                    <option key={a.id} value={a.id}>{a.title || '(untitled)'}</option>
+                                ))}
+                            </select>
+                            {newAutomationId && (
+                                <div className="text-[11px] text-[var(--text-tertiary)] pl-1">
+                                    {t('agent_wizard.skills.linked_automation_help') || 'When the agent activates this skill, the linked automation runs and its result is returned to the agent.'}
+                                </div>
+                            )}
+                        </div>
+                    )}
                     <div className="flex justify-end gap-2 pt-1">
                         <button onClick={() => setCreating(false)} className="px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
                             {t('agent_wizard.skills.cancel')}

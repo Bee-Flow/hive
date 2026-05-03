@@ -57,7 +57,7 @@ const STATUS_COLORS = {
     error: { bg: 'rgba(239,68,68,0.08)', color: '#ef4444', label: '❌ Error' },
 };
 
-export default function AITasksDesigner({ initialTaskId = null, onClose, modelTiers = {}, embedded = false, user = null }) {
+export default function AITasksDesigner({ initialTaskId = null, onClose, modelTiers = {}, embedded = false, user = null, onEditingChange }) {
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(false);
     const [maxTasks, setMaxTasks] = useState(10);
@@ -68,6 +68,13 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
     const [subTab, setSubTab] = useState('prompt'); // 'prompt' | 'automations'
     const [builderAutomationId, setBuilderAutomationId] = useState(null); // null = list, string = open builder
     const [openingBuilder, setOpeningBuilder] = useState(false);
+    // Signal upward (Studio → AgentHub) when the BuilderShell is open so the
+    // outer chrome can collapse for a fullscreen edit, mirroring AgentStudio.
+    const automationEditing = subTab === 'automations' && (builderAutomationId !== null || openingBuilder);
+    useEffect(() => {
+        onEditingChange?.(automationEditing);
+        return () => { onEditingChange?.(false); };
+    }, [automationEditing, onEditingChange]);
     // Editor view state — null means list/idle view
     const [editingTaskId, setEditingTaskId] = useState(null); // string = edit, 'new' = create
     const [title, setTitle] = useState('');
@@ -383,7 +390,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
         if (subTab === 'automations' && automationsAllowed) {
             return (
                 <div className="flex flex-col h-full bg-[var(--bg-primary)]">
-                    {subTabBar}
+                    {!automationEditing && subTabBar}
                     <div className="flex-1 min-h-0">
                         {builderAutomationId === null && !openingBuilder && (
                             <AutomationList onOpenBuilder={(id) => { setBuilderAutomationId(id || ''); }} />

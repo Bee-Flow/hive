@@ -23,9 +23,15 @@ export default function Studio({
 }) {
     const { t } = useTranslation();
     const [agentEditing, setAgentEditing] = useState(false);
-    const handleAgentEditing = (editing) => {
-        setAgentEditing(editing);
-        onEditingChange?.(editing);
+    const [automationEditing, setAutomationEditing] = useState(false);
+    const editing = agentEditing || automationEditing;
+    const handleAgentEditing = (next) => {
+        setAgentEditing(next);
+        onEditingChange?.(next || automationEditing);
+    };
+    const handleAutomationEditing = (next) => {
+        setAutomationEditing(next);
+        onEditingChange?.(next || agentEditing);
     };
 
     const tabs = [
@@ -43,8 +49,8 @@ export default function Studio({
 
     return (
         <div className="flex flex-col h-full bg-[var(--bg-primary)]">
-            {/* Top sub-nav — hidden in fullscreen agent edit mode */}
-            {!agentEditing && (
+            {/* Top sub-nav — hidden in any fullscreen edit mode */}
+            {!editing && (
             <div className="flex items-center gap-1 px-4 py-2 border-b border-[var(--border-default)]">
                 {tabs.map((tab) => {
                     const active = section === tab.id;
@@ -99,6 +105,7 @@ export default function Studio({
                         modelTiers={modelTiers}
                         embedded={true}
                         user={user}
+                        onEditingChange={handleAutomationEditing}
                     />
                 )}
             </div>

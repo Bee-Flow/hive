@@ -1939,7 +1939,11 @@ const EN_DEFAULTS = {
     "agent_wizard.skills.cancel": "Cancel",
     "agent_wizard.skills.field_name": "Skill name",
     "agent_wizard.skills.field_description": "Short description (optional)",
-    "agent_wizard.skills.field_instructions": "Instructions: when and how the agent should use this skill"
+    "agent_wizard.skills.field_instructions": "Instructions: when and how the agent should use this skill",
+    "agent_wizard.skills.linked_automation": "Linked to an automation",
+    "agent_wizard.skills.linked_automation_label": "Linked automation (optional)",
+    "agent_wizard.skills.linked_automation_none": "— No automation, use instructions above —",
+    "agent_wizard.skills.linked_automation_help": "When the agent activates this skill, the linked automation runs and its result is returned to the agent."
 };
 
 export default EN_DEFAULTS;

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Power, Eye, Sparkles, Wrench } from 'lucide-react';
+import { ArrowLeft, Power, Eye, Sparkles, Wrench, ChevronDown } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../../utils/helpers';
 import scopedStorage from '../../../../utils/scopedStorage';
 import InputArea from '../../../InputArea';
@@ -114,44 +114,106 @@ export default function BuilderShell({ automationId, onBack, user }) {
     };
 
     const isActive = !!serverAutomation?.isActive;
+    const isDraft = !!serverAutomation?.isDraft;
     const title = serverAutomation?.title || 'New automation';
+    const statusLabel = isDraft ? 'Draft' : (isActive ? 'Live' : 'Paused');
+    const statusBadgeClass = isDraft
+        ? 'bg-[var(--bg-secondary)] text-[var(--text-secondary)]'
+        : isActive
+            ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
+            : 'bg-amber-500/15 text-amber-600 dark:text-amber-400';
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-            <div style={{ borderBottom: '1px solid #e5e7eb', padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 12 }}>
-                <button onClick={onBack} style={{ background: 'none', border: 'none', cursor: 'pointer' }}><ArrowLeft size={18} /></button>
-                <Sparkles size={16} color="#7c3aed" />
-                <div style={{ fontWeight: 600, flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{title}</div>
-                <span style={{ fontSize: 12, color: '#6b7280' }}>
-                    {serverAutomation?.isDraft ? 'Draft' : (isActive ? 'Active' : 'Inactive')}
-                    {serverAutomation?.needsFirstRunConfirm && !serverAutomation.isDraft && ' · awaiting first-run confirm'}
+        <div className="flex flex-col h-full min-h-0 bg-[var(--bg-primary)]">
+            {/* Top header — matches the agent editor's chrome. */}
+            <div className="flex items-center gap-3 px-6 py-3 border-b border-[var(--border-default)]">
+                <button
+                    onClick={onBack}
+                    className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)] transition"
+                    title="Back"
+                >
+                    <ArrowLeft size={18} />
+                </button>
+                <div className="w-9 h-9 rounded-xl bg-[var(--bg-secondary)] flex items-center justify-center text-lg flex-shrink-0">
+                    <Sparkles size={16} className="text-[var(--accent)]" />
+                </div>
+                <div className="flex-1 min-w-0">
+                    <div className="text-base font-semibold text-[var(--text-primary)] truncate">{title}</div>
+                    {serverAutomation?.needsFirstRunConfirm && !isDraft && (
+                        <div className="text-xs text-amber-600 dark:text-amber-400">Awaiting first-run confirmation</div>
+                    )}
+                </div>
+                <span className={`text-[11px] uppercase tracking-wide font-medium px-2 py-1 rounded-full ${statusBadgeClass}`}>
+                    {statusLabel}
                 </span>
-                <button onClick={onDryRun} disabled={busy} style={btnSecondary}><Eye size={14}/> Dry-run</button>
-                {isActive
-                    ? <button onClick={onDeactivate} disabled={busy} style={btnSecondary}><Power size={14}/> Deactivate</button>
-                    : <button onClick={onActivate} disabled={busy} style={btnPrimary}><Power size={14}/> Activate</button>}
+                <button
+                    onClick={onDryRun}
+                    disabled={busy}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-[var(--bg-secondary)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition disabled:opacity-50"
+                >
+                    <Eye size={14} /> Dry-run
+                </button>
+                {isActive ? (
+                    <button
+                        onClick={onDeactivate}
+                        disabled={busy}
+                        className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium bg-[var(--accent)]/15 text-[var(--accent)] ring-1 ring-[var(--accent)]/40 hover:bg-[var(--accent)]/25 transition disabled:opacity-50"
+                    >
+                        <Power size={14} /> Pause
+                        <ChevronDown size={12} className="opacity-60" />
+                    </button>
+                ) : (
+                    <button
+                        onClick={onActivate}
+                        disabled={busy}
+                        className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium bg-[var(--accent)] text-white hover:opacity-90 ring-1 ring-[var(--accent)] transition disabled:opacity-50 shadow-sm"
+                    >
+                        <Power size={14} /> Activate
+                    </button>
+                )}
             </div>
 
-            {error && <div style={{ background: '#fee2e2', color: '#991b1b', padding: 8, fontSize: 13 }}>{error}</div>}
-            {state.error && <div style={{ background: '#fef3c7', color: '#92400e', padding: 8, fontSize: 13 }}>{state.error}</div>}
+            {error && <div className="bg-red-500/10 text-red-600 dark:text-red-400 px-4 py-2 text-sm border-b border-red-500/20">{error}</div>}
+            {state.error && <div className="bg-amber-500/10 text-amber-600 dark:text-amber-400 px-4 py-2 text-sm border-b border-amber-500/20">{state.error}</div>}
 
-            <div style={{ flex: 1, display: 'flex', minHeight: 0, position: 'relative' }}>
-                {/* Chat side ─ same composer as direct chat, custom message timeline */}
-                <div style={{ flex: 1, minWidth: 0, borderRight: '1px solid #e5e7eb', display: 'flex', flexDirection: 'column' }}>
-                    <div ref={messagesContainerRef} style={{ flex: 1, overflowY: 'auto', padding: 16 }} className="custom-scrollbar">
+            <div className="flex-1 flex min-h-0 relative">
+                {/* Chat side — same composer as direct chat, custom message timeline */}
+                <div className="flex-1 min-w-0 border-r border-[var(--border-default)] flex flex-col">
+                    <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 custom-scrollbar">
                         {state.messages.length === 0 && (
-                            <div style={{ color: '#6b7280', textAlign: 'center', padding: '40px 16px', fontSize: 14 }}>
-                                Tell the builder what automation you want.<br/>
-                                <em>Example: "Every Monday at 9am, get my unread Gmail labelled invoices, summarise each, post to #finance."</em>
+                            <div className="h-full flex flex-col items-center justify-center text-center px-4">
+                                <div className="w-12 h-12 rounded-full bg-[var(--bg-secondary)] flex items-center justify-center mb-3">
+                                    <Sparkles size={20} className="text-[var(--accent)]" />
+                                </div>
+                                <div className="text-sm font-medium text-[var(--text-primary)] mb-1">Build an automation with AI</div>
+                                <div className="text-xs text-[var(--text-tertiary)] mb-5 max-w-xs">
+                                    Describe the trigger and what should happen. I'll wire the steps for you.
+                                </div>
+                                <div className="flex flex-col gap-2 w-full max-w-sm">
+                                    {[
+                                        'Every Monday at 9am, summarise unread Gmail labelled "invoices" to #finance',
+                                        'When a new GitHub issue is created with label "bug", send a Slack DM',
+                                        'Every weekday at 18:00, email me a digest of today\'s calendar events',
+                                    ].map((p) => (
+                                        <button
+                                            key={p}
+                                            type="button"
+                                            onClick={() => setChatInput(p)}
+                                            className="text-left text-xs px-3 py-2 rounded-lg bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition"
+                                        >
+                                            {p}
+                                        </button>
+                                    ))}
+                                </div>
                             </div>
                         )}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                        <div className="flex flex-col gap-3">
                             {state.messages.map((m, i) => <MessageBubble key={i} msg={m} />)}
-                            {state.running && <div style={{ color: '#9ca3af', fontStyle: 'italic', fontSize: 13 }}>Thinking…</div>}
+                            {state.running && <div className="text-xs italic text-[var(--text-tertiary)]">Thinking…</div>}
                             <div ref={messagesEndRef} />
                         </div>
                     </div>
-                    <div style={{ width: '100%', display: 'flex', flexDirection: 'column', flexShrink: 0 }}>
+                    <div className="w-full flex flex-col flex-shrink-0">
                         <InputArea
                             onSendMessage={onSend}
                             onStopGenerating={() => { /* SSE abort happens automatically when send is re-issued */ }}
@@ -168,20 +230,20 @@ export default function BuilderShell({ automationId, onBack, user }) {
                     </div>
                 </div>
                 {/* Diagram + summary + dry-run + run history */}
-                <div style={{ flex: 1, minWidth: 0, overflowY: 'auto' }}>
+                <div className="flex-1 min-w-0 overflow-y-auto">
                     {state.summary && (
-                        <div style={{ padding: 12, borderBottom: '1px solid #e5e7eb', fontSize: 13 }}>
-                            <div style={{ fontWeight: 600, marginBottom: 6 }}>What this automation does</div>
-                            <div style={{ whiteSpace: 'pre-wrap' }}>{state.summary}</div>
+                        <div className="p-4 border-b border-[var(--border-default)]">
+                            <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-2">What this automation does</div>
+                            <div className="text-sm text-[var(--text-primary)] whitespace-pre-wrap">{state.summary}</div>
                         </div>
                     )}
                     <DryRunPanel run={state.dryRun} steps={state.steps} />
-                    <div style={{ borderTop: '1px solid #f3f4f6' }}>
+                    <div className="border-t border-[var(--border-default)]">
                         <DiagramPane definition={effectiveDef} runSteps={state.steps} onNodeClick={setSelectedStepId} />
                     </div>
                     {(state.automationId || automationId) && (
-                        <div style={{ borderTop: '1px solid #e5e7eb' }}>
-                            <div style={{ padding: '8px 12px', fontWeight: 600, fontSize: 13 }}>Run history</div>
+                        <div className="border-t border-[var(--border-default)]">
+                            <div className="px-4 py-2 text-xs uppercase tracking-wide text-[var(--text-tertiary)]">Run history</div>
                             <RunHistory automationId={state.automationId || automationId} />
                         </div>
                     )}
@@ -195,19 +257,16 @@ export default function BuilderShell({ automationId, onBack, user }) {
 function MessageBubble({ msg }) {
     const isUser = msg.role === 'user';
     return (
-        <div style={{ alignSelf: isUser ? 'flex-end' : 'flex-start', maxWidth: '85%' }}>
-            <div style={{
-                background: isUser ? '#4f46e5' : '#f3f4f6',
-                color: isUser ? '#fff' : '#111827',
-                padding: '10px 14px',
-                borderRadius: 12,
-                whiteSpace: 'pre-wrap',
-                fontSize: 14,
-            }}>
+        <div className={`max-w-[85%] ${isUser ? 'self-end' : 'self-start'}`}>
+            <div
+                className={`px-4 py-2.5 rounded-2xl text-sm whitespace-pre-wrap ${isUser
+                    ? 'bg-[var(--accent)] text-white'
+                    : 'bg-[var(--bg-secondary)] text-[var(--text-primary)]'}`}
+            >
                 {isUser ? msg.content : <MarkdownRenderer content={msg.content || ''} />}
             </div>
             {!isUser && Array.isArray(msg.toolCalls) && msg.toolCalls.length > 0 && (
-                <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                <div className="mt-1.5 flex flex-col gap-1">
                     {msg.toolCalls.map((tc, i) => <ToolCallChip key={i} tc={tc} />)}
                 </div>
             )}
@@ -218,24 +277,19 @@ function MessageBubble({ msg }) {
 function ToolCallChip({ tc }) {
     const [open, setOpen] = useState(false);
     return (
-        <div style={{ background: '#fafafa', border: '1px solid #e5e7eb', borderRadius: 8, padding: 8, fontSize: 12 }}>
-            <button type="button" onClick={() => setOpen(o => !o)} style={{ background: 'none', border: 'none', padding: 0, cursor: 'pointer', color: '#374151', display: 'flex', alignItems: 'center', gap: 6 }}>
-                <Wrench size={12} /> <code>{tc.name}</code>
+        <div className="bg-[var(--bg-secondary)]/60 border border-[var(--border-default)] rounded-lg p-2 text-xs">
+            <button
+                type="button"
+                onClick={() => setOpen(o => !o)}
+                className="flex items-center gap-1.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition"
+            >
+                <Wrench size={12} /> <code className="font-mono">{tc.name}</code>
             </button>
             {open && (
-                <pre style={{ marginTop: 6, background: '#fff', padding: 8, borderRadius: 6, overflow: 'auto', maxHeight: 240, whiteSpace: 'pre-wrap' }}>
+                <pre className="mt-2 bg-[var(--bg-primary)] border border-[var(--border-default)] rounded-md p-2 max-h-60 overflow-auto whitespace-pre-wrap text-[var(--text-primary)]">
                     {JSON.stringify({ args: tc.arguments, result: tc.result }, null, 2)}
                 </pre>
             )}
         </div>
     );
 }
-
-const btnPrimary = {
-    background: '#16a34a', color: '#fff', border: 'none', borderRadius: 6, padding: '6px 10px',
-    display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, cursor: 'pointer',
-};
-const btnSecondary = {
-    background: '#fff', color: '#374151', border: '1px solid #d1d5db', borderRadius: 6, padding: '6px 10px',
-    display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 13, cursor: 'pointer',
-};
