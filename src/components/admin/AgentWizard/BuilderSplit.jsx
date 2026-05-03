@@ -19,7 +19,7 @@ import SkillPicker from './pickers/SkillPicker';
 import AppsPicker from './pickers/AppsPicker';
 import { CollapsibleSection, Field, ToggleRow } from './pickers/_primitives';
 
-export default function BuilderSplit({ agent: initialAgent, plan, history, tier, locale, onBack, onPublished, rightHeaderExtras = null, user = null }) {
+export default function BuilderSplit({ agent: initialAgent, plan, history, tier, locale, onBack, onPublished, rightHeaderExtras = null, user = null, initialRefinement = null }) {
     const { t } = useTranslation();
 
     const [agent, setAgent] = useState(initialAgent);
@@ -559,11 +559,11 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     // as the user leaves the field, even if they click immediately to nav away.
     const flushNow = () => { if (dirtyRef.current) flush(); };
 
-    const handleRefine = async () => {
-        const text = chatInput.trim();
+    const handleRefine = async (overrideText = null) => {
+        const text = (overrideText ?? chatInput).trim();
         if (!text || chatBusy) return;
         setChat(prev => [...prev, { role: 'user', content: text }]);
-        setChatInput('');
+        if (overrideText == null) setChatInput('');
         setChatBusy(true);
         try {
             const res = await authFetch(`${API_BASE}/agents/wizard/refine`, {
@@ -627,6 +627,18 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
             setChatBusy(false);
         }
     };
+
+    // When the wizard handed us off mid-conversation (user typed a refine
+    // message on the landing screen), auto-fire it here so the response
+    // appears in the builder chat — not back in the wizard.
+    const initialRefinementFiredRef = useRef(false);
+    useEffect(() => {
+        if (initialRefinementFiredRef.current) return;
+        if (!initialRefinement || !initialRefinement.trim()) return;
+        initialRefinementFiredRef.current = true;
+        handleRefine(initialRefinement);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initialRefinement]);
 
     // Flush any pending or in-flight save, then close.
     const handleDone = async () => {

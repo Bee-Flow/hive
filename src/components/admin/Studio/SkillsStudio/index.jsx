@@ -162,6 +162,8 @@ export default function SkillsStudio({ user, initialSkillId = null, onNavigate, 
                         orgGroups={orgGroups}
                         user={user}
                         onRefreshList={fetchSkills}
+                        canDelete={hasPermission('manage_skills')}
+                        onDelete={() => requestDelete(selected)}
                     />
                 )}
             </section>
@@ -226,7 +228,7 @@ function EmptyState({ t, onCreate }) {
 }
 
 // SkillEditor is fully self-contained: savingState is local, no parent re-renders from saving.
-function SkillEditor({ t, skill, orgGroups, user, onRefreshList }) {
+function SkillEditor({ t, skill, orgGroups, user, onRefreshList, canDelete = false, onDelete }) {
     const [name, setName] = useState(skill.name || '');
     const [description, setDescription] = useState(skill.description || '');
     const [instructions, setInstructions] = useState(skill.instructions || '');
@@ -403,12 +405,21 @@ function SkillEditor({ t, skill, orgGroups, user, onRefreshList }) {
                     />
                 </div>
 
-                <div className="flex-shrink-0">
+                <div className="flex-shrink-0 flex items-center gap-3">
                     <span className="text-xs" style={{ color: 'var(--text-tertiary)' }}>
                         {savingState === 'saving' && t('agent_wizard.builder.save_saving')}
                         {savingState === 'saved' && t('agent_wizard.builder.save_saved')}
                         {savingState === 'error' && t('agent_wizard.builder.save_error')}
                     </span>
+                    {canDelete && (
+                        <button
+                            onClick={onDelete}
+                            title={t('skills_studio.delete_title')}
+                            className="p-2 rounded-lg text-[var(--text-tertiary)] hover:text-red-500 hover:bg-red-500/10 transition-colors"
+                        >
+                            <Trash2 size={16} />
+                        </button>
+                    )}
                 </div>
             </div>
 

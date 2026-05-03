@@ -23,6 +23,11 @@ export default function AgentWizard({ user, onClose, onPublished, onSwitchToManu
     const [agent, setAgent] = useState(null);
     const [tiers, setTiers] = useState({});
     const [tier, setTier] = useState('fast');
+    // When the user types a follow-up message on the review screen we commit
+    // immediately and hand the message off to BuilderSplit, which fires it
+    // through its own /wizard/refine on mount. This avoids splitting the
+    // conversation across two screens.
+    const [pendingRefinement, setPendingRefinement] = useState(null);
 
     useEffect(() => {
         (async () => {
@@ -79,7 +84,7 @@ export default function AgentWizard({ user, onClose, onPublished, onSwitchToManu
         }
     };
 
-    const commitAndBuild = async () => {
+    const commitAndBuild = async (refinement = null) => {
         if (!plan || busy) return;
         setBusy(true);
         try {
@@ -91,12 +96,23 @@ export default function AgentWizard({ user, onClose, onPublished, onSwitchToManu
             if (!res.ok) throw new Error(await res.text());
             const { agent: newAgent } = await res.json();
             setAgent(newAgent);
+            if (refinement) setPendingRefinement(refinement);
             setStage('builder');
         } catch (err) {
             setError(err.message);
         } finally {
             setBusy(false);
         }
+    };
+
+    // From the review screen: any follow-up message commits the current plan
+    // and continues the conversation inside BuilderSplit. The user sees their
+    // message appear there, not here.
+    const submitFollowUp = (text) => {
+        const trimmed = (text || '').trim();
+        if (!trimmed || busy) return;
+        setPrompt('');
+        commitAndBuild(trimmed);
     };
 
     if (stage === 'builder' && agent) {
@@ -107,6 +123,7 @@ export default function AgentWizard({ user, onClose, onPublished, onSwitchToManu
                 history={history}
                 tier={tier}
                 locale={locale}
+                initialRefinement={pendingRefinement}
                 onBack={() => setStage('review')}
                 onPublished={(updated) => {
                     if (onPublished) onPublished(updated);
@@ -209,7 +226,7 @@ export default function AgentWizard({ user, onClose, onPublished, onSwitchToManu
                         <PromptInput
                             value={prompt}
                             onChange={setPrompt}
-                            onSubmit={() => { refine(prompt); setPrompt(''); }}
+                            onSubmit={() => submitFollowUp(prompt)}
                             busy={busy}
                             placeholder={t('agent_wizard.placeholder_describe')}
                             tiers={tiers}
@@ -235,10 +252,10 @@ function PromptInput({ value, onChange, onSubmit, busy, placeholder, tiers, tier
                 className="w-full bg-transparent outline-none text-sm text-[var(--text-primary)] placeholder-[var(--text-tertiary)] resize-none"
                 disabled={busy}
             />
-            <div className="flex items-center justify-between mt-1 gap-2">
-                {onTierChange ? (
+            <div className="flex items-center justify-end mt-1 gap-2">
+                {onTierChange && (
                     <ModelTierSelector tiers={tiers || {}} value={tier} onChange={onTierChange} dropDirection="up" />
-                ) : <span />}
+                )}
                 <button
                     onClick={onSubmit}
                     disabled={busy || !value.trim()}

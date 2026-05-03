@@ -50,6 +50,16 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
         if (found) { setSelectedAgent(found); setMode('edit'); }
     }, [initialAgentId, agents]);
 
+    // Reflect the open agent in the URL so it's bookmarkable / visible to the user.
+    useEffect(() => {
+        if (!onNavigate) return;
+        if (mode === 'edit' && selectedAgent?.id) {
+            onNavigate(`studio/agents/${selectedAgent.id}`);
+        } else if (mode === 'idle') {
+            onNavigate('studio/agents');
+        }
+    }, [mode, selectedAgent?.id, onNavigate]);
+
     const createEmpty = async () => {
         try {
             const res = await authFetch(`${API_BASE}/agents`, {
