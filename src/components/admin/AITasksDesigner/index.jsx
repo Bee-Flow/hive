@@ -80,15 +80,15 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
     const [repeatInterval, setRepeatInterval] = useState('weekly');
     const [tier, setTier] = useState('auto');
 
-    // Combined editing signal — collapses outer chrome (Sidebar + Studio top
-    // tabs) for any deep editor view: the Automations builder OR the regular
-    // routine prompt editor.
+    // Editing-signal: only the Automations builder requests fullscreen chrome
+    // collapse. Editing a regular routine keeps the Studio top-tabs visible
+    // so users don't lose their place — routines is a section inside Studio,
+    // not a separate screen.
     const taskEditing = subTab === 'prompt' && editingTaskId !== null;
-    const editingFullscreen = automationEditing || taskEditing;
     useEffect(() => {
-        onEditingChange?.(editingFullscreen);
+        onEditingChange?.(automationEditing);
         return () => { onEditingChange?.(false); };
-    }, [editingFullscreen, onEditingChange]);
+    }, [automationEditing, onEditingChange]);
 
     const fetchTasks = useCallback(async () => {
         setLoading(true);
@@ -415,10 +415,10 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
 
         return (
           <div className="flex flex-col h-full bg-[var(--bg-primary)]">
-            {!editingFullscreen && subTabBar}
+            {!automationEditing && subTabBar}
             <div className="flex h-full bg-[var(--bg-primary)]">
-                {/* Sidebar — hidden in single-task fullscreen edit mode */}
-                {!taskEditing && (
+                {/* Sidebar — always visible so the user keeps the routine list
+                    in view while editing a single routine. */}
                 <aside className="w-64 flex-shrink-0 border-r border-[var(--border-default)] flex flex-col">
                     <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
                         <div className="flex items-center gap-1.5 min-w-0">
@@ -486,7 +486,6 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                         })}
                     </div>
                 </aside>
-                )}
 
                 {/* Content */}
                 <section className="flex-1 min-w-0 overflow-y-auto">

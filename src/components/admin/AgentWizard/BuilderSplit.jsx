@@ -1768,8 +1768,9 @@ function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                                                 type="button"
                                                 onClick={() => toggleDay(d)}
                                                 className={`flex-1 py-1.5 rounded-full text-xs font-medium transition border ${active
-                                                    ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                                                    ? 'text-white border-transparent'
                                                     : 'bg-[var(--bg-primary)] text-[var(--text-secondary)] border-[var(--border-default)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]'}`}
+                                                style={active ? { background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)' } : undefined}
                                             >
                                                 {ROUTINE_DOW_LABELS[d]}
                                             </button>
@@ -1842,7 +1843,8 @@ function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                         type="button"
                         onClick={submit}
                         disabled={busy}
-                        className="px-5 py-2 rounded-full bg-[var(--text-primary)] text-[var(--bg-primary)] text-sm font-medium hover:opacity-90 transition disabled:opacity-50"
+                        className="px-5 py-2 rounded-full text-white text-sm font-medium hover:opacity-90 transition disabled:opacity-50"
+                        style={{ background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)' }}
                     >
                         {busy ? '…' : (isEdit ? 'Save changes' : (t('routines.add') || 'Add routine'))}
                     </button>

@@ -43,7 +43,7 @@ export default function Studio({
 
     const switchTo = (id) => {
         if (!onNavigate) return;
-        const seg = id === 'aiTasks' ? 'ai-tasks' : id;
+        const seg = id === 'aiTasks' ? 'routines' : id;
         onNavigate(`studio/${seg}`);
     };
 

@@ -33,7 +33,9 @@ const PAGE_ROUTES = {
     agentDesignerAdvanced: '/app/agent-designer-advanced',
     agentWizard: '/app/agent-wizard',
     studio: '/app/studio',
-    aiTasks: '/app/ai-tasks',
+    // URL slug renamed from /app/ai-tasks → /app/routines (Aug 2026 rename).
+    // Old paths still parse below for one release.
+    aiTasks: '/app/routines',
     reports: '/app/reports',
     components: '/app/components',
     meetingNotes: '/app/meeting-notes',
@@ -80,7 +82,9 @@ function pageFromPath(pathname) {
     if (pathname === '/app/agent-wizard' || pathname.startsWith('/app/agent-wizard/')) return 'agentWizard';
     // /app/studio (and sub-sections) → unified Studio
     if (pathname === '/app/studio' || pathname.startsWith('/app/studio/')) return 'studio';
-    // /app/ai-tasks or /app/ai-tasks/* → aiTasks
+    // /app/routines or /app/routines/* → aiTasks (internal page key kept for stability)
+    if (pathname === '/app/routines' || pathname.startsWith('/app/routines/')) return 'aiTasks';
+    // Backward-compat: legacy /app/ai-tasks paths still resolve to the same page
     if (pathname === '/app/ai-tasks' || pathname.startsWith('/app/ai-tasks/')) return 'aiTasks';
     // /app/notebooks/:id → notebooks page (must come before generic /app/*)
     if (pathname.startsWith('/app/notebooks')) return 'notebooks';
@@ -130,20 +134,22 @@ function parseAgentDesignerUrl(pathname) {
 }
 
 // Parse /app/studio/{section}/{id?} → { section: 'agents'|'skills'|'aiTasks'|'knowledge', id?: string }
+// 'routines' is the canonical URL slug; 'ai-tasks' is accepted for backward compat.
 function parseStudioUrl(pathname) {
     const m = pathname.match(/^\/app\/studio(?:\/([^/]+))?(?:\/([^/]+))?/);
     const seg = m?.[1] || 'agents';
     const id = m?.[2] || null;
-    const section = seg === 'ai-tasks' ? 'aiTasks'
+    const section = (seg === 'routines' || seg === 'ai-tasks') ? 'aiTasks'
         : seg === 'skills' ? 'skills'
         : seg === 'knowledge' ? 'knowledge'
         : 'agents';
     return { section, id };
 }
 
-// Parse the task id out of /app/ai-tasks/{taskId} (or "new"). Trailing segments ignored.
+// Parse the task id out of /app/routines/{taskId} or legacy /app/ai-tasks/{taskId}.
+// Trailing segments ignored.
 function parseAITasksUrl(pathname) {
-    const match = pathname.match(/^\/app\/ai-tasks(?:\/([^/]+))?/);
+    const match = pathname.match(/^\/app\/(?:routines|ai-tasks)(?:\/([^/]+))?/);
     return match?.[1] || null;
 }
 
@@ -436,20 +442,20 @@ function App() {
             setCurrentPage('agentDesignerAdvanced');
             return;
         }
-        // Unified Studio — Agents / Skills / AI Tasks / Knowledge Bases under one shell.
-        // Accepts: 'studio', 'studio/agents', 'studio/skills', 'studio/ai-tasks', 'studio/knowledge',
-        // and 'studio/<section>/<id>' for deep links.
+        // Unified Studio — Agents / Skills / Routines / Knowledge Bases under one shell.
+        // Accepts: 'studio', 'studio/agents', 'studio/skills', 'studio/routines', 'studio/knowledge',
+        // and 'studio/<section>/<id>' for deep links. 'studio/ai-tasks' kept as legacy alias.
         if (page === 'studio' || page.startsWith('studio/') || page.startsWith('studio:')) {
             // Normalise: 'studio:agents:<id>' or 'studio/agents/<id>'.
             const raw = page.replace(/^studio[/:]?/, '');
             const parts = raw.split(/[/:]/).filter(Boolean);
             const sectionRaw = parts[0] || 'agents';
             const id = parts[1] || null;
-            const section = sectionRaw === 'ai-tasks' ? 'aiTasks'
+            const section = (sectionRaw === 'routines' || sectionRaw === 'ai-tasks') ? 'aiTasks'
                 : sectionRaw === 'skills' ? 'skills'
                 : sectionRaw === 'knowledge' ? 'knowledge'
                 : 'agents';
-            const pathSegment = section === 'aiTasks' ? 'ai-tasks' : section;
+            const pathSegment = section === 'aiTasks' ? 'routines' : section;
             const path = id ? `/app/studio/${pathSegment}/${id}` : `/app/studio/${pathSegment}`;
             setStudioRoute({ section, id });
             setShowStudio(true);
@@ -508,7 +514,7 @@ function App() {
             setShowEmailKB(false);
             setShowNotebooks(false);
             setShowStudio(false);
-            const path = taskId ? `/app/ai-tasks/${taskId}` : '/app/ai-tasks';
+            const path = taskId ? `/app/routines/${taskId}` : '/app/routines';
             if (window.location.pathname !== path) {
                 window.history.pushState({ page: 'aiTasks' }, '', path);
             }
@@ -936,7 +942,7 @@ function App() {
         }} showAITasks={showAITasks} onCloseAITasks={() => {
             setShowAITasks(false);
             setInitialAITaskId(null);
-            if (window.location.pathname.startsWith('/app/ai-tasks')) {
+            if (window.location.pathname.startsWith('/app/routines') || window.location.pathname.startsWith('/app/ai-tasks')) {
                 setCurrentPage('agents');
                 window.history.pushState({ page: 'agents' }, '', '/app');
             }
