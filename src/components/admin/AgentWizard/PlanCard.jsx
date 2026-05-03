@@ -11,7 +11,10 @@ const CAPABILITY_ICONS = [
 
 const INTEGRATION_BY_ID = new Map(INTEGRATION_CATALOG.map(i => [i.id, i]));
 
-export default function PlanCard({ plan, onAdjust, onBuild, busy, t: tOverride }) {
+// `hideActions`: when the plan card is shown as part of an existing agent's
+// chat scrollback (BuilderSplit), the agent already exists so the Build/Adjust
+// buttons would be no-ops. Pass `hideActions` to render the plan summary only.
+export default function PlanCard({ plan, onAdjust, onBuild, busy, t: tOverride, hideActions = false }) {
     const { t: tHook } = useTranslation();
     const t = tOverride || tHook;
     if (!plan) return null;
@@ -73,16 +76,18 @@ export default function PlanCard({ plan, onAdjust, onBuild, busy, t: tOverride }
                 </div>
             )}
 
-            <div className="flex items-center justify-end gap-3 mt-6">
-                <button
-                    type="button"
-                    onClick={onBuild}
-                    disabled={busy}
-                    className="px-4 py-2 rounded-full text-sm bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-50"
-                >
-                    {busy ? t('agent_wizard.busy') : t('agent_wizard.build')}
-                </button>
-            </div>
+            {!hideActions && (
+                <div className="flex items-center justify-end gap-3 mt-6">
+                    <button
+                        type="button"
+                        onClick={onBuild}
+                        disabled={busy}
+                        className="px-4 py-2 rounded-full text-sm bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-50"
+                    >
+                        {busy ? t('agent_wizard.busy') : t('agent_wizard.build')}
+                    </button>
+                </div>
+            )}
         </div>
     );
 }

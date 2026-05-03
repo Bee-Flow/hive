@@ -4,6 +4,7 @@ import { API_BASE, authFetch } from '../../../utils/helpers';
 import useTranslation from '../../../hooks/useTranslation';
 import AgentWizard from '../AgentWizard';
 import BuilderSplit from '../AgentWizard/BuilderSplit';
+import { AgentEditorBootstrapProvider } from '../AgentWizard/AgentEditorBootstrapContext';
 
 // Unified agent editor: agent list (left) + wizard-style split (right).
 // Replaces the legacy AgentDesigner as the primary entry point. The legacy
@@ -15,8 +16,10 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
     const [agents, setAgents] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedAgent, setSelectedAgent] = useState(null);
-    // mode: 'idle' (no agent + show wizard landing), 'wizard' (creating with AI),
-    //       'edit' (editing selected agent in BuilderSplit)
+    // mode: 'idle' = no agent selected; show wizard landing.
+    //       'edit' = editing selectedAgent in BuilderSplit.
+    // (A third 'wizard' value used to exist in the comments but was never set
+    //  anywhere; the wizard landing renders whenever mode === 'idle'.)
     const [mode, setMode] = useState('idle');
     const [pendingDelete, setPendingDelete] = useState(null);
     const [deleting, setDeleting] = useState(false);
@@ -103,7 +106,17 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
         }
     };
 
+    // Escape closes the delete-confirm modal (when not in-flight). Matches
+    // the pattern used by the other modals in BuilderSplit.
+    useEffect(() => {
+        if (!pendingDelete) return undefined;
+        const onKey = (e) => { if (e.key === 'Escape' && !deleting) setPendingDelete(null); };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, [pendingDelete, deleting]);
+
     return (
+        <AgentEditorBootstrapProvider>
         <div className="flex h-full bg-[var(--bg-primary)]">
             {/* Agent list sidebar — hidden in fullscreen edit mode */}
             {!isEditing && (
@@ -226,5 +239,6 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
                 </div>
             )}
         </div>
+        </AgentEditorBootstrapProvider>
     );
 }

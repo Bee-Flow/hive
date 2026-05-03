@@ -3,10 +3,21 @@ import { Send, Plus, Sparkles, Upload, Brain, AppWindow, ArrowLeft, X, Search, C
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import useTranslation from '../../../hooks/useTranslation';
 import ModelTierSelector from '../../ModelTierSelector';
-import VersionHistory from '../../VersionHistory';
+import { tierLabel } from '../../tierMeta';
 import MarkdownRenderer from '../../MarkdownRenderer';
 import { INTEGRATION_CATALOG } from '../AgentDesigner/integrations';
 import PlanCard from './PlanCard';
+import { computeRoutineNextRun } from '../../../utils/routineSchedule';
+import { useAgentEditorBootstrap } from './AgentEditorBootstrapContext';
+import { RoutinesPicker, RoutineModal } from './pickers/RoutinePickers';
+import AvatarPicker from './pickers/AvatarPicker';
+import VersionPicker from './pickers/VersionPicker';
+import PublishMenu from './pickers/PublishMenu';
+import BehaviorPicker from './pickers/BehaviorPicker';
+import FilesUploadModal from './pickers/FilesUploadModal';
+import SkillPicker from './pickers/SkillPicker';
+import AppsPicker from './pickers/AppsPicker';
+import { CollapsibleSection, Field, ToggleRow } from './pickers/_primitives';
 
 export default function BuilderSplit({ agent: initialAgent, plan, history, tier, locale, onBack, onPublished, rightHeaderExtras = null, user = null }) {
     const { t } = useTranslation();
@@ -60,7 +71,10 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     const [llamaGuardEnabled, setLlamaGuardEnabled] = useState(initialAgent?.config?.llamaGuardEnabled === true);
     const [webSearchGuardEnabled, setWebSearchGuardEnabled] = useState(initialAgent?.config?.webSearchGuardEnabled === true);
     // Bubble widget (subset of most-used)
-    const [bubbleColor, setBubbleColor] = useState(initialAgent?.config?.bubbleColor || '#6366F1');
+    // Default bubble color is a neutral mid-grey — the original `#6366F1`
+    // (indigo) is on the user-banned-purple list. Users can still pick any
+    // color via the bubble color picker; we just don't *default* to purple.
+    const [bubbleColor, setBubbleColor] = useState(initialAgent?.config?.bubbleColor || '#6b7280');
     const [bubblePosition, setBubblePosition] = useState(initialAgent?.config?.bubblePosition || 'right');
     const [bubbleIcon, setBubbleIcon] = useState(initialAgent?.config?.bubbleIcon || '💬');
 
@@ -74,6 +88,10 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     const [automations, setAutomations] = useState([]);
 
     const [savingState, setSavingState] = useState('idle');
+    // Last save-error message (server response body or fetch error). Surfaced
+    // in the save-state pill's title / tooltip so users see what went wrong
+    // instead of a silent "Save error" with no context.
+    const [saveErrorMsg, setSaveErrorMsg] = useState('');
 
     // Section open/closed state for the inline accordion.
     const [openSection, setOpenSection] = useState(null); // 'identity'|'model'|'knowledge'|'behavior'|'publishing'|'guardrails'|'embed'|null
@@ -152,11 +170,37 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
     }, [chat]);
 
-    // Eager-load on mount so badge counts ("Browse apps · 7") reflect what
-    // the user is actually allowed to use, not the full catalog. Also pull
-    // the data needed by the inline collapsible sections (categories for the
-    // category dropdown, org groups for publishing, tiers for the model picker).
+    // Bootstrap data (skills, integration status, categories, org groups,
+    // tiers, automations). When mounted under AgentStudio the data comes from
+    // the shared AgentEditorBootstrapProvider — one fetch per session, not
+    // one per agent switch. When mounted standalone (the wizard landing
+    // path), the context returns empty defaults and we fall back to the local
+    // fetch below.
+    const bootstrap = useAgentEditorBootstrap();
+    const usingProvider = bootstrap.loaded || bootstrap.allSkills !== null;
     useEffect(() => {
+        if (!usingProvider) return;
+        setAllSkills(bootstrap.allSkills);
+        setIntegrationStatus(bootstrap.integrationStatus);
+        setCategories(bootstrap.categories);
+        setOrgGroups(bootstrap.orgGroups);
+        setTiers(bootstrap.tiers);
+        setAutomations(bootstrap.automations);
+    }, [usingProvider, bootstrap.allSkills, bootstrap.integrationStatus, bootstrap.categories, bootstrap.orgGroups, bootstrap.tiers, bootstrap.automations]);
+
+    useEffect(() => {
+        // Sync the chat-input tier pill with the agent's persisted tier on mount
+        // (and on agent switch — useEffect re-runs when initialAgent.id changes
+        // because BuilderSplit is keyed by it in AgentStudio).
+        if (initialAgent?.model && initialAgent.model.startsWith('tier:')) {
+            setSelectedTier(initialAgent.model.slice('tier:'.length));
+        }
+    }, [initialAgent?.id, initialAgent?.model]);
+
+    // Standalone fallback — only fires when we're NOT under the provider.
+    // Uses the same 6-request bootstrap so the legacy wizard landing keeps working.
+    useEffect(() => {
+        if (usingProvider) return;
         let cancelled = false;
         (async () => {
             try {
@@ -180,9 +224,6 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                         setAutomations(Array.isArray(data?.automations) ? data.automations : []);
                     } catch (_) { setAutomations([]); }
                 }
-                if (initialAgent?.model && initialAgent.model.startsWith('tier:')) {
-                    setSelectedTier(initialAgent.model.slice('tier:'.length));
-                }
             } catch (_) {
                 if (!cancelled) {
                     setAllSkills([]);
@@ -191,7 +232,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
             }
         })();
         return () => { cancelled = true; };
-    }, []);
+    }, [usingProvider]);
 
     // ── Save pipeline ─────────────────────────────────────────────
     // The PUT /agents/:id endpoint writes columns from whatever it receives
@@ -267,9 +308,13 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 // loses keystrokes typed during the in-flight save.
                 setAgent(updated);
                 setSavingState('saved');
+                setSaveErrorMsg('');
             } catch (err) {
                 console.error('Auto-save failed:', err);
                 setSavingState('error');
+                // Surface the server's reason in the indicator's tooltip so the
+                // user can act on it (e.g., a 403 on a tier they don't have).
+                setSaveErrorMsg(String(err?.message || err || 'Unknown error').slice(0, 500));
                 // Mark dirty again so a retry happens on next change.
                 dirtyRef.current = true;
             } finally {
@@ -295,10 +340,14 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         }
     }, [flush]);
 
-    // Save before the user navigates away. sendBeacon-style fallback ensures
-    // a quick toggle right before close still reaches the server.
+    // Save before the user navigates away, AND prompt them when there's
+    // unsynced state. The sendBeacon fallback ships any pending edit to the
+    // server in the background; the preventDefault + returnValue triggers the
+    // browser's native "Leave site?" dialog so the user has a chance to wait
+    // for the save to confirm before closing.
     useEffect(() => {
-        const onBeforeUnload = () => {
+        const onBeforeUnload = (event) => {
+            const hasUnsynced = dirtyRef.current || inflightRef.current;
             if (saveTimer.current && agentIdRef.current && dirtyRef.current) {
                 clearTimeout(saveTimer.current);
                 saveTimer.current = null;
@@ -314,6 +363,14 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                         new Blob([JSON.stringify(snapshot)], { type: 'application/json' })
                     );
                 } catch (_) { /* ignore */ }
+            }
+            if (hasUnsynced) {
+                // Modern browsers ignore the message string but still show
+                // their native dialog when returnValue is set / preventDefault
+                // is called.
+                event.preventDefault();
+                event.returnValue = '';
+                return '';
             }
         };
         window.addEventListener('beforeunload', onBeforeUnload);
@@ -367,13 +424,9 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         const v = tierName ? `tier:${tierName}` : '';
         setModel(v);
         setSelectedTier(tierName);
-        stateRef.current.config = stateRef.current.config; // no-op; model is top-level not config
-        // model is a top-level column on the agent — write through stateRef so the
-        // canonical PUT picks it up (the snapshot already merges all top-level fields).
-        // Use a manual flush via the queue so it lands immediately.
-        const id = agentIdRef.current;
-        if (!id) return;
-        // Stash the new model on stateRef so flush() picks it up; queueSave dirties.
+        // model is a top-level agent column (not under config). Stash it on
+        // stateRef so flush() picks it up, then queue an immediate save.
+        if (!agentIdRef.current) return;
         stateRef.current.model = v;
         dirtyRef.current = true;
         queueSave(true);
@@ -410,14 +463,30 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         setDisableExternalTools(next);
         patchConfig({ disableExternalTools: next });
     };
-    const toggleEmbedEnabled = () => {
-        const next = !embedEnabled;
+    // Persist `embedEnabled`. Going embed-OFF is silent (defensive). Going
+    // embed-ON exposes the agent on the public /chat/<id> route, so we gate
+    // it behind a confirmation modal — the actual flip happens via
+    // `confirmEnableEmbed` after the user accepts.
+    const [pendingEmbedEnable, setPendingEmbedEnable] = useState(false);
+    const persistEmbedEnabled = useCallback((next) => {
         setEmbedEnabled(next);
-        // embed_enabled is a top-level column on the agent table.
         stateRef.current.embedEnabled = next;
         dirtyRef.current = true;
         queueSave(true);
+    }, [queueSave]);
+    const toggleEmbedEnabled = () => {
+        const next = !embedEnabled;
+        if (next) {
+            setPendingEmbedEnable(true);
+        } else {
+            persistEmbedEnabled(false);
+        }
     };
+    const confirmEnableEmbed = () => {
+        persistEmbedEnabled(true);
+        setPendingEmbedEnable(false);
+    };
+    const cancelEnableEmbed = () => setPendingEmbedEnable(false);
 
     // Publishing — uses the dedicated PATCH /agents/:id/publish endpoint instead
     // of the canonical PUT, since publish state lives in a column the regular
@@ -530,29 +599,8 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
             if (updated.routine && routinesAllowed && agent?.id) {
                 try {
                     const r = updated.routine;
-                    // Compute a sensible nextRunAt the server expects.
-                    const now = new Date();
-                    let nextRunAt = null;
-                    if (r.repeatInterval === 'hourly') {
-                        const next = new Date(now);
-                        next.setHours(next.getHours() + 1);
-                        next.setMinutes(0); next.setSeconds(0); next.setMilliseconds(0);
-                        nextRunAt = next.toISOString();
-                    } else {
-                        const [hh, mm] = (r.timeOfDay || '08:00').split(':').map(n => parseInt(n, 10) || 0);
-                        const next = new Date(now);
-                        next.setHours(hh, mm, 0, 0);
-                        if (next <= now) next.setDate(next.getDate() + 1);
-                        if (Array.isArray(r.daysOfWeek) && r.daysOfWeek.length > 0) {
-                            const tokens = ['sun','mon','tue','wed','thu','fri','sat'];
-                            const allowed = new Set(r.daysOfWeek);
-                            for (let i = 0; i < 7; i += 1) {
-                                if (allowed.has(tokens[next.getDay()])) break;
-                                next.setDate(next.getDate() + 1);
-                            }
-                        }
-                        nextRunAt = next.toISOString();
-                    }
+                    const tz = r.timezone || (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
+                    const nextRunAt = computeRoutineNextRun(r, tz);
                     const createRes = await authFetch(`${API_BASE}/api/ai-tasks`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -620,11 +668,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     <button onClick={onBack} className="flex items-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
                         <ArrowLeft size={16} /> {t('agent_wizard.back')}
                     </button>
-                    <span className="text-xs text-[var(--text-tertiary)]">
-                        {savingState === 'saving' && t('agent_wizard.builder.save_saving')}
-                        {savingState === 'saved' && t('agent_wizard.builder.save_saved')}
-                        {savingState === 'error' && t('agent_wizard.builder.save_error')}
-                    </span>
+                    <SaveStateIndicator t={t} state={savingState} errorMsg={saveErrorMsg} onRetry={flush} />
                 </div>
                 <div ref={chatScrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
                     {chat.length === 0 && (
@@ -665,7 +709,9 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                             );
                         }
                         if (m.role === 'plan') {
-                            return <div key={i}><PlanCard plan={m.plan} onAdjust={() => { }} onBuild={() => { }} busy /></div>;
+                            // Plan card in the chat scrollback is read-only — the agent
+                            // already exists, so the Build button would be a no-op.
+                            return <div key={i}><PlanCard plan={m.plan} hideActions /></div>;
                         }
                         if (m.role === 'error') {
                             return <div key={i} className="text-xs text-red-500">{m.content}</div>;
@@ -705,13 +751,6 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                     <Paperclip size={16} />
                                 </button>
                                 <button
-                                    className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors opacity-60 cursor-default"
-                                    title="Web"
-                                    type="button"
-                                >
-                                    <Globe size={16} />
-                                </button>
-                                <button
                                     onClick={() => setKnowledgeOpen(true)}
                                     className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
                                     title={t('agent_wizard.builder.upload_files')}
@@ -734,15 +773,16 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 </button>
                             </div>
                             <div className="flex items-center gap-2">
-                                <ModelTierSelector
-                                    tiers={tiers || {}}
-                                    value={selectedTier}
-                                    // Single source of truth: changing the chat-input pill
-                                    // also persists to the agent's saved tier so the two
-                                    // selectors stay in lockstep.
-                                    onChange={(v) => updateModel(v)}
-                                    dropDirection="up"
-                                />
+                                {/* Tier picker lives only in the agent header — duplicating
+                                    it here was confusing because both controls actually
+                                    persist to the agent's tier. We surface the current
+                                    tier as a read-only label so users still know which
+                                    tier the chat refine call uses. */}
+                                {selectedTier && (
+                                    <span className="text-xs text-[var(--text-tertiary)]" title={t('routines.model_tier') || 'Model tier'}>
+                                        {tierLabel(selectedTier, tiers || {})}
+                                    </span>
+                                )}
                                 <button
                                     onClick={handleRefine}
                                     disabled={chatBusy || !chatInput.trim()}
@@ -760,11 +800,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
             {/* Right config panel */}
             <main className="flex-1 overflow-y-auto">
                 <div className="flex items-center justify-end gap-3 px-8 py-3 relative">
-                    <span className="text-xs text-[var(--text-tertiary)]">
-                        {savingState === 'saving' && t('agent_wizard.builder.save_saving')}
-                        {savingState === 'saved' && t('agent_wizard.builder.save_saved')}
-                        {savingState === 'error' && t('agent_wizard.builder.save_error')}
-                    </span>
+                    <SaveStateIndicator t={t} state={savingState} errorMsg={saveErrorMsg} onRetry={flush} />
                     {rightHeaderExtras}
                     <PublishMenu
                         t={t}
@@ -1019,14 +1055,12 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     <div className="mt-10">
                         <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-3">{t('agent_wizard.builder.instructions')}</div>
                         {instructionsEditing ? (
-                            <textarea
+                            <InstructionsEditor
                                 ref={instructionsTextareaRef}
-                                value={instructions}
-                                onChange={(e) => updateInstructions(e.target.value)}
-                                onBlur={() => { flushNow(); setInstructionsEditing(false); }}
-                                rows={Math.max(12, (instructions.match(/\n/g) || []).length + 2)}
+                                initialValue={instructions}
                                 placeholder={t('agent_wizard.builder.instructions_placeholder')}
-                                className="w-full bg-[var(--bg-secondary)]/50 border border-transparent focus:border-[var(--border-default)] rounded-xl px-4 py-3 text-[15px] leading-7 text-[var(--text-primary)] outline-none resize-y"
+                                onCommit={updateInstructions}
+                                onBlurEnd={() => { flushNow(); setInstructionsEditing(false); }}
                             />
                         ) : (
                             <div
@@ -1078,445 +1112,162 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     }}
                 />
             )}
-        </div>
-    );
-}
-
-function SkillPicker({ skills, selectedIds, automations = [], search, onSearch, onClose, onToggle, onCreate, t }) {
-    const [creating, setCreating] = useState(false);
-    const [newName, setNewName] = useState('');
-    const [newDesc, setNewDesc] = useState('');
-    const [newInstr, setNewInstr] = useState('');
-    const [newAutomationId, setNewAutomationId] = useState('');
-    const [busy, setBusy] = useState(false);
-    const filtered = (skills || []).filter(s =>
-        !search || (s.name || '').toLowerCase().includes(search.toLowerCase())
-    );
-
-    const submit = async () => {
-        if (!newName.trim() || busy) return;
-        setBusy(true);
-        const created = await onCreate({
-            name: newName.trim(),
-            description: newDesc.trim(),
-            instructions: newInstr.trim(),
-            automationId: newAutomationId || null,
-        });
-        setBusy(false);
-        if (created) {
-            setNewName(''); setNewDesc(''); setNewInstr(''); setNewAutomationId(''); setCreating(false);
-        }
-    };
-
-    return (
-        <div className="absolute z-20 top-full left-0 mt-2 w-[460px] rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-lg p-3">
-            {!creating && (
-                <>
-                    <div className="flex items-center gap-2 mb-2">
-                        <Search size={14} className="text-[var(--text-tertiary)]" />
-                        <input
-                            autoFocus
-                            value={search}
-                            onChange={(e) => onSearch(e.target.value)}
-                            placeholder={t('agent_wizard.skills.search')}
-                            className="flex-1 bg-transparent outline-none text-sm text-[var(--text-primary)] placeholder-[var(--text-tertiary)]"
-                        />
-                        <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={14} /></button>
-                    </div>
-                    <button
-                        onClick={() => { setCreating(true); setNewName(search); }}
-                        className="w-full flex items-center gap-2 py-2 px-2 mb-1 rounded-lg text-sm text-[var(--accent)] hover:bg-[var(--bg-secondary)]"
-                    >
-                        <Plus size={14} /> {t('agent_wizard.skills.create_new')}
-                    </button>
-                    <div className="max-h-64 overflow-y-auto divide-y divide-[var(--border-default)]">
-                        {filtered.length === 0 && (
-                            <div className="text-xs text-[var(--text-tertiary)] py-3 text-center">
-                                {t('agent_wizard.skills.empty')}
-                            </div>
-                        )}
-                        {filtered.map((s) => {
-                            const checked = selectedIds.includes(s.id);
-                            return (
-                                <button
-                                    key={s.id}
-                                    onClick={() => onToggle(s.id)}
-                                    className="w-full flex items-center gap-3 py-2 text-left hover:bg-[var(--bg-secondary)] rounded-lg px-2"
-                                >
-                                    <span className="text-base">{s.icon || '✨'}</span>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="text-sm text-[var(--text-primary)] truncate flex items-center gap-1.5">
-                                            {s.name}
-                                            {s.automationId && (
-                                                <span title={t('agent_wizard.skills.linked_automation') || 'Linked to an automation'} className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] flex items-center gap-1">
-                                                    <Sparkles size={10} /> Flow
-                                                </span>
-                                            )}
-                                        </div>
-                                        {s.description && <div className="text-xs text-[var(--text-tertiary)] truncate">{s.description}</div>}
-                                    </div>
-                                    <span className={`w-4 h-4 rounded-sm border flex items-center justify-center ${checked ? 'bg-[var(--accent)] border-[var(--accent)] text-white' : 'border-[var(--border-default)]'}`}>
-                                        {checked && '✓'}
-                                    </span>
-                                </button>
-                            );
-                        })}
-                    </div>
-                </>
-            )}
-            {creating && (
-                <div className="space-y-2">
-                    <div className="flex items-center justify-between">
-                        <div className="text-sm font-medium text-[var(--text-primary)]">{t('agent_wizard.skills.create_new')}</div>
-                        <button onClick={() => setCreating(false)} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={14} /></button>
-                    </div>
-                    <input
-                        autoFocus
-                        value={newName}
-                        onChange={(e) => setNewName(e.target.value)}
-                        placeholder={t('agent_wizard.skills.field_name')}
-                        className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
-                    />
-                    <input
-                        value={newDesc}
-                        onChange={(e) => setNewDesc(e.target.value)}
-                        placeholder={t('agent_wizard.skills.field_description')}
-                        className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
-                    />
-                    {!newAutomationId && (
-                        <textarea
-                            value={newInstr}
-                            onChange={(e) => setNewInstr(e.target.value)}
-                            rows={4}
-                            placeholder={t('agent_wizard.skills.field_instructions')}
-                            className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)] resize-y"
-                        />
-                    )}
-                    {automations && automations.length > 0 && (
-                        <div className="space-y-1">
-                            <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)]">
-                                {t('agent_wizard.skills.linked_automation_label') || 'Linked automation (optional)'}
-                            </div>
-                            <select
-                                value={newAutomationId}
-                                onChange={(e) => setNewAutomationId(e.target.value)}
-                                className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)] cursor-pointer"
-                            >
-                                <option value="">{t('agent_wizard.skills.linked_automation_none') || '— No automation, use instructions above —'}</option>
-                                {automations.map(a => (
-                                    <option key={a.id} value={a.id}>{a.title || '(untitled)'}</option>
-                                ))}
-                            </select>
-                            {newAutomationId && (
-                                <div className="text-[11px] text-[var(--text-tertiary)] pl-1">
-                                    {t('agent_wizard.skills.linked_automation_help') || 'When the agent activates this skill, the linked automation runs and its result is returned to the agent.'}
-                                </div>
-                            )}
-                        </div>
-                    )}
-                    <div className="flex justify-end gap-2 pt-1">
-                        <button onClick={() => setCreating(false)} className="px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
-                            {t('agent_wizard.skills.cancel')}
-                        </button>
-                        <button onClick={submit} disabled={!newName.trim() || busy} className="px-3 py-1.5 rounded-full text-sm bg-[var(--accent)] text-white disabled:opacity-50">
-                            {busy ? t('agent_wizard.busy') : t('agent_wizard.skills.create_attach')}
-                        </button>
-                    </div>
-                </div>
+            {pendingEmbedEnable && (
+                <EnableEmbedConfirmModal
+                    t={t}
+                    agent={agent}
+                    onConfirm={confirmEnableEmbed}
+                    onCancel={cancelEnableEmbed}
+                />
             )}
         </div>
     );
 }
 
-function AppsPicker({ items, enabled, onClose, onToggle, t }) {
-    const isSelected = (id) => enabled === null ? true : enabled.includes(id);
-    const [search, setSearch] = useState('');
-    const [focusedId, setFocusedId] = useState(items[0]?.id || null);
-    const filtered = items.filter(it =>
-        !search.trim() || it.label.toLowerCase().includes(search.toLowerCase()) || (it.description || '').toLowerCase().includes(search.toLowerCase())
-    );
-    useEffect(() => {
-        if (filtered.length && !filtered.some(it => it.id === focusedId)) {
-            setFocusedId(filtered[0].id);
-        }
-    }, [filtered, focusedId]);
-    const focused = items.find(it => it.id === focusedId) || filtered[0] || null;
-    const focusedSelected = focused ? isSelected(focused.id) : false;
 
-    return (
-        <div
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
-            onClick={onClose}
-        >
-            <div
-                className="w-full max-w-3xl h-[560px] rounded-2xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-2xl overflow-hidden flex"
-                onClick={(e) => e.stopPropagation()}
-            >
-                {/* Left: search + list */}
-                <div className="w-[40%] flex flex-col border-r border-[var(--border-default)]">
-                    <div className="p-3">
-                        <div className="relative">
-                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
-                            <input
-                                type="text"
-                                value={search}
-                                onChange={(e) => setSearch(e.target.value)}
-                                placeholder={t('agent_wizard.apps.search') || 'Search apps'}
-                                className="w-full bg-[var(--bg-secondary)] rounded-full pl-9 pr-3 py-2 text-sm outline-none text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
-                                autoFocus
-                            />
-                        </div>
-                    </div>
-                    <div className="flex-1 overflow-y-auto px-2 pb-2">
-                        {filtered.length === 0 && (
-                            <div className="text-xs text-[var(--text-tertiary)] text-center py-6">—</div>
-                        )}
-                        {filtered.map((item) => {
-                            const isFocus = item.id === focusedId;
-                            const selected = isSelected(item.id);
-                            return (
-                                <button
-                                    key={item.id}
-                                    type="button"
-                                    onClick={() => setFocusedId(item.id)}
-                                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left text-sm transition ${isFocus ? 'bg-[var(--bg-secondary)]' : 'hover:bg-[var(--bg-secondary)]/60'}`}
-                                >
-                                    <div className="w-6 h-6 flex items-center justify-center flex-shrink-0">{item.iconSvg}</div>
-                                    <span className="truncate flex-1 text-[var(--text-primary)]">{item.label}</span>
-                                    {selected && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" aria-label="enabled" />}
-                                </button>
-                            );
-                        })}
-                    </div>
-                </div>
 
-                {/* Right: detail pane */}
-                <div className="flex-1 flex flex-col relative">
-                    <button
-                        onClick={onClose}
-                        className="absolute top-3 right-3 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] z-10"
-                        aria-label="Close"
-                    >
-                        <X size={18} />
-                    </button>
-                    {focused ? (
-                        <>
-                            <div className="flex-1 overflow-y-auto px-8 pt-10 pb-4">
-                                <div className="w-14 h-14 rounded-2xl border border-[var(--border-default)] flex items-center justify-center mb-5">
-                                    <div className="w-9 h-9 flex items-center justify-center">{focused.iconSvg}</div>
-                                </div>
-                                <h3 className="text-2xl font-semibold text-[var(--text-primary)] mb-3">{focused.label}</h3>
-                                <p className="text-sm text-[var(--text-secondary)] leading-6">
-                                    {focused.description || t('agent_wizard.apps.no_description') || 'No description available.'}
-                                </p>
-                            </div>
-                            <div className="px-8 pb-6 pt-3">
-                                <button
-                                    type="button"
-                                    onClick={() => onToggle(focused.id)}
-                                    className={`w-full py-3 rounded-full text-sm font-medium transition ${focusedSelected
-                                        ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'
-                                        : 'bg-[var(--text-primary)] text-[var(--bg-primary)] hover:opacity-90'}`}
-                                >
-                                    {focusedSelected
-                                        ? (t('agent_wizard.apps.disable') || 'Disable')
-                                        : (t('agent_wizard.apps.enable') || 'Enable')}
-                                </button>
-                            </div>
-                        </>
-                    ) : (
-                        <div className="flex-1 flex items-center justify-center text-sm text-[var(--text-tertiary)]">—</div>
-                    )}
-                </div>
-            </div>
-        </div>
-    );
-}
-
-function FilesUploadModal({ t, agent, knowledgeBaseIds, onKnowledgeBaseIdsChange, strictKnowledge, onStrictKnowledgeChange, includeSourceReferences, onIncludeSourceReferencesChange, allKbs, onToggleKbLink, onCreateKb, onClose }) {
-    // Primary KB = the auto-created KB at wizard/commit time, or the first linked KB.
-    const initialKbId = agent?.config?.wizard?.primaryKbId || knowledgeBaseIds?.[0] || null;
-    const [kbId, setKbId] = useState(initialKbId);
-    const [docs, setDocs] = useState([]);
-    const [loading, setLoading] = useState(false);
-    const [uploading, setUploading] = useState(false);
-    const [error, setError] = useState(null);
-    const [dragOver, setDragOver] = useState(false);
-
-    const ensureKB = useCallback(async () => {
-        if (kbId) return kbId;
-        // Lazily create one if commit didn't (older agents, KB feature was disabled, etc.).
-        try {
-            const res = await authFetch(`${API_BASE}/api/kb`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ name: agent?.name || 'Knowledge', description: `Auto-generated for agent "${agent?.name}"` }),
-            });
-            if (!res.ok) throw new Error(await res.text());
-            const created = await res.json();
-            setKbId(created.id);
-            const next = Array.from(new Set([...(knowledgeBaseIds || []), created.id]));
-            onKnowledgeBaseIdsChange(next);
-            return created.id;
-        } catch (err) {
-            setError(err.message);
-            return null;
-        }
-    }, [kbId, agent?.name, agent?.id, knowledgeBaseIds, onKnowledgeBaseIdsChange]);
-
-    const loadDocs = useCallback(async (id) => {
-        if (!id) return;
-        setLoading(true);
-        try {
-            const res = await authFetch(`${API_BASE}/api/kb/${id}/documents?limit=200`);
-            if (res.ok) {
-                const data = await res.json();
-                setDocs(data.items || data.documents || data || []);
-            }
-        } catch (_) { /* ignore */ } finally { setLoading(false); }
-    }, []);
-
-    useEffect(() => { if (kbId) loadDocs(kbId); }, [kbId, loadDocs]);
-
-    const uploadFiles = async (files) => {
-        if (!files || files.length === 0) return;
-        setError(null);
-        setUploading(true);
-        try {
-            const id = await ensureKB();
-            if (!id) return;
-            for (const file of files) {
-                const fd = new FormData();
-                fd.append('file', file);
-                const res = await authFetch(`${API_BASE}/api/kb/${id}/ingest/file`, {
-                    method: 'POST',
-                    body: fd,
-                });
-                if (!res.ok) {
-                    const txt = await res.text();
-                    throw new Error(`${file.name}: ${txt}`);
-                }
-            }
-            await loadDocs(id);
-        } catch (err) {
-            setError(err.message);
-        } finally {
-            setUploading(false);
-        }
-    };
-
-    const onDrop = (e) => {
-        e.preventDefault();
-        setDragOver(false);
-        if (e.dataTransfer?.files?.length) uploadFiles(Array.from(e.dataTransfer.files));
-    };
-
-    const deleteDoc = async (docId) => {
-        if (!kbId) return;
-        try {
-            const res = await authFetch(`${API_BASE}/api/kb/${kbId}/documents/${docId}`, { method: 'DELETE' });
-            if (!res.ok) throw new Error(await res.text());
-            await loadDocs(kbId);
-        } catch (err) { setError(err.message); }
-    };
-
-    return (
-        <div className="fixed inset-0 z-[1000] bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
-            <div className="bg-[var(--bg-primary)] rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-                <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border-default)]">
-                    <div>
-                        <div className="text-sm font-semibold text-[var(--text-primary)]">{t('agent_wizard.files.title')}</div>
-                        <div className="text-xs text-[var(--text-tertiary)]">{t('agent_wizard.files.subtitle')}</div>
-                    </div>
-                    <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={18} /></button>
-                </div>
-
-                <div className="p-5 space-y-4">
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <label className="flex items-start gap-3 px-3 py-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] cursor-pointer">
-                            <input type="checkbox" checked={!!strictKnowledge} onChange={(e) => onStrictKnowledgeChange(e.target.checked)} className="mt-1" />
-                            <div>
-                                <div className="text-sm text-[var(--text-primary)]">{t('agent_wizard.files.strict_label')}</div>
-                                <div className="text-xs text-[var(--text-tertiary)]">{t('agent_wizard.files.strict_help')}</div>
-                            </div>
-                        </label>
-                        <label className="flex items-start gap-3 px-3 py-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] cursor-pointer">
-                            <input type="checkbox" checked={!!includeSourceReferences} onChange={(e) => onIncludeSourceReferencesChange?.(e.target.checked)} className="mt-1" />
-                            <div>
-                                <div className="text-sm text-[var(--text-primary)]">{t('agent_wizard.knowledge.sources_label')}</div>
-                                <div className="text-xs text-[var(--text-tertiary)]">{t('agent_wizard.knowledge.sources_help')}</div>
-                            </div>
-                        </label>
-                    </div>
-
-                    {Array.isArray(allKbs) && (
-                        <div>
-                            <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-2">
-                                {t('agent_wizard.knowledge.kbs') || 'Knowledge bases'} ({allKbs.length})
-                            </div>
-                            <KbList
-                                t={t}
-                                kbs={allKbs}
-                                linkedIds={knowledgeBaseIds}
-                                onToggle={onToggleKbLink}
-                                onCreate={onCreateKb}
-                            />
-                        </div>
-                    )}
-
-                    <label
-                        onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
-                        onDragLeave={() => setDragOver(false)}
-                        onDrop={onDrop}
-                        className={`block rounded-xl border-2 border-dashed p-8 text-center cursor-pointer transition ${dragOver ? 'border-[var(--accent)] bg-[var(--bg-secondary)]' : 'border-[var(--border-default)] bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)]'}`}
-                    >
-                        <Upload className="mx-auto mb-2 text-[var(--text-tertiary)]" size={24} />
-                        <div className="text-sm text-[var(--text-primary)]">{t('agent_wizard.files.drop_here')}</div>
-                        <div className="text-xs text-[var(--text-tertiary)] mt-1">{t('agent_wizard.files.click_or_drag')}</div>
-                        <input
-                            type="file"
-                            multiple
-                            className="hidden"
-                            onChange={(e) => { uploadFiles(Array.from(e.target.files || [])); e.target.value = ''; }}
-                        />
-                    </label>
-
-                    {uploading && <div className="text-xs text-[var(--text-secondary)]">{t('agent_wizard.files.uploading')}</div>}
-                    {error && <div className="text-xs text-red-500">{error}</div>}
-
-                    <div>
-                        <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-2">
-                            {t('agent_wizard.files.documents')} {!loading && `(${docs.length})`}
-                        </div>
-                        {loading && <div className="text-xs text-[var(--text-tertiary)]">…</div>}
-                        {!loading && docs.length === 0 && (
-                            <div className="text-xs text-[var(--text-tertiary)] py-3 text-center">{t('agent_wizard.files.no_documents')}</div>
-                        )}
-                        <div className="divide-y divide-[var(--border-default)]">
-                            {docs.map((d) => (
-                                <div key={d.id} className="flex items-center gap-3 py-2 text-sm text-[var(--text-primary)]">
-                                    <div className="flex-1 min-w-0">
-                                        <div className="truncate">{d.title || d.source_url || d.id}</div>
-                                        <div className="text-[11px] text-[var(--text-tertiary)]">
-                                            {d.chunk_count != null ? `${d.chunk_count} chunks` : ''}
-                                        </div>
-                                    </div>
-                                    <button onClick={() => deleteDoc(d.id)} className="text-[var(--text-tertiary)] hover:text-red-500"><X size={14} /></button>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    );
-}
 
 // `popoverTrigger` (optional): when this pill is the toggle for a popover, set
 // to a unique name that matches the popover's `triggerName` prop. The popover's
 // outside-click handler then ignores clicks on this trigger so toggling
 // works correctly (without it, the document mousedown listener and the
 // trigger's onClick race and the popover stays open on close-click).
+// Memoized instructions textarea. The parent's `instructions` state lives in
+// BuilderSplit (~127 hooks), so updating it on every keystroke causes the
+// entire editor to rerender. This child holds its own local string and only
+// commits to the parent on a 250ms debounce + on blur — keystrokes stay
+// scoped to this component, BuilderSplit only sees settled values.
+const InstructionsEditor = React.memo(React.forwardRef(function InstructionsEditor(
+    { initialValue, placeholder, onCommit, onBlurEnd },
+    forwardedRef,
+) {
+    const [value, setValue] = useState(initialValue || '');
+    const debounceRef = useRef(null);
+    const onCommitRef = useRef(onCommit);
+    useEffect(() => { onCommitRef.current = onCommit; }, [onCommit]);
+
+    // Keep the local buffer aligned if the parent rewrites instructions
+    // (e.g., wizard refine response or version restore). Don't blow away
+    // in-flight keystrokes — only sync when the prop genuinely differs from
+    // the last committed value.
+    const lastInitialRef = useRef(initialValue);
+    useEffect(() => {
+        if (initialValue !== lastInitialRef.current) {
+            lastInitialRef.current = initialValue;
+            setValue(initialValue || '');
+        }
+    }, [initialValue]);
+
+    const handleChange = (e) => {
+        const next = e.target.value;
+        setValue(next);
+        if (debounceRef.current) clearTimeout(debounceRef.current);
+        debounceRef.current = setTimeout(() => {
+            onCommitRef.current?.(next);
+            debounceRef.current = null;
+        }, 250);
+    };
+
+    const handleBlur = () => {
+        if (debounceRef.current) {
+            clearTimeout(debounceRef.current);
+            debounceRef.current = null;
+            onCommitRef.current?.(value);
+        }
+        onBlurEnd?.();
+    };
+
+    return (
+        <textarea
+            ref={forwardedRef}
+            value={value}
+            onChange={handleChange}
+            onBlur={handleBlur}
+            rows={Math.max(12, (value.match(/\n/g) || []).length + 2)}
+            placeholder={placeholder}
+            className="w-full bg-[var(--bg-secondary)]/50 border border-transparent focus:border-[var(--border-default)] rounded-xl px-4 py-3 text-[15px] leading-7 text-[var(--text-primary)] outline-none resize-y"
+        />
+    );
+}));
+
+// Confirmation modal shown before flipping `embedEnabled` to true. Without
+// this, the toggle silently makes the agent reachable at the public
+// /chat/<id> URL — users may not realise that's what just happened.
+function EnableEmbedConfirmModal({ t, agent, onConfirm, onCancel }) {
+    useEffect(() => {
+        const onKey = (e) => { if (e.key === 'Escape') onCancel(); };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, [onCancel]);
+    const url = agent?.id ? `${window.location.origin}/chat/${agent.id}` : '';
+    return (
+        <div className="fixed inset-0 z-[1100] bg-black/50 flex items-center justify-center p-4" onClick={onCancel}>
+            <div className="bg-[var(--bg-primary)] rounded-xl w-full max-w-md shadow-xl border border-[var(--border-default)]" onClick={(e) => e.stopPropagation()}>
+                <div className="px-5 py-4 border-b border-[var(--border-default)] text-sm font-semibold text-[var(--text-primary)]">
+                    {t('agent_wizard.embed.confirm_title') || 'Make this agent public?'}
+                </div>
+                <div className="px-5 py-4 text-sm text-[var(--text-secondary)] space-y-3">
+                    <p>{t('agent_wizard.embed.confirm_body') || 'Anyone who knows the URL will be able to chat with this agent without an account. The agent will run with its full configuration: system prompt, attached skills, and knowledge bases.'}</p>
+                    {url && (
+                        <div className="text-xs px-3 py-2 rounded-lg bg-[var(--bg-secondary)] text-[var(--text-tertiary)] break-all font-mono">{url}</div>
+                    )}
+                </div>
+                <div className="flex justify-end gap-2 px-5 py-3 border-t border-[var(--border-default)]">
+                    <button onClick={onCancel} className="px-4 py-2 rounded-full text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] transition">
+                        {t('agent_wizard.embed.confirm_cancel') || 'Cancel'}
+                    </button>
+                    <button onClick={onConfirm} className="px-4 py-2 rounded-full text-sm bg-[var(--text-primary)] text-[var(--bg-primary)] hover:opacity-90 transition">
+                        {t('agent_wizard.embed.confirm_enable') || 'Enable public access'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// Compact save-state pill for the editor header. State machine:
+//   - idle:    nothing rendered (no churn before the first save)
+//   - saving:  spinner + label
+//   - saved:   check + label
+//   - error:   warning icon, full server message in `title` tooltip,
+//              click to retry the save
+function SaveStateIndicator({ t, state, errorMsg, onRetry }) {
+    if (!state || state === 'idle') return null;
+
+    if (state === 'saving') {
+        return (
+            <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]" title={t('agent_wizard.builder.save_saving') || 'Saving…'}>
+                <span className="w-3 h-3 inline-block rounded-full border border-[var(--text-tertiary)] border-t-transparent animate-spin" />
+                {t('agent_wizard.builder.save_saving') || 'Saving…'}
+            </span>
+        );
+    }
+    if (state === 'saved') {
+        return (
+            <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]" title={t('agent_wizard.builder.save_saved') || 'Saved'}>
+                <Check size={12} className="text-emerald-500" />
+                {t('agent_wizard.builder.save_saved') || 'Saved'}
+            </span>
+        );
+    }
+    // error
+    const tooltip = errorMsg
+        ? `${t('agent_wizard.builder.save_error') || 'Save failed'}: ${errorMsg}`
+        : (t('agent_wizard.builder.save_error') || 'Save failed');
+    return (
+        <button
+            type="button"
+            onClick={onRetry}
+            className="inline-flex items-center gap-1.5 text-xs text-red-500 hover:text-red-600 cursor-pointer"
+            title={tooltip}
+        >
+            <span aria-hidden="true">!</span>
+            {t('agent_wizard.builder.save_error') || 'Save failed'}
+            <span className="underline">{t('agent_wizard.builder.save_retry') || 'retry'}</span>
+        </button>
+    );
+}
+
 function ActionPill({ icon, label, count, onClick, active, popoverTrigger }) {
     return (
         <button
@@ -1535,31 +1286,6 @@ function ActionPill({ icon, label, count, onClick, active, popoverTrigger }) {
     );
 }
 
-function CopyField({ value, t }) {
-    const [copied, setCopied] = useState(false);
-    const onCopy = async () => {
-        try { await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (_) { /* ignore */ }
-    };
-    return (
-        <div className="flex gap-2">
-            <input
-                readOnly
-                value={value}
-                onFocus={(e) => e.target.select()}
-                className="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-default)] text-[var(--text-secondary)] outline-none"
-            />
-            <button
-                type="button"
-                onClick={onCopy}
-                className="px-3 py-2 text-xs rounded-lg bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)] transition flex items-center gap-1.5"
-                title={t('agent_wizard.embed.copy') || 'Copy'}
-            >
-                {copied ? <Check size={12} /> : <Copy size={12} />}
-                {copied ? (t('agent_wizard.embed.copied') || 'Copied') : (t('agent_wizard.embed.copy') || 'Copy')}
-            </button>
-        </div>
-    );
-}
 
 function CategoryField({ t, value, categories, onChange, onCreate }) {
     const [creating, setCreating] = useState(false);
@@ -1619,885 +1345,7 @@ function CategoryField({ t, value, categories, onChange, onCreate }) {
     );
 }
 
-const ROUTINE_DOW_TOKENS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
-const ROUTINE_DOW_LABELS = { sun: 'Sun', mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat' };
-function formatRoutineNextRun(iso) {
-    if (!iso) return '—';
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return '—';
-    const now = new Date();
-    const diffMs = d - now;
-    const sameDay = d.toDateString() === now.toDateString();
-    const tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate() + 1);
-    const isTomorrow = d.toDateString() === tomorrow.toDateString();
-    const time = d.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' });
-    if (diffMs < 0) return `Overdue (${d.toLocaleString()})`;
-    if (sameDay) return `Today at ${time}`;
-    if (isTomorrow) return `Tomorrow at ${time}`;
-    return d.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-}
+// Routine-picker constants and components moved to ./pickers/RoutinePickers.jsx
 
-function RoutinesPicker({ t, agent, routines, onClose, onCreate, onEdit, onToggle, onRunNow, onDelete }) {
-    const popoverRef = useRef(null);
-    useEffect(() => {
-        const onDoc = (e) => {
-            if (popoverRef.current?.contains(e.target)) return;
-            // Ignore clicks on this picker's own trigger pill — let the trigger's
-            // onClick handle the toggle. Without this, the close handler races
-            // with the trigger and the picker stays open on close-click.
-            if (e.target.closest?.('[data-popover-trigger="routines"]')) return;
-            onClose();
-        };
-        document.addEventListener('mousedown', onDoc);
-        return () => document.removeEventListener('mousedown', onDoc);
-    }, [onClose]);
-    return (
-        <div
-            ref={popoverRef}
-            className="absolute z-30 top-full left-0 mt-2 w-[440px] max-h-[70vh] overflow-y-auto rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-xl"
-        >
-            <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-[var(--text-primary)]">{t('routines.title') || 'Routines'}</span>
-                    <span className="text-[10px] uppercase tracking-wide font-medium px-1.5 py-0.5 rounded-full bg-[var(--accent)]/15 text-[var(--accent)]">
-                        {t('routines.beta_badge') || 'Beta'}
-                    </span>
-                </div>
-                <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={14} /></button>
-            </div>
-            <div className="p-3">
-                <button
-                    type="button"
-                    onClick={onCreate}
-                    className="w-full mb-2 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[var(--accent)]/10 hover:bg-[var(--accent)]/20 text-[var(--accent)] text-sm font-medium transition"
-                >
-                    <Plus size={14} /> {t('routines.new') || 'New routine'}
-                </button>
-                {routines.length === 0 ? (
-                    <div className="text-xs text-[var(--text-tertiary)] py-6 text-center">
-                        {t('routines.no_routines_for_agent') || 'No routines yet for this agent.'}
-                    </div>
-                ) : (
-                    <div className="divide-y divide-[var(--border-default)]">
-                        {routines.map((r) => (
-                            <div key={r.id} className="py-2 flex items-start gap-2">
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-sm text-[var(--text-primary)] truncate">{r.title}</div>
-                                    <div className="text-[11px] text-[var(--text-tertiary)] truncate">
-                                        {r.isActive
-                                            ? `${t('routines.scheduled_for') || 'Scheduled for'}: ${formatRoutineNextRun(r.nextRunAt)}`
-                                            : (t('routines.paused') || 'Paused')}
-                                    </div>
-                                </div>
-                                <div className="flex items-center gap-0.5 flex-shrink-0">
-                                    <button onClick={() => onRunNow(r)} title={t('routines.run_now') || 'Run now'} className="p-1.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition">
-                                        <Play size={13} />
-                                    </button>
-                                    <button onClick={() => onToggle(r)} title={r.isActive ? 'Pause' : 'Resume'} className="p-1.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition">
-                                        {r.isActive ? <Pause size={13} /> : <Play size={13} />}
-                                    </button>
-                                    <button onClick={() => onEdit(r)} title={t('routines.edit') || 'Edit'} className="p-1.5 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition">
-                                        <Sliders size={13} />
-                                    </button>
-                                    <button onClick={() => onDelete(r)} title="Delete" className="p-1.5 rounded hover:bg-red-500/10 text-[var(--text-tertiary)] hover:text-red-500 transition">
-                                        <Trash2 size={13} />
-                                    </button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-}
 
-function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
-    const isEdit = !!initialRoutine;
-    // `mode` maps directly to the server's repeatInterval value, plus 'hourly'
-    // which the UI special-cases (hours-N input instead of day picker).
-    const [mode, setMode] = useState(() => initialRoutine?.repeatInterval || 'daily');
-    const [title, setTitle] = useState(initialRoutine?.title || '');
-    const [prompt, setPrompt] = useState(initialRoutine?.prompt || '');
-    const [hours, setHours] = useState(1);
-    const [daysOfWeek, setDaysOfWeek] = useState(() => {
-        if (Array.isArray(initialRoutine?.daysOfWeek) && initialRoutine.daysOfWeek.length > 0) return initialRoutine.daysOfWeek;
-        return ['mon', 'tue', 'wed', 'thu', 'fri'];
-    });
-    // Day of month for Monthly mode (1-28 to dodge Feb edge cases).
-    const [dayOfMonth, setDayOfMonth] = useState(() => {
-        if (initialRoutine?.repeatInterval === 'monthly' && initialRoutine?.nextRunAt) {
-            return new Date(initialRoutine.nextRunAt).getDate();
-        }
-        return 1;
-    });
-    const [time, setTime] = useState(initialRoutine?.timeOfDay || '08:00');
-    const [timezone, setTimezone] = useState(initialRoutine?.timezone || (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'));
-    const [busy, setBusy] = useState(false);
-    const [error, setError] = useState(null);
 
-    // 'daily' / 'weekdays' / 'weekly' / 'biweekly' all use the day-of-week picker.
-    const usesDayPicker = mode === 'daily' || mode === 'weekdays' || mode === 'weekly' || mode === 'biweekly';
-    const usesDayOfMonth = mode === 'monthly';
-
-    const toggleDay = (d) => {
-        setDaysOfWeek(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
-    };
-
-    // Compute the next run as an ISO timestamp the server expects.
-    const computeNextRun = () => {
-        const now = new Date();
-        if (mode === 'hourly') {
-            const next = new Date(now);
-            next.setHours(next.getHours() + Number(hours || 1));
-            next.setMinutes(0); next.setSeconds(0); next.setMilliseconds(0);
-            return next.toISOString();
-        }
-        const [hh, mm] = (time || '08:00').split(':').map(n => parseInt(n, 10));
-        if (usesDayOfMonth) {
-            const next = new Date(now.getFullYear(), now.getMonth(), Math.max(1, Math.min(28, Number(dayOfMonth) || 1)), hh || 0, mm || 0, 0, 0);
-            if (next <= now) next.setMonth(next.getMonth() + 1);
-            return next.toISOString();
-        }
-        // Day-of-week modes — pick the next occurrence at `time` on a permitted day.
-        const allowedTokens = mode === 'weekdays' ? ['mon','tue','wed','thu','fri'] : daysOfWeek;
-        const next = new Date(now);
-        next.setHours(hh || 0, mm || 0, 0, 0);
-        if (next <= now) next.setDate(next.getDate() + 1);
-        if (Array.isArray(allowedTokens) && allowedTokens.length > 0) {
-            const allowed = new Set(allowedTokens);
-            for (let i = 0; i < 7; i += 1) {
-                if (allowed.has(ROUTINE_DOW_TOKENS[next.getDay()])) break;
-                next.setDate(next.getDate() + 1);
-            }
-        }
-        return next.toISOString();
-    };
-
-    const submit = async () => {
-        setError(null);
-        if (!title.trim()) { setError('Title is required'); return; }
-        if (!prompt.trim()) { setError('Prompt is required'); return; }
-        setBusy(true);
-        try {
-            const body = {
-                title: title.trim(),
-                prompt: prompt.trim(),
-                repeatInterval: mode,
-                // Only send the day picker payload for modes that consume it.
-                // Weekdays mode is encoded by `repeatInterval='weekdays'` server-side
-                // so we leave daysOfWeek null to avoid ambiguity.
-                daysOfWeek: (mode === 'daily' || mode === 'weekly' || mode === 'biweekly') ? daysOfWeek : null,
-                timeOfDay: mode === 'hourly' ? null : time,
-                timezone,
-                nextRunAt: computeNextRun(),
-            };
-            if (!isEdit) body.agentId = agent.id;
-            const url = isEdit
-                ? `${API_BASE}/api/ai-tasks/${initialRoutine.id}`
-                : `${API_BASE}/api/ai-tasks`;
-            const res = await authFetch(url, {
-                method: isEdit ? 'PUT' : 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
-            if (!res.ok) throw new Error(await res.text());
-            onSaved();
-        } catch (err) {
-            setError(err.message || 'Save failed');
-        } finally {
-            setBusy(false);
-        }
-    };
-
-    return (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
-            <div
-                className="w-full max-w-md rounded-2xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-2xl overflow-hidden"
-                onClick={(e) => e.stopPropagation()}
-            >
-                <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-default)]">
-                    <span className="text-base font-semibold text-[var(--text-primary)]">
-                        {isEdit ? (t('routines.edit') || 'Edit routine') : (t('routines.new') || 'New routine')}
-                    </span>
-                    <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={18} /></button>
-                </div>
-                <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
-                    {/* Repeat cadence picker — drives which body fields show. */}
-                    <div>
-                        <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                            {t('routines.repeat') || 'Repeat'}
-                        </div>
-                        <select
-                            value={mode}
-                            onChange={(e) => setMode(e.target.value)}
-                            className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)] cursor-pointer"
-                        >
-                            <option value="hourly">Hourly</option>
-                            <option value="daily">Daily</option>
-                            <option value="weekdays">Weekdays (Mon–Fri)</option>
-                            <option value="weekly">Weekly</option>
-                            <option value="biweekly">Every 2 weeks</option>
-                            <option value="monthly">Monthly</option>
-                        </select>
-                    </div>
-
-                    {/* Hourly mode */}
-                    {mode === 'hourly' && (
-                        <div>
-                            <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                {t('routines.run_every') || 'Run every'}
-                            </div>
-                            <select
-                                value={hours}
-                                onChange={(e) => setHours(parseInt(e.target.value, 10))}
-                                className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)] cursor-pointer"
-                            >
-                                {[1, 2, 3, 4, 6, 8, 12, 24].map(n => (
-                                    <option key={n} value={n}>{n === 1 ? (t('routines.hour_one') || '1 hour') : `${n} hours`}</option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
-
-                    {/* Day-of-week picker — only for cadences that select specific weekdays.
-                        Weekdays mode is implicit (Mon–Fri) and skips the picker. */}
-                    {usesDayPicker && mode !== 'weekdays' && (
-                        <div>
-                            <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                {mode === 'daily' ? (t('routines.run_every') || 'Run every') : 'Day of week'}
-                            </div>
-                            <div className="flex gap-1">
-                                {ROUTINE_DOW_TOKENS.map(d => {
-                                    const active = daysOfWeek.includes(d);
-                                    return (
-                                        <button
-                                            key={d}
-                                            type="button"
-                                            onClick={() => toggleDay(d)}
-                                            className={`flex-1 py-1.5 rounded-full text-xs font-medium transition border ${active
-                                                ? 'bg-[var(--text-primary)] text-[var(--bg-primary)] border-transparent'
-                                                : 'bg-[var(--bg-primary)] text-[var(--text-secondary)] border-[var(--border-default)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]'}`}
-                                        >
-                                            {ROUTINE_DOW_LABELS[d]}
-                                        </button>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Day-of-month — only for Monthly mode. Capped at 28 so every month fires. */}
-                    {usesDayOfMonth && (
-                        <div>
-                            <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                Day of month
-                            </div>
-                            <select
-                                value={dayOfMonth}
-                                onChange={(e) => setDayOfMonth(parseInt(e.target.value, 10))}
-                                className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)] cursor-pointer"
-                            >
-                                {Array.from({ length: 28 }, (_, i) => i + 1).map(n => (
-                                    <option key={n} value={n}>Day {n}</option>
-                                ))}
-                            </select>
-                        </div>
-                    )}
-
-                    {/* Time + timezone — shown for every non-hourly cadence. */}
-                    {mode !== 'hourly' && (
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                    {t('routines.time') || 'Time'}
-                                </div>
-                                <input
-                                    type="time"
-                                    value={time}
-                                    onChange={(e) => setTime(e.target.value)}
-                                    className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)]"
-                                />
-                            </div>
-                            <div>
-                                <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                    {t('routines.timezone') || 'Timezone'}
-                                </div>
-                                <input
-                                    type="text"
-                                    value={timezone}
-                                    onChange={(e) => setTimezone(e.target.value)}
-                                    className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)]"
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    <div>
-                        <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                            {t('routines.task_name') || 'Routine name'}
-                        </div>
-                        <input
-                            value={title}
-                            onChange={(e) => setTitle(e.target.value)}
-                            placeholder={`e.g. Daily standup brief`}
-                            className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
-                        />
-                    </div>
-                    <div>
-                        <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                            {t('routines.additional_instructions_optional') || 'Additional instructions (optional)'}
-                        </div>
-                        <textarea
-                            value={prompt}
-                            onChange={(e) => setPrompt(e.target.value)}
-                            rows={4}
-                            placeholder={(t('routines.placeholder_what_should_agent_do') || 'What should {agent} do?').replace('{agent}', agent?.name || 'this agent')}
-                            className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)] resize-y"
-                        />
-                    </div>
-
-                    {error && <div className="text-xs text-red-500">{error}</div>}
-                </div>
-                <div className="px-5 py-4 border-t border-[var(--border-default)] flex justify-end gap-2">
-                    <button
-                        type="button"
-                        onClick={onClose}
-                        className="px-4 py-2 rounded-full text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] transition"
-                    >
-                        Cancel
-                    </button>
-                    <button
-                        type="button"
-                        onClick={submit}
-                        disabled={busy}
-                        className="px-5 py-2 rounded-full bg-[var(--text-primary)] text-[var(--bg-primary)] text-sm font-medium hover:opacity-90 transition disabled:opacity-50"
-                    >
-                        {busy ? '…' : (isEdit ? 'Save changes' : (t('routines.add') || 'Add routine'))}
-                    </button>
-                </div>
-            </div>
-        </div>
-    );
-}
-
-function VersionPicker({ t, agentId, onClose, onRestore }) {
-    const popoverRef = useRef(null);
-    useEffect(() => {
-        const onDoc = (e) => {
-            if (popoverRef.current?.contains(e.target)) return;
-            if (e.target.closest?.('[data-popover-trigger="versions"]')) return;
-            onClose();
-        };
-        document.addEventListener('mousedown', onDoc);
-        return () => document.removeEventListener('mousedown', onDoc);
-    }, [onClose]);
-    return (
-        <div
-            ref={popoverRef}
-            className="absolute z-30 top-full left-0 mt-2 w-[420px] max-h-[70vh] overflow-y-auto rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-xl"
-        >
-            <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
-                <span className="text-sm font-medium text-[var(--text-primary)]">{t('agent_wizard.section.versions') || 'Version History'}</span>
-                <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={14} /></button>
-            </div>
-            <div className="p-4">
-                <VersionHistory agentId={agentId} onRestore={onRestore} />
-            </div>
-        </div>
-    );
-}
-
-function BehaviorPicker({
-    t, agent, onClose,
-    allowCopy, onToggleAllowCopy,
-    disableExternalTools, onToggleDisableExternalTools,
-    embedEnabled, onToggleEmbedEnabled,
-    bubbleColor, onBubbleColor,
-    bubblePosition, onBubblePosition,
-    bubbleIcon, onBubbleIcon,
-    memoryEnabled, onToggleMemory,
-    useGeneralMemory, onToggleUseGeneralMemory,
-}) {
-    const popoverRef = useRef(null);
-    useEffect(() => {
-        const onDoc = (e) => {
-            if (popoverRef.current?.contains(e.target)) return;
-            if (e.target.closest?.('[data-popover-trigger="behavior"]')) return;
-            onClose();
-        };
-        document.addEventListener('mousedown', onDoc);
-        return () => document.removeEventListener('mousedown', onDoc);
-    }, [onClose]);
-
-    const publicUrl = agent?.id ? `${window.location.origin}/chat/${agent.id}` : '';
-    const iframeSnippet = agent?.id
-        ? `<iframe src="${publicUrl}" width="400" height="600" style="border:none;border-radius:12px;"></iframe>`
-        : '';
-    const ICONS = ['💬', '🐝', '🤖', '❓', '👋', '✨'];
-
-    return (
-        <div
-            ref={popoverRef}
-            className="absolute z-30 top-full left-0 mt-2 w-[460px] max-h-[70vh] overflow-y-auto rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-xl"
-        >
-            <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
-                <span className="text-sm font-medium text-[var(--text-primary)]">{t('agent_wizard.section.behavior') || 'Behavior'}</span>
-                <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={14} /></button>
-            </div>
-            <div className="p-4 space-y-4">
-                <ToggleRow
-                    label={t('agent_wizard.builder.memory') || 'Memory'}
-                    help={t('agent_wizard.builder.memory_explainer')}
-                    checked={memoryEnabled}
-                    onChange={() => onToggleMemory()}
-                />
-                {memoryEnabled && (
-                    <div className="pl-7 -mt-1">
-                        <ToggleRow
-                            label={t('agent_wizard.builder.memory_use_general_label')}
-                            help={t('agent_wizard.builder.memory_use_general_help')}
-                            checked={useGeneralMemory}
-                            onChange={() => onToggleUseGeneralMemory()}
-                        />
-                    </div>
-                )}
-                <div className="border-t border-[var(--border-default)] -mx-4" />
-                <ToggleRow
-                    label={t('agent_wizard.behavior.allow_copy_label')}
-                    help={t('agent_wizard.behavior.allow_copy_help')}
-                    checked={allowCopy}
-                    onChange={() => onToggleAllowCopy()}
-                />
-                <ToggleRow
-                    label={t('agent_wizard.behavior.disable_external_label')}
-                    help={t('agent_wizard.behavior.disable_external_help')}
-                    checked={disableExternalTools}
-                    onChange={() => onToggleDisableExternalTools()}
-                />
-                <ToggleRow
-                    label={t('agent_wizard.behavior.embed_label')}
-                    help={t('agent_wizard.behavior.embed_help')}
-                    checked={embedEnabled}
-                    onChange={() => onToggleEmbedEnabled()}
-                />
-                {embedEnabled && (
-                    <div className="space-y-3 border-t border-[var(--border-default)] -mx-4 px-4 pt-4">
-                        {agent?.id ? (
-                            <>
-                                <div>
-                                    <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                        {t('agent_wizard.embed.public_url') || 'Public URL'}
-                                    </div>
-                                    <CopyField value={publicUrl} t={t} />
-                                </div>
-                                <div>
-                                    <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                        {t('agent_wizard.embed.iframe') || 'Iframe snippet'}
-                                    </div>
-                                    <CopyField value={iframeSnippet} t={t} />
-                                </div>
-                            </>
-                        ) : (
-                            <div className="text-xs text-[var(--text-tertiary)] italic">
-                                Save the agent first to get the embed URL.
-                            </div>
-                        )}
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                    {t('agent_wizard.embed.bubble_color') || 'Bubble color'}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        type="color"
-                                        value={bubbleColor}
-                                        onChange={(e) => onBubbleColor(e.target.value)}
-                                        className="w-8 h-8 rounded-lg border-0 cursor-pointer p-0"
-                                    />
-                                    <input
-                                        type="text"
-                                        value={bubbleColor}
-                                        onChange={(e) => onBubbleColor(e.target.value)}
-                                        className="flex-1 min-w-0 text-xs font-mono px-2 py-1.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-default)] outline-none text-[var(--text-secondary)]"
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                    {t('agent_wizard.embed.position') || 'Position'}
-                                </div>
-                                <div className="flex gap-1">
-                                    {['left', 'right'].map(pos => (
-                                        <button
-                                            key={pos}
-                                            type="button"
-                                            onClick={() => onBubblePosition(pos)}
-                                            className={`flex-1 px-2 py-1.5 text-xs rounded-lg transition ${bubblePosition === pos
-                                                ? 'bg-[var(--accent)]/10 text-[var(--accent)] font-medium'
-                                                : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}
-                                        >
-                                            {pos === 'left' ? '◀ Left' : 'Right ▶'}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                        <div>
-                            <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                {t('agent_wizard.embed.icon') || 'Icon'}
-                            </div>
-                            <div className="flex gap-1">
-                                {ICONS.map(icon => (
-                                    <button
-                                        key={icon}
-                                        type="button"
-                                        onClick={() => onBubbleIcon(icon)}
-                                        className={`w-9 h-9 rounded-lg text-base flex items-center justify-center transition ${bubbleIcon === icon
-                                            ? 'ring-2 ring-[var(--accent)] bg-[var(--bg-secondary)]'
-                                            : 'bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)]'}`}
-                                    >
-                                        {icon}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                )}
-            </div>
-        </div>
-    );
-}
-
-function PublishMenu({ t, agent, open, onToggle, onClose, isPublished, onTogglePublished, embedEnabled, orgGroups, sharedGroups, onToggleGroup }) {
-    const popoverRef = useRef(null);
-    const triggerRef = useRef(null);
-    useEffect(() => {
-        if (!open) return;
-        const onDoc = (e) => {
-            if (popoverRef.current?.contains(e.target)) return;
-            if (triggerRef.current?.contains(e.target)) return;
-            onClose();
-        };
-        document.addEventListener('mousedown', onDoc);
-        return () => document.removeEventListener('mousedown', onDoc);
-    }, [open, onClose]);
-
-    const stateLabel = isPublished
-        ? (t('agent_wizard.publish.update') || 'Update')
-        : (t('agent_wizard.publish.publish') || 'Publish');
-
-    return (
-        <>
-            <button
-                ref={triggerRef}
-                type="button"
-                onClick={onToggle}
-                className={`flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-semibold transition shadow-sm ${isPublished
-                    ? 'bg-[var(--accent)]/15 text-[var(--accent)] ring-1 ring-[var(--accent)]/40 hover:bg-[var(--accent)]/25'
-                    : 'bg-[var(--accent)] text-white hover:opacity-90 ring-1 ring-[var(--accent)]'}`}
-            >
-                {!isPublished && <Globe size={14} />}
-                {stateLabel}
-                <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
-            </button>
-            {open && (
-                <div
-                    ref={popoverRef}
-                    className="absolute z-30 right-8 top-full mt-1 w-[320px] rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-xl overflow-hidden"
-                >
-                    <div className="px-4 py-3 border-b border-[var(--border-default)]">
-                        <div className="text-sm font-medium text-[var(--text-primary)]">
-                            {t('agent_wizard.section.publishing') || 'Publish'}
-                        </div>
-                        <div className="text-xs text-[var(--text-tertiary)] mt-0.5">
-                            {isPublished
-                                ? (t('agent_wizard.publish.live_help') || 'This agent is live in your workspace.')
-                                : (t('agent_wizard.publish.draft_help') || 'Only you can use this agent right now.')}
-                        </div>
-                    </div>
-                    <div className="p-3 space-y-3">
-                        <ToggleRow
-                            label={t('agent_wizard.publishing.published_label')}
-                            help={t('agent_wizard.publishing.published_help')}
-                            checked={isPublished}
-                            onChange={onTogglePublished}
-                        />
-                        {isPublished && (
-                            <div>
-                                <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                    {t('agent_wizard.publishing.groups')}
-                                </div>
-                                {orgGroups.length === 0 && (
-                                    <div className="text-xs text-[var(--text-tertiary)]">{t('agent_wizard.publishing.no_groups')}</div>
-                                )}
-                                <div className="space-y-1 max-h-40 overflow-y-auto">
-                                    {orgGroups.map(g => {
-                                        const checked = sharedGroups.includes(g.id);
-                                        return (
-                                            <label key={g.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                                                <input type="checkbox" checked={checked} onChange={() => onToggleGroup(g.id)} />
-                                                <span className="text-[var(--text-primary)]">{g.name}</span>
-                                            </label>
-                                        );
-                                    })}
-                                </div>
-                            </div>
-                        )}
-                        {embedEnabled && agent?.id && (
-                            <div className="text-[11px] text-[var(--text-tertiary)] pt-2 border-t border-[var(--border-default)]">
-                                {t('agent_wizard.publish.embed_hint') || 'Web embed is on — manage it in Behavior.'}
-                            </div>
-                        )}
-                    </div>
-                </div>
-            )}
-        </>
-    );
-}
-
-// Avatar picker — emoji input + image upload.
-// Supports emoji glyph or data:/http URL (rendered as <img>). Mirrors the
-// behaviour of [AgentDesigner/sections/IdentitySection.jsx:127-146].
-const AVATAR_EMOJI_CATEGORIES = {
-    tech:    { label: '🤖', emojis: ['🤖','🧠','💡','🔧','🛠️','⚙️','📊','📈','📉','🎯','🚀','⚡','🔥','💥','✨','🌟','⭐','🏆','📝','✏️','📌','📎','🗂️','📂','📁','🔒','🔑','🛡️','💻','⌨️','🖥️','📱','🖨️','🔍','🔬','📡','💾','🌐','🧰','📚'] },
-    smileys: { label: '😀', emojis: ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','😊','😇','🥰','😍','🤩','😘','😋','😎','🥸','🤓','🧐','🤨','😏','😌','😴','🥳','🤠','😈','👽','💀','👻','😺','🙃','😉','🤗','🤔','🤫','🤭','🤐','😶','🙄'] },
-    people:  { label: '👤', emojis: ['👋','🤚','✋','👌','✌️','🤞','🤟','🤘','👍','👎','👏','🙌','👐','🤝','🙏','💪','👨‍💻','👩‍💻','👨‍🔬','👩‍🔬','👨‍🎨','👩‍🎨','🧑‍🚀','🧑‍🍳','🧑‍🏫','🧑‍⚕️','🧑‍🎓','👮','🕵️','🧙','🦸','🥷','💼','🎩','👑','🦾','🫶','🫡','🫰','🫵'] },
-    nature:  { label: '🌿', emojis: ['🐶','🐱','🦊','🐻','🐼','🐨','🦁','🐯','🐮','🐷','🐸','🐵','🐔','🐧','🐦','🦆','🦅','🦉','🐺','🦄','🐝','🦋','🐢','🐍','🐬','🐳','🦈','🌳','🌲','🌴','🌵','🌷','🌹','🌻','🌼','🍀','🍁','🌍','🌙','☀️'] },
-    food:    { label: '🍔', emojis: ['🍏','🍎','🍌','🍇','🍓','🍒','🥑','🥦','🥕','🌽','🍞','🥐','🥨','🧀','🥚','🍳','🥞','🥓','🍔','🍟','🍕','🌭','🥪','🌮','🌯','🥗','🍜','🍝','🍣','🍱','🍙','🍩','🍪','🎂','🍰','🍫','🍿','☕','🍵','🥤'] },
-    objects: { label: '💡', emojis: ['📞','📟','📠','🔋','🔌','💡','🔦','🕯️','🧯','🛢️','💸','💵','💴','💶','💷','🪙','💳','🧾','💎','⚖️','🪜','🧰','🔧','🔨','⛏️','🔩','⚙️','🧲','🔫','💣','🧨','🪓','🔪','🗡️','⚔️','🛡️','🚬','⚰️','🪦','🧪'] },
-    travel:  { label: '✈️', emojis: ['🚗','🚕','🚌','🏎️','🚓','🚑','🚒','🚜','🏍️','🚲','🛴','🚂','🚆','🚇','✈️','🛫','🚀','🛸','🚁','⛵','🚢','🏠','🏢','🏥','🏨','🏫','🏭','🗼','🗽','⛪','🕌','⛲','🌍','🌎','🌏','🗺️','🏝️','🏔️','⛰️','🌋'] },
-    symbols: { label: '⚡', emojis: ['❤️','🧡','💛','💚','💙','💜','🤍','🖤','💔','❣️','💕','💞','💓','💖','💘','💝','💟','☮️','✝️','☪️','🕉️','☸️','✡️','☯️','♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓','✅','❌','⚠️','♻️'] },
-};
-const isImageAvatar = (a) => !!a && (a.startsWith('data:') || a.startsWith('http'));
-function AvatarPicker({ avatar, onChange, t }) {
-    const [open, setOpen] = useState(false);
-    const [category, setCategory] = useState('tech');
-    const popoverRef = useRef(null);
-    const triggerRef = useRef(null);
-    const isImage = isImageAvatar(avatar);
-
-    useEffect(() => {
-        if (!open) return;
-        const onDoc = (e) => {
-            if (popoverRef.current?.contains(e.target)) return;
-            if (triggerRef.current?.contains(e.target)) return;
-            setOpen(false);
-        };
-        document.addEventListener('mousedown', onDoc);
-        return () => document.removeEventListener('mousedown', onDoc);
-    }, [open]);
-
-    const onFile = (e) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        if (file.size > 512 * 1024) { alert(t('agent_wizard.avatar.too_large') || 'Image must be under 512KB'); e.target.value = ''; return; }
-        const reader = new FileReader();
-        reader.onload = (ev) => { onChange(ev.target.result); setOpen(false); };
-        reader.readAsDataURL(file);
-        e.target.value = '';
-    };
-    const pickEmoji = (em) => { onChange(em); setOpen(false); };
-
-    return (
-        <div className="relative">
-            <button
-                ref={triggerRef}
-                type="button"
-                onClick={() => setOpen(v => !v)}
-                className="w-16 h-16 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-default)] text-3xl flex items-center justify-center overflow-hidden hover:bg-[var(--bg-tertiary)] transition"
-                title={t('agent_wizard.avatar.title') || 'Avatar'}
-            >
-                {isImage
-                    ? <img src={avatar} alt="" className="w-full h-full object-cover" />
-                    : <span>{avatar || '🤖'}</span>}
-            </button>
-            {open && (
-                <div
-                    ref={popoverRef}
-                    className="absolute z-30 top-full left-0 mt-2 w-[360px] rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-xl overflow-hidden"
-                >
-                    {/* Category tabs */}
-                    <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-[var(--border-default)]">
-                        {Object.entries(AVATAR_EMOJI_CATEGORIES).map(([key, cat]) => (
-                            <button
-                                key={key}
-                                type="button"
-                                onClick={() => setCategory(key)}
-                                className={`flex-1 py-1.5 rounded-md text-base transition ${category === key ? 'bg-[var(--bg-tertiary)]' : 'hover:bg-[var(--bg-secondary)]'}`}
-                                title={key}
-                            >
-                                {cat.label}
-                            </button>
-                        ))}
-                    </div>
-                    {/* Emoji grid */}
-                    <div className="p-2 max-h-64 overflow-y-auto">
-                        <div className="grid grid-cols-8 gap-0.5">
-                            {(AVATAR_EMOJI_CATEGORIES[category]?.emojis || []).map((em) => (
-                                <button
-                                    key={em}
-                                    type="button"
-                                    onClick={() => pickEmoji(em)}
-                                    className={`w-9 h-9 rounded-lg flex items-center justify-center text-xl hover:bg-[var(--bg-tertiary)] transition ${avatar === em ? 'bg-[var(--bg-tertiary)] ring-2 ring-[var(--accent)]' : ''}`}
-                                >
-                                    {em}
-                                </button>
-                            ))}
-                        </div>
-                    </div>
-                    {/* Upload + reset row — <label> wrapping the file input is the
-                        most reliable cross-browser pattern (see legacy
-                        KnowledgeBasesSection.jsx:621). */}
-                    <div className="flex items-center gap-2 px-3 py-2 border-t border-[var(--border-default)]">
-                        <label className="flex-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)] transition cursor-pointer text-center flex items-center justify-center gap-1.5">
-                            <ImageIcon size={13} />
-                            {t('agent_wizard.avatar.upload') || 'Upload image'}
-                            <input
-                                type="file"
-                                accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif"
-                                className="hidden"
-                                onChange={onFile}
-                            />
-                        </label>
-                        {isImage && (
-                            <button
-                                type="button"
-                                onClick={() => { onChange('🤖'); setOpen(false); }}
-                                className="px-3 py-1.5 text-xs rounded-lg text-[var(--text-tertiary)] hover:text-red-500 hover:bg-[var(--bg-secondary)] transition"
-                            >
-                                {t('agent_wizard.avatar.reset') || 'Remove'}
-                            </button>
-                        )}
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-}
-
-function CollapsibleSection({ title, open, onToggle, children }) {
-    return (
-        <div className="border-t border-[var(--border-default)] first:border-t-0">
-            <button
-                onClick={onToggle}
-                className="w-full flex items-center justify-between px-1 py-4 hover:opacity-80 transition text-left"
-            >
-                <span className="text-[15px] font-medium text-[var(--text-primary)]">{title}</span>
-                <ChevronRight
-                    size={18}
-                    className={`text-[var(--text-tertiary)] transition-transform ${open ? 'rotate-90' : ''}`}
-                />
-            </button>
-            {open && <div className="px-1 pb-5">{children}</div>}
-        </div>
-    );
-}
-
-function Field({ label, children }) {
-    return (
-        <div>
-            <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">{label}</div>
-            {children}
-        </div>
-    );
-}
-
-function ToggleRow({ label, help, checked, onChange }) {
-    return (
-        <label className="flex items-start gap-3 cursor-pointer">
-            <input
-                type="checkbox"
-                checked={!!checked}
-                onChange={(e) => onChange(e.target.checked)}
-                className="mt-1"
-            />
-            <div className="flex-1">
-                <div className="text-sm text-[var(--text-primary)]">{label}</div>
-                {help && <div className="text-xs text-[var(--text-tertiary)]">{help}</div>}
-            </div>
-        </label>
-    );
-}
-
-function KbList({ kbs, linkedIds, onToggle, onCreate, t }) {
-    const [creating, setCreating] = useState(false);
-    const [name, setName] = useState('');
-    const [description, setDescription] = useState('');
-    const [busy, setBusy] = useState(false);
-    const submit = async () => {
-        if (!name.trim() || busy) return;
-        setBusy(true);
-        const created = await onCreate(name.trim(), description.trim());
-        setBusy(false);
-        if (created) { setName(''); setDescription(''); setCreating(false); }
-    };
-    return (
-        <div>
-            <div className="flex items-center justify-between mb-2">
-                <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)]">
-                    {t('agent_wizard.knowledge.kbs')} ({kbs.length})
-                </div>
-                <button
-                    onClick={() => setCreating(v => !v)}
-                    className="text-xs text-[var(--accent)] hover:underline"
-                >
-                    + {t('agent_wizard.knowledge.create_kb')}
-                </button>
-            </div>
-            {creating && (
-                <div className="mb-3 p-3 rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] space-y-2">
-                    <input
-                        autoFocus
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        placeholder={t('agent_wizard.knowledge.kb_name')}
-                        className="w-full bg-[var(--bg-primary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
-                    />
-                    <input
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        placeholder={t('agent_wizard.knowledge.kb_description')}
-                        className="w-full bg-[var(--bg-primary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
-                    />
-                    <div className="flex justify-end gap-2">
-                        <button onClick={() => setCreating(false)} className="px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
-                            {t('agent_studio.cancel')}
-                        </button>
-                        <button onClick={submit} disabled={!name.trim() || busy} className="px-3 py-1.5 rounded-full text-xs bg-[var(--accent)] text-white disabled:opacity-50">
-                            {busy ? '…' : t('agent_wizard.knowledge.create_kb')}
-                        </button>
-                    </div>
-                </div>
-            )}
-            {kbs.length === 0 && (
-                <div className="text-xs text-[var(--text-tertiary)] py-2">{t('agent_wizard.knowledge.no_kbs')}</div>
-            )}
-            <div className="divide-y divide-[var(--border-default)] border-t border-b border-[var(--border-default)]">
-                {kbs.map(kb => {
-                    const linked = linkedIds.includes(kb.id);
-                    return (
-                        <div key={kb.id} className="flex items-center gap-3 py-2 px-1">
-                            <div className="flex-1 min-w-0">
-                                <div className="text-sm text-[var(--text-primary)] truncate">{kb.name}</div>
-                                {(kb.docs_count != null || kb.doc_count != null) && (
-                                    <div className="text-[11px] text-[var(--text-tertiary)]">
-                                        {(kb.docs_count ?? kb.doc_count ?? 0)} docs
-                                    </div>
-                                )}
-                            </div>
-                            <button
-                                onClick={() => onToggle(kb.id)}
-                                className={`px-3 py-1 rounded-full text-xs border transition ${linked
-                                    ? 'border-[var(--accent)] text-[var(--accent)] bg-[var(--bg-secondary)]'
-                                    : 'border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}
-                            >
-                                {linked ? `✓ ${t('agent_wizard.knowledge.linked')}` : `+ ${t('agent_wizard.knowledge.link')}`}
-                            </button>
-                        </div>
-                    );
-                })}
-            </div>
-        </div>
-    );
-}
