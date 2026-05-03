@@ -579,7 +579,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
 
             {/* Right config panel */}
             <main className="flex-1 overflow-y-auto">
-                <div className="flex items-center justify-end gap-3 px-6 py-3 border-b border-[var(--border-default)]">
+                <div className="flex items-center justify-end gap-3 px-8 py-3">
                     <span className="text-xs text-[var(--text-tertiary)]">
                         {savingState === 'saving' && t('agent_wizard.builder.save_saving')}
                         {savingState === 'saved' && t('agent_wizard.builder.save_saved')}
@@ -588,20 +588,20 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     {rightHeaderExtras}
                     <button
                         onClick={handleDone}
-                        className="px-6 py-2 rounded-full bg-[var(--accent)] text-white text-sm font-semibold hover:opacity-90 transition shadow-sm"
+                        className="px-5 py-1.5 rounded-full bg-[var(--accent)] text-white text-sm font-medium hover:opacity-90 transition"
                     >
                         {t('agent_wizard.builder.done')}
                     </button>
                 </div>
 
-                <div className="max-w-3xl mx-auto px-8 pt-10 pb-8">
-                    <div className="flex flex-col items-start gap-4 mb-10">
+                <div className="max-w-4xl mx-auto px-10 pt-8 pb-12">
+                    <div className="flex flex-col items-start gap-5 mb-12">
                         <AvatarPicker t={t} avatar={avatar} onChange={updateAvatar} />
                         <input
                             value={name}
                             onChange={(e) => updateName(e.target.value)}
                             onBlur={flushNow}
-                            className="w-full text-3xl font-semibold bg-transparent outline-none text-[var(--text-primary)] border-b border-transparent focus:border-[var(--border-default)] py-1 -ml-1 px-1 rounded"
+                            className="w-full text-4xl font-semibold bg-transparent outline-none text-[var(--text-primary)] py-1 -ml-1 px-1 rounded hover:bg-[var(--bg-secondary)]/40 focus:bg-[var(--bg-secondary)]/40 transition"
                             placeholder={t('agent_wizard.builder.name_placeholder')}
                         />
                     </div>
@@ -720,16 +720,16 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     )}
 
                     <div>
-                        <div className="text-sm text-[var(--text-secondary)] mb-3">{t('agent_wizard.builder.instructions')}</div>
+                        <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-3">{t('agent_wizard.builder.instructions')}</div>
                         {instructionsEditing ? (
                             <textarea
                                 ref={instructionsTextareaRef}
                                 value={instructions}
                                 onChange={(e) => updateInstructions(e.target.value)}
                                 onBlur={() => { flushNow(); setInstructionsEditing(false); }}
-                                rows={Math.max(10, (instructions.match(/\n/g) || []).length + 2)}
+                                rows={Math.max(12, (instructions.match(/\n/g) || []).length + 2)}
                                 placeholder={t('agent_wizard.builder.instructions_placeholder')}
-                                className="w-full bg-transparent border border-[var(--border-default)] rounded-xl px-4 py-3 text-[15px] leading-7 text-[var(--text-primary)] outline-none focus:border-[var(--accent)] resize-y font-mono"
+                                className="w-full bg-[var(--bg-secondary)]/50 border border-transparent focus:border-[var(--border-default)] rounded-xl px-4 py-3 text-[15px] leading-7 text-[var(--text-primary)] outline-none resize-y"
                             />
                         ) : (
                             <div
@@ -737,7 +737,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 tabIndex={0}
                                 onClick={() => setInstructionsEditing(true)}
                                 onFocus={() => setInstructionsEditing(true)}
-                                className="instructions-view min-h-[12rem] px-1 py-2 cursor-text rounded-lg hover:bg-[var(--bg-secondary)]/40 transition"
+                                className="instructions-view min-h-[12rem] px-4 py-3 -mx-4 cursor-text rounded-xl hover:bg-[var(--bg-secondary)]/40 transition"
                                 title={t('agent_wizard.builder.instructions_edit_hint') || 'Click to edit'}
                             >
                                 {instructions ? (
@@ -1236,12 +1236,12 @@ function ActionPill({ icon, label, count, onClick, active }) {
     return (
         <button
             onClick={onClick}
-            className={`group flex items-center gap-2 pl-3.5 pr-3 py-2 rounded-full text-sm border transition shadow-sm hover:shadow ${active ? 'border-[var(--accent)] text-[var(--accent)] bg-[var(--bg-secondary)]' : 'border-[var(--border-default)] text-[var(--text-primary)] bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)]'}`}
+            className={`group flex items-center gap-2 pl-3.5 pr-3 py-1.5 rounded-full text-sm transition ${active ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'bg-[var(--bg-secondary)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'}`}
         >
-            <span className="text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]">{icon}</span>
+            <span className={active ? '' : 'text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]'}>{icon}</span>
             <span>{label}</span>
-            {(count !== undefined && count !== null) && (
-                <span className={`ml-1 inline-flex items-center justify-center min-w-[1.25rem] h-5 px-1.5 rounded-full text-[11px] font-medium ${active ? 'bg-[var(--accent)] text-white' : 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)]'}`}>
+            {(count !== undefined && count !== null && count > 0) && (
+                <span className={`ml-0.5 text-xs ${active ? 'text-[var(--accent)]' : 'text-[var(--text-tertiary)]'}`}>
                     {count}
                 </span>
             )}

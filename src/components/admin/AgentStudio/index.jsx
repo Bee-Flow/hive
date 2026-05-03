@@ -9,7 +9,7 @@ import BuilderSplit from '../AgentWizard/BuilderSplit';
 // Replaces the legacy AgentDesigner as the primary entry point. The legacy
 // form is still reachable via "Advanced settings" for fields that aren't yet
 // surfaced by the studio (guardrails, embedding, bubble widget, sharing).
-export default function AgentStudio({ user, initialAgentId = null, onClose, onNavigate, hasPermission = () => true, systemMode = false }) {
+export default function AgentStudio({ user, initialAgentId = null, onClose, onNavigate, hasPermission = () => true, systemMode = false, onEditingChange }) {
     const { t } = useTranslation();
 
     const [agents, setAgents] = useState([]);
@@ -33,6 +33,12 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
     }, [systemMode]);
 
     useEffect(() => { fetchAgents(); }, [fetchAgents]);
+
+    const isEditing = mode === 'edit' && !!selectedAgent;
+    useEffect(() => {
+        onEditingChange?.(isEditing);
+        return () => { onEditingChange?.(false); };
+    }, [isEditing, onEditingChange]);
 
     // Auto-select agent passed in via URL once agents have loaded.
     useEffect(() => {
@@ -99,7 +105,8 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
 
     return (
         <div className="flex h-full bg-[var(--bg-primary)]">
-            {/* Agent list sidebar */}
+            {/* Agent list sidebar — hidden in fullscreen edit mode */}
+            {!isEditing && (
             <aside className="w-64 flex-shrink-0 border-r border-[var(--border-default)] flex flex-col">
                 <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
                     <span className="text-sm font-semibold text-[var(--text-primary)]">{systemMode ? t('agent_studio.title_system') : t('agent_studio.title')}</span>
@@ -142,6 +149,7 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
                     })}
                 </div>
             </aside>
+            )}
 
             {/* Content */}
             <section className="flex-1 min-w-0 flex flex-col">

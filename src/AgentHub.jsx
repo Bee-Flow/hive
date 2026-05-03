@@ -89,6 +89,21 @@ const AgentHub = ({
     // Default to expanded on anything wider than a tablet; only small screens
     // start in icon-rail mode. The user can still toggle it.
     const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
+    const [studioFullscreen, setStudioFullscreen] = useState(false);
+    const sidebarOpenBeforeStudioRef = useRef(null);
+    useEffect(() => {
+        if (studioFullscreen) {
+            if (sidebarOpenBeforeStudioRef.current === null) {
+                sidebarOpenBeforeStudioRef.current = sidebarOpen;
+            }
+            if (sidebarOpen) setSidebarOpen(false);
+        } else if (sidebarOpenBeforeStudioRef.current !== null) {
+            const restore = sidebarOpenBeforeStudioRef.current;
+            sidebarOpenBeforeStudioRef.current = null;
+            if (restore) setSidebarOpen(true);
+        }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [studioFullscreen]);
     const [notebookContent, setNotebookContent] = useState('');
     const [notebookLastFetchedId, setNotebookLastFetchedId] = useState(null);
     const [notebookSelection, setNotebookSelection] = useState('');
@@ -1578,6 +1593,7 @@ const AgentHub = ({
                         onClose={onCloseStudio}
                         onNavigate={onNavigate}
                         modelTiers={modelTiers}
+                        onEditingChange={setStudioFullscreen}
                         hasPermission={(perm) => {
                             const perms = user?.permissions || [];
                             return perms.includes('all') || perms.includes(perm);

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Bot, Sparkles, ListChecks, BookOpen } from 'lucide-react';
 import useTranslation from '../../../hooks/useTranslation';
 import AgentStudio from '../AgentStudio';
@@ -19,8 +19,14 @@ export default function Studio({
     onNavigate,
     hasPermission = () => true,
     modelTiers = {},
+    onEditingChange,
 }) {
     const { t } = useTranslation();
+    const [agentEditing, setAgentEditing] = useState(false);
+    const handleAgentEditing = (editing) => {
+        setAgentEditing(editing);
+        onEditingChange?.(editing);
+    };
 
     const tabs = [
         { id: 'agents',    label: t('studio.tab.agents'),    icon: <Bot size={14} /> },
@@ -37,7 +43,8 @@ export default function Studio({
 
     return (
         <div className="flex flex-col h-full bg-[var(--bg-primary)]">
-            {/* Top sub-nav */}
+            {/* Top sub-nav — hidden in fullscreen agent edit mode */}
+            {!agentEditing && (
             <div className="flex items-center gap-1 px-4 py-2 border-b border-[var(--border-default)]">
                 {tabs.map((tab) => {
                     const active = section === tab.id;
@@ -55,6 +62,7 @@ export default function Studio({
                     );
                 })}
             </div>
+            )}
 
             {/* Sub-section */}
             <div className="flex-1 min-h-0">
@@ -65,6 +73,7 @@ export default function Studio({
                         onClose={onClose}
                         onNavigate={onNavigate}
                         hasPermission={hasPermission}
+                        onEditingChange={handleAgentEditing}
                     />
                 )}
                 {section === 'skills' && (
