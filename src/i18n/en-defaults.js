@@ -1904,6 +1904,9 @@ const EN_DEFAULTS = {
     "agent_wizard.builder.add_details": "Add description & category",
     "agent_wizard.builder.hide_details": "Hide details",
     "agent_wizard.builder.instructions_edit_hint": "Click to edit",
+    "agent_wizard.builder.category_new": "New category",
+    "agent_wizard.builder.category_new_placeholder": "New category name",
+    "agent_wizard.builder.category_create": "Create",
 
     "agent_wizard.apps.search": "Search apps",
     "agent_wizard.apps.enable": "Enable",

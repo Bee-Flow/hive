@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Plus, Sparkles, Upload, Brain, AppWindow, ArrowLeft, X, Search, ChevronDown, ChevronRight, Image as ImageIcon, Globe, BookOpen, Paperclip, LayoutGrid, ArrowUp, Puzzle as PuzzlePiece, Sliders, Copy, Check } from 'lucide-react';
+import { Send, Plus, Sparkles, Upload, Brain, AppWindow, ArrowLeft, X, Search, ChevronDown, ChevronRight, Image as ImageIcon, Globe, BookOpen, Paperclip, LayoutGrid, ArrowUp, Puzzle as PuzzlePiece, Sliders, Copy, Check, History } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import useTranslation from '../../../hooks/useTranslation';
 import ModelTierSelector from '../../ModelTierSelector';
@@ -85,7 +85,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     const [appsPickerOpen, setAppsPickerOpen] = useState(false);
     const [knowledgeOpen, setKnowledgeOpen] = useState(false);
     const [behaviorPickerOpen, setBehaviorPickerOpen] = useState(false);
-    const [memoryPickerOpen, setMemoryPickerOpen] = useState(false);
+    const [versionPickerOpen, setVersionPickerOpen] = useState(false);
     const [publishPickerOpen, setPublishPickerOpen] = useState(false);
     const [detailsOpen, setDetailsOpen] = useState(false);
     const [skillSearch, setSkillSearch] = useState('');
@@ -94,6 +94,22 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     const updateBubbleColor = (v) => { setBubbleColor(v); patchConfig({ bubbleColor: v }); };
     const updateBubblePosition = (v) => { setBubblePosition(v); patchConfig({ bubblePosition: v }); };
     const updateBubbleIcon = (v) => { setBubbleIcon(v); patchConfig({ bubbleIcon: v }); };
+    const handleVersionRestore = async () => {
+        if (!agent?.id) return;
+        try {
+            const res = await authFetch(`${API_BASE}/agents/${agent.id}`);
+            if (res.ok) {
+                const fresh = await res.json();
+                setAgent(fresh);
+                setName(fresh.name || '');
+                setDescription(fresh.description || '');
+                setInstructions(fresh.system_prompt || '');
+                setAvatar(fresh.avatar || fresh.config?.avatar || '🤖');
+                setModel(fresh.model || '');
+                if (fresh.model && fresh.model.startsWith('tier:')) setSelectedTier(fresh.model.slice(5));
+            }
+        } catch (_) { /* ignore */ }
+    };
 
     const [chat, setChat] = useState(history || []);
     const [chatInput, setChatInput] = useState('');
@@ -200,16 +216,12 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
             });
             if (!res.ok) throw new Error(await res.text());
             const updated = await res.json();
+            // Refresh the `agent` shell only (id, timestamps, derived fields).
+            // Do NOT overwrite `stateRef.current` from the server response — by
+            // the time this resolves the user may have typed more, and that
+            // newer text lives only in stateRef. Overwriting here silently
+            // loses keystrokes typed during the in-flight save.
             setAgent(updated);
-            stateRef.current = {
-                name: updated.name || snapshot.name,
-                description: updated.description || snapshot.description,
-                systemPrompt: updated.system_prompt || snapshot.systemPrompt,
-                model: updated.model || snapshot.model,
-                categoryId: updated.category_id || snapshot.categoryId,
-                embedEnabled: updated.embed_enabled === 1 || updated.embed_enabled === true,
-                config: updated.config || snapshot.config,
-            };
             setSavingState('saved');
         } catch (err) {
             console.error('Auto-save failed:', err);
@@ -322,6 +334,25 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         queueSave(true);
     };
     const updateCategory = (id) => { setCategoryId(id); stateRef.current.categoryId = id; dirtyRef.current = true; queueSave(true); };
+    const createCategory = async (name) => {
+        const trimmed = name?.trim();
+        if (!trimmed) return null;
+        try {
+            const res = await authFetch(`${API_BASE}/agents/categories`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name: trimmed }),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            const created = await res.json();
+            setCategories(prev => [...prev, created]);
+            updateCategory(created.id);
+            return created;
+        } catch (err) {
+            alert(err.message || 'Failed to create category');
+            return null;
+        }
+    };
 
     // Behavior toggles
     const toggleAllowCopy = () => {
@@ -646,26 +677,17 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 </div>
 
                 <div className="max-w-4xl mx-auto px-10 pt-8 pb-12">
-                    <div className="flex flex-col items-start gap-5 mb-8">
+                    <div className="flex flex-col items-start gap-4 mb-8">
                         <AvatarPicker t={t} avatar={avatar} onChange={updateAvatar} />
-                        <div className="flex items-end gap-3 w-full">
-                            <input
-                                value={name}
-                                onChange={(e) => updateName(e.target.value)}
-                                onBlur={flushNow}
-                                className="flex-1 min-w-0 text-4xl font-semibold bg-transparent outline-none text-[var(--text-primary)] py-1 -ml-1 px-1 rounded hover:bg-[var(--bg-secondary)]/40 focus:bg-[var(--bg-secondary)]/40 transition"
-                                placeholder={t('agent_wizard.builder.name_placeholder')}
-                            />
-                            <div className="pb-2 flex-shrink-0">
-                                <ModelTierSelector
-                                    tiers={tiers || {}}
-                                    value={selectedTier}
-                                    onChange={(v) => updateModel(v)}
-                                />
-                            </div>
-                        </div>
+                        <input
+                            value={name}
+                            onChange={(e) => updateName(e.target.value)}
+                            onBlur={flushNow}
+                            className="w-full text-4xl font-semibold bg-transparent outline-none text-[var(--text-primary)] py-1 -ml-1 px-1 rounded hover:bg-[var(--bg-secondary)]/40 focus:bg-[var(--bg-secondary)]/40 transition truncate"
+                            placeholder={t('agent_wizard.builder.name_placeholder')}
+                        />
                         {(detailsOpen || description || categoryId) ? (
-                            <div className="w-full grid grid-cols-1 sm:grid-cols-[1fr,220px] gap-3">
+                            <div className="w-full grid grid-cols-1 sm:grid-cols-[1fr,240px] gap-3">
                                 <div>
                                     <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1">
                                         {t('agent_wizard.builder.role_description_label') || 'Role description'}
@@ -682,16 +704,13 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                     <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1">
                                         {t('agent_wizard.builder.category_label') || 'Category'}
                                     </div>
-                                    <select
-                                        value={categoryId || ''}
-                                        onChange={(e) => updateCategory(e.target.value || null)}
-                                        className="w-full bg-[var(--bg-secondary)]/40 border border-transparent hover:bg-[var(--bg-secondary)] focus:border-[var(--accent)] outline-none rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] transition cursor-pointer"
-                                    >
-                                        <option value="">{t('agent_wizard.field.category_none')}</option>
-                                        {categories.map(c => (
-                                            <option key={c.id} value={c.id}>{c.name}</option>
-                                        ))}
-                                    </select>
+                                    <CategoryField
+                                        t={t}
+                                        value={categoryId}
+                                        categories={categories}
+                                        onChange={updateCategory}
+                                        onCreate={createCategory}
+                                    />
                                 </div>
                             </div>
                         ) : (
@@ -706,7 +725,14 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                         )}
                     </div>
 
-                    <div className="flex flex-wrap gap-2 mb-8 relative">
+                    <div className="flex flex-wrap items-center gap-2 mb-8 relative">
+                        <div className="mr-1">
+                            <ModelTierSelector
+                                tiers={tiers || {}}
+                                value={selectedTier}
+                                onChange={(v) => updateModel(v)}
+                            />
+                        </div>
                         <ActionPill
                             icon={<AppWindow size={14} />}
                             label={t('agent_wizard.builder.browse_apps')}
@@ -727,29 +753,21 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                             count={knowledgeBaseIds.length}
                             onClick={() => setKnowledgeOpen(true)}
                         />
-                        <ActionPill
-                            icon={<Brain size={14} />}
-                            label={memoryEnabled ? t('agent_wizard.builder.memory_on') : t('agent_wizard.builder.memory')}
-                            onClick={() => setMemoryPickerOpen(v => !v)}
-                            active={memoryPickerOpen || memoryEnabled}
-                        />
+                        {agent?.id && (
+                            <ActionPill
+                                icon={<History size={14} />}
+                                label={t('agent_wizard.section.versions') || 'Version History'}
+                                onClick={() => setVersionPickerOpen(v => !v)}
+                                active={versionPickerOpen}
+                            />
+                        )}
                         <ActionPill
                             icon={<Sliders size={14} />}
                             label={t('agent_wizard.builder.behavior') || 'Behavior'}
                             onClick={() => setBehaviorPickerOpen(v => !v)}
-                            active={behaviorPickerOpen}
+                            active={behaviorPickerOpen || memoryEnabled}
                         />
 
-                        {memoryPickerOpen && (
-                            <MemoryPicker
-                                t={t}
-                                onClose={() => setMemoryPickerOpen(false)}
-                                memoryEnabled={memoryEnabled}
-                                onToggleMemory={toggleMemory}
-                                useGeneralMemory={useGeneralMemory}
-                                onToggleUseGeneralMemory={toggleUseGeneralMemory}
-                            />
-                        )}
                         {behaviorPickerOpen && (
                             <BehaviorPicker
                                 t={t}
@@ -767,6 +785,18 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 onBubblePosition={updateBubblePosition}
                                 bubbleIcon={bubbleIcon}
                                 onBubbleIcon={updateBubbleIcon}
+                                memoryEnabled={memoryEnabled}
+                                onToggleMemory={toggleMemory}
+                                useGeneralMemory={useGeneralMemory}
+                                onToggleUseGeneralMemory={toggleUseGeneralMemory}
+                            />
+                        )}
+                        {versionPickerOpen && agent?.id && (
+                            <VersionPicker
+                                t={t}
+                                agentId={agent.id}
+                                onClose={() => setVersionPickerOpen(false)}
+                                onRestore={handleVersionRestore}
                             />
                         )}
                         {skillPickerOpen && (
@@ -831,36 +861,6 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                     );
                                 })}
                             </div>
-                        </div>
-                    )}
-
-                    {/* Only Version History remains as a collapsible — other sections moved into pills/header. */}
-                    {agent?.id && (
-                        <div className="mb-2">
-                            <CollapsibleSection
-                                title={t('agent_wizard.section.versions')}
-                                open={openSection === 'versions'}
-                                onToggle={() => toggleSection('versions')}
-                            >
-                                <VersionHistory
-                                    agentId={agent.id}
-                                    onRestore={async () => {
-                                        try {
-                                            const res = await authFetch(`${API_BASE}/agents/${agent.id}`);
-                                            if (res.ok) {
-                                                const fresh = await res.json();
-                                                setAgent(fresh);
-                                                setName(fresh.name || '');
-                                                setDescription(fresh.description || '');
-                                                setInstructions(fresh.system_prompt || '');
-                                                setAvatar(fresh.avatar || fresh.config?.avatar || '🤖');
-                                                setModel(fresh.model || '');
-                                                if (fresh.model && fresh.model.startsWith('tier:')) setSelectedTier(fresh.model.slice(5));
-                                            }
-                                        } catch (_) { /* ignore */ }
-                                    }}
-                                />
-                            </CollapsibleSection>
                         </div>
                     )}
 
@@ -1354,7 +1354,65 @@ function CopyField({ value, t }) {
     );
 }
 
-function MemoryPicker({ t, onClose, memoryEnabled, onToggleMemory, useGeneralMemory, onToggleUseGeneralMemory }) {
+function CategoryField({ t, value, categories, onChange, onCreate }) {
+    const [creating, setCreating] = useState(false);
+    const [draft, setDraft] = useState('');
+    const inputRef = useRef(null);
+    useEffect(() => { if (creating) inputRef.current?.focus(); }, [creating]);
+    const submit = async () => {
+        const name = draft.trim();
+        if (!name) { setCreating(false); return; }
+        const created = await onCreate(name);
+        if (created) { setDraft(''); setCreating(false); }
+    };
+    if (creating) {
+        return (
+            <div className="flex gap-1">
+                <input
+                    ref={inputRef}
+                    value={draft}
+                    onChange={(e) => setDraft(e.target.value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter') { e.preventDefault(); submit(); }
+                        if (e.key === 'Escape') { setDraft(''); setCreating(false); }
+                    }}
+                    placeholder={t('agent_wizard.builder.category_new_placeholder') || 'New category name'}
+                    className="flex-1 min-w-0 bg-[var(--bg-secondary)]/40 border border-[var(--accent)] outline-none rounded-lg px-3 py-2 text-sm text-[var(--text-primary)]"
+                />
+                <button type="button" onClick={submit} className="px-3 py-2 rounded-lg bg-[var(--accent)] text-white text-xs font-medium hover:opacity-90 transition">
+                    {t('agent_wizard.builder.category_create') || 'Create'}
+                </button>
+                <button type="button" onClick={() => { setDraft(''); setCreating(false); }} className="px-2 py-2 rounded-lg text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition">
+                    <X size={14} />
+                </button>
+            </div>
+        );
+    }
+    return (
+        <div className="flex gap-1">
+            <select
+                value={value || ''}
+                onChange={(e) => onChange(e.target.value || null)}
+                className="flex-1 min-w-0 bg-[var(--bg-secondary)]/40 border border-transparent hover:bg-[var(--bg-secondary)] focus:border-[var(--accent)] outline-none rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] transition cursor-pointer"
+            >
+                <option value="">{t('agent_wizard.field.category_none')}</option>
+                {categories.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+            </select>
+            <button
+                type="button"
+                onClick={() => setCreating(true)}
+                className="px-2.5 py-2 rounded-lg bg-[var(--bg-secondary)]/40 hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition"
+                title={t('agent_wizard.builder.category_new') || 'New category'}
+            >
+                <Plus size={14} />
+            </button>
+        </div>
+    );
+}
+
+function VersionPicker({ t, agentId, onClose, onRestore }) {
     const popoverRef = useRef(null);
     useEffect(() => {
         const onDoc = (e) => { if (!popoverRef.current?.contains(e.target)) onClose(); };
@@ -1364,29 +1422,14 @@ function MemoryPicker({ t, onClose, memoryEnabled, onToggleMemory, useGeneralMem
     return (
         <div
             ref={popoverRef}
-            className="absolute z-30 top-full left-0 mt-2 w-[360px] rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-xl"
+            className="absolute z-30 top-full left-0 mt-2 w-[420px] max-h-[70vh] overflow-y-auto rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-xl"
         >
             <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
-                <span className="text-sm font-medium text-[var(--text-primary)]">{t('agent_wizard.builder.memory') || 'Memory'}</span>
+                <span className="text-sm font-medium text-[var(--text-primary)]">{t('agent_wizard.section.versions') || 'Version History'}</span>
                 <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={14} /></button>
             </div>
-            <div className="p-4 space-y-3">
-                <ToggleRow
-                    label={t('agent_wizard.builder.memory_on') || 'Memory · on'}
-                    help={t('agent_wizard.builder.memory_explainer')}
-                    checked={memoryEnabled}
-                    onChange={() => onToggleMemory()}
-                />
-                {memoryEnabled && (
-                    <div className="pt-3 border-t border-[var(--border-default)]">
-                        <ToggleRow
-                            label={t('agent_wizard.builder.memory_use_general_label')}
-                            help={t('agent_wizard.builder.memory_use_general_help')}
-                            checked={useGeneralMemory}
-                            onChange={() => onToggleUseGeneralMemory()}
-                        />
-                    </div>
-                )}
+            <div className="p-4">
+                <VersionHistory agentId={agentId} onRestore={onRestore} />
             </div>
         </div>
     );
@@ -1400,6 +1443,8 @@ function BehaviorPicker({
     bubbleColor, onBubbleColor,
     bubblePosition, onBubblePosition,
     bubbleIcon, onBubbleIcon,
+    memoryEnabled, onToggleMemory,
+    useGeneralMemory, onToggleUseGeneralMemory,
 }) {
     const popoverRef = useRef(null);
     useEffect(() => {
@@ -1424,6 +1469,23 @@ function BehaviorPicker({
                 <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={14} /></button>
             </div>
             <div className="p-4 space-y-4">
+                <ToggleRow
+                    label={t('agent_wizard.builder.memory') || 'Memory'}
+                    help={t('agent_wizard.builder.memory_explainer')}
+                    checked={memoryEnabled}
+                    onChange={() => onToggleMemory()}
+                />
+                {memoryEnabled && (
+                    <div className="pl-7 -mt-1">
+                        <ToggleRow
+                            label={t('agent_wizard.builder.memory_use_general_label')}
+                            help={t('agent_wizard.builder.memory_use_general_help')}
+                            checked={useGeneralMemory}
+                            onChange={() => onToggleUseGeneralMemory()}
+                        />
+                    </div>
+                )}
+                <div className="border-t border-[var(--border-default)] -mx-4" />
                 <ToggleRow
                     label={t('agent_wizard.behavior.allow_copy_label')}
                     help={t('agent_wizard.behavior.allow_copy_help')}
