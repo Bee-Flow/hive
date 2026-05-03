@@ -169,6 +169,7 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
                     <BuilderSplit
                         key={selectedAgent.id}
                         agent={selectedAgent}
+                        user={user}
                         plan={null}
                         history={[]}
                         onBack={() => { setSelectedAgent(null); setMode('idle'); }}

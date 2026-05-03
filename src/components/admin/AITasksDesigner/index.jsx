@@ -71,10 +71,6 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
     // Signal upward (Studio → AgentHub) when the BuilderShell is open so the
     // outer chrome can collapse for a fullscreen edit, mirroring AgentStudio.
     const automationEditing = subTab === 'automations' && (builderAutomationId !== null || openingBuilder);
-    useEffect(() => {
-        onEditingChange?.(automationEditing);
-        return () => { onEditingChange?.(false); };
-    }, [automationEditing, onEditingChange]);
     // Editor view state — null means list/idle view
     const [editingTaskId, setEditingTaskId] = useState(null); // string = edit, 'new' = create
     const [title, setTitle] = useState('');
@@ -83,6 +79,16 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
     const [time, setTime] = useState('');
     const [repeatInterval, setRepeatInterval] = useState('weekly');
     const [tier, setTier] = useState('auto');
+
+    // Combined editing signal — collapses outer chrome (Sidebar + Studio top
+    // tabs) for any deep editor view: the Automations builder OR the regular
+    // routine prompt editor.
+    const taskEditing = subTab === 'prompt' && editingTaskId !== null;
+    const editingFullscreen = automationEditing || taskEditing;
+    useEffect(() => {
+        onEditingChange?.(editingFullscreen);
+        return () => { onEditingChange?.(false); };
+    }, [editingFullscreen, onEditingChange]);
 
     const fetchTasks = useCallback(async () => {
         setLoading(true);
@@ -230,7 +236,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-start justify-between px-5 py-4 border-b border-[var(--border-default)]">
-                    <div className="text-sm font-semibold text-[var(--text-primary)]">Delete AI Task</div>
+                    <div className="text-sm font-semibold text-[var(--text-primary)]">Delete routine</div>
                     <button onClick={() => setPendingDeleteTask(null)} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
                         <X size={18} />
                     </button>
@@ -297,7 +303,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                             lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
                         }}>{resultModal.title}</div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted, #94a3b8)', fontWeight: 500, marginTop: 2 }}>
-                            AI Task Result
+                            Routine result
                         </div>
                     </div>
                     <button
@@ -409,19 +415,20 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
 
         return (
           <div className="flex flex-col h-full bg-[var(--bg-primary)]">
-            {subTabBar}
+            {!editingFullscreen && subTabBar}
             <div className="flex h-full bg-[var(--bg-primary)]">
-                {/* Sidebar */}
+                {/* Sidebar — hidden in single-task fullscreen edit mode */}
+                {!taskEditing && (
                 <aside className="w-64 flex-shrink-0 border-r border-[var(--border-default)] flex flex-col">
                     <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
                         <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="text-sm font-semibold text-[var(--text-primary)]">AI Tasks</span>
+                            <span className="text-sm font-semibold text-[var(--text-primary)]">Routines</span>
                             <span className="text-xs text-[var(--text-tertiary)]">{tasks.length}/{maxTasks}</span>
                         </div>
                         <button
                             onClick={startNewTask}
                             disabled={tasks.length >= maxTasks}
-                            title="New AI Task"
+                            title="New routine"
                             className="p-1 rounded-lg hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] disabled:opacity-50"
                         >
                             <Plus size={16} />
@@ -433,7 +440,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                         )}
                         {!loading && tasks.length === 0 && (
                             <div className="text-xs text-[var(--text-tertiary)] p-4 text-center">
-                                No AI tasks yet
+                                No routines yet
                             </div>
                         )}
                         {tasks.map((task) => {
@@ -479,6 +486,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                         })}
                     </div>
                 </aside>
+                )}
 
                 {/* Content */}
                 <section className="flex-1 min-w-0 overflow-y-auto">
@@ -491,7 +499,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                                 <Bot size={28} style={{ color: '#8b5cf6', opacity: 0.6 }} />
                             </div>
                             <div className="text-lg font-semibold text-[var(--text-primary)] mb-2">
-                                Schedule AI Tasks
+                                Schedule routines
                             </div>
                             <div className="text-sm text-[var(--text-tertiary)] mb-6 max-w-sm text-center leading-relaxed">
                                 Automate recurring AI workflows — weekly digests, reports, lead summaries.
@@ -504,7 +512,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                                 style={{ background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)' }}
                             >
                                 <Plus size={15} />
-                                New AI Task
+                                New routine
                             </button>
                         </div>
                     ) : (() => {
@@ -589,7 +597,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                 </div>
                 <div className="flex-1 min-w-0">
                     <div className="text-[15px] font-bold text-[var(--text-primary)] leading-tight">
-                        {editing ? (isNewMode ? 'New AI Task' : 'Edit AI Task') : 'AI Tasks'}
+                        {editing ? (isNewMode ? 'New routine' : 'Edit routine') : 'Routines'}
                     </div>
                     <div className="text-[11px] text-[var(--text-muted)] font-medium">
                         {editing ? 'Schedule a recurring AI workflow' : `${tasks.length}/${maxTasks} tasks`}
@@ -603,7 +611,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                         style={{ background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)', boxShadow: tasks.length >= maxTasks ? 'none' : '0 2px 8px rgba(139,92,246,0.25)' }}
                     >
                         <Plus className="w-4 h-4" />
-                        New AI Task
+                        New routine
                     </button>
                 )}
                 {onClose && (
@@ -679,7 +687,7 @@ function ListView({ loading, activeTasks, inactiveTasks, modelTiers, onEdit, onT
                 <div className="w-16 h-16 rounded-2xl mb-4 flex items-center justify-center" style={{ background: 'rgba(139,92,246,0.08)' }}>
                     <Bot className="w-8 h-8" style={{ color: '#8b5cf6', opacity: 0.5 }} />
                 </div>
-                <h2 className="text-[17px] font-bold text-[var(--text-primary)] mb-2">No AI Tasks yet</h2>
+                <h2 className="text-[17px] font-bold text-[var(--text-primary)] mb-2">No routines yet</h2>
                 <p className="text-[13px] text-[var(--text-muted)] max-w-md mb-6 leading-relaxed">
                     Schedule recurring AI workflows — like a weekly news digest or daily lead report.
                     Results land in your notifications when they're ready.
