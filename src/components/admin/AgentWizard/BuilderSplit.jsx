@@ -85,7 +85,9 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     const [appsPickerOpen, setAppsPickerOpen] = useState(false);
     const [knowledgeOpen, setKnowledgeOpen] = useState(false);
     const [behaviorPickerOpen, setBehaviorPickerOpen] = useState(false);
+    const [memoryPickerOpen, setMemoryPickerOpen] = useState(false);
     const [publishPickerOpen, setPublishPickerOpen] = useState(false);
+    const [detailsOpen, setDetailsOpen] = useState(false);
     const [skillSearch, setSkillSearch] = useState('');
     const [instructionsEditing, setInstructionsEditing] = useState(false);
     const instructionsTextareaRef = useRef(null);
@@ -499,6 +501,35 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     </span>
                 </div>
                 <div ref={chatScrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+                    {chat.length === 0 && (
+                        <div className="h-full flex flex-col items-center justify-center text-center px-2">
+                            <div className="w-10 h-10 rounded-full bg-[var(--bg-secondary)] flex items-center justify-center mb-3">
+                                <Sparkles size={18} className="text-[var(--accent)]" />
+                            </div>
+                            <div className="text-sm font-medium text-[var(--text-primary)] mb-1">
+                                {t('agent_wizard.builder.chat_empty_title')}
+                            </div>
+                            <div className="text-xs text-[var(--text-tertiary)] mb-5 max-w-[260px]">
+                                {t('agent_wizard.builder.chat_empty_subtitle')}
+                            </div>
+                            <div className="flex flex-col gap-2 w-full max-w-[300px]">
+                                {[
+                                    'agent_wizard.builder.chat_prompt_tone',
+                                    'agent_wizard.builder.chat_prompt_steps',
+                                    'agent_wizard.builder.chat_prompt_constraint',
+                                ].map((key) => (
+                                    <button
+                                        key={key}
+                                        type="button"
+                                        onClick={() => setChatInput(t(key))}
+                                        className="text-left text-xs px-3 py-2 rounded-lg bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition"
+                                    >
+                                        {t(key)}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    )}
                     {chat.map((m, i) => {
                         if (m.role === 'user') {
                             return (
@@ -633,25 +664,46 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 />
                             </div>
                         </div>
-                        <div className="w-full grid grid-cols-1 md:grid-cols-[1fr,200px] gap-3">
-                            <input
-                                value={description}
-                                onChange={(e) => updateDescription(e.target.value)}
-                                onBlur={flushNow}
-                                placeholder={t('agent_wizard.field.role_description_placeholder')}
-                                className="w-full bg-transparent border-b border-transparent hover:border-[var(--border-default)] focus:border-[var(--accent)] outline-none px-1 py-1.5 text-sm text-[var(--text-primary)] transition"
-                            />
-                            <select
-                                value={categoryId || ''}
-                                onChange={(e) => updateCategory(e.target.value || null)}
-                                className="bg-transparent border-b border-transparent hover:border-[var(--border-default)] focus:border-[var(--accent)] outline-none px-1 py-1.5 text-sm text-[var(--text-primary)] transition cursor-pointer"
+                        {(detailsOpen || description || categoryId) ? (
+                            <div className="w-full grid grid-cols-1 sm:grid-cols-[1fr,220px] gap-3">
+                                <div>
+                                    <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1">
+                                        {t('agent_wizard.builder.role_description_label') || 'Role description'}
+                                    </div>
+                                    <input
+                                        value={description}
+                                        onChange={(e) => updateDescription(e.target.value)}
+                                        onBlur={flushNow}
+                                        placeholder={t('agent_wizard.field.role_description_placeholder')}
+                                        className="w-full bg-[var(--bg-secondary)]/40 border border-transparent hover:bg-[var(--bg-secondary)] focus:border-[var(--accent)] outline-none rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] transition"
+                                    />
+                                </div>
+                                <div>
+                                    <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1">
+                                        {t('agent_wizard.builder.category_label') || 'Category'}
+                                    </div>
+                                    <select
+                                        value={categoryId || ''}
+                                        onChange={(e) => updateCategory(e.target.value || null)}
+                                        className="w-full bg-[var(--bg-secondary)]/40 border border-transparent hover:bg-[var(--bg-secondary)] focus:border-[var(--accent)] outline-none rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] transition cursor-pointer"
+                                    >
+                                        <option value="">{t('agent_wizard.field.category_none')}</option>
+                                        {categories.map(c => (
+                                            <option key={c.id} value={c.id}>{c.name}</option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+                        ) : (
+                            <button
+                                type="button"
+                                onClick={() => setDetailsOpen(true)}
+                                className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition flex items-center gap-1"
                             >
-                                <option value="">{t('agent_wizard.field.category_none')}</option>
-                                {categories.map(c => (
-                                    <option key={c.id} value={c.id}>{c.name}</option>
-                                ))}
-                            </select>
-                        </div>
+                                <Plus size={12} />
+                                {t('agent_wizard.builder.add_details') || 'Add description & category'}
+                            </button>
+                        )}
                     </div>
 
                     <div className="flex flex-wrap gap-2 mb-8 relative">
@@ -678,8 +730,8 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                         <ActionPill
                             icon={<Brain size={14} />}
                             label={memoryEnabled ? t('agent_wizard.builder.memory_on') : t('agent_wizard.builder.memory')}
-                            onClick={toggleMemory}
-                            active={memoryEnabled}
+                            onClick={() => setMemoryPickerOpen(v => !v)}
+                            active={memoryPickerOpen || memoryEnabled}
                         />
                         <ActionPill
                             icon={<Sliders size={14} />}
@@ -688,6 +740,16 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                             active={behaviorPickerOpen}
                         />
 
+                        {memoryPickerOpen && (
+                            <MemoryPicker
+                                t={t}
+                                onClose={() => setMemoryPickerOpen(false)}
+                                memoryEnabled={memoryEnabled}
+                                onToggleMemory={toggleMemory}
+                                useGeneralMemory={useGeneralMemory}
+                                onToggleUseGeneralMemory={toggleUseGeneralMemory}
+                            />
+                        )}
                         {behaviorPickerOpen && (
                             <BehaviorPicker
                                 t={t}
@@ -753,26 +815,6 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                             />
                         )}
                     </div>
-
-                    {memoryEnabled && (
-                        <div className="mb-8 p-3 rounded-xl border border-[var(--border-default)] bg-[var(--bg-secondary)]">
-                            <div className="text-xs text-[var(--text-secondary)] mb-2">
-                                {t('agent_wizard.builder.memory_explainer')}
-                            </div>
-                            <label className="flex items-start gap-3 cursor-pointer">
-                                <input
-                                    type="checkbox"
-                                    checked={useGeneralMemory}
-                                    onChange={toggleUseGeneralMemory}
-                                    className="mt-1"
-                                />
-                                <div>
-                                    <div className="text-sm text-[var(--text-primary)]">{t('agent_wizard.builder.memory_use_general_label')}</div>
-                                    <div className="text-xs text-[var(--text-tertiary)]">{t('agent_wizard.builder.memory_use_general_help')}</div>
-                                </div>
-                            </label>
-                        </div>
-                    )}
 
                     {attachedSkillIds.length > 0 && (
                         <div className="mb-8">
@@ -1099,7 +1141,6 @@ function FilesUploadModal({ t, agent, knowledgeBaseIds, onKnowledgeBaseIdsChange
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState(null);
     const [dragOver, setDragOver] = useState(false);
-    const fileInputRef = useRef(null);
 
     const ensureKB = useCallback(async () => {
         if (kbId) return kbId;
@@ -1222,24 +1263,22 @@ function FilesUploadModal({ t, agent, knowledgeBaseIds, onKnowledgeBaseIdsChange
                         </div>
                     )}
 
-                    <div
+                    <label
                         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
                         onDragLeave={() => setDragOver(false)}
                         onDrop={onDrop}
-                        onClick={() => fileInputRef.current?.click()}
-                        className={`rounded-xl border-2 border-dashed p-8 text-center cursor-pointer transition ${dragOver ? 'border-[var(--accent)] bg-[var(--bg-secondary)]' : 'border-[var(--border-default)] bg-[var(--bg-secondary)]'}`}
+                        className={`block rounded-xl border-2 border-dashed p-8 text-center cursor-pointer transition ${dragOver ? 'border-[var(--accent)] bg-[var(--bg-secondary)]' : 'border-[var(--border-default)] bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)]'}`}
                     >
                         <Upload className="mx-auto mb-2 text-[var(--text-tertiary)]" size={24} />
                         <div className="text-sm text-[var(--text-primary)]">{t('agent_wizard.files.drop_here')}</div>
                         <div className="text-xs text-[var(--text-tertiary)] mt-1">{t('agent_wizard.files.click_or_drag')}</div>
                         <input
-                            ref={fileInputRef}
                             type="file"
                             multiple
                             className="hidden"
                             onChange={(e) => { uploadFiles(Array.from(e.target.files || [])); e.target.value = ''; }}
                         />
-                    </div>
+                    </label>
 
                     {uploading && <div className="text-xs text-[var(--text-secondary)]">{t('agent_wizard.files.uploading')}</div>}
                     {error && <div className="text-xs text-red-500">{error}</div>}
@@ -1315,6 +1354,44 @@ function CopyField({ value, t }) {
     );
 }
 
+function MemoryPicker({ t, onClose, memoryEnabled, onToggleMemory, useGeneralMemory, onToggleUseGeneralMemory }) {
+    const popoverRef = useRef(null);
+    useEffect(() => {
+        const onDoc = (e) => { if (!popoverRef.current?.contains(e.target)) onClose(); };
+        document.addEventListener('mousedown', onDoc);
+        return () => document.removeEventListener('mousedown', onDoc);
+    }, [onClose]);
+    return (
+        <div
+            ref={popoverRef}
+            className="absolute z-30 top-full left-0 mt-2 w-[360px] rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-xl"
+        >
+            <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
+                <span className="text-sm font-medium text-[var(--text-primary)]">{t('agent_wizard.builder.memory') || 'Memory'}</span>
+                <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={14} /></button>
+            </div>
+            <div className="p-4 space-y-3">
+                <ToggleRow
+                    label={t('agent_wizard.builder.memory_on') || 'Memory · on'}
+                    help={t('agent_wizard.builder.memory_explainer')}
+                    checked={memoryEnabled}
+                    onChange={() => onToggleMemory()}
+                />
+                {memoryEnabled && (
+                    <div className="pt-3 border-t border-[var(--border-default)]">
+                        <ToggleRow
+                            label={t('agent_wizard.builder.memory_use_general_label')}
+                            help={t('agent_wizard.builder.memory_use_general_help')}
+                            checked={useGeneralMemory}
+                            onChange={() => onToggleUseGeneralMemory()}
+                        />
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
 function BehaviorPicker({
     t, agent, onClose,
     allowCopy, onToggleAllowCopy,
@@ -1365,20 +1442,28 @@ function BehaviorPicker({
                     checked={embedEnabled}
                     onChange={() => onToggleEmbedEnabled()}
                 />
-                {embedEnabled && agent?.id && (
-                    <div className="space-y-3 pl-1 pt-1 border-t border-[var(--border-default)] -mx-4 px-4 pt-4">
-                        <div>
-                            <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                {t('agent_wizard.embed.public_url') || 'Public URL'}
+                {embedEnabled && (
+                    <div className="space-y-3 border-t border-[var(--border-default)] -mx-4 px-4 pt-4">
+                        {agent?.id ? (
+                            <>
+                                <div>
+                                    <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                                        {t('agent_wizard.embed.public_url') || 'Public URL'}
+                                    </div>
+                                    <CopyField value={publicUrl} t={t} />
+                                </div>
+                                <div>
+                                    <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                                        {t('agent_wizard.embed.iframe') || 'Iframe snippet'}
+                                    </div>
+                                    <CopyField value={iframeSnippet} t={t} />
+                                </div>
+                            </>
+                        ) : (
+                            <div className="text-xs text-[var(--text-tertiary)] italic">
+                                Save the agent first to get the embed URL.
                             </div>
-                            <CopyField value={publicUrl} t={t} />
-                        </div>
-                        <div>
-                            <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                {t('agent_wizard.embed.iframe') || 'Iframe snippet'}
-                            </div>
-                            <CopyField value={iframeSnippet} t={t} />
-                        </div>
+                        )}
                         <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
@@ -1469,8 +1554,11 @@ function PublishMenu({ t, agent, open, onToggle, onClose, isPublished, onToggleP
                 ref={triggerRef}
                 type="button"
                 onClick={onToggle}
-                className={`flex items-center gap-1.5 px-5 py-1.5 rounded-full text-sm font-medium transition ${isPublished ? 'bg-[var(--accent)] text-white hover:opacity-90' : 'bg-[var(--text-primary)] text-[var(--bg-primary)] hover:opacity-90'}`}
+                className={`flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-semibold transition shadow-sm ${isPublished
+                    ? 'bg-[var(--accent)]/15 text-[var(--accent)] ring-1 ring-[var(--accent)]/40 hover:bg-[var(--accent)]/25'
+                    : 'bg-[var(--accent)] text-white hover:opacity-90 ring-1 ring-[var(--accent)]'}`}
             >
+                {!isPublished && <Globe size={14} />}
                 {stateLabel}
                 <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
             </button>
@@ -1546,7 +1634,6 @@ const isImageAvatar = (a) => !!a && (a.startsWith('data:') || a.startsWith('http
 function AvatarPicker({ avatar, onChange, t }) {
     const [open, setOpen] = useState(false);
     const [category, setCategory] = useState('tech');
-    const fileRef = useRef(null);
     const popoverRef = useRef(null);
     const triggerRef = useRef(null);
     const isImage = isImageAvatar(avatar);
@@ -1564,12 +1651,12 @@ function AvatarPicker({ avatar, onChange, t }) {
 
     const onFile = (e) => {
         const file = e.target.files?.[0];
-        e.target.value = '';
         if (!file) return;
-        if (file.size > 512 * 1024) { alert(t('agent_wizard.avatar.too_large') || 'Image must be under 512KB'); return; }
+        if (file.size > 512 * 1024) { alert(t('agent_wizard.avatar.too_large') || 'Image must be under 512KB'); e.target.value = ''; return; }
         const reader = new FileReader();
         reader.onload = (ev) => { onChange(ev.target.result); setOpen(false); };
         reader.readAsDataURL(file);
+        e.target.value = '';
     };
     const pickEmoji = (em) => { onChange(em); setOpen(false); };
 
@@ -1620,22 +1707,20 @@ function AvatarPicker({ avatar, onChange, t }) {
                             ))}
                         </div>
                     </div>
-                    {/* Upload + reset row */}
+                    {/* Upload + reset row — <label> wrapping the file input is the
+                        most reliable cross-browser pattern (see legacy
+                        KnowledgeBasesSection.jsx:621). */}
                     <div className="flex items-center gap-2 px-3 py-2 border-t border-[var(--border-default)]">
-                        <input
-                            ref={fileRef}
-                            type="file"
-                            accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif"
-                            className="hidden"
-                            onChange={onFile}
-                        />
-                        <button
-                            type="button"
-                            onClick={() => fileRef.current?.click()}
-                            className="flex-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)] transition"
-                        >
-                            📷 {t('agent_wizard.avatar.upload') || 'Upload image'}
-                        </button>
+                        <label className="flex-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)] transition cursor-pointer text-center flex items-center justify-center gap-1.5">
+                            <ImageIcon size={13} />
+                            {t('agent_wizard.avatar.upload') || 'Upload image'}
+                            <input
+                                type="file"
+                                accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif"
+                                className="hidden"
+                                onChange={onFile}
+                            />
+                        </label>
                         {isImage && (
                             <button
                                 type="button"

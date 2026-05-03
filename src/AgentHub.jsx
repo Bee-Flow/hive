@@ -2036,7 +2036,7 @@ const AgentHub = ({
                                             onToggleSkill={handleToggleSkill}
                                             messages={messages}
                                             onVoiceTurnComplete={handleVoiceTurnComplete}
-                                            availableKBs={kbs}
+                                            availableKBs={directChatKbs}
                                             selectedKBIds={directChatKBIds}
                                             onChangeKBIds={setDirectChatKBIds}
                                         />
