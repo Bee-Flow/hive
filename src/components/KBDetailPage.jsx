@@ -34,7 +34,6 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
     // Settings form state
     const [name, setName] = useState('');
     const [description, setDescription] = useState('');
-    const [defaultLang, setDefaultLang] = useState('unknown');
     const [icon, setIcon] = useState('📚');
     const [categoryId, setCategoryId] = useState('');
     const [categories, setCategories] = useState([]);
@@ -151,7 +150,6 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                 setKb(data);
                 setName(data.name || '');
                 setDescription(data.description || '');
-                setDefaultLang(data.default_lang || 'unknown');
                 setIcon(data.icon || '📚');
                 setCategoryId(data.category_id || '');
                 setOrganizationId(data.organization_id || '');
@@ -207,7 +205,6 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                     body: JSON.stringify({
                         name: name.trim(),
                         description,
-                        defaultLang,
                         icon: icon || null,
                         categoryId: categoryId || null,
                     }),
@@ -229,7 +226,6 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                     body: JSON.stringify({
                         name: name.trim(),
                         description,
-                        defaultLang,
                         icon: icon || null,
                         categoryId: categoryId || null,
                     }),
@@ -1080,18 +1076,6 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                     rows={2}
                                     disabled={!canManage}
                                     className="w-full px-3 py-2.5 rounded-xl text-sm border outline-none resize-none focus:ring-2 focus:ring-[var(--accent-primary)]/30 disabled:opacity-60"
-                                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
-                                />
-                            </div>
-
-                            <div>
-                                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t('kb_detail.lang_label')}</label>
-                                <input
-                                    value={defaultLang}
-                                    onChange={e => setDefaultLang(e.target.value)}
-                                    placeholder={t('kb_detail.lang_placeholder')}
-                                    disabled={!canManage}
-                                    className="w-full px-3 py-2.5 rounded-xl text-sm border outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/30 disabled:opacity-60"
                                     style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
                                 />
                             </div>

@@ -196,6 +196,7 @@ export default function WebpageIDE({
                                     }}
                                     dirtyFiles={dirtyFiles}
                                     extraFiles={extraFiles}
+                                    dbSize={selected?.dbSize || 0}
                                 />
                             )}
                             {sidebarPane === 'sources' && (
@@ -270,6 +271,7 @@ export default function WebpageIDE({
                     {/* Preview — always visible, full height when no editor is open */}
                     <div style={{ flex: 1, minHeight: 0, overflow: 'hidden' }}>
                         <WebpagePreview
+                            webpageId={selected?.id}
                             html={html} css={css} js={js}
                             extraFiles={extraFiles}
                             extraContents={extraContents}

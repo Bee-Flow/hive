@@ -1,6 +1,7 @@
 import React, { useMemo, useState, useEffect } from 'react';
 import { RefreshCw, ExternalLink } from 'lucide-react';
 import composeWebpageDocument from '../../utils/composeWebpageDocument';
+import { API_BASE, authFetch } from '../../utils/helpers';
 
 /**
  * Sandboxed live preview of a webpage's three slots.
@@ -10,14 +11,55 @@ import composeWebpageDocument from '../../utils/composeWebpageDocument';
  *  • the previewed page's CSS / JS can never reach into the host app
  *  • the host app's CSS / JS can never reach into the preview
  *  • parent.location, document.cookie, fetch() to the host app all fail
+ *
+ * Database access from the iframe goes through a separate cross-origin
+ * channel: the editor fetches a short-lived bearer token below, bakes it
+ * into the iframe document, and the injected `window.beeflowDB` shim sends
+ * it on every call to /api/webpages-preview/:id/db/...
  */
-export default function WebpagePreview({ html, css, js, extraFiles = [], extraContents = {}, onSelectionAttach }) {
+export default function WebpagePreview({ webpageId, html, css, js, extraFiles = [], extraContents = {}, onSelectionAttach }) {
     const [refreshKey, setRefreshKey] = useState(0);
+    const [dbToken, setDbToken] = useState(null);
+    const [dbTokenExpiresAt, setDbTokenExpiresAt] = useState(0);
 
     // The composed doc embeds a small script that posts user selections back
     // to the parent. Only enable the bridge when the parent supplied a
     // callback — keeps the iframe minimal everywhere else.
     const bridgeOn = typeof onSelectionAttach === 'function';
+
+    // The iframe has an opaque origin, so `/api/...` relative URLs would
+    // resolve against `null` and fail. Build an absolute base — VITE_API_URL
+    // already gives an absolute URL in dev; in prod (relative API_BASE) we
+    // use the editor's own origin since nginx proxies /api through it.
+    const dbApiBase = useMemo(() => {
+        if (API_BASE) return API_BASE;
+        if (typeof window !== 'undefined') return window.location.origin;
+        return '';
+    }, []);
+
+    // Fetch / refresh the preview token when the webpage changes or the
+    // user reloads the iframe. Tokens are good for ~4h; we refresh ahead of
+    // expiry so a long editing session doesn't break mid-query.
+    useEffect(() => {
+        let cancelled = false;
+        if (!webpageId) { setDbToken(null); return; }
+        // Reuse if there's still > 60 s left.
+        if (dbToken && dbTokenExpiresAt - Date.now() > 60_000) return;
+        (async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/api/webpages/${webpageId}/preview-token`, { method: 'POST' });
+                if (!res.ok) throw new Error(`token fetch ${res.status}`);
+                const data = await res.json();
+                if (cancelled) return;
+                setDbToken(data.token);
+                setDbTokenExpiresAt(data.expiresAt || 0);
+            } catch (err) {
+                console.warn('[WebpagePreview] preview-token fetch failed:', err.message);
+                if (!cancelled) { setDbToken(null); setDbTokenExpiresAt(0); }
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [webpageId, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // Merge metadata + content into a single shape composeWebpageDocument expects.
     const extras = useMemo(() => extraFiles.map(f => {
@@ -28,8 +70,17 @@ export default function WebpagePreview({ html, css, js, extraFiles = [], extraCo
     }), [extraFiles, extraContents]);
 
     const srcDoc = useMemo(
-        () => composeWebpageDocument({ html, css, js }, { selectionBridge: bridgeOn, extraFiles: extras }),
-        [html, css, js, extras, bridgeOn]
+        () => composeWebpageDocument(
+            { html, css, js },
+            {
+                selectionBridge: bridgeOn,
+                extraFiles: extras,
+                dbToken,
+                dbApiBase,
+                dbWebpageId: webpageId,
+            }
+        ),
+        [html, css, js, extras, bridgeOn, dbToken, dbApiBase, webpageId]
     );
 
     useEffect(() => {

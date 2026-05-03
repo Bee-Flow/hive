@@ -51,8 +51,52 @@ function inlineDataUrl(html, targetPath, dataUrl) {
     return html.replace(reHref, `$1${dataUrl}$2`).replace(reSrc, `$1${dataUrl}$2`);
 }
 
+/**
+ * Build the `window.beeflowDB` shim that the user's script.js can call to
+ * talk to the per-webpage SQLite database. Lives in <head> so it's defined
+ * before script.js runs. Only emitted when all three of (token, base, id)
+ * are present — otherwise the page renders without DB support and any
+ * `beeflowDB.*` call surfaces as a clear ReferenceError.
+ */
+function buildBeeflowDbScript({ dbToken, dbApiBase, dbWebpageId }) {
+    const safeBase = String(dbApiBase || '').replace(/\/+$/, '');
+    const safeId = encodeURIComponent(dbWebpageId);
+    // JSON-stringify the token so it survives any quote characters and lands
+    // in the iframe as a plain string literal.
+    const tokenLiteral = JSON.stringify(dbToken);
+    const baseLiteral = JSON.stringify(safeBase);
+    return `<script>(function(){
+  var TOKEN = ${tokenLiteral};
+  var BASE  = ${baseLiteral} + "/api/webpages-preview/${safeId}/db";
+  async function call(path, body, method){
+    var res = await fetch(BASE + path, {
+      method: method || "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": "Bearer " + TOKEN
+      },
+      body: body ? JSON.stringify(body) : undefined
+    });
+    var json = null;
+    try { json = await res.json(); } catch(_) {}
+    if (!res.ok) {
+      var err = new Error((json && json.error) || ("HTTP " + res.status));
+      err.status = res.status;
+      throw err;
+    }
+    return json;
+  }
+  window.beeflowDB = {
+    query:  function(sql, params){ return call("/query", { sql: sql, params: params || [] }); },
+    exec:   function(sql, params){ return call("/exec",  { sql: sql, params: params || [] }); },
+    batch:  function(statements){  return call("/batch", { statements: statements }); },
+    schema: function(){            return call("/schema", null, "GET"); }
+  };
+})();<\/script>`;
+}
+
 export function composeWebpageDocument({ html, css, js }, options = {}) {
-    const { selectionBridge = false, extraFiles = [] } = options;
+    const { selectionBridge = false, extraFiles = [], dbToken = null, dbApiBase = null, dbWebpageId = null } = options;
     const safeHtml = html && html.trim()
         ? html
         : '<!DOCTYPE html><html><head></head><body></body></html>';
@@ -60,6 +104,9 @@ export function composeWebpageDocument({ html, css, js }, options = {}) {
     // The closing `</script>` is split so the surrounding script the iframe
     // is rendered inside can't be mistaken for a closing tag by some parsers.
     const scriptTag = js ? `<script>\n${js}\n<\/script>` : '';
+    const beeflowDbScript = (dbToken && dbApiBase && dbWebpageId)
+        ? buildBeeflowDbScript({ dbToken, dbApiBase, dbWebpageId })
+        : '';
     const bridgeScript = selectionBridge ? `<script>(function(){
   function relay(){
     try {
@@ -119,7 +166,9 @@ export function composeWebpageDocument({ html, css, js }, options = {}) {
     }
 
     if (/<head[^>]*>/i.test(working)) {
-        let out = working.replace(/<head([^>]*)>/i, `<head$1>\n${styleTag}`);
+        // beeflowDbScript goes immediately after <head> so the global is
+        // defined before any user CSS/JS that might (theoretically) reach for it.
+        let out = working.replace(/<head([^>]*)>/i, `<head$1>\n${beeflowDbScript}\n${styleTag}`);
         if (/<\/body>/i.test(out)) {
             out = out.replace(/<\/body>/i, `${scriptTag}\n${bridgeScript}\n</body>`);
         } else {
@@ -127,7 +176,7 @@ export function composeWebpageDocument({ html, css, js }, options = {}) {
         }
         return out;
     }
-    return `<!DOCTYPE html><html><head>${styleTag}</head><body>${working}${scriptTag}${bridgeScript}</body></html>`;
+    return `<!DOCTYPE html><html><head>${beeflowDbScript}${styleTag}</head><body>${working}${scriptTag}${bridgeScript}</body></html>`;
 }
 
 export default composeWebpageDocument;

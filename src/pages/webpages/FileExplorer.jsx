@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { ChevronDown, Code, Palette, Cpu, FileText, Folder, FolderOpen, Image as ImageIcon, FileType, Braces } from 'lucide-react';
+import { ChevronDown, Code, Palette, Cpu, FileText, Folder, FolderOpen, Image as ImageIcon, FileType, Braces, Database } from 'lucide-react';
 
 /**
  * File explorer tree view for the Webpages IDE.
@@ -137,11 +137,18 @@ function FileNode({ node, depth, activePath, onFileSelect }) {
     );
 }
 
+function formatBytes(n) {
+    if (!n || n < 1024) return `${n || 0} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
+
 export default function FileExplorer({
     activeFile,         // 'html' | 'css' | 'js' | { path, ... } | null
     onFileSelect,
     dirtyFiles = {},
     extraFiles = [],
+    dbSize = 0,         // bytes; render data.db row only when > 0
 }) {
     // Track expanded folders by their path. The pseudo-root "src" lives at
     // path = '__src__' since the primary slots aren't really nested in a
@@ -213,6 +220,20 @@ export default function FileExplorer({
                     </button>
                 );
             })}
+
+            {srcOpen && dbSize > 0 && (
+                <div
+                    title={`SQLite database — managed via the AI chat or window.beeflowDB inside the page (${formatBytes(dbSize)})`}
+                    className="flex items-center gap-1.5 py-0.5 w-full text-left text-[12px] cursor-default"
+                    style={{ paddingLeft: 24, color: 'var(--vsc-fg-muted)', opacity: 0.85 }}
+                >
+                    <Database size={13} />
+                    <span className="flex-1 truncate">data.db</span>
+                    <span className="text-[10px] mr-2 shrink-0" style={{ opacity: 0.7 }}>
+                        {formatBytes(dbSize)}
+                    </span>
+                </div>
+            )}
 
             {/* Extra files: folder tree */}
             {tree.length > 0 && (

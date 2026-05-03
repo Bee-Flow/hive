@@ -617,8 +617,6 @@ const EN_DEFAULTS = {
     "kb_detail.name_placeholder": "e.g. Product Documentation",
     "kb_detail.description_label": "Description",
     "kb_detail.description_placeholder": "What's in this KB?",
-    "kb_detail.lang_label": "Default Language",
-    "kb_detail.lang_placeholder": "en, nl, …",
     "kb_detail.category_label": "Category",
     "kb_detail.category_uncategorised": "Uncategorised",
     "kb_detail.category_new_placeholder": "Category name...",
