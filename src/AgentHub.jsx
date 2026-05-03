@@ -331,6 +331,16 @@ const AgentHub = ({
     const [kbCategories, setKbCategories] = useState([]);
     const [kbFavorites, setKbFavorites] = useState([]);
     const [kbsLoadedOnce, setKbsLoadedOnce] = useState(false);
+    // Direct-chat picker only sees KBs whose usage_contexts include 'direct_chat'.
+    // (The Knowledge Bases marketplace continues to show the full `kbs` list.)
+    const directChatKbs = useMemo(() => (kbs || []).filter(kb => {
+        const ctx = kb.usage_contexts;
+        if (Array.isArray(ctx)) return ctx.includes('direct_chat');
+        if (typeof ctx === 'string') {
+            try { const v = JSON.parse(ctx); return Array.isArray(v) && v.includes('direct_chat'); } catch { return true; }
+        }
+        return true; // legacy rows without the column → include by default
+    }), [kbs]);
     const [showSearch, setShowSearch] = useState(false);
 
     const [showMemoryPanel, setShowMemoryPanel] = useState(false);
@@ -1975,7 +1985,7 @@ const AgentHub = ({
                                                     onToggleSkill={handleToggleSkill}
                                                     messages={messages}
                                                     onVoiceTurnComplete={handleVoiceTurnComplete}
-                                                    availableKBs={kbs}
+                                                    availableKBs={directChatKbs}
                                                     selectedKBIds={directChatKBIds}
                                                     onChangeKBIds={setDirectChatKBIds}
                                                 />

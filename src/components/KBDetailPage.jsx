@@ -35,6 +35,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
     const [name, setName] = useState('');
     const [description, setDescription] = useState('');
     const [icon, setIcon] = useState('📚');
+    const [usageContexts, setUsageContexts] = useState(['agent', 'direct_chat', 'webpage']);
     const [categoryId, setCategoryId] = useState('');
     const [categories, setCategories] = useState([]);
     const [organizationId, setOrganizationId] = useState('');
@@ -151,6 +152,11 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                 setName(data.name || '');
                 setDescription(data.description || '');
                 setIcon(data.icon || '📚');
+                setUsageContexts(Array.isArray(data.usage_contexts)
+                    ? data.usage_contexts
+                    : (typeof data.usage_contexts === 'string'
+                        ? (() => { try { const v = JSON.parse(data.usage_contexts); return Array.isArray(v) ? v : ['agent', 'direct_chat', 'webpage']; } catch { return ['agent', 'direct_chat', 'webpage']; } })()
+                        : ['agent', 'direct_chat', 'webpage']));
                 setCategoryId(data.category_id || '');
                 setOrganizationId(data.organization_id || '');
                 setIsPublished(!!data.is_published);
@@ -207,6 +213,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                         description,
                         icon: icon || null,
                         categoryId: categoryId || null,
+                        usageContexts,
                     }),
                 });
                 if (res.ok) {
@@ -228,6 +235,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                         description,
                         icon: icon || null,
                         categoryId: categoryId || null,
+                        usageContexts,
                     }),
                 });
                 if (res.ok) {
@@ -438,6 +446,14 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
 
     function toggleGroup(gid) {
         setSharedGroups(prev => prev.includes(gid) ? prev.filter(g => g !== gid) : [...prev, gid]);
+    }
+
+    function toggleUsageContext(ctx) {
+        setUsageContexts(prev => {
+            const next = prev.includes(ctx) ? prev.filter(c => c !== ctx) : [...prev, ctx];
+            // Keep at least one context selected so the KB stays reachable somewhere.
+            return next.length > 0 ? next : prev;
+        });
     }
 
     function pickIcon(emoji) {
@@ -1075,6 +1091,36 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                     className="w-full px-3 py-2.5 rounded-xl text-sm border outline-none resize-none focus:ring-2 focus:ring-[var(--accent-primary)]/30 disabled:opacity-60"
                                     style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
                                 />
+                            </div>
+
+                            {/* Usage contexts — where this KB shows up in pickers */}
+                            <div>
+                                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>{t('kb_detail.usage_label')}</label>
+                                <div className="rounded-xl border divide-y" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)' }}>
+                                    {[
+                                        { id: 'agent', label: t('kb_detail.usage_agents'), hint: t('kb_detail.usage_agents_hint') },
+                                        { id: 'direct_chat', label: t('kb_detail.usage_direct_chat'), hint: t('kb_detail.usage_direct_chat_hint') },
+                                        { id: 'webpage', label: t('kb_detail.usage_webpages'), hint: t('kb_detail.usage_webpages_hint') },
+                                    ].map(ctx => (
+                                        <label
+                                            key={ctx.id}
+                                            className={`flex items-start gap-3 px-3 py-2.5 ${canManage ? 'cursor-pointer hover:bg-[var(--bg-tertiary)]' : 'opacity-60'} transition-colors`}
+                                            style={{ borderColor: 'var(--border-subtle)' }}
+                                        >
+                                            <input
+                                                type="checkbox"
+                                                checked={usageContexts.includes(ctx.id)}
+                                                onChange={() => toggleUsageContext(ctx.id)}
+                                                disabled={!canManage}
+                                                className="mt-0.5 accent-[var(--accent-primary)] w-4 h-4"
+                                            />
+                                            <div className="min-w-0">
+                                                <div className="text-sm" style={{ color: 'var(--text-primary)' }}>{ctx.label}</div>
+                                                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{ctx.hint}</div>
+                                            </div>
+                                        </label>
+                                    ))}
+                                </div>
                             </div>
 
                             {/* Category with inline create */}

@@ -100,7 +100,8 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
     const fetchKBs = async () => {
         setLoadingKbs(true);
         try {
-            const res = await authFetch(`${API_BASE}/api/kb`);
+            // Agent designer picker: only show KBs whose usage_contexts include 'agent'.
+            const res = await authFetch(`${API_BASE}/api/kb?context=agent`);
             if (res.ok) setKbs(await res.json());
         } catch (e) { console.error('Failed to fetch KBs:', e); }
         finally { setLoadingKbs(false); }
