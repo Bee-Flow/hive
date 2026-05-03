@@ -4,6 +4,7 @@ import { API_BASE, authFetch } from '../../utils/helpers';
 import { Loader2, ToggleLeft, ToggleRight, Check, Settings, Plus, Trash2, RefreshCw, Plug, ChevronDown, ExternalLink, Mail, Send, Layers, Search as SearchIcon, Cloud, BookOpen, FolderKanban, Sparkles, FileDown, Maximize2, LayoutList, Video } from 'lucide-react';
 import McpMarketplace from './McpMarketplace';
 import MeetBotSdkConfigPanel from './MeetBotSdkConfigPanel';
+import AppEmoji from '../AppEmoji';
 
 const SECTIONS = [
     { id: 'features', labelKey: 'admin.integ_features', icon: Layers, color: '#10b981' },
@@ -1600,6 +1601,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                                 name: 'Voxtral',
                                 badge: 'Mistral Cloud',
                                 emoji: '⚡',
+                                catalogId: 'integration.fast',
                                 badgeColor: '#f59e0b',
                                 desc: 'Fast, high-quality cloud transcription with built-in diarization. Requires a Mistral API key.',
                                 requires: 'Mistral API key (AI Config)',
@@ -1610,6 +1612,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                                 name: 'Azure Speech',
                                 badge: 'Microsoft Cloud',
                                 emoji: '☁️',
+                                catalogId: 'integration.cloud',
                                 badgeColor: '#0078D4',
                                 desc: 'Enterprise-grade Whisper model on Azure. Great for compliance-conscious organisations.',
                                 requires: 'Azure Speech key + region',
@@ -1620,6 +1623,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                                 name: 'Azure Whisper',
                                 badge: 'Batch API',
                                 emoji: '🎙️',
+                                catalogId: 'integration.recording',
                                 badgeColor: '#0078D4',
                                 desc: 'Higher accuracy via Azure Batch Transcription (Whisper model). Async — large files, up to 35 speakers. Uses RustFS for temp audio storage.',
                                 requires: 'Azure Speech key + RustFS',
@@ -1630,6 +1634,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                                 name: 'WhisperX',
                                 badge: 'Self-hosted',
                                 emoji: '🏠',
+                                catalogId: 'integration.local',
                                 badgeColor: '#8b5cf6',
                                 desc: 'Fully private. Run Whisper on your own server — audio never leaves your infrastructure.',
                                 requires: 'Self-hosted server URL',
@@ -1667,7 +1672,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                                 {transcriptionProvider === p.id && (
                                     <span className="absolute top-3 right-3 w-2 h-2 rounded-full bg-green-400" />
                                 )}
-                                <div className="text-2xl mb-2">{p.emoji}</div>
+                                <div className="text-2xl mb-2"><AppEmoji id={p.catalogId} default={p.emoji} /></div>
                                 <div className="font-semibold text-sm mb-1" style={{ color: 'var(--text-primary)' }}>{p.name}</div>
                                 <span className="text-xs px-1.5 py-0.5 rounded-full font-medium" style={{ background: p.badgeColor + '18', color: p.badgeColor }}>
                                     {p.badge}

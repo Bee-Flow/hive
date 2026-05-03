@@ -4,7 +4,8 @@ import useTranslation from '../../../hooks/useTranslation';
 import { Copy, Check, Bot, ChevronDown, Send, ThumbsUp, ThumbsDown, RefreshCw, Pencil, Download, FileText, MoreHorizontal } from 'lucide-react';
 import MarkdownRenderer from '../../MarkdownRenderer';
 import MapEmbedRenderer from '../../MapEmbedRenderer';
-import { API_BASE, authFetch, getToolLabel, getToolIcon } from '../../../utils/helpers';
+import { API_BASE, authFetch, getToolLabel, getToolIcon, toolNameToCatalogId } from '../../../utils/helpers';
+import AppEmoji from '../../AppEmoji';
 import AudioPlayerInline from './AudioPlayer';
 import ImageLightbox from './ImageLightbox';
 import ToolOutput from './ToolOutput';
@@ -857,7 +858,7 @@ const MessageItem = ({
                                                             {/* Card */}
                                                             <div className="flex-1 min-w-0">
                                                                 <summary className="flex items-center gap-2 cursor-pointer rounded-lg px-2.5 py-2 select-none list-none [&::-webkit-details-marker]:hidden transition-colors hover:bg-[var(--bg-tertiary)]" style={{ background: 'var(--bg-tertiary)', border: '1px solid transparent' }}>
-                                                                    <span className="text-sm flex-shrink-0">{getToolIcon(tool.name)}</span>
+                                                                    <AppEmoji id={toolNameToCatalogId(tool.name)} default={getToolIcon(tool.name)} className="text-sm flex-shrink-0" />
                                                                     <div className="flex-1 min-w-0">
                                                                         <div className="flex items-center gap-1.5 flex-wrap">
                                                                             <span className="text-[11px] font-semibold" style={{ color: 'var(--text-primary)' }}>{getToolLabel(tool.name)}</span>

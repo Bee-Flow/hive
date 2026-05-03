@@ -651,9 +651,6 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                             <RefreshCcw className={`w-3 h-3 ${reindexing ? 'animate-spin' : ''}`} />
                                             {reindexing ? t('kb_docs.reindexing') : t('kb_docs.reindex')}
                                         </button>
-                                        <button onClick={refreshDocs} className="text-[11px] hover:underline" style={{ color: 'var(--text-muted)' }} disabled={docsLoading}>
-                                            {docsLoading ? t('kb_docs.refreshing') : t('kb_docs.refresh')}
-                                        </button>
                                     </div>
                                 </div>
                             )}

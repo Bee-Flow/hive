@@ -4,11 +4,11 @@ import {
     Sparkles, AlertCircle, X, Loader2,
 } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
-import { AppIcon } from '../AppIcon';
 import IconPickerModal from '../icons/IconPickerModal';
 import { loadSettings } from '../chat/NanoBananaSettings';
 import { useTranslation } from '../../hooks/useTranslation';
 import { useIconPack } from '../../hooks/useIconPack';
+import { EMOJI_CATEGORIES as FALLBACK_CATEGORIES } from '../../utils/emojiCatalog';
 
 const API = `${API_BASE}/api/icons`;
 
@@ -20,7 +20,7 @@ export default function AppearanceAdminPanel() {
     const [packs, setPacks] = useState([]);
     const [activePackId, setActivePackId] = useState(null);
     const [selectedPackId, setSelectedPackId] = useState(null);
-    const [categories, setCategories] = useState([]);
+    const [categories, setCategories] = useState(FALLBACK_CATEGORIES);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
     const [showAddModal, setShowAddModal] = useState(false);
@@ -31,7 +31,7 @@ export default function AppearanceAdminPanel() {
             const data = await res.json();
             setPacks(data.packs || []);
             setActivePackId(data.activeIconPackId || null);
-            setCategories(data.categories || []);
+            if (Array.isArray(data.categories) && data.categories.length) setCategories(data.categories);
             setSelectedPackId(prev => {
                 if (prev && data.packs?.some(p => p.id === prev)) return prev;
                 return data.activeIconPackId || data.packs?.[0]?.id || null;
@@ -336,12 +336,17 @@ const PackEditor = ({ packId, categories, isActive, onActivate, onExport, onPack
 
     useEffect(() => { fetchPack(); }, [fetchPack]);
 
-    const allKeys = useMemo(() => categories.flatMap(c => c.keys), [categories]);
+    const allEntries = useMemo(() => categories.flatMap(c => c.entries || []), [categories]);
     const stats = useMemo(() => {
-        const total = allKeys.length;
-        const customized = allKeys.filter(k => (pack?.icons || {})[k]).length;
+        const total = allEntries.length;
+        const customized = allEntries.filter(e => (pack?.icons || {})[e.id]).length;
         return { total, customized, progress: total ? Math.round((customized / total) * 100) : 0 };
-    }, [allKeys, pack]);
+    }, [allEntries, pack]);
+
+    const editingEntry = useMemo(
+        () => allEntries.find(e => e.id === editingIconKey) || null,
+        [allEntries, editingIconKey]
+    );
 
     const setIcon = useCallback(async (iconKey, iconData) => {
         if (!pack) return;
@@ -488,12 +493,14 @@ const PackEditor = ({ packId, categories, isActive, onActivate, onExport, onPack
                 </div>
             )}
 
-            {/* Icon grid */}
+            {/* Emoji grid */}
             <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-6">
                 {categories.map(category => {
-                    const filtered = category.keys.filter(k => {
-                        if (search && !k.toLowerCase().includes(search.toLowerCase())) return false;
-                        const isCustom = !!(pack.icons || {})[k];
+                    const entries = category.entries || [];
+                    const filtered = entries.filter(entry => {
+                        const q = search.toLowerCase();
+                        if (q && !entry.id.toLowerCase().includes(q) && !(entry.label || '').toLowerCase().includes(q)) return false;
+                        const isCustom = !!(pack.icons || {})[entry.id];
                         if (showOnly === 'customized' && !isCustom) return false;
                         if (showOnly === 'missing' && isCustom) return false;
                         return true;
@@ -505,12 +512,12 @@ const PackEditor = ({ packId, categories, isActive, onActivate, onExport, onPack
                                 {category.name}
                             </h4>
                             <div className="grid grid-cols-3 sm:grid-cols-5 md:grid-cols-6 lg:grid-cols-8 xl:grid-cols-10 gap-2">
-                                {filtered.map(iconKey => (
+                                {filtered.map(entry => (
                                     <IconCell
-                                        key={iconKey}
-                                        iconKey={iconKey}
-                                        custom={(pack.icons || {})[iconKey]}
-                                        onClick={() => setEditingIconKey(iconKey)}
+                                        key={entry.id}
+                                        entry={entry}
+                                        custom={(pack.icons || {})[entry.id]}
+                                        onClick={() => setEditingIconKey(entry.id)}
                                     />
                                 ))}
                             </div>
@@ -519,15 +526,17 @@ const PackEditor = ({ packId, categories, isActive, onActivate, onExport, onPack
                 })}
             </div>
 
-            {editingIconKey && (
+            {editingEntry && (
                 <IconPickerModal
                     isOpen
                     onClose={() => setEditingIconKey(null)}
-                    iconKey={editingIconKey}
-                    currentCustom={(pack.icons || {})[editingIconKey]}
+                    iconKey={editingEntry.id}
+                    iconLabel={editingEntry.label}
+                    defaultEmoji={editingEntry.defaultEmoji}
+                    currentCustom={(pack.icons || {})[editingEntry.id]}
                     nanoBananaSettings={nanoSettings}
                     onApply={(data) => {
-                        setIcon(editingIconKey, data);
+                        setIcon(editingEntry.id, data);
                         setEditingIconKey(null);
                     }}
                 />
@@ -547,35 +556,36 @@ const PackEditor = ({ packId, categories, isActive, onActivate, onExport, onPack
 };
 
 // ─── Single icon cell ────────────────────────────────────────────
-const IconCell = React.memo(({ iconKey, custom, onClick }) => (
-    <button
-        onClick={onClick}
-        className="relative flex flex-col items-center justify-center p-2 border rounded-lg cursor-pointer transition-colors group"
-        style={{
-            background: custom ? 'rgba(59, 130, 246, 0.05)' : 'var(--bg-secondary)',
-            borderColor: custom ? 'rgba(59, 130, 246, 0.4)' : 'var(--border-subtle)',
-        }}
-    >
-        <div className="h-8 flex items-center justify-center mb-1">
-            {custom ? (
-                custom.type === 'image'
-                    ? <img src={custom.value} alt={iconKey} className="w-6 h-6 object-contain" />
-                    : <span className="text-xl leading-none">{custom.value}</span>
-            ) : (
-                <AppIcon name={iconKey} className="w-6 h-6" style={{ color: 'var(--text-muted)' }} />
-            )}
-        </div>
-        <span className="text-[10px] text-center w-full truncate px-1" style={{ color: custom ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-            {iconKey}
-        </span>
-        {custom && <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent-primary)' }} title="Customized" />}
-        <div className="absolute inset-0 bg-black/5 dark:bg-white/5 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded-lg transition-opacity">
-            <div className="bg-white dark:bg-zinc-800 p-1 rounded-full shadow-sm">
-                <Pencil className="w-3 h-3" style={{ color: 'var(--accent-primary)' }} />
+const IconCell = React.memo(({ entry, custom, onClick }) => {
+    const display = custom
+        ? (custom.type === 'image'
+            ? <img src={custom.value} alt={entry.label} className="w-6 h-6 object-contain" />
+            : <span className="text-xl leading-none">{custom.value}</span>)
+        : <span className="text-xl leading-none" style={{ opacity: 0.85 }}>{entry.defaultEmoji}</span>;
+
+    return (
+        <button
+            onClick={onClick}
+            title={entry.label}
+            className="relative flex flex-col items-center justify-center p-2 border rounded-lg cursor-pointer transition-colors group"
+            style={{
+                background: custom ? 'rgba(59, 130, 246, 0.05)' : 'var(--bg-secondary)',
+                borderColor: custom ? 'rgba(59, 130, 246, 0.4)' : 'var(--border-subtle)',
+            }}
+        >
+            <div className="h-8 flex items-center justify-center mb-1">{display}</div>
+            <span className="text-[10px] text-center w-full truncate px-1" style={{ color: custom ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+                {entry.label}
+            </span>
+            {custom && <div className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full" style={{ background: 'var(--accent-primary)' }} title="Customized" />}
+            <div className="absolute inset-0 bg-black/5 dark:bg-white/5 opacity-0 group-hover:opacity-100 flex items-center justify-center rounded-lg transition-opacity">
+                <div className="bg-white dark:bg-zinc-800 p-1 rounded-full shadow-sm">
+                    <Pencil className="w-3 h-3" style={{ color: 'var(--accent-primary)' }} />
+                </div>
             </div>
-        </div>
-    </button>
-));
+        </button>
+    );
+});
 
 // ─── Bulk generate modal ────────────────────────────────────────
 const BulkGenerateModal = ({ pack, nanoSettings, running, onRun, onClose }) => {
@@ -589,10 +599,10 @@ const BulkGenerateModal = ({ pack, nanoSettings, running, onRun, onClose }) => {
             <div className="w-full max-w-md rounded-2xl border shadow-2xl p-5" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }} onClick={e => e.stopPropagation()}>
                 <div className="flex items-center gap-2 mb-3">
                     <Sparkles className="w-5 h-5" style={{ color: '#f59e0b' }} />
-                    <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>AI Generate All Icons</h3>
+                    <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>AI Generate All Emojis</h3>
                 </div>
                 <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>
-                    Generates an icon for every key in the catalog using Nano Banana. Existing custom icons are kept unless you tick overwrite.
+                    Generates an icon for every entry in the catalog using Nano Banana. Existing custom overrides are kept unless you tick overwrite.
                 </p>
 
                 <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>Style prompt</label>

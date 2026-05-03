@@ -1,5 +1,9 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { TIER_META, customTierMeta } from './tierMeta';
+import AppEmoji from './AppEmoji';
+
+// Map a tier key to its catalog id; custom tiers fall back to tier.custom.
+const tierCatalogId = (key) => key?.startsWith('custom:') ? 'tier.custom' : (key === 'pro' ? 'tier.deep' : `tier.${key}`);
 
 const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection = 'up' }) => {
     const [open, setOpen] = useState(false);
@@ -42,7 +46,7 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
             >
                 {currentMeta.iconSrc
                     ? <img src={currentMeta.iconSrc} alt="" className="w-4 h-4 object-contain" />
-                    : <span>{currentMeta.icon}</span>}
+                    : <AppEmoji id={tierCatalogId(value)} default={currentMeta.icon} />}
                 <span>{currentMeta.label}</span>
                 <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ opacity: 0.5 }}>
                     <path d="M2 4L5 7L8 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -94,7 +98,7 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
                                 <span style={{ fontSize: '18px', width: '24px', textAlign: 'center', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
                                     {meta.iconSrc
                                         ? <img src={meta.iconSrc} alt="" style={{ width: '20px', height: '20px', objectFit: 'contain' }} />
-                                        : meta.icon}
+                                        : <AppEmoji id={tierCatalogId(key)} default={meta.icon} />}
                                 </span>
                                 <div style={{ flex: 1, minWidth: 0 }}>
                                     <div style={{ fontSize: '13px', fontWeight: 600 }}>{meta.label}</div>

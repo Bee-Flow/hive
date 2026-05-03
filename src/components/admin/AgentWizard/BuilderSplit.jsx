@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Plus, Sparkles, Upload, Brain, AppWindow, ArrowLeft, X, Search, ChevronDown, ChevronRight, Image as ImageIcon, Globe, BookOpen, Paperclip, LayoutGrid, ArrowUp, Puzzle as PuzzlePiece } from 'lucide-react';
+import { Send, Plus, Sparkles, Upload, Brain, AppWindow, ArrowLeft, X, Search, ChevronDown, ChevronRight, Image as ImageIcon, Globe, BookOpen, Paperclip, LayoutGrid, ArrowUp, Puzzle as PuzzlePiece, Sliders, Copy, Check } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import useTranslation from '../../../hooks/useTranslation';
 import ModelTierSelector from '../../ModelTierSelector';
@@ -61,7 +61,8 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     const [webSearchGuardEnabled, setWebSearchGuardEnabled] = useState(initialAgent?.config?.webSearchGuardEnabled === true);
     // Bubble widget (subset of most-used)
     const [bubbleColor, setBubbleColor] = useState(initialAgent?.config?.bubbleColor || '#6366F1');
-    const [bubblePosition, setBubblePosition] = useState(initialAgent?.config?.bubblePosition || 'bottom-right');
+    const [bubblePosition, setBubblePosition] = useState(initialAgent?.config?.bubblePosition || 'right');
+    const [bubbleIcon, setBubbleIcon] = useState(initialAgent?.config?.bubbleIcon || '💬');
 
     // Tier (for chat input)
     const [tiers, setTiers] = useState({});
@@ -83,9 +84,14 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     const [skillPickerOpen, setSkillPickerOpen] = useState(false);
     const [appsPickerOpen, setAppsPickerOpen] = useState(false);
     const [knowledgeOpen, setKnowledgeOpen] = useState(false);
+    const [behaviorPickerOpen, setBehaviorPickerOpen] = useState(false);
+    const [publishPickerOpen, setPublishPickerOpen] = useState(false);
     const [skillSearch, setSkillSearch] = useState('');
     const [instructionsEditing, setInstructionsEditing] = useState(false);
     const instructionsTextareaRef = useRef(null);
+    const updateBubbleColor = (v) => { setBubbleColor(v); patchConfig({ bubbleColor: v }); };
+    const updateBubblePosition = (v) => { setBubblePosition(v); patchConfig({ bubblePosition: v }); };
+    const updateBubbleIcon = (v) => { setBubbleIcon(v); patchConfig({ bubbleIcon: v }); };
 
     const [chat, setChat] = useState(history || []);
     const [chatInput, setChatInput] = useState('');
@@ -586,31 +592,66 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
 
             {/* Right config panel */}
             <main className="flex-1 overflow-y-auto">
-                <div className="flex items-center justify-end gap-3 px-8 py-3">
+                <div className="flex items-center justify-end gap-3 px-8 py-3 relative">
                     <span className="text-xs text-[var(--text-tertiary)]">
                         {savingState === 'saving' && t('agent_wizard.builder.save_saving')}
                         {savingState === 'saved' && t('agent_wizard.builder.save_saved')}
                         {savingState === 'error' && t('agent_wizard.builder.save_error')}
                     </span>
                     {rightHeaderExtras}
-                    <button
-                        onClick={handleDone}
-                        className="px-5 py-1.5 rounded-full bg-[var(--accent)] text-white text-sm font-medium hover:opacity-90 transition"
-                    >
-                        {t('agent_wizard.builder.done')}
-                    </button>
+                    <PublishMenu
+                        t={t}
+                        agent={agent}
+                        open={publishPickerOpen}
+                        onToggle={() => setPublishPickerOpen(v => !v)}
+                        onClose={() => setPublishPickerOpen(false)}
+                        isPublished={isPublished}
+                        onTogglePublished={togglePublishedToOrg}
+                        embedEnabled={embedEnabled}
+                        orgGroups={orgGroups}
+                        sharedGroups={sharedGroups}
+                        onToggleGroup={togglePublishGroup}
+                    />
                 </div>
 
                 <div className="max-w-4xl mx-auto px-10 pt-8 pb-12">
-                    <div className="flex flex-col items-start gap-5 mb-12">
+                    <div className="flex flex-col items-start gap-5 mb-8">
                         <AvatarPicker t={t} avatar={avatar} onChange={updateAvatar} />
-                        <input
-                            value={name}
-                            onChange={(e) => updateName(e.target.value)}
-                            onBlur={flushNow}
-                            className="w-full text-4xl font-semibold bg-transparent outline-none text-[var(--text-primary)] py-1 -ml-1 px-1 rounded hover:bg-[var(--bg-secondary)]/40 focus:bg-[var(--bg-secondary)]/40 transition"
-                            placeholder={t('agent_wizard.builder.name_placeholder')}
-                        />
+                        <div className="flex items-end gap-3 w-full">
+                            <input
+                                value={name}
+                                onChange={(e) => updateName(e.target.value)}
+                                onBlur={flushNow}
+                                className="flex-1 min-w-0 text-4xl font-semibold bg-transparent outline-none text-[var(--text-primary)] py-1 -ml-1 px-1 rounded hover:bg-[var(--bg-secondary)]/40 focus:bg-[var(--bg-secondary)]/40 transition"
+                                placeholder={t('agent_wizard.builder.name_placeholder')}
+                            />
+                            <div className="pb-2 flex-shrink-0">
+                                <ModelTierSelector
+                                    tiers={tiers || {}}
+                                    value={selectedTier}
+                                    onChange={(v) => updateModel(v)}
+                                />
+                            </div>
+                        </div>
+                        <div className="w-full grid grid-cols-1 md:grid-cols-[1fr,200px] gap-3">
+                            <input
+                                value={description}
+                                onChange={(e) => updateDescription(e.target.value)}
+                                onBlur={flushNow}
+                                placeholder={t('agent_wizard.field.role_description_placeholder')}
+                                className="w-full bg-transparent border-b border-transparent hover:border-[var(--border-default)] focus:border-[var(--accent)] outline-none px-1 py-1.5 text-sm text-[var(--text-primary)] transition"
+                            />
+                            <select
+                                value={categoryId || ''}
+                                onChange={(e) => updateCategory(e.target.value || null)}
+                                className="bg-transparent border-b border-transparent hover:border-[var(--border-default)] focus:border-[var(--accent)] outline-none px-1 py-1.5 text-sm text-[var(--text-primary)] transition cursor-pointer"
+                            >
+                                <option value="">{t('agent_wizard.field.category_none')}</option>
+                                {categories.map(c => (
+                                    <option key={c.id} value={c.id}>{c.name}</option>
+                                ))}
+                            </select>
+                        </div>
                     </div>
 
                     <div className="flex flex-wrap gap-2 mb-8 relative">
@@ -640,7 +681,32 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                             onClick={toggleMemory}
                             active={memoryEnabled}
                         />
+                        <ActionPill
+                            icon={<Sliders size={14} />}
+                            label={t('agent_wizard.builder.behavior') || 'Behavior'}
+                            onClick={() => setBehaviorPickerOpen(v => !v)}
+                            active={behaviorPickerOpen}
+                        />
 
+                        {behaviorPickerOpen && (
+                            <BehaviorPicker
+                                t={t}
+                                agent={agent}
+                                onClose={() => setBehaviorPickerOpen(false)}
+                                allowCopy={allowCopy}
+                                onToggleAllowCopy={toggleAllowCopy}
+                                disableExternalTools={disableExternalTools}
+                                onToggleDisableExternalTools={toggleDisableExternalTools}
+                                embedEnabled={embedEnabled}
+                                onToggleEmbedEnabled={toggleEmbedEnabled}
+                                bubbleColor={bubbleColor}
+                                onBubbleColor={updateBubbleColor}
+                                bubblePosition={bubblePosition}
+                                onBubblePosition={updateBubblePosition}
+                                bubbleIcon={bubbleIcon}
+                                onBubbleIcon={updateBubbleIcon}
+                            />
+                        )}
                         {skillPickerOpen && (
                             <SkillPicker
                                 t={t}
@@ -726,139 +792,9 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                         </div>
                     )}
 
-                    {/* ── Inline collapsible sections — moved above Instructions per request ── */}
-                    <div className="mb-2">
-                        <CollapsibleSection
-                            title={t('agent_wizard.section.identity')}
-                            open={openSection === 'identity'}
-                            onToggle={() => toggleSection('identity')}
-                        >
-                            <div className="space-y-4">
-                                <Field label={t('agent_wizard.field.role_description')}>
-                                    <input
-                                        value={description}
-                                        onChange={(e) => updateDescription(e.target.value)}
-                                        onBlur={flushNow}
-                                        placeholder={t('agent_wizard.field.role_description_placeholder')}
-                                        className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
-                                    />
-                                </Field>
-                                <Field label={t('agent_wizard.field.category')}>
-                                    <select
-                                        value={categoryId || ''}
-                                        onChange={(e) => updateCategory(e.target.value || null)}
-                                        className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
-                                    >
-                                        <option value="">{t('agent_wizard.field.category_none')}</option>
-                                        {categories.map(c => (
-                                            <option key={c.id} value={c.id}>{c.name}</option>
-                                        ))}
-                                    </select>
-                                </Field>
-                                <Field label={t('agent_wizard.field.model')}>
-                                    <ModelTierSelector
-                                        tiers={tiers || {}}
-                                        value={selectedTier}
-                                        onChange={(v) => updateModel(v)}
-                                    />
-                                </Field>
-                            </div>
-                        </CollapsibleSection>
-
-                        <CollapsibleSection
-                            title={t('agent_wizard.section.knowledge')}
-                            open={openSection === 'knowledge'}
-                            onToggle={() => toggleSection('knowledge')}
-                        >
-                            <div className="space-y-3">
-                                <ToggleRow
-                                    label={t('agent_wizard.knowledge.strict_label')}
-                                    help={t('agent_wizard.knowledge.strict_help')}
-                                    checked={strictKnowledge}
-                                    onChange={onStrictKnowledgeChange}
-                                />
-                                <ToggleRow
-                                    label={t('agent_wizard.knowledge.sources_label')}
-                                    help={t('agent_wizard.knowledge.sources_help')}
-                                    checked={includeSourceReferences}
-                                    onChange={onIncludeSourceReferencesChange}
-                                />
-                                <KbList
-                                    t={t}
-                                    kbs={allKbs}
-                                    linkedIds={knowledgeBaseIds}
-                                    onToggle={toggleKbLink}
-                                    onCreate={createKb}
-                                />
-                            </div>
-                        </CollapsibleSection>
-
-                        <CollapsibleSection
-                            title={t('agent_wizard.section.behavior')}
-                            open={openSection === 'behavior'}
-                            onToggle={() => toggleSection('behavior')}
-                        >
-                            <div className="space-y-3">
-                                <ToggleRow
-                                    label={t('agent_wizard.behavior.allow_copy_label')}
-                                    help={t('agent_wizard.behavior.allow_copy_help')}
-                                    checked={allowCopy}
-                                    onChange={() => toggleAllowCopy()}
-                                />
-                                <ToggleRow
-                                    label={t('agent_wizard.behavior.disable_external_label')}
-                                    help={t('agent_wizard.behavior.disable_external_help')}
-                                    checked={disableExternalTools}
-                                    onChange={() => toggleDisableExternalTools()}
-                                />
-                                <ToggleRow
-                                    label={t('agent_wizard.behavior.embed_label')}
-                                    help={t('agent_wizard.behavior.embed_help')}
-                                    checked={embedEnabled}
-                                    onChange={() => toggleEmbedEnabled()}
-                                />
-                                {embedEnabled && agent?.id && (
-                                    <div className="text-xs text-[var(--text-tertiary)] pl-1">
-                                        {t('agent_wizard.behavior.embed_url')}: <code className="text-[var(--text-primary)]">/chat/{agent.id}</code>
-                                    </div>
-                                )}
-                            </div>
-                        </CollapsibleSection>
-
-                        <CollapsibleSection
-                            title={t('agent_wizard.section.publishing')}
-                            open={openSection === 'publishing'}
-                            onToggle={() => toggleSection('publishing')}
-                        >
-                            <div className="space-y-3">
-                                <ToggleRow
-                                    label={t('agent_wizard.publishing.published_label')}
-                                    help={t('agent_wizard.publishing.published_help')}
-                                    checked={isPublished}
-                                    onChange={togglePublishedToOrg}
-                                />
-                                {isPublished && (
-                                    <Field label={t('agent_wizard.publishing.groups')}>
-                                        {orgGroups.length === 0 && (
-                                            <div className="text-xs text-[var(--text-tertiary)]">{t('agent_wizard.publishing.no_groups')}</div>
-                                        )}
-                                        <div className="space-y-1">
-                                            {orgGroups.map(g => {
-                                                const checked = sharedGroups.includes(g.id);
-                                                return (
-                                                    <label key={g.id} className="flex items-center gap-2 text-sm cursor-pointer">
-                                                        <input type="checkbox" checked={checked} onChange={() => togglePublishGroup(g.id)} />
-                                                        <span className="text-[var(--text-primary)]">{g.name}</span>
-                                                    </label>
-                                                );
-                                            })}
-                                        </div>
-                                    </Field>
-                                )}
-                            </div>
-                        </CollapsibleSection>
-
-                        {agent?.id && (
+                    {/* Only Version History remains as a collapsible — other sections moved into pills/header. */}
+                    {agent?.id && (
+                        <div className="mb-2">
                             <CollapsibleSection
                                 title={t('agent_wizard.section.versions')}
                                 open={openSection === 'versions'}
@@ -867,8 +803,6 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 <VersionHistory
                                     agentId={agent.id}
                                     onRestore={async () => {
-                                        // After a version is restored, re-fetch the agent so all
-                                        // local state and stateRef rehydrate from the canonical row.
                                         try {
                                             const res = await authFetch(`${API_BASE}/agents/${agent.id}`);
                                             if (res.ok) {
@@ -885,8 +819,8 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                     }}
                                 />
                             </CollapsibleSection>
-                        )}
-                    </div>
+                        </div>
+                    )}
 
                     <div className="mt-10">
                         <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-3">{t('agent_wizard.builder.instructions')}</div>
@@ -930,6 +864,11 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     onKnowledgeBaseIdsChange={onKnowledgeBaseIdsChange}
                     strictKnowledge={strictKnowledge}
                     onStrictKnowledgeChange={onStrictKnowledgeChange}
+                    includeSourceReferences={includeSourceReferences}
+                    onIncludeSourceReferencesChange={onIncludeSourceReferencesChange}
+                    allKbs={allKbs}
+                    onToggleKbLink={toggleKbLink}
+                    onCreateKb={createKb}
                     onClose={() => setKnowledgeOpen(false)}
                 />
             )}
@@ -1151,7 +1090,7 @@ function AppsPicker({ items, enabled, onClose, onToggle, t }) {
     );
 }
 
-function FilesUploadModal({ t, agent, knowledgeBaseIds, onKnowledgeBaseIdsChange, strictKnowledge, onStrictKnowledgeChange, onClose }) {
+function FilesUploadModal({ t, agent, knowledgeBaseIds, onKnowledgeBaseIdsChange, strictKnowledge, onStrictKnowledgeChange, includeSourceReferences, onIncludeSourceReferencesChange, allKbs, onToggleKbLink, onCreateKb, onClose }) {
     // Primary KB = the auto-created KB at wizard/commit time, or the first linked KB.
     const initialKbId = agent?.config?.wizard?.primaryKbId || knowledgeBaseIds?.[0] || null;
     const [kbId, setKbId] = useState(initialKbId);
@@ -1251,13 +1190,37 @@ function FilesUploadModal({ t, agent, knowledgeBaseIds, onKnowledgeBaseIdsChange
                 </div>
 
                 <div className="p-5 space-y-4">
-                    <label className="flex items-start gap-3 px-3 py-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] cursor-pointer">
-                        <input type="checkbox" checked={!!strictKnowledge} onChange={(e) => onStrictKnowledgeChange(e.target.checked)} className="mt-1" />
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <label className="flex items-start gap-3 px-3 py-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] cursor-pointer">
+                            <input type="checkbox" checked={!!strictKnowledge} onChange={(e) => onStrictKnowledgeChange(e.target.checked)} className="mt-1" />
+                            <div>
+                                <div className="text-sm text-[var(--text-primary)]">{t('agent_wizard.files.strict_label')}</div>
+                                <div className="text-xs text-[var(--text-tertiary)]">{t('agent_wizard.files.strict_help')}</div>
+                            </div>
+                        </label>
+                        <label className="flex items-start gap-3 px-3 py-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] cursor-pointer">
+                            <input type="checkbox" checked={!!includeSourceReferences} onChange={(e) => onIncludeSourceReferencesChange?.(e.target.checked)} className="mt-1" />
+                            <div>
+                                <div className="text-sm text-[var(--text-primary)]">{t('agent_wizard.knowledge.sources_label')}</div>
+                                <div className="text-xs text-[var(--text-tertiary)]">{t('agent_wizard.knowledge.sources_help')}</div>
+                            </div>
+                        </label>
+                    </div>
+
+                    {Array.isArray(allKbs) && (
                         <div>
-                            <div className="text-sm text-[var(--text-primary)]">{t('agent_wizard.files.strict_label')}</div>
-                            <div className="text-xs text-[var(--text-tertiary)]">{t('agent_wizard.files.strict_help')}</div>
+                            <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-2">
+                                {t('agent_wizard.knowledge.kbs') || 'Knowledge bases'} ({allKbs.length})
+                            </div>
+                            <KbList
+                                t={t}
+                                kbs={allKbs}
+                                linkedIds={knowledgeBaseIds}
+                                onToggle={onToggleKbLink}
+                                onCreate={onCreateKb}
+                            />
                         </div>
-                    </label>
+                    )}
 
                     <div
                         onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
@@ -1323,6 +1286,246 @@ function ActionPill({ icon, label, count, onClick, active }) {
                 </span>
             )}
         </button>
+    );
+}
+
+function CopyField({ value, t }) {
+    const [copied, setCopied] = useState(false);
+    const onCopy = async () => {
+        try { await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch (_) { /* ignore */ }
+    };
+    return (
+        <div className="flex gap-2">
+            <input
+                readOnly
+                value={value}
+                onFocus={(e) => e.target.select()}
+                className="flex-1 min-w-0 text-xs font-mono px-3 py-2 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-default)] text-[var(--text-secondary)] outline-none"
+            />
+            <button
+                type="button"
+                onClick={onCopy}
+                className="px-3 py-2 text-xs rounded-lg bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)] transition flex items-center gap-1.5"
+                title={t('agent_wizard.embed.copy') || 'Copy'}
+            >
+                {copied ? <Check size={12} /> : <Copy size={12} />}
+                {copied ? (t('agent_wizard.embed.copied') || 'Copied') : (t('agent_wizard.embed.copy') || 'Copy')}
+            </button>
+        </div>
+    );
+}
+
+function BehaviorPicker({
+    t, agent, onClose,
+    allowCopy, onToggleAllowCopy,
+    disableExternalTools, onToggleDisableExternalTools,
+    embedEnabled, onToggleEmbedEnabled,
+    bubbleColor, onBubbleColor,
+    bubblePosition, onBubblePosition,
+    bubbleIcon, onBubbleIcon,
+}) {
+    const popoverRef = useRef(null);
+    useEffect(() => {
+        const onDoc = (e) => { if (!popoverRef.current?.contains(e.target)) onClose(); };
+        document.addEventListener('mousedown', onDoc);
+        return () => document.removeEventListener('mousedown', onDoc);
+    }, [onClose]);
+
+    const publicUrl = agent?.id ? `${window.location.origin}/chat/${agent.id}` : '';
+    const iframeSnippet = agent?.id
+        ? `<iframe src="${publicUrl}" width="400" height="600" style="border:none;border-radius:12px;"></iframe>`
+        : '';
+    const ICONS = ['💬', '🐝', '🤖', '❓', '👋', '✨'];
+
+    return (
+        <div
+            ref={popoverRef}
+            className="absolute z-30 top-full left-0 mt-2 w-[460px] max-h-[70vh] overflow-y-auto rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-xl"
+        >
+            <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
+                <span className="text-sm font-medium text-[var(--text-primary)]">{t('agent_wizard.section.behavior') || 'Behavior'}</span>
+                <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={14} /></button>
+            </div>
+            <div className="p-4 space-y-4">
+                <ToggleRow
+                    label={t('agent_wizard.behavior.allow_copy_label')}
+                    help={t('agent_wizard.behavior.allow_copy_help')}
+                    checked={allowCopy}
+                    onChange={() => onToggleAllowCopy()}
+                />
+                <ToggleRow
+                    label={t('agent_wizard.behavior.disable_external_label')}
+                    help={t('agent_wizard.behavior.disable_external_help')}
+                    checked={disableExternalTools}
+                    onChange={() => onToggleDisableExternalTools()}
+                />
+                <ToggleRow
+                    label={t('agent_wizard.behavior.embed_label')}
+                    help={t('agent_wizard.behavior.embed_help')}
+                    checked={embedEnabled}
+                    onChange={() => onToggleEmbedEnabled()}
+                />
+                {embedEnabled && agent?.id && (
+                    <div className="space-y-3 pl-1 pt-1 border-t border-[var(--border-default)] -mx-4 px-4 pt-4">
+                        <div>
+                            <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                                {t('agent_wizard.embed.public_url') || 'Public URL'}
+                            </div>
+                            <CopyField value={publicUrl} t={t} />
+                        </div>
+                        <div>
+                            <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                                {t('agent_wizard.embed.iframe') || 'Iframe snippet'}
+                            </div>
+                            <CopyField value={iframeSnippet} t={t} />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                            <div>
+                                <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                                    {t('agent_wizard.embed.bubble_color') || 'Bubble color'}
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <input
+                                        type="color"
+                                        value={bubbleColor}
+                                        onChange={(e) => onBubbleColor(e.target.value)}
+                                        className="w-8 h-8 rounded-lg border-0 cursor-pointer p-0"
+                                    />
+                                    <input
+                                        type="text"
+                                        value={bubbleColor}
+                                        onChange={(e) => onBubbleColor(e.target.value)}
+                                        className="flex-1 min-w-0 text-xs font-mono px-2 py-1.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-default)] outline-none text-[var(--text-secondary)]"
+                                    />
+                                </div>
+                            </div>
+                            <div>
+                                <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                                    {t('agent_wizard.embed.position') || 'Position'}
+                                </div>
+                                <div className="flex gap-1">
+                                    {['left', 'right'].map(pos => (
+                                        <button
+                                            key={pos}
+                                            type="button"
+                                            onClick={() => onBubblePosition(pos)}
+                                            className={`flex-1 px-2 py-1.5 text-xs rounded-lg transition ${bubblePosition === pos
+                                                ? 'bg-[var(--accent)]/10 text-[var(--accent)] font-medium'
+                                                : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}
+                                        >
+                                            {pos === 'left' ? '◀ Left' : 'Right ▶'}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                        <div>
+                            <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                                {t('agent_wizard.embed.icon') || 'Icon'}
+                            </div>
+                            <div className="flex gap-1">
+                                {ICONS.map(icon => (
+                                    <button
+                                        key={icon}
+                                        type="button"
+                                        onClick={() => onBubbleIcon(icon)}
+                                        className={`w-9 h-9 rounded-lg text-base flex items-center justify-center transition ${bubbleIcon === icon
+                                            ? 'ring-2 ring-[var(--accent)] bg-[var(--bg-secondary)]'
+                                            : 'bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)]'}`}
+                                    >
+                                        {icon}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function PublishMenu({ t, agent, open, onToggle, onClose, isPublished, onTogglePublished, embedEnabled, orgGroups, sharedGroups, onToggleGroup }) {
+    const popoverRef = useRef(null);
+    const triggerRef = useRef(null);
+    useEffect(() => {
+        if (!open) return;
+        const onDoc = (e) => {
+            if (popoverRef.current?.contains(e.target)) return;
+            if (triggerRef.current?.contains(e.target)) return;
+            onClose();
+        };
+        document.addEventListener('mousedown', onDoc);
+        return () => document.removeEventListener('mousedown', onDoc);
+    }, [open, onClose]);
+
+    const stateLabel = isPublished
+        ? (t('agent_wizard.publish.update') || 'Update')
+        : (t('agent_wizard.publish.publish') || 'Publish');
+
+    return (
+        <>
+            <button
+                ref={triggerRef}
+                type="button"
+                onClick={onToggle}
+                className={`flex items-center gap-1.5 px-5 py-1.5 rounded-full text-sm font-medium transition ${isPublished ? 'bg-[var(--accent)] text-white hover:opacity-90' : 'bg-[var(--text-primary)] text-[var(--bg-primary)] hover:opacity-90'}`}
+            >
+                {stateLabel}
+                <ChevronDown size={14} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
+            </button>
+            {open && (
+                <div
+                    ref={popoverRef}
+                    className="absolute z-30 right-8 top-full mt-1 w-[320px] rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-xl overflow-hidden"
+                >
+                    <div className="px-4 py-3 border-b border-[var(--border-default)]">
+                        <div className="text-sm font-medium text-[var(--text-primary)]">
+                            {t('agent_wizard.section.publishing') || 'Publish'}
+                        </div>
+                        <div className="text-xs text-[var(--text-tertiary)] mt-0.5">
+                            {isPublished
+                                ? (t('agent_wizard.publish.live_help') || 'This agent is live in your workspace.')
+                                : (t('agent_wizard.publish.draft_help') || 'Only you can use this agent right now.')}
+                        </div>
+                    </div>
+                    <div className="p-3 space-y-3">
+                        <ToggleRow
+                            label={t('agent_wizard.publishing.published_label')}
+                            help={t('agent_wizard.publishing.published_help')}
+                            checked={isPublished}
+                            onChange={onTogglePublished}
+                        />
+                        {isPublished && (
+                            <div>
+                                <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                                    {t('agent_wizard.publishing.groups')}
+                                </div>
+                                {orgGroups.length === 0 && (
+                                    <div className="text-xs text-[var(--text-tertiary)]">{t('agent_wizard.publishing.no_groups')}</div>
+                                )}
+                                <div className="space-y-1 max-h-40 overflow-y-auto">
+                                    {orgGroups.map(g => {
+                                        const checked = sharedGroups.includes(g.id);
+                                        return (
+                                            <label key={g.id} className="flex items-center gap-2 text-sm cursor-pointer">
+                                                <input type="checkbox" checked={checked} onChange={() => onToggleGroup(g.id)} />
+                                                <span className="text-[var(--text-primary)]">{g.name}</span>
+                                            </label>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        )}
+                        {embedEnabled && agent?.id && (
+                            <div className="text-[11px] text-[var(--text-tertiary)] pt-2 border-t border-[var(--border-default)]">
+                                {t('agent_wizard.publish.embed_hint') || 'Web embed is on — manage it in Behavior.'}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
+        </>
     );
 }
 

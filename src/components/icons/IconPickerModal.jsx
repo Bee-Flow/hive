@@ -2,9 +2,8 @@ import React, { useState, useRef } from 'react';
 import EmojiPicker from 'emoji-picker-react';
 import { Camera, Upload, X, Loader2, Sparkles, Image as ImageIcon, Smile } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
-import { AppIcon } from '../AppIcon';
 
-export function IconPickerModal({ isOpen, onClose, iconKey, currentCustom, onApply, nanoBananaSettings }) {
+export function IconPickerModal({ isOpen, onClose, iconKey, iconLabel, defaultEmoji, currentCustom, onApply, nanoBananaSettings }) {
     const [tab, setTab] = useState('emoji');
     const [prompt, setPrompt] = useState('');
     const [generating, setGenerating] = useState(false);
@@ -85,10 +84,13 @@ export function IconPickerModal({ isOpen, onClose, iconKey, currentCustom, onApp
                 <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-subtle)' }}>
                     <div>
                         <h2 className="text-lg font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                            <span>Change Icon:</span>
-                            <AppIcon name={iconKey} className="w-5 h-5 text-blue-500" />
+                            <span>Change emoji:</span>
+                            {defaultEmoji && <span className="text-xl leading-none" aria-hidden>{defaultEmoji}</span>}
+                            <span>{iconLabel || iconKey}</span>
                         </h2>
-                        <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Select overriding icon for '{iconKey}'</p>
+                        <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+                            Pick an emoji, upload an image, or generate one with AI. Default: {defaultEmoji || iconKey}
+                        </p>
                     </div>
                     <button onClick={onClose} className="p-2 rounded-lg transition-colors hover:bg-black/5 dark:hover:bg-white/5">
                         <X className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />

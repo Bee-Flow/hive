@@ -82,3 +82,23 @@ export function categoriesForProvider(provider) {
 
 // Private: merged list so labelForCategory() doesn't care which taxonomy owns an id.
 const _allCategories = [...LLAMA_GUARD_CATEGORIES, ...AZURE_CONTENT_SAFETY_CATEGORIES];
+
+/**
+ * Map a guardrail category id (S1-S14 or an Azure key) to its emoji catalog id
+ * so the active icon pack can override every site that renders this category.
+ * Llama and Azure categories that share a meaning collapse onto the same id
+ * (e.g. S10 'Hate' and Azure 'Hate' both -> guardrail.hate).
+ */
+const _CATALOG_ID_BY_CATEGORY = {
+    S1: 'guardrail.violence',  S2: 'guardrail.crimes',  S3: 'guardrail.sex_crimes',
+    S4: 'guardrail.csae',      S5: 'guardrail.defamation', S6: 'guardrail.specialized_advice',
+    S7: 'guardrail.privacy',   S8: 'guardrail.ip',       S9: 'guardrail.weapons',
+    S10: 'guardrail.hate',     S11: 'guardrail.self_harm', S12: 'guardrail.sexual',
+    S13: 'guardrail.elections', S14: 'guardrail.code_abuse',
+    Hate: 'guardrail.hate',    Violence: 'guardrail.violence',
+    Sexual: 'guardrail.sexual', SelfHarm: 'guardrail.self_harm',
+};
+
+export function guardrailCatalogIdFor(id) {
+    return _CATALOG_ID_BY_CATEGORY[String(id)] || null;
+}

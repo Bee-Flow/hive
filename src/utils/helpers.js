@@ -161,22 +161,58 @@ export const getToolLabel = (name) => {
 };
 
 /**
- * Returns an emoji icon for a known tool, or a generic wrench.
+ * Maps a raw tool name to a stable catalog id (see emojiCatalog.js). Use this
+ * with <AppEmoji id={toolNameToCatalogId(toolName)} /> so the active icon pack
+ * can override every search-tool emoji at once via a single `tools.search` key.
+ *
+ * Returns 'tools.fallback' for unknown tools so AppEmoji renders the generic 🔧.
  */
-export const getToolIcon = (name) => {
-    const icons = {
-        'agent_search': '🔍', 'google_search': '🔍', 'serper_search': '🔍',
-        'scholar_search': '🔍', 'arxiv_search': '🔍', 'pubmed_search': '🔍', 'crossref_lookup': '🔍',
-        'web_browser': '🌐', 'browser_agent': '🌐',
-        'terminal_exec': '💻', 'python_interpreter': '🐍',
-        'notebook_doc_write': '📝', 'notebook_add_source': '📎',
-        'sql_query': '🗄️', 'file_read': '📂', 'document_reader': '📄',
-        'gmail_tool': '📧', 'calendar_tool': '📅',
-        'sequentialthinking': '🧠', 'api_fetcher': '🔗',
-        'activate_skill': '🧩', 'activate_session_skill': '🐝', 'complete_session_skill': '✅', 'publish_session_skill_to_library': '⭐',
-        'gamma_create_presentation': '📊', 'gamma_create_from_template': '📊',
-        'gamma_revise_as_new': '📊', 'gamma_get_generation_status': '⏱️',
-        'gamma_list_themes': '🎨', 'gamma_list_folders': '📁',
+export const toolNameToCatalogId = (name) => {
+    const map = {
+        agent_search: 'tools.search', google_search: 'tools.search', serper_search: 'tools.search',
+        scholar_search: 'tools.search', arxiv_search: 'tools.search', pubmed_search: 'tools.search',
+        crossref_lookup: 'tools.search',
+        web_browser: 'tools.web_browser', browser_agent: 'tools.web_browser',
+        terminal_exec: 'tools.terminal',
+        python_interpreter: 'tools.python',
+        notebook_doc_write: 'tools.notebook_write',
+        notebook_add_source: 'tools.notebook_attach',
+        sql_query: 'tools.sql',
+        file_read: 'tools.file_read',
+        document_reader: 'tools.document_reader',
+        gmail_tool: 'tools.gmail',
+        calendar_tool: 'tools.calendar',
+        sequentialthinking: 'tools.thinking',
+        api_fetcher: 'tools.api_fetcher',
+        activate_skill: 'tools.skill',
+        activate_session_skill: 'tools.session_skill',
+        complete_session_skill: 'tools.skill_complete',
+        publish_session_skill_to_library: 'tools.skill_publish',
+        gamma_create_presentation: 'tools.gamma_create',
+        gamma_create_from_template: 'tools.gamma_create',
+        gamma_revise_as_new: 'tools.gamma_create',
+        gamma_get_generation_status: 'tools.gamma_status',
+        gamma_list_themes: 'tools.gamma_themes',
+        gamma_list_folders: 'tools.gamma_folders',
     };
-    return icons[name] || '🔧';
+    return map[name] || 'tools.fallback';
 };
+
+const TOOL_DEFAULT_EMOJI = {
+    'tools.search': '🔍', 'tools.web_browser': '🌐', 'tools.terminal': '💻',
+    'tools.python': '🐍', 'tools.notebook_write': '📝', 'tools.notebook_attach': '📎',
+    'tools.sql': '🗄️', 'tools.file_read': '📂', 'tools.document_reader': '📄',
+    'tools.gmail': '📧', 'tools.calendar': '📅', 'tools.thinking': '🧠',
+    'tools.api_fetcher': '🔗', 'tools.skill': '🧩', 'tools.session_skill': '🐝',
+    'tools.skill_complete': '✅', 'tools.skill_publish': '⭐',
+    'tools.gamma_create': '📊', 'tools.gamma_status': '⏱️',
+    'tools.gamma_themes': '🎨', 'tools.gamma_folders': '📁',
+    'tools.fallback': '🔧',
+};
+
+/**
+ * Returns the default emoji for a tool name. Prefer rendering via
+ * <AppEmoji id={toolNameToCatalogId(name)} /> so user overrides apply;
+ * use this only when you need a synchronous string (logs, plain strings).
+ */
+export const getToolIcon = (name) => TOOL_DEFAULT_EMOJI[toolNameToCatalogId(name)] || '🔧';

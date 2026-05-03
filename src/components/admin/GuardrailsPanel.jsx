@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
 import { API_BASE, authFetch } from '../../utils/helpers';
-import { LLAMA_GUARD_CATEGORIES, AZURE_CONTENT_SAFETY_CATEGORIES } from '../../utils/guardrailCategories';
+import { LLAMA_GUARD_CATEGORIES, AZURE_CONTENT_SAFETY_CATEGORIES, guardrailCatalogIdFor } from '../../utils/guardrailCategories';
+import AppEmoji from '../AppEmoji';
 import { ToastHost, showToast } from './guardrails/Toast';
 
 // Guardrails Configuration Panel (Regex Rules)
@@ -892,7 +893,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                                             }}
                                                                             className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0"
                                                                         />
-                                                                        <span>{cat.icon}</span>
+                                                                        <AppEmoji id={guardrailCatalogIdFor(cat.id)} default={cat.icon} />
                                                                         <span>{cat.label}</span>
                                                                     </label>
                                                                 ))}
@@ -1039,7 +1040,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                                             }}
                                                                             className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0"
                                                                         />
-                                                                        <span>{cat.icon}</span>
+                                                                        <AppEmoji id={guardrailCatalogIdFor(cat.id)} default={cat.icon} />
                                                                         <span>{cat.label}</span>
                                                                     </label>
                                                                 ))}
@@ -1111,7 +1112,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                                     }}
                                                                     className="w-3.5 h-3.5 rounded border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0"
                                                                 />
-                                                                <span>{cat.icon} {cat.label}</span>
+                                                                <span><AppEmoji id={guardrailCatalogIdFor(cat.id)} default={cat.icon} /> {cat.label}</span>
                                                             </label>
                                                         ))}
                                                     </div>
@@ -1663,7 +1664,7 @@ const AIModerationConfig = () => {
                                             }}
                                             className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0"
                                         />
-                                        <span className="text-base">{cat.icon}</span>
+                                        <AppEmoji id={guardrailCatalogIdFor(cat.id)} default={cat.icon} className="text-base" />
                                         <div>
                                             <span className="text-sm block" style={{ color: 'var(--text-secondary)' }}>{cat.label}</span>
                                             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{cat.desc}</span>
@@ -1675,7 +1676,7 @@ const AIModerationConfig = () => {
                             <div className="grid grid-cols-3 gap-2">
                                 {llamaCategories.map(cat => (
                                     <div key={cat.id} className="flex items-center gap-2 p-2.5 rounded-lg" style={{ background: 'var(--bg-tertiary)' }}>
-                                        <span className="text-base">{cat.icon}</span>
+                                        <AppEmoji id={guardrailCatalogIdFor(cat.id)} default={cat.icon} className="text-base" />
                                         <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{cat.label}</span>
                                     </div>
                                 ))}

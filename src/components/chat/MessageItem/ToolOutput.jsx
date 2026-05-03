@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Terminal, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react';
-import { getToolLabel, getToolIcon } from '../../../utils/helpers';
+import { getToolLabel, getToolIcon, toolNameToCatalogId } from '../../../utils/helpers';
+import AppEmoji from '../../AppEmoji';
 
 const SESSION_SKILL_TOOL_NAMES = new Set(['activate_session_skill', 'activate_skill']);
 
@@ -112,7 +113,8 @@ export default function ToolOutput({ msg, sessionSkills = [] }) {
             // Don't show when reasoning model thinking header is already visible
             if (msg.isStreaming && !msg.content) return null;
 
-            const icon = getToolIcon(msg.toolCall.name);
+            const toolCallId = toolNameToCatalogId(msg.toolCall.name);
+            const toolCallDefault = getToolIcon(msg.toolCall.name);
             // Find the in-flight entry in toolHistory so we can read its args;
             // args is the only place the skill_ids live at render time.
             const runningEntry = (msg.toolHistory || []).find(t => t.status === 'running' && t.name === msg.toolCall.name);
@@ -133,7 +135,7 @@ export default function ToolOutput({ msg, sessionSkills = [] }) {
                                 return (
                                     <div key={i} className="flex items-center gap-1.5 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
                                         <span className="flex-shrink-0" style={{ color: 'var(--accent-primary)', opacity: 0.7 }}>✓</span>
-                                        <span className="text-xs">{getToolIcon(t.name)}</span>
+                                        <AppEmoji id={toolNameToCatalogId(t.name)} default={getToolIcon(t.name)} className="text-xs" />
                                         <span className="font-medium" style={{ color: 'var(--text-secondary)' }}>{skillAwareLabel(t, sessionSkills) || getToolLabel(t.name)}</span>
                                         {dur !== null && (
                                             <span className="tabular-nums opacity-60">
@@ -155,7 +157,7 @@ export default function ToolOutput({ msg, sessionSkills = [] }) {
                                 border: '1px solid var(--border-subtle)',
                             }}
                         >
-                            <span className="text-xs">{icon}</span>
+                            <AppEmoji id={toolCallId} default={toolCallDefault} className="text-xs" />
                             <span>{label}</span>
                             <span className="flex items-center gap-0.5 ml-0.5">
                                 <span className="w-1 h-1 rounded-full animate-pulse" style={{ background: 'var(--accent-primary)' }}></span>
