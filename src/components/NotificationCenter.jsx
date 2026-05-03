@@ -7,7 +7,7 @@ const CATEGORY_CONFIG = {
     info: { icon: Info, color: '#6366f1', bg: 'rgba(99, 102, 241, 0.08)', label: 'Info' },
     heads_up: { icon: AlertTriangle, color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.08)', label: 'Heads Up' },
     urgent: { icon: AlertCircle, color: '#ef4444', bg: 'rgba(239, 68, 68, 0.08)', label: 'Urgent' },
-    ai_task: { icon: Bot, color: '#8b5cf6', bg: 'rgba(139, 92, 246, 0.08)', label: 'AI Task' },
+    ai_task: { icon: Bot, color: '#0f172a', bg: 'rgba(15, 23, 42, 0.06)', label: 'Routine' },
 };
 
 function timeAgo(dateStr) {
@@ -454,7 +454,7 @@ export default function NotificationCenter() {
                                                                 display: 'flex', alignItems: 'center', gap: 5,
                                                                 padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
                                                                 border: 'none', cursor: 'pointer',
-                                                                background: 'rgba(139,92,246,0.1)', color: '#8b5cf6',
+                                                                background: 'var(--bg-secondary, rgba(0,0,0,0.04))', color: 'var(--text-primary, #0f172a)',
                                                             }}
                                                         >
                                                             View Full Result
@@ -536,16 +536,16 @@ export default function NotificationCenter() {
                             display: 'flex', alignItems: 'center', gap: 10,
                             padding: '16px 20px',
                             borderBottom: '1px solid var(--border-subtle, rgba(0,0,0,0.06))',
-                            background: 'linear-gradient(135deg, rgba(139,92,246,0.04), rgba(99,102,241,0.02))',
+                            background: 'var(--bg-secondary, rgba(0,0,0,0.02))',
                         }}>
                             <div style={{
                                 width: 36, height: 36, borderRadius: 10,
-                                background: 'rgba(139,92,246,0.08)',
+                                background: 'var(--bg-secondary, rgba(0,0,0,0.04))',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                border: '1px solid rgba(139,92,246,0.15)',
+                                border: '1px solid var(--border-subtle, rgba(0,0,0,0.08))',
                                 flexShrink: 0,
                             }}>
-                                <Bot style={{ width: 18, height: 18, color: '#8b5cf6' }} />
+                                <Bot style={{ width: 18, height: 18, color: 'var(--text-primary, #0f172a)' }} />
                             </div>
                             <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{
@@ -557,7 +557,7 @@ export default function NotificationCenter() {
                                     {resultModal.title}
                                 </div>
                                 <div style={{ fontSize: 11, color: 'var(--text-muted, #94a3b8)', fontWeight: 500, marginTop: 2 }}>
-                                    AI Task Result
+                                    Routine Result
                                 </div>
                             </div>
                             <button
@@ -567,9 +567,8 @@ export default function NotificationCenter() {
                                     padding: '8px 14px', borderRadius: 10,
                                     fontSize: 13, fontWeight: 600,
                                     border: 'none', cursor: 'pointer',
-                                    background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
-                                    color: '#fff',
-                                    boxShadow: '0 2px 8px rgba(139,92,246,0.3)',
+                                    background: 'var(--text-primary, #0f172a)',
+                                    color: 'var(--bg-primary, #fff)',
                                     flexShrink: 0,
                                 }}
                             >

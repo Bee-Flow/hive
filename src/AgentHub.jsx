@@ -902,7 +902,7 @@ const AgentHub = ({
                     {
                         id: generateMessageId(),
                         role: 'user',
-                        content: `Show me the result from my AI Task "${title}"`,
+                        content: `Show me the result from my routine "${title}"`,
                         timestamp: now,
                     },
                     {
@@ -1134,7 +1134,11 @@ const AgentHub = ({
         setActiveProjectId(null);
         if (onCloseSettings) onCloseSettings();
         if (onCloseAgentDesigner) onCloseAgentDesigner();
+        if (onCloseAgentWizard) onCloseAgentWizard();
+        if (onCloseStudio) onCloseStudio();
         if (onCloseAITasks) onCloseAITasks();
+        if (onCloseSkillsPanel) onCloseSkillsPanel();
+        if (onCloseEmailKB) onCloseEmailKB();
         scopedStorage.setItem('lastUsedMode', 'direct-chat');
         loadDirectConversations();
         loadModelTiers();
@@ -1197,6 +1201,8 @@ const AgentHub = ({
     const handleNewChat = () => {
         if (onCloseSettings) onCloseSettings();
         if (onCloseAgentDesigner) onCloseAgentDesigner();
+        if (onCloseAgentWizard) onCloseAgentWizard();
+        if (onCloseStudio) onCloseStudio();
         if (onCloseAITasks) onCloseAITasks();
         if (onCloseSkillsPanel) onCloseSkillsPanel();
         if (onCloseEmailKB) onCloseEmailKB();
