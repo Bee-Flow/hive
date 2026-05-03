@@ -17,6 +17,20 @@ const TABS = [
 export default function SkillsStudio({ user, initialSkillId = null, onNavigate, hasPermission = () => true }) {
     const { t } = useTranslation();
 
+    // `manage_skills` isn't a discrete permission in the role system — fall back to
+    // the same broader check used in the Sidebar so org admins / agent managers can
+    // create and delete skills, not only `all`-permission super-admins.
+    const canManageSkills = (
+        hasPermission('manage_skills')
+        || hasPermission('manage_agents')
+        || user?.isAdmin
+        || user?.role === 'admin'
+        || user?.orgRole === 'admin'
+        || user?.orgRole === 'org_admin'
+        || user?.orgRole === 'agent_admin'
+        || user?.orgRole === 'agent_editor'
+    );
+
     const [skills, setSkills] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selected, setSelected] = useState(null);
@@ -107,7 +121,7 @@ export default function SkillsStudio({ user, initialSkillId = null, onNavigate, 
             <aside className="w-64 flex-shrink-0 border-r border-[var(--border-default)] flex flex-col">
                 <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
                     <span className="text-sm font-semibold text-[var(--text-primary)]">{t('skills_studio.title')}</span>
-                    {hasPermission('manage_skills') && (
+                    {canManageSkills && (
                         <button
                             onClick={createEmpty}
                             title={t('skills_studio.create')}
@@ -135,10 +149,11 @@ export default function SkillsStudio({ user, initialSkillId = null, onNavigate, 
                             >
                                 <span className="text-base flex-shrink-0">{s.icon || '⚡'}</span>
                                 <span className="truncate flex-1">{s.name}</span>
-                                {hasPermission('manage_skills') && (
+                                {canManageSkills && (
                                     <button
                                         onClick={(e) => { e.stopPropagation(); requestDelete(s); }}
-                                        className="opacity-0 group-hover:opacity-100 text-[var(--text-tertiary)] hover:text-red-500"
+                                        title={t('skills_studio.delete_title')}
+                                        className="text-[var(--text-tertiary)] hover:text-red-500 transition-colors"
                                     >
                                         <Trash2 size={13} />
                                     </button>
@@ -162,7 +177,7 @@ export default function SkillsStudio({ user, initialSkillId = null, onNavigate, 
                         orgGroups={orgGroups}
                         user={user}
                         onRefreshList={fetchSkills}
-                        canDelete={hasPermission('manage_skills')}
+                        canDelete={canManageSkills}
                         onDelete={() => requestDelete(selected)}
                     />
                 )}
