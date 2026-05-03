@@ -55,7 +55,7 @@ export default function AutomationList({ onOpenBuilder }) {
                 <h2 style={{ margin: 0, fontSize: 18 }}>Automations</h2>
                 <span style={{ flex: 1 }} />
                 <button onClick={() => onOpenBuilder(null)} style={{
-                    background: 'linear-gradient(90deg, #4f46e5, #7c3aed)', color: '#fff', border: 'none',
+                    background: 'var(--text-primary)', color: 'var(--bg-primary)', border: 'none',
                     borderRadius: 8, padding: '8px 14px', display: 'inline-flex', alignItems: 'center', gap: 6, cursor: 'pointer',
                 }}>
                     <Sparkles size={16} /> Build with AI

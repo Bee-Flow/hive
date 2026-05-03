@@ -51,13 +51,13 @@ function formatNextRun(dateStr) {
 }
 
 const STATUS_COLORS = {
-    pending: { bg: 'rgba(99,102,241,0.08)', color: '#6366f1', label: '⏳ Pending' },
+    pending: { bg: 'var(--bg-secondary)', color: 'var(--text-secondary)', label: '⏳ Pending' },
     running: { bg: 'rgba(245,158,11,0.08)', color: '#f59e0b', label: '⚡ Running' },
     success: { bg: 'rgba(34,197,94,0.08)', color: '#22c55e', label: '✅ Success' },
     error: { bg: 'rgba(239,68,68,0.08)', color: '#ef4444', label: '❌ Error' },
 };
 
-export default function AITasksDesigner({ initialTaskId = null, onClose, modelTiers = {}, embedded = false, user = null, onEditingChange }) {
+export default function AITasksDesigner({ initialTaskId = null, onClose, onNavigate, modelTiers = {}, embedded = false, user = null, onEditingChange }) {
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(false);
     const [maxTasks, setMaxTasks] = useState(10);
@@ -115,7 +115,13 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
         }
         if (tasks.length === 0) return;
         const task = tasks.find(t => t.id === initialTaskId);
-        if (task) startEditTask(task);
+        if (!task) return;
+        // Agent routines live in the agent editor — redirect deep links there.
+        if (task.agentId && onNavigate) {
+            onNavigate(`studio/agents/${task.agentId}`);
+            return;
+        }
+        startEditTask(task);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [initialTaskId, tasks.length]);
 
@@ -287,15 +293,15 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                     display: 'flex', alignItems: 'center', gap: 10,
                     padding: '16px 20px',
                     borderBottom: '1px solid var(--border-subtle, rgba(0,0,0,0.06))',
-                    background: 'linear-gradient(135deg, rgba(139,92,246,0.04), rgba(99,102,241,0.02))',
+                    background: 'var(--bg-secondary)',
                 }}>
                     <div style={{
                         width: 36, height: 36, borderRadius: 10,
-                        background: 'rgba(139,92,246,0.08)',
+                        background: 'var(--bg-secondary)',
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        border: '1px solid rgba(139,92,246,0.15)', flexShrink: 0,
+                        border: '1px solid var(--border-default)', flexShrink: 0,
                     }}>
-                        <Bot style={{ width: 18, height: 18, color: '#8b5cf6' }} />
+                        <Bot style={{ width: 18, height: 18, color: 'var(--text-primary)' }} />
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
                         <div style={{
@@ -313,8 +319,8 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                             padding: '8px 14px', borderRadius: 10,
                             fontSize: 13, fontWeight: 600,
                             border: 'none', cursor: 'pointer',
-                            background: 'linear-gradient(135deg, #8b5cf6, #6366f1)',
-                            color: '#fff', boxShadow: '0 2px 8px rgba(139,92,246,0.3)',
+                            background: 'var(--text-primary)',
+                            color: '#fff', boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
                             flexShrink: 0,
                         }}
                     >
@@ -446,22 +452,43 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                         {tasks.map((task) => {
                             const sel = editingTaskId === task.id;
                             const statusColor = (STATUS_COLORS[task.lastStatus] || STATUS_COLORS.pending).color;
+                            const isAgentRoutine = !!task.agentId;
+                            // Agent routines edit in the agent editor, not inline — that's
+                            // where the rest of the agent context lives, and where the
+                            // routine modal already exists. Inline edit stays for legacy
+                            // user-scoped tasks (no agent) that have no other home.
+                            const handleClick = () => {
+                                if (isAgentRoutine && onNavigate) {
+                                    onNavigate(`studio/agents/${task.agentId}`);
+                                } else {
+                                    startEditTask(task);
+                                }
+                            };
                             return (
                                 <div
                                     key={task.id}
-                                    onClick={() => startEditTask(task)}
+                                    onClick={handleClick}
                                     className={`group flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer text-sm transition ${sel ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}
+                                    title={isAgentRoutine ? `Agent routine — opens ${task.agentName || 'agent'} editor` : undefined}
                                 >
                                     <span
                                         className="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-px"
                                         style={{ background: statusColor, opacity: task.isActive ? 1 : 0.35 }}
                                     />
-                                    <span className="truncate flex-1">{task.title}</span>
+                                    {isAgentRoutine && (
+                                        <span className="text-sm flex-shrink-0" title={task.agentName}>{task.agentAvatar || '🤖'}</span>
+                                    )}
+                                    <span className="truncate flex-1">
+                                        {task.title}
+                                        {isAgentRoutine && task.agentName && (
+                                            <span className="ml-1.5 text-[10px] text-[var(--text-tertiary)]">· {task.agentName}</span>
+                                        )}
+                                    </span>
                                     <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
                                         <button
                                             onClick={(e) => { e.stopPropagation(); runTaskNow(task.id); }}
                                             title="Run now"
-                                            className="p-1 rounded text-[var(--text-tertiary)] hover:text-[#8b5cf6]"
+                                            className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
                                             disabled={task.lastStatus === 'running'}
                                         >
                                             <Play size={11} />
@@ -493,9 +520,9 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                         <div className="h-full flex flex-col items-center justify-center px-6 py-12">
                             <div
                                 className="w-16 h-16 rounded-2xl mb-4 flex items-center justify-center"
-                                style={{ background: 'rgba(139,92,246,0.08)' }}
+                                style={{ background: 'var(--bg-secondary)' }}
                             >
-                                <Bot size={28} style={{ color: '#8b5cf6', opacity: 0.6 }} />
+                                <Bot size={28} style={{ color: 'var(--text-primary)', opacity: 0.6 }} />
                             </div>
                             <div className="text-lg font-semibold text-[var(--text-primary)] mb-2">
                                 Schedule routines
@@ -508,7 +535,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                                 onClick={startNewTask}
                                 disabled={tasks.length >= maxTasks}
                                 className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold text-white disabled:opacity-50"
-                                style={{ background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)' }}
+                                style={{ background: 'var(--text-primary)' }}
                             >
                                 <Plus size={15} />
                                 New routine
@@ -527,7 +554,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                                             onClick={() => runTaskNow(currentTask.id)}
                                             disabled={currentTask.lastStatus === 'running'}
                                             className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-50"
-                                            style={{ background: 'rgba(139,92,246,0.08)', color: '#8b5cf6' }}
+                                            style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
                                         >
                                             <Play size={12} /> Run Now
                                         </button>
@@ -591,8 +618,8 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                         <ArrowLeft className="w-4 h-4" />
                     </button>
                 )}
-                <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'rgba(139,92,246,0.08)', border: '1px solid rgba(139,92,246,0.15)' }}>
-                    <Bot className="w-[18px] h-[18px]" style={{ color: '#8b5cf6' }} />
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)' }}>
+                    <Bot className="w-[18px] h-[18px]" style={{ color: 'var(--text-primary)' }} />
                 </div>
                 <div className="flex-1 min-w-0">
                     <div className="text-[15px] font-bold text-[var(--text-primary)] leading-tight">
@@ -607,7 +634,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, modelTi
                         onClick={startNewTask}
                         disabled={tasks.length >= maxTasks}
                         className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-[13px] font-semibold text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                        style={{ background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)', boxShadow: tasks.length >= maxTasks ? 'none' : '0 2px 8px rgba(139,92,246,0.25)' }}
+                        style={{ background: 'var(--text-primary)', boxShadow: tasks.length >= maxTasks ? 'none' : '0 2px 8px rgba(0,0,0,0.1)' }}
                     >
                         <Plus className="w-4 h-4" />
                         New routine
@@ -669,8 +696,8 @@ function ListView({ loading, activeTasks, inactiveTasks, modelTiers, onEdit, onT
             <div className="flex flex-col items-center justify-center py-20 text-[var(--text-muted)] text-[13px]">
                 <div style={{
                     width: 32, height: 32,
-                    border: '2px solid rgba(139,92,246,0.2)',
-                    borderTopColor: '#8b5cf6',
+                    border: '2px solid var(--border-default)',
+                    borderTopColor: 'var(--text-primary)',
                     borderRadius: '50%',
                     animation: 'aiTaskSpin 0.8s linear infinite',
                     marginBottom: 12,
@@ -683,8 +710,8 @@ function ListView({ loading, activeTasks, inactiveTasks, modelTiers, onEdit, onT
     if (activeTasks.length === 0 && inactiveTasks.length === 0) {
         return (
             <div className="flex flex-col items-center justify-center py-24 px-8 text-center">
-                <div className="w-16 h-16 rounded-2xl mb-4 flex items-center justify-center" style={{ background: 'rgba(139,92,246,0.08)' }}>
-                    <Bot className="w-8 h-8" style={{ color: '#8b5cf6', opacity: 0.5 }} />
+                <div className="w-16 h-16 rounded-2xl mb-4 flex items-center justify-center" style={{ background: 'var(--bg-secondary)' }}>
+                    <Bot className="w-8 h-8" style={{ color: 'var(--text-primary)', opacity: 0.5 }} />
                 </div>
                 <h2 className="text-[17px] font-bold text-[var(--text-primary)] mb-2">No routines yet</h2>
                 <p className="text-[13px] text-[var(--text-muted)] max-w-md mb-6 leading-relaxed">
@@ -695,7 +722,7 @@ function ListView({ loading, activeTasks, inactiveTasks, modelTiers, onEdit, onT
                     onClick={onCreate}
                     disabled={!canCreate}
                     className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-[14px] font-semibold text-white transition-all disabled:opacity-50"
-                    style={{ background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)', boxShadow: '0 4px 14px rgba(139,92,246,0.3)' }}
+                    style={{ background: 'var(--text-primary)', boxShadow: '0 4px 14px rgba(0,0,0,0.15)' }}
                 >
                     <Plus className="w-4 h-4" />
                     Create your first task
@@ -708,7 +735,7 @@ function ListView({ loading, activeTasks, inactiveTasks, modelTiers, onEdit, onT
         <div className="px-6 py-5 max-w-4xl mx-auto w-full">
             {activeTasks.length > 0 && (
                 <>
-                    <div className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: '#8b5cf6' }}>
+                    <div className="text-[10px] font-bold uppercase tracking-widest mb-2" style={{ color: 'var(--text-primary)' }}>
                         Active
                     </div>
                     <div className="space-y-2 mb-6">
@@ -755,11 +782,11 @@ function TaskCard({ task, index, modelTiers, onEdit, onToggle, onRequestDelete, 
             <div className="flex items-start gap-3 p-4">
                 <div className="flex-shrink-0 w-10 h-10 rounded-xl flex items-center justify-center"
                     style={{
-                        background: t.isActive ? 'rgba(139,92,246,0.08)' : 'rgba(0,0,0,0.04)',
-                        border: `1px solid ${t.isActive ? 'rgba(139,92,246,0.15)' : 'rgba(0,0,0,0.06)'}`,
+                        background: t.isActive ? 'var(--bg-secondary)' : 'rgba(0,0,0,0.04)',
+                        border: `1px solid ${t.isActive ? 'var(--border-default)' : 'rgba(0,0,0,0.06)'}`,
                     }}
                 >
-                    <Bot className="w-[18px] h-[18px]" style={{ color: t.isActive ? '#8b5cf6' : '#94a3b8' }} />
+                    <Bot className="w-[18px] h-[18px]" style={{ color: t.isActive ? 'var(--text-primary)' : '#94a3b8' }} />
                 </div>
                 <div className="flex-1 min-w-0">
                     <div className="text-[14px] font-semibold text-[var(--text-primary)] leading-snug mb-1">
@@ -770,7 +797,7 @@ function TaskCard({ task, index, modelTiers, onEdit, onToggle, onRequestDelete, 
                             {status.label}
                         </span>
                         {t.repeatInterval && (
-                            <span className="text-[10px] px-2 py-0.5 rounded-md font-semibold inline-flex items-center gap-1" style={{ background: 'rgba(139,92,246,0.06)', color: '#8b5cf6' }}>
+                            <span className="text-[10px] px-2 py-0.5 rounded-md font-semibold inline-flex items-center gap-1" style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}>
                                 <Repeat className="w-2.5 h-2.5" />
                                 {repeatLabel(t.repeatInterval)}
                             </span>
@@ -799,7 +826,7 @@ function TaskCard({ task, index, modelTiers, onEdit, onToggle, onRequestDelete, 
                             onClick={() => onRunNow(t.id)}
                             disabled={t.lastStatus === 'running'}
                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold disabled:opacity-50"
-                            style={{ background: 'rgba(139,92,246,0.08)', color: '#8b5cf6' }}
+                            style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
                         >
                             <Play className="w-3 h-3" />
                             Run Now
@@ -807,7 +834,7 @@ function TaskCard({ task, index, modelTiers, onEdit, onToggle, onRequestDelete, 
                         <button
                             onClick={() => onEdit(t)}
                             className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold"
-                            style={{ background: 'rgba(99,102,241,0.08)', color: '#6366f1' }}
+                            style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
                         >
                             <Pencil className="w-3 h-3" />
                             Edit
@@ -866,7 +893,7 @@ function EditorView({
                             onChange={e => setTitle(e.target.value)}
                             placeholder="e.g. Weekly AI News Digest"
                             autoFocus
-                            className="w-full px-3.5 py-2.5 rounded-xl border bg-[var(--bg-card)] text-[14px] text-[var(--text-primary)] outline-none focus:border-[#8b5cf6] transition-colors"
+                            className="w-full px-3.5 py-2.5 rounded-xl border bg-[var(--bg-card)] text-[14px] text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)] transition-colors"
                             style={{ borderColor: 'var(--border-subtle, rgba(0,0,0,0.08))' }}
                         />
                     </div>
@@ -880,7 +907,7 @@ function EditorView({
                             onChange={e => setPrompt(e.target.value)}
                             placeholder="What should the AI do? Be specific.&#10;&#10;e.g. Search for the top 5 AI news stories from the past week and summarize each with a source link, formatted as a markdown bulleted list."
                             rows={10}
-                            className="w-full px-3.5 py-2.5 rounded-xl border bg-[var(--bg-card)] text-[14px] text-[var(--text-primary)] outline-none focus:border-[#8b5cf6] transition-colors resize-y leading-relaxed"
+                            className="w-full px-3.5 py-2.5 rounded-xl border bg-[var(--bg-card)] text-[14px] text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)] transition-colors resize-y leading-relaxed"
                             style={{ borderColor: 'var(--border-subtle, rgba(0,0,0,0.08))', fontFamily: 'inherit' }}
                         />
                     </div>
@@ -894,7 +921,7 @@ function EditorView({
                                 type="date"
                                 value={date}
                                 onChange={e => setDate(e.target.value)}
-                                className="w-full px-3.5 py-2.5 rounded-xl border bg-[var(--bg-card)] text-[13px] text-[var(--text-primary)] outline-none focus:border-[#8b5cf6] transition-colors"
+                                className="w-full px-3.5 py-2.5 rounded-xl border bg-[var(--bg-card)] text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)] transition-colors"
                                 style={{ borderColor: 'var(--border-subtle, rgba(0,0,0,0.08))' }}
                             />
                         </div>
@@ -906,7 +933,7 @@ function EditorView({
                                 type="time"
                                 value={time}
                                 onChange={e => setTime(e.target.value)}
-                                className="w-full px-3.5 py-2.5 rounded-xl border bg-[var(--bg-card)] text-[13px] text-[var(--text-primary)] outline-none focus:border-[#8b5cf6] transition-colors"
+                                className="w-full px-3.5 py-2.5 rounded-xl border bg-[var(--bg-card)] text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)] transition-colors"
                                 style={{ borderColor: 'var(--border-subtle, rgba(0,0,0,0.08))' }}
                             />
                         </div>
@@ -920,7 +947,7 @@ function EditorView({
                             <select
                                 value={repeatInterval}
                                 onChange={e => setRepeatInterval(e.target.value)}
-                                className="w-full px-3.5 py-2.5 rounded-xl border bg-[var(--bg-card)] text-[13px] text-[var(--text-primary)] outline-none focus:border-[#8b5cf6] transition-colors cursor-pointer"
+                                className="w-full px-3.5 py-2.5 rounded-xl border bg-[var(--bg-card)] text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)] transition-colors cursor-pointer"
                                 style={{ borderColor: 'var(--border-subtle, rgba(0,0,0,0.08))' }}
                             >
                                 {REPEAT_OPTIONS.map(opt => (
@@ -953,8 +980,8 @@ function EditorView({
                             disabled={!canSave}
                             className="px-5 py-2 rounded-lg text-[13px] font-semibold text-white transition-all disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
                             style={{
-                                background: canSave ? 'linear-gradient(135deg, #8b5cf6, #7c3aed)' : 'rgba(139,92,246,0.3)',
-                                boxShadow: canSave ? '0 2px 8px rgba(139,92,246,0.25)' : 'none',
+                                background: canSave ? 'var(--text-primary)' : 'rgba(0,0,0,0.15)',
+                                boxShadow: canSave ? '0 2px 8px rgba(0,0,0,0.1)' : 'none',
                             }}
                         >
                             <Check className="w-4 h-4" />
@@ -966,12 +993,12 @@ function EditorView({
                 {/* Help / preview column */}
                 <aside className="space-y-4">
                     {nextRunPreview && (
-                        <div className="rounded-xl p-4 border" style={{ background: 'rgba(139,92,246,0.04)', borderColor: 'rgba(139,92,246,0.15)' }}>
-                            <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: '#8b5cf6' }}>
+                        <div className="rounded-xl p-4 border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
+                            <div className="text-[10px] font-bold uppercase tracking-wider mb-1" style={{ color: 'var(--text-primary)' }}>
                                 Next run
                             </div>
                             <div className="text-[14px] font-semibold text-[var(--text-primary)] inline-flex items-center gap-1.5">
-                                <Clock className="w-3.5 h-3.5" style={{ color: '#8b5cf6' }} />
+                                <Clock className="w-3.5 h-3.5" style={{ color: 'var(--text-primary)' }} />
                                 {nextRunPreview}
                             </div>
                             <div className="text-[11px] text-[var(--text-muted)] mt-1">

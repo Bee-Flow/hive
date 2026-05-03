@@ -102,6 +102,7 @@ export default function Studio({
                     <AITasksDesigner
                         initialTaskId={initialTaskId}
                         onClose={onClose}
+                        onNavigate={onNavigate}
                         modelTiers={modelTiers}
                         embedded={true}
                         user={user}

@@ -502,6 +502,56 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
             };
             queueSave();
             setChat(prev => [...prev, { role: 'plan', plan: updated }]);
+
+            // Routine action: when the LLM detected a clear scheduling intent
+            // and the user has the agent_routines beta, create the routine
+            // for this agent and surface a confirmation in the chat.
+            if (updated.routine && routinesAllowed && agent?.id) {
+                try {
+                    const r = updated.routine;
+                    // Compute a sensible nextRunAt the server expects.
+                    const now = new Date();
+                    let nextRunAt = null;
+                    if (r.repeatInterval === 'hourly') {
+                        const next = new Date(now);
+                        next.setHours(next.getHours() + 1);
+                        next.setMinutes(0); next.setSeconds(0); next.setMilliseconds(0);
+                        nextRunAt = next.toISOString();
+                    } else {
+                        const [hh, mm] = (r.timeOfDay || '08:00').split(':').map(n => parseInt(n, 10) || 0);
+                        const next = new Date(now);
+                        next.setHours(hh, mm, 0, 0);
+                        if (next <= now) next.setDate(next.getDate() + 1);
+                        if (Array.isArray(r.daysOfWeek) && r.daysOfWeek.length > 0) {
+                            const tokens = ['sun','mon','tue','wed','thu','fri','sat'];
+                            const allowed = new Set(r.daysOfWeek);
+                            for (let i = 0; i < 7; i += 1) {
+                                if (allowed.has(tokens[next.getDay()])) break;
+                                next.setDate(next.getDate() + 1);
+                            }
+                        }
+                        nextRunAt = next.toISOString();
+                    }
+                    const createRes = await authFetch(`${API_BASE}/api/ai-tasks`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            agentId: agent.id,
+                            title: r.title,
+                            prompt: r.prompt,
+                            repeatInterval: r.repeatInterval,
+                            daysOfWeek: r.daysOfWeek,
+                            timeOfDay: r.timeOfDay,
+                            timezone: r.timezone || (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'),
+                            nextRunAt,
+                        }),
+                    });
+                    if (createRes.ok) {
+                        await refreshAgentRoutines();
+                        setChat(prev => [...prev, { role: 'system', content: `⏰ Created routine "${r.title}" — ${r.repeatInterval}${r.timeOfDay ? ` at ${r.timeOfDay}` : ''}.` }]);
+                    }
+                } catch (_) { /* non-fatal — chat already shows the plan update */ }
+            }
         } catch (err) {
             setChat(prev => [...prev, { role: 'error', content: err.message }]);
         } finally {
@@ -598,6 +648,13 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                         }
                         if (m.role === 'error') {
                             return <div key={i} className="text-xs text-red-500">{m.content}</div>;
+                        }
+                        if (m.role === 'system') {
+                            return (
+                                <div key={i} className="text-xs px-3 py-2 rounded-lg bg-[var(--bg-secondary)] text-[var(--text-secondary)] inline-block">
+                                    {m.content}
+                                </div>
+                            );
                         }
                         return <div key={i} className="text-sm text-[var(--text-secondary)]">{m.content}</div>;
                     })}
@@ -1620,10 +1677,9 @@ function RoutinesPicker({ t, agent, routines, onClose, onCreate, onEdit, onToggl
 
 function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
     const isEdit = !!initialRoutine;
-    const [mode, setMode] = useState(() => {
-        if (initialRoutine?.repeatInterval === 'hourly') return 'hourly';
-        return 'daily';
-    });
+    // `mode` maps directly to the server's repeatInterval value, plus 'hourly'
+    // which the UI special-cases (hours-N input instead of day picker).
+    const [mode, setMode] = useState(() => initialRoutine?.repeatInterval || 'daily');
     const [title, setTitle] = useState(initialRoutine?.title || '');
     const [prompt, setPrompt] = useState(initialRoutine?.prompt || '');
     const [hours, setHours] = useState(1);
@@ -1631,10 +1687,21 @@ function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
         if (Array.isArray(initialRoutine?.daysOfWeek) && initialRoutine.daysOfWeek.length > 0) return initialRoutine.daysOfWeek;
         return ['mon', 'tue', 'wed', 'thu', 'fri'];
     });
+    // Day of month for Monthly mode (1-28 to dodge Feb edge cases).
+    const [dayOfMonth, setDayOfMonth] = useState(() => {
+        if (initialRoutine?.repeatInterval === 'monthly' && initialRoutine?.nextRunAt) {
+            return new Date(initialRoutine.nextRunAt).getDate();
+        }
+        return 1;
+    });
     const [time, setTime] = useState(initialRoutine?.timeOfDay || '08:00');
     const [timezone, setTimezone] = useState(initialRoutine?.timezone || (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'));
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
+
+    // 'daily' / 'weekdays' / 'weekly' / 'biweekly' all use the day-of-week picker.
+    const usesDayPicker = mode === 'daily' || mode === 'weekdays' || mode === 'weekly' || mode === 'biweekly';
+    const usesDayOfMonth = mode === 'monthly';
 
     const toggleDay = (d) => {
         setDaysOfWeek(prev => prev.includes(d) ? prev.filter(x => x !== d) : [...prev, d]);
@@ -1649,13 +1716,19 @@ function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
             next.setMinutes(0); next.setSeconds(0); next.setMilliseconds(0);
             return next.toISOString();
         }
-        // Daily mode — pick the next occurrence at `time` on a permitted day.
         const [hh, mm] = (time || '08:00').split(':').map(n => parseInt(n, 10));
+        if (usesDayOfMonth) {
+            const next = new Date(now.getFullYear(), now.getMonth(), Math.max(1, Math.min(28, Number(dayOfMonth) || 1)), hh || 0, mm || 0, 0, 0);
+            if (next <= now) next.setMonth(next.getMonth() + 1);
+            return next.toISOString();
+        }
+        // Day-of-week modes — pick the next occurrence at `time` on a permitted day.
+        const allowedTokens = mode === 'weekdays' ? ['mon','tue','wed','thu','fri'] : daysOfWeek;
         const next = new Date(now);
         next.setHours(hh || 0, mm || 0, 0, 0);
         if (next <= now) next.setDate(next.getDate() + 1);
-        if (Array.isArray(daysOfWeek) && daysOfWeek.length > 0) {
-            const allowed = new Set(daysOfWeek);
+        if (Array.isArray(allowedTokens) && allowedTokens.length > 0) {
+            const allowed = new Set(allowedTokens);
             for (let i = 0; i < 7; i += 1) {
                 if (allowed.has(ROUTINE_DOW_TOKENS[next.getDay()])) break;
                 next.setDate(next.getDate() + 1);
@@ -1673,14 +1746,12 @@ function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
             const body = {
                 title: title.trim(),
                 prompt: prompt.trim(),
-                // Daily mode: pick the cheapest cadence the day picker implies.
-                // All 7 days = daily, anything less = weekly (the runner uses
-                // daysOfWeek to skip non-permitted days).
-                repeatInterval: mode === 'hourly'
-                    ? 'hourly'
-                    : (Array.isArray(daysOfWeek) && daysOfWeek.length === 7 ? 'daily' : 'weekly'),
-                daysOfWeek: mode === 'daily' ? daysOfWeek : null,
-                timeOfDay: mode === 'daily' ? time : null,
+                repeatInterval: mode,
+                // Only send the day picker payload for modes that consume it.
+                // Weekdays mode is encoded by `repeatInterval='weekdays'` server-side
+                // so we leave daysOfWeek null to avoid ambiguity.
+                daysOfWeek: (mode === 'daily' || mode === 'weekly' || mode === 'biweekly') ? daysOfWeek : null,
+                timeOfDay: mode === 'hourly' ? null : time,
                 timezone,
                 nextRunAt: computeNextRun(),
             };
@@ -1715,23 +1786,23 @@ function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                     <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={18} /></button>
                 </div>
                 <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
-                    {/* Hourly / Daily tabs */}
-                    <div className="flex p-1 rounded-full bg-[var(--bg-secondary)]">
-                        {[
-                            { key: 'hourly', label: t('routines.tab_hourly') || 'Hourly' },
-                            { key: 'daily', label: t('routines.tab_daily') || 'Daily' },
-                        ].map(tab => (
-                            <button
-                                key={tab.key}
-                                type="button"
-                                onClick={() => setMode(tab.key)}
-                                className={`flex-1 py-1.5 rounded-full text-sm transition ${mode === tab.key
-                                    ? 'bg-[var(--bg-primary)] text-[var(--text-primary)] font-medium shadow-sm'
-                                    : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
-                            >
-                                {tab.label}
-                            </button>
-                        ))}
+                    {/* Repeat cadence picker — drives which body fields show. */}
+                    <div>
+                        <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                            {t('routines.repeat') || 'Repeat'}
+                        </div>
+                        <select
+                            value={mode}
+                            onChange={(e) => setMode(e.target.value)}
+                            className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)] cursor-pointer"
+                        >
+                            <option value="hourly">Hourly</option>
+                            <option value="daily">Daily</option>
+                            <option value="weekdays">Weekdays (Mon–Fri)</option>
+                            <option value="weekly">Weekly</option>
+                            <option value="biweekly">Every 2 weeks</option>
+                            <option value="monthly">Monthly</option>
+                        </select>
                     </div>
 
                     {/* Hourly mode */}
@@ -1743,7 +1814,7 @@ function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                             <select
                                 value={hours}
                                 onChange={(e) => setHours(parseInt(e.target.value, 10))}
-                                className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)] cursor-pointer"
+                                className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)] cursor-pointer"
                             >
                                 {[1, 2, 3, 4, 6, 8, 12, 24].map(n => (
                                     <option key={n} value={n}>{n === 1 ? (t('routines.hour_one') || '1 hour') : `${n} hours`}</option>
@@ -1752,57 +1823,77 @@ function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                         </div>
                     )}
 
-                    {/* Daily mode — day picker + time + timezone */}
-                    {mode === 'daily' && (
-                        <>
+                    {/* Day-of-week picker — only for cadences that select specific weekdays.
+                        Weekdays mode is implicit (Mon–Fri) and skips the picker. */}
+                    {usesDayPicker && mode !== 'weekdays' && (
+                        <div>
+                            <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                                {mode === 'daily' ? (t('routines.run_every') || 'Run every') : 'Day of week'}
+                            </div>
+                            <div className="flex gap-1">
+                                {ROUTINE_DOW_TOKENS.map(d => {
+                                    const active = daysOfWeek.includes(d);
+                                    return (
+                                        <button
+                                            key={d}
+                                            type="button"
+                                            onClick={() => toggleDay(d)}
+                                            className={`flex-1 py-1.5 rounded-full text-xs font-medium transition border ${active
+                                                ? 'bg-[var(--text-primary)] text-[var(--bg-primary)] border-transparent'
+                                                : 'bg-[var(--bg-primary)] text-[var(--text-secondary)] border-[var(--border-default)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]'}`}
+                                        >
+                                            {ROUTINE_DOW_LABELS[d]}
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Day-of-month — only for Monthly mode. Capped at 28 so every month fires. */}
+                    {usesDayOfMonth && (
+                        <div>
+                            <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                                Day of month
+                            </div>
+                            <select
+                                value={dayOfMonth}
+                                onChange={(e) => setDayOfMonth(parseInt(e.target.value, 10))}
+                                className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)] cursor-pointer"
+                            >
+                                {Array.from({ length: 28 }, (_, i) => i + 1).map(n => (
+                                    <option key={n} value={n}>Day {n}</option>
+                                ))}
+                            </select>
+                        </div>
+                    )}
+
+                    {/* Time + timezone — shown for every non-hourly cadence. */}
+                    {mode !== 'hourly' && (
+                        <div className="grid grid-cols-2 gap-3">
                             <div>
                                 <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                    {t('routines.run_every') || 'Run every'}
+                                    {t('routines.time') || 'Time'}
                                 </div>
-                                <div className="flex gap-1">
-                                    {ROUTINE_DOW_TOKENS.map(d => {
-                                        const active = daysOfWeek.includes(d);
-                                        return (
-                                            <button
-                                                key={d}
-                                                type="button"
-                                                onClick={() => toggleDay(d)}
-                                                className={`flex-1 py-1.5 rounded-full text-xs font-medium transition border ${active
-                                                    ? 'text-white border-transparent'
-                                                    : 'bg-[var(--bg-primary)] text-[var(--text-secondary)] border-[var(--border-default)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]'}`}
-                                                style={active ? { background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)' } : undefined}
-                                            >
-                                                {ROUTINE_DOW_LABELS[d]}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
+                                <input
+                                    type="time"
+                                    value={time}
+                                    onChange={(e) => setTime(e.target.value)}
+                                    className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)]"
+                                />
                             </div>
-                            <div className="grid grid-cols-2 gap-3">
-                                <div>
-                                    <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                        {t('routines.time') || 'Time'}
-                                    </div>
-                                    <input
-                                        type="time"
-                                        value={time}
-                                        onChange={(e) => setTime(e.target.value)}
-                                        className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
-                                    />
+                            <div>
+                                <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                                    {t('routines.timezone') || 'Timezone'}
                                 </div>
-                                <div>
-                                    <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                        {t('routines.timezone') || 'Timezone'}
-                                    </div>
-                                    <input
-                                        type="text"
-                                        value={timezone}
-                                        onChange={(e) => setTimezone(e.target.value)}
-                                        className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)]"
-                                    />
-                                </div>
+                                <input
+                                    type="text"
+                                    value={timezone}
+                                    onChange={(e) => setTimezone(e.target.value)}
+                                    className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)]"
+                                />
                             </div>
-                        </>
+                        </div>
                     )}
 
                     <div>
@@ -1843,8 +1934,7 @@ function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                         type="button"
                         onClick={submit}
                         disabled={busy}
-                        className="px-5 py-2 rounded-full text-white text-sm font-medium hover:opacity-90 transition disabled:opacity-50"
-                        style={{ background: 'linear-gradient(135deg, #8b5cf6, #7c3aed)' }}
+                        className="px-5 py-2 rounded-full bg-[var(--text-primary)] text-[var(--bg-primary)] text-sm font-medium hover:opacity-90 transition disabled:opacity-50"
                     >
                         {busy ? '…' : (isEdit ? 'Save changes' : (t('routines.add') || 'Add routine'))}
                     </button>
