@@ -124,6 +124,21 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 setAvatar(fresh.avatar || fresh.config?.avatar || '🤖');
                 setModel(fresh.model || '');
                 if (fresh.model && fresh.model.startsWith('tier:')) setSelectedTier(fresh.model.slice(5));
+
+                // Mirror the restored values into stateRef so the next save
+                // sends the restored snapshot, not the pre-restore one. Also
+                // clear the dirty flag so a queued autosave doesn't re-PUT
+                // stale data on top of the restore.
+                stateRef.current.name = fresh.name || '';
+                stateRef.current.description = fresh.description || '';
+                stateRef.current.systemPrompt = fresh.system_prompt || '';
+                stateRef.current.model = fresh.model || '';
+                stateRef.current.categoryId = fresh.category_id || null;
+                stateRef.current.embedEnabled = fresh.embed_enabled === 1 || fresh.embed_enabled === true;
+                stateRef.current.config = { ...(fresh.config || {}) };
+                dirtyRef.current = false;
+                if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
+                setSavingState('saved');
             }
         } catch (_) { /* ignore */ }
     };
@@ -208,55 +223,61 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     useEffect(() => { agentIdRef.current = agent?.id; }, [agent?.id]);
 
     const saveTimer = useRef(null);
-    const inflightRef = useRef(false);
     const dirtyRef = useRef(false);
+    // Promise queue for serialized saves. Every flush() call chains onto the
+    // tail so two callers can't double-POST. The previous polling-loop
+    // implementation could allow two callers to both pass `while (inflightRef)`
+    // and race. The chain pattern is self-serializing without a busy wait.
+    const saveChainRef = useRef(Promise.resolve());
+    const inflightRef = useRef(false); // exposed to handleDone / beforeunload only
 
-    const flush = useCallback(async () => {
+    const flush = useCallback(() => {
         const id = agentIdRef.current;
-        if (!id) return;
+        if (!id) return saveChainRef.current;
         if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
-        // Serialize: if a save is in progress, wait for it before issuing another.
-        // This prevents lost updates when the user changes things rapidly.
-        while (inflightRef.current) {
-            await new Promise(r => setTimeout(r, 50));
-        }
-        if (!dirtyRef.current) return;
-        dirtyRef.current = false;
-        inflightRef.current = true;
-        const snapshot = {
-            name: stateRef.current.name,
-            description: stateRef.current.description,
-            systemPrompt: stateRef.current.systemPrompt,
-            model: stateRef.current.model,
-            categoryId: stateRef.current.categoryId,
-            embedEnabled: stateRef.current.embedEnabled,
-            config: { ...stateRef.current.config },
-        };
-        try {
-            const res = await authFetch(`${API_BASE}/agents/${id}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(snapshot),
-            });
-            if (!res.ok) throw new Error(await res.text());
-            const updated = await res.json();
-            // Refresh the `agent` shell only (id, timestamps, derived fields).
-            // Do NOT overwrite `stateRef.current` from the server response — by
-            // the time this resolves the user may have typed more, and that
-            // newer text lives only in stateRef. Overwriting here silently
-            // loses keystrokes typed during the in-flight save.
-            setAgent(updated);
-            setSavingState('saved');
-        } catch (err) {
-            console.error('Auto-save failed:', err);
-            setSavingState('error');
-            // Mark dirty again so a retry happens on next change.
-            dirtyRef.current = true;
-        } finally {
-            inflightRef.current = false;
-            // If something was changed while we were saving, schedule another flush.
-            if (dirtyRef.current) flush();
-        }
+
+        // Snapshot the dirty state at *enqueue* time. If multiple flushes are
+        // queued in rapid succession, only the first does work and the rest
+        // see dirtyRef cleared and no-op. That's the desired coalescing.
+        const next = saveChainRef.current.then(async () => {
+            if (!dirtyRef.current) return;
+            dirtyRef.current = false;
+            inflightRef.current = true;
+            const snapshot = {
+                name: stateRef.current.name,
+                description: stateRef.current.description,
+                systemPrompt: stateRef.current.systemPrompt,
+                model: stateRef.current.model,
+                categoryId: stateRef.current.categoryId,
+                embedEnabled: stateRef.current.embedEnabled,
+                config: { ...stateRef.current.config },
+            };
+            try {
+                const res = await authFetch(`${API_BASE}/agents/${id}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(snapshot),
+                });
+                if (!res.ok) throw new Error(await res.text());
+                const updated = await res.json();
+                // Refresh the `agent` shell only (id, timestamps, derived fields).
+                // Do NOT overwrite `stateRef.current` from the server response — by
+                // the time this resolves the user may have typed more, and that
+                // newer text lives only in stateRef. Overwriting here silently
+                // loses keystrokes typed during the in-flight save.
+                setAgent(updated);
+                setSavingState('saved');
+            } catch (err) {
+                console.error('Auto-save failed:', err);
+                setSavingState('error');
+                // Mark dirty again so a retry happens on next change.
+                dirtyRef.current = true;
+            } finally {
+                inflightRef.current = false;
+            }
+        });
+        saveChainRef.current = next.catch(() => { /* swallow so the chain survives */ });
+        return saveChainRef.current;
     }, []);
 
     const queueSave = useCallback((immediate = false) => {
@@ -844,6 +865,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 count={agentRoutines.filter(r => r.isActive).length}
                                 onClick={() => setRoutinesPickerOpen(v => !v)}
                                 active={routinesPickerOpen}
+                                popoverTrigger="routines"
                             />
                         )}
                         {agent?.id && (
@@ -852,6 +874,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 label={t('agent_wizard.section.versions') || 'Version History'}
                                 onClick={() => setVersionPickerOpen(v => !v)}
                                 active={versionPickerOpen}
+                                popoverTrigger="versions"
                             />
                         )}
                         <ActionPill
@@ -859,6 +882,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                             label={t('agent_wizard.builder.behavior') || 'Behavior'}
                             onClick={() => setBehaviorPickerOpen(v => !v)}
                             active={behaviorPickerOpen || memoryEnabled}
+                            popoverTrigger="behavior"
                         />
 
                         {behaviorPickerOpen && (
@@ -1488,10 +1512,16 @@ function FilesUploadModal({ t, agent, knowledgeBaseIds, onKnowledgeBaseIdsChange
     );
 }
 
-function ActionPill({ icon, label, count, onClick, active }) {
+// `popoverTrigger` (optional): when this pill is the toggle for a popover, set
+// to a unique name that matches the popover's `triggerName` prop. The popover's
+// outside-click handler then ignores clicks on this trigger so toggling
+// works correctly (without it, the document mousedown listener and the
+// trigger's onClick race and the popover stays open on close-click).
+function ActionPill({ icon, label, count, onClick, active, popoverTrigger }) {
     return (
         <button
             onClick={onClick}
+            data-popover-trigger={popoverTrigger || undefined}
             className={`group flex items-center gap-2 pl-3.5 pr-3 py-1.5 rounded-full text-sm transition ${active ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'bg-[var(--bg-secondary)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'}`}
         >
             <span className={active ? '' : 'text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]'}>{icon}</span>
@@ -1610,7 +1640,14 @@ function formatRoutineNextRun(iso) {
 function RoutinesPicker({ t, agent, routines, onClose, onCreate, onEdit, onToggle, onRunNow, onDelete }) {
     const popoverRef = useRef(null);
     useEffect(() => {
-        const onDoc = (e) => { if (!popoverRef.current?.contains(e.target)) onClose(); };
+        const onDoc = (e) => {
+            if (popoverRef.current?.contains(e.target)) return;
+            // Ignore clicks on this picker's own trigger pill — let the trigger's
+            // onClick handle the toggle. Without this, the close handler races
+            // with the trigger and the picker stays open on close-click.
+            if (e.target.closest?.('[data-popover-trigger="routines"]')) return;
+            onClose();
+        };
         document.addEventListener('mousedown', onDoc);
         return () => document.removeEventListener('mousedown', onDoc);
     }, [onClose]);
@@ -1947,7 +1984,11 @@ function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
 function VersionPicker({ t, agentId, onClose, onRestore }) {
     const popoverRef = useRef(null);
     useEffect(() => {
-        const onDoc = (e) => { if (!popoverRef.current?.contains(e.target)) onClose(); };
+        const onDoc = (e) => {
+            if (popoverRef.current?.contains(e.target)) return;
+            if (e.target.closest?.('[data-popover-trigger="versions"]')) return;
+            onClose();
+        };
         document.addEventListener('mousedown', onDoc);
         return () => document.removeEventListener('mousedown', onDoc);
     }, [onClose]);
@@ -1980,7 +2021,11 @@ function BehaviorPicker({
 }) {
     const popoverRef = useRef(null);
     useEffect(() => {
-        const onDoc = (e) => { if (!popoverRef.current?.contains(e.target)) onClose(); };
+        const onDoc = (e) => {
+            if (popoverRef.current?.contains(e.target)) return;
+            if (e.target.closest?.('[data-popover-trigger="behavior"]')) return;
+            onClose();
+        };
         document.addEventListener('mousedown', onDoc);
         return () => document.removeEventListener('mousedown', onDoc);
     }, [onClose]);
