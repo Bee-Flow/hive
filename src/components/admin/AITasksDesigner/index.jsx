@@ -926,7 +926,14 @@ function EditorView({
                             </label>
                             <select
                                 value={agentId || ''}
-                                onChange={e => setAgentId(e.target.value)}
+                                onChange={e => {
+                                    const next = e.target.value;
+                                    setAgentId(next);
+                                    // When linking to an agent, reset any custom
+                                    // routine-tier so we don't quietly persist an
+                                    // override the UI no longer surfaces.
+                                    if (next && setTier) setTier('auto');
+                                }}
                                 className="w-full px-3.5 py-2.5 rounded-xl border bg-[var(--bg-card)] text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)] transition-colors cursor-pointer"
                                 style={{ borderColor: 'var(--border-subtle, rgba(0,0,0,0.08))' }}
                             >
@@ -992,12 +999,22 @@ function EditorView({
                             <label className="block text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1.5">
                                 Model tier
                             </label>
-                            <ModelTierSelector
-                                tiers={modelTiers || {}}
-                                value={tier}
-                                onChange={setTier}
-                                dropDirection="down"
-                            />
+                            {agentId ? (
+                                <div
+                                    className="px-3.5 py-2.5 rounded-xl text-[13px] text-[var(--text-tertiary)] italic border bg-[var(--bg-secondary)]"
+                                    style={{ borderColor: 'var(--border-subtle, rgba(0,0,0,0.08))' }}
+                                    title="The linked agent provides the model. Change it in the agent editor."
+                                >
+                                    Inherited from agent
+                                </div>
+                            ) : (
+                                <ModelTierSelector
+                                    tiers={modelTiers || {}}
+                                    value={tier}
+                                    onChange={setTier}
+                                    dropDirection="down"
+                                />
+                            )}
                         </div>
                     </div>
 

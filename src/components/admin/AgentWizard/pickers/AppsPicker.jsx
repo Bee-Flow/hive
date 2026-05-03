@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { Search, X } from 'lucide-react';
 
 export default function AppsPicker({ items, enabled, onClose, onToggle, t }) {
-    const isSelected = (id) => enabled === null ? true : enabled.includes(id);
+    // R4: apps off by default. `enabled` is always an array now (legacy null backfilled).
+    const isSelected = (id) => Array.isArray(enabled) ? enabled.includes(id) : false;
     const [search, setSearch] = useState('');
     const [focusedId, setFocusedId] = useState(items[0]?.id || null);
     const filtered = items.filter(it =>

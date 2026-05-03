@@ -678,9 +678,11 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     })();
 
     const skillNamesById = new Map((allSkills || []).map(s => [s.id, s]));
-    const enabledIntegrationCount = enabledIntegrations === null
-        ? availableIntegrations.length
-        : enabledIntegrations.filter(id => availableIntegrations.some(a => a.id === id)).length;
+    // Apps are off by default (R4). Legacy `null` rows have been backfilled
+    // server-side, so `enabledIntegrations` is always an array here.
+    const enabledIntegrationCount = Array.isArray(enabledIntegrations)
+        ? enabledIntegrations.filter(id => availableIntegrations.some(a => a.id === id)).length
+        : 0;
 
     return (
         <div className="flex h-full bg-[var(--bg-primary)]">

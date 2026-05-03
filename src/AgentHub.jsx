@@ -872,11 +872,48 @@ const AgentHub = ({
 
     // Listen for "Open in Direct Chat" events from NotificationCenter (AI Task results)
     useEffect(() => {
-        const handler = (e) => {
-            const { title, content } = e.detail || {};
+        const handler = async (e) => {
+            const { title, content, agentId, conversationId } = e.detail || {};
             if (!content) return;
 
-            // Switch to direct chat mode
+            // R2: routine result came from an agent — open the agent's chat
+            // (continuing the same conversation the routine ran in when
+            // possible) instead of generic direct chat.
+            if (agentId) {
+                try {
+                    const agentRes = await authFetch(`${API_BASE}/agents/${agentId}`);
+                    if (agentRes.ok) {
+                        const agent = await agentRes.json();
+                        setDirectChatMode(false);
+                        setSelectedAgent(agent);
+                        scopedStorage.setItem('lastUsedMode', 'agent');
+                        if (isMobile) setSidebarOpen(false);
+
+                        // Try to attach the routine's persisted conversation so
+                        // the user picks up the same thread the routine wrote
+                        // to. Falls back to a fresh thread seeded with the
+                        // result if the conversation can't be loaded.
+                        if (conversationId) {
+                            try { await selectConversation(agentId, conversationId); return; }
+                            catch (_) { /* fall through */ }
+                        }
+                        const now = new Date().toISOString();
+                        setCurrentConversation(null);
+                        setMessages([
+                            { id: generateMessageId(), role: 'user',
+                              content: `Show me the result from my routine "${title}"`, timestamp: now },
+                            { id: generateMessageId(), role: 'assistant',
+                              content, timestamp: now,
+                              respondingAgentAvatar: agent?.avatar || agent?.config?.avatar || '🤖' },
+                        ]);
+                        return;
+                    }
+                } catch (err) {
+                    console.warn('Failed to open agent for routine result, falling back to direct chat:', err);
+                }
+            }
+
+            // Default path: direct chat (no agent on the routine, or lookup failed).
             setDirectChatMode(true);
             setSelectedAgent(null);
             setCurrentConversation(null);
@@ -890,33 +927,21 @@ const AgentHub = ({
             loadDirectConversations();
             loadModelTiers();
             updateDirectChatUrl(null);
-
-            // Auto-close sidebar on mobile
             if (isMobile) setSidebarOpen(false);
 
-            // Seed the chat with the AI task result as a conversation history
-            // so the user can immediately ask follow-up questions
             const now = new Date().toISOString();
             setTimeout(() => {
                 setMessages([
-                    {
-                        id: generateMessageId(),
-                        role: 'user',
-                        content: `Show me the result from my routine "${title}"`,
-                        timestamp: now,
-                    },
-                    {
-                        id: generateMessageId(),
-                        role: 'assistant',
-                        content: content,
-                        timestamp: now,
-                        respondingAgentAvatar: '🤖',
-                    },
+                    { id: generateMessageId(), role: 'user',
+                      content: `Show me the result from my routine "${title}"`, timestamp: now },
+                    { id: generateMessageId(), role: 'assistant',
+                      content, timestamp: now, respondingAgentAvatar: '🤖' },
                 ]);
             }, 100);
         };
         window.addEventListener('openDirectChatWithContext', handler);
         return () => window.removeEventListener('openDirectChatWithContext', handler);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isMobile]);
 
     const loadModelTiers = async () => {

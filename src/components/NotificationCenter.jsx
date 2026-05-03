@@ -61,7 +61,7 @@ export default function NotificationCenter() {
     const panelRef = useRef(null);
 
     const openResultModal = useCallback((data, notifId) => {
-        setResultModal(data);
+        setResultModal({ ...data, notifId });
         if (notifId) {
             const n = notifications.find(x => x.id === notifId);
             if (n && !n.read) markRead(notifId);
@@ -69,12 +69,46 @@ export default function NotificationCenter() {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [notifications]);
 
-    const openInDirectChat = useCallback((title, content) => {
+    const openInDirectChat = useCallback(async (title, content, notifId) => {
         setResultModal(null);
+        // If the source notification was an agent routine, look up the
+        // routine's agent + persisted conversation so the chat opens on the
+        // agent (not generic direct chat) and continues the same thread the
+        // routine ran in.
+        let agentId = null;
+        let conversationId = null;
+        try {
+            const n = notifId ? notifications.find(x => x.id === notifId) : null;
+            const taskId = n?.task_id || n?.taskId || null;
+            if (taskId) {
+                const res = await fetch(`/api/ai-tasks/${taskId}`, { credentials: 'include' });
+                if (res.ok) {
+                    const task = await res.json();
+                    agentId = task?.agentId || task?.agent_id || null;
+                    conversationId = task?.conversationId || task?.conversation_id || null;
+                }
+            }
+        } catch (_) { /* fall through to direct chat */ }
         window.dispatchEvent(new CustomEvent('openDirectChatWithContext', {
-            detail: { title, content }
+            detail: { title, content, agentId, conversationId },
         }));
-    }, []);
+    }, [notifications]);
+
+    // Routine credentials expired/revoked notifications carry a deep-link
+    // token at the start of the body: `routine_reauth:<provider>\n\n…`. Parse
+    // it once so we can hide the token from the rendered message and surface
+    // a one-click Reconnect button instead.
+    const parseReauthToken = (msg) => {
+        if (!msg || typeof msg !== 'string') return { provider: null, body: msg || '' };
+        const m = msg.match(/^routine_reauth:([a-z0-9_-]+)\n\n?([\s\S]*)$/i);
+        if (!m) return { provider: null, body: msg };
+        return { provider: m[1].toLowerCase(), body: m[2] };
+    };
+    const startReconnect = (provider) => {
+        // Pop a fresh tab so the user keeps the notifications panel open.
+        const url = `/auth/login/${encodeURIComponent(provider)}?returnTo=${encodeURIComponent(window.location.pathname || '/')}`;
+        window.open(url, '_blank', 'noopener');
+    };
 
     const fetchCount = useCallback(async () => {
         try {
@@ -446,42 +480,64 @@ export default function NotificationCenter() {
                                                 borderRadius: 10,
                                                 border: '1px solid var(--border-subtle, rgba(0,0,0,0.05))',
                                             }}>
-                                                {n.category === 'ai_task' && n.message && (
-                                                    <div style={{ marginBottom: 10 }}>
-                                                        <button
-                                                            onClick={(e) => { e.stopPropagation(); openResultModal({ title: n.title, content: n.message }, n.id); }}
-                                                            style={{
-                                                                display: 'flex', alignItems: 'center', gap: 5,
-                                                                padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
-                                                                border: 'none', cursor: 'pointer',
-                                                                background: 'var(--bg-secondary, rgba(0,0,0,0.04))', color: 'var(--text-primary, #0f172a)',
-                                                            }}
-                                                        >
-                                                            View Full Result
-                                                        </button>
-                                                    </div>
-                                                )}
-                                                {n.message && (
-                                                    n.category === 'ai_task' ? (
-                                                        <div style={{
-                                                            fontSize: 13, color: 'var(--text-primary, #0f172a)',
-                                                            lineHeight: 1.6,
-                                                            wordBreak: 'break-word',
-                                                            maxHeight: 600, overflowY: 'auto',
-                                                        }}>
-                                                            <MarkdownRenderer content={n.message} />
-                                                        </div>
-                                                    ) : (
-                                                        <p style={{
-                                                            fontSize: 13, color: 'var(--text-primary, #0f172a)',
-                                                            margin: 0, lineHeight: 1.6,
-                                                            wordBreak: 'break-word',
-                                                            whiteSpace: 'pre-wrap',
-                                                        }}>
-                                                            {n.message}
-                                                        </p>
-                                                    )
-                                                )}
+                                                {(() => {
+                                                    const { provider: reauthProvider, body: cleanedBody } = parseReauthToken(n.message);
+                                                    return (
+                                                        <>
+                                                            {reauthProvider && (
+                                                                <div style={{ marginBottom: 10 }}>
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); startReconnect(reauthProvider); }}
+                                                                        style={{
+                                                                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                                                                            padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                                                                            border: 'none', cursor: 'pointer',
+                                                                            background: 'var(--text-primary, #0f172a)', color: 'var(--bg-primary, #fff)',
+                                                                        }}
+                                                                    >
+                                                                        Reconnect {reauthProvider.charAt(0).toUpperCase() + reauthProvider.slice(1)}
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                            {n.category === 'ai_task' && cleanedBody && !reauthProvider && (
+                                                                <div style={{ marginBottom: 10 }}>
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); openResultModal({ title: n.title, content: cleanedBody }, n.id); }}
+                                                                        style={{
+                                                                            display: 'flex', alignItems: 'center', gap: 5,
+                                                                            padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                                                                            border: 'none', cursor: 'pointer',
+                                                                            background: 'var(--bg-secondary, rgba(0,0,0,0.04))', color: 'var(--text-primary, #0f172a)',
+                                                                        }}
+                                                                    >
+                                                                        View Full Result
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                            {cleanedBody && (
+                                                                n.category === 'ai_task' && !reauthProvider ? (
+                                                                    <div style={{
+                                                                        fontSize: 13, color: 'var(--text-primary, #0f172a)',
+                                                                        lineHeight: 1.6,
+                                                                        wordBreak: 'break-word',
+                                                                        maxHeight: 600, overflowY: 'auto',
+                                                                    }}>
+                                                                        <MarkdownRenderer content={cleanedBody} />
+                                                                    </div>
+                                                                ) : (
+                                                                    <p style={{
+                                                                        fontSize: 13, color: 'var(--text-primary, #0f172a)',
+                                                                        margin: 0, lineHeight: 1.6,
+                                                                        wordBreak: 'break-word',
+                                                                        whiteSpace: 'pre-wrap',
+                                                                    }}>
+                                                                        {cleanedBody}
+                                                                    </p>
+                                                                )
+                                                            )}
+                                                        </>
+                                                    );
+                                                })()}
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: n.message ? 10 : 0, flexWrap: 'wrap' }}>
                                                     <span style={{
                                                         fontSize: 10, padding: '2px 8px', borderRadius: 6,
@@ -561,7 +617,7 @@ export default function NotificationCenter() {
                                 </div>
                             </div>
                             <button
-                                onClick={() => openInDirectChat(resultModal.title, resultModal.content)}
+                                onClick={() => openInDirectChat(resultModal.title, resultModal.content, resultModal.notifId)}
                                 style={{
                                     display: 'flex', alignItems: 'center', gap: 6,
                                     padding: '8px 14px', borderRadius: 10,
