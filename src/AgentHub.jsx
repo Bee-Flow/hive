@@ -473,7 +473,9 @@ const AgentHub = ({
     const refreshKBs = useCallback(async () => {
         try {
             const [kbRes, catRes] = await Promise.all([
-                authFetch(`${API_BASE}/api/kb?t=${Date.now()}`, { cache: 'no-store' }),
+                // Studio is for KBs managed by the user. Webpage-owned KBs (auto-created
+                // or explicitly tagged) are managed inside the webpage UI, not here.
+                authFetch(`${API_BASE}/api/kb?excludeContext=webpage&t=${Date.now()}`, { cache: 'no-store' }),
                 authFetch(`${API_BASE}/api/kb/categories`),
             ]);
             if (kbRes.ok) {

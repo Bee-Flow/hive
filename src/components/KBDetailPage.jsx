@@ -35,7 +35,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
     const [name, setName] = useState('');
     const [description, setDescription] = useState('');
     const [icon, setIcon] = useState('📚');
-    const [usageContexts, setUsageContexts] = useState(['agent', 'direct_chat', 'webpage']);
+    const [usageContexts, setUsageContexts] = useState(['agent', 'direct_chat']);
     const [categoryId, setCategoryId] = useState('');
     const [categories, setCategories] = useState([]);
     const [organizationId, setOrganizationId] = useState('');
@@ -152,11 +152,17 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                 setName(data.name || '');
                 setDescription(data.description || '');
                 setIcon(data.icon || '📚');
-                setUsageContexts(Array.isArray(data.usage_contexts)
+                // Studio surfaces only the agent + direct-chat toggles; the 'webpage'
+                // context is owned by the webpage UI, so we strip it from the editable
+                // value here. Existing 'webpage' entries left over from older defaults
+                // are quietly removed on next save.
+                const rawContexts = Array.isArray(data.usage_contexts)
                     ? data.usage_contexts
                     : (typeof data.usage_contexts === 'string'
-                        ? (() => { try { const v = JSON.parse(data.usage_contexts); return Array.isArray(v) ? v : ['agent', 'direct_chat', 'webpage']; } catch { return ['agent', 'direct_chat', 'webpage']; } })()
-                        : ['agent', 'direct_chat', 'webpage']));
+                        ? (() => { try { const v = JSON.parse(data.usage_contexts); return Array.isArray(v) ? v : ['agent', 'direct_chat']; } catch { return ['agent', 'direct_chat']; } })()
+                        : ['agent', 'direct_chat']);
+                const studioContexts = rawContexts.filter(c => c === 'agent' || c === 'direct_chat');
+                setUsageContexts(studioContexts.length > 0 ? studioContexts : ['agent', 'direct_chat']);
                 setCategoryId(data.category_id || '');
                 setOrganizationId(data.organization_id || '');
                 setIsPublished(!!data.is_published);
@@ -1100,7 +1106,6 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                     {[
                                         { id: 'agent', label: t('kb_detail.usage_agents'), hint: t('kb_detail.usage_agents_hint') },
                                         { id: 'direct_chat', label: t('kb_detail.usage_direct_chat'), hint: t('kb_detail.usage_direct_chat_hint') },
-                                        { id: 'webpage', label: t('kb_detail.usage_webpages'), hint: t('kb_detail.usage_webpages_hint') },
                                     ].map(ctx => (
                                         <label
                                             key={ctx.id}
