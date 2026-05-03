@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, BookOpen, Trash2, FileText, Globe, Paperclip, Settings as SettingsIcon, Loader2, Plus, X, RefreshCcw, Building2, Check } from 'lucide-react';
+import { ArrowLeft, BookOpen, Trash2, FileText, Globe, Paperclip, Settings as SettingsIcon, Loader2, Plus, X, RefreshCcw, Building2, Check, ChevronDown, ChevronRight, Search as SearchIcon } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { useTranslation } from '../hooks/useTranslation';
 
@@ -76,6 +76,16 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
     // Re-index
     const [reindexing, setReindexing] = useState(false);
     const [reindexStatus, setReindexStatus] = useState('');
+
+    // Chunks viewer (per-document)
+    const [expandedDocId, setExpandedDocId] = useState(null);
+    const [chunksByDoc, setChunksByDoc] = useState({});      // docId → { loading, chunks, remoteOnly, error }
+
+    // Search test
+    const [searchQuery, setSearchQuery] = useState('');
+    const [searching, setSearching] = useState(false);
+    const [searchResults, setSearchResults] = useState(null);
+    const [searchError, setSearchError] = useState('');
 
     const nameRef = useRef(null);
 
@@ -374,8 +384,60 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
         if (!confirm(t('kb_docs.delete_confirm'))) return;
         try {
             const res = await authFetch(`${API_BASE}/api/kb/${kbId}/documents/${docId}`, { method: 'DELETE' });
-            if (res.ok) refreshDocs();
+            if (res.ok) {
+                refreshDocs();
+                setChunksByDoc(prev => { const next = { ...prev }; delete next[docId]; return next; });
+                if (expandedDocId === docId) setExpandedDocId(null);
+            }
         } catch (e) { /* ignore */ }
+    }
+
+    async function toggleDocChunks(docId) {
+        if (expandedDocId === docId) {
+            setExpandedDocId(null);
+            return;
+        }
+        setExpandedDocId(docId);
+        if (chunksByDoc[docId]?.chunks) return; // cached
+        setChunksByDoc(prev => ({ ...prev, [docId]: { loading: true, chunks: [], remoteOnly: false } }));
+        try {
+            const res = await authFetch(`${API_BASE}/api/kb/${kbId}/documents/${docId}/chunks`);
+            if (res.ok) {
+                const data = await res.json();
+                setChunksByDoc(prev => ({ ...prev, [docId]: { loading: false, chunks: data.chunks || [], remoteOnly: !!data.remote_only } }));
+            } else {
+                const err = await res.json().catch(() => ({}));
+                setChunksByDoc(prev => ({ ...prev, [docId]: { loading: false, chunks: [], error: err.error || `HTTP ${res.status}` } }));
+            }
+        } catch (e) {
+            setChunksByDoc(prev => ({ ...prev, [docId]: { loading: false, chunks: [], error: e.message } }));
+        }
+    }
+
+    async function runSearch() {
+        if (!kbId || !searchQuery.trim()) return;
+        setSearching(true);
+        setSearchError('');
+        try {
+            const res = await authFetch(`${API_BASE}/api/kb/search`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ kb_ids: [kbId], query: searchQuery.trim(), top_k: 8 }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setSearchResults(data);
+            } else {
+                const err = await res.json().catch(() => ({}));
+                setSearchError(err.error || `HTTP ${res.status}`);
+                setSearchResults(null);
+            }
+        } catch (e) {
+            setSearchError(e.message);
+            setSearchResults(null);
+        } finally {
+            setSearching(false);
+        }
     }
 
     function toggleGroup(gid) {
@@ -549,6 +611,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                 <div className="flex border-b -mb-px" style={{ borderColor: 'var(--border-subtle)' }}>
                     {[
                         { id: 'documents', label: t('kb_detail.tab_documents'), icon: FileText, disabled: isCreateMode },
+                        { id: 'search', label: t('kb_detail.tab_search'), icon: SearchIcon, disabled: isCreateMode },
                         { id: 'settings', label: t('kb_detail.tab_settings'), icon: SettingsIcon },
                     ].map(tabDef => (
                         <button
@@ -621,21 +684,27 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
 
                                     {ingestMode === 'text' && (
                                         <div className="space-y-2">
-                                            <input
-                                                value={textTitle}
-                                                onChange={e => setTextTitle(e.target.value)}
-                                                placeholder={t('kb_docs.title_optional')}
-                                                className="w-full px-3 py-2 rounded-lg border text-sm outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/30"
-                                                style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
-                                            />
-                                            <textarea
-                                                value={textContent}
-                                                onChange={e => setTextContent(e.target.value)}
-                                                placeholder={t('kb_docs.text_placeholder')}
-                                                rows={4}
-                                                className="w-full px-3 py-2 rounded-lg border text-sm resize-none outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/30"
-                                                style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
-                                            />
+                                            <div>
+                                                <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>{t('kb_docs.doc_title_label')}</label>
+                                                <input
+                                                    value={textTitle}
+                                                    onChange={e => setTextTitle(e.target.value)}
+                                                    placeholder={t('kb_docs.doc_title_placeholder')}
+                                                    className="w-full px-3 py-2 rounded-lg border text-sm outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/30"
+                                                    style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="block text-[10px] font-semibold uppercase tracking-wider mb-1" style={{ color: 'var(--text-muted)' }}>{t('kb_docs.doc_content_label')}</label>
+                                                <textarea
+                                                    value={textContent}
+                                                    onChange={e => setTextContent(e.target.value)}
+                                                    placeholder={t('kb_docs.text_placeholder')}
+                                                    rows={4}
+                                                    className="w-full px-3 py-2 rounded-lg border text-sm resize-none outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/30"
+                                                    style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
+                                                />
+                                            </div>
                                         </div>
                                     )}
 
@@ -744,28 +813,171 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                     </div>
                                 ) : (
                                     <div className="space-y-1">
-                                        {docs.map(doc => (
-                                            <div key={doc.id} className="flex items-center justify-between px-3 py-2 rounded-lg group hover:bg-[var(--bg-tertiary)]" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)' }}>
-                                                <div className="flex items-center gap-2.5 min-w-0">
-                                                    <span className="text-base flex-shrink-0">{sourceEmoji(doc.source_type)}</span>
-                                                    <div className="min-w-0">
-                                                        <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{doc.title || t('kb_detail.untitled')}</div>
-                                                        <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                                                            {doc.chunk_count || 0} chunks · {formatDate(doc.created_at)}
-                                                            {doc.source_uri && <span className="ml-1.5 truncate">· {doc.source_uri.replace(/^https?:\/\//, '').slice(0, 40)}</span>}
-                                                        </div>
+                                        {docs.map(doc => {
+                                            const isOpen = expandedDocId === doc.id;
+                                            const docChunks = chunksByDoc[doc.id];
+                                            return (
+                                                <div key={doc.id} className="rounded-lg overflow-hidden" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)' }}>
+                                                    <div className="flex items-center justify-between px-3 py-2 group hover:bg-[var(--bg-tertiary)]">
+                                                        <button
+                                                            onClick={() => toggleDocChunks(doc.id)}
+                                                            className="flex items-center gap-2.5 min-w-0 flex-1 text-left"
+                                                            title={t('kb_docs.view_chunks')}
+                                                        >
+                                                            {isOpen ? <ChevronDown className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} /> : <ChevronRight className="w-3.5 h-3.5 flex-shrink-0" style={{ color: 'var(--text-muted)' }} />}
+                                                            <span className="text-base flex-shrink-0">{sourceEmoji(doc.source_type)}</span>
+                                                            <div className="min-w-0">
+                                                                <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{doc.title || t('kb_detail.untitled')}</div>
+                                                                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                                                    {doc.chunk_count || 0} chunks · {formatDate(doc.created_at)}
+                                                                    {doc.source_uri && <span className="ml-1.5 truncate">· {doc.source_uri.replace(/^https?:\/\//, '').slice(0, 40)}</span>}
+                                                                </div>
+                                                            </div>
+                                                        </button>
+                                                        {canManage && (
+                                                            <button onClick={() => deleteDoc(doc.id)} className="p-1.5 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/10" title="Delete">
+                                                                <Trash2 className="w-3.5 h-3.5 text-red-500" />
+                                                            </button>
+                                                        )}
                                                     </div>
+                                                    {isOpen && (
+                                                        <div className="px-3 py-2.5 border-t" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
+                                                            {docChunks?.loading && (
+                                                                <div className="flex items-center gap-2 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                                                    <Loader2 className="w-3 h-3 animate-spin" /> {t('kb_docs.chunks_loading')}
+                                                                </div>
+                                                            )}
+                                                            {docChunks?.error && (
+                                                                <div className="text-[11px] text-red-500">{docChunks.error}</div>
+                                                            )}
+                                                            {!docChunks?.loading && !docChunks?.error && (docChunks?.chunks || []).length === 0 && (
+                                                                <div className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                                                    {docChunks?.remoteOnly ? t('kb_docs.chunks_remote_only') : t('kb_docs.chunks_empty')}
+                                                                </div>
+                                                            )}
+                                                            {(docChunks?.chunks || []).length > 0 && (
+                                                                <div className="space-y-1.5">
+                                                                    <div className="text-[10px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                                                                        {t('kb_docs.chunks_heading', { count: docChunks.chunks.length })}
+                                                                    </div>
+                                                                    {docChunks.chunks.map((c, idx) => (
+                                                                        <div key={`${doc.id}-${c.chunk_id ?? idx}`} className="rounded-lg p-2.5 text-[12px] whitespace-pre-wrap font-mono" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', color: 'var(--text-primary)', maxHeight: '320px', overflow: 'auto' }}>
+                                                                            <div className="flex items-center gap-2 mb-1.5 font-sans">
+                                                                                <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>#{c.chunk_id ?? idx}</span>
+                                                                                {c.chunk_type && c.chunk_type !== 'content' && (
+                                                                                    <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>{c.chunk_type}</span>
+                                                                                )}
+                                                                                {c.lang && c.lang !== 'unknown' && (
+                                                                                    <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{c.lang}</span>
+                                                                                )}
+                                                                            </div>
+                                                                            {c.content}
+                                                                        </div>
+                                                                    ))}
+                                                                </div>
+                                                            )}
+                                                        </div>
+                                                    )}
                                                 </div>
-                                                {canManage && (
-                                                    <button onClick={() => deleteDoc(doc.id)} className="p-1.5 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/10" title="Delete">
-                                                        <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                                                    </button>
-                                                )}
-                                            </div>
-                                        ))}
+                                            );
+                                        })}
                                     </div>
                                 )}
                             </div>
+                        </div>
+                    )}
+
+                    {/* Search tab — test what the agent retrieves from this KB */}
+                    {tab === 'search' && !isCreateMode && (
+                        <div className="space-y-4">
+                            <div className="p-3 rounded-xl border space-y-3" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)' }}>
+                                <div>
+                                    <h3 className="text-xs font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>{t('kb_search.title')}</h3>
+                                    <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{t('kb_search.subtitle')}</p>
+                                </div>
+                                <div className="flex gap-2">
+                                    <div className="flex-1 relative">
+                                        <SearchIcon className="w-3.5 h-3.5 absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-muted)' }} />
+                                        <input
+                                            value={searchQuery}
+                                            onChange={e => setSearchQuery(e.target.value)}
+                                            onKeyDown={e => { if (e.key === 'Enter' && !searching) runSearch(); }}
+                                            placeholder={t('kb_search.placeholder')}
+                                            className="w-full pl-8 pr-3 py-2 rounded-lg border text-sm outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/30"
+                                            style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
+                                        />
+                                    </div>
+                                    <button
+                                        onClick={runSearch}
+                                        disabled={searching || !searchQuery.trim()}
+                                        className="px-4 py-2 rounded-lg text-xs font-medium text-white disabled:opacity-50 hover:brightness-110 flex items-center gap-1.5"
+                                        style={{ background: 'var(--accent-primary)' }}
+                                    >
+                                        {searching && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
+                                        {searching ? t('kb_search.searching') : t('kb_search.run')}
+                                    </button>
+                                </div>
+                            </div>
+
+                            {searchError && (
+                                <div className="rounded-lg p-3 text-xs" style={{ background: 'rgba(239,68,68,0.08)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.25)' }}>
+                                    {searchError}
+                                </div>
+                            )}
+
+                            {searchResults && (() => {
+                                const chunks = searchResults.chunks || searchResults.results || [];
+                                const metrics = chunks._metrics || searchResults._metrics;
+                                return (
+                                    <div className="space-y-2">
+                                        <div className="flex items-center justify-between">
+                                            <h3 className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
+                                                {t('kb_search.results_heading', { count: chunks.length })}
+                                            </h3>
+                                            {metrics && (
+                                                <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                                    {t('kb_search.metrics', {
+                                                        ms: metrics.latencyMs ?? '?',
+                                                        vec: metrics.vecCandidates ?? 0,
+                                                        fts: metrics.ftsCandidates ?? 0,
+                                                    })}
+                                                </span>
+                                            )}
+                                        </div>
+                                        {chunks.length === 0 ? (
+                                            <div className="text-center py-10 text-xs rounded-xl border border-dashed" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-subtle)' }}>
+                                                {t('kb_search.empty')}
+                                            </div>
+                                        ) : (
+                                            <div className="space-y-2">
+                                                {chunks.map((c, idx) => (
+                                                    <div key={c.id ?? `${c.document_id}-${c.chunk_id}-${idx}`} className="rounded-lg p-3" style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)' }}>
+                                                        <div className="flex items-center justify-between mb-1.5">
+                                                            <div className="flex items-center gap-2 min-w-0">
+                                                                <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>#{idx + 1}</span>
+                                                                {c.title && (
+                                                                    <span className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{c.title}</span>
+                                                                )}
+                                                                {c.source_uri && (
+                                                                    <span className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>· {c.source_uri.replace(/^https?:\/\//, '').slice(0, 50)}</span>
+                                                                )}
+                                                            </div>
+                                                            {typeof c.score === 'number' && (
+                                                                <span className="text-[10px] font-mono px-1.5 py-0.5 rounded flex-shrink-0" style={{ background: 'var(--bg-tertiary)', color: 'var(--accent-primary)' }}>
+                                                                    {c.score.toFixed(3)}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div className="text-[12px] whitespace-pre-wrap font-mono" style={{ color: 'var(--text-primary)', maxHeight: '260px', overflow: 'auto' }}>
+                                                            {c.content}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
                         </div>
                     )}
 

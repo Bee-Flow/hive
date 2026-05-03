@@ -53,22 +53,26 @@ export function IconPickerModal({ isOpen, onClose, iconKey, currentCustom, onApp
         if (!prompt.trim()) return;
         setGenerating(true);
         try {
-            // Re-using chat endpoint logic to generate image if possible:
-            // Since there is no explicit image-gen endpoint without chat context, 
-            // we will simulate calling the backend models endpoint if one exists.
-            const res = await authFetch(`${API_BASE}/api/meet-bot/generate-image`, { // placeholder or you can adapt to real image-gen
+            const res = await authFetch(`${API_BASE}/api/icons/generate`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ prompt, settings: nanoBananaSettings?.image })
+                body: JSON.stringify({
+                    prompt,
+                    model: nanoBananaSettings?.image?.model,
+                    aspectRatio: '1:1',
+                }),
             });
             if (res.ok) {
                 const data = await res.json();
                 if (data.url) onApply({ type: 'image', value: data.url });
+                else alert('Generation returned no image.');
             } else {
-                alert('Generation failed. Make sure AI models are configured.');
+                const data = await res.json().catch(() => ({}));
+                alert(data.error || 'Generation failed. Make sure the Google API key is configured.');
             }
         } catch (err) {
             console.error('Generate Error:', err);
+            alert('Generation failed: ' + err.message);
         }
         setGenerating(false);
     };
