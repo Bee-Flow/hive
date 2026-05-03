@@ -39,8 +39,12 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     // write to general memory). False = fully isolated bucket.
     const [useGeneralMemory, setUseGeneralMemory] = useState(initialAgent?.config?.useGeneralMemory !== false);
     const [attachedSkillIds, setAttachedSkillIds] = useState(initialAgent?.config?.attachedSkillIds || []);
+    // New agents are created with `enabledIntegrations: []` (none enabled).
+    // Legacy agents may have `null`, which historically means "all available
+    // are enabled" — we preserve that contract so chat tools don't disappear
+    // until the user explicitly customises the list.
     const [enabledIntegrations, setEnabledIntegrations] = useState(
-        initialAgent?.config?.enabledIntegrations === undefined ? null : initialAgent.config.enabledIntegrations
+        initialAgent?.config?.enabledIntegrations === undefined ? [] : initialAgent.config.enabledIntegrations
     );
     const [knowledgeBaseIds, setKnowledgeBaseIds] = useState(initialAgent?.config?.knowledge_base_ids || []);
     const [strictKnowledge, setStrictKnowledge] = useState(!!initialAgent?.config?.strictKnowledge);
@@ -277,7 +281,10 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         patchConfig({ attachedSkillIds: next });
     };
     const toggleIntegration = (id, available) => {
-        const baseList = enabledIntegrations || available.map(a => a.id);
+        // null = legacy "all enabled" — materialise the implicit list before toggling.
+        const baseList = Array.isArray(enabledIntegrations)
+            ? enabledIntegrations
+            : available.map(a => a.id);
         const next = baseList.includes(id) ? baseList.filter(x => x !== id) : [...baseList, id];
         setEnabledIntegrations(next);
         patchConfig({ enabledIntegrations: next });
@@ -719,40 +726,8 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                         </div>
                     )}
 
-                    <div>
-                        <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-3">{t('agent_wizard.builder.instructions')}</div>
-                        {instructionsEditing ? (
-                            <textarea
-                                ref={instructionsTextareaRef}
-                                value={instructions}
-                                onChange={(e) => updateInstructions(e.target.value)}
-                                onBlur={() => { flushNow(); setInstructionsEditing(false); }}
-                                rows={Math.max(12, (instructions.match(/\n/g) || []).length + 2)}
-                                placeholder={t('agent_wizard.builder.instructions_placeholder')}
-                                className="w-full bg-[var(--bg-secondary)]/50 border border-transparent focus:border-[var(--border-default)] rounded-xl px-4 py-3 text-[15px] leading-7 text-[var(--text-primary)] outline-none resize-y"
-                            />
-                        ) : (
-                            <div
-                                role="button"
-                                tabIndex={0}
-                                onClick={() => setInstructionsEditing(true)}
-                                onFocus={() => setInstructionsEditing(true)}
-                                className="instructions-view min-h-[12rem] px-4 py-3 -mx-4 cursor-text rounded-xl hover:bg-[var(--bg-secondary)]/40 transition"
-                                title={t('agent_wizard.builder.instructions_edit_hint') || 'Click to edit'}
-                            >
-                                {instructions ? (
-                                    <MarkdownRenderer content={instructions} />
-                                ) : (
-                                    <div className="text-[var(--text-tertiary)] text-[15px] leading-7">
-                                        {t('agent_wizard.builder.instructions_placeholder')}
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-
-                    {/* ── Inline collapsible sections — full parity with the legacy Agent Designer ── */}
-                    <div className="mt-10">
+                    {/* ── Inline collapsible sections — moved above Instructions per request ── */}
+                    <div className="mb-2">
                         <CollapsibleSection
                             title={t('agent_wizard.section.identity')}
                             open={openSection === 'identity'}
@@ -912,6 +887,38 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                             </CollapsibleSection>
                         )}
                     </div>
+
+                    <div className="mt-10">
+                        <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-3">{t('agent_wizard.builder.instructions')}</div>
+                        {instructionsEditing ? (
+                            <textarea
+                                ref={instructionsTextareaRef}
+                                value={instructions}
+                                onChange={(e) => updateInstructions(e.target.value)}
+                                onBlur={() => { flushNow(); setInstructionsEditing(false); }}
+                                rows={Math.max(12, (instructions.match(/\n/g) || []).length + 2)}
+                                placeholder={t('agent_wizard.builder.instructions_placeholder')}
+                                className="w-full bg-[var(--bg-secondary)]/50 border border-transparent focus:border-[var(--border-default)] rounded-xl px-4 py-3 text-[15px] leading-7 text-[var(--text-primary)] outline-none resize-y"
+                            />
+                        ) : (
+                            <div
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => setInstructionsEditing(true)}
+                                onFocus={() => setInstructionsEditing(true)}
+                                className="instructions-view min-h-[12rem] px-4 py-3 -mx-4 cursor-text rounded-xl hover:bg-[var(--bg-secondary)]/40 transition"
+                                title={t('agent_wizard.builder.instructions_edit_hint') || 'Click to edit'}
+                            >
+                                {instructions ? (
+                                    <MarkdownRenderer content={instructions} />
+                                ) : (
+                                    <div className="text-[var(--text-tertiary)] text-[15px] leading-7">
+                                        {t('agent_wizard.builder.instructions_placeholder')}
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
                 </div>
             </main>
 
@@ -1041,34 +1048,104 @@ function SkillPicker({ skills, selectedIds, search, onSearch, onClose, onToggle,
 
 function AppsPicker({ items, enabled, onClose, onToggle, t }) {
     const isSelected = (id) => enabled === null ? true : enabled.includes(id);
+    const [search, setSearch] = useState('');
+    const [focusedId, setFocusedId] = useState(items[0]?.id || null);
+    const filtered = items.filter(it =>
+        !search.trim() || it.label.toLowerCase().includes(search.toLowerCase()) || (it.description || '').toLowerCase().includes(search.toLowerCase())
+    );
+    useEffect(() => {
+        if (filtered.length && !filtered.some(it => it.id === focusedId)) {
+            setFocusedId(filtered[0].id);
+        }
+    }, [filtered, focusedId]);
+    const focused = items.find(it => it.id === focusedId) || filtered[0] || null;
+    const focusedSelected = focused ? isSelected(focused.id) : false;
+
     return (
-        <div className="absolute z-20 top-full left-0 mt-2 w-[480px] rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-lg p-3">
-            <div className="flex items-center justify-between mb-2 px-1">
-                <div className="text-sm font-medium text-[var(--text-primary)]">{t('agent_wizard.builder.browse_apps')}</div>
-                <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={14} /></button>
-            </div>
-            <div className="max-h-72 overflow-y-auto grid grid-cols-2 gap-2">
-                {items.length === 0 && (
-                    <div className="col-span-2 text-xs text-[var(--text-tertiary)] py-3 text-center">—</div>
-                )}
-                {items.map((item) => {
-                    const selected = isSelected(item.id);
-                    return (
-                        <button
-                            key={item.id}
-                            onClick={() => onToggle(item.id)}
-                            className={`flex items-center gap-3 p-2.5 rounded-lg border text-left transition ${selected ? 'border-[var(--accent)] bg-[var(--bg-secondary)]' : 'border-[var(--border-default)] bg-[var(--bg-secondary)] opacity-60 hover:opacity-100'}`}
-                        >
-                            <div className="w-7 h-7 rounded flex items-center justify-center flex-shrink-0">
-                                {item.iconSvg}
+        <div
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+            onClick={onClose}
+        >
+            <div
+                className="w-full max-w-3xl h-[560px] rounded-2xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-2xl overflow-hidden flex"
+                onClick={(e) => e.stopPropagation()}
+            >
+                {/* Left: search + list */}
+                <div className="w-[40%] flex flex-col border-r border-[var(--border-default)]">
+                    <div className="p-3">
+                        <div className="relative">
+                            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
+                            <input
+                                type="text"
+                                value={search}
+                                onChange={(e) => setSearch(e.target.value)}
+                                placeholder={t('agent_wizard.apps.search') || 'Search apps'}
+                                className="w-full bg-[var(--bg-secondary)] rounded-full pl-9 pr-3 py-2 text-sm outline-none text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
+                                autoFocus
+                            />
+                        </div>
+                    </div>
+                    <div className="flex-1 overflow-y-auto px-2 pb-2">
+                        {filtered.length === 0 && (
+                            <div className="text-xs text-[var(--text-tertiary)] text-center py-6">—</div>
+                        )}
+                        {filtered.map((item) => {
+                            const isFocus = item.id === focusedId;
+                            const selected = isSelected(item.id);
+                            return (
+                                <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={() => setFocusedId(item.id)}
+                                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg text-left text-sm transition ${isFocus ? 'bg-[var(--bg-secondary)]' : 'hover:bg-[var(--bg-secondary)]/60'}`}
+                                >
+                                    <div className="w-6 h-6 flex items-center justify-center flex-shrink-0">{item.iconSvg}</div>
+                                    <span className="truncate flex-1 text-[var(--text-primary)]">{item.label}</span>
+                                    {selected && <span className="w-1.5 h-1.5 rounded-full bg-[var(--accent)]" aria-label="enabled" />}
+                                </button>
+                            );
+                        })}
+                    </div>
+                </div>
+
+                {/* Right: detail pane */}
+                <div className="flex-1 flex flex-col relative">
+                    <button
+                        onClick={onClose}
+                        className="absolute top-3 right-3 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] z-10"
+                        aria-label="Close"
+                    >
+                        <X size={18} />
+                    </button>
+                    {focused ? (
+                        <>
+                            <div className="flex-1 overflow-y-auto px-8 pt-10 pb-4">
+                                <div className="w-14 h-14 rounded-2xl border border-[var(--border-default)] flex items-center justify-center mb-5">
+                                    <div className="w-9 h-9 flex items-center justify-center">{focused.iconSvg}</div>
+                                </div>
+                                <h3 className="text-2xl font-semibold text-[var(--text-primary)] mb-3">{focused.label}</h3>
+                                <p className="text-sm text-[var(--text-secondary)] leading-6">
+                                    {focused.description || t('agent_wizard.apps.no_description') || 'No description available.'}
+                                </p>
                             </div>
-                            <div className="min-w-0 flex-1">
-                                <div className="text-sm text-[var(--text-primary)] truncate">{item.label}</div>
-                                <div className="text-[10px] text-[var(--text-tertiary)] truncate">{item.description}</div>
+                            <div className="px-8 pb-6 pt-3">
+                                <button
+                                    type="button"
+                                    onClick={() => onToggle(focused.id)}
+                                    className={`w-full py-3 rounded-full text-sm font-medium transition ${focusedSelected
+                                        ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'
+                                        : 'bg-[var(--text-primary)] text-[var(--bg-primary)] hover:opacity-90'}`}
+                                >
+                                    {focusedSelected
+                                        ? (t('agent_wizard.apps.disable') || 'Disable')
+                                        : (t('agent_wizard.apps.enable') || 'Enable')}
+                                </button>
                             </div>
-                        </button>
-                    );
-                })}
+                        </>
+                    ) : (
+                        <div className="flex-1 flex items-center justify-center text-sm text-[var(--text-tertiary)]">—</div>
+                    )}
+                </div>
             </div>
         </div>
     );
@@ -1252,25 +1329,52 @@ function ActionPill({ icon, label, count, onClick, active }) {
 // Avatar picker — emoji input + image upload.
 // Supports emoji glyph or data:/http URL (rendered as <img>). Mirrors the
 // behaviour of [AgentDesigner/sections/IdentitySection.jsx:127-146].
+const AVATAR_EMOJI_CATEGORIES = {
+    tech:    { label: '🤖', emojis: ['🤖','🧠','💡','🔧','🛠️','⚙️','📊','📈','📉','🎯','🚀','⚡','🔥','💥','✨','🌟','⭐','🏆','📝','✏️','📌','📎','🗂️','📂','📁','🔒','🔑','🛡️','💻','⌨️','🖥️','📱','🖨️','🔍','🔬','📡','💾','🌐','🧰','📚'] },
+    smileys: { label: '😀', emojis: ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','😊','😇','🥰','😍','🤩','😘','😋','😎','🥸','🤓','🧐','🤨','😏','😌','😴','🥳','🤠','😈','👽','💀','👻','😺','🙃','😉','🤗','🤔','🤫','🤭','🤐','😶','🙄'] },
+    people:  { label: '👤', emojis: ['👋','🤚','✋','👌','✌️','🤞','🤟','🤘','👍','👎','👏','🙌','👐','🤝','🙏','💪','👨‍💻','👩‍💻','👨‍🔬','👩‍🔬','👨‍🎨','👩‍🎨','🧑‍🚀','🧑‍🍳','🧑‍🏫','🧑‍⚕️','🧑‍🎓','👮','🕵️','🧙','🦸','🥷','💼','🎩','👑','🦾','🫶','🫡','🫰','🫵'] },
+    nature:  { label: '🌿', emojis: ['🐶','🐱','🦊','🐻','🐼','🐨','🦁','🐯','🐮','🐷','🐸','🐵','🐔','🐧','🐦','🦆','🦅','🦉','🐺','🦄','🐝','🦋','🐢','🐍','🐬','🐳','🦈','🌳','🌲','🌴','🌵','🌷','🌹','🌻','🌼','🍀','🍁','🌍','🌙','☀️'] },
+    food:    { label: '🍔', emojis: ['🍏','🍎','🍌','🍇','🍓','🍒','🥑','🥦','🥕','🌽','🍞','🥐','🥨','🧀','🥚','🍳','🥞','🥓','🍔','🍟','🍕','🌭','🥪','🌮','🌯','🥗','🍜','🍝','🍣','🍱','🍙','🍩','🍪','🎂','🍰','🍫','🍿','☕','🍵','🥤'] },
+    objects: { label: '💡', emojis: ['📞','📟','📠','🔋','🔌','💡','🔦','🕯️','🧯','🛢️','💸','💵','💴','💶','💷','🪙','💳','🧾','💎','⚖️','🪜','🧰','🔧','🔨','⛏️','🔩','⚙️','🧲','🔫','💣','🧨','🪓','🔪','🗡️','⚔️','🛡️','🚬','⚰️','🪦','🧪'] },
+    travel:  { label: '✈️', emojis: ['🚗','🚕','🚌','🏎️','🚓','🚑','🚒','🚜','🏍️','🚲','🛴','🚂','🚆','🚇','✈️','🛫','🚀','🛸','🚁','⛵','🚢','🏠','🏢','🏥','🏨','🏫','🏭','🗼','🗽','⛪','🕌','⛲','🌍','🌎','🌏','🗺️','🏝️','🏔️','⛰️','🌋'] },
+    symbols: { label: '⚡', emojis: ['❤️','🧡','💛','💚','💙','💜','🤍','🖤','💔','❣️','💕','💞','💓','💖','💘','💝','💟','☮️','✝️','☪️','🕉️','☸️','✡️','☯️','♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓','✅','❌','⚠️','♻️'] },
+};
+const isImageAvatar = (a) => !!a && (a.startsWith('data:') || a.startsWith('http'));
 function AvatarPicker({ avatar, onChange, t }) {
     const [open, setOpen] = useState(false);
+    const [category, setCategory] = useState('tech');
     const fileRef = useRef(null);
-    const [emojiInput, setEmojiInput] = useState(
-        avatar && (avatar.startsWith('data:') || avatar.startsWith('http')) ? '' : (avatar || '🤖')
-    );
-    const isImage = avatar && (avatar.startsWith('data:') || avatar.startsWith('http'));
+    const popoverRef = useRef(null);
+    const triggerRef = useRef(null);
+    const isImage = isImageAvatar(avatar);
+
+    useEffect(() => {
+        if (!open) return;
+        const onDoc = (e) => {
+            if (popoverRef.current?.contains(e.target)) return;
+            if (triggerRef.current?.contains(e.target)) return;
+            setOpen(false);
+        };
+        document.addEventListener('mousedown', onDoc);
+        return () => document.removeEventListener('mousedown', onDoc);
+    }, [open]);
+
     const onFile = (e) => {
         const file = e.target.files?.[0];
+        e.target.value = '';
         if (!file) return;
         if (file.size > 512 * 1024) { alert(t('agent_wizard.avatar.too_large') || 'Image must be under 512KB'); return; }
         const reader = new FileReader();
         reader.onload = (ev) => { onChange(ev.target.result); setOpen(false); };
         reader.readAsDataURL(file);
-        e.target.value = '';
     };
+    const pickEmoji = (em) => { onChange(em); setOpen(false); };
+
     return (
         <div className="relative">
             <button
+                ref={triggerRef}
+                type="button"
                 onClick={() => setOpen(v => !v)}
                 className="w-16 h-16 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-default)] text-3xl flex items-center justify-center overflow-hidden hover:bg-[var(--bg-tertiary)] transition"
                 title={t('agent_wizard.avatar.title') || 'Avatar'}
@@ -1280,39 +1384,65 @@ function AvatarPicker({ avatar, onChange, t }) {
                     : <span>{avatar || '🤖'}</span>}
             </button>
             {open && (
-                <div className="absolute z-20 top-full left-0 mt-2 w-72 rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-lg p-3">
-                    <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-2">
-                        {t('agent_wizard.avatar.title') || 'Avatar'}
+                <div
+                    ref={popoverRef}
+                    className="absolute z-30 top-full left-0 mt-2 w-[360px] rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-xl overflow-hidden"
+                >
+                    {/* Category tabs */}
+                    <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-[var(--border-default)]">
+                        {Object.entries(AVATAR_EMOJI_CATEGORIES).map(([key, cat]) => (
+                            <button
+                                key={key}
+                                type="button"
+                                onClick={() => setCategory(key)}
+                                className={`flex-1 py-1.5 rounded-md text-base transition ${category === key ? 'bg-[var(--bg-tertiary)]' : 'hover:bg-[var(--bg-secondary)]'}`}
+                                title={key}
+                            >
+                                {cat.label}
+                            </button>
+                        ))}
                     </div>
-                    <div className="flex items-center gap-2 mb-3">
+                    {/* Emoji grid */}
+                    <div className="p-2 max-h-64 overflow-y-auto">
+                        <div className="grid grid-cols-8 gap-0.5">
+                            {(AVATAR_EMOJI_CATEGORIES[category]?.emojis || []).map((em) => (
+                                <button
+                                    key={em}
+                                    type="button"
+                                    onClick={() => pickEmoji(em)}
+                                    className={`w-9 h-9 rounded-lg flex items-center justify-center text-xl hover:bg-[var(--bg-tertiary)] transition ${avatar === em ? 'bg-[var(--bg-tertiary)] ring-2 ring-[var(--accent)]' : ''}`}
+                                >
+                                    {em}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    {/* Upload + reset row */}
+                    <div className="flex items-center gap-2 px-3 py-2 border-t border-[var(--border-default)]">
                         <input
-                            type="text"
-                            value={emojiInput}
-                            onChange={(e) => {
-                                const v = e.target.value.slice(-2) || '🤖';
-                                setEmojiInput(v);
-                                onChange(v);
-                            }}
-                            maxLength={2}
-                            placeholder="🤖"
-                            className="w-16 text-center text-xl bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg py-1"
+                            ref={fileRef}
+                            type="file"
+                            accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif"
+                            className="hidden"
+                            onChange={onFile}
                         />
-                        <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/svg+xml,image/webp,image/gif" className="hidden" onChange={onFile} />
                         <button
+                            type="button"
                             onClick={() => fileRef.current?.click()}
-                            className="px-3 py-1.5 text-xs font-medium rounded-lg border border-[var(--border-default)] hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)]"
+                            className="flex-1 px-3 py-1.5 text-xs font-medium rounded-lg bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-primary)] transition"
                         >
-                            📷 {t('agent_wizard.avatar.upload') || 'Upload'}
+                            📷 {t('agent_wizard.avatar.upload') || 'Upload image'}
                         </button>
+                        {isImage && (
+                            <button
+                                type="button"
+                                onClick={() => { onChange('🤖'); setOpen(false); }}
+                                className="px-3 py-1.5 text-xs rounded-lg text-[var(--text-tertiary)] hover:text-red-500 hover:bg-[var(--bg-secondary)] transition"
+                            >
+                                {t('agent_wizard.avatar.reset') || 'Remove'}
+                            </button>
+                        )}
                     </div>
-                    {isImage && (
-                        <button
-                            onClick={() => { onChange('🤖'); setEmojiInput('🤖'); }}
-                            className="text-xs text-[var(--text-tertiary)] hover:text-red-500"
-                        >
-                            {t('agent_wizard.avatar.reset') || 'Remove image'}
-                        </button>
-                    )}
                 </div>
             )}
         </div>

@@ -58,7 +58,7 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
                     systemPrompt: '',
                     config: {
                         avatar: '🤖',
-                        enabledIntegrations: null,
+                        enabledIntegrations: [],
                         knowledge_base_ids: [],
                         attachedSkillIds: [],
                         memoryEnabled: false,
