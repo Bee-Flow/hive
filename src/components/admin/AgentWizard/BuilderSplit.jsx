@@ -150,7 +150,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     authFetch(`${API_BASE}/ai/user-settings`),
                     authFetch(`${API_BASE}/agents/categories`),
                     authFetch(`${API_BASE}/auth/groups`),
-                    authFetch(`${API_BASE}/ai/config/chat-models`),
+                    authFetch(`${API_BASE}/ai/config/tiers-for-user?taskType=direct_chat`),
                     authFetch(`${API_BASE}/automation`).catch(() => ({ ok: false })),
                 ]);
                 if (cancelled) return;
@@ -659,7 +659,10 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 <ModelTierSelector
                                     tiers={tiers || {}}
                                     value={selectedTier}
-                                    onChange={(v) => setSelectedTier(v)}
+                                    // Single source of truth: changing the chat-input pill
+                                    // also persists to the agent's saved tier so the two
+                                    // selectors stay in lockstep.
+                                    onChange={(v) => updateModel(v)}
                                     dropDirection="up"
                                 />
                                 <button
@@ -1531,18 +1534,6 @@ function CategoryField({ t, value, categories, onChange, onCreate }) {
 
 const ROUTINE_DOW_TOKENS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 const ROUTINE_DOW_LABELS = { sun: 'Sun', mon: 'Mon', tue: 'Tue', wed: 'Wed', thu: 'Thu', fri: 'Fri', sat: 'Sat' };
-const ROUTINE_REPEAT_OPTIONS = [
-    { value: '', label: 'One-time (no repeat)' },
-    { value: 'hourly', label: 'Hourly' },
-    { value: 'daily', label: 'Daily' },
-    { value: 'weekdays', label: 'Weekdays (Mon–Fri)' },
-    { value: 'weekly', label: 'Weekly' },
-    { value: 'biweekly', label: 'Every 2 weeks' },
-    { value: 'monthly', label: 'Monthly' },
-    { value: 'quarterly', label: 'Every 3 months' },
-    { value: 'yearly', label: 'Yearly' },
-];
-
 function formatRoutineNextRun(iso) {
     if (!iso) return '—';
     const d = new Date(iso);
@@ -1642,8 +1633,6 @@ function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
     });
     const [time, setTime] = useState(initialRoutine?.timeOfDay || '08:00');
     const [timezone, setTimezone] = useState(initialRoutine?.timezone || (Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'));
-    const [repeatInterval, setRepeatInterval] = useState(initialRoutine?.repeatInterval || 'daily');
-    const [advancedOpen, setAdvancedOpen] = useState(false);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
 
@@ -1684,7 +1673,12 @@ function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
             const body = {
                 title: title.trim(),
                 prompt: prompt.trim(),
-                repeatInterval: mode === 'hourly' ? 'hourly' : (repeatInterval || null),
+                // Daily mode: pick the cheapest cadence the day picker implies.
+                // All 7 days = daily, anything less = weekly (the runner uses
+                // daysOfWeek to skip non-permitted days).
+                repeatInterval: mode === 'hourly'
+                    ? 'hourly'
+                    : (Array.isArray(daysOfWeek) && daysOfWeek.length === 7 ? 'daily' : 'weekly'),
                 daysOfWeek: mode === 'daily' ? daysOfWeek : null,
                 timeOfDay: mode === 'daily' ? time : null,
                 timezone,
@@ -1773,9 +1767,9 @@ function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                                                 key={d}
                                                 type="button"
                                                 onClick={() => toggleDay(d)}
-                                                className={`flex-1 py-1.5 rounded-full text-xs font-medium transition ${active
-                                                    ? 'bg-[var(--accent)] text-white'
-                                                    : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]'}`}
+                                                className={`flex-1 py-1.5 rounded-full text-xs font-medium transition border ${active
+                                                    ? 'bg-[var(--accent)] text-white border-[var(--accent)]'
+                                                    : 'bg-[var(--bg-primary)] text-[var(--text-secondary)] border-[var(--border-default)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]'}`}
                                             >
                                                 {ROUTINE_DOW_LABELS[d]}
                                             </button>
@@ -1807,30 +1801,6 @@ function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                                     />
                                 </div>
                             </div>
-                            <button
-                                type="button"
-                                onClick={() => setAdvancedOpen(v => !v)}
-                                className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition flex items-center gap-1"
-                            >
-                                <ChevronRight size={12} className={`transition-transform ${advancedOpen ? 'rotate-90' : ''}`} />
-                                Advanced repeat
-                            </button>
-                            {advancedOpen && (
-                                <div>
-                                    <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                        {t('routines.repeat') || 'Repeat'}
-                                    </div>
-                                    <select
-                                        value={repeatInterval || ''}
-                                        onChange={(e) => setRepeatInterval(e.target.value || null)}
-                                        className="w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--accent)] cursor-pointer"
-                                    >
-                                        {ROUTINE_REPEAT_OPTIONS.map(o => (
-                                            <option key={o.value} value={o.value}>{o.label}</option>
-                                        ))}
-                                    </select>
-                                </div>
-                            )}
                         </>
                     )}
 

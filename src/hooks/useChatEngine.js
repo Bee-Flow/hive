@@ -748,6 +748,13 @@ export default function useChatEngine({
                 onWebpageExtraDeletedRef.current?.({ path: data.path });
                 break;
 
+            // DB tool wrote — re-broadcast as a DOM event so the open DB
+            // viewer (if mounted) can refresh its schema/rows. Avoids drilling
+            // a callback through the chat → IDE → viewer prop chain.
+            case 'webpage_db_update':
+                try { window.dispatchEvent(new CustomEvent('webpage_db_update')); } catch (_) {}
+                break;
+
             // Webpage plan proposal — attach to the in-flight assistant message
             // so the chat can render an approval card. The user will click
             // Approve/Reject and the plan card flips status; on Approve a new

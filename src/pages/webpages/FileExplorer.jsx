@@ -148,7 +148,7 @@ export default function FileExplorer({
     onFileSelect,
     dirtyFiles = {},
     extraFiles = [],
-    dbSize = 0,         // bytes; render data.db row only when > 0
+    dbSize = 0,         // bytes; data.db row is always shown — 0 renders as "empty"
 }) {
     // Track expanded folders by their path. The pseudo-root "src" lives at
     // path = '__src__' since the primary slots aren't really nested in a
@@ -166,8 +166,8 @@ export default function FileExplorer({
     const tree = useMemo(() => buildTree(extraFiles), [extraFiles]);
 
     const srcOpen = expanded.has('__src__');
-    const activePath = activeFile && typeof activeFile === 'object' && activeFile.path
-        ? `extra:${activeFile.path}`
+    const activePath = activeFile && typeof activeFile === 'object'
+        ? (activeFile.kind === 'db' ? 'db' : (activeFile.path ? `extra:${activeFile.path}` : null))
         : (typeof activeFile === 'string' ? activeFile : null);
 
     return (
@@ -221,19 +221,28 @@ export default function FileExplorer({
                 );
             })}
 
-            {srcOpen && dbSize > 0 && (
-                <div
-                    title={`SQLite database — managed via the AI chat or window.beeflowDB inside the page (${formatBytes(dbSize)})`}
-                    className="flex items-center gap-1.5 py-0.5 w-full text-left text-[12px] cursor-default"
-                    style={{ paddingLeft: 24, color: 'var(--vsc-fg-muted)', opacity: 0.85 }}
-                >
-                    <Database size={13} />
-                    <span className="flex-1 truncate">data.db</span>
-                    <span className="text-[10px] mr-2 shrink-0" style={{ opacity: 0.7 }}>
-                        {formatBytes(dbSize)}
-                    </span>
-                </div>
-            )}
+            {srcOpen && (() => {
+                const isActive = activePath === 'db';
+                const isEmpty = !dbSize;
+                return (
+                    <button
+                        onClick={() => onFileSelect({ kind: 'db' })}
+                        title={`SQLite database${isEmpty ? ' (empty — click to create tables)' : ` (${formatBytes(dbSize)})`} — open the DB viewer`}
+                        className="flex items-center gap-1.5 py-0.5 w-full text-left text-[12px] transition-colors"
+                        style={{
+                            paddingLeft: 24,
+                            background: isActive ? 'var(--vsc-file-active-bg)' : 'transparent',
+                            color: isActive ? 'var(--vsc-fg)' : 'var(--vsc-fg-muted)',
+                        }}
+                    >
+                        <Database size={13} />
+                        <span className="flex-1 truncate">data.db</span>
+                        <span className="text-[10px] mr-2 shrink-0" style={{ opacity: 0.7 }}>
+                            {isEmpty ? 'empty' : formatBytes(dbSize)}
+                        </span>
+                    </button>
+                );
+            })()}
 
             {/* Extra files: folder tree */}
             {tree.length > 0 && (

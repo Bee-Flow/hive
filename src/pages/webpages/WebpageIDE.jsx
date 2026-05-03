@@ -7,6 +7,7 @@ import WebpageEditor from './WebpageEditor';
 import WebpagePreview from './WebpagePreview';
 import WebpageChat from './WebpageChat';
 import WebpageSources from './WebpageSources';
+import WebpageDbViewer from './WebpageDbViewer';
 import StatusBar from './StatusBar';
 import scopedStorage from '../../utils/scopedStorage';
 
@@ -157,7 +158,8 @@ export default function WebpageIDE({
     const dirtyFiles = {};
     // (simplified — we don't track per-file dirty here, parent tracks overall saveState)
 
-    const fileSize = new Blob([{ html, css, js }[activeFile] || '']).size;
+    const isDbView = !!activeFile && typeof activeFile === 'object' && activeFile.kind === 'db';
+    const fileSize = isDbView ? 0 : new Blob([{ html, css, js }[activeFile] || '']).size;
 
     const handleFileChange = (file, value) => {
         if (file === 'html') onHtmlChange(value);
@@ -190,9 +192,10 @@ export default function WebpageIDE({
                                     activeFile={activeFile}
                                     onFileSelect={(file) => {
                                         // Primary slot: 'html' | 'css' | 'js'  — opens Monaco.
-                                        // Extra file (object): selecting it does nothing
-                                        // editor-wise yet (the AI manages extras via tools).
+                                        // { kind: 'db' } — opens the DB viewer in the editor pane.
+                                        // Other extra-file objects: not yet wired (AI manages them).
                                         if (typeof file === 'string') openFile(file);
+                                        else if (file?.kind === 'db') openFile({ kind: 'db' });
                                     }}
                                     dirtyFiles={dirtyFiles}
                                     extraFiles={extraFiles}
@@ -246,17 +249,21 @@ export default function WebpageIDE({
 
                     {editorOpen && (
                         <>
-                            {/* Editor */}
+                            {/* Editor pane — Monaco for html/css/js, DB viewer for the db file. */}
                             <div style={{ flex: `0 0 ${editorPct}%`, minHeight: 0, overflow: 'hidden' }}>
-                                <WebpageEditor
-                                    activeFile={activeFile}
-                                    html={html}
-                                    css={css}
-                                    js={js}
-                                    onChange={handleFileChange}
-                                    theme={theme}
-                                    onCursorChange={setCursor}
-                                />
+                                {isDbView ? (
+                                    <WebpageDbViewer webpageId={selected?.id} theme={theme} />
+                                ) : (
+                                    <WebpageEditor
+                                        activeFile={activeFile}
+                                        html={html}
+                                        css={css}
+                                        js={js}
+                                        onChange={handleFileChange}
+                                        theme={theme}
+                                        onCursorChange={setCursor}
+                                    />
+                                )}
                             </div>
 
                             {/* Editor/Preview resize handle */}

@@ -1,20 +1,24 @@
 import React from 'react';
-import { Code, Palette, Cpu, X } from 'lucide-react';
+import { Code, Palette, Cpu, Database, X } from 'lucide-react';
 
-const TABS = [
+const PRIMARY_TABS = [
     { id: 'html', label: 'index.html', Icon: Code },
     { id: 'css',  label: 'style.css',  Icon: Palette },
     { id: 'js',   label: 'script.js',  Icon: Cpu },
 ];
 
 export default function EditorTabs({ activeFile, onSelect, onClose, dirtyFiles = {} }) {
+    const isDbActive = !!activeFile && typeof activeFile === 'object' && activeFile.kind === 'db';
+    const tabs = isDbActive
+        ? [...PRIMARY_TABS, { id: 'db', label: 'data.db', Icon: Database, payload: { kind: 'db' } }]
+        : PRIMARY_TABS;
     return (
         <div
             className="flex items-end shrink-0 overflow-x-auto"
             style={{ height: 35, background: 'var(--vsc-tab-inactive-bg)', borderBottom: '1px solid var(--vsc-border)' }}
         >
-            {TABS.map(({ id, label, Icon }) => {
-                const isActive = id === activeFile;
+            {tabs.map(({ id, label, Icon, payload }) => {
+                const isActive = id === 'db' ? isDbActive : id === activeFile;
                 const isDirty = !!dirtyFiles[id];
                 return (
                     <div
@@ -28,7 +32,7 @@ export default function EditorTabs({ activeFile, onSelect, onClose, dirtyFiles =
                         }}
                     >
                         <button
-                            onClick={() => onSelect(id)}
+                            onClick={() => onSelect(payload || id)}
                             className="flex items-center gap-1.5 pl-3 pr-2 h-full text-[12px]"
                             style={{ color: 'inherit' }}
                         >
