@@ -560,10 +560,15 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     const flushNow = () => { if (dirtyRef.current) flush(); };
 
     const handleRefine = async (overrideText = null) => {
-        const text = (overrideText ?? chatInput).trim();
+        // Callers pass either a string (programmatic refine from the wizard
+        // hand-off) or nothing (button/Enter). React event objects and similar
+        // non-string values get treated as "no override" so we fall back to
+        // the live chatInput.
+        const usingOverride = typeof overrideText === 'string';
+        const text = (usingOverride ? overrideText : chatInput).trim();
         if (!text || chatBusy) return;
         setChat(prev => [...prev, { role: 'user', content: text }]);
-        if (overrideText == null) setChatInput('');
+        if (!usingOverride) setChatInput('');
         setChatBusy(true);
         try {
             const res = await authFetch(`${API_BASE}/agents/wizard/refine`, {
