@@ -1560,15 +1560,13 @@ const AgentHub = ({
                 chatHistoryMode={chatHistoryMode}
                 allAgentConversations={allAgentConversations}
                 onSelectAllChatsConversation={(conv) => {
-                    // Close any open overlays
-                    if (onCloseSettings) onCloseSettings();
-                    if (onCloseAgentDesigner) onCloseAgentDesigner();
-                    if (onCloseAITasks) onCloseAITasks();
-                    if (onCloseSkillsPanel) onCloseSkillsPanel();
-        if (onCloseEmailKB) onCloseEmailKB();
-                    setShowMarketplace(false);
-                    setShowKBStore(false);
-                    setActiveKBId(null);
+                    // Close every overlay before switching context — Studio, Agent
+                    // Wizard, Notebooks, Webpages, etc. were all missing here, which
+                    // is why clicking a chat from history while Studio was open
+                    // appeared to "do nothing": the conversation loaded behind the
+                    // Studio overlay. closeAllOverlays() is the single source of
+                    // truth for this and matches the per-agent path above.
+                    closeAllOverlays();
                     if (conv._source === 'direct') {
                         // Switch to direct chat mode and open the conversation
                         if (!directChatMode) {

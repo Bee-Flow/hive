@@ -955,6 +955,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 tiers={tiers || {}}
                                 value={selectedTier}
                                 onChange={(v) => updateModel(v)}
+                                dropDirection="down"
                             />
                         </div>
                         <ActionPill
