@@ -797,16 +797,15 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 </button>
                             </div>
                             <div className="flex items-center gap-2">
-                                {/* Tier picker lives only in the agent header — duplicating
-                                    it here was confusing because both controls actually
-                                    persist to the agent's tier. We surface the current
-                                    tier as a read-only label so users still know which
-                                    tier the chat refine call uses. */}
-                                {selectedTier && (
-                                    <span className="text-xs text-[var(--text-tertiary)]" title={t('routines.model_tier') || 'Model tier'}>
-                                        {tierLabel(selectedTier, tiers || {})}
-                                    </span>
-                                )}
+                                {/* Same tier picker shape as direct chat — sits next to the
+                                    send button and writes through to the agent's model so
+                                    the change persists. */}
+                                <ModelTierSelector
+                                    tiers={tiers || {}}
+                                    value={selectedTier}
+                                    onChange={updateModel}
+                                    dropDirection="up"
+                                />
                                 <button
                                     onClick={handleRefine}
                                     disabled={chatBusy || !chatInput.trim()}
@@ -857,13 +856,15 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                     <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1">
                                         {t('agent_wizard.builder.role_description_label') || 'Role description'}
                                     </div>
-                                    <input
+                                    <textarea
                                         value={description}
-                                        onChange={(e) => updateDescription(e.target.value)}
+                                        onChange={(e) => updateDescription(e.target.value.slice(0, 500))}
                                         onBlur={flushNow}
                                         placeholder={t('agent_wizard.field.role_description_placeholder')}
-                                        className="w-full bg-[var(--bg-secondary)]/40 border border-transparent hover:bg-[var(--bg-secondary)] focus:border-[var(--accent)] outline-none rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] transition"
+                                        rows={4}
+                                        className="w-full bg-[var(--bg-secondary)]/40 border border-transparent hover:bg-[var(--bg-secondary)] focus:border-[var(--accent)] outline-none rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] transition resize-none"
                                     />
+                                    <div className="text-right text-[10px] text-[var(--text-tertiary)] mt-0.5">{description.length}/500</div>
                                 </div>
                                 <div>
                                     <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1">
@@ -1058,23 +1059,6 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                         )}
                     </div>
 
-                    {attachedSkillIds.length > 0 && (
-                        <div className="mb-8">
-                            <div className="text-sm text-[var(--text-secondary)] mb-2">{t('agent_wizard.builder.skills')}</div>
-                            <div className="flex flex-wrap gap-2">
-                                {attachedSkillIds.map((id) => {
-                                    const s = skillNamesById.get(id);
-                                    return (
-                                        <span key={id} className="px-3 py-1 rounded-full bg-[var(--bg-secondary)] border border-[var(--border-default)] text-sm text-[var(--text-primary)] flex items-center gap-2">
-                                            <span>{s?.icon || '✨'}</span>
-                                            <span>{s?.name || id}</span>
-                                            <button onClick={() => toggleSkill(id)} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={12} /></button>
-                                        </span>
-                                    );
-                                })}
-                            </div>
-                        </div>
-                    )}
 
                     <div className="mt-10">
                         <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-3">{t('agent_wizard.builder.instructions')}</div>

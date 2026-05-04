@@ -90,9 +90,14 @@ const AgentHub = ({
     // start in icon-rail mode. The user can still toggle it.
     const [sidebarOpen, setSidebarOpen] = useState(() => window.innerWidth >= 768);
     const [studioFullscreen, setStudioFullscreen] = useState(false);
+    // Collapse the main sidebar to its icon-rail whenever Studio is open OR a
+    // child explicitly asks for fullscreen (legacy path used by AgentStudio's
+    // edit mode). Stash the prior expanded/collapsed state so we can restore
+    // it when the user navigates back out of Studio.
+    const collapseForStudio = showStudio || studioFullscreen;
     const sidebarOpenBeforeStudioRef = useRef(null);
     useEffect(() => {
-        if (studioFullscreen) {
+        if (collapseForStudio) {
             if (sidebarOpenBeforeStudioRef.current === null) {
                 sidebarOpenBeforeStudioRef.current = sidebarOpen;
             }
@@ -103,7 +108,7 @@ const AgentHub = ({
             if (restore) setSidebarOpen(true);
         }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [studioFullscreen]);
+    }, [collapseForStudio]);
     const [notebookContent, setNotebookContent] = useState('');
     const [notebookLastFetchedId, setNotebookLastFetchedId] = useState(null);
     const [notebookSelection, setNotebookSelection] = useState('');
@@ -786,17 +791,10 @@ const AgentHub = ({
     // --- Actions ---
 
     const handleSelectAgent = (agent) => {
+        closeAllOverlays();
         setSelectedAgent(agent);
         setDesignMode(false);
-        setShowMarketplace(false);
-        setShowKBStore(false);
-        setActiveKBId(null);
-        setShowProjectsStore(false);
-        setActiveProjectId(null);
         setDirectChatMode(false);
-        if (onCloseSettings) onCloseSettings();
-        if (onCloseAgentDesigner) onCloseAgentDesigner();
-        if (onCloseAITasks) onCloseAITasks();
 
         // Auto-start new chat — reset notebook only when switching agents
         setCurrentConversation({ id: null, title: 'New Chat', messages: [] });
@@ -1139,6 +1137,28 @@ const AgentHub = ({
         }
     };
 
+    // Single source of truth for "user navigated somewhere — dismiss every
+    // floating overlay first." Without this, opening a chat / notification /
+    // marketplace while Studio (or AgentWizard / SkillsPanel / etc) is open
+    // leaves the overlay sitting on top of the new content. Every navigation
+    // entry point should call this before changing state.
+    const closeAllOverlays = () => {
+        if (onCloseSettings) onCloseSettings();
+        if (onCloseAgentDesigner) onCloseAgentDesigner();
+        if (onCloseAgentWizard) onCloseAgentWizard();
+        if (onCloseStudio) onCloseStudio();
+        if (onCloseAITasks) onCloseAITasks();
+        if (onCloseSkillsPanel) onCloseSkillsPanel();
+        if (onCloseEmailKB) onCloseEmailKB();
+        if (onCloseNotebooks) onCloseNotebooks();
+        if (onCloseWebpages) onCloseWebpages();
+        setShowMarketplace(false);
+        setShowKBStore(false);
+        setActiveKBId(null);
+        setShowProjectsStore(false);
+        setActiveProjectId(null);
+    };
+
     const handleDirectChat = () => {
         setDirectChatMode(true);
         setSelectedAgent(null);
@@ -1157,13 +1177,7 @@ const AgentHub = ({
         setActiveKBId(null);
         setShowProjectsStore(false);
         setActiveProjectId(null);
-        if (onCloseSettings) onCloseSettings();
-        if (onCloseAgentDesigner) onCloseAgentDesigner();
-        if (onCloseAgentWizard) onCloseAgentWizard();
-        if (onCloseStudio) onCloseStudio();
-        if (onCloseAITasks) onCloseAITasks();
-        if (onCloseSkillsPanel) onCloseSkillsPanel();
-        if (onCloseEmailKB) onCloseEmailKB();
+        closeAllOverlays();
         scopedStorage.setItem('lastUsedMode', 'direct-chat');
         loadDirectConversations();
         loadModelTiers();
@@ -1224,18 +1238,7 @@ const AgentHub = ({
     };
 
     const handleNewChat = () => {
-        if (onCloseSettings) onCloseSettings();
-        if (onCloseAgentDesigner) onCloseAgentDesigner();
-        if (onCloseAgentWizard) onCloseAgentWizard();
-        if (onCloseStudio) onCloseStudio();
-        if (onCloseAITasks) onCloseAITasks();
-        if (onCloseSkillsPanel) onCloseSkillsPanel();
-        if (onCloseEmailKB) onCloseEmailKB();
-        setShowMarketplace(false);
-        setShowKBStore(false);
-        setActiveKBId(null);
-        setShowProjectsStore(false);
-        setActiveProjectId(null);
+        closeAllOverlays();
         if (directChatMode) {
             setCurrentDirectConversation(null);
             setMessages([]);
@@ -1464,17 +1467,7 @@ const AgentHub = ({
                 groupedConversations={getGroupedConversations()}
                 currentConversation={currentConversation}
                 onSelectConversation={(conv) => {
-                    // Close any open overlays
-                    if (onCloseSettings) onCloseSettings();
-                    if (onCloseAgentDesigner) onCloseAgentDesigner();
-                    if (onCloseAITasks) onCloseAITasks();
-                    if (onCloseSkillsPanel) onCloseSkillsPanel();
-        if (onCloseEmailKB) onCloseEmailKB();
-                    setShowMarketplace(false);
-                    setShowKBStore(false);
-                    setActiveKBId(null);
-                    setShowProjectsStore(false);
-                    setActiveProjectId(null);
+                    closeAllOverlays();
                     // Switch agent if the conversation belongs to a different one
                     if (conv.agent_id && (!selectedAgent || selectedAgent.id !== conv.agent_id)) {
                         const agent = agents.find(a => a.id === conv.agent_id);
@@ -1490,9 +1483,9 @@ const AgentHub = ({
                 }}
                 onDeleteConversation={handleDeleteConversation}
                 onSelectAgent={handleSelectAgent}
-                onOpenMarketplace={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); if (onCloseAITasks) onCloseAITasks(); setShowKBStore(false); setActiveKBId(null); setShowProjectsStore(false); setActiveProjectId(null); setShowMarketplace(true); }}
-                onOpenKBStore={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); if (onCloseAITasks) onCloseAITasks(); setShowMarketplace(false); setActiveKBId(null); setShowProjectsStore(false); setActiveProjectId(null); setShowKBStore(true); }}
-                onOpenSearch={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); if (onCloseAITasks) onCloseAITasks(); setShowSearch(true); }}
+                onOpenMarketplace={() => { closeAllOverlays(); setShowMarketplace(true); }}
+                onOpenKBStore={() => { closeAllOverlays(); setShowKBStore(true); }}
+                onOpenSearch={() => { closeAllOverlays(); setShowSearch(true); }}
                 hasPermission={hasPermission}
                 user={user}
                 onLogout={onLogout}
