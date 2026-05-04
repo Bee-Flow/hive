@@ -739,8 +739,8 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     return (
         <div className="flex h-full bg-[var(--bg-card,#ffffff)]">
             {/* Left chat panel */}
-            <aside style={{ width: chatWidth }} className="flex-shrink-0 border-r border-[var(--border-default)] flex flex-col min-w-[240px] max-w-[600px] bg-[var(--bg-secondary)]">
-                <div className="flex items-center px-4 py-3 border-b border-[var(--border-default)]">
+            <aside style={{ width: chatWidth }} className="flex-shrink-0 border-r border-[var(--border-default)] flex flex-col min-w-[240px] max-w-[600px] bg-[var(--bg-card,#fff)]">
+                <div className="flex items-center px-4 py-3">
                     <button onClick={onBack} className="flex items-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
                         <ArrowLeft size={16} /> {t('agent_wizard.back')}
                     </button>
@@ -748,6 +748,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 <div ref={chatScrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
                     {chat.length === 0 && (
                         <div className="h-full flex flex-col items-center justify-center text-center px-3">
+                            <img src="/BeeFlow-logo-Icon-2026.svg" alt="Bee Flow" className="w-12 h-12 mb-4" />
                             <div className="text-base font-semibold text-[var(--text-primary)] mb-2">
                                 Refine this agent
                             </div>
@@ -795,15 +796,19 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 </div>
                             );
                         }
-                        return <div key={i} className="text-sm text-[var(--text-secondary)]">{m.content}</div>;
+                        return (
+                            <div key={i} className="text-[15px] leading-7 text-[var(--text-primary)] prose prose-sm max-w-none">
+                                <MarkdownRenderer content={m.content || ''} />
+                            </div>
+                        );
                     })}
                 </div>
-                <div className="p-3 border-t border-[var(--border-default)]">
+                <div className="p-3">
                     {/* Visual parity with direct chat InputArea: textarea on top,
                         action icon row + tier pill + send on the bottom. The icons
                         open the same wizard pickers when relevant; placeholder
                         icons (paperclip / globe) are visual-only for parity. */}
-                    <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card,#fff)] px-4 pt-3 pb-2">
+                    <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-secondary)] px-4 pt-3 pb-2">
                         <textarea
                             value={chatInput}
                             onChange={(e) => setChatInput(e.target.value)}
@@ -862,6 +867,9 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 </button>
                             </div>
                         </div>
+                    </div>
+                    <div className="text-[11px] text-center text-[var(--text-tertiary)] mt-2">
+                        AI can make mistakes. Please verify important information.
                     </div>
                 </div>
             </aside>

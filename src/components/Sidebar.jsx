@@ -418,6 +418,9 @@ const Sidebar = ({
     const [projectsOpen, setProjectsOpen] = useState(() => readExpanded('projects', true));
     const [activeAITaskCount, setActiveAITaskCount] = useState(0);
     const profileRef = useRef(null);
+    const scrollRef = useRef(null);
+    const secondaryItemRefs = useRef({});
+    const [hiddenSecondaryKeys, setHiddenSecondaryKeys] = useState(() => new Set());
 
     const toggleAgents = useCallback(() => setAgentsOpen(p => { writeExpanded('agents', !p); return !p; }), []);
     const toggleChats = useCallback(() => setChatsOpen(p => { writeExpanded('chats', !p); return !p; }), []);
@@ -430,6 +433,48 @@ const Sidebar = ({
         document.addEventListener('mousedown', close);
         return () => document.removeEventListener('mousedown', close);
     }, [showProfileMenu]);
+
+    // Track which secondaryNav items have scrolled above the visible scroll
+    // region so we can render them as a compact icon strip pinned below the
+    // static coreNav. Uses IntersectionObserver against the scroll container.
+    const observerRef = useRef(null);
+    useEffect(() => {
+        if (!isOpen) { setHiddenSecondaryKeys(new Set()); return; }
+        const root = scrollRef.current;
+        if (!root) return;
+        const observer = new IntersectionObserver((entries) => {
+            setHiddenSecondaryKeys(prev => {
+                const next = new Set(prev);
+                let changed = false;
+                for (const entry of entries) {
+                    const key = entry.target.dataset.navKey;
+                    if (!key) continue;
+                    const rootTop = entry.rootBounds?.top ?? 0;
+                    const isAbove = !entry.isIntersecting && entry.boundingClientRect.bottom <= rootTop;
+                    if (isAbove) {
+                        if (!next.has(key)) { next.add(key); changed = true; }
+                    } else {
+                        if (next.has(key)) { next.delete(key); changed = true; }
+                    }
+                }
+                return changed ? next : prev;
+            });
+        }, { root, threshold: 0 });
+        observerRef.current = observer;
+        Object.values(secondaryItemRefs.current).forEach(el => { if (el) observer.observe(el); });
+        return () => { observer.disconnect(); observerRef.current = null; };
+    }, [isOpen]);
+
+    const setSecondaryRef = useCallback((key) => (el) => {
+        const prev = secondaryItemRefs.current[key];
+        if (prev && prev !== el && observerRef.current) observerRef.current.unobserve(prev);
+        if (el) {
+            secondaryItemRefs.current[key] = el;
+            if (observerRef.current) observerRef.current.observe(el);
+        } else {
+            delete secondaryItemRefs.current[key];
+        }
+    }, []);
 
     // Lightweight active AI task count for the sidebar badge.
     // Refreshed when the AI Tasks page is opened/closed, so create/edit/toggle
@@ -661,14 +706,35 @@ const Sidebar = ({
                 </div>
             )}
 
+            {/* ── Compact icon strip for secondaryNav items that have scrolled out of view ── */}
+            {isOpen && hiddenSecondaryKeys.size > 0 && (
+                <div className="px-2 py-1.5 flex items-center gap-1 flex-wrap flex-shrink-0 border-b border-[var(--border-subtle)]/50">
+                    {secondaryNav.filter(item => hiddenSecondaryKeys.has(item.key)).map(item => (
+                        <button
+                            key={item.key}
+                            onClick={item.onClick}
+                            title={item.label}
+                            aria-label={item.label}
+                            className={`w-8 h-8 rounded-lg flex items-center justify-center transition-colors flex-shrink-0 ${item.active ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]' : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]'}`}
+                        >
+                            <item.icon className="w-4 h-4" strokeWidth={item.active ? 2.25 : 1.75} />
+                        </button>
+                    ))}
+                </div>
+            )}
+
             {/* ── Scrollable middle region (Secondary nav + Projects + My Agents + Chats) ── */}
-            <div className={`flex-1 min-h-0 flex flex-col overflow-y-auto custom-scrollbar ${isOpen ? '' : ''}`}>
+            <div ref={scrollRef} className={`flex-1 min-h-0 flex flex-col overflow-y-auto custom-scrollbar ${isOpen ? '' : ''}`}>
 
             {/* ── Secondary nav (Agents, AI Tasks, KB, Meeting Notes, Skills, Tickets, Notebooks)
                  — sits inside the scroll region so it scrolls away like ChatGPT ── */}
             {isOpen && secondaryNav.length > 0 && (
                 <nav aria-label="Secondary navigation" className="px-2 pt-1 flex-shrink-0 flex flex-col gap-1">
-                    {secondaryNav.map(renderNavRow)}
+                    {secondaryNav.map(item => (
+                        <div key={item.key} ref={setSecondaryRef(item.key)} data-nav-key={item.key}>
+                            {renderNavRow(item)}
+                        </div>
+                    ))}
                 </nav>
             )}
 

@@ -191,7 +191,7 @@ export default function AgentWizard({ user, onClose, onPublished, onSwitchToManu
                 <div className="flex-1 flex flex-col items-center justify-center px-6">
                     <img src="/BeeFlow-logo-Icon-2026.svg" alt="Bee Flow" className="w-14 h-14 mb-3" />
                     <h1 className="text-2xl font-semibold text-[var(--text-primary)] mb-6">{t('agent_wizard.title')}</h1>
-                    <div className="w-full max-w-xl rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card,#fff)] overflow-hidden shadow-sm">
+                    <div className="w-full max-w-xl rounded-2xl border border-[var(--border-default)] bg-[var(--bg-secondary)] overflow-hidden">
                         <div className="p-4">
                             <PromptInput
                                 value={prompt}
@@ -294,7 +294,7 @@ function PromptInput({ value, onChange, onSubmit, busy, placeholder, tiers, tier
             />
             <div className="flex items-center justify-end mt-1 gap-2">
                 {onTierChange && (
-                    <ModelTierSelector tiers={tiers || {}} value={tier} onChange={onTierChange} dropDirection="up" />
+                    <ModelTierSelector tiers={tiers || {}} value={tier} onChange={onTierChange} dropDirection="up" variant="input" />
                 )}
                 <button
                     onClick={onSubmit}

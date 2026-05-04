@@ -1138,7 +1138,7 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
                                                 </div>
                                                 <p className="text-sm font-medium mb-1" style={{ color: 'var(--text-primary)' }}>Send Bot to Meeting</p>
                                                 <p className="text-xs mb-5" style={{ color: 'var(--text-muted)' }}>
-                                                    Paste a <strong>Google Meet</strong>, <strong>Microsoft Teams</strong>, or <strong>Zoom</strong> link. The bot joins as "Bee Flow - Meeting Assistant", records, and auto-transcribes when done.
+                                                    Paste a <strong>Google Meet</strong>, <strong>Microsoft Teams</strong>, or <strong>Zoom</strong> link. The bot joins as "Bee Flow - Meeting assistant", records, and auto-transcribes when done.
                                                 </p>
                                                 <div className="flex gap-2 max-w-md mx-auto">
                                                     <input
