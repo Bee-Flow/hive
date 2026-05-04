@@ -1198,6 +1198,7 @@ const InputArea = ({
                                             tiers={modelTiers}
                                             value={selectedTier}
                                             onChange={onTierChange}
+                                            variant="input"
                                         />
                                     </div>
                                 )}

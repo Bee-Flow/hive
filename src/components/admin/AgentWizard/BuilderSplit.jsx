@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { Send, Plus, Sparkles, Upload, Brain, AppWindow, ArrowLeft, X, Search, ChevronDown, ChevronRight, Image as ImageIcon, Globe, BookOpen, Paperclip, LayoutGrid, ArrowUp, Puzzle as PuzzlePiece, Sliders, Copy, Check, History, Clock, Play, Pause, Trash2 } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import useTranslation from '../../../hooks/useTranslation';
@@ -123,6 +124,14 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     const actionBarRef = useRef(null);
     // Separate ref just for the ··· overflow pill+popup, which is right-aligned.
     const overflowMenuRef = useRef(null);
+    // Popover is portalled to document.body, so click-outside needs its own ref —
+    // it's no longer a DOM descendant of overflowMenuRef.
+    const overflowPopoverRef = useRef(null);
+    // Trigger position for the portalled popover (right-aligned to the trigger,
+    // viewport-relative — avoids the action bar's overflow-y:auto ancestor that
+    // otherwise forces overflow-x:auto and clips the dropdown when the right
+    // panel is narrow).
+    const [overflowPopoverPos, setOverflowPopoverPos] = useState(null);
 
     useEffect(() => {
         const onDoc = (e) => {
@@ -131,13 +140,39 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 setSkillPickerOpen(false);
             }
             // Overflow menu — close when click is outside the overflow pill wrapper
-            if (overflowMenuOpen && overflowMenuRef.current && !overflowMenuRef.current.contains(e.target)) {
+            // OR the portalled popover (which lives outside the wrapper in the DOM).
+            if (overflowMenuOpen
+                && overflowMenuRef.current && !overflowMenuRef.current.contains(e.target)
+                && (!overflowPopoverRef.current || !overflowPopoverRef.current.contains(e.target))) {
                 setOverflowMenuOpen(false);
             }
         };
         document.addEventListener('mousedown', onDoc);
         return () => document.removeEventListener('mousedown', onDoc);
     }, [skillPickerOpen, overflowMenuOpen]);
+
+    // Track the trigger's bounding rect while the overflow popover is open
+    // so the portalled popover stays anchored to it on resize / scroll.
+    useEffect(() => {
+        if (!overflowMenuOpen) { setOverflowPopoverPos(null); return; }
+        const measure = () => {
+            const el = overflowMenuRef.current;
+            if (!el) return;
+            const rect = el.getBoundingClientRect();
+            setOverflowPopoverPos({
+                top: rect.bottom + 8,
+                right: Math.max(8, window.innerWidth - rect.right),
+            });
+        };
+        measure();
+        window.addEventListener('resize', measure);
+        window.addEventListener('scroll', measure, true);
+        return () => {
+            window.removeEventListener('resize', measure);
+            window.removeEventListener('scroll', measure, true);
+        };
+    }, [overflowMenuOpen]);
+
     const updateBubbleColor = (v) => { setBubbleColor(v); patchConfig({ bubbleColor: v }); };
     const updateBubblePosition = (v) => { setBubblePosition(v); patchConfig({ bubblePosition: v }); };
     const updateBubbleIcon = (v) => { setBubbleIcon(v); patchConfig({ bubbleIcon: v }); };
@@ -951,8 +986,18 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 onClick={() => setOverflowMenuOpen(v => !v)}
                                 active={overflowMenuOpen || behaviorPickerOpen || versionPickerOpen || skillPickerOpen || !!categoryId || memoryEnabled || attachedSkillIds.length > 0}
                             />
-                            {overflowMenuOpen && (
-                                <div className="absolute z-30 top-full right-0 mt-2 w-64 rounded-xl border border-[var(--border-default)] bg-[var(--bg-card,#fff)] shadow-lg p-3">
+                            {overflowMenuOpen && overflowPopoverPos && createPortal(
+                                <div
+                                    ref={overflowPopoverRef}
+                                    style={{
+                                        position: 'fixed',
+                                        top: overflowPopoverPos.top,
+                                        right: overflowPopoverPos.right,
+                                        width: 'min(16rem, calc(100vw - 1rem))',
+                                        zIndex: 1000,
+                                    }}
+                                    className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-card,#fff)] shadow-lg p-3"
+                                >
                                     <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-2">
                                         {t('agent_wizard.builder.category_label') || 'Category'}
                                     </div>
@@ -989,7 +1034,8 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                             <span>{t('agent_wizard.section.versions') || 'Version History'}</span>
                                         </button>
                                     )}
-                                </div>
+                                </div>,
+                                document.body
                             )}
                         </div>
 
