@@ -65,6 +65,7 @@ function detectMeetingPlatform(url, platforms = []) {
     if (/meet\.google\.com/i.test(url)) family = 'google';
     else if (/teams\.(microsoft|live)\.com/i.test(url)) family = 'teams';
     else if (/zoom\.us/i.test(url)) family = 'zoom';
+    else if (/(?:\/index\.php)?\/call\/[a-zA-Z0-9]+(?:[/?#]|$)/.test(url)) family = 'nextcloud';
     if (!family) return null;
 
     const families = {
@@ -87,6 +88,13 @@ function detectMeetingPlatform(url, platforms = []) {
             color: '#2d8cff',
             order: ['zoom'],
             fallbackId: 'zoom',
+            fallbackRequiresCreds: false,
+        },
+        nextcloud: {
+            label: 'Nextcloud Talk',
+            color: '#0082c9',
+            order: ['nextcloud-talk'],
+            fallbackId: 'nextcloud-talk',
             fallbackRequiresCreds: false,
         },
     };
@@ -137,6 +145,7 @@ function platformBadge(platform) {
         case 'google-meet-sdk': return { label: 'Meet (SDK)', color: '#1a73e8', emoji: '⚡' };
         case 'teams-graph': return { label: 'Teams', color: '#5059c9', emoji: '⚡' };
         case 'zoom': return { label: 'Zoom', color: '#2d8cff', emoji: '🔵' };
+        case 'nextcloud-talk': return { label: 'Nextcloud Talk', color: '#0082c9', emoji: '💬' };
         default: return { label: platform || 'Bot', color: '#6366f1', emoji: '🤖' };
     }
 }

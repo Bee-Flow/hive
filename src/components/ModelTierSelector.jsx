@@ -5,7 +5,7 @@ import AppEmoji from './AppEmoji';
 // Map a tier key to its catalog id; custom tiers fall back to tier.custom.
 const tierCatalogId = (key) => key?.startsWith('custom:') ? 'tier.custom' : (key === 'pro' ? 'tier.deep' : `tier.${key}`);
 
-const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection = 'up' }) => {
+const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection = 'up', variant = 'default' }) => {
     const [open, setOpen] = useState(false);
     const ref = useRef(null);
 
@@ -34,12 +34,12 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
                 onClick={() => setOpen(!open)}
                 style={{
                     display: 'flex', alignItems: 'center', gap: '6px',
-                    padding: '8px 12px', borderRadius: '8px',
-                    background: 'var(--bg-secondary)', border: '1px solid var(--border-default)',
+                    padding: '6px 12px', borderRadius: '8px',
+                    background: variant === 'input' ? 'var(--bg-secondary)' : 'var(--bg-card, #fff)', border: '1px solid var(--border-default)',
                     color: 'var(--text-primary)', cursor: 'pointer',
-                    fontSize: '13px', fontWeight: 500, transition: 'all 0.15s',
+                    fontSize: '12px', fontWeight: 500, transition: 'all 0.15s',
                     whiteSpace: 'nowrap',
-                    height: '36px'
+                    height: 'auto'
                 }}
                 title="Select model tier"
                 data-testid="model-tier-trigger"

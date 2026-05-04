@@ -61,7 +61,7 @@ export default function BehaviorPicker({
     return (
         <div
             ref={popoverRef}
-            className="absolute z-30 top-full left-0 mt-2 w-[460px] max-h-[70vh] overflow-y-auto rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-xl"
+            className="absolute z-30 top-full left-0 mt-2 w-[460px] max-h-[70vh] overflow-y-auto rounded-xl border border-[var(--border-default)] bg-[var(--bg-card,#fff)] shadow-xl"
         >
             <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
                 <span className="text-sm font-medium text-[var(--text-primary)]">{t('agent_wizard.section.behavior') || 'Behavior'}</span>

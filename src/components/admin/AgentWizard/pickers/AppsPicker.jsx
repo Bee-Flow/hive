@@ -28,7 +28,7 @@ export default function AppsPicker({ items, enabled, onClose, onToggle, t }) {
             onClick={onClose}
         >
             <div
-                className="w-full max-w-3xl h-[560px] rounded-2xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-2xl overflow-hidden flex"
+                className="w-full max-w-3xl h-[560px] rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card,#fff)] shadow-2xl overflow-hidden flex"
                 onClick={(e) => e.stopPropagation()}
             >
                 {/* Left: search + list */}

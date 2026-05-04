@@ -64,7 +64,7 @@ export function RoutinesPicker({ t, agent, routines, onClose, onCreate, onEdit, 
     return (
         <div
             ref={popoverRef}
-            className="absolute z-30 top-full left-0 mt-2 w-[440px] max-h-[70vh] overflow-y-auto rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-xl"
+            className="absolute z-30 top-full left-0 mt-2 w-[460px] max-h-[70vh] overflow-y-auto rounded-xl border border-[var(--border-default)] bg-[var(--bg-card,#fff)] shadow-xl"
         >
             <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
                 <div className="flex items-center gap-2">
@@ -79,7 +79,7 @@ export function RoutinesPicker({ t, agent, routines, onClose, onCreate, onEdit, 
                 <button
                     type="button"
                     onClick={onCreate}
-                    className="w-full mb-2 flex items-center justify-center gap-1.5 py-2 rounded-lg bg-[var(--accent)]/10 hover:bg-[var(--accent)]/20 text-[var(--accent)] text-sm font-medium transition"
+                    className="w-full mb-2 flex items-center justify-center gap-1.5 py-2 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card,#fff)] text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] text-sm font-medium transition"
                 >
                     <Plus size={14} /> {t('routines.new') || 'New routine'}
                 </button>
@@ -216,7 +216,7 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40" onClick={onClose}>
             <div
-                className="w-full max-w-md rounded-2xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-2xl overflow-hidden"
+                className="w-full max-w-md rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card,#fff)] shadow-2xl overflow-hidden"
                 onClick={(e) => e.stopPropagation()}
             >
                 <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-default)]">
@@ -228,7 +228,7 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                 <div className="p-5 space-y-4 max-h-[70vh] overflow-y-auto">
                     {/* Repeat cadence picker — drives which body fields show. */}
                     <div>
-                        <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                        <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">
                             {t('routines.repeat') || 'Repeat'}
                         </div>
                         <select
@@ -248,7 +248,7 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                     {/* Hourly mode */}
                     {mode === 'hourly' && (
                         <div>
-                            <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                            <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">
                                 {t('routines.run_every') || 'Run every'}
                             </div>
                             <select
@@ -267,7 +267,7 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                         Weekdays mode is implicit (Mon–Fri) and skips the picker. */}
                     {usesDayPicker && mode !== 'weekdays' && (
                         <div>
-                            <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                            <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">
                                 {mode === 'daily' ? (t('routines.run_every') || 'Run every') : (t('routines.day_of_week') || 'Day of week')}
                             </div>
                             <div className="flex gap-1">
@@ -293,7 +293,7 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                     {/* Day-of-month — only for Monthly mode. Capped at 28 so every month fires. */}
                     {usesDayOfMonth && (
                         <div>
-                            <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                            <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">
                                 {t('routines.day_of_month') || 'Day of month'}
                             </div>
                             <select
@@ -312,7 +312,7 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                     {mode !== 'hourly' && (
                         <div className="grid grid-cols-2 gap-3">
                             <div>
-                                <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                                <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">
                                     {t('routines.time') || 'Time'}
                                 </div>
                                 <input
@@ -323,7 +323,7 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                                 />
                             </div>
                             <div>
-                                <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                                <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">
                                     {t('routines.timezone') || 'Timezone'}
                                 </div>
                                 <select
@@ -340,7 +340,7 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                     )}
 
                     <div>
-                        <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                        <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">
                             {t('routines.task_name') || 'Routine name'}
                         </div>
                         <input
@@ -351,7 +351,7 @@ export function RoutineModal({ t, agent, initialRoutine, onClose, onSaved }) {
                         />
                     </div>
                     <div>
-                        <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                        <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">
                             {t('routines.additional_instructions_optional') || 'Additional instructions (optional)'}
                         </div>
                         <textarea

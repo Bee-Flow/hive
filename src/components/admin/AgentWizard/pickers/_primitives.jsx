@@ -26,7 +26,7 @@ export function CollapsibleSection({ title, open, onToggle, children }) {
 export function Field({ label, children }) {
     return (
         <div>
-            <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">{label}</div>
+            <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1.5">{label}</div>
             {children}
         </div>
     );

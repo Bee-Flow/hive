@@ -176,54 +176,53 @@ export default function AgentWizard({ user, onClose, onPublished, onSwitchToManu
 
     return (
         <div className="flex flex-col h-full bg-[var(--bg-primary)]">
-            <div className="flex items-center justify-between px-6 py-3 border-b border-[var(--border-default)]">
-                <div className="text-sm font-semibold text-[var(--text-primary)]">{t('agent_wizard.title')}</div>
-                <div className="flex items-center gap-3">
-                    {stage === 'review' && (
-                        <button
-                            onClick={() => { setStage('landing'); setPlan(null); setHistory([]); setPrompt(''); }}
-                            className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-                        >
-                            {t('agent_wizard.start_over')}
-                        </button>
-                    )}
+            {stage === 'review' && (
+                <div className="flex items-center justify-end px-6 py-3 border-b border-[var(--border-default)]">
                     <button
-                        onClick={() => (onSwitchToManual || onClose) && (onSwitchToManual || onClose)()}
+                        onClick={() => { setStage('landing'); setPlan(null); setHistory([]); setPrompt(''); }}
                         className="text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
                     >
-                        {t('agent_wizard.switch_manual')}
+                        {t('agent_wizard.start_over')}
                     </button>
                 </div>
-            </div>
+            )}
 
             {stage === 'landing' && (
                 <div className="flex-1 flex flex-col items-center justify-center px-6">
-                    <img src="/BeeFlow-logo-Icon-2026.svg" alt="Bee Flow" className="w-16 h-16 mb-4" />
-                    <h1 className="text-2xl font-semibold text-[var(--text-primary)] mb-8">{t('agent_wizard.title')}</h1>
-                    <PromptInput
-                        value={prompt}
-                        onChange={setPrompt}
-                        onSubmit={() => submitPromptInstant(prompt)}
-                        busy={busy}
-                        tiers={tiers}
-                        tier={tier}
-                        onTierChange={setTier}
-                        placeholder={t('agent_wizard.placeholder_initial')}
-                    />
-                    {error && <div className="mt-4 text-sm text-red-500 max-w-xl">{error}</div>}
-                    <div className="mt-8 w-full max-w-xl space-y-1">
-                        {examples.map((ex) => (
-                            <button
-                                key={ex.title}
-                                onClick={() => submitPromptInstant(`${ex.title}: ${ex.sub}`)}
-                                className="flex items-center gap-3 w-full text-left px-3 py-2.5 rounded-lg hover:bg-[var(--bg-secondary)] transition"
-                            >
-                                <span className="text-[var(--text-tertiary)]">{ex.icon}</span>
-                                <span className="text-sm text-[var(--text-primary)] font-medium">{ex.title}</span>
-                                <span className="text-sm text-[var(--text-tertiary)]">{ex.sub}</span>
-                            </button>
-                        ))}
+                    <img src="/BeeFlow-logo-Icon-2026.svg" alt="Bee Flow" className="w-14 h-14 mb-3" />
+                    <h1 className="text-2xl font-semibold text-[var(--text-primary)] mb-6">{t('agent_wizard.title')}</h1>
+                    <div className="w-full max-w-xl rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card,#fff)] overflow-hidden shadow-sm">
+                        <div className="p-4">
+                            <PromptInput
+                                value={prompt}
+                                onChange={setPrompt}
+                                onSubmit={() => submitPromptInstant(prompt)}
+                                busy={busy}
+                                tiers={tiers}
+                                tier={tier}
+                                onTierChange={setTier}
+                                placeholder={t('agent_wizard.placeholder_initial')}
+                                noBorder
+                            />
+                        </div>
                     </div>
+                    <div className="w-full max-w-xl mt-6">
+                        <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-2">Or start from a template</div>
+                        <div className="flex flex-col gap-2">
+                            {examples.map((ex) => (
+                                <button
+                                    key={ex.title}
+                                    onClick={() => submitPromptInstant(`${ex.title}: ${ex.sub}`)}
+                                    className="flex items-center gap-3 w-full text-left px-3 py-2.5 rounded-lg border border-[var(--border-default)] bg-[var(--bg-card,#fff)] hover:bg-[var(--bg-secondary)] transition shadow-sm"
+                                >
+                                    <span className="text-[var(--text-tertiary)]">{ex.icon}</span>
+                                    <span className="text-sm text-[var(--text-primary)] font-medium">{ex.title}</span>
+                                    <span className="text-sm text-[var(--text-tertiary)] truncate">{ex.sub}</span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                    {error && <div className="mt-4 text-sm text-red-500 max-w-xl">{error}</div>}
                 </div>
             )}
 
@@ -281,9 +280,9 @@ export default function AgentWizard({ user, onClose, onPublished, onSwitchToManu
     );
 }
 
-function PromptInput({ value, onChange, onSubmit, busy, placeholder, tiers, tier, onTierChange }) {
+function PromptInput({ value, onChange, onSubmit, busy, placeholder, tiers, tier, onTierChange, noBorder }) {
     return (
-        <div className="w-full max-w-xl rounded-2xl border border-[var(--border-default)] bg-[var(--bg-secondary)] px-4 py-3">
+        <div className={`w-full max-w-xl px-1 py-1 ${noBorder ? '' : 'rounded-2xl border border-[var(--border-default)] bg-[var(--bg-secondary)] px-4 py-3'}`}>
             <textarea
                 value={value}
                 onChange={(e) => onChange(e.target.value)}

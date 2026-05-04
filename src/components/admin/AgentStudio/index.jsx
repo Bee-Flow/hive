@@ -130,7 +130,7 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
         <div className="flex h-full bg-[var(--bg-primary)]">
             {/* Agent list sidebar — hidden in fullscreen edit mode */}
             {!isEditing && (
-            <aside className="w-64 flex-shrink-0 border-r border-[var(--border-default)] flex flex-col">
+            <aside className="w-64 flex-shrink-0 border-r border-[var(--border-default)] flex flex-col bg-[var(--bg-secondary)]">
                 <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
                     <span className="text-sm font-semibold text-[var(--text-primary)]">{systemMode ? t('agent_studio.title_system') : t('agent_studio.title')}</span>
                     {!systemMode && hasPermission('manage_agents') && (
@@ -156,7 +156,7 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
                                 onClick={() => selectAgent(a)}
                                 className={`group flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer text-sm transition ${sel ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}
                             >
-                                <span className="text-base flex-shrink-0">{a.avatar || a.config?.avatar || '🤖'}</span>
+                                {(() => { const av = a.avatar || a.config?.avatar || '🤖'; return av.startsWith('data:') ? <img src={av} alt="" className="w-5 h-5 rounded-sm object-cover flex-shrink-0" /> : <span className="text-base flex-shrink-0">{av}</span>; })()}
                                 <span className="truncate flex-1">{a.name}</span>
                                 {!systemMode && hasPermission('manage_agents') && (
                                     <button

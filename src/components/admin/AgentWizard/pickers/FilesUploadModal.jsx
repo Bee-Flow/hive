@@ -19,7 +19,7 @@ function KbList({ kbs, linkedIds, onToggle, onCreate, t }) {
     return (
         <div>
             <div className="flex items-center justify-between mb-2">
-                <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)]">
+                <div className="text-[13px] font-medium text-[var(--text-secondary)]">
                     {t('agent_wizard.knowledge.kbs')} ({kbs.length})
                 </div>
                 <button
@@ -48,7 +48,7 @@ function KbList({ kbs, linkedIds, onToggle, onCreate, t }) {
                         <button onClick={() => setCreating(false)} className="px-3 py-1.5 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
                             {t('agent_studio.cancel')}
                         </button>
-                        <button onClick={submit} disabled={!name.trim() || busy} className="px-3 py-1.5 rounded-full text-xs bg-[var(--accent)] text-white disabled:opacity-50">
+                        <button onClick={submit} disabled={!name.trim() || busy} className="px-4 py-1.5 rounded-full text-xs font-medium bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50">
                             {busy ? '…' : t('agent_wizard.knowledge.create_kb')}
                         </button>
                     </div>
@@ -181,7 +181,7 @@ export default function FilesUploadModal({ t, agent, knowledgeBaseIds, onKnowled
 
     return (
         <div className="fixed inset-0 z-[1000] bg-black/50 flex items-center justify-center p-4" onClick={onClose}>
-            <div className="bg-[var(--bg-primary)] rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="bg-[var(--bg-card,#fff)] rounded-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
                 <div className="flex items-center justify-between px-5 py-3 border-b border-[var(--border-default)]">
                     <div>
                         <div className="text-sm font-semibold text-[var(--text-primary)]">{t('agent_wizard.files.title')}</div>
@@ -210,7 +210,7 @@ export default function FilesUploadModal({ t, agent, knowledgeBaseIds, onKnowled
 
                     {Array.isArray(allKbs) && (
                         <div>
-                            <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-2">
+                            <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-2">
                                 {t('agent_wizard.knowledge.kbs') || 'Knowledge bases'} ({allKbs.length})
                             </div>
                             <KbList
@@ -244,7 +244,7 @@ export default function FilesUploadModal({ t, agent, knowledgeBaseIds, onKnowled
                     {error && <div className="text-xs text-red-500">{error}</div>}
 
                     <div>
-                        <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-2">
+                        <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-2">
                             {t('agent_wizard.files.documents')} {!loading && `(${docs.length})`}
                         </div>
                         {loading && <div className="text-xs text-[var(--text-tertiary)]">…</div>}

@@ -27,8 +27,8 @@ export default function PublishMenu({ t, agent, open, onToggle, onClose, isPubli
                 type="button"
                 onClick={onToggle}
                 className={`flex items-center gap-1.5 px-5 py-2 rounded-full text-sm font-semibold transition shadow-sm ${isPublished
-                    ? 'bg-[var(--accent)]/15 text-[var(--accent)] ring-1 ring-[var(--accent)]/40 hover:bg-[var(--accent)]/25'
-                    : 'bg-[var(--accent)] text-white hover:opacity-90 ring-1 ring-[var(--accent)]'}`}
+                    ? 'bg-emerald-500/10 text-emerald-600 ring-1 ring-emerald-500/30 hover:bg-emerald-500/20'
+                    : 'bg-emerald-500 text-white hover:bg-emerald-600 shadow-md'}`}
             >
                 {!isPublished && <Globe size={14} />}
                 {stateLabel}
@@ -37,7 +37,7 @@ export default function PublishMenu({ t, agent, open, onToggle, onClose, isPubli
             {open && (
                 <div
                     ref={popoverRef}
-                    className="absolute z-30 right-8 top-full mt-1 w-[320px] rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-xl overflow-hidden"
+                    className="absolute z-30 right-8 top-full mt-1 w-[320px] rounded-xl border border-[var(--border-default)] bg-[var(--bg-card,#fff)] shadow-xl overflow-hidden"
                 >
                     <div className="px-4 py-3 border-b border-[var(--border-default)]">
                         <div className="text-sm font-medium text-[var(--text-primary)]">

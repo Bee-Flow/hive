@@ -28,7 +28,7 @@ export default function SkillPicker({ skills, selectedIds, automations = [], sea
     };
 
     return (
-        <div className="absolute z-20 top-full left-0 mt-2 w-[460px] rounded-xl border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-lg p-3">
+        <div className="absolute z-30 top-full left-0 mt-2 w-[460px] rounded-xl border border-[var(--border-default)] bg-[var(--bg-card,#fff)] shadow-xl p-3">
             {!creating && (
                 <>
                     <div className="flex items-center gap-2 mb-2">
@@ -113,7 +113,7 @@ export default function SkillPicker({ skills, selectedIds, automations = [], sea
                     )}
                     {automations && automations.length > 0 && (
                         <div className="space-y-1">
-                            <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)]">
+                            <div className="text-[13px] font-medium text-[var(--text-secondary)]">
                                 {t('agent_wizard.skills.linked_automation_label') || 'Linked automation (optional)'}
                             </div>
                             <select
@@ -137,7 +137,7 @@ export default function SkillPicker({ skills, selectedIds, automations = [], sea
                         <button onClick={() => setCreating(false)} className="px-3 py-1.5 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
                             {t('agent_wizard.skills.cancel')}
                         </button>
-                        <button onClick={submit} disabled={!newName.trim() || busy} className="px-3 py-1.5 rounded-full text-sm bg-[var(--accent)] text-white disabled:opacity-50">
+                        <button onClick={submit} disabled={!newName.trim() || busy} className="px-4 py-1.5 rounded-full text-sm font-medium bg-emerald-500 text-white hover:bg-emerald-600 disabled:opacity-50">
                             {busy ? t('agent_wizard.busy') : t('agent_wizard.skills.create_attach')}
                         </button>
                     </div>

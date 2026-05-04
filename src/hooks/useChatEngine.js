@@ -1192,32 +1192,28 @@ export default function useChatEngine({
     const retryMessage = useCallback((messageIndex, overrideTier) => {
         if (isLoading) return;
 
-        setMessages(prev => {
-            // Find the assistant message and the user message before it
-            const visibleMessages = prev.filter(m => !m.parentId);
-            const assistantMsg = visibleMessages[messageIndex];
-            if (!assistantMsg || assistantMsg.role !== 'assistant') return prev;
+        // Compute truncation outside the state updater so the side-effect
+        // (sendMessage) runs exactly once — React 19 StrictMode double-invokes
+        // updater functions, which would otherwise fire sendMessage twice.
+        const currentMessages = messagesRef.current;
+        const visibleMessages = currentMessages.filter(m => !m.parentId);
+        const assistantMsg = visibleMessages[messageIndex];
+        if (!assistantMsg || assistantMsg.role !== 'assistant') return;
 
-            // Find the user message that preceded this assistant message
-            let userMsgIndex = messageIndex - 1;
-            while (userMsgIndex >= 0 && visibleMessages[userMsgIndex]?.role !== 'user') {
-                userMsgIndex--;
-            }
-            const userMsg = visibleMessages[userMsgIndex];
-            if (!userMsg) return prev;
+        let userMsgIndex = messageIndex - 1;
+        while (userMsgIndex >= 0 && visibleMessages[userMsgIndex]?.role !== 'user') {
+            userMsgIndex--;
+        }
+        const userMsg = visibleMessages[userMsgIndex];
+        if (!userMsg) return;
 
-            // Truncate: remove both the user message and everything after it
-            // sendMessage will re-add the user message, so we must not keep it
-            const userIdx = prev.indexOf(userMsg);
-            const truncated = prev.slice(0, userIdx);
+        const userIdx = currentMessages.indexOf(userMsg);
+        const truncated = currentMessages.slice(0, userIdx);
 
-            // Pass truncated history directly to avoid stale closure issues
-            setTimeout(() => {
-                sendMessage(userMsg.content, userMsg.attachments || [], false, truncated, overrideTier || null);
-            }, 50);
-
-            return truncated;
-        });
+        setMessages(truncated);
+        setTimeout(() => {
+            sendMessage(userMsg.content, userMsg.attachments || [], false, truncated, overrideTier || null);
+        }, 50);
     }, [isLoading, sendMessage, directMode]);
 
     /**
@@ -1230,22 +1226,18 @@ export default function useChatEngine({
         if (isLoading) return;
         if (!newContent?.trim()) return;
 
-        setMessages(prev => {
-            const visibleMessages = prev.filter(m => !m.parentId);
-            const userMsg = visibleMessages[messageIndex];
-            if (!userMsg || userMsg.role !== 'user') return prev;
+        const currentMessages = messagesRef.current;
+        const visibleMessages = currentMessages.filter(m => !m.parentId);
+        const userMsg = visibleMessages[messageIndex];
+        if (!userMsg || userMsg.role !== 'user') return;
 
-            // Truncate: keep messages before this user message
-            const userIdx = prev.indexOf(userMsg);
-            const truncated = prev.slice(0, userIdx);
+        const userIdx = currentMessages.indexOf(userMsg);
+        const truncated = currentMessages.slice(0, userIdx);
 
-            // Pass truncated history directly to avoid stale closure issues
-            setTimeout(() => {
-                sendMessage(newContent.trim(), userMsg.attachments || [], false, truncated);
-            }, 50);
-
-            return truncated;
-        });
+        setMessages(truncated);
+        setTimeout(() => {
+            sendMessage(newContent.trim(), userMsg.attachments || [], false, truncated);
+        }, 50);
     }, [isLoading, sendMessage]);
 
     return {

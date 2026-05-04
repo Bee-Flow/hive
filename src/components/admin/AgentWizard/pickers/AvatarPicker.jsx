@@ -15,7 +15,7 @@ const AVATAR_EMOJI_CATEGORIES = {
 };
 const isImageAvatar = (a) => !!a && (typeof a === 'string') && (a.startsWith('data:') || a.startsWith('http'));
 
-export default function AvatarPicker({ avatar, onChange, t }) {
+export default function AvatarPicker({ avatar, onChange, t, size }) {
     const [open, setOpen] = useState(false);
     const [category, setCategory] = useState('tech');
     const popoverRef = useRef(null);
@@ -50,7 +50,7 @@ export default function AvatarPicker({ avatar, onChange, t }) {
                 ref={triggerRef}
                 type="button"
                 onClick={() => setOpen(v => !v)}
-                className="w-16 h-16 rounded-2xl bg-[var(--bg-secondary)] border border-[var(--border-default)] text-3xl flex items-center justify-center overflow-hidden hover:bg-[var(--bg-tertiary)] transition"
+                className={`${size === 'lg' ? 'w-20 h-20 text-4xl rounded-2xl' : 'w-16 h-16 text-3xl rounded-2xl'} bg-[var(--bg-secondary)] border border-[var(--border-default)] flex items-center justify-center overflow-hidden hover:bg-[var(--bg-tertiary)] transition`}
                 title={t('agent_wizard.avatar.title') || 'Avatar'}
             >
                 {isImage

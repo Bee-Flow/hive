@@ -81,13 +81,16 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     // Tier (for chat input)
     const [tiers, setTiers] = useState({});
     const [selectedTier, setSelectedTier] = useState('fast');
+    // Separate tier for the chat/refine panel — does not affect the saved agent model.
+    const [chatTier, setChatTier] = useState('fast');
 
     // Categories + groups (for selectors)
     const [categories, setCategories] = useState([]);
     const [orgGroups, setOrgGroups] = useState([]);
     const [automations, setAutomations] = useState([]);
 
-    const [savingState, setSavingState] = useState('idle');
+    const [savingState, setSavingState] = useState(() => initialAgent?.updated_at ? 'saved' : 'idle');
+    const [savedAt, setSavedAt] = useState(() => initialAgent?.updated_at ? new Date(initialAgent.updated_at) : null);
     // Last save-error message (server response body or fetch error). Surfaced
     // in the save-state pill's title / tooltip so users see what went wrong
     // instead of a silent "Save error" with no context.
@@ -110,9 +113,31 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     const [agentRoutines, setAgentRoutines] = useState([]);
     const [publishPickerOpen, setPublishPickerOpen] = useState(false);
     const [detailsOpen, setDetailsOpen] = useState(false);
+    const [overflowMenuOpen, setOverflowMenuOpen] = useState(false);
     const [skillSearch, setSkillSearch] = useState('');
     const [instructionsEditing, setInstructionsEditing] = useState(false);
     const instructionsTextareaRef = useRef(null);
+
+    // Single ref on the action bar — all dropdown pickers are positioned
+    // relative to it (top-full left-0), so one outside-click handler covers them all.
+    const actionBarRef = useRef(null);
+    // Separate ref just for the ··· overflow pill+popup, which is right-aligned.
+    const overflowMenuRef = useRef(null);
+
+    useEffect(() => {
+        const onDoc = (e) => {
+            // SkillPicker — close when click is outside the action bar
+            if (skillPickerOpen && actionBarRef.current && !actionBarRef.current.contains(e.target)) {
+                setSkillPickerOpen(false);
+            }
+            // Overflow menu — close when click is outside the overflow pill wrapper
+            if (overflowMenuOpen && overflowMenuRef.current && !overflowMenuRef.current.contains(e.target)) {
+                setOverflowMenuOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', onDoc);
+        return () => document.removeEventListener('mousedown', onDoc);
+    }, [skillPickerOpen, overflowMenuOpen]);
     const updateBubbleColor = (v) => { setBubbleColor(v); patchConfig({ bubbleColor: v }); };
     const updateBubblePosition = (v) => { setBubblePosition(v); patchConfig({ bubblePosition: v }); };
     const updateBubbleIcon = (v) => { setBubbleIcon(v); patchConfig({ bubbleIcon: v }); };
@@ -156,7 +181,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 stateRef.current.config = { ...(fresh.config || {}) };
                 dirtyRef.current = false;
                 if (saveTimer.current) { clearTimeout(saveTimer.current); saveTimer.current = null; }
-                setSavingState('saved');
+                setSavingState('saved'); setSavedAt(new Date());
             }
         } catch (_) { /* ignore */ }
     };
@@ -307,7 +332,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 // newer text lives only in stateRef. Overwriting here silently
                 // loses keystrokes typed during the in-flight save.
                 setAgent(updated);
-                setSavingState('saved');
+                setSavingState('saved'); setSavedAt(new Date());
                 setSaveErrorMsg('');
             } catch (err) {
                 console.error('Auto-save failed:', err);
@@ -578,7 +603,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     prompt: chat[0]?.content || '',
                     plan: { name, description: agent?.description || '', avatar, capabilities: plan?.capabilities || [], systemPrompt: instructions },
                     refinement: text,
-                    modelTier: selectedTier || tier || 'fast',
+                    modelTier: chatTier || tier || 'fast',
                     locale,
                 }),
             });
@@ -684,29 +709,52 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         ? enabledIntegrations.filter(id => availableIntegrations.some(a => a.id === id)).length
         : 0;
 
+    const [chatWidth, setChatWidth] = useState(460);
+    const isDragging = useRef(false);
+    const dragStartX = useRef(0);
+    const dragStartW = useRef(0);
+
+    const onDragStart = (e) => {
+        isDragging.current = true;
+        dragStartX.current = e.clientX;
+        dragStartW.current = chatWidth;
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        const onMove = (ev) => {
+            if (!isDragging.current) return;
+            const delta = ev.clientX - dragStartX.current;
+            setChatWidth(Math.min(600, Math.max(240, dragStartW.current + delta)));
+        };
+        const onUp = () => {
+            isDragging.current = false;
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+    };
+
     return (
-        <div className="flex h-full bg-[var(--bg-primary)]">
+        <div className="flex h-full bg-[var(--bg-card,#ffffff)]">
             {/* Left chat panel */}
-            <aside className="w-[380px] flex-shrink-0 border-r border-[var(--border-default)] flex flex-col">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-default)]">
+            <aside style={{ width: chatWidth }} className="flex-shrink-0 border-r border-[var(--border-default)] flex flex-col min-w-[240px] max-w-[600px] bg-[var(--bg-secondary)]">
+                <div className="flex items-center px-4 py-3 border-b border-[var(--border-default)]">
                     <button onClick={onBack} className="flex items-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
                         <ArrowLeft size={16} /> {t('agent_wizard.back')}
                     </button>
-                    <SaveStateIndicator t={t} state={savingState} errorMsg={saveErrorMsg} onRetry={flush} />
                 </div>
                 <div ref={chatScrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
                     {chat.length === 0 && (
-                        <div className="h-full flex flex-col items-center justify-center text-center px-2">
-                            <div className="w-10 h-10 rounded-full bg-[var(--bg-secondary)] flex items-center justify-center mb-3">
-                                <Sparkles size={18} className="text-[var(--accent)]" />
+                        <div className="h-full flex flex-col items-center justify-center text-center px-3">
+                            <div className="text-base font-semibold text-[var(--text-primary)] mb-2">
+                                Refine this agent
                             </div>
-                            <div className="text-sm font-medium text-[var(--text-primary)] mb-1">
-                                {t('agent_wizard.builder.chat_empty_title')}
+                            <div className="text-sm text-[var(--text-secondary)] mb-6 max-w-[280px] leading-relaxed">
+                                Tell me what to change — I'll update the instructions, knowledge, or behaviour.
                             </div>
-                            <div className="text-xs text-[var(--text-tertiary)] mb-5 max-w-[260px]">
-                                {t('agent_wizard.builder.chat_empty_subtitle')}
-                            </div>
-                            <div className="flex flex-col gap-2 w-full max-w-[300px]">
+                            <div className="flex flex-col gap-2 w-full max-w-[320px]">
                                 {[
                                     'agent_wizard.builder.chat_prompt_tone',
                                     'agent_wizard.builder.chat_prompt_steps',
@@ -716,7 +764,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                         key={key}
                                         type="button"
                                         onClick={() => setChatInput(t(key))}
-                                        className="text-left text-xs px-3 py-2 rounded-lg bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition"
+                                        className="text-left text-sm px-4 py-3 rounded-xl border border-[var(--border-default)] bg-[var(--bg-card,#fff)] hover:bg-[var(--bg-secondary)] text-[var(--text-primary)] transition shadow-sm"
                                     >
                                         {t(key)}
                                     </button>
@@ -728,7 +776,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                         if (m.role === 'user') {
                             return (
                                 <div key={i} className="flex justify-end">
-                                    <div className="max-w-[80%] rounded-2xl bg-[var(--bg-secondary)] px-4 py-2 text-sm text-[var(--text-primary)]">{m.content}</div>
+                                    <div className="max-w-[80%] rounded-2xl bg-[var(--bg-secondary)] px-4 py-2 text-[15px] text-[var(--text-primary)]">{m.content}</div>
                                 </div>
                             );
                         }
@@ -755,7 +803,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                         action icon row + tier pill + send on the bottom. The icons
                         open the same wizard pickers when relevant; placeholder
                         icons (paperclip / globe) are visual-only for parity. */}
-                    <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-secondary)] px-4 pt-3 pb-2">
+                    <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-card,#fff)] px-4 pt-3 pb-2">
                         <textarea
                             value={chatInput}
                             onChange={(e) => setChatInput(e.target.value)}
@@ -797,14 +845,12 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 </button>
                             </div>
                             <div className="flex items-center gap-2">
-                                {/* Same tier picker shape as direct chat — sits next to the
-                                    send button and writes through to the agent's model so
-                                    the change persists. */}
                                 <ModelTierSelector
                                     tiers={tiers || {}}
-                                    value={selectedTier}
-                                    onChange={updateModel}
+                                    value={chatTier}
+                                    onChange={setChatTier}
                                     dropDirection="up"
+                                    variant="input"
                                 />
                                 <button
                                     onClick={handleRefine}
@@ -820,10 +866,16 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 </div>
             </aside>
 
+            {/* Drag handle */}
+            <div
+                onMouseDown={onDragStart}
+                className="w-1 flex-shrink-0 cursor-col-resize hover:bg-[var(--accent)]/40 active:bg-[var(--accent)]/60 transition-colors z-10"
+            />
+
             {/* Right config panel */}
             <main className="flex-1 overflow-y-auto">
                 <div className="flex items-center justify-end gap-3 px-8 py-3 relative">
-                    <SaveStateIndicator t={t} state={savingState} errorMsg={saveErrorMsg} onRetry={flush} />
+                    <SaveStateIndicator t={t} state={savingState} savedAt={savedAt} errorMsg={saveErrorMsg} onRetry={flush} />
                     {rightHeaderExtras}
                     <PublishMenu
                         t={t}
@@ -841,57 +893,20 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 </div>
 
                 <div className="max-w-4xl mx-auto px-10 pt-8 pb-12">
-                    <div className="flex flex-col items-start gap-4 mb-8">
-                        <AvatarPicker t={t} avatar={avatar} onChange={updateAvatar} />
-                        <input
-                            value={name}
-                            onChange={(e) => updateName(e.target.value)}
-                            onBlur={flushNow}
-                            className="w-full text-4xl font-semibold bg-transparent outline-none text-[var(--text-primary)] py-1 -ml-1 px-1 rounded hover:bg-[var(--bg-secondary)]/40 focus:bg-[var(--bg-secondary)]/40 transition truncate"
-                            placeholder={t('agent_wizard.builder.name_placeholder')}
-                        />
-                        {(detailsOpen || description || categoryId) ? (
-                            <div className="w-full grid grid-cols-1 sm:grid-cols-[1fr,240px] gap-3">
-                                <div>
-                                    <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1">
-                                        {t('agent_wizard.builder.role_description_label') || 'Role description'}
-                                    </div>
-                                    <textarea
-                                        value={description}
-                                        onChange={(e) => updateDescription(e.target.value.slice(0, 500))}
-                                        onBlur={flushNow}
-                                        placeholder={t('agent_wizard.field.role_description_placeholder')}
-                                        rows={4}
-                                        className="w-full bg-[var(--bg-secondary)]/40 border border-transparent hover:bg-[var(--bg-secondary)] focus:border-[var(--accent)] outline-none rounded-lg px-3 py-2 text-sm text-[var(--text-primary)] transition resize-none"
-                                    />
-                                    <div className="text-right text-[10px] text-[var(--text-tertiary)] mt-0.5">{description.length}/500</div>
-                                </div>
-                                <div>
-                                    <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1">
-                                        {t('agent_wizard.builder.category_label') || 'Category'}
-                                    </div>
-                                    <CategoryField
-                                        t={t}
-                                        value={categoryId}
-                                        categories={categories}
-                                        onChange={updateCategory}
-                                        onCreate={createCategory}
-                                    />
-                                </div>
-                            </div>
-                        ) : (
-                            <button
-                                type="button"
-                                onClick={() => setDetailsOpen(true)}
-                                className="text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition flex items-center gap-1"
-                            >
-                                <Plus size={12} />
-                                {t('agent_wizard.builder.add_details') || 'Add description & category'}
-                            </button>
-                        )}
-                    </div>
+                    {/* Header block — avatar + name + action bar as one unit */}
+                    <div className="mb-8">
+                        <div className="flex items-center gap-4 mb-4">
+                            <AvatarPicker t={t} avatar={avatar} onChange={updateAvatar} size="lg" />
+                            <input
+                                value={name}
+                                onChange={(e) => updateName(e.target.value)}
+                                onBlur={flushNow}
+                                className="flex-1 text-3xl font-semibold bg-transparent outline-none text-[var(--text-primary)] py-1 px-2 rounded-lg hover:bg-[var(--bg-secondary)] focus:bg-[var(--bg-secondary)] transition"
+                                placeholder={t('agent_wizard.builder.name_placeholder')}
+                            />
+                        </div>
 
-                    <div className="flex flex-wrap items-center gap-2 mb-8 relative">
+                    <div ref={actionBarRef} className="flex flex-wrap items-center gap-2 relative">
                         <div className="mr-1">
                             <ModelTierSelector
                                 tiers={tiers || {}}
@@ -905,13 +920,6 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                             count={enabledIntegrationCount}
                             onClick={() => setAppsPickerOpen(v => !v)}
                             active={appsPickerOpen}
-                        />
-                        <ActionPill
-                            icon={<Sparkles size={14} />}
-                            label={t('agent_wizard.builder.add_skill')}
-                            count={attachedSkillIds.length}
-                            onClick={() => setSkillPickerOpen(v => !v)}
-                            active={skillPickerOpen}
                         />
                         <ActionPill
                             icon={<Upload size={14} />}
@@ -929,22 +937,53 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 popoverTrigger="routines"
                             />
                         )}
-                        {agent?.id && (
+                        <div className="relative" ref={overflowMenuRef}>
                             <ActionPill
-                                icon={<History size={14} />}
-                                label={t('agent_wizard.section.versions') || 'Version History'}
-                                onClick={() => setVersionPickerOpen(v => !v)}
-                                active={versionPickerOpen}
-                                popoverTrigger="versions"
+                                label="···"
+                                onClick={() => setOverflowMenuOpen(v => !v)}
+                                active={overflowMenuOpen || behaviorPickerOpen || versionPickerOpen || skillPickerOpen || !!categoryId || memoryEnabled || attachedSkillIds.length > 0}
                             />
-                        )}
-                        <ActionPill
-                            icon={<Sliders size={14} />}
-                            label={t('agent_wizard.builder.behavior') || 'Behavior'}
-                            onClick={() => setBehaviorPickerOpen(v => !v)}
-                            active={behaviorPickerOpen || memoryEnabled}
-                            popoverTrigger="behavior"
-                        />
+                            {overflowMenuOpen && (
+                                <div className="absolute z-30 top-full right-0 mt-2 w-64 rounded-xl border border-[var(--border-default)] bg-[var(--bg-card,#fff)] shadow-lg p-3">
+                                    <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-2">
+                                        {t('agent_wizard.builder.category_label') || 'Category'}
+                                    </div>
+                                    <CategoryField
+                                        t={t}
+                                        value={categoryId}
+                                        categories={categories}
+                                        onChange={updateCategory}
+                                        onCreate={createCategory}
+                                    />
+                                    <div className="border-t border-[var(--border-default)] my-3" />
+                                    <button
+                                        onClick={() => { setOverflowMenuOpen(false); setSkillPickerOpen(true); }}
+                                        className="w-full flex items-center gap-2 py-2 px-2 rounded-lg hover:bg-[var(--bg-secondary)] text-sm text-[var(--text-primary)] transition"
+                                    >
+                                        <Sparkles size={14} className="text-[var(--text-secondary)]" />
+                                        <span>{t('agent_wizard.builder.add_skill') || 'Skills'}</span>
+                                        {attachedSkillIds.length > 0 && <span className="ml-auto text-[10px] text-[var(--accent)]">{attachedSkillIds.length} active</span>}
+                                    </button>
+                                    <button
+                                        onClick={() => { setOverflowMenuOpen(false); setBehaviorPickerOpen(true); }}
+                                        className="w-full flex items-center gap-2 py-2 px-2 rounded-lg hover:bg-[var(--bg-secondary)] text-sm text-[var(--text-primary)] transition"
+                                    >
+                                        <Sliders size={14} className="text-[var(--text-secondary)]" />
+                                        <span>{t('agent_wizard.builder.behavior') || 'Behavior'}</span>
+                                        {memoryEnabled && <span className="ml-auto text-[10px] text-[var(--accent)]">Memory on</span>}
+                                    </button>
+                                    {agent?.id && (
+                                        <button
+                                            onClick={() => { setOverflowMenuOpen(false); setVersionPickerOpen(true); }}
+                                            className="w-full flex items-center gap-2 py-2 px-2 rounded-lg hover:bg-[var(--bg-secondary)] text-sm text-[var(--text-primary)] transition"
+                                        >
+                                            <History size={14} className="text-[var(--text-secondary)]" />
+                                            <span>{t('agent_wizard.section.versions') || 'Version History'}</span>
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+                        </div>
 
                         {behaviorPickerOpen && (
                             <BehaviorPicker
@@ -1058,10 +1097,45 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                             />
                         )}
                     </div>
+                    </div>{/* end header card */}
 
+                    {(detailsOpen || description) ? (
+                        <div className="mb-8">
+                            <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1">
+                                {t('agent_wizard.builder.role_description_label') || 'Role description'}
+                            </div>
+                            <div className="relative -mx-4">
+                                <textarea
+                                    value={description}
+                                    onChange={(e) => {
+                                        updateDescription(e.target.value.slice(0, 300));
+                                        e.target.style.height = 'auto';
+                                        e.target.style.height = e.target.scrollHeight + 'px';
+                                    }}
+                                    onFocus={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
+                                    onBlur={flushNow}
+                                    placeholder={t('agent_wizard.field.role_description_placeholder')}
+                                    rows={2}
+                                    className="w-full bg-transparent border-none outline-none rounded-xl px-4 py-3 pb-6 text-[15px] leading-6 text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]/40 focus:bg-[var(--bg-secondary)]/40 transition resize-none overflow-hidden"
+                                />
+                                <span className="absolute bottom-1.5 right-3 text-[10px] text-[var(--text-tertiary)] pointer-events-none">{description.length}/300</span>
+                            </div>
+                        </div>
+                    ) : (
+                        <button
+                            type="button"
+                            onClick={() => setDetailsOpen(true)}
+                            className="mb-8 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition flex items-center gap-1"
+                        >
+                            <Plus size={12} />
+                            {t('agent_wizard.builder.add_details') || 'Add description'}
+                        </button>
+                    )}
 
-                    <div className="mt-10">
-                        <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-3">{t('agent_wizard.builder.instructions')}</div>
+                    <div className="mb-2">
+                        <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1">
+                            {t('agent_wizard.builder.instructions')}
+                        </div>
                         {instructionsEditing ? (
                             <InstructionsEditor
                                 ref={instructionsTextareaRef}
@@ -1076,7 +1150,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 tabIndex={0}
                                 onClick={() => setInstructionsEditing(true)}
                                 onFocus={() => setInstructionsEditing(true)}
-                                className="instructions-view min-h-[12rem] px-4 py-3 -mx-4 cursor-text rounded-xl hover:bg-[var(--bg-secondary)]/40 transition"
+                                className="instructions-view min-h-[10rem] px-4 py-3 -mx-4 cursor-text rounded-xl hover:bg-[var(--bg-secondary)]/40 transition"
                                 title={t('agent_wizard.builder.instructions_edit_hint') || 'Click to edit'}
                             >
                                 {instructions ? (
@@ -1239,22 +1313,34 @@ function EnableEmbedConfirmModal({ t, agent, onConfirm, onCancel }) {
 //   - saved:   check + label
 //   - error:   warning icon, full server message in `title` tooltip,
 //              click to retry the save
-function SaveStateIndicator({ t, state, errorMsg, onRetry }) {
+function SaveStateIndicator({ t, state, savedAt, errorMsg, onRetry }) {
     if (!state || state === 'idle') return null;
 
     if (state === 'saving') {
         return (
-            <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]" title={t('agent_wizard.builder.save_saving') || 'Saving…'}>
+            <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]">
                 <span className="w-3 h-3 inline-block rounded-full border border-[var(--text-tertiary)] border-t-transparent animate-spin" />
-                {t('agent_wizard.builder.save_saving') || 'Saving…'}
+                Saving…
             </span>
         );
     }
     if (state === 'saved') {
+        let timeStr = '';
+        if (savedAt) {
+            const now = new Date();
+            const isToday = savedAt.toDateString() === now.toDateString();
+            const time = savedAt.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit', hour12: false });
+            if (isToday) {
+                timeStr = time;
+            } else {
+                const date = savedAt.toLocaleDateString(undefined, { day: '2-digit', month: '2-digit' });
+                timeStr = `${date} · ${time}`;
+            }
+        }
         return (
-            <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]" title={t('agent_wizard.builder.save_saved') || 'Saved'}>
+            <span className="inline-flex items-center gap-1.5 text-xs text-[var(--text-tertiary)]">
                 <Check size={12} className="text-emerald-500" />
-                {t('agent_wizard.builder.save_saved') || 'Saved'}
+                Saved{timeStr ? ` · ${timeStr}` : ''}
             </span>
         );
     }
@@ -1281,12 +1367,12 @@ function ActionPill({ icon, label, count, onClick, active, popoverTrigger }) {
         <button
             onClick={onClick}
             data-popover-trigger={popoverTrigger || undefined}
-            className={`group flex items-center gap-2 pl-3.5 pr-3 py-1.5 rounded-full text-sm transition ${active ? 'bg-[var(--accent)]/10 text-[var(--accent)]' : 'bg-[var(--bg-secondary)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]'}`}
+            className={`group flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all ${active ? 'border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--accent)]' : 'border-[var(--border-default)] bg-[var(--bg-card,#fff)] text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]'}`}
         >
             <span className={active ? '' : 'text-[var(--text-secondary)] group-hover:text-[var(--text-primary)]'}>{icon}</span>
             <span>{label}</span>
             {(count !== undefined && count !== null && count > 0) && (
-                <span className={`ml-0.5 text-xs ${active ? 'text-[var(--accent)]' : 'text-[var(--text-tertiary)]'}`}>
+                <span className={`ml-0.5 text-[10px] font-semibold ${active ? 'text-[var(--accent)]' : 'text-[var(--text-tertiary)]'}`}>
                     {count}
                 </span>
             )}
