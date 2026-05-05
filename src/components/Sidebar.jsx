@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, PenLine, Sparkles, Mail, Ticket, BookOpen, Globe, LayoutGrid } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
+import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar, DEFAULT_AGENT_EMOJI } from '../utils/agentAvatar';
 import NotificationCenter from './NotificationCenter';
 import NavLink from './NavLink';
 
@@ -698,8 +699,8 @@ const Sidebar = ({
                             title={agent.name}
                         >
                             {selectedAgent?.id === agent.id && <div className={ACCENT_BAR.replace('left-0', '-left-1.5')} />}
-                            {agent.avatar && (agent.avatar.startsWith('data:') || agent.avatar.startsWith('http')) ? (
-                                <img src={agent.avatar} alt="" className="w-full h-full object-cover" />
+                            {isImageAvatar(agent.avatar) ? (
+                                <img src={resolveAvatarSrc(agent.avatar)} alt="" className="w-full h-full object-cover" />
                             ) : (agent.avatar || agent.name?.[0]?.toUpperCase())}
                         </button>
                     ))}
@@ -821,7 +822,7 @@ const Sidebar = ({
                             {favoriteAgents.map(agent => {
                                 const sel = selectedAgent?.id === agent.id;
                                 const initials = (agent.name?.[0]?.toUpperCase() || '?');
-                                const hasImageAvatar = agent.avatar && (agent.avatar.startsWith('data:') || agent.avatar.startsWith('http'));
+                                const hasImageAvatar = isImageAvatar(agent.avatar);
                                 return (
                                     <button
                                         key={agent.id}
@@ -833,7 +834,7 @@ const Sidebar = ({
                                         {/* Avatar */}
                                         <div className={`w-8 h-8 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center text-[13px] font-bold ring-1 transition-all duration-150 ${sel ? 'ring-[var(--accent-primary)]/40 shadow-sm shadow-[var(--accent-primary)]/20' : 'ring-black/8 shadow-sm'} ${!hasImageAvatar ? 'bg-gradient-to-br from-[var(--accent-primary)]/15 to-[var(--accent-primary)]/30 text-[var(--accent-primary)]' : 'bg-[var(--bg-tertiary)]'}`}>
                                             {hasImageAvatar ? (
-                                                <img src={agent.avatar} alt="" className="w-full h-full object-contain" />
+                                                <img src={resolveAvatarSrc(agent.avatar)} alt="" className="w-full h-full object-contain" />
                                             ) : (agent.avatar || initials)}
                                         </div>
                                         <span className={`text-[13px] truncate flex-1 leading-snug ${sel ? 'font-semibold text-black' : 'text-black'}`} title={agent.name}>
@@ -878,7 +879,7 @@ const Sidebar = ({
                                     {group.label}
                                 </h3>
                                 <div className="space-y-px">
-                                    {group.items.map(c => <ConvRow key={c.id} conv={c} t={t} active={convIsActive(c)} selectConv={selectConv} deleteConv={deleteConv} conversationLabels={conversationLabels} projects={projects} onRenameConversation={onRenameConversation} onPinConversation={onPinConversation} onLabelConversation={onLabelConversation} onDeleteLabel={onDeleteLabel} onEditLabel={onEditLabel} onCreateLabel={onCreateLabel} onMoveToProject={onMoveToProject} agentBadge={isAllChats ? (c._source === 'direct' ? { icon: '💬', name: 'Direct Chat' } : (() => { const a = agents.find(x => x.id === c.agent_id); if (!a) return { icon: '🤖', name: c.agent_name || 'Agent' }; const hasImgAvatar = a.avatar && (a.avatar.startsWith('data:') || a.avatar.startsWith('http')); return hasImgAvatar ? { avatarUrl: a.avatar, name: a.name } : { icon: a.avatar || '🤖', name: a.name }; })()) : null} />)}
+                                    {group.items.map(c => <ConvRow key={c.id} conv={c} t={t} active={convIsActive(c)} selectConv={selectConv} deleteConv={deleteConv} conversationLabels={conversationLabels} projects={projects} onRenameConversation={onRenameConversation} onPinConversation={onPinConversation} onLabelConversation={onLabelConversation} onDeleteLabel={onDeleteLabel} onEditLabel={onEditLabel} onCreateLabel={onCreateLabel} onMoveToProject={onMoveToProject} agentBadge={isAllChats ? (c._source === 'direct' ? { icon: '💬', name: 'Direct Chat' } : (() => { const a = agents.find(x => x.id === c.agent_id); if (!a) return { icon: DEFAULT_AGENT_EMOJI, name: c.agent_name || 'Agent' }; return isImageAvatar(a.avatar) ? { avatarUrl: resolveAvatarSrc(a.avatar), name: a.name } : { icon: a.avatar || DEFAULT_AGENT_EMOJI, name: a.name }; })()) : null} />)}
                                 </div>
                             </div>
                         ))

@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, BookOpen, Trash2, FileText, Globe, Paperclip, Settings as SettingsIcon, Loader2, Plus, X, RefreshCcw, Building2, Check, ChevronDown, ChevronRight, Search as SearchIcon } from 'lucide-react';
+import { ArrowLeft, BookOpen, Trash2, FileText, Globe, Paperclip, Settings as SettingsIcon, Loader2, Plus, X, RefreshCcw, Building2, Check, ChevronDown, ChevronRight, Search as SearchIcon, Lock, Users } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { useTranslation } from '../hooks/useTranslation';
 
@@ -256,24 +256,28 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
         finally { setSaving(false); }
     }
 
-    async function togglePublish(groups) {
+    // Explicit publish-state setter — pass desired (isPublished, groups) rather
+    // than toggling. Lets the menu offer three explicit destinations
+    // (Personal / Entire Org / Specific Groups) without the user having to
+    // unpublish first.
+    async function setPublishState(nextPublished, groups) {
         if (!kbId) return;
-        const next = !isPublished;
-        if (next && !organizationId) {
+        if (nextPublished && !organizationId) {
             alert(t('kb_detail.must_be_in_org'));
             return;
         }
+        const nextGroups = nextPublished ? (groups || []) : [];
         setSaving(true);
         try {
             const res = await authFetch(`${API_BASE}/api/kb/${kbId}/publish`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ isPublished: next, sharedGroups: next ? (groups || []) : [] }),
+                body: JSON.stringify({ isPublished: nextPublished, sharedGroups: nextGroups }),
             });
             if (res.ok) {
                 const data = await res.json();
-                setIsPublished(next);
-                setSharedGroups(next ? (groups || []) : []);
+                setIsPublished(nextPublished);
+                setSharedGroups(nextGroups);
                 setKb(prev => ({ ...prev, ...(data.kb || {}) }));
                 setShowPublishMenu(false);
                 onSaved?.(data.kb);
@@ -284,6 +288,10 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
         } catch (e) { alert(t('kb_detail.publish_failed', { error: e.message })); }
         finally { setSaving(false); }
     }
+    // Back-compat wrapper — `togglePublish` was the old API used by callsites
+    // that just want to flip publish state. Anything that needs an explicit
+    // state should call setPublishState directly.
+    const togglePublish = (groups) => setPublishState(!isPublished, groups);
 
     async function handleDeleteKB() {
         if (!kbId) return;
@@ -528,10 +536,22 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                             )}
                         </div>
                     </div>
-                    {!isCreateMode && canManage && (
+                    {!isCreateMode && canManage && (() => {
+                        // Derived state for the three menu modes. "Personal" =
+                        // unpublished; "Entire Org" = published, no group filter;
+                        // "Specific Groups" = published, at least one group.
+                        const mode = !isPublished
+                            ? 'personal'
+                            : (sharedGroups.length === 0 ? 'org' : 'groups');
+                        const buttonLabel = mode === 'personal'
+                            ? t('kb_detail.visibility_personal')
+                            : mode === 'org'
+                                ? t('kb_detail.published')
+                                : t('kb_detail.published_n_groups', { count: sharedGroups.length });
+                        return (
                         <div className="relative" ref={publishMenuRef}>
                             <button
-                                onClick={() => isPublished ? togglePublish() : setShowPublishMenu(v => !v)}
+                                onClick={() => setShowPublishMenu(v => !v)}
                                 disabled={saving}
                                 className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 border ${
                                     isPublished
@@ -540,17 +560,14 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                 }`}
                                 style={!isPublished ? { borderColor: 'var(--border-default)' } : {}}
                             >
-                                {isPublished ? (
-                                    <>
-                                        <Check className="w-3.5 h-3.5" />
-                                        {sharedGroups.length > 0 ? t('kb_detail.published_n_groups', { count: sharedGroups.length }) : t('kb_detail.published')}
-                                    </>
-                                ) : (
-                                    <>{t('kb_detail.publish')} <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg></>
-                                )}
+                                {isPublished
+                                    ? <Check className="w-3.5 h-3.5" />
+                                    : <Lock className="w-3.5 h-3.5" />}
+                                {buttonLabel}
+                                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                             </button>
 
-                            {showPublishMenu && !isPublished && (
+                            {showPublishMenu && (
                                 <div
                                     className="absolute right-0 top-full mt-2 w-72 rounded-xl shadow-2xl z-50 overflow-hidden"
                                     style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-default)' }}
@@ -560,17 +577,35 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                         <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{t('kb_detail.publish_choose_who')}</p>
                                     </div>
 
+                                    {/* Personal — only the owner can access. */}
                                     <button
-                                        onClick={() => togglePublish([])}
+                                        onClick={() => setPublishState(false, [])}
                                         className="w-full px-4 py-3 flex items-center gap-3 hover:bg-[var(--bg-tertiary)] transition-colors text-left"
+                                    >
+                                        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(107,114,128,0.15)' }}>
+                                            <Lock className="w-4 h-4 text-[var(--text-secondary)]" />
+                                        </div>
+                                        <div className="flex-1">
+                                            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{t('kb_detail.personal')}</p>
+                                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{t('kb_detail.personal_desc')}</p>
+                                        </div>
+                                        {mode === 'personal' && <Check className="w-4 h-4 text-emerald-500" />}
+                                    </button>
+
+                                    {/* Entire Organisation — published, no group restriction. */}
+                                    <button
+                                        onClick={() => setPublishState(true, [])}
+                                        className="w-full px-4 py-3 flex items-center gap-3 hover:bg-[var(--bg-tertiary)] transition-colors text-left border-t"
+                                        style={{ borderColor: 'var(--border-subtle)' }}
                                     >
                                         <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'rgba(16,185,129,0.15)' }}>
                                             <Building2 className="w-4 h-4 text-emerald-500" />
                                         </div>
-                                        <div>
+                                        <div className="flex-1">
                                             <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{t('kb_detail.entire_org')}</p>
                                             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{t('kb_detail.entire_org_desc')}</p>
                                         </div>
+                                        {mode === 'org' && <Check className="w-4 h-4 text-emerald-500" />}
                                     </button>
 
                                     {orgGroups.length > 0 && (
@@ -602,7 +637,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                     {sharedGroups.length > 0 && (
                                         <div className="p-3 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
                                             <button
-                                                onClick={() => togglePublish(sharedGroups)}
+                                                onClick={() => setPublishState(true, sharedGroups)}
                                                 className="w-full px-4 py-2 rounded-lg text-sm font-medium bg-emerald-500 text-white hover:bg-emerald-600 transition-colors"
                                             >
                                                 {sharedGroups.length > 1
@@ -622,7 +657,8 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                 </div>
                             )}
                         </div>
-                    )}
+                        );
+                    })()}
                 </div>
 
                 {/* Tabs */}

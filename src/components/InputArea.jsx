@@ -972,7 +972,22 @@ const InputArea = ({
                                                     ) : (
                                                         filteredKBs.map(kb => {
                                                             const checked = selectedKBIds.includes(kb.id);
-                                                            const isOrg = !!kb.organization_id;
+                                                            // Visibility badge — derive from the actual publish state
+                                                            // rather than just `organization_id`, which is also set on
+                                                            // personal KBs the user created inside an org. Three modes
+                                                            // mirror the publish-menu options (Personal / Org / Groups).
+                                                            const groups = (() => {
+                                                                if (Array.isArray(kb.shared_groups)) return kb.shared_groups;
+                                                                if (typeof kb.shared_groups === 'string') {
+                                                                    try { return JSON.parse(kb.shared_groups || '[]'); } catch { return []; }
+                                                                }
+                                                                return [];
+                                                            })();
+                                                            const visibility = !kb.is_published
+                                                                ? { label: 'Personal', cls: 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)]' }
+                                                                : groups.length > 0
+                                                                    ? { label: `${groups.length} group${groups.length > 1 ? 's' : ''}`, cls: 'bg-amber-500/10 text-amber-600' }
+                                                                    : { label: 'Org', cls: 'bg-blue-500/10 text-blue-500' };
                                                             return (
                                                                 <label
                                                                     key={kb.id}
@@ -991,7 +1006,7 @@ const InputArea = ({
                                                                         <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{kb.name}</p>
                                                                         <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
                                                                             {(kb.document_count || 0)} docs · {(kb.total_chunks || 0)} chunks
-                                                                            {isOrg && <span className="ml-1.5 px-1 py-0.5 rounded bg-blue-500/10 text-blue-500 font-medium text-[9px]">Org</span>}
+                                                                            <span className={`ml-1.5 px-1 py-0.5 rounded font-medium text-[9px] ${visibility.cls}`}>{visibility.label}</span>
                                                                         </p>
                                                                     </div>
                                                                 </label>

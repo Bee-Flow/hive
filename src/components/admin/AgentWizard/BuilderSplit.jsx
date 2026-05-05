@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { Send, Plus, Sparkles, Upload, Brain, AppWindow, ArrowLeft, X, Search, ChevronDown, ChevronRight, Image as ImageIcon, Globe, BookOpen, Paperclip, LayoutGrid, ArrowUp, Puzzle as PuzzlePiece, Sliders, Copy, Check, History, Clock, Play, Pause, Trash2 } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
+import { pickAgentAvatar, DEFAULT_AGENT_EMOJI } from '../../../utils/agentAvatar';
 import useTranslation from '../../../hooks/useTranslation';
 import ModelTierSelector from '../../ModelTierSelector';
 import { tierLabel } from '../../tierMeta';
@@ -25,7 +26,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
 
     const [agent, setAgent] = useState(initialAgent);
     const [name, setName] = useState(initialAgent?.name || plan?.name || t('agent_wizard.builder.name_placeholder'));
-    const [avatar, setAvatar] = useState(initialAgent?.avatar || initialAgent?.config?.avatar || plan?.avatar || '🤖');
+    const [avatar, setAvatar] = useState(pickAgentAvatar(initialAgent) || plan?.avatar || DEFAULT_AGENT_EMOJI);
     const [description, setDescription] = useState(initialAgent?.description || plan?.description || '');
     const [instructions, setInstructions] = useState(initialAgent?.system_prompt || plan?.systemPrompt || '');
     const [model, setModel] = useState(initialAgent?.model || '');
@@ -199,7 +200,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 setName(fresh.name || '');
                 setDescription(fresh.description || '');
                 setInstructions(fresh.system_prompt || '');
-                setAvatar(fresh.avatar || fresh.config?.avatar || '🤖');
+                setAvatar(pickAgentAvatar(fresh) || DEFAULT_AGENT_EMOJI);
                 setModel(fresh.model || '');
                 if (fresh.model && fresh.model.startsWith('tier:')) setSelectedTier(fresh.model.slice(5));
 
@@ -306,6 +307,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         model: initialAgent?.model || '',
         categoryId: initialAgent?.category_id || null,
         embedEnabled: initialAgent?.embed_enabled === 1 || initialAgent?.embed_enabled === true,
+        avatar: pickAgentAvatar(initialAgent) || plan?.avatar || DEFAULT_AGENT_EMOJI,
         config: { ...(initialAgent?.config || {}) },
     });
     useEffect(() => { stateRef.current.name = name; }, [name]);
@@ -351,6 +353,11 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 model: stateRef.current.model,
                 categoryId: stateRef.current.categoryId,
                 embedEnabled: stateRef.current.embedEnabled,
+                // Top-level avatar so the agents column reflects the picker
+                // — without this, the marketplace card kept rendering initials
+                // because `agent.avatar` stayed NULL even though config.avatar
+                // was set.
+                avatar: stateRef.current.avatar,
                 config: { ...stateRef.current.config },
             };
             try {
@@ -446,7 +453,14 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     const updateName = (v) => { setName(v); stateRef.current.name = v; queueSave(false); };
     const updateInstructions = (v) => { setInstructions(v); stateRef.current.systemPrompt = v; queueSave(false); };
     // Discrete actions: save immediately so a quick navigation still persists.
-    const updateAvatar = (v) => { setAvatar(v); patchConfig({ avatar: v }); };
+    // Avatar is now written only to the canonical top-level column. Reads still
+    // fall through to config.avatar via pickAgentAvatar so legacy agents keep
+    // displaying until the one-shot backfill migration lands.
+    const updateAvatar = (v) => {
+        setAvatar(v);
+        stateRef.current.avatar = v;
+        queueSave(true);
+    };
     const toggleMemory = () => {
         const next = !memoryEnabled;
         setMemoryEnabled(next);
@@ -572,6 +586,11 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         // "Publish to entire organisation" → empty sharedGroups.
         callPublish(!isPublished, []);
     };
+    // Explicit setters for the three publish modes — used by the menu so the
+    // user can switch directly between Personal / Entire Org / Specific
+    // Groups without first toggling the master switch off and on.
+    const setPublishPersonal = () => callPublish(false, []);
+    const setPublishEntireOrg = () => callPublish(true, []);
     const togglePublishGroup = (gid) => {
         const next = sharedGroups.includes(gid) ? sharedGroups.filter(x => x !== gid) : [...sharedGroups, gid];
         // Setting any group implies published=true.
@@ -644,15 +663,16 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
             });
             if (!res.ok) throw new Error(await res.text());
             const { plan: updated } = await res.json();
+            const nextAvatar = updated.avatar || avatar;
             setName(updated.name);
-            setAvatar(updated.avatar || avatar);
+            setAvatar(nextAvatar);
             setInstructions(updated.systemPrompt || instructions);
             stateRef.current.name = updated.name;
             stateRef.current.description = updated.description || stateRef.current.description;
             stateRef.current.systemPrompt = updated.systemPrompt || stateRef.current.systemPrompt;
+            stateRef.current.avatar = nextAvatar;
             stateRef.current.config = {
                 ...stateRef.current.config,
-                avatar: updated.avatar || avatar,
                 wizard: { capabilities: updated.capabilities, suggestedSkills: updated.suggestedSkills },
             };
             queueSave();
@@ -928,6 +948,8 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                         onClose={() => setPublishPickerOpen(false)}
                         isPublished={isPublished}
                         onTogglePublished={togglePublishedToOrg}
+                        onSetPersonal={setPublishPersonal}
+                        onSetEntireOrg={setPublishEntireOrg}
                         embedEnabled={embedEnabled}
                         orgGroups={orgGroups}
                         sharedGroups={sharedGroups}

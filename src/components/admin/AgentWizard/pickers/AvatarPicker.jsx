@@ -1,8 +1,10 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { Image as ImageIcon } from 'lucide-react';
+import { isImageAvatar, resolveAvatarSrc, DEFAULT_AGENT_EMOJI } from '../../../../utils/agentAvatar';
 
-// Avatar can be either an emoji string OR a data-URL / http URL for an
-// uploaded image. The picker offers both: tabbed emoji grid + a file upload.
+// Avatar can be either an emoji string OR a data-URL / http URL / server
+// upload path for an image. The picker offers both: tabbed emoji grid + a
+// file upload. Detection / resolution is shared via utils/agentAvatar.
 const AVATAR_EMOJI_CATEGORIES = {
     tech:    { label: '🤖', emojis: ['🤖','🧠','💡','🔧','🛠️','⚙️','📊','📈','📉','🎯','🚀','⚡','🔥','💥','✨','🌟','⭐','🏆','📝','✏️','📌','📎','🗂️','📂','📁','🔒','🔑','🛡️','💻','⌨️','🖥️','📱','🖨️','🔍','🔬','📡','💾','🌐','🧰','📚'] },
     smileys: { label: '😀', emojis: ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','😊','😇','🥰','😍','🤩','😘','😋','😎','🥸','🤓','🧐','🤨','😏','😌','😴','🥳','🤠','😈','👽','💀','👻','😺','🙃','😉','🤗','🤔','🤫','🤭','🤐','😶','🙄'] },
@@ -13,8 +15,6 @@ const AVATAR_EMOJI_CATEGORIES = {
     travel:  { label: '✈️', emojis: ['🚗','🚕','🚌','🏎️','🚓','🚑','🚒','🚜','🏍️','🚲','🛴','🚂','🚆','🚇','✈️','🛫','🚀','🛸','🚁','⛵','🚢','🏠','🏢','🏥','🏨','🏫','🏭','🗼','🗽','⛪','🕌','⛲','🌍','🌎','🌏','🗺️','🏝️','🏔️','⛰️','🌋'] },
     symbols: { label: '⚡', emojis: ['❤️','🧡','💛','💚','💙','💜','🤍','🖤','💔','❣️','💕','💞','💓','💖','💘','💝','💟','☮️','✝️','☪️','🕉️','☸️','✡️','☯️','♈','♉','♊','♋','♌','♍','♎','♏','♐','♑','♒','♓','✅','❌','⚠️','♻️'] },
 };
-const isImageAvatar = (a) => !!a && (typeof a === 'string') && (a.startsWith('data:') || a.startsWith('http'));
-
 export default function AvatarPicker({ avatar, onChange, t, size }) {
     const [open, setOpen] = useState(false);
     const [category, setCategory] = useState('tech');
@@ -54,8 +54,8 @@ export default function AvatarPicker({ avatar, onChange, t, size }) {
                 title={t('agent_wizard.avatar.title') || 'Avatar'}
             >
                 {isImage
-                    ? <img src={avatar} alt="" className="w-full h-full object-cover" />
-                    : <span>{avatar || '🤖'}</span>}
+                    ? <img src={resolveAvatarSrc(avatar)} alt="" className="w-full h-full object-cover" />
+                    : <span>{avatar || DEFAULT_AGENT_EMOJI}</span>}
             </button>
             {open && (
                 <div
@@ -108,7 +108,7 @@ export default function AvatarPicker({ avatar, onChange, t, size }) {
                         {isImage && (
                             <button
                                 type="button"
-                                onClick={() => { onChange('🤖'); setOpen(false); }}
+                                onClick={() => { onChange(DEFAULT_AGENT_EMOJI); setOpen(false); }}
                                 className="px-3 py-1.5 text-xs rounded-lg text-[var(--text-tertiary)] hover:text-red-500 hover:bg-[var(--bg-secondary)] transition"
                             >
                                 {t('agent_wizard.avatar.reset') || 'Remove'}

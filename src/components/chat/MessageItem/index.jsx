@@ -5,6 +5,7 @@ import { Copy, Check, Bot, ChevronDown, Send, ThumbsUp, ThumbsDown, RefreshCw, P
 import MarkdownRenderer from '../../MarkdownRenderer';
 import MapEmbedRenderer from '../../MapEmbedRenderer';
 import { API_BASE, authFetch, getToolLabel, getToolIcon, toolNameToCatalogId } from '../../../utils/helpers';
+import { isImageAvatar, resolveAvatarSrc } from '../../../utils/agentAvatar';
 import AppEmoji from '../../AppEmoji';
 import AudioPlayerInline from './AudioPlayer';
 import ImageLightbox from './ImageLightbox';
@@ -333,8 +334,8 @@ const MessageItem = ({
             {!isUser && !isTool && msg.respondingAgentName && (
                 <div className="flex items-center gap-1.5 ml-1 mb-1 text-xs text-[var(--text-secondary)] opacity-80">
                     <div className="w-4 h-4 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center text-[10px] overflow-hidden border border-[var(--border-subtle)]">
-                        {msg.respondingAgentAvatar && (msg.respondingAgentAvatar.startsWith('data:') || msg.respondingAgentAvatar.startsWith('http')) ? (
-                            <img src={msg.respondingAgentAvatar} alt="" className="w-full h-full object-cover" />
+                        {isImageAvatar(msg.respondingAgentAvatar) ? (
+                            <img src={resolveAvatarSrc(msg.respondingAgentAvatar)} alt="" className="w-full h-full object-cover" />
                         ) : msg.respondingAgentAvatar ? msg.respondingAgentAvatar : <Bot className="w-3 h-3" />}
                     </div>
                     <span className="font-medium">{msg.respondingAgentName}</span>

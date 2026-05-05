@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { Search, X, MessageSquare, Calendar, Bot, Clock } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
+import { isImageAvatar, resolveAvatarSrc } from '../utils/agentAvatar';
 
 const RECENT_KEY = 'beeflow.search.recent';
 const MAX_RECENT = 5;
@@ -410,7 +411,7 @@ const ResultRow = ({ result, query, idx, selected, onSelect, onHover }) => {
     const isDirect = result.kind === 'direct';
     const agentName = result.agent_name || (isDirect ? 'Direct Chat' : 'Agent');
     const avatar = result.agent_avatar;
-    const hasImageAvatar = avatar && (avatar.startsWith('data:') || avatar.startsWith('http'));
+    const hasImageAvatar = isImageAvatar(avatar);
 
     return (
         <button
@@ -435,7 +436,7 @@ const ResultRow = ({ result, query, idx, selected, onSelect, onHover }) => {
                     </div>
                 ) : hasImageAvatar ? (
                     <div className="w-8 h-8 rounded-lg overflow-hidden border border-[var(--border-subtle)] bg-[var(--bg-secondary)]">
-                        <img src={avatar} alt="" className="w-full h-full object-contain" />
+                        <img src={resolveAvatarSrc(avatar)} alt="" className="w-full h-full object-contain" />
                     </div>
                 ) : avatar ? (
                     <div className="w-8 h-8 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] flex items-center justify-center text-base leading-none">

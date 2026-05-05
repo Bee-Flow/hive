@@ -4,6 +4,7 @@ import WelcomeScreen from '../components/WelcomeScreen';
 import InputArea from '../components/InputArea';
 import { Sun, Moon } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
+import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar } from '../utils/agentAvatar';
 
 const getInitialTheme = () => {
     // 1. Check URL param (?theme=light or ?theme=dark) — allows iframe embedder to control
@@ -521,15 +522,28 @@ const EmbedChat = ({ agentId }) => {
             {/* Minimal Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)] flex-shrink-0">
                 <div className="flex items-center gap-3">
-                    {agent.avatar ? (
-                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-secondary)] flex items-center justify-center text-xl shadow-md">
-                            {agent.avatar}
-                        </div>
-                    ) : (
-                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-secondary)] flex items-center justify-center text-sm font-semibold text-white shadow-md">
-                            {(agent.name || 'A').charAt(0).toUpperCase()}
-                        </div>
-                    )}
+                    {(() => {
+                        const av = pickAgentAvatar(agent);
+                        if (isImageAvatar(av)) {
+                            return (
+                                <div className="w-9 h-9 rounded-xl overflow-hidden flex items-center justify-center shadow-md">
+                                    <img src={resolveAvatarSrc(av)} alt="" className="w-full h-full object-cover" />
+                                </div>
+                            );
+                        }
+                        if (av) {
+                            return (
+                                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-secondary)] flex items-center justify-center text-xl shadow-md">
+                                    {av}
+                                </div>
+                            );
+                        }
+                        return (
+                            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[var(--accent-primary)] to-[var(--accent-secondary)] flex items-center justify-center text-sm font-semibold text-white shadow-md">
+                                {(agent.name || 'A').charAt(0).toUpperCase()}
+                            </div>
+                        );
+                    })()}
                     <div>
                         <div className="text-sm font-semibold text-[var(--text-primary)]">{agent.name}</div>
                         {agent.description && (
