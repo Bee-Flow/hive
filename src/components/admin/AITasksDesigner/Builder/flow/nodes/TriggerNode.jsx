@@ -50,9 +50,9 @@ export default function TriggerNode({ data }) {
             )}
             {kind === 'app_event' && filter && Object.keys(filter).length > 0 && (
                 <div className="mt-1 flex items-center gap-1 flex-wrap">
-                    {Object.entries(filter).slice(0, 3).map(([k, v]) => (
-                        <NodeChip key={k} title={`filter ${k}=${JSON.stringify(v)}`}>
-                            {k}={Array.isArray(v) ? v.join(',') : String(v)}
+                    {summariseFilter(filter).slice(0, 4).map(({ key, label }) => (
+                        <NodeChip key={key} title={key}>
+                            {label}
                         </NodeChip>
                     ))}
                 </div>
@@ -88,4 +88,30 @@ export default function TriggerNode({ data }) {
             issues={issues}
         />
     );
+}
+
+/**
+ * Render Gmail trigger filter as readable chips.
+ * Returns [{key, label}] in the order users expect to read them.
+ */
+function summariseFilter(filter) {
+    const out = [];
+    if (filter.from)              out.push({ key: 'from',            label: `from: ${truncate(filter.from, 22)}` });
+    if (filter.to)                out.push({ key: 'to',              label: `to: ${truncate(filter.to, 22)}` });
+    if (filter.cc)                out.push({ key: 'cc',              label: `cc: ${truncate(filter.cc, 22)}` });
+    if (filter.subjectContains)   out.push({ key: 'subjectContains', label: `subject ~ "${truncate(filter.subjectContains, 18)}"` });
+    if (filter.subjectRegex)      out.push({ key: 'subjectRegex',    label: `subject /${truncate(filter.subjectRegex, 16)}/` });
+    if (Array.isArray(filter.labelIds) && filter.labelIds.length)
+        out.push({ key: 'labelIds', label: `labels: ${filter.labelIds.slice(0, 2).join(',')}${filter.labelIds.length > 2 ? '+' + (filter.labelIds.length - 2) : ''}` });
+    if (Array.isArray(filter.excludeLabelIds) && filter.excludeLabelIds.length)
+        out.push({ key: 'excludeLabelIds', label: `not: ${filter.excludeLabelIds.slice(0, 2).join(',')}` });
+    if (filter.hasAttachment === true)   out.push({ key: 'hasAttachment',   label: 'has attachment' });
+    if (filter.excludeFromSelf === true) out.push({ key: 'excludeFromSelf', label: 'not sent by me' });
+    if (typeof filter.maxAgeMinutes === 'number') out.push({ key: 'maxAgeMinutes', label: `≤ ${filter.maxAgeMinutes}m old` });
+    return out;
+}
+
+function truncate(s, n) {
+    s = String(s ?? '');
+    return s.length > n ? s.slice(0, n - 1) + '…' : s;
 }
