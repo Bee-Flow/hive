@@ -3,6 +3,9 @@ import React from 'react';
 const variantClass = {
     primary:   'btn btn-primary',
     secondary: 'btn btn-secondary',
+    ghost:     'btn btn-ghost',
+    link:      'btn btn-link',
+    // Legacy alias kept for any caller that still passes 'login'.
     login:     'btn btn-login',
 };
 

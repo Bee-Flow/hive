@@ -7,8 +7,9 @@ const isPreview = () =>
     typeof window !== 'undefined' &&
     new URLSearchParams(window.location.search).has('preview');
 
-export default function Footer({ data }) {
+export default function Footer({ data, isDark, onToggleTheme }) {
     if (!data?.enabled) return null;
+    const showThemeSwitcher = !!data.themeSwitcher?.enabled;
     return (
         <SectionFrame id="footer" name="Footer" enabled={data.enabled}>
             <footer className="site-footer">
@@ -46,7 +47,12 @@ export default function Footer({ data }) {
                                 <ul>
                                     {(col.links || []).map((link, j) => (
                                         <li key={j}>
-                                            <a href={link.href} onClick={(e) => isPreview() && e.preventDefault()}>
+                                            <a
+                                                href={link.href}
+                                                target={link.target}
+                                                rel={link.rel}
+                                                onClick={(e) => isPreview() && e.preventDefault()}
+                                            >
                                                 <EditableText
                                                     path={`footer.columns.${i}.links.${j}.label`}
                                                     placeholder="Link"
@@ -64,30 +70,54 @@ export default function Footer({ data }) {
                         <EditableText path="footer.copyright" placeholder="© Company">
                             {data.copyright || ''}
                         </EditableText>
-                        {data.socials?.length ? (
-                            <div className="footer-socials">
-                                {data.socials.map((s, i) => (
-                                    <a
-                                        key={i}
-                                        href={s.href}
-                                        aria-label={s.platform}
-                                        onClick={(e) => isPreview() && e.preventDefault()}
-                                    >
-                                        <AppIcon
-                                            name={
-                                                s.platform === 'github'   ? 'Github' :
-                                                s.platform === 'twitter'  ? 'Twitter' :
-                                                s.platform === 'linkedin' ? 'Linkedin' : 'Link'
-                                            }
-                                            className="w-5 h-5"
-                                        />
-                                    </a>
-                                ))}
-                            </div>
-                        ) : null}
+                        <div className="footer-bottom-right">
+                            {data.socials?.length ? (
+                                <div className="footer-socials">
+                                    {data.socials.map((s, i) => (
+                                        <a
+                                            key={i}
+                                            href={s.href}
+                                            target={s.target}
+                                            rel={s.rel}
+                                            aria-label={s.platform}
+                                            onClick={(e) => isPreview() && e.preventDefault()}
+                                        >
+                                            <AppIcon
+                                                name={
+                                                    s.platform === 'github'   ? 'Github' :
+                                                    s.platform === 'twitter'  ? 'Twitter' :
+                                                    s.platform === 'linkedin' ? 'Linkedin' : 'Link'
+                                                }
+                                                className="w-5 h-5"
+                                            />
+                                        </a>
+                                    ))}
+                                </div>
+                            ) : null}
+                            {showThemeSwitcher && onToggleTheme ? (
+                                <ThemeSwitcher isDark={!!isDark} onToggle={onToggleTheme} />
+                            ) : null}
+                        </div>
                     </div>
                 </div>
             </footer>
         </SectionFrame>
+    );
+}
+
+// Single-button day/night toggle. The icon shows the CURRENT mode; clicking
+// flips to the other. No system option — keep the affordance to one button.
+function ThemeSwitcher({ isDark, onToggle }) {
+    const label = isDark ? 'Switch to light mode' : 'Switch to dark mode';
+    return (
+        <button
+            type="button"
+            className="cms-theme-toggle"
+            aria-label={label}
+            title={label}
+            onClick={onToggle}
+        >
+            <AppIcon name={isDark ? 'Moon' : 'Sun'} className="w-4 h-4" />
+        </button>
     );
 }

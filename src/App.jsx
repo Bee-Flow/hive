@@ -181,20 +181,60 @@ function parseWebpageUrl(pathname) {
     return match ? match[1] : null;
 }
 
+// Top-level paths claimed by the BeeFlow app shell. Any single-segment
+// pathname starting with one of these (e.g. `/app`, `/api`, `/admin`) is
+// handed straight to the app router instead of being treated as a CMS page
+// slug. Mirrors RESERVED_SLUGS in server/i18n/defaults/cmsDefaults.js plus
+// the legacy short-id prefixes used by App.jsx's parsers.
+const RESERVED_TOP_LEVEL = new Set([
+    'app', 'api', 'admin', 'auth', 'login', 'logout', 'register', 'signup',
+    'dashboard', 'settings', 'embed', 'oauth', 'callback',
+    'chat', 'd', 'a', 'agent',
+    'org-settings', 'email-kb', 'ticket-assistant',
+    '__cms_preview__',
+]);
+
+// Returns true when `pathname` could be a CMS page (homepage or a single
+// non-reserved slug segment). Multi-segment paths and reserved prefixes
+// fall through to the app shell.
+function isCmsPathCandidate(pathname) {
+    if (!pathname || pathname === '/' || pathname === '') return true;
+    const m = pathname.match(/^\/([^/]+)\/?$/);
+    if (!m) return false;
+    const seg = m[1].toLowerCase();
+    if (RESERVED_TOP_LEVEL.has(seg)) return false;
+    return /^[a-z0-9][a-z0-9-]*$/.test(seg);
+}
+
 // Root wrapper — handles embed route before App's hooks
 function AppRoot() {
     const chatMatch = window.location.pathname.match(/^\/chat\/([a-zA-Z0-9-]+)/);
     if (chatMatch) {
         return <EmbedChat agentId={chatMatch[1]} />;
     }
-    // Root-path marketing-site gate: when the CMS is enabled, intercept "/"
-    // and render the public product website. When disabled, replace the URL
-    // with /app so the login form lives there. Anything else falls through
-    // to the regular app shell.
-    if (window.location.pathname === '/' || window.location.pathname === '') {
+    // Dedicated CMS preview route — rendered inside the admin Product Website
+    // editor's iframe. Always shows the marketing site in preview mode, with
+    // no auth/enabled/redirect coupling.
+    if (window.location.pathname === '/__cms_preview__') {
+        return <CmsPreviewHost />;
+    }
+    // Path-based marketing-site gate: intercept `/` and any single-segment
+    // path (e.g. `/about`, `/contact`) so they render the public product
+    // website. RootPathGate falls through to <App /> when the CMS is off
+    // OR when the slug doesn't match a real page.
+    if (isCmsPathCandidate(window.location.pathname)) {
         return <RootPathGate />;
     }
     return <App />;
+}
+
+// Isolated host for the CMS preview iframe. Renders ProductWebsite with empty
+// content; the admin panel pushes the real content via cms-preview postMessage
+// immediately after ProductWebsite posts its cms-preview-ready handshake.
+// No fetch, no auth coupling, no redirect logic — the iframe always renders
+// the marketing site shell, never the chat app.
+function CmsPreviewHost() {
+    return <ProductWebsite content={{}} />;
 }
 
 function RootPathGate() {
@@ -207,6 +247,11 @@ function RootPathGate() {
         let cancelled = false;
         const params = new URLSearchParams(window.location.search);
         const locale = (params.get('locale') || (navigator.language || 'en').split('-')[0]).toLowerCase();
+        // Path-based routing: `/about` → slug "about", `/` → empty (homepage).
+        // The legacy `?slug=` query param still wins if present so old links
+        // keep working during the cutover.
+        const pathSlug = (window.location.pathname.match(/^\/([^/]+)\/?$/)?.[1] || '').toLowerCase();
+        const slug = (params.get('slug') || pathSlug || '').toString();
 
         // Preview mode: always render the marketing site so the admin's iframe
         // shows something even when the public site is still disabled. Pull
@@ -223,20 +268,46 @@ function RootPathGate() {
             return;
         }
 
-        fetch(`${API_BASE}/api/cms/site?locale=${encodeURIComponent(locale)}`)
+        const qs = `locale=${encodeURIComponent(locale)}` +
+                   (slug ? `&slug=${encodeURIComponent(slug)}` : '');
+        fetch(`${API_BASE}/api/cms/site?${qs}`)
             .then(r => r.ok ? r.json() : { enabled: false })
             .catch(() => ({ enabled: false }))
             .then(data => {
                 if (cancelled) return;
-                if (data?.enabled) {
-                    setCms({ content: data.content || {} });
-                } else {
-                    // Marketing site disabled — redirect "/" to "/app" so the
-                    // login form lives at a stable URL. Use replaceState so
-                    // back-button doesn't loop.
+                if (!data?.enabled) {
+                    // No live site → redirect "/" to "/app" so the login
+                    // form lives at a stable URL. replaceState so back
+                    // button doesn't loop.
                     window.history.replaceState(null, '', '/app');
                     setCms(false);
+                    return;
                 }
+                // Path-based 404: the user asked for `/widgets`, the CMS
+                // is live, but no page with that slug exists. Hand the URL
+                // back to the BeeFlow app router rather than rendering an
+                // empty marketing shell. Homepage requests (no slug) skip
+                // this check — the homepage is implicit.
+                if (slug && data.found === false) {
+                    setCms(false);
+                    return;
+                }
+                // Canonical URL: the homepage lives at "/" only. If the
+                // user typed `/home` (or any slug that resolves to the
+                // homepage), rewrite the URL bar to "/" without reloading.
+                // canonicalSlug is "" for the homepage, otherwise the
+                // page's own slug.
+                if (typeof data.canonicalSlug === 'string') {
+                    const canonical = `/${data.canonicalSlug}`;
+                    if (window.location.pathname !== canonical) {
+                        window.history.replaceState(
+                            null,
+                            '',
+                            canonical + window.location.search + window.location.hash,
+                        );
+                    }
+                }
+                setCms({ content: data.content || {} });
             });
         return () => { cancelled = true; };
     }, []); // eslint-disable-line react-hooks/exhaustive-deps

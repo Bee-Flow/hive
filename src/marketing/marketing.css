@@ -1,37 +1,66 @@
 /* ────────────────────────────────────────────────────────────────────────────
-   Bee Flow — Product Website Stylesheet
+   Product Website Stylesheet
    All selectors scoped under `.marketing-root` so they cannot bleed into
    the rest of the app.
+
+   Tokens are layered:
+     --brand-* / --font-* / --radius-base   user-controlled design system
+                                            (overridden via inline style on
+                                            the root element by the renderer
+                                            from site.design)
+     legacy --bg-primary / --accent / etc.  preserved so existing rules
+                                            keep working — they alias the
+                                            brand tokens
    ──────────────────────────────────────────────────────────────────────────── */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+/* The dynamic font loader injects a <link> tag into the iframe head based on
+   site.design.fonts. Inter is kept as a system fallback so the page never
+   shows a flash of unstyled text before the loader runs. */
 
 .marketing-root {
-    /* ── Design Tokens ────────────────────────────────────────────────── */
-    --bg-primary:        #06090F;
-    --bg-secondary:      #0C1220;
-    --bg-card:           rgba(255, 255, 255, 0.03);
-    --bg-card-hover:     rgba(255, 255, 255, 0.06);
-    --bg-glass:          rgba(12, 18, 32, 0.7);
+    /* ── Brand / design-system tokens (user-controlled) ─────────────── */
+    --brand-primary:        #F5A623;
+    --brand-secondary:      #1F2937;
+    --brand-accent:         #FFD166;
+    --brand-bg:             #FFFFFF;
+    --brand-surface:        #F7F8FA;
+    --brand-text:           #0F172A;
+    --brand-text-secondary: #475569;
 
-    --accent:            #F5A623;
-    --accent-light:      #FFD080;
+    --font-heading: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-body:    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+    --radius-base: 12px;
+
+    /* ── Legacy tokens — aliased to the brand tokens above ──────────── */
+    --bg-primary:        var(--brand-bg);
+    --bg-secondary:      var(--brand-surface);
+    --bg-card:           rgba(0, 0, 0, 0.03);
+    --bg-card-hover:     rgba(0, 0, 0, 0.06);
+    --bg-glass:          rgba(255, 255, 255, 0.7);
+
+    --accent:            var(--brand-primary);
+    --accent-light:      var(--brand-accent);
     --accent-glow:       rgba(245, 166, 35, 0.25);
-    --accent-gradient:   linear-gradient(135deg, #F5A623 0%, #FF6B35 100%);
+    /* Default fill is SOLID. The .cms-gradient class below upgrades it to a
+       linear gradient when the user opts in via the Design tab. */
+    --accent-gradient:   var(--brand-primary);
 
-    --text-primary:      #F0F2F5;
-    --text-secondary:    #8A92A6;
-    --text-muted:        #555D70;
+    --text-primary:      var(--brand-text);
+    --text-secondary:    var(--brand-text-secondary);
+    --text-muted:        rgba(15, 23, 42, 0.5);
 
-    --border-subtle:     rgba(255, 255, 255, 0.06);
+    --border-subtle:     rgba(15, 23, 42, 0.08);
     --border-accent:     rgba(245, 166, 35, 0.3);
 
-    --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-lg: 20px;
-    --radius-xl: 28px;
+    /* Radius scale derived from --radius-base so the global slider scales
+       buttons, cards, inputs proportionally. */
+    --radius-sm: calc(var(--radius-base) * 0.5);
+    --radius-md: var(--radius-base);
+    --radius-lg: calc(var(--radius-base) * 1.5);
+    --radius-xl: calc(var(--radius-base) * 2);
 
-    --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.3);
+    --shadow-card: 0 4px 24px rgba(15, 23, 42, 0.08);
     --shadow-glow: 0 0 60px rgba(245, 166, 35, 0.08);
 
     --transition-fast: 0.2s ease;
@@ -42,13 +71,27 @@
     --header-height: 72px;
 
     /* ── Base ─────────────────────────────────────────────────────────── */
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: var(--font-body);
     background: var(--bg-primary);
     color: var(--text-primary);
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     min-height: 100vh;
+}
+
+/* Heading font applies to all heading elements + the headline utility classes.
+   Body text inherits --font-body from .marketing-root. */
+.marketing-root h1,
+.marketing-root h2,
+.marketing-root h3,
+.marketing-root h4,
+.marketing-root h5,
+.marketing-root h6,
+.marketing-root .headline-xl,
+.marketing-root .headline-lg,
+.marketing-root .headline-md {
+    font-family: var(--font-heading);
 }
 
 .marketing-root *,
@@ -134,6 +177,34 @@
     color: var(--accent-light);
 }
 
+/* Ghost — text-only button, no border or fill. Used for tertiary header
+   actions (e.g. "Log in") that shouldn't compete with the primary CTA. */
+.marketing-root .btn-ghost {
+    padding: 10px 16px;
+    background: transparent;
+    color: var(--text-primary);
+    border: none;
+}
+.marketing-root .btn-ghost:hover {
+    color: var(--accent);
+}
+
+/* Link — plain underlined link, matches body-text rhythm. Useful for
+   inline secondary actions where a button would feel too heavy. */
+.marketing-root .btn-link {
+    padding: 0;
+    background: transparent;
+    color: var(--accent);
+    border: none;
+    border-radius: 0;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    font-weight: 500;
+}
+.marketing-root .btn-link:hover {
+    color: var(--accent-light);
+}
+
 /* ── Header ───────────────────────────────────────────────────────────── */
 .marketing-root .header {
     position: fixed;
@@ -170,6 +241,16 @@
     display: flex; align-items: center; justify-content: center;
     color: #fff; font-weight: 800;
 }
+/* Image logo — uploaded via Site chrome → Logo image. Sized to roughly
+   match the letter-avatar's height so swapping between modes doesn't
+   change the header's vertical rhythm. */
+.marketing-root .header-logo .logo-image {
+    height: 38px;
+    width: auto;
+    max-width: 160px;
+    object-fit: contain;
+    display: block;
+}
 .marketing-root .header-logo .logo-dot { color: var(--accent); }
 .marketing-root .header-nav {
     display: flex;
@@ -192,6 +273,105 @@
     transition: width var(--transition-fast);
 }
 .marketing-root .header-nav a:hover::after { width: 100%; }
+
+/* Nav dropdown — items in site.header.nav with non-empty `children`
+   render as a parent <a> + a hidden <ul> that appears on hover/focus.
+   Specificity here is intentionally tighter than `.header-nav a::after`
+   so the parent's underline still works. */
+.marketing-root .header-nav .nav-item.has-dropdown {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+.marketing-root .header-nav .nav-item.has-dropdown > a {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.marketing-root .header-nav .nav-item.has-dropdown > a::before {
+    content: '';
+    width: 0; height: 0;
+    margin-left: 4px;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 4px solid currentColor;
+    opacity: 0.6;
+    transition: opacity var(--transition-fast), transform var(--transition-fast);
+    order: 2;                /* render the chevron AFTER the label text */
+    align-self: center;
+}
+.marketing-root .header-nav .nav-item.has-dropdown:hover > a::before,
+.marketing-root .header-nav .nav-item.has-dropdown:focus-within > a::before {
+    opacity: 1;
+    transform: rotate(180deg);
+}
+.marketing-root .header-nav .nav-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin: 0;
+    padding: 6px;
+    min-width: 200px;
+    list-style: none;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+    backdrop-filter: blur(10px);
+    /* Hidden by default; revealed by hover/focus on the parent .nav-item.
+       opacity + visibility (rather than display:none) so the transition
+       runs and so focus stays inside the dropdown when tabbing. */
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-4px);
+    transition: opacity var(--transition-fast),
+                transform var(--transition-fast),
+                visibility 0s linear var(--transition-fast);
+    z-index: 100;
+}
+.marketing-root .header-nav .nav-item.has-dropdown:hover .nav-dropdown,
+.marketing-root .header-nav .nav-item.has-dropdown:focus-within .nav-dropdown {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    transition-delay: 0s;
+}
+.marketing-root .header-nav .nav-dropdown li { display: block; }
+.marketing-root .header-nav .nav-dropdown li a {
+    display: block;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    white-space: nowrap;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+.marketing-root .header-nav .nav-dropdown li a::after { content: none; }
+.marketing-root .header-nav .nav-dropdown li a:hover {
+    background: var(--bg-card);
+    color: var(--text-primary);
+}
+.marketing-root .header-nav .nav-dropdown li a.active {
+    color: var(--text-primary);
+    background: var(--bg-card);
+}
+
+/* Mobile dropdown children — always visible, indented under the parent.
+   We don't use the desktop dropdown layout here; the mobile drawer just
+   stacks links vertically. */
+.marketing-root .mobile-nav-children {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-left: 16px;
+    padding-left: 12px;
+    border-left: 1px solid var(--border-subtle);
+}
+.marketing-root .mobile-nav-children a {
+    font-size: 1.05rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
 .marketing-root .header-actions {
     display: flex;
     align-items: center;
@@ -722,9 +902,39 @@
     color: var(--text-muted);
     font-size: 0.85rem;
 }
+.marketing-root .footer-bottom-right {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+}
 .marketing-root .footer-socials { display: flex; gap: 12px; }
 .marketing-root .footer-socials a { color: var(--text-muted); transition: color var(--transition-fast); }
 .marketing-root .footer-socials a:hover { color: var(--accent); }
+
+/* Day / night toggle (opt-in, rendered by Footer when enabled in Site
+   chrome). Single round icon button; the icon mirrors the current mode. */
+.marketing-root .cms-theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color var(--transition-fast),
+                background-color var(--transition-fast),
+                border-color var(--transition-fast),
+                transform var(--transition-fast);
+}
+.marketing-root .cms-theme-toggle:hover {
+    color: var(--accent);
+    border-color: var(--border-accent);
+    background: var(--bg-card-hover);
+}
+.marketing-root .cms-theme-toggle:active { transform: scale(0.95); }
 
 /* ── Scroll reveal ────────────────────────────────────────────────────── */
 .marketing-root .reveal {
@@ -771,85 +981,9 @@
     display: none;
 }
 
-/* Section frame + hover toolbar */
-.marketing-root .cms-section-frame {
-    position: relative;
-    transition: outline-color 0.15s ease;
-}
-.marketing-root .cms-section-frame::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    outline: 0 solid transparent;
-    outline-offset: -2px;
-    transition: outline 0.15s ease;
-}
-.marketing-root .cms-section-frame:hover::after {
-    outline: 2px solid rgba(245, 166, 35, 0.4);
-}
-.marketing-root .cms-section-frame.cms-section-active::after {
-    outline: 2px solid var(--accent);
-}
-.marketing-root .cms-section-hidden {
-    opacity: 0.5;
-    filter: grayscale(0.4);
-}
-
-.marketing-root .cms-section-toolbar {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    z-index: 50;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 4px 4px 10px;
-    background: rgba(12, 18, 32, 0.95);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-sm);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-    backdrop-filter: blur(8px);
-    opacity: 0;
-    transform: translateY(-6px);
-    transition: opacity 0.18s ease, transform 0.18s ease;
-    pointer-events: none;
-    font-family: 'Inter', sans-serif;
-}
-.marketing-root .cms-section-frame:hover .cms-section-toolbar,
-.marketing-root .cms-section-frame:focus-within .cms-section-toolbar {
-    opacity: 1;
-    transform: translateY(0);
-    pointer-events: auto;
-}
-.marketing-root .cms-section-toolbar .cms-section-name {
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--accent);
-    padding-right: 6px;
-    border-right: 1px solid var(--border-subtle);
-    margin-right: 2px;
-}
-.marketing-root .cms-section-toolbar button {
-    padding: 5px 10px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--text-secondary);
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease;
-}
-.marketing-root .cms-section-toolbar button:hover {
-    background: rgba(245, 166, 35, 0.12);
-    color: var(--accent-light);
-}
-
-/* Make the fixed header non-fixed in preview so toolbars don't overlap */
-.marketing-root.cms-preview .header { position: absolute; }
+/* The hover-toolbar / active-frame outline used to live on
+   .cms-section-frame here. Removed along with SectionFrame's wrapper —
+   the side panel owns block selection and visibility now. */
 
 /* ── Animations ───────────────────────────────────────────────────────── */
 @keyframes orbFloat {
@@ -882,3 +1016,402 @@
     .marketing-root .arch-layer-label { flex: none; }
     .marketing-root .footer-bottom { flex-direction: column; gap: 16px; }
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+   Per-block style wrapper
+   ─────────────────────────────────────────────────────────────────────────
+   Each block in ProductWebsite.jsx is wrapped in a `.cms-block-wrap` div
+   that carries the user's per-block style overrides as inline CSS. The
+   classes below cover the structural pieces (max-width variants, text
+   alignment) so the inline style stays small and predictable.
+   The actual padding/margin/background/etc. come in via inline `style`. */
+
+.marketing-root .cms-block-wrap {
+    position: relative;        /* anchor for image-overlay pseudo */
+    isolation: isolate;        /* keep overlay z-index local */
+}
+.marketing-root .cms-block-wrap > * {
+    position: relative;
+    z-index: 1;                /* keep section content above the overlay */
+}
+
+/* Inner container clamps section content when a max-width preset is set.
+   Handlers in JSX add the right modifier class. The default (full) leaves
+   the section's own .container behavior intact. */
+.marketing-root .cms-block-wrap--narrow > * { max-width: 720px;  margin-inline: auto; }
+.marketing-root .cms-block-wrap--medium > * { max-width: 960px;  margin-inline: auto; }
+.marketing-root .cms-block-wrap--wide   > * { max-width: 1200px; margin-inline: auto; }
+.marketing-root .cms-block-wrap--full   > * { max-width: 100%; }
+
+.marketing-root .cms-block-wrap--align-left   { text-align: left; }
+.marketing-root .cms-block-wrap--align-center { text-align: center; }
+.marketing-root .cms-block-wrap--align-right  { text-align: right; }
+
+/* Background image overlay. The image is set as `background-image` on the
+   wrap; the overlay is a pseudo-element whose fill comes from
+   --cms-bg-overlay (a single CSS color string, e.g. rgba(0,0,0,0.5))
+   set per-block. When no image is set the pseudo isn't visible because
+   the wrapper lacks the .cms-block-wrap--has-image class. */
+.marketing-root .cms-block-wrap--has-image {
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+.marketing-root .cms-block-wrap--has-image::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--cms-bg-overlay, transparent);
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Dark theme — overrides the layout palette (bg/surface/text) but leaves
+   brand colors (primary/secondary/accent) intact. The renderer skips
+   setting --brand-bg/--brand-surface/--brand-text/--brand-text-secondary
+   inline when theme==='dark' so this class actually wins (otherwise inline
+   would beat the class). Border + card alphas are also flipped so they
+   read on a dark background. */
+.marketing-root.cms-theme-dark {
+    color-scheme: dark;
+    --brand-bg:             #0F172A;
+    --brand-surface:        #1E293B;
+    --brand-text:           #F1F5F9;
+    --brand-text-secondary: #94A3B8;
+
+    --bg-card:           rgba(255, 255, 255, 0.04);
+    --bg-card-hover:     rgba(255, 255, 255, 0.08);
+    --bg-glass:          rgba(15, 23, 42, 0.7);
+    --text-muted:        rgba(241, 245, 249, 0.5);
+    --border-subtle:     rgba(255, 255, 255, 0.08);
+    --shadow-card:       0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Gradient mode — opts user into a linear-gradient fill for primary
+   elements (CTAs, hero gradient text, feature card top border, chat-user
+   bubbles, header logo tile). Ramp goes primary → accent so users have
+   control over both endpoints via the Design tab. When the class is
+   absent, --accent-gradient is the solid var(--brand-primary). */
+.marketing-root.cms-gradient {
+    --accent-gradient: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-accent) 100%);
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Active nav link — applied to the link whose href matches the page
+   currently being previewed/rendered. Mirrors the hover state but locked. */
+.marketing-root .header-nav a.active        { color: var(--text-primary); }
+.marketing-root .header-nav a.active::after { width: 100%; }
+
+/* ────────────────────────────────────────────────────────────────────────
+   Content block — generic flexible section.
+   Three layout knobs from data:
+     backgroundVariant → fill + foreground (default | surface | primary | dark)
+     textAlign         → text alignment within the text column (left | center | right)
+     imagePosition     → flex-direction on the inner row (above | below | left | right)
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* Background variants. Default falls through to the page bg. Saturated
+   variants (primary/dark) flip text colors so body copy stays readable. */
+/* ── Content block (column + elements) ─────────────────────────────
+   New shape: any number of columns, each holding a stack of typed
+   elements. Grid layout drives the column proportions. */
+
+.marketing-root .content-block               { padding: 64px 0; }
+.marketing-root .content-block--bg-light     { background: var(--brand-surface); }
+.marketing-root .content-block--bg-primary   { background: var(--brand-primary); color: #fff; }
+.marketing-root .content-block--bg-dark      { background: var(--brand-secondary); color: var(--brand-bg); }
+.marketing-root .content-block--bg-primary .content-el-subheading,
+.marketing-root .content-block--bg-primary .content-el-body,
+.marketing-root .content-block--bg-primary .content-el-caption,
+.marketing-root .content-block--bg-dark    .content-el-subheading,
+.marketing-root .content-block--bg-dark    .content-el-body,
+.marketing-root .content-block--bg-dark    .content-el-caption {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+.marketing-root .content-block-grid {
+    display: grid;
+    gap: 48px;
+    align-items: start;
+}
+.marketing-root .content-block-grid--layout-1   { grid-template-columns: minmax(0, 800px); justify-content: center; }
+.marketing-root .content-block-grid--layout-2   { grid-template-columns: 1fr 1fr; }
+.marketing-root .content-block-grid--layout-3   { grid-template-columns: 1fr 1fr 1fr; }
+.marketing-root .content-block-grid--layout-1-2 { grid-template-columns: 1fr 2fr; }
+.marketing-root .content-block-grid--layout-2-1 { grid-template-columns: 2fr 1fr; }
+
+.marketing-root .content-block-grid--valign-top    { align-items: start;  }
+.marketing-root .content-block-grid--valign-center { align-items: center; }
+.marketing-root .content-block-grid--valign-bottom { align-items: end;    }
+
+.marketing-root .content-block-col {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    min-width: 0;
+}
+
+/* ── Element types ─────────────────────────────────────────────── */
+
+.marketing-root .content-el { min-width: 0; }
+
+.marketing-root .content-el-text--align-left   { text-align: left;   }
+.marketing-root .content-el-text--align-center { text-align: center; }
+.marketing-root .content-el-text--align-right  { text-align: right;  }
+
+.marketing-root .content-el-heading    { margin: 0 0 12px; font-weight: 700; }
+.marketing-root .content-el-heading:is(h2) { font-size: clamp(1.6rem, 2.5vw, 2.25rem); line-height: 1.2; }
+.marketing-root .content-el-heading:is(h3) { font-size: clamp(1.25rem, 2vw, 1.6rem); line-height: 1.25; }
+.marketing-root .content-el-subheading { margin: 0 0 12px; font-size: 1.125rem; opacity: 0.9; }
+.marketing-root .content-el-body       { margin: 0; line-height: 1.6; white-space: pre-wrap; }
+
+.marketing-root .content-el-image           { margin: 0; }
+.marketing-root .content-el-image-wrap      { overflow: hidden; border-radius: var(--radius-md); background: var(--bg-card); }
+.marketing-root .content-el-image.is-rounded .content-el-image-wrap { border-radius: var(--radius-xl); }
+.marketing-root .content-el-image-wrap img  { width: 100%; height: 100%; object-fit: cover; display: block; }
+.marketing-root .content-el-image-wrap[style*="aspect-ratio"] img { object-fit: cover; }
+.marketing-root .content-el-image-placeholder {
+    width: 100%; height: 100%;
+    min-height: 180px;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px dashed var(--border-subtle);
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.marketing-root .content-el-video-wrap {
+    position: relative;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: #000;
+}
+.marketing-root .content-el-video-wrap iframe {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    border: 0;
+}
+.marketing-root .content-el-video-placeholder {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.marketing-root .content-el-iframe iframe { display: block; border-radius: var(--radius-md); }
+.marketing-root .content-el-iframe-placeholder {
+    width: 100%;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px dashed var(--border-subtle);
+    border-radius: var(--radius-md);
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.marketing-root .content-el-caption {
+    margin: 8px 0 0;
+    font-size: 0.875rem;
+    opacity: 0.8;
+}
+
+.marketing-root .content-el-cta--align-left   { text-align: left;   }
+.marketing-root .content-el-cta--align-center { text-align: center; }
+.marketing-root .content-el-cta--align-right  { text-align: right;  }
+
+/* Responsive — collapse all multi-column layouts to a single stacked
+   column on narrow screens. */
+@media (max-width: 768px) {
+    .marketing-root .content-block-grid--layout-2,
+    .marketing-root .content-block-grid--layout-3,
+    .marketing-root .content-block-grid--layout-1-2,
+    .marketing-root .content-block-grid--layout-2-1 {
+        grid-template-columns: 1fr;
+        gap: 32px;
+    }
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Shared background-variant utilities.
+   Reusable across content-style blocks (Media + Text and any future block
+   that exposes a 'backgroundVariant' knob). Each block adds its own
+   block-scoped rules for inverse text colors on saturated backgrounds.
+   The 'default' variant intentionally has no rule — it falls through to
+   the page background. */
+
+.marketing-root .cms-bg--surface { background: var(--brand-surface); }
+.marketing-root .cms-bg--primary { background: var(--brand-primary);   color: #fff; }
+.marketing-root .cms-bg--dark    { background: var(--brand-secondary); color: var(--brand-bg); }
+
+/* ────────────────────────────────────────────────────────────────────────
+   Media + Text block.
+   Two layout knobs:
+     mediaPosition → flex-direction (left = row, right = row-reverse)
+     mediaSize     → flex-basis on the media column (half / third / two-thirds)
+   Below 768px the row collapses to a column with media first (markup
+   keeps media in source order so flex-direction:column lands it on top). */
+
+.marketing-root .media-text-block-inner {
+    display: flex;
+    gap: 48px;
+    align-items: center;
+    flex-direction: column;     /* default for narrow / no-position state */
+}
+.marketing-root .media-text-block-inner--position-left  { flex-direction: row; }
+.marketing-root .media-text-block-inner--position-right { flex-direction: row-reverse; }
+
+/* Default text expands to fill remaining space; media column's flex-basis
+   determines the split. */
+.marketing-root .media-text-block-text  { flex: 1 1 0; min-width: 0; }
+.marketing-root .media-text-block-media { flex: 1 1 0; min-width: 0; }
+
+/* Size variants override the media column's flex. Text stays flex:1. */
+.marketing-root .media-text-block-inner--size-third      .media-text-block-media { flex: 0 0 33%; }
+.marketing-root .media-text-block-inner--size-two-thirds .media-text-block-media { flex: 0 0 66%; }
+/* size-half keeps the default 1 1 0 / 1 1 0 → 50/50 */
+
+/* Media rendering — image, video iframe (16:9), or placeholder. */
+.marketing-root .media-text-block-media img {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: var(--radius-lg);
+}
+.marketing-root .media-text-block-video {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: #000;
+}
+.marketing-root .media-text-block-video iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+.marketing-root .media-text-block-media-placeholder {
+    aspect-ratio: 16 / 9;
+    background: var(--bg-card);
+    border: 1px dashed var(--border-subtle);
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    text-align: center;
+    padding: 16px;
+}
+
+.marketing-root .media-text-block-heading    { margin-bottom: 16px; }
+.marketing-root .media-text-block-subheading { margin-bottom: 16px; font-size: 1.125rem; opacity: 0.9; }
+.marketing-root .media-text-block-body       { white-space: pre-line; line-height: 1.6; }
+.marketing-root .media-text-block-cta        { margin-top: 24px; }
+
+/* Inverse text colors on saturated backgrounds — block-scoped so they
+   don't leak into other blocks that happen to share the bg utility. */
+.marketing-root .media-text-block.cms-bg--primary .media-text-block-subheading,
+.marketing-root .media-text-block.cms-bg--primary .media-text-block-body,
+.marketing-root .media-text-block.cms-bg--dark    .media-text-block-subheading,
+.marketing-root .media-text-block.cms-bg--dark    .media-text-block-body {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+/* Responsive — collapse side-by-side to stacked column with media on top.
+   The selector specificity matches the position variants above so it wins. */
+@media (max-width: 768px) {
+    .marketing-root .media-text-block-inner.media-text-block-inner--position-left,
+    .marketing-root .media-text-block-inner.media-text-block-inner--position-right {
+        flex-direction: column;
+    }
+    .marketing-root .media-text-block-inner--size-third      .media-text-block-media,
+    .marketing-root .media-text-block-inner--size-two-thirds .media-text-block-media {
+        flex: 1 1 100%;
+    }
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   CTA Banner block.
+   Two layouts:
+     centered → text + CTAs stacked, all centered
+     split    → text on the left (flex:1), CTAs on the right (shrink:0)
+   On screens <768px the split layout collapses to centered. */
+
+.marketing-root .cta-banner-block-inner {
+    display: flex;
+    gap: 32px;
+    align-items: center;
+}
+
+.marketing-root .cta-banner-block-inner--layout-centered {
+    flex-direction: column;
+    text-align: center;
+}
+
+.marketing-root .cta-banner-block-inner--layout-split {
+    flex-direction: row;
+    justify-content: space-between;
+}
+.marketing-root .cta-banner-block-inner--layout-split .cta-banner-block-text    { flex: 1 1 0; min-width: 0; }
+.marketing-root .cta-banner-block-inner--layout-split .cta-banner-block-actions { flex-shrink: 0; }
+
+.marketing-root .cta-banner-block-heading    { margin-bottom: 8px; }
+.marketing-root .cta-banner-block-subheading { font-size: 1.125rem; opacity: 0.9; margin: 0; }
+
+.marketing-root .cta-banner-block-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.marketing-root .cta-banner-block-inner--layout-centered .cta-banner-block-actions {
+    justify-content: center;
+    margin-top: 24px;
+}
+
+/* Subheading contrast on saturated backgrounds. */
+.marketing-root .cta-banner-block.cms-bg--primary .cta-banner-block-subheading,
+.marketing-root .cta-banner-block.cms-bg--dark    .cta-banner-block-subheading {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+/* On a primary-colored banner the .btn-primary fill (=brand-primary) would
+   blend invisibly into the background. Invert to a white pill so the CTA
+   stays readable. .btn-secondary becomes an outlined ghost button. Same
+   treatment on dark backgrounds for consistency. Selectors are scoped to
+   .cta-banner-block so they don't bleed into other blocks' buttons. */
+.marketing-root .cta-banner-block.cms-bg--primary .btn-primary,
+.marketing-root .cta-banner-block.cms-bg--dark    .btn-primary {
+    background: #fff;
+    color: var(--brand-primary);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+.marketing-root .cta-banner-block.cms-bg--primary .btn-primary:hover,
+.marketing-root .cta-banner-block.cms-bg--dark    .btn-primary:hover {
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+}
+.marketing-root .cta-banner-block.cms-bg--primary .btn-secondary,
+.marketing-root .cta-banner-block.cms-bg--dark    .btn-secondary {
+    background: transparent;
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.4);
+    backdrop-filter: none;
+}
+.marketing-root .cta-banner-block.cms-bg--primary .btn-secondary:hover,
+.marketing-root .cta-banner-block.cms-bg--dark    .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.7);
+}
+
+@media (max-width: 768px) {
+    .marketing-root .cta-banner-block-inner--layout-split {
+        flex-direction: column;
+        text-align: center;
+    }
+    .marketing-root .cta-banner-block-inner--layout-split .cta-banner-block-actions {
+        justify-content: center;
+    }
+}
+
