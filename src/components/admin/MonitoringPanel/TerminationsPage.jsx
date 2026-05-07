@@ -191,6 +191,8 @@ export function TerminationsPage({ range = '7d', customStart, customEnd, refresh
         return Array.from(seen.entries()).map(([id, name]) => ({ id, name }));
     }, [rows]);
 
+    const largeInputCount = useMemo(() => rows.filter(isLargeInput).length, [rows]);
+
     if (loading) {
         return (
             <Card>
@@ -203,7 +205,6 @@ export function TerminationsPage({ range = '7d', customStart, customEnd, refresh
 
     const total = summary?.total || 0;
     const by = summary?.by_type || {};
-    const largeInputCount = useMemo(() => rows.filter(isLargeInput).length, [rows]);
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, animation: 'fadeIn 0.3s ease' }}>
