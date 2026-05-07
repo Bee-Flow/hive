@@ -79,17 +79,29 @@ export default function StepInspector({ step, runStep, onClose, definition, onSa
         catch (e) { setParseError(e.message); return; }
         if (!parsed || typeof parsed !== 'object') { setParseError('Step must be a JSON object.'); return; }
         if (parsed.id && parsed.id !== step.id) { setParseError('Cannot change step id from the editor — remove and re-add the step instead.'); return; }
-        // Build the new definition with the edited step swapped in.
+        await persistStep(parsed);
+    };
+
+    /**
+     * Persist a partial-or-full edit of THIS step back through the
+     * definition PUT. Used by both the JSON editor save and the Settings
+     * tab's per-field saves so they share the same validation path.
+     */
+    const persistStep = async (patch) => {
+        if (!definition || typeof onSaveStep !== 'function') return;
         const next = { ...definition };
+        const merged = { ...step, ...patch, id: step.id };
         if (definition.trigger?.id === step.id) {
-            next.trigger = { ...parsed, id: step.id };
+            next.trigger = merged;
         } else {
-            next.steps = (definition.steps || []).map(s => s.id === step.id ? { ...parsed, id: step.id } : s);
+            next.steps = (definition.steps || []).map(s => s.id === step.id ? merged : s);
         }
         setSaving(true);
         setSaveError(null);
         try {
             await onSaveStep(next);
+            // Re-sync the editor so it reflects the persisted shape.
+            setEditorText(safeStringify(merged));
         } catch (e) {
             setSaveError(e.message || 'Save failed');
         }

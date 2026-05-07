@@ -284,8 +284,8 @@ export default function BuilderShell({ automationId, onBack, user }) {
 
             <div className="flex-1 flex min-h-0 relative">
                 {/* Chat side — same composer as direct chat, custom message timeline */}
-                <div className="flex-1 min-w-0 border-r border-[var(--border-default)] flex flex-col">
-                    <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                <div className="flex-1 min-w-0 border-r border-[var(--border-default)] flex flex-col bg-[var(--bg-primary)]">
+                    <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-6 custom-scrollbar">
                         {state.messages.length === 0 && (
                             <div className="h-full flex flex-col items-center justify-center text-center px-4">
                                 <div className="w-12 h-12 rounded-full bg-[var(--bg-secondary)] flex items-center justify-center mb-3">
@@ -313,9 +313,13 @@ export default function BuilderShell({ automationId, onBack, user }) {
                                 </div>
                             </div>
                         )}
-                        <div className="flex flex-col gap-3">
+                        <div className="flex flex-col gap-4 w-full max-w-[900px] mx-auto">
                             {state.messages.map((m, i) => <MessageBubble key={i} msg={m} />)}
-                            {state.running && <div className="text-xs italic text-[var(--text-tertiary)]">Thinking…</div>}
+                            {state.running && (
+                                <div className="self-start text-xs italic text-[var(--text-tertiary)] px-1">
+                                    Thinking…
+                                </div>
+                            )}
                             <div ref={messagesEndRef} />
                         </div>
                     </div>
@@ -374,14 +378,25 @@ export default function BuilderShell({ automationId, onBack, user }) {
     );
 }
 
+/**
+ * Message bubble styled to match direct/agent chat:
+ *   - 900px centered column (same as MessageItem outer container).
+ *   - User: light grey #e8e8eb pill capped at 85%, bottom-right corner squared.
+ *   - Assistant: no background — body sits directly on the chat surface, the
+ *     same way direct chat renders so long markdown reads naturally instead
+ *     of being trapped in a small grey bubble. Bottom-left corner squared
+ *     to mirror the speech-bubble feel.
+ *   - Markdown is rendered for assistant turns; user content is plain text
+ *     with whitespace preserved.
+ */
 function MessageBubble({ msg }) {
     const isUser = msg.role === 'user';
     return (
-        <div className={`max-w-[85%] ${isUser ? 'self-end' : 'self-start'}`}>
+        <div className={`flex flex-col w-full ${isUser ? 'items-end' : 'items-start'}`}>
             <div
-                className={`px-4 py-2.5 rounded-2xl text-sm whitespace-pre-wrap ${isUser
-                    ? 'bg-[var(--accent)] text-white'
-                    : 'bg-[var(--bg-secondary)] text-[var(--text-primary)]'}`}
+                className={`relative rounded-2xl p-4 transition-all duration-200 overflow-hidden text-sm ${isUser
+                    ? 'max-w-[85%] bg-[#e8e8eb] text-black rounded-br-none whitespace-pre-wrap'
+                    : 'max-w-3xl text-[var(--text-primary)] rounded-bl-none'}`}
             >
                 {isUser ? msg.content : <MarkdownRenderer content={msg.content || ''} />}
             </div>
@@ -394,7 +409,7 @@ function MessageBubble({ msg }) {
                 </div>
             )}
             {!isUser && Array.isArray(msg.toolCalls) && msg.toolCalls.length > 0 && (
-                <div className="mt-1.5 flex flex-col gap-1">
+                <div className="mt-1.5 flex flex-col gap-1 w-full max-w-3xl">
                     {msg.toolCalls.map((tc, i) => <ToolCallChip key={i} tc={tc} />)}
                 </div>
             )}
