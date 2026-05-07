@@ -66,7 +66,11 @@ export default function DiagramPane({ definition, runSteps = [], onNodeClick, va
     }
 
     return (
-        <div className="w-full h-full min-h-[420px]">
+        // ReactFlow needs an explicit pixel height — `h-full` collapses to 0
+        // inside a parent that uses overflow-y-auto + min-height (which is
+        // exactly the BuilderShell layout), so the canvas would otherwise
+        // render into a 0-tall box and you'd see nothing.
+        <div style={{ width: '100%', height: 480 }}>
             <ReactFlow
                 nodes={nodes}
                 edges={edges}
