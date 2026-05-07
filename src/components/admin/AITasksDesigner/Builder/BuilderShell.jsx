@@ -371,6 +371,7 @@ export default function BuilderShell({ automationId, onBack, user }) {
                         definition={effectiveDef}
                         onSaveStep={onSaveStep}
                         validation={state.validation}
+                        modelTiers={modelTiers}
                     />
                 )}
             </div>
