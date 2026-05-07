@@ -1,5 +1,5 @@
-import React from 'react';
-import { TextField, Toggle, IconField, ImageField, RepeatableList, LinkField } from './fields';
+import React, { useState } from 'react';
+import { TextField, Toggle, IconField, ImageField, RepeatableList, LinkField, FieldRow, inputCls } from './fields';
 
 /**
  * Block editors — structural controls only. Text is edited inline via
@@ -21,20 +21,99 @@ const InlineHint = ({ children }) => (
 
 export function HeaderEditor({ data = {}, pages = [], onChange }) {
     const nav = data.nav || [];
+    const logo = data.logo || {};
+    const ctas = Array.isArray(data.ctas) ? data.ctas : [];
+
+    const updateLogo = (patch) => onChange(set(data, 'logo', { ...logo, ...patch }));
+
     return (
         <>
-            <InlineHint>Click logo text, login label, and CTA label in the preview to edit them.</InlineHint>
-            <LinkField
-                label="CTA destination"
-                value={data.ctaLink}
-                pages={pages}
-                onChange={v => onChange(set(data, 'ctaLink', v))}
+            <InlineHint>Click logo text, link labels, and button labels in the preview to edit them inline.</InlineHint>
+
+            {/* ── Logo & brand ──────────────────────────────────────── */}
+            <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
+                <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Logo & brand</div>
+                <ImageField
+                    label="Logo image (optional)"
+                    value={logo.src || ''}
+                    onChange={v => updateLogo({ src: v || '' })}
+                />
+                <TextField
+                    label="Brand title"
+                    value={logo.text !== undefined ? logo.text : (data.logoText || '')}
+                    onChange={v => updateLogo({ text: v })}
+                />
+                <FieldRow label="Title color">
+                    <input
+                        type="color"
+                        className={inputCls + ' h-9 p-1 cursor-pointer'}
+                        value={logo.textColor || '#000000'}
+                        onChange={e => updateLogo({ textColor: e.target.value })}
+                    />
+                </FieldRow>
+                <FieldRow label="Title size">
+                    <select
+                        className={inputCls}
+                        value={logo.fontSize || 'medium'}
+                        onChange={e => updateLogo({ fontSize: e.target.value })}
+                    >
+                        <option value="small">Small (14px)</option>
+                        <option value="medium">Medium (18px)</option>
+                        <option value="large">Large (24px)</option>
+                    </select>
+                </FieldRow>
+            </div>
+
+            {/* ── Header action buttons (multi-CTA) ─────────────────── */}
+            <RepeatableList
+                label="Header buttons"
+                items={ctas}
+                onChange={v => onChange(set(data, 'ctas', v))}
+                makeNew={() => ({
+                    id: `cta_${Math.random().toString(36).slice(2, 8)}`,
+                    label: 'Get started',
+                    link: { kind: 'app', path: '/app' },
+                    style: 'primary',
+                })}
+                itemLabel={(c) => c.label}
+                renderItem={(item, update) => (
+                    <>
+                        <TextField
+                            label="Label"
+                            value={item.label}
+                            onChange={v => update({ ...item, label: v })}
+                        />
+                        <LinkField
+                            label="Link"
+                            value={item.link}
+                            pages={pages}
+                            onChange={v => update({ ...item, link: v })}
+                        />
+                        <FieldRow label="Style">
+                            <select
+                                className={inputCls}
+                                value={item.style || 'primary'}
+                                onChange={e => update({ ...item, style: e.target.value })}
+                            >
+                                <option value="primary">Primary (filled)</option>
+                                <option value="secondary">Secondary (outlined)</option>
+                                <option value="ghost">Ghost (no border)</option>
+                                <option value="link">Link (underlined)</option>
+                            </select>
+                        </FieldRow>
+                    </>
+                )}
+                addLabel="Add button"
             />
+
+            {/* ── Nav links (collapsible rows) ──────────────────────── */}
             <RepeatableList
                 label="Nav links"
                 items={nav}
                 onChange={v => onChange(set(data, 'nav', v))}
                 makeNew={() => ({ id: `nav_${Math.random().toString(36).slice(2,8)}`, label: 'New link', link: { kind: 'external', url: '#' } })}
+                itemLabel={(item) => item.label}
+                collapsible
                 renderItem={(item, update) => (
                     <>
                         <TextField
@@ -53,6 +132,7 @@ export function HeaderEditor({ data = {}, pages = [], onChange }) {
                             items={item.children || []}
                             onChange={v => update({ ...item, children: v })}
                             makeNew={() => ({ id: `nav_${Math.random().toString(36).slice(2,8)}`, label: 'Child link', link: { kind: 'external', url: '#' } })}
+                            itemLabel={(child) => child.label}
                             renderItem={(child, updChild) => (
                                 <>
                                     <TextField label="Label" value={child.label} onChange={v => updChild({ ...child, label: v })} />
@@ -156,94 +236,401 @@ export function SocialProofEditor({ data = {}, onChange }) {
 
 // ── Content (generic flexible block) ─────────────────────────────────
 
+// Layout, element, and migration helpers live in the marketing-side
+// module so the editor and the renderer share one source of truth on
+// shape conversion + defaults.
+import {
+    migrateLegacyContent,
+    makeColumn,
+    makeElement,
+} from '../../../marketing/sections/contentMigration';
+
+const COLUMN_LAYOUTS = [
+    { value: '1',   label: '1',         hint: 'Single column' },
+    { value: '2',   label: '1 │ 1', hint: 'Two equal columns' },
+    { value: '3',   label: '1│ 1│ 1', hint: 'Three equal columns' },
+    { value: '1-2', label: '1 │ 2', hint: 'Narrow | Wide' },
+    { value: '2-1', label: '2 │ 1', hint: 'Wide | Narrow' },
+];
+
+const VALIGNS = [
+    { value: 'top',    label: 'Top'    },
+    { value: 'center', label: 'Center' },
+    { value: 'bottom', label: 'Bottom' },
+];
+
+const BACKGROUNDS = [
+    { value: 'none',    label: 'None (page bg)' },
+    { value: 'light',   label: 'Light surface'  },
+    { value: 'dark',    label: 'Dark'           },
+    { value: 'primary', label: 'Brand primary'  },
+];
+
+const ALIGNS = [
+    { value: 'left',   label: 'Left'   },
+    { value: 'center', label: 'Center' },
+    { value: 'right',  label: 'Right'  },
+];
+
+const ELEMENT_KINDS = [
+    { value: 'text',   label: 'Text',   icon: 'Type'    },
+    { value: 'image',  label: 'Image',  icon: 'Image'   },
+    { value: 'video',  label: 'Video',  icon: 'Video'   },
+    { value: 'iframe', label: 'Embed',  icon: 'Globe'   },
+    { value: 'cta',    label: 'Button', icon: 'Square'  },
+];
+
+// How many columns each layout token lays out. Used when the user picks a
+// new layout so we add/remove columns to match — preserving content where
+// possible and warning before dropping a non-empty column.
+const COLUMN_COUNT_FOR_LAYOUT = {
+    '1': 1, '2': 2, '3': 3, '1-2': 2, '2-1': 2,
+};
+
 export function ContentEditor({ data = {}, pages = [], onChange }) {
-    const setField = (key, value) => onChange(set(data, key, value));
+    // Always read through the migration helper. If `data` is already in
+    // the new shape, this is a no-op; if it's legacy, the editor sees the
+    // converted shape and the very next user edit persists it.
+    const c = migrateLegacyContent(data);
+    const setField = (key, value) => onChange({ ...c, [key]: value });
 
-    const showSubheading = data.subheading !== null && data.subheading !== undefined;
-    const showImage      = !!data.image;
-    const showCta        = !!data.cta;
+    const handleLayoutChange = (nextLayout) => {
+        const targetCount = COLUMN_COUNT_FOR_LAYOUT[nextLayout] || 1;
+        const current = Array.isArray(c.columns) ? c.columns : [];
+        let nextColumns;
+        if (targetCount === current.length) {
+            nextColumns = current;
+        } else if (targetCount > current.length) {
+            // Pad with empty columns so the user can immediately fill them.
+            nextColumns = current.slice();
+            while (nextColumns.length < targetCount) nextColumns.push(makeColumn());
+        } else {
+            // Dropping columns — warn if the to-be-removed ones aren't empty.
+            const dropped = current.slice(targetCount);
+            const hasContent = dropped.some(col => Array.isArray(col?.elements) && col.elements.length > 0);
+            if (hasContent) {
+                const labels = dropped
+                    .map((_, i) => `Column ${targetCount + i + 1}`)
+                    .join(', ');
+                // eslint-disable-next-line no-alert
+                const ok = window.confirm(`${labels} contain elements. Remove anyway?`);
+                if (!ok) return;
+            }
+            nextColumns = current.slice(0, targetCount);
+        }
+        onChange({ ...c, columnLayout: nextLayout, columns: nextColumns });
+    };
 
-    const toggleSubheading = (next) => setField('subheading', next ? '' : null);
-    const toggleImage      = (next) => setField('image', next ? { src: '', alt: '' } : null);
-    const toggleCta        = (next) => setField('cta',
-        next ? { label: 'Get started', link: { kind: 'anchor', anchor: '' } } : null);
-
-    const updateImage = (key, value) => setField('image', { ...(data.image || {}), [key]: value });
-    const updateCta   = (key, value) => setField('cta',   { ...(data.cta   || {}), [key]: value });
+    const updateColumn = (idx, nextCol) => {
+        const cols = c.columns.slice();
+        cols[idx] = nextCol;
+        onChange({ ...c, columns: cols });
+    };
 
     return (
         <>
             <InlineHint>
-                Click the heading, subheading, body, and CTA label in the preview to edit them.
-                Use the toggles below to add or remove the optional pieces.
+                Each column holds a stack of elements (text, image, video, embed, button).
+                Click any text in the preview to edit it inline.
             </InlineHint>
 
-            <Toggle label="Show subheading" value={showSubheading} onChange={toggleSubheading} />
-            <Toggle label="Show image"      value={showImage}      onChange={toggleImage} />
+            {/* ── Layout ─────────────────────────────────────────── */}
+            <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
+                <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Layout</div>
+                <FieldRow label="Column layout">
+                    <div className="flex flex-wrap gap-1.5">
+                        {COLUMN_LAYOUTS.map(opt => (
+                            <button
+                                key={opt.value}
+                                type="button"
+                                title={opt.hint}
+                                onClick={() => handleLayoutChange(opt.value)}
+                                className={`px-2.5 py-1.5 text-xs rounded-md border font-mono transition-colors
+                                    ${c.columnLayout === opt.value
+                                        ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]'
+                                        : 'border-[var(--border-default)] text-[var(--text-secondary)] hover:border-[var(--accent-primary)]/60'}
+                                `}
+                            >
+                                {opt.label}
+                            </button>
+                        ))}
+                    </div>
+                </FieldRow>
+                <FieldSelect
+                    label="Vertical align"
+                    value={c.verticalAlign || 'top'}
+                    options={VALIGNS}
+                    onChange={v => setField('verticalAlign', v)}
+                />
+                <FieldSelect
+                    label="Background"
+                    value={c.background || 'none'}
+                    options={BACKGROUNDS}
+                    onChange={v => setField('background', v)}
+                />
+            </div>
 
-            {showImage ? (
-                <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
+            {/* ── Columns ────────────────────────────────────────── */}
+            <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Columns</div>
+            {c.columns.map((col, colIdx) => (
+                <ColumnPanel
+                    key={col.id || colIdx}
+                    col={col}
+                    colIdx={colIdx}
+                    pages={pages}
+                    onChange={(nextCol) => updateColumn(colIdx, nextCol)}
+                />
+            ))}
+        </>
+    );
+}
+
+// ── Column panel ───────────────────────────────────────────────────────
+
+function ColumnPanel({ col, colIdx, pages, onChange }) {
+    const [open, setOpen] = useState(true);
+    const elements = Array.isArray(col?.elements) ? col.elements : [];
+
+    const updateElements = (next) => onChange({ ...col, elements: next });
+    const addElement = (kind) => {
+        updateElements([...elements, makeElement(kind)]);
+    };
+
+    return (
+        <div className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-secondary)] p-3 mb-3">
+            <button
+                type="button"
+                onClick={() => setOpen(v => !v)}
+                className="flex w-full items-center justify-between text-xs text-[var(--text-secondary)] mb-2"
+            >
+                <span className="flex items-center gap-1.5">
+                    <span style={{ transform: open ? 'rotate(0)' : 'rotate(-90deg)' }} aria-hidden>▾</span>
+                    <span className="font-medium">Column {colIdx + 1}</span>
+                    <span className="text-[var(--text-muted)]">· {elements.length} element{elements.length === 1 ? '' : 's'}</span>
+                </span>
+            </button>
+
+            {open ? (
+                <>
+                    <RepeatableList
+                        items={elements}
+                        onChange={updateElements}
+                        makeNew={() => makeElement('text')}
+                        itemLabel={(el) => {
+                            const k = ELEMENT_KINDS.find(x => x.value === el?.kind);
+                            return k ? k.label : (el?.kind || 'Element');
+                        }}
+                        collapsible
+                        addLabel="Add element"
+                        renderItem={(el, update) => (
+                            <ElementFields el={el} pages={pages} update={update} />
+                        )}
+                    />
+
+                    {/* Quick-add buttons next to "+ Add element" — saves a
+                        click + a kind change on the first new element. */}
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                        {ELEMENT_KINDS.map(k => (
+                            <button
+                                key={k.value}
+                                type="button"
+                                onClick={() => addElement(k.value)}
+                                className="px-2 py-1 text-[11px] rounded-md border border-dashed border-[var(--border-default)] text-[var(--text-muted)] hover:border-[var(--accent-primary)] hover:text-[var(--accent-primary)] transition-colors"
+                            >
+                                + {k.label}
+                            </button>
+                        ))}
+                    </div>
+                </>
+            ) : null}
+        </div>
+    );
+}
+
+// ── Element field renderer (per-kind) ──────────────────────────────────
+
+function ElementFields({ el, pages, update }) {
+    const setKind = (nextKind) => {
+        if (nextKind === el.kind) return;
+        // Preserve the id when changing kind so RepeatableList's collapse
+        // state for this row stays attached, but otherwise reset to the
+        // new kind's defaults — fields don't share semantics across kinds.
+        const fresh = makeElement(nextKind);
+        update({ ...fresh, id: el.id });
+    };
+
+    return (
+        <>
+            <FieldSelect
+                label="Element type"
+                value={el.kind || 'text'}
+                options={ELEMENT_KINDS.map(k => ({ value: k.value, label: k.label }))}
+                onChange={setKind}
+            />
+
+            {el.kind === 'text' ? (
+                <>
+                    <TextField
+                        label="Heading"
+                        value={el.heading || ''}
+                        onChange={v => update({ ...el, heading: v })}
+                        placeholder="Optional heading"
+                    />
+                    <TextField
+                        label="Subheading"
+                        value={el.subheading || ''}
+                        onChange={v => update({ ...el, subheading: v })}
+                        placeholder="Optional subheading"
+                    />
+                    <FieldRow label="Body">
+                        <textarea
+                            rows={4}
+                            className={inputCls + ' resize-y'}
+                            value={el.body || ''}
+                            onChange={e => update({ ...el, body: e.target.value })}
+                            placeholder="Write paragraph text. Line breaks are preserved."
+                        />
+                    </FieldRow>
+                    <FieldSelect
+                        label="Align"
+                        value={el.align || 'left'}
+                        options={ALIGNS}
+                        onChange={v => update({ ...el, align: v })}
+                    />
+                </>
+            ) : null}
+
+            {el.kind === 'image' ? (
+                <>
                     <ImageField
                         label="Image"
-                        value={data.image?.src || ''}
-                        onChange={v => updateImage('src', v)}
+                        value={el.src || ''}
+                        onChange={v => update({ ...el, src: v })}
                     />
                     <TextField
                         label="Alt text"
-                        value={data.image?.alt || ''}
-                        onChange={v => updateImage('alt', v)}
+                        value={el.alt || ''}
+                        onChange={v => update({ ...el, alt: v })}
                         placeholder="Describe the image"
                     />
-                </div>
-            ) : null}
-
-            <Toggle label="Show CTA" value={showCta} onChange={toggleCta} />
-
-            {showCta ? (
-                <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
-                    <LinkField
-                        label="Destination"
-                        value={data.cta?.link}
-                        pages={pages}
-                        onChange={v => updateCta('link', v)}
+                    <FieldSelect
+                        label="Aspect ratio"
+                        value={el.aspectRatio || 'auto'}
+                        options={[
+                            { value: 'auto', label: 'Auto (intrinsic)' },
+                            { value: '16/9', label: '16:9' },
+                            { value: '4/3',  label: '4:3'  },
+                            { value: '1/1',  label: '1:1'  },
+                            { value: '3/4',  label: '3:4'  },
+                        ]}
+                        onChange={v => update({ ...el, aspectRatio: v })}
                     />
-                </div>
+                    <Toggle
+                        label="Rounded corners"
+                        value={!!el.rounded}
+                        onChange={v => update({ ...el, rounded: v })}
+                    />
+                    <TextField
+                        label="Caption"
+                        value={el.caption || ''}
+                        onChange={v => update({ ...el, caption: v })}
+                        placeholder="Optional caption"
+                    />
+                </>
             ) : null}
 
-            <FieldSelect
-                label="Image position"
-                value={data.imagePosition || 'below'}
-                options={[
-                    { value: 'above', label: 'Above text' },
-                    { value: 'below', label: 'Below text' },
-                    { value: 'left',  label: 'Left of text' },
-                    { value: 'right', label: 'Right of text' },
-                ]}
-                onChange={v => setField('imagePosition', v)}
-            />
+            {el.kind === 'video' ? (
+                <>
+                    <TextField
+                        label="Video URL"
+                        value={el.url || ''}
+                        onChange={v => update({ ...el, url: v })}
+                        placeholder="YouTube or Vimeo URL"
+                    />
+                    <FieldSelect
+                        label="Aspect ratio"
+                        value={el.aspectRatio || '16/9'}
+                        options={[
+                            { value: '16/9', label: '16:9' },
+                            { value: '4/3',  label: '4:3'  },
+                            { value: '1/1',  label: '1:1'  },
+                        ]}
+                        onChange={v => update({ ...el, aspectRatio: v })}
+                    />
+                    <TextField
+                        label="Caption"
+                        value={el.caption || ''}
+                        onChange={v => update({ ...el, caption: v })}
+                        placeholder="Optional caption"
+                    />
+                </>
+            ) : null}
 
-            <FieldSelect
-                label="Text alignment"
-                value={data.textAlign || 'left'}
-                options={[
-                    { value: 'left',   label: 'Left' },
-                    { value: 'center', label: 'Center' },
-                    { value: 'right',  label: 'Right' },
-                ]}
-                onChange={v => setField('textAlign', v)}
-            />
+            {el.kind === 'iframe' ? (
+                <>
+                    <TextField
+                        label="Embed URL"
+                        value={el.src || ''}
+                        onChange={v => update({ ...el, src: v })}
+                        placeholder="https://… (chat agent, Calendly, Map, …)"
+                    />
+                    <FieldRow label="Height (px)">
+                        <input
+                            type="number"
+                            min={120}
+                            max={2000}
+                            step={20}
+                            className={inputCls}
+                            value={Number.isFinite(el.height) ? el.height : 480}
+                            onChange={e => update({ ...el, height: Number(e.target.value) || 480 })}
+                        />
+                    </FieldRow>
+                    <TextField
+                        label="Accessible label"
+                        value={el.label || ''}
+                        onChange={v => update({ ...el, label: v })}
+                        placeholder="Used as the iframe title attribute"
+                    />
+                    <Toggle
+                        label="Allow scrolling"
+                        value={!!el.scrolling}
+                        onChange={v => update({ ...el, scrolling: v })}
+                    />
+                </>
+            ) : null}
 
-            <FieldSelect
-                label="Background"
-                value={data.backgroundVariant || 'default'}
-                options={[
-                    { value: 'default', label: 'Default (page bg)' },
-                    { value: 'surface', label: 'Surface (alt bg)' },
-                    { value: 'primary', label: 'Primary (brand color)' },
-                    { value: 'dark',    label: 'Dark (secondary color)' },
-                ]}
-                onChange={v => setField('backgroundVariant', v)}
-            />
+            {el.kind === 'cta' ? (
+                <>
+                    <TextField
+                        label="Label"
+                        value={el.label || ''}
+                        onChange={v => update({ ...el, label: v })}
+                    />
+                    <LinkField
+                        label="Link"
+                        value={el.link}
+                        pages={pages}
+                        onChange={v => update({ ...el, link: v })}
+                    />
+                    <FieldSelect
+                        label="Style"
+                        value={el.style || 'primary'}
+                        options={[
+                            { value: 'primary',   label: 'Primary (filled)' },
+                            { value: 'secondary', label: 'Secondary (outlined)' },
+                            { value: 'ghost',     label: 'Ghost (no border)' },
+                            { value: 'link',      label: 'Link (underlined)' },
+                        ]}
+                        onChange={v => update({ ...el, style: v })}
+                    />
+                    <FieldSelect
+                        label="Align"
+                        value={el.align || 'left'}
+                        options={ALIGNS}
+                        onChange={v => update({ ...el, align: v })}
+                    />
+                </>
+            ) : null}
         </>
     );
 }
@@ -595,30 +982,52 @@ export function CtaBannerEditor({ data = {}, pages = [], onChange }) {
 // ── Footer ────────────────────────────────────────────────────────────
 
 export function FooterEditor({ data = {}, pages = [], onChange }) {
+    const themeSwitcherEnabled = !!data.themeSwitcher?.enabled;
     return (
         <>
             <InlineHint>Brand text, blurb, column headings, link labels, and copyright are editable in the preview.</InlineHint>
+            <Toggle
+                label="Show theme switcher"
+                value={themeSwitcherEnabled}
+                onChange={v => onChange(set(data, 'themeSwitcher', { ...(data.themeSwitcher || {}), enabled: v }))}
+            />
             <RepeatableList
                 label="Columns"
                 items={data.columns || []}
                 onChange={v => onChange(set(data, 'columns', v))}
                 makeNew={() => ({ id: `fcol_${Math.random().toString(36).slice(2,8)}`, heading: 'New column', links: [] })}
+                itemLabel={(c) => c.heading}
                 renderItem={(col, updateCol) => (
-                    <RepeatableList
-                        label="Links"
-                        items={col.links || []}
-                        onChange={v => updateCol({ ...col, links: v })}
-                        makeNew={() => ({ id: `fl_${Math.random().toString(36).slice(2,8)}`, label: 'New link', link: { kind: 'external', url: '#' } })}
-                        renderItem={(l, updL) => (
-                            <LinkField
-                                label="Link"
-                                value={l.link}
-                                pages={pages}
-                                onChange={v => updL({ ...l, link: v })}
-                            />
-                        )}
-                        addLabel="Add link"
-                    />
+                    <>
+                        <TextField
+                            label="Heading"
+                            value={col.heading || ''}
+                            onChange={v => updateCol({ ...col, heading: v })}
+                        />
+                        <RepeatableList
+                            label="Links"
+                            items={col.links || []}
+                            onChange={v => updateCol({ ...col, links: v })}
+                            makeNew={() => ({ id: `fl_${Math.random().toString(36).slice(2,8)}`, label: 'New link', link: { kind: 'external', url: '#' } })}
+                            itemLabel={(l) => l.label}
+                            renderItem={(l, updL) => (
+                                <>
+                                    <TextField
+                                        label="Label"
+                                        value={l.label || ''}
+                                        onChange={v => updL({ ...l, label: v })}
+                                    />
+                                    <LinkField
+                                        label="Link"
+                                        value={l.link}
+                                        pages={pages}
+                                        onChange={v => updL({ ...l, link: v })}
+                                    />
+                                </>
+                            )}
+                            addLabel="Add link"
+                        />
+                    </>
                 )}
                 addLabel="Add column"
             />
@@ -627,6 +1036,7 @@ export function FooterEditor({ data = {}, pages = [], onChange }) {
                 items={data.socials || []}
                 onChange={v => onChange(set(data, 'socials', v))}
                 makeNew={() => ({ id: `soc_${Math.random().toString(36).slice(2,8)}`, platform: 'github', link: { kind: 'external', url: '' } })}
+                itemLabel={(s) => s.platform}
                 renderItem={(s, updS) => (
                     <>
                         <FieldSelect
@@ -725,14 +1135,28 @@ export const BLOCK_DEFAULTS = {
         logos: [],
     },
     content: {
-        heading:           'Your heading here',
-        subheading:        null,
-        body:              'Add your content here.',
-        image:             null,                       // { src, alt }
-        cta:               null,                       // { label, link: { kind, ... } }
-        imagePosition:     'below',                    // 'above' | 'below' | 'left' | 'right'
-        textAlign:         'left',                     // 'left' | 'center' | 'right'
-        backgroundVariant: 'default',                  // 'default' | 'surface' | 'primary' | 'dark'
+        // New flexible Content block — column + elements system. The editor
+        // and renderer accept the legacy flat shape too via
+        // migrateLegacyContent(), so existing blocks keep rendering until
+        // they're saved (the next save persists the new shape).
+        columnLayout: '1',
+        verticalAlign: 'top',
+        background: 'none',
+        columns: [
+            {
+                id: 'col_default',
+                elements: [
+                    {
+                        id: 'el_default',
+                        kind: 'text',
+                        heading: 'Your heading here',
+                        subheading: '',
+                        body: 'Add your content here.',
+                        align: 'left',
+                    },
+                ],
+            },
+        ],
     },
     'media-text': {
         heading:           'Your heading here',

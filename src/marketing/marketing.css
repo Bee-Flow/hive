@@ -177,6 +177,34 @@
     color: var(--accent-light);
 }
 
+/* Ghost — text-only button, no border or fill. Used for tertiary header
+   actions (e.g. "Log in") that shouldn't compete with the primary CTA. */
+.marketing-root .btn-ghost {
+    padding: 10px 16px;
+    background: transparent;
+    color: var(--text-primary);
+    border: none;
+}
+.marketing-root .btn-ghost:hover {
+    color: var(--accent);
+}
+
+/* Link — plain underlined link, matches body-text rhythm. Useful for
+   inline secondary actions where a button would feel too heavy. */
+.marketing-root .btn-link {
+    padding: 0;
+    background: transparent;
+    color: var(--accent);
+    border: none;
+    border-radius: 0;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+    font-weight: 500;
+}
+.marketing-root .btn-link:hover {
+    color: var(--accent-light);
+}
+
 /* ── Header ───────────────────────────────────────────────────────────── */
 .marketing-root .header {
     position: fixed;
@@ -213,6 +241,16 @@
     display: flex; align-items: center; justify-content: center;
     color: #fff; font-weight: 800;
 }
+/* Image logo — uploaded via Site chrome → Logo image. Sized to roughly
+   match the letter-avatar's height so swapping between modes doesn't
+   change the header's vertical rhythm. */
+.marketing-root .header-logo .logo-image {
+    height: 38px;
+    width: auto;
+    max-width: 160px;
+    object-fit: contain;
+    display: block;
+}
 .marketing-root .header-logo .logo-dot { color: var(--accent); }
 .marketing-root .header-nav {
     display: flex;
@@ -235,6 +273,105 @@
     transition: width var(--transition-fast);
 }
 .marketing-root .header-nav a:hover::after { width: 100%; }
+
+/* Nav dropdown — items in site.header.nav with non-empty `children`
+   render as a parent <a> + a hidden <ul> that appears on hover/focus.
+   Specificity here is intentionally tighter than `.header-nav a::after`
+   so the parent's underline still works. */
+.marketing-root .header-nav .nav-item.has-dropdown {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+}
+.marketing-root .header-nav .nav-item.has-dropdown > a {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+.marketing-root .header-nav .nav-item.has-dropdown > a::before {
+    content: '';
+    width: 0; height: 0;
+    margin-left: 4px;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 4px solid currentColor;
+    opacity: 0.6;
+    transition: opacity var(--transition-fast), transform var(--transition-fast);
+    order: 2;                /* render the chevron AFTER the label text */
+    align-self: center;
+}
+.marketing-root .header-nav .nav-item.has-dropdown:hover > a::before,
+.marketing-root .header-nav .nav-item.has-dropdown:focus-within > a::before {
+    opacity: 1;
+    transform: rotate(180deg);
+}
+.marketing-root .header-nav .nav-dropdown {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    margin: 0;
+    padding: 6px;
+    min-width: 200px;
+    list-style: none;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+    backdrop-filter: blur(10px);
+    /* Hidden by default; revealed by hover/focus on the parent .nav-item.
+       opacity + visibility (rather than display:none) so the transition
+       runs and so focus stays inside the dropdown when tabbing. */
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-4px);
+    transition: opacity var(--transition-fast),
+                transform var(--transition-fast),
+                visibility 0s linear var(--transition-fast);
+    z-index: 100;
+}
+.marketing-root .header-nav .nav-item.has-dropdown:hover .nav-dropdown,
+.marketing-root .header-nav .nav-item.has-dropdown:focus-within .nav-dropdown {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    transition-delay: 0s;
+}
+.marketing-root .header-nav .nav-dropdown li { display: block; }
+.marketing-root .header-nav .nav-dropdown li a {
+    display: block;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    white-space: nowrap;
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+.marketing-root .header-nav .nav-dropdown li a::after { content: none; }
+.marketing-root .header-nav .nav-dropdown li a:hover {
+    background: var(--bg-card);
+    color: var(--text-primary);
+}
+.marketing-root .header-nav .nav-dropdown li a.active {
+    color: var(--text-primary);
+    background: var(--bg-card);
+}
+
+/* Mobile dropdown children — always visible, indented under the parent.
+   We don't use the desktop dropdown layout here; the mobile drawer just
+   stacks links vertically. */
+.marketing-root .mobile-nav-children {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    margin-left: 16px;
+    padding-left: 12px;
+    border-left: 1px solid var(--border-subtle);
+}
+.marketing-root .mobile-nav-children a {
+    font-size: 1.05rem;
+    font-weight: 500;
+    color: var(--text-secondary);
+}
 .marketing-root .header-actions {
     display: flex;
     align-items: center;
@@ -765,9 +902,39 @@
     color: var(--text-muted);
     font-size: 0.85rem;
 }
+.marketing-root .footer-bottom-right {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+}
 .marketing-root .footer-socials { display: flex; gap: 12px; }
 .marketing-root .footer-socials a { color: var(--text-muted); transition: color var(--transition-fast); }
 .marketing-root .footer-socials a:hover { color: var(--accent); }
+
+/* Day / night toggle (opt-in, rendered by Footer when enabled in Site
+   chrome). Single round icon button; the icon mirrors the current mode. */
+.marketing-root .cms-theme-toggle {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 32px;
+    height: 32px;
+    border-radius: 999px;
+    border: 1px solid var(--border-subtle);
+    background: var(--bg-card);
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: color var(--transition-fast),
+                background-color var(--transition-fast),
+                border-color var(--transition-fast),
+                transform var(--transition-fast);
+}
+.marketing-root .cms-theme-toggle:hover {
+    color: var(--accent);
+    border-color: var(--border-accent);
+    background: var(--bg-card-hover);
+}
+.marketing-root .cms-theme-toggle:active { transform: scale(0.95); }
 
 /* ── Scroll reveal ────────────────────────────────────────────────────── */
 .marketing-root .reveal {
@@ -814,85 +981,9 @@
     display: none;
 }
 
-/* Section frame + hover toolbar */
-.marketing-root .cms-section-frame {
-    position: relative;
-    transition: outline-color 0.15s ease;
-}
-.marketing-root .cms-section-frame::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    pointer-events: none;
-    outline: 0 solid transparent;
-    outline-offset: -2px;
-    transition: outline 0.15s ease;
-}
-.marketing-root .cms-section-frame:hover::after {
-    outline: 2px solid rgba(245, 166, 35, 0.4);
-}
-.marketing-root .cms-section-frame.cms-section-active::after {
-    outline: 2px solid var(--accent);
-}
-.marketing-root .cms-section-hidden {
-    opacity: 0.5;
-    filter: grayscale(0.4);
-}
-
-.marketing-root .cms-section-toolbar {
-    position: absolute;
-    top: 12px;
-    right: 12px;
-    z-index: 50;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 4px 4px 10px;
-    background: rgba(12, 18, 32, 0.95);
-    border: 1px solid var(--border-subtle);
-    border-radius: var(--radius-sm);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-    backdrop-filter: blur(8px);
-    opacity: 0;
-    transform: translateY(-6px);
-    transition: opacity 0.18s ease, transform 0.18s ease;
-    pointer-events: none;
-    font-family: 'Inter', sans-serif;
-}
-.marketing-root .cms-section-frame:hover .cms-section-toolbar,
-.marketing-root .cms-section-frame:focus-within .cms-section-toolbar {
-    opacity: 1;
-    transform: translateY(0);
-    pointer-events: auto;
-}
-.marketing-root .cms-section-toolbar .cms-section-name {
-    font-size: 0.7rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--accent);
-    padding-right: 6px;
-    border-right: 1px solid var(--border-subtle);
-    margin-right: 2px;
-}
-.marketing-root .cms-section-toolbar button {
-    padding: 5px 10px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--text-secondary);
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background 0.15s ease, color 0.15s ease;
-}
-.marketing-root .cms-section-toolbar button:hover {
-    background: rgba(245, 166, 35, 0.12);
-    color: var(--accent-light);
-}
-
-/* Make the fixed header non-fixed in preview so toolbars don't overlap */
-.marketing-root.cms-preview .header { position: absolute; }
+/* The hover-toolbar / active-frame outline used to live on
+   .cms-section-frame here. Removed along with SectionFrame's wrapper —
+   the side panel owns block selection and visibility now. */
 
 /* ── Animations ───────────────────────────────────────────────────────── */
 @keyframes orbFloat {
@@ -1023,67 +1114,121 @@
 
 /* Background variants. Default falls through to the page bg. Saturated
    variants (primary/dark) flip text colors so body copy stays readable. */
-.marketing-root .content-block--bg-surface { background: var(--brand-surface); }
-.marketing-root .content-block--bg-primary { background: var(--brand-primary); color: #fff; }
-.marketing-root .content-block--bg-dark    { background: var(--brand-secondary); color: var(--brand-bg); }
-.marketing-root .content-block--bg-primary .content-block-subheading,
-.marketing-root .content-block--bg-primary .content-block-body,
-.marketing-root .content-block--bg-dark    .content-block-subheading,
-.marketing-root .content-block--bg-dark    .content-block-body {
+/* ── Content block (column + elements) ─────────────────────────────
+   New shape: any number of columns, each holding a stack of typed
+   elements. Grid layout drives the column proportions. */
+
+.marketing-root .content-block               { padding: 64px 0; }
+.marketing-root .content-block--bg-light     { background: var(--brand-surface); }
+.marketing-root .content-block--bg-primary   { background: var(--brand-primary); color: #fff; }
+.marketing-root .content-block--bg-dark      { background: var(--brand-secondary); color: var(--brand-bg); }
+.marketing-root .content-block--bg-primary .content-el-subheading,
+.marketing-root .content-block--bg-primary .content-el-body,
+.marketing-root .content-block--bg-primary .content-el-caption,
+.marketing-root .content-block--bg-dark    .content-el-subheading,
+.marketing-root .content-block--bg-dark    .content-el-body,
+.marketing-root .content-block--bg-dark    .content-el-caption {
     color: rgba(255, 255, 255, 0.85);
 }
 
-/* Text alignment scoped to the text column so the image keeps its grid
-   cell rather than shifting with the text. */
-.marketing-root .content-block--align-left   .content-block-text { text-align: left; }
-.marketing-root .content-block--align-center .content-block-text { text-align: center; }
-.marketing-root .content-block--align-right  .content-block-text { text-align: right; }
-
-/* Inner layout — flex-direction handles all four image-position variants
-   without changing source order. Above/below stack vertically; left/right
-   put image and text side-by-side with equal weight. */
-.marketing-root .content-block-inner {
-    display: flex;
+.marketing-root .content-block-grid {
+    display: grid;
     gap: 48px;
-    align-items: center;
-    flex-direction: column;
+    align-items: start;
 }
-.marketing-root .content-block-inner--image-above { flex-direction: column; }
-.marketing-root .content-block-inner--image-below { flex-direction: column-reverse; }
-.marketing-root .content-block-inner--image-left  { flex-direction: row; }
-.marketing-root .content-block-inner--image-right { flex-direction: row-reverse; }
+.marketing-root .content-block-grid--layout-1   { grid-template-columns: minmax(0, 800px); justify-content: center; }
+.marketing-root .content-block-grid--layout-2   { grid-template-columns: 1fr 1fr; }
+.marketing-root .content-block-grid--layout-3   { grid-template-columns: 1fr 1fr 1fr; }
+.marketing-root .content-block-grid--layout-1-2 { grid-template-columns: 1fr 2fr; }
+.marketing-root .content-block-grid--layout-2-1 { grid-template-columns: 2fr 1fr; }
 
-.marketing-root .content-block-inner--image-left  > *,
-.marketing-root .content-block-inner--image-right > * {
-    flex: 1 1 0;
+.marketing-root .content-block-grid--valign-top    { align-items: start;  }
+.marketing-root .content-block-grid--valign-center { align-items: center; }
+.marketing-root .content-block-grid--valign-bottom { align-items: end;    }
+
+.marketing-root .content-block-col {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
     min-width: 0;
 }
 
-/* Image rendering. Empty src shows a dashed placeholder so the layout
-   doesn't collapse while the user is editing in the panel. */
-.marketing-root .content-block-image          { border-radius: var(--radius-lg); overflow: hidden; }
-.marketing-root .content-block-image img      { width: 100%; height: auto; display: block; }
-.marketing-root .content-block-image-placeholder {
-    aspect-ratio: 16 / 9;
-    background: var(--bg-card);
+/* ── Element types ─────────────────────────────────────────────── */
+
+.marketing-root .content-el { min-width: 0; }
+
+.marketing-root .content-el-text--align-left   { text-align: left;   }
+.marketing-root .content-el-text--align-center { text-align: center; }
+.marketing-root .content-el-text--align-right  { text-align: right;  }
+
+.marketing-root .content-el-heading    { margin: 0 0 12px; font-weight: 700; }
+.marketing-root .content-el-heading:is(h2) { font-size: clamp(1.6rem, 2.5vw, 2.25rem); line-height: 1.2; }
+.marketing-root .content-el-heading:is(h3) { font-size: clamp(1.25rem, 2vw, 1.6rem); line-height: 1.25; }
+.marketing-root .content-el-subheading { margin: 0 0 12px; font-size: 1.125rem; opacity: 0.9; }
+.marketing-root .content-el-body       { margin: 0; line-height: 1.6; white-space: pre-wrap; }
+
+.marketing-root .content-el-image           { margin: 0; }
+.marketing-root .content-el-image-wrap      { overflow: hidden; border-radius: var(--radius-md); background: var(--bg-card); }
+.marketing-root .content-el-image.is-rounded .content-el-image-wrap { border-radius: var(--radius-xl); }
+.marketing-root .content-el-image-wrap img  { width: 100%; height: 100%; object-fit: cover; display: block; }
+.marketing-root .content-el-image-wrap[style*="aspect-ratio"] img { object-fit: cover; }
+.marketing-root .content-el-image-placeholder {
+    width: 100%; height: 100%;
+    min-height: 180px;
+    display: flex; align-items: center; justify-content: center;
     border: 1px dashed var(--border-subtle);
-    border-radius: var(--radius-lg);
-    display: flex;
-    align-items: center;
-    justify-content: center;
     color: var(--text-muted);
     font-size: 0.875rem;
 }
 
-.marketing-root .content-block-heading    { margin-bottom: 16px; }
-.marketing-root .content-block-subheading { margin-bottom: 16px; font-size: 1.125rem; opacity: 0.9; }
-.marketing-root .content-block-body       { white-space: pre-line; line-height: 1.6; }
-.marketing-root .content-block-cta        { margin-top: 24px; }
+.marketing-root .content-el-video-wrap {
+    position: relative;
+    border-radius: var(--radius-md);
+    overflow: hidden;
+    background: #000;
+}
+.marketing-root .content-el-video-wrap iframe {
+    position: absolute; inset: 0;
+    width: 100%; height: 100%;
+    border: 0;
+}
+.marketing-root .content-el-video-placeholder {
+    width: 100%; height: 100%;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
 
-/* Responsive — collapse side-by-side to stacked on small screens. */
+.marketing-root .content-el-iframe iframe { display: block; border-radius: var(--radius-md); }
+.marketing-root .content-el-iframe-placeholder {
+    width: 100%;
+    display: flex; align-items: center; justify-content: center;
+    border: 1px dashed var(--border-subtle);
+    border-radius: var(--radius-md);
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.marketing-root .content-el-caption {
+    margin: 8px 0 0;
+    font-size: 0.875rem;
+    opacity: 0.8;
+}
+
+.marketing-root .content-el-cta--align-left   { text-align: left;   }
+.marketing-root .content-el-cta--align-center { text-align: center; }
+.marketing-root .content-el-cta--align-right  { text-align: right;  }
+
+/* Responsive — collapse all multi-column layouts to a single stacked
+   column on narrow screens. */
 @media (max-width: 768px) {
-    .marketing-root .content-block-inner--image-left,
-    .marketing-root .content-block-inner--image-right { flex-direction: column; }
+    .marketing-root .content-block-grid--layout-2,
+    .marketing-root .content-block-grid--layout-3,
+    .marketing-root .content-block-grid--layout-1-2,
+    .marketing-root .content-block-grid--layout-2-1 {
+        grid-template-columns: 1fr;
+        gap: 32px;
+    }
 }
 
 /* ────────────────────────────────────────────────────────────────────────

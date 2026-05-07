@@ -18,6 +18,8 @@ export const cmsApi = {
     site:                (siteId)                      => `${root}/sites/${siteId}`,
 
     // ── Per-site editor operations ──
+    siteLive:            (siteId)                      => `${root}/sites/${siteId}/live`,
+    sitePublish:         (siteId)                      => `${root}/sites/${siteId}/publish`,
     siteGraph:           (siteId)                      => `${root}/sites/${siteId}/graph`,
     siteLocaleOverride:  (siteId, locale)              => `${root}/sites/${siteId}/site/locale/${encodeURIComponent(locale)}`,
     pages:               (siteId)                      => `${root}/sites/${siteId}/pages`,

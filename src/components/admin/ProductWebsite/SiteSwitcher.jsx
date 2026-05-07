@@ -14,6 +14,7 @@ import AppIcon from '../../AppIcon';
 export default function SiteSwitcher({
     sites,
     activeSiteId,
+    liveSiteId,
     onSelect,
     onCreate,
     onRename,
@@ -79,6 +80,12 @@ export default function SiteSwitcher({
                     <span className="truncate font-medium">
                         {activeSite ? activeSite.name : 'Select a site'}
                     </span>
+                    {activeSite && activeSite.id === liveSiteId && (
+                        <span
+                            className="w-2 h-2 rounded-full bg-emerald-500 shrink-0"
+                            title="This site is live"
+                        />
+                    )}
                 </span>
                 <AppIcon name={open ? 'ChevronUp' : 'ChevronDown'} className="w-3.5 h-3.5 shrink-0 text-[var(--text-muted)]" />
             </button>
@@ -100,6 +107,7 @@ export default function SiteSwitcher({
                                 key={site.id}
                                 site={site}
                                 isActive={site.id === activeSiteId}
+                                isLive={site.id === liveSiteId}
                                 isRenaming={renamingId === site.id}
                                 onPick={() => handlePick(site.id)}
                                 onStartRename={() => setRenamingId(site.id)}
@@ -136,7 +144,7 @@ export default function SiteSwitcher({
 
 // ── Row with hover menu + inline rename ─────────────────────────
 
-function SiteRow({ site, isActive, isRenaming, onPick, onStartRename, onCancelRename, onConfirmRename, onDelete }) {
+function SiteRow({ site, isActive, isLive, isRenaming, onPick, onStartRename, onCancelRename, onConfirmRename, onDelete }) {
     if (isRenaming) {
         return (
             <li>
@@ -163,6 +171,15 @@ function SiteRow({ site, isActive, isRenaming, onPick, onStartRename, onCancelRe
                     className={`w-3.5 h-3.5 shrink-0 ${isActive ? 'text-[var(--accent-primary)]' : 'text-[var(--text-muted)]'}`}
                 />
                 <span className="truncate flex-1">{site.name}</span>
+                {isLive && (
+                    <span
+                        className="flex items-center gap-1 shrink-0 px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-[10px] font-medium text-emerald-400"
+                        title="Currently live at the public URL"
+                    >
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                        Live
+                    </span>
+                )}
                 <span className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
                     <IconBtn name="Pencil" title="Rename" onClick={(e) => { e.stopPropagation(); onStartRename(); }} />
                     <IconBtn name="Trash2" title="Delete" danger onClick={(e) => { e.stopPropagation(); onDelete(); }} />

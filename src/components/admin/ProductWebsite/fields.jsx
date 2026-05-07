@@ -1,6 +1,18 @@
-import React, { useState } from 'react';
+import React, { createContext, useContext, useRef, useState } from 'react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import AppIcon from '../../AppIcon';
+
+/**
+ * Optional context for "+ Create new page…" inside any LinkField. The
+ * provider value is `async ({title, slug}) => ({id, slug, title})` and is
+ * supplied once at the top of the editor by ProductWebsitePanel. When a
+ * LinkField finds a value here it appends a sentinel option to the
+ * internal-page selector that lets the user spin up a page without
+ * leaving whatever they're editing. We use Context (rather than threading
+ * the callback through every editor's props) so the existing 12+ editor
+ * components don't all need new prop signatures.
+ */
+export const CreatePageContext = createContext(null);
 
 // Shared input class to match other admin panels.
 const inputClass =
@@ -157,7 +169,7 @@ export function ImageField({ value, onChange, label }) {
  * RepeatableList — generic add/remove/reorder for an array field.
  * `renderItem(item, update)` is responsible for rendering one row's fields.
  */
-export function RepeatableList({ items = [], onChange, renderItem, makeNew, label, addLabel = 'Add item' }) {
+export function RepeatableList({ items = [], onChange, renderItem, makeNew, label, addLabel = 'Add item', itemLabel, collapsible = false }) {
     const update = (idx, next) => {
         const copy = [...items];
         copy[idx] = next;
@@ -172,20 +184,89 @@ export function RepeatableList({ items = [], onChange, renderItem, makeNew, labe
         onChange(copy);
     };
 
+    // Collapse state — UI-only, NOT persisted. Keyed by item.id so that
+    // reordering / removing a row keeps the right rows collapsed. New
+    // rows added via "+ Add …" auto-expand once on next render so the
+    // user can fill in fields immediately. Falls back to index-keying
+    // when the caller's items don't expose stable ids.
+    const keyFor = (item, idx) => (item && item.id) ? `id:${item.id}` : `idx:${idx}`;
+    const [collapsedMap, setCollapsedMap] = useState({});
+    // Auto-collapse any item key we haven't seen yet (default: collapsed).
+    // Done in an effect to avoid mutating state during render.
+    React.useEffect(() => {
+        if (!collapsible) return;
+        setCollapsedMap(prev => {
+            const next = { ...prev };
+            let changed = false;
+            const seenKeys = new Set();
+            items.forEach((item, idx) => {
+                const k = keyFor(item, idx);
+                seenKeys.add(k);
+                if (!(k in next)) { next[k] = true; changed = true; }
+            });
+            // Drop entries for keys that no longer exist — keeps the map
+            // from growing forever as users add/remove rows.
+            for (const k of Object.keys(next)) {
+                if (!seenKeys.has(k)) { delete next[k]; changed = true; }
+            }
+            return changed ? next : prev;
+        });
+    }, [items, collapsible]);
+    const toggleCollapsed = (key) => setCollapsedMap(prev => ({ ...prev, [key]: !prev[key] }));
+    // When the user clicks "+ Add …" we want the new row to start expanded
+    // (otherwise they'd have to click the chevron just to type a label).
+    const handleAdd = () => {
+        const newItem = makeNew ? makeNew() : {};
+        if (collapsible) {
+            const k = newItem && newItem.id ? `id:${newItem.id}` : `idx:${items.length}`;
+            setCollapsedMap(prev => ({ ...prev, [k]: false }));
+        }
+        onChange([...items, newItem]);
+    };
+
     return (
         <div className="mb-3">
             {label ? (
                 <div className="text-xs font-medium text-[var(--text-secondary)] mb-2">{label}</div>
             ) : null}
             <div className="flex flex-col gap-3">
-                {items.map((item, idx) => (
+                {items.map((item, idx) => {
+                    // Optional caller-supplied label (e.g. the link's own label
+                    // or the column's heading) so users can tell rows apart at
+                    // a glance instead of just seeing "#1 / #2 / #3".
+                    const customLabel = typeof itemLabel === 'function'
+                        ? (itemLabel(item, idx) || '').toString().trim()
+                        : '';
+                    const rowKey = keyFor(item, idx);
+                    // Collapsible mode treats unseen keys as collapsed too,
+                    // so the very first render (before the effect runs) shows
+                    // existing rows collapsed instead of flashing them open.
+                    const isCollapsed = collapsible && (collapsedMap[rowKey] ?? true);
+                    return (
                     <div
                         key={idx}
                         className="rounded-md border border-[var(--border-subtle)] bg-[var(--bg-secondary)] p-3"
                     >
-                        <div className="flex items-center justify-between mb-2">
-                            <span className="text-xs text-[var(--text-muted)]">#{idx + 1}</span>
-                            <div className="flex items-center gap-1">
+                        <div className="flex items-center justify-between mb-2 gap-2 min-w-0">
+                            <span
+                                className={`text-xs text-[var(--text-muted)] truncate min-w-0 flex items-center gap-1.5 ${collapsible ? 'cursor-pointer select-none' : ''}`}
+                                onClick={collapsible ? () => toggleCollapsed(rowKey) : undefined}
+                                role={collapsible ? 'button' : undefined}
+                                aria-expanded={collapsible ? !isCollapsed : undefined}
+                            >
+                                {collapsible ? (
+                                    <span
+                                        className="shrink-0 inline-block transition-transform"
+                                        style={{ transform: isCollapsed ? 'rotate(-90deg)' : 'rotate(0deg)' }}
+                                        aria-hidden="true"
+                                    >▾</span>
+                                ) : null}
+                                <span className="shrink-0">#{idx + 1}</span>
+                                {customLabel ? (
+                                    <span className="text-[var(--text-secondary)] font-medium truncate">{customLabel}</span>
+                                ) : null}
+                            </span>
+                            <div className="flex items-center gap-1 shrink-0">
                                 <button type="button" onClick={() => move(idx, -1)} disabled={idx === 0}
                                         className="px-2 py-0.5 text-xs rounded hover:bg-[var(--bg-tertiary)] disabled:opacity-30">↑</button>
                                 <button type="button" onClick={() => move(idx,  1)} disabled={idx === items.length - 1}
@@ -194,13 +275,14 @@ export function RepeatableList({ items = [], onChange, renderItem, makeNew, labe
                                         className="px-2 py-0.5 text-xs rounded text-red-400 hover:bg-red-500/10">Remove</button>
                             </div>
                         </div>
-                        {renderItem(item, (next) => update(idx, next), idx)}
+                        {!isCollapsed && renderItem(item, (next) => update(idx, next), idx)}
                     </div>
-                ))}
+                    );
+                })}
             </div>
             <button
                 type="button"
-                onClick={() => onChange([...items, makeNew ? makeNew() : {}])}
+                onClick={handleAdd}
                 className="mt-2 px-3 py-1.5 text-xs rounded-md border border-dashed border-[var(--border-default)] text-[var(--text-secondary)] hover:border-[var(--accent-primary)] hover:text-[var(--accent-primary)] transition-colors"
             >
                 + {addLabel}
@@ -258,45 +340,13 @@ export function LinkField({ label, value, onChange, pages = [], hint }) {
 
             {/* kind-specific fields */}
             {kind === 'page' && (
-                <div className="flex flex-col gap-1.5 mt-1.5">
-                    <select
-                        className={`${inputClass} ${brokenPage ? 'border-red-500/50 focus:border-red-500' : ''}`}
-                        value={link.pageId || ''}
-                        onChange={e => set({ pageId: e.target.value })}
-                    >
-                        {pages.length === 0 && <option value="">— no pages —</option>}
-                        {/* If pageId is dangling, surface it in the dropdown so
-                            the user can see what's set and pick a replacement. */}
-                        {brokenPage && (
-                            <option value={link.pageId}>
-                                ⚠ Missing page ({link.pageId})
-                            </option>
-                        )}
-                        {pages.map(p => (
-                            <option key={p.id} value={p.id}>
-                                {p.title || p.slug} (/{p.slug}{p.isHomepage ? ' · home' : ''})
-                            </option>
-                        ))}
-                    </select>
-                    {brokenPage && (
-                        <span className="text-xs text-red-400">
-                            This link points to a page that no longer exists. Pick another page above.
-                        </span>
-                    )}
-                    {linkedPage && (
-                        <span className="text-xs text-[var(--text-muted)]">
-                            → {linkedPage.isHomepage ? '/' : `/${linkedPage.slug}`}
-                            {link.anchor ? `#${link.anchor}` : ''}
-                        </span>
-                    )}
-                    <input
-                        type="text"
-                        className={inputClass}
-                        placeholder="#section-anchor (optional)"
-                        value={link.anchor || ''}
-                        onChange={e => set({ anchor: e.target.value.replace(/^#/, '') })}
-                    />
-                </div>
+                <PageSelector
+                    link={link}
+                    set={set}
+                    pages={pages}
+                    brokenPage={brokenPage}
+                    linkedPage={linkedPage}
+                />
             )}
             {kind === 'anchor' && (
                 <input
@@ -337,5 +387,193 @@ export function LinkField({ label, value, onChange, pages = [], hint }) {
                 />
             )}
         </FieldRow>
+    );
+}
+
+/**
+ * Internal-page selector pulled out of LinkField so the inline-create flow
+ * (the "+ Create new page…" sentinel + form) can own its local state without
+ * cluttering the LinkField body. The selector falls back to plain-select
+ * behaviour when no CreatePageContext is available — every other call site
+ * (existing block editors, footer/header link rows, etc.) just keeps working.
+ */
+const NEW_PAGE_SENTINEL = '__cms_new_page__';
+
+function PageSelector({ link, set, pages, brokenPage, linkedPage }) {
+    const onCreatePage = useContext(CreatePageContext);
+    // The "+ Create new page…" branch keeps a snapshot of the previously
+    // selected pageId so Cancel can restore it. We capture on focus, not
+    // on render, since the link.pageId we'd capture in render gets stomped
+    // when the user picks the sentinel.
+    const previousPageIdRef = useRef(link.pageId || '');
+    const [creating, setCreating] = useState(false);
+    const [submitting, setSubmitting] = useState(false);
+    const [createError, setCreateError] = useState(null);
+    const [newTitle, setNewTitle] = useState('');
+    const [newSlug, setNewSlug] = useState('');
+    const slugAuto = useRef(true);
+
+    const deriveSlug = (t) =>
+        String(t || '').toLowerCase().trim()
+            .replace(/\s+/g, '-')
+            .replace(/[^a-z0-9_-]/g, '')
+            .slice(0, 64);
+
+    const handleSelectChange = (e) => {
+        const value = e.target.value;
+        if (value === NEW_PAGE_SENTINEL) {
+            // Remember what the link pointed at before so Cancel can revert.
+            previousPageIdRef.current = link.pageId || '';
+            slugAuto.current = true;
+            setNewTitle('');
+            setNewSlug('');
+            setCreateError(null);
+            setCreating(true);
+            return;
+        }
+        set({ pageId: value });
+    };
+
+    const submitNew = async () => {
+        if (!onCreatePage || submitting) return;
+        const title = newTitle.trim();
+        if (!title) return;
+        setSubmitting(true);
+        setCreateError(null);
+        try {
+            const result = await onCreatePage({ title, slug: newSlug.trim() || undefined });
+            if (!result?.id) throw new Error('Page creation returned no id');
+            // Point the link at the freshly-created page. The new page now
+            // appears in the `pages` prop on the next render (parent reloaded
+            // its payload as part of handleAddPage), so the dropdown will
+            // automatically show it as selected.
+            set({ pageId: result.id });
+            setCreating(false);
+        } catch (err) {
+            setCreateError(err?.message || 'Failed to create page');
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const cancelNew = () => {
+        setCreating(false);
+        setCreateError(null);
+        // Restore the prior pageId so the select doesn't stay on the sentinel.
+        if (previousPageIdRef.current && previousPageIdRef.current !== link.pageId) {
+            set({ pageId: previousPageIdRef.current });
+        }
+    };
+
+    // While the inline form is open, force the select to show the sentinel
+    // so the picker visually reflects the in-progress flow instead of the
+    // stale previous selection.
+    const selectValue = creating
+        ? NEW_PAGE_SENTINEL
+        : (link.pageId || '');
+
+    return (
+        <div className="flex flex-col gap-1.5 mt-1.5">
+            <select
+                className={`${inputClass} ${brokenPage ? 'border-red-500/50 focus:border-red-500' : ''}`}
+                value={selectValue}
+                onChange={handleSelectChange}
+            >
+                {pages.length === 0 && !creating && <option value="">— no pages —</option>}
+                {/* If pageId is dangling, surface it in the dropdown so
+                    the user can see what's set and pick a replacement. */}
+                {brokenPage && (
+                    <option value={link.pageId}>
+                        ⚠ Missing page ({link.pageId})
+                    </option>
+                )}
+                {pages.map(p => (
+                    <option key={p.id} value={p.id}>
+                        {p.title || p.slug} (/{p.slug}{p.isHomepage ? ' · home' : ''})
+                    </option>
+                ))}
+                {/* "+ Create new page…" only appears when a CreatePageContext
+                    provider is available (i.e. inside the Product Website
+                    editor). External / unrelated reuses of LinkField stay
+                    unaffected. */}
+                {onCreatePage && (
+                    <option value={NEW_PAGE_SENTINEL}>+ Create new page…</option>
+                )}
+            </select>
+            {brokenPage && !creating && (
+                <span className="text-xs text-red-400">
+                    This link points to a page that no longer exists. Pick another page above.
+                </span>
+            )}
+            {linkedPage && !creating && (
+                <span className="text-xs text-[var(--text-muted)]">
+                    → {linkedPage.isHomepage ? '/' : `/${linkedPage.slug}`}
+                    {link.anchor ? `#${link.anchor}` : ''}
+                </span>
+            )}
+            {creating && (
+                <div className="rounded-md border border-dashed border-[var(--accent-primary)]/40 bg-[var(--bg-tertiary)] p-2 flex flex-col gap-1.5">
+                    <label className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+                        New page title
+                    </label>
+                    <input
+                        autoFocus
+                        type="text"
+                        className={inputClass}
+                        placeholder="e.g. Pricing"
+                        value={newTitle}
+                        onChange={e => {
+                            setNewTitle(e.target.value);
+                            if (slugAuto.current) setNewSlug(deriveSlug(e.target.value));
+                        }}
+                        onKeyDown={e => {
+                            if (e.key === 'Enter') { e.preventDefault(); submitNew(); }
+                            if (e.key === 'Escape') { e.preventDefault(); cancelNew(); }
+                        }}
+                    />
+                    <label className="text-[10px] uppercase tracking-wide text-[var(--text-muted)]">
+                        Slug
+                    </label>
+                    <input
+                        type="text"
+                        className={`${inputClass} font-mono`}
+                        placeholder="auto"
+                        value={newSlug}
+                        onChange={e => {
+                            slugAuto.current = false;
+                            setNewSlug(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''));
+                        }}
+                    />
+                    {createError && (
+                        <span className="text-xs text-red-400">{createError}</span>
+                    )}
+                    <div className="flex gap-1.5 justify-end">
+                        <button
+                            type="button"
+                            onClick={cancelNew}
+                            disabled={submitting}
+                            className="text-xs px-2 py-1 text-[var(--text-muted)] hover:text-[var(--text-primary)] disabled:opacity-50"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="button"
+                            onClick={submitNew}
+                            disabled={submitting || !newTitle.trim()}
+                            className="text-xs px-3 py-1 rounded bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-primary)]/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            {submitting ? 'Creating…' : 'Create page'}
+                        </button>
+                    </div>
+                </div>
+            )}
+            <input
+                type="text"
+                className={inputClass}
+                placeholder="#section-anchor (optional)"
+                value={link.anchor || ''}
+                onChange={e => set({ anchor: e.target.value.replace(/^#/, '') })}
+            />
+        </div>
     );
 }

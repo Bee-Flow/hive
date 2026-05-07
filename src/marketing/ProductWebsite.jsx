@@ -50,7 +50,7 @@ const isPreviewMode = () =>
 // We mirror each design field to a CSS custom property on .marketing-root
 // via inline style. The CSS file already declares fallbacks for every
 // token, so a missing/null design just means "use the file's defaults".
-function applyDesignToRoot(rootEl, design) {
+function applyDesignToRoot(rootEl, design, effectiveTheme) {
     if (!rootEl) return;
     const style = rootEl.style;
     if (!design || typeof design !== 'object') {
@@ -60,7 +60,11 @@ function applyDesignToRoot(rootEl, design) {
         return;
     }
     const c = design.colors || {};
-    const isDark = design.theme === 'dark';
+    // effectiveTheme (resolved from the visitor's theme switcher choice
+    // when the site exposes it) wins over design.theme. Falls back to
+    // the design's setting when no visitor override is active.
+    const resolved = effectiveTheme || (design.theme === 'dark' ? 'dark' : 'light');
+    const isDark = resolved === 'dark';
 
     // Brand colors always come from the user — they ride through both modes.
     if (c.primary)   style.setProperty('--brand-primary',   c.primary);
@@ -202,6 +206,21 @@ function blockWrapStyle(style) {
 // Build a CSS rule string that scopes color-token overrides to a single
 // block's wrapper via [data-cms-block-id="..."]. Returns null when there's
 // nothing to override (so the rendered <style> stays empty).
+//
+// CSS custom properties resolve var() references at the point of declaration,
+// not the point of use. marketing.css declares aliases like
+//   .marketing-root { --accent: var(--brand-primary); --bg-primary: var(--brand-bg); … }
+// which get computed ON .marketing-root using ITS --brand-* values. Setting
+// --brand-primary on a deeper wrapper would NOT change those aliases for
+// descendants, because the alias values were already baked at the
+// marketing-root level. Most section CSS uses the aliases, not the raw
+// --brand-* tokens, so a naked --brand-* override would be near-invisible.
+//
+// To fix: re-declare the alias chain at the wrapper level too, so it
+// re-evaluates against whatever --brand-* the wrapper exposes (overridden
+// where set, inherited otherwise). --accent-gradient additionally depends
+// on the .cms-gradient class on .marketing-root — both flavors are emitted
+// so only the matching one applies.
 function buildBlockOverrideCss(blockId, style) {
     const co = style?.colorOverrides;
     if (!co || typeof co !== 'object' || !blockId) return null;
@@ -214,10 +233,45 @@ function buildBlockOverrideCss(blockId, style) {
     if (co.text)          decls.push(`--brand-text: ${co.text};`);
     if (co.textSecondary) decls.push(`--brand-text-secondary: ${co.textSecondary};`);
     if (decls.length === 0) return null;
+
     // Escape the id to be safe in the attribute selector. Block IDs are
     // already alphanumeric+underscore via the store, but being defensive.
     const safeId = String(blockId).replace(/"/g, '');
-    return `[data-cms-block-id="${safeId}"] { ${decls.join(' ')} }`;
+    const sel = `[data-cms-block-id="${safeId}"]`;
+
+    // Aliases that must be re-evaluated on the wrapper so descendants see
+    // the overridden brand tokens. Mirrors the alias declarations in
+    // marketing.css's .marketing-root rule (minus the hard-coded ones like
+    // --text-muted / --border-subtle, which the override layer doesn't
+    // attempt to recompute).
+    const aliases = [
+        '--accent: var(--brand-primary);',
+        '--accent-light: var(--brand-accent);',
+        '--bg-primary: var(--brand-bg);',
+        '--bg-secondary: var(--brand-surface);',
+        '--text-primary: var(--brand-text);',
+        '--text-secondary: var(--brand-text-secondary);',
+    ];
+
+    // Inherited CSS properties (color, background) are computed *once* on
+    // .marketing-root from var(--text-primary)/var(--bg-primary) and
+    // descendants inherit the RESOLVED value — not the variable. So a
+    // wrapper that only redeclares the variables doesn't change anything
+    // for sections like Media+Text that have no own color/background
+    // rules. We re-paint these on the wrapper itself when the user
+    // explicitly overrides them, so descendants inherit from the wrapper
+    // instead of the marketing-root. Only emitted on demand to avoid
+    // forcing a background color on blocks that didn't ask for one.
+    if (co.text)       aliases.push('color: var(--text-primary);');
+    if (co.background) aliases.push('background-color: var(--bg-primary);');
+
+    return [
+        `${sel} { ${decls.join(' ')} ${aliases.join(' ')} }`,
+        // Gradient flavor — matches when the site has gradient mode on.
+        `.marketing-root.cms-gradient ${sel} { --accent-gradient: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-accent) 100%); }`,
+        // Solid flavor — matches when gradient mode is off.
+        `.marketing-root:not(.cms-gradient) ${sel} { --accent-gradient: var(--brand-primary); }`,
+    ].join(' ');
 }
 
 function resolveAssetUrl(urlOrKey) {
@@ -251,15 +305,42 @@ export default function ProductWebsite({ content: initialContent }) {
     //   2. content.design embedded by the public route (synthesizeLegacyContent)
     //   3. null → CSS file defaults take over
     const [design, setDesign] = useState(initialContent?.design || null);
-    const [activeSection, setActiveSection] = useState(null);
+    // Preview mode: 'chrome' renders header/footer with a neutral placeholder
+    // body so the user can edit site chrome in isolation. Null/'page' renders
+    // the page's blocks normally. Only set in admin preview (postMessage).
+    const [previewMode, setPreviewMode] = useState(null);
+
+    // Visitor theme override — null = follow design.theme; 'light'/'dark'
+    // force a mode. Persisted across visits in localStorage when the site
+    // exposes the footer theme toggle.
+    const [themeOverride, setThemeOverrideState] = useState(() => {
+        if (typeof window === 'undefined') return null;
+        try {
+            const v = window.localStorage.getItem('cms.themeOverride');
+            return v === 'light' || v === 'dark' ? v : null;
+        } catch { return null; }
+    });
+    const setThemeOverride = (next) => {
+        setThemeOverrideState(next);
+        try {
+            if (next) window.localStorage.setItem('cms.themeOverride', next);
+            else      window.localStorage.removeItem('cms.themeOverride');
+        } catch { /* ignore */ }
+    };
+    // Resolved theme drives the dark-mode class. Override wins; otherwise
+    // fall back to the site's design.theme.
+    const effectiveTheme =
+        themeOverride ||
+        (design?.theme === 'dark' ? 'dark' : 'light');
+    const isDark = effectiveTheme === 'dark';
+    const toggleTheme = () => setThemeOverride(isDark ? 'light' : 'dark');
 
     useEffect(() => {
         setContent(initialContent || {});
         if (initialContent?.design) setDesign(initialContent.design);
     }, [initialContent]);
 
-    // Preview-mode listener — admin panel posts structural + design updates
-    // and active-section highlights.
+    // Preview-mode listener — admin panel posts structural + design updates.
     useEffect(() => {
         if (!isPreviewMode()) return;
         const onMessage = (e) => {
@@ -268,9 +349,7 @@ export default function ProductWebsite({ content: initialContent }) {
                 // Allow null/undefined design to mean "no override", but
                 // normalize to null so applyDesignToRoot clears inline vars.
                 if ('design' in e.data) setDesign(e.data.design || null);
-            }
-            if (e.data?.type === 'cms-active-section') {
-                setActiveSection(e.data.section || null);
+                if ('previewMode' in e.data) setPreviewMode(e.data.previewMode || null);
             }
         };
         window.addEventListener('message', onMessage);
@@ -282,23 +361,12 @@ export default function ProductWebsite({ content: initialContent }) {
     }, []);
 
     // Apply design to the root element + sync Google Fonts <link> in head.
+    // effectiveTheme is included in deps so the dark-mode class flips when
+    // the visitor toggles the footer switcher.
     useEffect(() => {
-        applyDesignToRoot(rootRef.current, design);
+        applyDesignToRoot(rootRef.current, design, effectiveTheme);
         ensureFontsLink(rootRef.current?.ownerDocument, design?.fonts?.heading, design?.fonts?.body);
-    }, [design]);
-
-    // Highlight the active section frame.
-    useEffect(() => {
-        if (!isPreviewMode() || !rootRef.current) return;
-        const root = rootRef.current;
-        root.querySelectorAll('.cms-section-frame.cms-section-active').forEach(el =>
-            el.classList.remove('cms-section-active')
-        );
-        if (activeSection) {
-            const target = root.querySelector(`[data-cms-section="${activeSection}"]`);
-            target?.classList.add('cms-section-active');
-        }
-    }, [activeSection, content]);
+    }, [design, effectiveTheme]);
 
     useScrollReveal(rootRef);
 
@@ -312,7 +380,9 @@ export default function ProductWebsite({ content: initialContent }) {
     return (
         <div className="marketing-root" ref={rootRef}>
             <Header data={content.header} />
-            {orderedBlocks ? (
+            {previewMode === 'chrome' ? (
+                <ChromePreviewPlaceholder />
+            ) : orderedBlocks ? (
                 orderedBlocks.map(b => {
                     const Comp = SECTION_REGISTRY[b.type];
                     const overrideCss = buildBlockOverrideCss(b.id, b.style);
@@ -324,7 +394,7 @@ export default function ProductWebsite({ content: initialContent }) {
                                 className={blockWrapClasses(b.style)}
                                 style={blockWrapStyle(b.style)}
                             >
-                                <Comp data={b.content} />
+                                <Comp data={{ enabled: b.enabled !== false, ...(b.content || {}) }} />
                             </div>
                         </React.Fragment>
                     );
@@ -342,7 +412,39 @@ export default function ProductWebsite({ content: initialContent }) {
                     <CTA          data={content.cta} />
                 </>
             )}
-            <Footer data={content.footer} />
+            <Footer
+                data={content.footer}
+                isDark={isDark}
+                onToggleTheme={toggleTheme}
+            />
+        </div>
+    );
+}
+
+// Placeholder body shown in the admin preview when the editor is on the
+// "Site chrome" panel — keeps header/footer in view while making it clear
+// why the body is empty.
+function ChromePreviewPlaceholder() {
+    return (
+        <div style={{
+            minHeight: '50vh',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '4rem 1.5rem',
+            background: 'var(--brand-bg, transparent)',
+        }}>
+            <p style={{
+                maxWidth: 420,
+                margin: 0,
+                textAlign: 'center',
+                fontSize: '0.9rem',
+                lineHeight: 1.6,
+                color: 'var(--brand-text-secondary, #94a3b8)',
+                opacity: 0.75,
+            }}>
+                Header and footer are shared across all pages.
+            </p>
         </div>
     );
 }

@@ -1,40 +1,18 @@
 import React from 'react';
 
 /**
- * Wraps a marketing section. In preview mode, hovering the section reveals
- * a small toolbar (Edit settings · Hide) that posts intents to the parent
- * panel. In normal (public) mode it's a transparent passthrough.
+ * Pass-through wrapper for marketing sections. The hover-toolbar (Edit
+ * settings · Hide) is gone — its `id` was the block *type*, while the
+ * panel keys everything off block *id*, so neither the click handler
+ * nor the active-section highlight ever resolved correctly. The side
+ * panel covers the same affordances unambiguously.
+ *
+ * Kept as a thin component (rather than ripping it out of every section)
+ * so the call sites in Hero/Features/etc. can stay unchanged. If we want
+ * to bring the toolbar back later, do it here and post the block.id —
+ * which means threading block.id through ProductWebsite.jsx into each
+ * section so the path / id can flow back the other direction too.
  */
-function isPreviewMode() {
-    if (typeof window === 'undefined') return false;
-    return new URLSearchParams(window.location.search).has('preview');
-}
-
-export default function SectionFrame({ id, name, enabled = true, children }) {
-    if (!isPreviewMode()) {
-        return <>{children}</>;
-    }
-
-    const post = (action) => {
-        window.parent?.postMessage({ type: 'cms-section-action', section: id, action }, '*');
-    };
-
-    return (
-        <div
-            className={`cms-section-frame ${enabled ? '' : 'cms-section-hidden'}`}
-            data-cms-section={id}
-            onMouseEnter={() => post('hover')}
-        >
-            <div className="cms-section-toolbar" role="toolbar" aria-label={`${name} section controls`}>
-                <span className="cms-section-name">{name}</span>
-                <button type="button" onClick={() => post('focus')} title="Edit settings">
-                    ⚙ Settings
-                </button>
-                <button type="button" onClick={() => post('toggle')} title={enabled ? 'Hide section' : 'Show section'}>
-                    {enabled ? '👁 Hide' : '👁 Show'}
-                </button>
-            </div>
-            {children}
-        </div>
-    );
+export default function SectionFrame({ children }) {
+    return <>{children}</>;
 }

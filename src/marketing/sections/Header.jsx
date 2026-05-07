@@ -26,36 +26,32 @@ export default function Header({ data }) {
 
     if (!data?.enabled) return null;
 
-    const initials = (data.logoText || 'B').slice(0, 1).toUpperCase();
+    // Logo & brand — `data.logo` is the new shape; we fall back to the
+    // legacy data.logoText / letter-avatar so existing sites with no
+    // `logo` key still render the original logo.
+    const logo       = data.logo || {};
+    const brandText  = (logo.text !== undefined ? logo.text : data.logoText) || '';
+    const initials   = (brandText || 'B').slice(0, 1).toUpperCase();
+    const fontSizePx = logo.fontSize === 'small'  ? 14
+                     : logo.fontSize === 'large'  ? 24
+                     : logo.fontSize === 'medium' ? 18 : undefined;
+    const brandTextStyle = {};
+    if (logo.textColor) brandTextStyle.color    = logo.textColor;
+    if (fontSizePx)     brandTextStyle.fontSize = `${fontSizePx}px`;
 
-    // Nav fallback: if the user hasn't customized header.nav, auto-generate
-    // links from the site's pages. Filtering rules:
-    //   1. Exclude the homepage (it's reachable via the logo).
-    //   2. Exclude pages where showInNav === false (Sitemap toggle).
-    //   3. Sort by navOrder ascending (independent of array/page-creation order).
-    // When the user adds explicit navLinks in the Site chrome editor, those
-    // win and pages aren't auto-listed.
-    const userNav = Array.isArray(data.navLinks) ? data.navLinks : [];
-    const allPages = Array.isArray(data.pages) ? data.pages : [];
-    const autoNav = allPages
-        .filter(p => !p.isHomepage)
-        .filter(p => p.showInNav !== false)
-        .slice()                                    // don't mutate the upstream array
-        .sort((a, b) => (a.navOrder ?? 0) - (b.navOrder ?? 0))
-        .map(p => ({
-            label: p.title || p.slug,
-            // Public site is served at `/` (RootPathGate). Routing per page
-            // via `?slug=…` keeps the browser at the root path so the BeeFlow
-            // app router doesn't intercept and serve the AI chat.
-            href:  `/?slug=${encodeURIComponent(p.slug)}`,
-            slug:  p.slug,
-        }));
-    const navItems = userNav.length > 0 ? userNav : autoNav;
+    // Nav is fully owned by the user via Site chrome → Nav links. Pages
+    // no longer auto-merge into the nav — adding a page in the Pages
+    // panel does NOT make it appear here. To link a page from the nav,
+    // add an item with link kind = "Internal page".
+    const navItems = Array.isArray(data.navLinks) ? data.navLinks : [];
     const activeSlug = data.activeSlug || '';
-    const isActive = (href, slug) => {
-        if (slug && slug === activeSlug) return true;
-        if (href === `/${activeSlug}` && activeSlug) return true;
-        return false;
+    // A nav item is "active" when its href matches the slug of the page
+    // currently being viewed. Page-kind links resolve to `/slug` (or `/`
+    // for the homepage) via resolveLink / resolvePreviewHref, so a plain
+    // string compare is enough.
+    const isActive = (href) => {
+        if (!activeSlug || !href) return false;
+        return href === `/${activeSlug}` || href === `/${encodeURIComponent(activeSlug)}`;
     };
 
     return (
@@ -63,46 +59,100 @@ export default function Header({ data }) {
             <header className={`header ${scrolled ? 'scrolled' : ''}`}>
                 <div className="header-inner">
                     <a href="#" className="header-logo" onClick={navHandler}>
-                        <div className="logo-tile">{initials}</div>
-                        <span>
-                            <EditableText path="header.logoText" placeholder="Logo">
-                                {data.logoText || ''}
+                        {logo.src ? (
+                            // Image logo — uploaded via Site chrome → Logo image.
+                            // Constrained to roughly the same vertical footprint
+                            // as the letter avatar so the header height doesn't
+                            // jump when switching between modes.
+                            <img
+                                src={logo.src}
+                                alt={brandText || 'Logo'}
+                                className="logo-image"
+                            />
+                        ) : (
+                            // Letter-avatar fallback for sites without an
+                            // uploaded logo image (also covers freshly-created
+                            // sites that have no `logo` field at all).
+                            <div className="logo-tile">{initials}</div>
+                        )}
+                        <span style={brandTextStyle}>
+                            <EditableText path="header.logo.text" placeholder="Logo">
+                                {brandText}
                             </EditableText>
                             <span className="logo-dot">.</span>
                         </span>
                     </a>
                     <nav className="header-nav">
-                        {navItems.map((link, i) => (
-                            <a
-                                key={i}
-                                href={link.href}
-                                onClick={navHandler}
-                                className={isActive(link.href, link.slug) ? 'active' : undefined}
-                            >
-                                {/* Only the user-customized nav is inline-editable
-                                    (auto-generated entries are derived from page
-                                    titles — edit those in the page meta strip). */}
-                                {userNav.length > 0 ? (
-                                    <EditableText path={`header.navLinks.${i}.label`} placeholder="Link">
-                                        {link.label || ''}
-                                    </EditableText>
-                                ) : (
-                                    link.label || ''
-                                )}
-                            </a>
-                        ))}
+                        {navItems.map((link, i) => {
+                            const children = Array.isArray(link.children) ? link.children : [];
+                            const hasDropdown = children.length > 0;
+                            if (!hasDropdown) {
+                                return (
+                                    <a
+                                        key={i}
+                                        href={link.href}
+                                        target={link.target}
+                                        rel={link.rel}
+                                        onClick={navHandler}
+                                        className={isActive(link.href) ? 'active' : undefined}
+                                    >
+                                        <EditableText path={`header.navLinks.${i}.label`} placeholder="Link">
+                                            {link.label || ''}
+                                        </EditableText>
+                                    </a>
+                                );
+                            }
+                            return (
+                                <div key={i} className="nav-item has-dropdown">
+                                    <a
+                                        href={link.href}
+                                        target={link.target}
+                                        rel={link.rel}
+                                        onClick={navHandler}
+                                        className={isActive(link.href) ? 'active' : undefined}
+                                    >
+                                        <EditableText path={`header.navLinks.${i}.label`} placeholder="Link">
+                                            {link.label || ''}
+                                        </EditableText>
+                                    </a>
+                                    <ul className="nav-dropdown">
+                                        {children.map((child, j) => (
+                                            <li key={j}>
+                                                <a
+                                                    href={child.href}
+                                                    target={child.target}
+                                                    rel={child.rel}
+                                                    onClick={navHandler}
+                                                    className={isActive(child.href) ? 'active' : undefined}
+                                                >
+                                                    <EditableText
+                                                        path={`header.navLinks.${i}.children.${j}.label`}
+                                                        placeholder="Link"
+                                                    >
+                                                        {child.label || ''}
+                                                    </EditableText>
+                                                </a>
+                                            </li>
+                                        ))}
+                                    </ul>
+                                </div>
+                            );
+                        })}
                     </nav>
                     <div className="header-actions">
-                        <Button variant="login" href="/app">
-                            <EditableText path="header.loginLabel" placeholder="Log in">
-                                {data.loginLabel || 'Log in'}
-                            </EditableText>
-                        </Button>
-                        <Button variant="primary" href={data.ctaHref || '/app'}>
-                            <EditableText path="header.ctaLabel" placeholder="Get started">
-                                {data.ctaLabel || 'Get started'}
-                            </EditableText>
-                        </Button>
+                        {(data.ctas || []).map((cta, i) => (
+                            <Button
+                                key={cta.id || i}
+                                variant={cta.style || 'primary'}
+                                href={cta.href || '/app'}
+                                target={cta.target}
+                                rel={cta.rel}
+                            >
+                                <EditableText path={`header.ctas.${i}.label`} placeholder="Button">
+                                    {cta.label || ''}
+                                </EditableText>
+                            </Button>
+                        ))}
                         <button
                             type="button"
                             aria-label="Toggle menu"
@@ -116,17 +166,52 @@ export default function Header({ data }) {
             </header>
             <div className={`mobile-nav ${mobileOpen ? 'active' : ''}`}>
                 <div className="mobile-nav-inner">
-                    {navItems.map((link, i) => (
+                    {navItems.map((link, i) => {
+                        const children = Array.isArray(link.children) ? link.children : [];
+                        return (
+                            <React.Fragment key={i}>
+                                <a
+                                    href={link.href}
+                                    target={link.target}
+                                    rel={link.rel}
+                                    onClick={(e) => { navHandler(e); setMobileOpen(false); }}
+                                    className={isActive(link.href) ? 'active' : undefined}
+                                >
+                                    {link.label}
+                                </a>
+                                {/* Mobile: dropdown children are always visible,
+                                    indented under the parent — no hover state on
+                                    touch surfaces. */}
+                                {children.length > 0 ? (
+                                    <div className="mobile-nav-children">
+                                        {children.map((child, j) => (
+                                            <a
+                                                key={j}
+                                                href={child.href}
+                                                target={child.target}
+                                                rel={child.rel}
+                                                onClick={(e) => { navHandler(e); setMobileOpen(false); }}
+                                                className={isActive(child.href) ? 'active' : undefined}
+                                            >
+                                                {child.label}
+                                            </a>
+                                        ))}
+                                    </div>
+                                ) : null}
+                            </React.Fragment>
+                        );
+                    })}
+                    {(data.ctas || []).map((cta, i) => (
                         <a
-                            key={i}
-                            href={link.href}
+                            key={cta.id || i}
+                            href={cta.href || '/app'}
+                            target={cta.target}
+                            rel={cta.rel}
                             onClick={(e) => { navHandler(e); setMobileOpen(false); }}
-                            className={isActive(link.href, link.slug) ? 'active' : undefined}
                         >
-                            {link.label}
+                            {cta.label || ''}
                         </a>
                     ))}
-                    <a href="/app" onClick={navHandler}>{data.loginLabel || 'Log in'}</a>
                 </div>
             </div>
         </SectionFrame>

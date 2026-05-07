@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { authFetch } from '../../../utils/helpers';
 import AppIcon from '../../AppIcon';
-import { Toggle } from './fields';
+import { Toggle, CreatePageContext } from './fields';
 import { BLOCK_CATALOGUE, BLOCK_EDITORS, BLOCK_DEFAULTS, HeaderEditor, FooterEditor } from './editors';
 import PageList from './PageList';
 import BlockList from './BlockList';
@@ -41,10 +41,10 @@ const ACTIVE_SITE_LS_KEY = 'cms.activeSiteId';
  * postMessage protocol:
  *   ← cms-preview-ready
  *   ← cms-edit            { path, value }
- *   ← cms-section-action  { section, action }   (section = block.id)
- *   → cms-preview         { content, design }   content = { header, footer, blocks };
- *                                                design = site.design (colors/fonts/radius/theme)
- *   → cms-active-section  { section }
+ *   → cms-preview         { content, design, previewMode }
+ *                                                content = { header, footer, blocks };
+ *                                                design = site.design (colors/fonts/radius/theme);
+ *                                                previewMode = 'page' | 'chrome'
  */
 
 const SITE_VIRTUAL_ID   = '__site__';
@@ -58,6 +58,17 @@ function newBlockId() {
 
 function cloneBlock(block) {
     return { ...JSON.parse(JSON.stringify(block)), id: newBlockId() };
+}
+
+function formatRelative(iso) {
+    if (!iso) return null;
+    const ts = Date.parse(iso);
+    if (Number.isNaN(ts)) return null;
+    const diffSec = Math.max(0, Math.round((Date.now() - ts) / 1000));
+    if (diffSec < 45)    return 'just now';
+    if (diffSec < 3600)  return `${Math.round(diffSec / 60)}m ago`;
+    if (diffSec < 86400) return `${Math.round(diffSec / 3600)}h ago`;
+    return new Date(ts).toLocaleDateString();
 }
 
 function SaveBadge({ status }) {
@@ -123,12 +134,20 @@ export default function ProductWebsitePanel() {
     // ── server state ────────────────────────────────────────────────
     const [loading, setLoading]               = useState(true);
     const [error, setError]                   = useState(null);
-    const [enabled, setEnabled]               = useState(false);
+    // liveSiteId is the *globally* live project id (or null). The Live
+    // toggle in the panel reflects whether this site === liveSiteId,
+    // since at most one project can be live at a time.
+    const [liveSiteId, setLiveSiteId]         = useState(null);
     const [defaultLocale, setDefaultLocale]   = useState('en');
     const [locales, setLocales]               = useState([{ code: 'en', name: 'English', isDefault: true }]);
     const [site, setSiteDoc]                  = useState(null);   // SiteDoc
     const [pages, setPages]                   = useState([]);     // [PageDoc]
     const [saveStatus, setSaveStatus]         = useState('idle');
+    // ISO string of the last successful publish for the active site, or
+    // null if it has never been published. Drives the "Publish" button
+    // hint and the disabled state when there's nothing new to ship.
+    const [publishedAt, setPublishedAt]       = useState(null);
+    const [publishing, setPublishing]         = useState(false);
 
     // ── editor state ────────────────────────────────────────────────
     const [activeLocale, setActiveLocale]     = useState('en');
@@ -143,6 +162,11 @@ export default function ProductWebsitePanel() {
     const saveTimerRef      = useRef(null);
     const saveStatusTimer   = useRef(null);
     const pendingSaves      = useRef({});   // { [pageId]: PageDoc | 'site' }
+    // Tracks the most recent flushSaves() Promise so handlePublish can await
+    // an in-flight save that was kicked off by the debounce timer firing
+    // (the timer callback otherwise drops the Promise on the floor, which
+    // lets a Publish click race the network round-trip).
+    const inFlightSaveRef   = useRef(null);
 
     // ── derived ─────────────────────────────────────────────────────
 
@@ -200,6 +224,7 @@ export default function ProductWebsitePanel() {
                 if (cancelled) return;
                 const list = Array.isArray(data.sites) ? data.sites : [];
                 setSites(list);
+                setLiveSiteId(data.liveSiteId || null);
                 const remembered = (() => {
                     try { return localStorage.getItem(ACTIVE_SITE_LS_KEY); } catch { return null; }
                 })();
@@ -237,6 +262,7 @@ export default function ProductWebsitePanel() {
         setActivePageId(SITE_VIRTUAL_ID);
         setActiveBlockId(null);
         setSaveStatus('idle');
+        setPublishedAt(null);
         pendingSaves.current = {};
         (async () => {
             try {
@@ -244,11 +270,14 @@ export default function ProductWebsitePanel() {
                 if (!res.ok) throw new Error(`Failed to load site (${res.status})`);
                 const data = await res.json();
                 if (cancelled) return;
-                setEnabled(!!data.enabled);
+                // Server includes liveSiteId on the site payload — refresh
+                // it here in case another tab toggled live in the meantime.
+                if (data.liveSiteId !== undefined) setLiveSiteId(data.liveSiteId || null);
                 setDefaultLocale(data.defaultLocale || 'en');
                 setLocales(data.locales || [{ code: 'en', name: 'English', isDefault: true }]);
                 setSiteDoc(data.site || null);
                 setPages(data.pages || []);
+                setPublishedAt(data.publishedAt || null);
                 setActiveLocale(data.defaultLocale || 'en');
                 const firstPageId = data.site?.pages?.[0]?.id;
                 setActivePageId(firstPageId || SITE_VIRTUAL_ID);
@@ -270,7 +299,14 @@ export default function ProductWebsitePanel() {
         pendingSaves.current[key] = payload;
         setSaveStatus('dirty');
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = setTimeout(flushSaves, 800);
+        saveTimerRef.current = setTimeout(() => {
+            saveTimerRef.current = null;
+            // Track the Promise so handlePublish can await it. Without this
+            // ref, an in-flight save races the publish POST: the publish
+            // reads the DB before the PUT lands, and the snapshot misses
+            // the latest edits.
+            inFlightSaveRef.current = flushSaves();
+        }, 800);
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const flushSaves = useCallback(async () => {
@@ -362,10 +398,34 @@ export default function ProductWebsitePanel() {
     // from ProductWebsite.jsx into each section and have EditableText use
     // `${blockId}.field` paths. Out of scope for now.
     const applyIframeEdit = useCallback((path, value) => {
+        // Site-chrome paths (header.* / footer.*) target the SiteDoc, not a
+        // page block. The iframe receives chrome in a re-shaped form
+        // (buildPreviewContent below) — e.g. footer.brand.blurb is the
+        // display path while the SiteDoc stores it at footer.blurb. We
+        // resolve the iframe path back to the SiteDoc path here and write
+        // straight through setSiteDoc + scheduleSave('site', …) (mirrors
+        // updateSiteChrome — inlined to avoid a TDZ on its declaration,
+        // which lives further down).
+        if ((path.startsWith('header.') || path.startsWith('footer.')) && site) {
+            const next = applyChromeEdit(site, path, value);
+            if (next) {
+                setSiteDoc(next);
+                scheduleSave('site', next);
+            }
+            return;
+        }
+
         if (!activePage) return;
         const parts = path.split('.');
         const blockType = parts[0];
-        const fieldPath = parts.slice(1);
+        // Convert numeric segments to actual numbers so paths into arrays
+        // (e.g. content.columns.0.elements.1.body) recognise the array
+        // indices when we walk + clone. With strings, the recursive
+        // `Array.isArray(cur[k]) ? [...] : {...}` decision still works for
+        // SETTING the leaf, but only if the array has been pre-allocated
+        // by the editor — which it will be once the new Content shape
+        // lands. Numeric coercion keeps things consistent either way.
+        const fieldPath = parts.slice(1).map(seg => /^\d+$/.test(seg) ? Number(seg) : seg);
 
         updatePage(activePage.id, p => {
             let matched = false;
@@ -378,7 +438,16 @@ export default function ProductWebsitePanel() {
                     let cur = content;
                     for (let i = 0; i < fieldPath.length - 1; i++) {
                         const k = fieldPath[i];
-                        cur[k] = Array.isArray(cur[k]) ? [...cur[k]] : { ...(cur[k] || {}) };
+                        // Pick the right shape for the next level: numeric
+                        // *next* segment → array; string → object.
+                        const nextIsArrayIndex = typeof fieldPath[i + 1] === 'number';
+                        if (nextIsArrayIndex) {
+                            cur[k] = Array.isArray(cur[k]) ? [...cur[k]] : [];
+                        } else {
+                            cur[k] = (cur[k] && typeof cur[k] === 'object' && !Array.isArray(cur[k]))
+                                ? { ...cur[k] }
+                                : (Array.isArray(cur[k]) ? [...cur[k]] : {});
+                        }
                         cur = cur[k];
                     }
                     cur[fieldPath[fieldPath.length - 1]] = value;
@@ -386,7 +455,7 @@ export default function ProductWebsitePanel() {
                 }),
             };
         });
-    }, [activePage, updatePage]);
+    }, [activePage, updatePage, site, scheduleSave]);
 
     // ── block CRUD ───────────────────────────────────────────────────
 
@@ -440,9 +509,15 @@ export default function ProductWebsitePanel() {
 
     // ── page CRUD (round-trips — no optimistic debounce needed here) ─
 
-    const handleAddPage = useCallback(async ({ title, slug }) => {
+    // Creates a page on the active site. Returns { id, slug, title } so
+    // callers (e.g. the LinkField "Create new page…" picker) can immediately
+    // point a link at the freshly-created page without round-tripping
+    // through the page list. Callers that initiated from PageList (the
+    // default) get the new page focused in the side panel; callers from
+    // inside a picker pass `{ keepActive: true }` to stay where they were.
+    const handleAddPage = useCallback(async ({ title, slug } = {}, options = {}) => {
         const siteId = activeSiteIdRef.current;
-        if (!siteId) return;
+        if (!siteId) return null;
         try {
             const res = await authFetch(cmsApi.pages(siteId), {
                 method: 'POST',
@@ -453,8 +528,14 @@ export default function ProductWebsitePanel() {
             if (!res.ok) throw new Error(data.error || 'Failed to create page');
             // Reload full payload so site index + page doc are consistent.
             await reloadPayload();
-            setActivePageId(data.id);
-        } catch (err) { setError(err.message); }
+            if (!options.keepActive) setActivePageId(data.id);
+            return { id: data.id, slug: data.slug, title: title || data.slug };
+        } catch (err) {
+            setError(err.message);
+            // Rethrow so picker callers can surface the error inline
+            // instead of silently swallowing it.
+            throw err;
+        }
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
     const handleDuplicatePage = useCallback(async (pageId) => {
@@ -523,6 +604,7 @@ export default function ProductWebsitePanel() {
         setSiteDoc(data.site || null);
         setPages(data.pages || []);
         setLocales(data.locales || locales);
+        if (data.publishedAt !== undefined) setPublishedAt(data.publishedAt || null);
     }, [locales]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ── site chrome mutations ────────────────────────────────────────
@@ -548,16 +630,81 @@ export default function ProductWebsitePanel() {
 
     // ── top-level toggles ────────────────────────────────────────────
 
-    const persistEnabled = async (next) => {
-        setEnabled(next);
-        try {
-            await authFetch(cmsApi.enabled(), {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ enabled: next }),
-            });
-        } catch (err) { setError(err.message); }
+    // Toggle whether *this* site (activeSiteId) is the live one. Only one
+    // project can be live at a time; when another site is currently live
+    // the user must confirm taking it offline before this one goes live.
+    const persistLive = async (next) => {
+        if (!activeSiteId) return;
+        if (next) {
+            const otherLive = liveSiteId && liveSiteId !== activeSiteId
+                ? sites.find(s => s.id === liveSiteId)
+                : null;
+            if (otherLive) {
+                const ok = window.confirm(
+                    `"${otherLive.name}" is currently live. Setting this site live will take "${otherLive.name}" offline. Continue?`
+                );
+                if (!ok) return;
+            }
+            setLiveSiteId(activeSiteId);
+            try {
+                const res = await authFetch(cmsApi.siteLive(activeSiteId), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ live: true }),
+                });
+                if (!res.ok) throw new Error(`Failed to set live (${res.status})`);
+            } catch (err) {
+                setError(err.message);
+                setLiveSiteId(liveSiteId);   // roll back optimistic update
+            }
+        } else {
+            setLiveSiteId(null);
+            try {
+                const res = await authFetch(cmsApi.siteLive(activeSiteId), {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ live: false }),
+                });
+                if (!res.ok) throw new Error(`Failed to take site offline (${res.status})`);
+            } catch (err) {
+                setError(err.message);
+                setLiveSiteId(liveSiteId);
+            }
+        }
     };
+
+    // Publish — snapshot the current draft on the server. Drains pending
+    // debounced saves first so in-flight edits land in the snapshot rather
+    // than being captured by the next publish click. The public site
+    // (/api/cms/site) reads from this snapshot.
+    const handlePublish = useCallback(async () => {
+        const siteId = activeSiteIdRef.current;
+        if (!siteId) return;
+        // Drain any pending save in three steps:
+        //   1. Cancel an unfired debounce timer (would re-queue work).
+        //   2. Await any save the timer already started (in-flight PUTs).
+        //   3. Run flushSaves once more to push anything queued since.
+        if (saveTimerRef.current) {
+            clearTimeout(saveTimerRef.current);
+            saveTimerRef.current = null;
+        }
+        if (inFlightSaveRef.current) {
+            try { await inFlightSaveRef.current; } catch { /* error already surfaced */ }
+            inFlightSaveRef.current = null;
+        }
+        await flushSaves();
+        setPublishing(true);
+        try {
+            const res = await authFetch(cmsApi.sitePublish(siteId), { method: 'POST' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || `Publish failed (${res.status})`);
+            setPublishedAt(data.publishedAt || new Date().toISOString());
+        } catch (err) {
+            setError(err.message);
+        } finally {
+            setPublishing(false);
+        }
+    }, [flushSaves]);
 
     const persistDefaultLocale = async (next) => {
         setDefaultLocale(next);
@@ -575,21 +722,20 @@ export default function ProductWebsitePanel() {
     const postPreview = useCallback(() => {
         const win = iframeRef.current?.contentWindow;
         if (!win || !previewReadyRef.current) return;
-        // Build preview content: header + footer from site, blocks from the
-        // preview-target page (active page if editing one, homepage when on
-        // a virtual entry like Design or Site chrome).
-        const content = buildPreviewContent(site, previewPage);
+        // Site-chrome view: render header + a neutral placeholder body +
+        // footer so the user can see the chrome in isolation. Pass a
+        // blocks-less page so buildPreviewContent doesn't carry homepage
+        // blocks through, and tag the message with previewMode='chrome'
+        // so the iframe shows the explainer instead of an empty body.
+        const isChromeView = activePageId === SITE_VIRTUAL_ID;
+        const pageForPreview = isChromeView ? { blocks: [] } : previewPage;
+        const content = buildPreviewContent(site, pageForPreview);
         // Design flows alongside content (not nested) so the iframe can
         // apply CSS variables independently of content updates.
         const design = site?.design || null;
-        win.postMessage({ type: 'cms-preview', content, design }, '*');
-    }, [site, previewPage]);
-
-    const postActiveSection = useCallback((id) => {
-        const win = iframeRef.current?.contentWindow;
-        if (!win || !previewReadyRef.current) return;
-        win.postMessage({ type: 'cms-active-section', section: id }, '*');
-    }, []);
+        const previewMode = isChromeView ? 'chrome' : 'page';
+        win.postMessage({ type: 'cms-preview', content, design, previewMode }, '*');
+    }, [site, previewPage, activePageId]);
 
     useEffect(() => {
         const onMessage = (e) => {
@@ -599,35 +745,22 @@ export default function ProductWebsitePanel() {
             if (msg.type === 'cms-preview-ready') {
                 previewReadyRef.current = true;
                 postPreview();
-                if (activeBlockId) postActiveSection(activeBlockId);
                 return;
             }
             if (msg.type === 'cms-edit' && typeof msg.path === 'string') {
                 applyIframeEdit(msg.path, msg.value);
                 return;
             }
-            if (msg.type === 'cms-section-action' && msg.section) {
-                if (msg.action === 'focus') {
-                    setActiveBlockId(msg.section);
-                }
-                if (msg.action === 'toggle') {
-                    toggleBlock(msg.section);
-                }
-            }
         };
         window.addEventListener('message', onMessage);
         return () => window.removeEventListener('message', onMessage);
-    }, [postPreview, postActiveSection, applyIframeEdit, toggleBlock, activeBlockId]);
+    }, [postPreview, applyIframeEdit]);
 
     // Push to iframe when active page or site chrome changes.
     useEffect(() => {
         const t = setTimeout(postPreview, 200);
         return () => clearTimeout(t);
     }, [postPreview]);
-
-    useEffect(() => {
-        if (activeBlockId) postActiveSection(activeBlockId);
-    }, [activeBlockId, postActiveSection]);
 
     // When switching pages, focus the first block. The iframe stays mounted —
     // the postPreview() push below carries the new page's content via
@@ -704,6 +837,10 @@ export default function ProductWebsitePanel() {
         const data = await res.json();
         const list = Array.isArray(data.sites) ? data.sites : [];
         setSites(list);
+        // Server clears cms_live_site_id when the live project is deleted —
+        // mirror that here so the toggle/indicator stay in sync without a
+        // second round-trip.
+        setLiveSiteId(data.liveSiteId || null);
         return list;
     }, []);
 
@@ -766,6 +903,22 @@ export default function ProductWebsitePanel() {
         } catch (err) { setError(err.message); }
     }, [handleSwitchSite, refreshSites]);
 
+    // Context value for the LinkField "+ Create new page…" picker. Wraps
+    // handleAddPage with keepActive=true so the user stays on whatever
+    // they were configuring (Site chrome / current block) instead of
+    // being yanked onto the freshly-created page editor. Memoized so the
+    // Provider value reference is stable — without it every render of
+    // ProductWebsitePanel would re-trigger every consuming LinkField.
+    //
+    // MUST be declared above the early-return guards below: hooks have
+    // to run unconditionally on every render (otherwise React throws
+    // "Rendered more hooks than during the previous render" once the
+    // guards stop firing).
+    const createPageFromPicker = useCallback(
+        (input) => handleAddPage(input, { keepActive: true }),
+        [handleAddPage],
+    );
+
     // ── render ───────────────────────────────────────────────────────
 
     if (!sitesLoaded || (loading && !site)) {
@@ -796,6 +949,7 @@ export default function ProductWebsitePanel() {
     ];
 
     return (
+      <CreatePageContext.Provider value={createPageFromPicker}>
         <div className="h-full flex flex-row" style={{ background: 'var(--bg-primary)' }}>
 
             {/* ── PANE A: page list (160px) ── */}
@@ -805,6 +959,7 @@ export default function ProductWebsitePanel() {
                     <SiteSwitcher
                         sites={sites}
                         activeSiteId={activeSiteId}
+                        liveSiteId={liveSiteId}
                         onSelect={handleSwitchSite}
                         onCreate={handleCreateSite}
                         onRename={handleRenameSite}
@@ -817,7 +972,20 @@ export default function ProductWebsitePanel() {
                         <span className="text-xs font-semibold text-[var(--text-primary)]">Website</span>
                         <SaveBadge status={saveStatus} />
                     </div>
-                    <Toggle label="Live" value={enabled} onChange={persistEnabled} />
+                    <Toggle label="Live" value={liveSiteId === activeSiteId} onChange={persistLive} />
+                    <button
+                        type="button"
+                        onClick={handlePublish}
+                        disabled={publishing || saveStatus === 'saving'}
+                        className="mt-2 w-full px-2 py-1.5 rounded-md text-xs font-medium bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-primary)]/90 disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                        {publishing ? 'Publishing…' : 'Publish'}
+                    </button>
+                    <p className="text-[10px] text-[var(--text-muted)] mt-1 text-center">
+                        {publishedAt
+                            ? `Last published ${formatRelative(publishedAt)}`
+                            : 'Not published yet — drafts only visible in editor'}
+                    </p>
                     <select
                         className="w-full mt-1 px-2 py-1.5 rounded-md text-xs border bg-[var(--bg-tertiary)] border-[var(--border-default)] text-[var(--text-primary)]"
                         value={activeLocale}
@@ -878,6 +1046,7 @@ export default function ProductWebsitePanel() {
                         onDuplicate={handleDuplicatePage}
                         onDelete={handleDeletePage}
                         onSetHomepage={handleSetHomepage}
+                        onRename={(pageId, title) => savePageMeta(pageId, { title })}
                         onReorder={handleReorderPages}
                     />
                 </div>
@@ -886,10 +1055,15 @@ export default function ProductWebsitePanel() {
                 <div className="p-2 border-t border-[var(--border-subtle)] shrink-0">
                     {error
                         ? <p className="text-xs text-red-400 truncate" title={error}>{error}</p>
-                        : <a href="/" target="_blank" rel="noreferrer"
-                              className="text-xs text-[var(--text-muted)] hover:text-[var(--accent-primary)]">
-                              Open live site ↗
-                          </a>
+                        : (liveSiteId === activeSiteId
+                            ? <a href="/" target="_blank" rel="noreferrer"
+                                  className="text-xs text-[var(--text-muted)] hover:text-[var(--accent-primary)]">
+                                  Open live site ↗
+                              </a>
+                            : <span className="text-xs text-[var(--text-muted)] italic">
+                                  Toggle Live to bring this site online
+                              </span>
+                        )
                     }
                 </div>
             </div>
@@ -1016,7 +1190,7 @@ export default function ProductWebsitePanel() {
                     {rightView === 'preview' && (
                         <span className="text-[10px] text-[var(--text-muted)] pr-4">
                             {isSiteView ? 'site chrome' : isDesignView ? 'design' : (activePage?.slug || 'home')} · {activeLocale}
-                            {!enabled ? ' · disabled' : ''}
+                            {liveSiteId !== activeSiteId ? ' · editor only' : ''}
                             {' · '}Click text to edit
                         </span>
                     )}
@@ -1046,6 +1220,7 @@ export default function ProductWebsitePanel() {
                 )}
             </div>
         </div>
+      </CreatePageContext.Provider>
     );
 }
 
@@ -1233,29 +1408,38 @@ function MetaToggle({ label, value, onChange }) {
 function buildPreviewContent(site, activePage) {
     const out = {};
 
-    // Header + footer from site chrome. The header carries:
-    //   navLinks  — user-customized nav from site.header.nav (may be empty)
-    //   pages     — full page list so Header.jsx can auto-build nav when
-    //               navLinks is empty (every page becomes a link, sans home)
-    //   activeSlug — the page being previewed, so Header.jsx can mark its
-    //                nav link active. Empty string means home.
+    // Header from site chrome. The header carries:
+    //   navLinks  — user-customized nav from site.header.nav (the ONLY
+    //               source of nav items now; pages no longer auto-merge)
+    //   activeSlug — the page being previewed, so Header.jsx can mark
+    //                its matching nav entry active. Empty string = home.
     if (site?.header) {
         out.header = {
             enabled: site.header.enabled !== false,
+            // Logo & brand — `logo` is the new shape; `logoText` is kept
+            // alongside as a fallback for the public renderer's legacy
+            // path (Header.jsx prefers logo.text when present).
             logoText: site.header.logoText,
+            logo: site.header.logo || undefined,
             loginLabel: site.header.loginLabel,
-            ctaLabel: site.header.ctaLabel,
-            ctaHref: site.header.ctaLink?.path || site.header.ctaLink?.url || '/app',
+            // Header buttons (multi-CTA). Each entry carries label, href
+            // (resolved), style, and any target/rel from "Open in new tab".
+            ctas: (site.header.ctas || []).map(cta => ({
+                id: cta.id,
+                label: cta.label,
+                href: resolvePreviewHref(cta.link, site?.pages),
+                style: cta.style || 'primary',
+            })),
             navLinks: (site.header.nav || []).map(n => ({
                 label: n.label,
                 href: resolvePreviewHref(n.link, site?.pages),
-            })),
-            pages: (site?.pages || []).map(p => ({
-                slug: p.slug,
-                title: p.title,
-                isHomepage: !!p.isHomepage,
-                showInNav: p.showInNav !== false,
-                navOrder:  typeof p.navOrder === 'number' ? p.navOrder : 0,
+                // Dropdown children are flattened the same way as the
+                // parent so Header.jsx can render them without knowing
+                // anything about the storage Link shape.
+                children: (n.children || []).map(c => ({
+                    label: c.label,
+                    href: resolvePreviewHref(c.link, site?.pages),
+                })),
             })),
             activeSlug: activePage?.isHomepage ? '' : (activePage?.slug || ''),
         };
@@ -1263,6 +1447,12 @@ function buildPreviewContent(site, activePage) {
     if (site?.footer) {
         out.footer = {
             enabled: site.footer.enabled !== false,
+            // Opt-in 3-button (system / light / dark) switcher rendered
+            // by the public Footer. Off by default — only emitted when
+            // the user toggles it on in the Site chrome editor.
+            themeSwitcher: site.footer.themeSwitcher?.enabled
+                ? { enabled: true }
+                : undefined,
             brand: { logoText: site.footer.brandText, blurb: site.footer.blurb },
             columns: (site.footer.columns || []).map(c => ({
                 heading: c.heading,
@@ -1347,4 +1537,72 @@ function legacyifyLinks(node, pages) {
             legacyifyLinks(v, pages);
         }
     }
+}
+
+// ── Chrome-path inverse mapper ───────────────────────────────────────
+//
+// buildPreviewContent re-shapes the SiteDoc for the iframe, so EditableText
+// emits paths in display-shape (e.g. footer.brand.blurb), while the SiteDoc
+// stores them in storage-shape (footer.blurb). applyChromeEdit walks the
+// path, translates the few non-passthrough keys, and returns a new SiteDoc
+// with the value applied. Returns null if the path doesn't map to anything
+// the SiteDoc owns (so the caller can ignore the edit safely).
+function applyChromeEdit(site, path, value) {
+    const parts = path.split('.');
+    const root = parts[0];
+    if (root !== 'header' && root !== 'footer') return null;
+
+    // Translate iframe-shape segments to storage-shape segments.
+    let storagePath;
+    if (root === 'footer' && parts[1] === 'brand' && parts[2] === 'logoText' && parts.length === 3) {
+        storagePath = ['footer', 'brandText'];
+    } else if (root === 'footer' && parts[1] === 'brand' && parts[2] === 'blurb' && parts.length === 3) {
+        storagePath = ['footer', 'blurb'];
+    } else if (root === 'header' && parts[1] === 'navLinks') {
+        // header.navLinks.{i}.label                       → header.nav[i].label
+        // header.navLinks.{i}.children.{j}.label          → header.nav[i].children[j].label
+        // Convert numeric segments in the tail to actual numbers so setIn
+        // recognises array indices (otherwise children would silently be
+        // converted to a plain object keyed by numeric strings).
+        storagePath = [
+            'header',
+            'nav',
+            Number(parts[2]),
+            ...parts.slice(3).map(seg => /^\d+$/.test(seg) ? Number(seg) : seg),
+        ];
+    } else if (root === 'header' && parts[1] === 'ctas') {
+        // header.ctas.{i}.label → header.ctas[i].label (storage shape
+        // matches display shape here, but we still need to convert the
+        // index to a number for setIn).
+        storagePath = [
+            'header',
+            'ctas',
+            Number(parts[2]),
+            ...parts.slice(3).map(seg => /^\d+$/.test(seg) ? Number(seg) : seg),
+        ];
+    } else {
+        // Pass-through: header.logoText / header.logo.text / header.loginLabel /
+        // footer.copyright / footer.columns.{i}.heading /
+        // footer.columns.{i}.links.{j}.label
+        storagePath = parts.map(seg => /^\d+$/.test(seg) ? Number(seg) : seg);
+    }
+
+    return setIn(site, storagePath, value);
+}
+
+// Immutable nested setter. Numeric path segments produce arrays; string
+// segments produce objects. Missing intermediate nodes are created so the
+// edit can land even when the user is filling in a freshly-empty field.
+function setIn(obj, path, value) {
+    if (path.length === 0) return value;
+    const [head, ...tail] = path;
+    const childIsArray = tail.length > 0 && typeof tail[0] === 'number';
+    const headIsArray = typeof head === 'number';
+    const base = headIsArray ? (Array.isArray(obj) ? [...obj] : []) : { ...(obj || {}) };
+    const childExisting = base[head];
+    const childInit = childIsArray
+        ? (Array.isArray(childExisting) ? childExisting : [])
+        : (childExisting && typeof childExisting === 'object' ? childExisting : {});
+    base[head] = setIn(tail.length ? childInit : undefined, tail, value);
+    return base;
 }
