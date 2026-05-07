@@ -356,21 +356,23 @@ export default function useAgentApi(state, { systemMode, securityMode, initialAg
         }
     };
 
-    const togglePublish = async (targetGroups = undefined) => {
+    // Send explicit (isPublished, groups) to the publish endpoint. The
+    // togglePublish wrapper keeps the legacy "no args = flip" semantics for
+    // older callsites; the menu uses setPublishState directly so the user
+    // can switch between Personal / Org / Specific Groups in one click.
+    const setPublishState = async (nextPublished, nextGroups = []) => {
         if (!selectedAgent) return;
-        const newPublished = targetGroups !== undefined ? true : !isPublished;
-        const newSharedGroups = targetGroups !== undefined ? targetGroups : sharedGroups;
-
+        const groups = nextPublished ? (Array.isArray(nextGroups) ? nextGroups : []) : [];
         try {
             const res = await authFetch(securityMode ? `${API_BASE}/security-agents/${selectedAgent.id}/publish` : `${API_BASE}/agents/${selectedAgent.id}/publish`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ isPublished: newPublished, sharedGroups: newSharedGroups })
+                body: JSON.stringify({ isPublished: nextPublished, sharedGroups: groups })
             });
 
             if (res.ok) {
-                setIsPublished(newPublished);
-                setSharedGroups(newSharedGroups);
+                setIsPublished(nextPublished);
+                setSharedGroups(groups);
                 setShowPublishMenu(false);
                 fetchAgents();
             } else {
@@ -384,6 +386,11 @@ export default function useAgentApi(state, { systemMode, securityMode, initialAg
             alert('Failed to publish agent. Please try again.');
         }
     };
+    const togglePublish = (targetGroups = undefined) => {
+        const nextPublished = targetGroups !== undefined ? true : !isPublished;
+        const nextGroups = targetGroups !== undefined ? targetGroups : sharedGroups;
+        return setPublishState(nextPublished, nextGroups);
+    };
 
     const toggleTool = (componentId) => {
         setSelectedTools(prev =>
@@ -395,6 +402,6 @@ export default function useAgentApi(state, { systemMode, securityMode, initialAg
 
     return {
         fetchAgents, selectAgent, createNewAgent, saveAgent,
-        deleteAgent, duplicateAgent, togglePublish, toggleTool,
+        deleteAgent, duplicateAgent, togglePublish, setPublishState, toggleTool,
     };
 }

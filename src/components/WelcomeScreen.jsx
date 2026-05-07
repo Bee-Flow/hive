@@ -1,6 +1,7 @@
 import React from 'react';
 import { MessageSquare, Sparkles } from 'lucide-react';
 import { useTranslation } from '../hooks/useTranslation';
+import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar } from '../utils/agentAvatar';
 
 const WelcomeScreen = ({ agent, onSendMessage, children }) => {
     const { t } = useTranslation();
@@ -9,13 +10,14 @@ const WelcomeScreen = ({ agent, onSendMessage, children }) => {
         ? agent.starter_prompts
         : (typeof agent?.starter_prompts === 'string' ? JSON.parse(agent.starter_prompts || '[]') : []);
 
+    const avatar = pickAgentAvatar(agent);
     return (
         <div className="flex flex-col items-center justify-center max-w-3xl mx-auto p-8 text-center animate-fade-in w-full">
             <div className="w-16 h-16 rounded-full flex items-center justify-center mb-4 overflow-hidden">
-                {agent?.avatar && (agent.avatar.startsWith('data:') || agent.avatar.startsWith('http')) ? (
-                    <img src={agent.avatar} alt="" className="w-full h-full object-cover" />
-                ) : agent?.avatar ? (
-                    <span className="text-3xl filter drop-shadow-md">{agent.avatar}</span>
+                {isImageAvatar(avatar) ? (
+                    <img src={resolveAvatarSrc(avatar)} alt="" className="w-full h-full object-cover" />
+                ) : avatar ? (
+                    <span className="text-3xl filter drop-shadow-md">{avatar}</span>
                 ) : (
                     <span className="text-2xl font-bold">{agent?.name?.[0]?.toUpperCase()}</span>
                 )}

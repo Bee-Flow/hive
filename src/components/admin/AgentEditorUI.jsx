@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import KnowledgePanel from '../KnowledgePanel';
 import VersionHistory from '../VersionHistory';
 import { API_BASE } from '../../utils/helpers';
+import { isImageAvatar, resolveAvatarSrc, DEFAULT_AGENT_EMOJI } from '../../utils/agentAvatar';
 import { useUrlQueryParam } from '../../hooks/useUrlTab';
 import AgentSkillsTab from './AgentSkillsTab';
 
@@ -93,9 +94,9 @@ const AgentEditorUI = ({
                                     onClick={() => setShowEmojiPicker(!showEmojiPicker)}
                                     className="w-full aspect-square text-2xl rounded-xl border border-[var(--border-default)] bg-[var(--bg-tertiary)] flex items-center justify-center hover:border-[var(--accent-primary)] transition-all overflow-hidden"
                                 >
-                                    {data.avatar && (data.avatar.startsWith('data:') || data.avatar.startsWith('http')) ? (
-                                        <img src={data.avatar} alt="" className="w-full h-full object-cover" />
-                                    ) : (data.avatar || '🤖')}
+                                    {isImageAvatar(data.avatar) ? (
+                                        <img src={resolveAvatarSrc(data.avatar)} alt="" className="w-full h-full object-cover" />
+                                    ) : (data.avatar || DEFAULT_AGENT_EMOJI)}
                                 </button>
                                 {showEmojiPicker && (
                                     <div className="absolute top-full left-0 mt-2 p-3 rounded-xl border border-[var(--border-default)] bg-[var(--bg-secondary)] shadow-xl z-50 w-64">

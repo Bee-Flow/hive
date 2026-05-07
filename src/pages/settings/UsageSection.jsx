@@ -1,7 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
-import { Bot, MessageSquare, BookOpen, Search, Code, LayoutTemplate, Filter, X, Cpu, Users, ChevronDown, Activity, ArrowUpRight, ArrowDownLeft, BarChart3, Zap, DollarSign, TrendingUp, ChevronRight, Shield, AlertTriangle, Eye, Fingerprint, Clock, Globe, Server, ArrowRight, ArrowLeft, Link2, Info, FileText, ScanEye, ShieldCheck, Binary } from 'lucide-react';
+import { Bot, MessageSquare, BookOpen, Search, Code, LayoutTemplate, Filter, X, Cpu, Users, ChevronDown, Activity, ArrowUpRight, ArrowDownLeft, BarChart3, Zap, DollarSign, TrendingUp, ChevronRight, Shield, AlertTriangle, Eye, Fingerprint, Clock, Globe, Server, ArrowRight, ArrowLeft, Link2, Info, FileText, ScanEye, ShieldCheck, Binary, ThumbsUp } from 'lucide-react';
+import OrgFeedbackPanel from './OrgFeedbackPanel';
+import OrgTerminationsPanel from './OrgTerminationsPanel';
 
 // ── Formatters ──────────────────────────────────────────────────────────────
 const fNum = (n) => {
@@ -254,6 +256,8 @@ const REPORT_TABS = [
     { id: 'overview', labelKey: 'usage.tab_overview', icon: BarChart3, color: '#6366f1' },
     { id: 'safety', labelKey: 'usage.tab_safety', icon: Shield, color: '#ef4444' },
     { id: 'integrations', labelKey: 'usage.tab_integrations', icon: Globe, color: '#0ea5e9' },
+    { id: 'feedback', labelKey: 'usage.tab_feedback', icon: ThumbsUp, color: '#10b981' },
+    { id: 'terminations', labelKey: 'usage.tab_terminations', icon: AlertTriangle, color: '#f43f5e' },
 ];
 
 const ReportTabBar = ({ active, onChange, t: translate }) => (
@@ -446,7 +450,8 @@ const UsageSection = () => {
 
             {/* ── Filter Bar ── */}
             <div style={{
-                display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap',
+                display: (activeReport === 'feedback' || activeReport === 'terminations') ? 'none' : 'flex',
+                alignItems: 'center', gap: 6, flexWrap: 'wrap',
                 padding: '6px 10px', borderRadius: 10,
                 background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)',
             }}>
@@ -467,7 +472,7 @@ const UsageSection = () => {
                 )}
             </div>
 
-            {loading ? (
+            {loading && activeReport !== 'feedback' && activeReport !== 'terminations' ? (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
                         {[1, 2, 3, 4].map(i => <div key={i} style={{ height: 80, borderRadius: 12, background: 'var(--bg-tertiary)', animation: 'pulse 1.5s ease-in-out infinite' }} />)}
@@ -1381,6 +1386,20 @@ const UsageSection = () => {
                             </>
                         )}
                     </div>)}
+
+                    {/* ════════════════════════════════════════════════════════════ */}
+                    {/* FEEDBACK TAB                                                */}
+                    {/* ════════════════════════════════════════════════════════════ */}
+                    {activeReport === 'feedback' && (
+                        <OrgFeedbackPanel />
+                    )}
+
+                    {/* ════════════════════════════════════════════════════════════ */}
+                    {/* TERMINATIONS TAB                                            */}
+                    {/* ════════════════════════════════════════════════════════════ */}
+                    {activeReport === 'terminations' && (
+                        <OrgTerminationsPanel />
+                    )}
                 </>
             )}
         </div>

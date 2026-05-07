@@ -77,7 +77,6 @@ export default function AutomationList({ onOpenBuilder }) {
                             <div style={{ fontWeight: 600 }}>
                                 {a.title}
                                 {a.isDraft && <span style={{ marginLeft: 8, fontSize: 11, color: '#a16207', background: '#fef3c7', padding: '2px 6px', borderRadius: 999 }}>DRAFT</span>}
-                                {a.needsFirstRunConfirm && !a.isDraft && <span style={{ marginLeft: 8, fontSize: 11, color: '#b45309', background: '#fef3c7', padding: '2px 6px', borderRadius: 999 }}>Needs first-run confirm</span>}
                             </div>
                             <div style={{ fontSize: 12, color: '#6b7280', marginTop: 2 }}>
                                 {a.triggerType}

@@ -1,6 +1,7 @@
 import React, { useState as useLocalState } from 'react';
 import ModelTierSelector from '../../../ModelTierSelector';
 import VersionHistory from '../../../VersionHistory';
+import { isImageAvatar, resolveAvatarSrc, DEFAULT_AGENT_EMOJI } from '../../../../utils/agentAvatar';
 
 export const IdentitySection = ({
   selectedAgent, name, setName, description, setDescription,
@@ -59,8 +60,8 @@ export const IdentitySection = ({
                                                                 className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl cursor-pointer hover:bg-[var(--bg-tertiary)] transition-all overflow-hidden border border-[var(--border-subtle)]"
                                                                 title="Click to change avatar"
                                                             >
-                                                                {avatar && (avatar.startsWith('data:') || avatar.startsWith('http')) ? (
-                                                                    <img src={avatar} alt="" className="w-full h-full object-cover" />
+                                                                {isImageAvatar(avatar) ? (
+                                                                    <img src={resolveAvatarSrc(avatar)} alt="" className="w-full h-full object-cover" />
                                                                 ) : (
                                                                     avatar
                                                                 )}
@@ -118,8 +119,8 @@ export const IdentitySection = ({
                                                                     <div className="flex items-center gap-2 px-3 py-2 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
                                                                         <input
                                                                             type="text"
-                                                                            value={avatar && (avatar.startsWith('data:') || avatar.startsWith('http')) ? '' : avatar}
-                                                                            onChange={(e) => setAvatar(e.target.value.slice(-2) || '🤖')}
+                                                                            value={isImageAvatar(avatar) ? '' : avatar}
+                                                                            onChange={(e) => setAvatar(e.target.value.slice(-2) || DEFAULT_AGENT_EMOJI)}
                                                                             className="input flex-1 py-1 text-center text-xl"
                                                                             placeholder="🤖"
                                                                             maxLength={2}

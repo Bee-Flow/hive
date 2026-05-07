@@ -6,6 +6,7 @@ import ModelSelector from "../../ModelSelector";
 import ModelTierSelector from "../../ModelTierSelector";
 
 import { API_BASE, authFetch } from "../../../utils/helpers";
+import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar } from "../../../utils/agentAvatar";
 import { CAPABILITIES } from "./constants";
 import { INTEGRATION_CATALOG } from "./integrations";
 
@@ -151,6 +152,7 @@ const AgentDesigner = ({
     deleteAgent,
     duplicateAgent,
     togglePublish,
+    setPublishState,
     toggleTool,
   } = useAgentApi(state, { systemMode, securityMode, initialAgentId });
 
@@ -300,17 +302,18 @@ const AgentDesigner = ({
                     <div
                       className={`w-7 h-7 rounded-lg flex items-center justify-center text-base flex-shrink-0 transition-transform ${sel ? "scale-110" : ""}`}
                     >
-                      {agent.avatar &&
-                      (agent.avatar.startsWith("data:") ||
-                        agent.avatar.startsWith("http")) ? (
-                        <img
-                          src={agent.avatar}
-                          alt=""
-                          className="w-full h-full object-cover"
-                        />
-                      ) : (
-                        agent.avatar || agent.name?.[0]?.toUpperCase()
-                      )}
+                      {(() => {
+                        const av = pickAgentAvatar(agent);
+                        return isImageAvatar(av) ? (
+                          <img
+                            src={resolveAvatarSrc(av)}
+                            alt=""
+                            className="w-full h-full object-cover"
+                          />
+                        ) : (
+                          av || agent.name?.[0]?.toUpperCase()
+                        );
+                      })()}
                     </div>
                     <span
                       className={`text-[13px] truncate flex-1 ${sel ? "font-bold text-black" : "text-black hover:text-black transition-colors"}`}
@@ -388,7 +391,7 @@ const AgentDesigner = ({
                         <div className="relative">
                           {!isReadonly && (
                             <button
-                              onClick={() => isPublished ? togglePublish() : setShowPublishMenu(!showPublishMenu)}
+                              onClick={() => setShowPublishMenu(!showPublishMenu)}
                               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 border ${
                                 isPublished ? "bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600" : "text-[var(--text-secondary)] bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)]"
                               }`}
@@ -398,16 +401,21 @@ const AgentDesigner = ({
                                 <>
                                   <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
                                   Published {sharedGroups.length > 0 ? ` (${sharedGroups.length})` : ""}
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
                                 </>
                               ) : (
-                                <>Publish <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg></>
+                                <>
+                                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11c1.657 0 3-1.343 3-3V6a3 3 0 10-6 0v2c0 1.657 1.343 3 3 3zM5 21v-2a4 4 0 014-4h6a4 4 0 014 4v2" /></svg>
+                                  Personal
+                                  <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                                </>
                               )}
                             </button>
                           )}
                           
                           {/* Publish Target Dropdown */}
                           {/* ... remainder handled by existing React component ... */}
-                        {showPublishMenu && !isPublished && (
+                        {showPublishMenu && (
                           <div
                             className="absolute right-0 top-full mt-2 w-72 rounded-xl shadow-2xl z-50 overflow-hidden"
                             style={{
@@ -433,10 +441,33 @@ const AgentDesigner = ({
                               </p>
                             </div>
 
+                            {/* Personal — only the owner can access. */}
+                            <button
+                              onClick={() => setPublishState(false, [])}
+                              className="w-full px-4 py-3 flex items-center gap-3 hover:bg-[var(--bg-tertiary)] transition-colors text-left"
+                            >
+                              <div
+                                className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                style={{ background: "rgba(107, 114, 128, 0.15)" }}
+                              >
+                                <svg className="w-4 h-4 text-[var(--text-secondary)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 11c1.657 0 3-1.343 3-3V6a3 3 0 10-6 0v2c0 1.657 1.343 3 3 3zM5 21v-2a4 4 0 014-4h6a4 4 0 014 4v2" />
+                                </svg>
+                              </div>
+                              <div className="flex-1">
+                                <p className="text-sm font-medium" style={{ color: "var(--text-primary)" }}>Personal</p>
+                                <p className="text-xs" style={{ color: "var(--text-muted)" }}>Only you can access</p>
+                              </div>
+                              {!isPublished && (
+                                <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                              )}
+                            </button>
+
                             {/* Publish to entire org */}
                             <button
-                              onClick={() => togglePublish([])}
-                              className="w-full px-4 py-3 flex items-center gap-3 hover:bg-[var(--bg-tertiary)] transition-colors text-left"
+                              onClick={() => setPublishState(true, [])}
+                              className="w-full px-4 py-3 flex items-center gap-3 hover:bg-[var(--bg-tertiary)] transition-colors text-left border-t"
+                              style={{ borderColor: "var(--border-subtle)" }}
                             >
                               <div
                                 className="w-8 h-8 rounded-lg flex items-center justify-center"
@@ -458,7 +489,7 @@ const AgentDesigner = ({
                                   />
                                 </svg>
                               </div>
-                              <div>
+                              <div className="flex-1">
                                 <p
                                   className="text-sm font-medium"
                                   style={{ color: "var(--text-primary)" }}
@@ -472,6 +503,9 @@ const AgentDesigner = ({
                                   All members can access
                                 </p>
                               </div>
+                              {isPublished && sharedGroups.length === 0 && (
+                                <svg className="w-4 h-4 text-emerald-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
+                              )}
                             </button>
 
                             {/* Divider */}

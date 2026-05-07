@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Bot, Plus, Play, Pause, Pencil, Trash2, Clock, Repeat, X, Sparkles, ArrowLeft, Check } from 'lucide-react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { Bot, Plus, Play, Pause, Pencil, Trash2, Clock, Repeat, X, Sparkles, ArrowLeft, Check, ChevronDown } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
+import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar, DEFAULT_AGENT_EMOJI } from '../../../utils/agentAvatar';
 import MarkdownRenderer from '../../MarkdownRenderer';
 import ModelTierSelector from '../../ModelTierSelector';
 import { tierLabel } from '../../tierMeta';
@@ -57,6 +58,98 @@ const STATUS_COLORS = {
     error: { bg: 'rgba(239,68,68,0.08)', color: '#ef4444', label: '❌ Error' },
 };
 
+// Render an agent avatar that may be either an emoji or an image
+// (data: URL, http(s) URL, or app-relative path). Native <option> elements
+// can't render images, so the surrounding AgentSelect uses this and a
+// custom popover instead of <select>.
+function AgentAvatar({ value, size = 20 }) {
+    if (isImageAvatar(value)) {
+        return (
+            <img
+                src={resolveAvatarSrc(value)}
+                alt=""
+                className="rounded object-cover flex-shrink-0"
+                style={{ width: size, height: size }}
+            />
+        );
+    }
+    return (
+        <span
+            className="inline-flex items-center justify-center flex-shrink-0"
+            style={{ width: size, height: size, fontSize: Math.round(size * 0.85), lineHeight: 1 }}
+        >
+            {value || DEFAULT_AGENT_EMOJI}
+        </span>
+    );
+}
+
+// Custom replacement for <select> that supports image avatars in both the
+// trigger and the option rows. Closes on outside click; falls back to a
+// generic 🤖 emoji when an agent has no avatar.
+function AgentSelect({ value, onChange, agents, placeholder }) {
+    const [open, setOpen] = useState(false);
+    const wrapRef = useRef(null);
+    useEffect(() => {
+        if (!open) return;
+        const onDoc = (e) => { if (wrapRef.current && !wrapRef.current.contains(e.target)) setOpen(false); };
+        document.addEventListener('mousedown', onDoc);
+        return () => document.removeEventListener('mousedown', onDoc);
+    }, [open]);
+
+    const selected = agents.find(a => a.id === value) || null;
+    const triggerLabel = selected
+        ? (selected.name || '(untitled)')
+        : (placeholder || '— No agent —');
+    const triggerAvatar = selected ? (pickAgentAvatar(selected) || DEFAULT_AGENT_EMOJI) : null;
+
+    return (
+        <div ref={wrapRef} className="relative">
+            <button
+                type="button"
+                onClick={() => setOpen(o => !o)}
+                className="w-full px-3.5 py-2.5 rounded-xl border bg-[var(--bg-card)] text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)] transition-colors cursor-pointer flex items-center gap-2"
+                style={{ borderColor: 'var(--border-subtle, rgba(0,0,0,0.08))' }}
+            >
+                {triggerAvatar && <AgentAvatar value={triggerAvatar} size={20} />}
+                <span className="flex-1 text-left truncate">{triggerLabel}</span>
+                <ChevronDown size={14} className={`text-[var(--text-tertiary)] transition-transform ${open ? 'rotate-180' : ''}`} />
+            </button>
+            {open && (
+                <div
+                    className="absolute left-0 right-0 top-full mt-1 z-30 rounded-xl border bg-[var(--bg-card)] shadow-lg max-h-64 overflow-auto"
+                    style={{ borderColor: 'var(--border-subtle, rgba(0,0,0,0.08))' }}
+                >
+                    <button
+                        type="button"
+                        onClick={() => { onChange(''); setOpen(false); }}
+                        className="w-full px-3.5 py-2 text-left text-[13px] hover:bg-[var(--bg-secondary)] transition-colors flex items-center gap-2"
+                    >
+                        <span className="w-5 h-5 inline-flex items-center justify-center text-[var(--text-tertiary)]">—</span>
+                        <span className="flex-1 text-[var(--text-secondary)]">{placeholder || 'No agent (general prompt)'}</span>
+                        {!value && <Check size={14} className="text-emerald-500" />}
+                    </button>
+                    {agents.map(a => {
+                        const av = pickAgentAvatar(a) || DEFAULT_AGENT_EMOJI;
+                        const isSelected = a.id === value;
+                        return (
+                            <button
+                                key={a.id}
+                                type="button"
+                                onClick={() => { onChange(a.id); setOpen(false); }}
+                                className="w-full px-3.5 py-2 text-left text-[13px] hover:bg-[var(--bg-secondary)] transition-colors flex items-center gap-2"
+                            >
+                                <AgentAvatar value={av} size={20} />
+                                <span className="flex-1 truncate">{a.name || '(untitled)'}</span>
+                                {isSelected && <Check size={14} className="text-emerald-500" />}
+                            </button>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function AITasksDesigner({ initialTaskId = null, onClose, onNavigate, modelTiers = {}, embedded = false, user = null, onEditingChange }) {
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -101,14 +194,34 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
                 const data = await res.json();
                 setTasks(data.tasks || []);
                 if (data.maxTasks) setMaxTasks(data.maxTasks);
+            } else {
+                console.error('[AITasksDesigner] fetchTasks failed:', res.status, res.statusText);
             }
-        } catch (err) { /* silent */ }
+        } catch (err) {
+            // Promoted from a silent catch — at minimum surface in devtools
+            // so a misconfigured route shows up during QA.
+            console.error('[AITasksDesigner] fetchTasks error:', err);
+        }
         setLoading(false);
     }, []);
 
     useEffect(() => {
         fetchTasks();
     }, [fetchTasks]);
+
+    // Snap sub-tab back to 'prompt' when the user loses access to the
+    // Automations beta. Replaces the old `setTimeout(setSubTab, 0)` in
+    // render which was a setState-in-render anti-pattern.
+    const automationsAllowedForGate = !!(
+        user?.isAdmin
+        || (user?.permissions || []).includes('all')
+        || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('automations'))
+    );
+    useEffect(() => {
+        if (subTab === 'automations' && !automationsAllowedForGate) {
+            setSubTab('prompt');
+        }
+    }, [subTab, automationsAllowedForGate]);
 
     // Load the user's own agents so a routine can be (re)assigned to one. Only
     // fetch when the beta is enabled — otherwise the selector stays hidden.
@@ -118,7 +231,8 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
             try {
                 const res = await authFetch(`${API_BASE}/agents/all`);
                 if (res.ok) setAgents(await res.json());
-            } catch { /* silent */ }
+                else console.error('[AITasksDesigner] agents/all failed:', res.status);
+            } catch (err) { console.error('[AITasksDesigner] agents/all error:', err); }
         })();
     }, [routinesAllowed]);
 
@@ -387,11 +501,8 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
             || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('automations'))
         );
 
-        // If the saved sub-tab is 'automations' but the feature is off, snap back.
-        if (subTab === 'automations' && !automationsAllowed) {
-            // setState in render is OK only when guarded — use effect-equivalent.
-            setTimeout(() => setSubTab('prompt'), 0);
-        }
+        // (Snap-back when access is lost is handled in a useEffect above
+        // so we never call setState during render.)
 
         const subTabBar = (
             <div className="flex items-center gap-1 px-3 py-2 border-b border-[var(--border-default)]">
@@ -924,26 +1035,17 @@ function EditorView({
                             <label className="block text-[11px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-1.5">
                                 Run as agent
                             </label>
-                            <select
+                            <AgentSelect
                                 value={agentId || ''}
-                                onChange={e => {
-                                    const next = e.target.value;
+                                onChange={(next) => {
                                     setAgentId(next);
-                                    // When linking to an agent, reset any custom
-                                    // routine-tier so we don't quietly persist an
-                                    // override the UI no longer surfaces.
+                                    // Linking to an agent inherits its model,
+                                    // so reset any custom routine-tier override.
                                     if (next && setTier) setTier('auto');
                                 }}
-                                className="w-full px-3.5 py-2.5 rounded-xl border bg-[var(--bg-card)] text-[13px] text-[var(--text-primary)] outline-none focus:border-[var(--text-primary)] transition-colors cursor-pointer"
-                                style={{ borderColor: 'var(--border-subtle, rgba(0,0,0,0.08))' }}
-                            >
-                                <option value="">— No agent (general prompt) —</option>
-                                {agents.map(a => (
-                                    <option key={a.id} value={a.id}>
-                                        {(a.avatar || a.config?.avatar || '🤖') + '  ' + (a.name || '(untitled)')}
-                                    </option>
-                                ))}
-                            </select>
+                                agents={agents}
+                                placeholder="No agent (general prompt)"
+                            />
                             <div className="mt-1 text-[11px] text-[var(--text-tertiary)]">
                                 {agentId
                                     ? 'The prompt runs through this agent — it can use the agent\'s skills, knowledge, and integrations.'

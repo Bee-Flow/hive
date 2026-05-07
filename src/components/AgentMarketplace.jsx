@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { getAgentInitials, getAgentColor } from '../utils/helpers';
+import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar } from '../utils/agentAvatar';
 import { ChevronDown, ChevronUp, X, Search, Heart, EyeOff, Pencil } from 'lucide-react';
 import { useTranslation } from '../hooks/useTranslation';
 import scopedStorage from '../utils/scopedStorage';
@@ -81,18 +82,23 @@ const AgentCard = React.memo(({ agentId, name, avatar, description, typeLabel, i
         </div>
 
         <div className="flex items-start gap-3">
-            <div
-                className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 overflow-hidden"
-                style={{
-                    background: avatar && !(avatar.startsWith('data:') || avatar.startsWith('http')) ? 'transparent' : (!avatar ? getAgentColor(name) : 'transparent'),
-                    color: avatar ? undefined : 'white',
-                    fontSize: avatar && !(avatar.startsWith('data:') || avatar.startsWith('http')) ? '1.2rem' : undefined,
-                }}
-            >
-                {avatar && (avatar.startsWith('data:') || avatar.startsWith('http'))
-                    ? <img src={avatar} alt="" className="w-full h-full object-cover" />
-                    : (avatar || getAgentInitials(name))}
-            </div>
+            {(() => {
+                const isImg = isImageAvatar(avatar);
+                return (
+                    <div
+                        className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 overflow-hidden"
+                        style={{
+                            background: avatar && !isImg ? 'transparent' : (!avatar ? getAgentColor(name) : 'transparent'),
+                            color: avatar ? undefined : 'white',
+                            fontSize: avatar && !isImg ? '1.2rem' : undefined,
+                        }}
+                    >
+                        {isImg
+                            ? <img src={resolveAvatarSrc(avatar)} alt="" className="w-full h-full object-cover" />
+                            : (avatar || getAgentInitials(name))}
+                    </div>
+                );
+            })()}
             <div className="flex-1 min-w-0 pr-16">
                 <h3 className="font-semibold text-[13px] truncate" style={{ color: 'var(--text-primary)' }} title={name}>{name}</h3>
                 <p className="text-xs mt-0.5 line-clamp-2 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
@@ -201,11 +207,11 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
     const hasActiveFilters = activeCategory !== 'all' || activeJobs.length > 0;
     const isSearching = search.trim().length > 0;
 
-    // Pre-compute card data to avoid work inside render
     const cardData = useMemo(() => filtered.map(a => {
         const isOwner = user && (a.owner_id === user.id || user.isAdmin || (user.permissions || []).includes('all'));
+        const avatar = pickAgentAvatar(a);
         return {
-            id: a.id, name: a.name, avatar: a.avatar, description: a.description,
+            id: a.id, name: a.name, avatar, description: a.description,
             typeLabel: TYPE_MAP[getAgentType(a)] || t('store.badge_agent'), isFavorite: favorites.includes(a.id), isOwner, agent: a,
         };
     }), [filtered, favorites, TYPE_MAP, user]);

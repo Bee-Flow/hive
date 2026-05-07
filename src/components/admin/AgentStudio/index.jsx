@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { Plus, Trash2, X } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
+import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar, DEFAULT_AGENT_EMOJI } from '../../../utils/agentAvatar';
 import useTranslation from '../../../hooks/useTranslation';
 import AgentWizard from '../AgentWizard';
 import BuilderSplit from '../AgentWizard/BuilderSplit';
@@ -156,7 +157,7 @@ export default function AgentStudio({ user, initialAgentId = null, onClose, onNa
                                 onClick={() => selectAgent(a)}
                                 className={`group flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer text-sm transition ${sel ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}
                             >
-                                {(() => { const av = a.avatar || a.config?.avatar || '🤖'; return av.startsWith('data:') ? <img src={av} alt="" className="w-5 h-5 rounded-sm object-cover flex-shrink-0" /> : <span className="text-base flex-shrink-0">{av}</span>; })()}
+                                {(() => { const av = pickAgentAvatar(a) || DEFAULT_AGENT_EMOJI; return isImageAvatar(av) ? <img src={resolveAvatarSrc(av)} alt="" className="w-5 h-5 rounded-sm object-cover flex-shrink-0" /> : <span className="text-base flex-shrink-0">{av}</span>; })()}
                                 <span className="truncate flex-1">{a.name}</span>
                                 {!systemMode && hasPermission('manage_agents') && (
                                     <button

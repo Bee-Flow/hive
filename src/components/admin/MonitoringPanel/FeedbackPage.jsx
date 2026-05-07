@@ -145,14 +145,35 @@ export function FeedbackPage({ feedback, summary }) {
                                                 color: 'var(--text-muted, #888)',
                                             }}>{item.source}</span>
                                         )}
-                                        {item.agent_id && (
+                                        {(item.agent_name || item.agent_id) && (
                                             <span style={{
                                                 display: 'flex', alignItems: 'center', gap: '3px',
                                                 padding: '1px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 600,
-                                                background: COLORS.primary + '15', color: COLORS.primary,
-                                            }}>
+                                                background: COLORS.blue + '15', color: COLORS.blue,
+                                            }}
+                                            title={item.agent_id || ''}>
                                                 <Bot style={{ width: 9, height: 9 }} />
-                                                {item.agent_id.length > 20 ? item.agent_id.slice(0, 20) + '…' : item.agent_id}
+                                                {item.agent_name || (item.agent_id.length > 20 ? item.agent_id.slice(0, 20) + '…' : item.agent_id)}
+                                            </span>
+                                        )}
+                                        {item.model && (
+                                            <span style={{
+                                                display: 'flex', alignItems: 'center', gap: '3px',
+                                                padding: '1px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 600,
+                                                background: 'var(--bg-tertiary, rgba(255,255,255,0.04))',
+                                                color: 'var(--text-secondary, #aaa)',
+                                            }} title={item.model}>
+                                                <Cpu style={{ width: 9, height: 9 }} />
+                                                {shortModel(item.model)}
+                                            </span>
+                                        )}
+                                        {item.model_tier && (
+                                            <span style={{
+                                                padding: '1px 6px', borderRadius: '4px', fontSize: '10px', fontWeight: 600,
+                                                background: COLORS.amber + '15', color: COLORS.amber,
+                                            }}
+                                            title={item.model_tier === 'auto' && item.model ? `auto → ${item.model}` : `tier: ${item.model_tier}`}>
+                                                tier: {item.model_tier}{item.model_tier === 'auto' && item.model ? ` → ${shortModel(item.model)}` : ''}
                                             </span>
                                         )}
                                         {hasConvo && (

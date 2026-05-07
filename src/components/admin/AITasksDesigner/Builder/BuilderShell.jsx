@@ -1,13 +1,15 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Power, Eye, Sparkles, Wrench, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Power, Eye, Sparkles, Wrench, ChevronDown, Stethoscope } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../../utils/helpers';
 import scopedStorage from '../../../../utils/scopedStorage';
 import InputArea from '../../../InputArea';
 import MarkdownRenderer from '../../../MarkdownRenderer';
+import { tierLabel } from '../../../tierMeta';
 import DiagramPane from './DiagramPane';
 import StepInspector from './StepInspector';
 import RunHistory from './RunHistory';
 import DryRunPanel from './DryRunPanel';
+import TriggerDiagnosePanel from './TriggerDiagnosePanel';
 import useAutomationApi from '../../../../hooks/useAutomationApi';
 import useAutomationBuilderStream from '../../../../hooks/useAutomationBuilderStream';
 
@@ -21,11 +23,12 @@ import useAutomationBuilderStream from '../../../../hooks/useAutomationBuilderSt
  */
 export default function BuilderShell({ automationId, onBack, user }) {
     const api = useAutomationApi();
-    const { state, send } = useAutomationBuilderStream({ automationId });
+    const { state, send, hydrate } = useAutomationBuilderStream({ automationId });
     const [serverAutomation, setServerAutomation] = useState(null);
     const [selectedStepId, setSelectedStepId] = useState(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
+    const [hasHydrated, setHasHydrated] = useState(false);
 
     // ── InputArea state (mirrors direct chat) ────────────────────────────
     const [chatInput, setChatInput] = useState('');
@@ -48,6 +51,18 @@ export default function BuilderShell({ automationId, onBack, user }) {
         return () => { alive = false; };
     }, []);
 
+    // Stale-tier fallback: when scopedStorage held a tier the server no
+    // longer returns for this user (beta revoked, custom tier deleted),
+    // snap back to 'auto' so the picker doesn't show an undefined slot.
+    // Mirrors AgentHub.jsx:974-980 for direct chat.
+    useEffect(() => {
+        const keys = Object.keys(modelTiers || {});
+        if (keys.length === 0) return;
+        if (!keys.includes(selectedTier)) {
+            setSelectedTier(keys.includes('auto') ? 'auto' : keys[0]);
+        }
+    }, [modelTiers, selectedTier]);
+
     const messagesContainerRef = useRef(null);
     const messagesEndRef = useRef(null);
     useEffect(() => {
@@ -63,6 +78,27 @@ export default function BuilderShell({ automationId, onBack, user }) {
         api.getAutomation(aid).then(d => { if (alive) setServerAutomation(d.automation); }).catch(() => {});
         return () => { alive = false; };
     }, [state.automationId, automationId, state.dryRun, state.finalizedId]); // eslint-disable-line
+
+    // One-shot snapshot rehydration. On mount with an existing automation
+    // id, fetch the latest builder-session snapshot and hydrate so the
+    // chat panel + draft + summary survive a refresh or SSE drop.
+    useEffect(() => {
+        const aid = state.automationId || automationId;
+        if (!aid || hasHydrated) return;
+        let alive = true;
+        (async () => {
+            try {
+                const r = await authFetch(`${API_BASE}/api/automation/builder/session/${aid}`);
+                if (!alive) return;
+                if (r.ok) {
+                    const j = await r.json();
+                    if (j?.snapshot) hydrate(j.snapshot);
+                }
+            } catch (_) { /* silent — snapshot is optional */ }
+            if (alive) setHasHydrated(true);
+        })();
+        return () => { alive = false; };
+    }, [state.automationId, automationId, hasHydrated, hydrate]);
 
     const allSteps = useMemo(() => {
         if (!effectiveDef) return [];
@@ -113,9 +149,58 @@ export default function BuilderShell({ automationId, onBack, user }) {
         setBusy(false);
     };
 
+    // Trigger health-check panel state. Only shown when the user opens it,
+    // so a healthy automation never has visual noise.
+    const [diagnoseOpen, setDiagnoseOpen] = useState(false);
+    const [diagnoseLoading, setDiagnoseLoading] = useState(false);
+    const [diagnoseError, setDiagnoseError] = useState(null);
+    const [diagnoseResult, setDiagnoseResult] = useState(null);
+    const onDiagnose = async () => {
+        const aid = state.automationId || serverAutomation?.id;
+        if (!aid) return;
+        setDiagnoseOpen(true);
+        setDiagnoseLoading(true);
+        setDiagnoseError(null);
+        setDiagnoseResult(null);
+        try {
+            const r = await api.diagnoseTrigger(aid);
+            setDiagnoseResult(r);
+        } catch (e) {
+            setDiagnoseError(e.message);
+        }
+        setDiagnoseLoading(false);
+    };
+
+    // Unsaved-changes guard. The builder persists every mutation to the
+    // server so the only "unsaved" window is between the local SSE-driven
+    // draft update and the server's snapshot persistence at end-of-turn.
+    // We block accidental tab-close while the SSE turn is mid-flight or
+    // the local draft diverges from the last server snapshot.
+    useEffect(() => {
+        const handler = (e) => {
+            if (!state.running && JSON.stringify(state.draft || null) === JSON.stringify(serverAutomation?.definition || null)) return;
+            e.preventDefault();
+            // Modern browsers ignore the custom string but require setting returnValue.
+            e.returnValue = '';
+            return '';
+        };
+        window.addEventListener('beforeunload', handler);
+        return () => window.removeEventListener('beforeunload', handler);
+    }, [state.running, state.draft, serverAutomation]);
+
+    const onSaveStep = async (nextDef) => {
+        const aid = state.automationId || serverAutomation?.id;
+        if (!aid) throw new Error('No automation id — save once via the chat first.');
+        const r = await api.updateAutomation(aid, { definition: nextDef });
+        setServerAutomation(r.automation || r);
+    };
+
     const isActive = !!serverAutomation?.isActive;
     const isDraft = !!serverAutomation?.isDraft;
     const title = serverAutomation?.title || 'New automation';
+    // Diagnose button only makes sense for app_event triggers — schedule
+    // and manual triggers have nothing to probe externally.
+    const isAppEventTrigger = effectiveDef?.trigger?.kind === 'app_event';
     const statusLabel = isDraft ? 'Draft' : (isActive ? 'Live' : 'Paused');
     const statusBadgeClass = isDraft
         ? 'bg-[var(--bg-secondary)] text-[var(--text-secondary)]'
@@ -139,9 +224,6 @@ export default function BuilderShell({ automationId, onBack, user }) {
                 </div>
                 <div className="flex-1 min-w-0">
                     <div className="text-base font-semibold text-[var(--text-primary)] truncate">{title}</div>
-                    {serverAutomation?.needsFirstRunConfirm && !isDraft && (
-                        <div className="text-xs text-amber-600 dark:text-amber-400">Awaiting first-run confirmation</div>
-                    )}
                 </div>
                 <span className={`text-[11px] uppercase tracking-wide font-medium px-2 py-1 rounded-full ${statusBadgeClass}`}>
                     {statusLabel}
@@ -153,6 +235,16 @@ export default function BuilderShell({ automationId, onBack, user }) {
                 >
                     <Eye size={14} /> Dry-run
                 </button>
+                {isAppEventTrigger && (
+                    <button
+                        onClick={onDiagnose}
+                        disabled={busy}
+                        title="Probe the trigger pipeline (subscription, credentials, Gmail, filter)"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-[var(--bg-secondary)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition disabled:opacity-50"
+                    >
+                        <Stethoscope size={14} /> Diagnose
+                    </button>
+                )}
                 {isActive ? (
                     <button
                         onClick={onDeactivate}
@@ -173,13 +265,27 @@ export default function BuilderShell({ automationId, onBack, user }) {
                 )}
             </div>
 
-            {error && <div className="bg-red-500/10 text-red-600 dark:text-red-400 px-4 py-2 text-sm border-b border-red-500/20">{error}</div>}
-            {state.error && <div className="bg-amber-500/10 text-amber-600 dark:text-amber-400 px-4 py-2 text-sm border-b border-amber-500/20">{state.error}</div>}
+            {diagnoseOpen && (
+                <TriggerDiagnosePanel
+                    result={diagnoseResult}
+                    loading={diagnoseLoading}
+                    error={diagnoseError}
+                    onClose={() => setDiagnoseOpen(false)}
+                />
+            )}
+
+            <BuilderErrorBanner
+                fatalError={error || state.error}
+                validation={state.validation}
+                aborted={state.aborted}
+                onDismiss={() => setError(null)}
+            />
+
 
             <div className="flex-1 flex min-h-0 relative">
                 {/* Chat side — same composer as direct chat, custom message timeline */}
-                <div className="flex-1 min-w-0 border-r border-[var(--border-default)] flex flex-col">
-                    <div ref={messagesContainerRef} className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                <div className="flex-1 min-w-0 border-r border-[var(--border-default)] flex flex-col bg-[var(--bg-primary)]">
+                    <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-6 custom-scrollbar">
                         {state.messages.length === 0 && (
                             <div className="h-full flex flex-col items-center justify-center text-center px-4">
                                 <div className="w-12 h-12 rounded-full bg-[var(--bg-secondary)] flex items-center justify-center mb-3">
@@ -207,9 +313,13 @@ export default function BuilderShell({ automationId, onBack, user }) {
                                 </div>
                             </div>
                         )}
-                        <div className="flex flex-col gap-3">
+                        <div className="flex flex-col gap-4 w-full max-w-[900px] mx-auto">
                             {state.messages.map((m, i) => <MessageBubble key={i} msg={m} />)}
-                            {state.running && <div className="text-xs italic text-[var(--text-tertiary)]">Thinking…</div>}
+                            {state.running && (
+                                <div className="self-start text-xs italic text-[var(--text-tertiary)] px-1">
+                                    Thinking…
+                                </div>
+                            )}
                             <div ref={messagesEndRef} />
                         </div>
                     </div>
@@ -239,7 +349,12 @@ export default function BuilderShell({ automationId, onBack, user }) {
                     )}
                     <DryRunPanel run={state.dryRun} steps={state.steps} />
                     <div className="border-t border-[var(--border-default)]">
-                        <DiagramPane definition={effectiveDef} runSteps={state.steps} onNodeClick={setSelectedStepId} />
+                        <DiagramPane
+                            definition={effectiveDef}
+                            runSteps={state.steps}
+                            onNodeClick={setSelectedStepId}
+                            validation={state.validation}
+                        />
                     </div>
                     {(state.automationId || automationId) && (
                         <div className="border-t border-[var(--border-default)]">
@@ -248,28 +363,112 @@ export default function BuilderShell({ automationId, onBack, user }) {
                         </div>
                     )}
                 </div>
-                {selectedStep && <StepInspector step={selectedStep} runStep={selectedRunStep} onClose={() => setSelectedStepId(null)} />}
+                {selectedStep && (
+                    <StepInspector
+                        step={selectedStep}
+                        runStep={selectedRunStep}
+                        onClose={() => setSelectedStepId(null)}
+                        definition={effectiveDef}
+                        onSaveStep={onSaveStep}
+                        validation={state.validation}
+                        modelTiers={modelTiers}
+                    />
+                )}
             </div>
         </div>
     );
 }
 
+/**
+ * Message bubble styled to match direct/agent chat:
+ *   - 900px centered column (same as MessageItem outer container).
+ *   - User: light grey #e8e8eb pill capped at 85%, bottom-right corner squared.
+ *   - Assistant: no background — body sits directly on the chat surface, the
+ *     same way direct chat renders so long markdown reads naturally instead
+ *     of being trapped in a small grey bubble. Bottom-left corner squared
+ *     to mirror the speech-bubble feel.
+ *   - Markdown is rendered for assistant turns; user content is plain text
+ *     with whitespace preserved.
+ */
 function MessageBubble({ msg }) {
     const isUser = msg.role === 'user';
     return (
-        <div className={`max-w-[85%] ${isUser ? 'self-end' : 'self-start'}`}>
+        <div className={`flex flex-col w-full ${isUser ? 'items-end' : 'items-start'}`}>
             <div
-                className={`px-4 py-2.5 rounded-2xl text-sm whitespace-pre-wrap ${isUser
-                    ? 'bg-[var(--accent)] text-white'
-                    : 'bg-[var(--bg-secondary)] text-[var(--text-primary)]'}`}
+                className={`relative rounded-2xl p-4 transition-all duration-200 overflow-hidden text-sm ${isUser
+                    ? 'max-w-[85%] bg-[#e8e8eb] text-black rounded-br-none whitespace-pre-wrap'
+                    : 'max-w-3xl text-[var(--text-primary)] rounded-bl-none'}`}
             >
                 {isUser ? msg.content : <MarkdownRenderer content={msg.content || ''} />}
             </div>
+            {/* Auto-tier badge — same shape as direct chat's MessageItem.
+                Shown only when the server resolved 'auto' to a real tier
+                so the user knows which model produced this turn. */}
+            {!isUser && msg.autoSelectedTier && (
+                <div className="mt-1 text-[11px] text-[var(--text-tertiary)] px-1">
+                    Auto → {tierLabel(msg.autoSelectedTier)}
+                </div>
+            )}
             {!isUser && Array.isArray(msg.toolCalls) && msg.toolCalls.length > 0 && (
-                <div className="mt-1.5 flex flex-col gap-1">
+                <div className="mt-1.5 flex flex-col gap-1 w-full max-w-3xl">
                     {msg.toolCalls.map((tc, i) => <ToolCallChip key={i} tc={tc} />)}
                 </div>
             )}
+        </div>
+    );
+}
+
+/**
+ * Consolidated error banner. Replaces the two independent banners that
+ * used to render `error` and `state.error` separately so users couldn't
+ * tell which failed. Renders, in priority order:
+ *
+ *   1. fatalError       — a network / API failure (red)
+ *   2. aborted          — builder ran out of iterations (amber)
+ *   3. validation.errors — structured records, only shown when present
+ *
+ * Each structured record renders {code, message, hint} so the user (and,
+ * via the LLM feedback loop, the model) gets actionable text instead of
+ * a wall of free-form prose.
+ */
+function BuilderErrorBanner({ fatalError, validation, aborted, onDismiss }) {
+    const errors = (validation?.errors || []);
+    const warnings = (validation?.warnings || []);
+    if (!fatalError && !aborted && errors.length === 0 && warnings.length === 0) return null;
+
+    return (
+        <div className="border-b border-[var(--border-default)]">
+            {fatalError && (
+                <div className="bg-red-500/10 text-red-600 dark:text-red-400 px-4 py-2 text-sm flex items-start gap-2">
+                    <span className="flex-1">{fatalError}</span>
+                    {onDismiss && (
+                        <button onClick={onDismiss} className="text-xs underline hover:no-underline opacity-80">dismiss</button>
+                    )}
+                </div>
+            )}
+            {aborted && (
+                <div className="bg-amber-500/10 text-amber-600 dark:text-amber-400 px-4 py-2 text-sm">
+                    Builder stopped after {aborted.iterations} iterations without finalizing — review the validation issues below and ask the builder to fix them.
+                </div>
+            )}
+            {(errors.length > 0 || warnings.length > 0) && (
+                <div className="px-4 py-2 text-xs bg-[var(--bg-secondary)] max-h-40 overflow-y-auto">
+                    {errors.map((e, i) => <BannerRecord key={`e-${i}`} record={e} />)}
+                    {warnings.map((w, i) => <BannerRecord key={`w-${i}`} record={w} />)}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function BannerRecord({ record }) {
+    const isErr = record.severity === 'error';
+    return (
+        <div className={`mb-1 ${isErr ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}>
+            <span className="font-mono text-[10px] mr-1.5 opacity-70">{record.code}</span>
+            <span className="text-[var(--text-tertiary)] mr-1">{record.path}</span>
+            {record.message}
+            {record.hint && <span className="text-[var(--text-tertiary)]"> — {record.hint}</span>}
         </div>
     );
 }

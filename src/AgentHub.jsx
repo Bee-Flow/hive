@@ -5,7 +5,7 @@ import AgentMarketplace from './components/AgentMarketplace';
 import KBMarketplace from './components/KBMarketplace';
 import KBDetailPage from './components/KBDetailPage';
 import SearchOverlay from './components/SearchOverlay';
-
+ 
 import Sidebar from './components/Sidebar';
 import InputArea from './components/InputArea';
 import WelcomeScreen from './components/WelcomeScreen';
@@ -29,6 +29,7 @@ import useChatEngine from './hooks/useChatEngine';
 import { useViewport } from './hooks/useViewport';
 
 import { API_BASE, generateMessageId, authFetch } from './utils/helpers';
+import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar, DEFAULT_AGENT_EMOJI } from './utils/agentAvatar';
 import scopedStorage from './utils/scopedStorage';
 import { normalizeLoadedMessages } from './utils/messageShape';
 import { X, Sparkles, PenLine, Heart, MoreVertical, Menu, EyeOff, Pencil } from 'lucide-react';
@@ -296,7 +297,7 @@ const AgentHub = ({
                 content: assistantMsg.content || '',
                 respondingAgentId: selectedAgent?.id || 'direct',
                 respondingAgentName: selectedAgent?.name || null,
-                respondingAgentAvatar: selectedAgent?.avatar || '🎙️',
+                respondingAgentAvatar: pickAgentAvatar(selectedAgent) || DEFAULT_AGENT_EMOJI,
                 timestamp,
                 source: 'voice',
                 voiceTools: Array.isArray(assistantMsg.tools) ? assistantMsg.tools : [],
@@ -443,14 +444,28 @@ const AgentHub = ({
 
 
 
-    // Reusable function to (re-)fetch published agents
+    // Reusable function to (re-)fetch the agent list shown across the hub.
+    // Merges two sources so the list matches what the user can actually open:
+    //   1. /agents/published — agents published in the user's org / groups
+    //   2. /agents          — the user's own agents, INCLUDING personal drafts
+    // Without (2), an agent set to "Personal" disappeared from the marketplace
+    // for its own owner, even though they're the only person who can use it.
     const refreshAgents = useCallback(async () => {
         try {
-            const res = await authFetch(`${API_BASE}/agents/published?t=${Date.now()}`, { cache: 'no-store' });
-            if (res.ok) {
-                const data = await res.json();
-
-                setAgents(data);
+            const [publishedRes, ownRes] = await Promise.all([
+                authFetch(`${API_BASE}/agents/published?t=${Date.now()}`, { cache: 'no-store' }),
+                authFetch(`${API_BASE}/agents?t=${Date.now()}`, { cache: 'no-store' }),
+            ]);
+            if (publishedRes.ok || ownRes.ok) {
+                const published = publishedRes.ok ? await publishedRes.json() : [];
+                const own = ownRes.ok ? await ownRes.json() : [];
+                // Dedup by id — published records are authoritative when both
+                // lists return the same agent (they carry parsed tool_params).
+                const byId = new Map();
+                for (const a of (Array.isArray(own) ? own : [])) byId.set(a.id, a);
+                for (const a of (Array.isArray(published) ? published : [])) byId.set(a.id, a);
+                const merged = Array.from(byId.values());
+                setAgents(merged);
 
                 // Also load agent categories
                 try {
@@ -461,7 +476,7 @@ const AgentHub = ({
                     }
                 } catch (e) { console.warn('Failed to load agent categories', e); }
 
-                return data;
+                return merged;
             }
         } catch (err) {
             console.error("Failed to refresh agents", err);
@@ -902,7 +917,7 @@ const AgentHub = ({
                               content: `Show me the result from my routine "${title}"`, timestamp: now },
                             { id: generateMessageId(), role: 'assistant',
                               content, timestamp: now,
-                              respondingAgentAvatar: agent?.avatar || agent?.config?.avatar || '🤖' },
+                              respondingAgentAvatar: pickAgentAvatar(agent) || DEFAULT_AGENT_EMOJI },
                         ]);
                         return;
                     }
@@ -1500,17 +1515,11 @@ const AgentHub = ({
                 directChatMode={directChatMode}
                 directConversations={directConversations}
                 onSelectDirectConversation={(conv) => {
-                    // Close any open overlays
-                    if (onCloseSettings) onCloseSettings();
-                    if (onCloseAgentDesigner) onCloseAgentDesigner();
-                    if (onCloseAITasks) onCloseAITasks();
-                    if (onCloseSkillsPanel) onCloseSkillsPanel();
-        if (onCloseEmailKB) onCloseEmailKB();
-                    setShowMarketplace(false);
-                    setShowKBStore(false);
-                    setActiveKBId(null);
-                    setShowProjectsStore(false);
-                    setActiveProjectId(null);
+                    // Close every overlay before switching to direct chat —
+                    // Studio, Agent Wizard, Notebooks, and Webpages were missing
+                    // here, so picking a direct chat from history while Studio
+                    // was open updated the URL but kept the editor on screen.
+                    closeAllOverlays();
                     // Ensure we're in direct chat mode
                     if (!directChatMode) {
                         setDirectChatMode(true);
@@ -1755,13 +1764,16 @@ const AgentHub = ({
                                     </button>
                                 )}
                                 <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm overflow-hidden">
-                                    {selectedAgent.avatar && (selectedAgent.avatar.startsWith('data:') || selectedAgent.avatar.startsWith('http')) ? (
-                                        <img src={selectedAgent.avatar} alt="" className="w-full h-full object-cover" />
-                                    ) : (
-                                        <span className="font-bold text-[var(--text-primary)]">
-                                            {selectedAgent.avatar || selectedAgent.name?.[0]?.toUpperCase()}
-                                        </span>
-                                    )}
+                                    {(() => {
+                                        const av = pickAgentAvatar(selectedAgent);
+                                        return isImageAvatar(av) ? (
+                                            <img src={resolveAvatarSrc(av)} alt="" className="w-full h-full object-cover" />
+                                        ) : (
+                                            <span className="font-bold text-[var(--text-primary)]">
+                                                {av || selectedAgent.name?.[0]?.toUpperCase()}
+                                            </span>
+                                        );
+                                    })()}
                                 </div>
                                 <h1 className="font-semibold text-[var(--text-primary)] text-sm">{selectedAgent.name}</h1>
                                 <div className="relative">

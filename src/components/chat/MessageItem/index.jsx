@@ -5,6 +5,7 @@ import { Copy, Check, Bot, ChevronDown, Send, ThumbsUp, ThumbsDown, RefreshCw, P
 import MarkdownRenderer from '../../MarkdownRenderer';
 import MapEmbedRenderer from '../../MapEmbedRenderer';
 import { API_BASE, authFetch, getToolLabel, getToolIcon, toolNameToCatalogId } from '../../../utils/helpers';
+import { isImageAvatar, resolveAvatarSrc } from '../../../utils/agentAvatar';
 import AppEmoji from '../../AppEmoji';
 import AudioPlayerInline from './AudioPlayer';
 import ImageLightbox from './ImageLightbox';
@@ -13,6 +14,7 @@ import { SequentialThinking } from './ThinkingSteps';
 import { ThinkingPanel } from './ThinkingPanel';
 import SessionSkillsTimeline from './SessionSkillsTimeline';
 import SwarmTimeline from './SwarmTimeline';
+import PhaseIndicator from './PhaseIndicator';
 
 import TerminalProgress from './TerminalProgress';
 import { tierLabel } from '../../tierMeta';
@@ -165,19 +167,37 @@ const MessageItem = ({
     const submitFeedback = async (rating, comment = '', withConversation = false) => {
         try {
             const API = (typeof API_BASE !== 'undefined' ? API_BASE : '') + '/api/feedback';
+            // Surface model + tier in the admin feedback view. The agent's
+            // configured `model` is either a concrete model id or a `tier:*`
+            // string; the backend resolves the concrete model from the most
+            // recent usage_log row for this conversation when needed.
+            const agentModel = selectedAgent?.model || null;
+            const modelTier = (typeof agentModel === 'string' && agentModel.startsWith('tier:'))
+                ? agentModel.slice(5)
+                : null;
+            const concreteModel = (typeof agentModel === 'string' && !agentModel.startsWith('tier:'))
+                ? agentModel
+                : (msg.model || null);
             const payload = {
                 conversationId: conversationId || null,
                 messageId: msg.id || `msg-${idx}`,
                 agentId: agentId || null,
+                agentName: selectedAgent?.name || msg.respondingAgentName || null,
+                model: concreteModel,
+                modelTier,
                 rating,
                 comment: comment || null,
                 source: chatSource,
             };
             if (withConversation && allMessages?.length > 0) {
                 payload.conversationSnapshot = allMessages.map(m => ({
+                    id: m.id || null,
                     role: m.role,
                     content: m.content,
                     timestamp: m.timestamp,
+                    // Capture per-turn model so the org admin can see when a model was
+                    // switched mid-conversation; falls back to enrichment on the server.
+                    model: m.model || null,
                 }));
             }
             await authFetch(API, {
@@ -333,8 +353,8 @@ const MessageItem = ({
             {!isUser && !isTool && msg.respondingAgentName && (
                 <div className="flex items-center gap-1.5 ml-1 mb-1 text-xs text-[var(--text-secondary)] opacity-80">
                     <div className="w-4 h-4 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center text-[10px] overflow-hidden border border-[var(--border-subtle)]">
-                        {msg.respondingAgentAvatar && (msg.respondingAgentAvatar.startsWith('data:') || msg.respondingAgentAvatar.startsWith('http')) ? (
-                            <img src={msg.respondingAgentAvatar} alt="" className="w-full h-full object-cover" />
+                        {isImageAvatar(msg.respondingAgentAvatar) ? (
+                            <img src={resolveAvatarSrc(msg.respondingAgentAvatar)} alt="" className="w-full h-full object-cover" />
                         ) : msg.respondingAgentAvatar ? msg.respondingAgentAvatar : <Bot className="w-3 h-3" />}
                     </div>
                     <span className="font-medium">{msg.respondingAgentName}</span>
@@ -539,16 +559,20 @@ const MessageItem = ({
                         ) : msg.content ? (
                             <MarkdownRenderer content={msg.images?.length > 0 ? errText.replace(/!\[[^\]]*\]\([^)]*\)/g, '').trim() : errText} isLoading={msg.isStreaming} />
                         ) : msg.isStreaming && !msg.thinking ? (
-                            <div className="flex items-center gap-3 py-1 animate-pulse">
-                                <div className="flex gap-1.5">
-                                    <div className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                                    <div className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                                    <div className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-bounce"></div>
+                            msg.currentPhase ? (
+                                <PhaseIndicator phase={msg.currentPhase} />
+                            ) : (
+                                <div className="flex items-center gap-3 py-1 animate-pulse">
+                                    <div className="flex gap-1.5">
+                                        <div className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                                        <div className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                                        <div className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-bounce"></div>
+                                    </div>
+                                    <span className="text-xs text-[var(--text-tertiary)] italic font-medium">
+                                        Thinking...
+                                    </span>
                                 </div>
-                                <span className="text-xs text-[var(--text-tertiary)] italic font-medium">
-                                    Thinking...
-                                </span>
-                            </div>
+                            )
                         ) : null;
                     })()}
                     {/* AI Generated Images — rendered after text (skip if album art for audio) */}
