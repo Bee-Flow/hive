@@ -14,6 +14,7 @@ import { SequentialThinking } from './ThinkingSteps';
 import { ThinkingPanel } from './ThinkingPanel';
 import SessionSkillsTimeline from './SessionSkillsTimeline';
 import SwarmTimeline from './SwarmTimeline';
+import PhaseIndicator from './PhaseIndicator';
 
 import TerminalProgress from './TerminalProgress';
 import { tierLabel } from '../../tierMeta';
@@ -554,16 +555,20 @@ const MessageItem = ({
                         ) : msg.content ? (
                             <MarkdownRenderer content={msg.images?.length > 0 ? errText.replace(/!\[[^\]]*\]\([^)]*\)/g, '').trim() : errText} isLoading={msg.isStreaming} />
                         ) : msg.isStreaming && !msg.thinking ? (
-                            <div className="flex items-center gap-3 py-1 animate-pulse">
-                                <div className="flex gap-1.5">
-                                    <div className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-bounce [animation-delay:-0.3s]"></div>
-                                    <div className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-bounce [animation-delay:-0.15s]"></div>
-                                    <div className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-bounce"></div>
+                            msg.currentPhase ? (
+                                <PhaseIndicator phase={msg.currentPhase} />
+                            ) : (
+                                <div className="flex items-center gap-3 py-1 animate-pulse">
+                                    <div className="flex gap-1.5">
+                                        <div className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-bounce [animation-delay:-0.3s]"></div>
+                                        <div className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-bounce [animation-delay:-0.15s]"></div>
+                                        <div className="w-1.5 h-1.5 bg-[var(--accent-primary)] rounded-full animate-bounce"></div>
+                                    </div>
+                                    <span className="text-xs text-[var(--text-tertiary)] italic font-medium">
+                                        Thinking...
+                                    </span>
                                 </div>
-                                <span className="text-xs text-[var(--text-tertiary)] italic font-medium">
-                                    Thinking...
-                                </span>
-                            </div>
+                            )
                         ) : null;
                     })()}
                     {/* AI Generated Images — rendered after text (skip if album art for audio) */}

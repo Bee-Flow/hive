@@ -131,11 +131,31 @@ export default function useChatEngine({
                         m.id === activeIdRef.current ? {
                             ...m,
                             content,
+                            // First content token arrived — clear any lingering
+                            // pre-LLM phase indicator. The server's
+                            // `streaming_start` phase already does this, but we
+                            // belt-and-suspenders here in case it was lost.
+                            currentPhase: m.currentPhase ? null : m.currentPhase,
                             respondingAgentName: data.respondingAgentName || m.respondingAgentName,
                             respondingAgentAvatar: data.respondingAgentAvatar || m.respondingAgentAvatar
                         } : m
                     ));
                 }
+                break;
+
+            case 'phase':
+                // Pre-LLM progress signal from any chat runtime. We render a
+                // single rotating status line above the typing dots so users
+                // see what is happening (KB search, attachment OCR, etc.)
+                // instead of a silent stall before the first token.
+                setMessages(prev => prev.map(m => {
+                    if (m.id !== activeIdRef.current) return m;
+                    if (data.status === 'end' && m.currentPhase?.stage !== data.stage) return m;
+                    const next = (data.status === 'end' || data.stage === 'streaming_start')
+                        ? null
+                        : { stage: data.stage, detail: data.detail || null, startedAt: Date.now() };
+                    return { ...m, currentPhase: next };
+                }));
                 break;
 
             case 'thinking_start':

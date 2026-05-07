@@ -738,7 +738,37 @@ const EN_DEFAULTS = {
     "usage.tab_overview": "Overview",
     "usage.tab_safety": "Safety & Guardrails",
     "usage.tab_integrations": "Integrations",
+    "usage.tab_feedback": "Feedback",
     "usage.no_guardrail_data": "No safety events recorded for this period",
+    // ── Org Feedback (Monitoring sub-tab) ──
+    "org.feedback_title": "User Feedback",
+    "org.feedback_subtitle": "Feedback your users gave on AI responses",
+    "org.feedback_today": "Today",
+    "org.feedback_7d": "7 Days",
+    "org.feedback_30d": "30 Days",
+    "org.feedback_all_time": "All Time",
+    "org.feedback_custom": "Custom",
+    "org.feedback_refresh": "Refresh",
+    "org.feedback_positive": "Positive",
+    "org.feedback_negative": "Negative",
+    "org.feedback_with_comments": "With Comments",
+    "org.feedback_with_conversation": "With Conversation",
+    "org.feedback_approval": "approval",
+    "org.feedback_shared_context": "Shared context",
+    "org.feedback_chip_all": "All",
+    "org.feedback_chip_positive": "👍 Positive",
+    "org.feedback_chip_negative": "👎 Negative",
+    "org.feedback_chip_comments": "💬 Comments",
+    "org.feedback_chip_with_convo": "🗨️ With Conversation",
+    "org.feedback_search_placeholder": "Search feedback...",
+    "org.feedback_empty": "No feedback entries",
+    "org.feedback_loading": "Loading feedback...",
+    "org.feedback_anonymous": "Anonymous",
+    "org.feedback_user_feedback": "User Feedback",
+    "org.feedback_conversation": "Conversation",
+    "org.feedback_no_conversation": "No conversation shared",
+    "org.feedback_role_user": "User",
+    "org.feedback_role_ai": "AI",
     // ── Safety & Guardrails ──
     "usage.safety_title": "Safety & Guardrails",
     "usage.safety_subtitle": "Content moderation, PII detection & regex guardrail events",
@@ -2014,7 +2044,23 @@ const EN_DEFAULTS = {
     "agent_wizard.skills.linked_automation": "Linked to an automation",
     "agent_wizard.skills.linked_automation_label": "Linked automation (optional)",
     "agent_wizard.skills.linked_automation_none": "— No automation, use instructions above —",
-    "agent_wizard.skills.linked_automation_help": "When the agent activates this skill, the linked automation runs and its result is returned to the agent."
+    "agent_wizard.skills.linked_automation_help": "When the agent activates this skill, the linked automation runs and its result is returned to the agent.",
+
+    // Pre-LLM phase indicator labels — shown above the typing dots while the
+    // server is doing prep work (KB search, attachment OCR, etc.) before
+    // the model produces its first token.
+    "chat.phase.tier_classify":          "Selecting best model…",
+    "chat.phase.model_resolved":         "Using {detail}",
+    "chat.phase.loading_tools":          "Loading tools…",
+    "chat.phase.memory_lookup":          "Recalling memory…",
+    "chat.phase.kb_search":              "Searching knowledge base…",
+    "chat.phase.processing_attachments": "Reading attachment {detail}…",
+    "chat.phase.compacting":             "Compacting conversation…",
+    "chat.phase.building_prompt":        "Preparing context…",
+    "chat.phase.guardrails":             "Validating input…",
+    "chat.phase.tool_pre_check":         "Checking tool plan…",
+    "chat.phase.processed_history":      "Loading history…",
+    "chat.phase.streaming_start":        "Thinking…"
 };
 
 export default EN_DEFAULTS;
