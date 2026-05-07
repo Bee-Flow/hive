@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Power, Eye, Sparkles, Wrench, ChevronDown } from 'lucide-react';
+import { ArrowLeft, Power, Eye, Sparkles, Wrench, ChevronDown, Stethoscope } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../../utils/helpers';
 import scopedStorage from '../../../../utils/scopedStorage';
 import InputArea from '../../../InputArea';
@@ -9,6 +9,7 @@ import DiagramPane from './DiagramPane';
 import StepInspector from './StepInspector';
 import RunHistory from './RunHistory';
 import DryRunPanel from './DryRunPanel';
+import TriggerDiagnosePanel from './TriggerDiagnosePanel';
 import useAutomationApi from '../../../../hooks/useAutomationApi';
 import useAutomationBuilderStream from '../../../../hooks/useAutomationBuilderStream';
 
@@ -148,6 +149,28 @@ export default function BuilderShell({ automationId, onBack, user }) {
         setBusy(false);
     };
 
+    // Trigger health-check panel state. Only shown when the user opens it,
+    // so a healthy automation never has visual noise.
+    const [diagnoseOpen, setDiagnoseOpen] = useState(false);
+    const [diagnoseLoading, setDiagnoseLoading] = useState(false);
+    const [diagnoseError, setDiagnoseError] = useState(null);
+    const [diagnoseResult, setDiagnoseResult] = useState(null);
+    const onDiagnose = async () => {
+        const aid = state.automationId || serverAutomation?.id;
+        if (!aid) return;
+        setDiagnoseOpen(true);
+        setDiagnoseLoading(true);
+        setDiagnoseError(null);
+        setDiagnoseResult(null);
+        try {
+            const r = await api.diagnoseTrigger(aid);
+            setDiagnoseResult(r);
+        } catch (e) {
+            setDiagnoseError(e.message);
+        }
+        setDiagnoseLoading(false);
+    };
+
     // Unsaved-changes guard. The builder persists every mutation to the
     // server so the only "unsaved" window is between the local SSE-driven
     // draft update and the server's snapshot persistence at end-of-turn.
@@ -175,6 +198,9 @@ export default function BuilderShell({ automationId, onBack, user }) {
     const isActive = !!serverAutomation?.isActive;
     const isDraft = !!serverAutomation?.isDraft;
     const title = serverAutomation?.title || 'New automation';
+    // Diagnose button only makes sense for app_event triggers — schedule
+    // and manual triggers have nothing to probe externally.
+    const isAppEventTrigger = effectiveDef?.trigger?.kind === 'app_event';
     const statusLabel = isDraft ? 'Draft' : (isActive ? 'Live' : 'Paused');
     const statusBadgeClass = isDraft
         ? 'bg-[var(--bg-secondary)] text-[var(--text-secondary)]'
@@ -209,6 +235,16 @@ export default function BuilderShell({ automationId, onBack, user }) {
                 >
                     <Eye size={14} /> Dry-run
                 </button>
+                {isAppEventTrigger && (
+                    <button
+                        onClick={onDiagnose}
+                        disabled={busy}
+                        title="Probe the trigger pipeline (subscription, credentials, Gmail, filter)"
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-[var(--bg-secondary)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition disabled:opacity-50"
+                    >
+                        <Stethoscope size={14} /> Diagnose
+                    </button>
+                )}
                 {isActive ? (
                     <button
                         onClick={onDeactivate}
@@ -228,6 +264,15 @@ export default function BuilderShell({ automationId, onBack, user }) {
                     </button>
                 )}
             </div>
+
+            {diagnoseOpen && (
+                <TriggerDiagnosePanel
+                    result={diagnoseResult}
+                    loading={diagnoseLoading}
+                    error={diagnoseError}
+                    onClose={() => setDiagnoseOpen(false)}
+                />
+            )}
 
             <BuilderErrorBanner
                 fatalError={error || state.error}

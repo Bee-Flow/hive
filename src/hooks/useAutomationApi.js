@@ -32,6 +32,7 @@ export default function useAutomationApi() {
         deactivate: (id) => send('POST', `/${id}/deactivate`),
         run: (id, body) => send('POST', `/${id}/run`, body || {}),
         dryRun: (id, body) => send('POST', `/${id}/dry-run`, body || {}),
+        diagnoseTrigger: (id) => send('POST', `/${id}/diagnose-trigger`),
         listRuns: (id) => get(`/${id}/runs`),
         getRun: (runId) => get(`/runs/${runId}`),
         getRunSteps: (runId) => get(`/runs/${runId}/steps`),
