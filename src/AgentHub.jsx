@@ -5,7 +5,7 @@ import AgentMarketplace from './components/AgentMarketplace';
 import KBMarketplace from './components/KBMarketplace';
 import KBDetailPage from './components/KBDetailPage';
 import SearchOverlay from './components/SearchOverlay';
-
+ 
 import Sidebar from './components/Sidebar';
 import InputArea from './components/InputArea';
 import WelcomeScreen from './components/WelcomeScreen';
