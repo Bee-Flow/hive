@@ -148,14 +148,21 @@ export default function useChatEngine({
                 // single rotating status line above the typing dots so users
                 // see what is happening (KB search, attachment OCR, etc.)
                 // instead of a silent stall before the first token.
-                setMessages(prev => prev.map(m => {
-                    if (m.id !== activeIdRef.current) return m;
-                    if (data.status === 'end' && m.currentPhase?.stage !== data.stage) return m;
-                    const next = (data.status === 'end' || data.stage === 'streaming_start')
-                        ? null
-                        : { stage: data.stage, detail: data.detail || null, startedAt: Date.now() };
-                    return { ...m, currentPhase: next };
-                }));
+                console.log('[phase]', data.stage, data.status, data.detail || '', '→ msgId', activeIdRef.current);
+                setMessages(prev => {
+                    let updated = false;
+                    const next = prev.map(m => {
+                        if (m.id !== activeIdRef.current) return m;
+                        if (data.status === 'end' && m.currentPhase?.stage !== data.stage) return m;
+                        const phase = (data.status === 'end' || data.stage === 'streaming_start')
+                            ? null
+                            : { stage: data.stage, detail: data.detail || null, startedAt: Date.now() };
+                        updated = true;
+                        return { ...m, currentPhase: phase };
+                    });
+                    if (!updated) console.warn('[phase] no message matched activeIdRef', activeIdRef.current, 'msgIds=', prev.map(p => p.id));
+                    return next;
+                });
                 break;
 
             case 'thinking_start':
