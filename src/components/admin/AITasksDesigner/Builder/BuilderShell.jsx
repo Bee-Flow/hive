@@ -4,6 +4,7 @@ import { API_BASE, authFetch } from '../../../../utils/helpers';
 import scopedStorage from '../../../../utils/scopedStorage';
 import InputArea from '../../../InputArea';
 import MarkdownRenderer from '../../../MarkdownRenderer';
+import { tierLabel } from '../../../tierMeta';
 import DiagramPane from './DiagramPane';
 import StepInspector from './StepInspector';
 import RunHistory from './RunHistory';
@@ -21,11 +22,12 @@ import useAutomationBuilderStream from '../../../../hooks/useAutomationBuilderSt
  */
 export default function BuilderShell({ automationId, onBack, user }) {
     const api = useAutomationApi();
-    const { state, send } = useAutomationBuilderStream({ automationId });
+    const { state, send, hydrate } = useAutomationBuilderStream({ automationId });
     const [serverAutomation, setServerAutomation] = useState(null);
     const [selectedStepId, setSelectedStepId] = useState(null);
     const [busy, setBusy] = useState(false);
     const [error, setError] = useState(null);
+    const [hasHydrated, setHasHydrated] = useState(false);
 
     // ── InputArea state (mirrors direct chat) ────────────────────────────
     const [chatInput, setChatInput] = useState('');
@@ -48,6 +50,18 @@ export default function BuilderShell({ automationId, onBack, user }) {
         return () => { alive = false; };
     }, []);
 
+    // Stale-tier fallback: when scopedStorage held a tier the server no
+    // longer returns for this user (beta revoked, custom tier deleted),
+    // snap back to 'auto' so the picker doesn't show an undefined slot.
+    // Mirrors AgentHub.jsx:974-980 for direct chat.
+    useEffect(() => {
+        const keys = Object.keys(modelTiers || {});
+        if (keys.length === 0) return;
+        if (!keys.includes(selectedTier)) {
+            setSelectedTier(keys.includes('auto') ? 'auto' : keys[0]);
+        }
+    }, [modelTiers, selectedTier]);
+
     const messagesContainerRef = useRef(null);
     const messagesEndRef = useRef(null);
     useEffect(() => {
@@ -63,6 +77,27 @@ export default function BuilderShell({ automationId, onBack, user }) {
         api.getAutomation(aid).then(d => { if (alive) setServerAutomation(d.automation); }).catch(() => {});
         return () => { alive = false; };
     }, [state.automationId, automationId, state.dryRun, state.finalizedId]); // eslint-disable-line
+
+    // One-shot snapshot rehydration. On mount with an existing automation
+    // id, fetch the latest builder-session snapshot and hydrate so the
+    // chat panel + draft + summary survive a refresh or SSE drop.
+    useEffect(() => {
+        const aid = state.automationId || automationId;
+        if (!aid || hasHydrated) return;
+        let alive = true;
+        (async () => {
+            try {
+                const r = await authFetch(`${API_BASE}/api/automation/builder/session/${aid}`);
+                if (!alive) return;
+                if (r.ok) {
+                    const j = await r.json();
+                    if (j?.snapshot) hydrate(j.snapshot);
+                }
+            } catch (_) { /* silent — snapshot is optional */ }
+            if (alive) setHasHydrated(true);
+        })();
+        return () => { alive = false; };
+    }, [state.automationId, automationId, hasHydrated, hydrate]);
 
     const allSteps = useMemo(() => {
         if (!effectiveDef) return [];
@@ -111,6 +146,30 @@ export default function BuilderShell({ automationId, onBack, user }) {
         try { await api.dryRun(aid); }
         catch (e) { setError(e.message); }
         setBusy(false);
+    };
+
+    // Unsaved-changes guard. The builder persists every mutation to the
+    // server so the only "unsaved" window is between the local SSE-driven
+    // draft update and the server's snapshot persistence at end-of-turn.
+    // We block accidental tab-close while the SSE turn is mid-flight or
+    // the local draft diverges from the last server snapshot.
+    useEffect(() => {
+        const handler = (e) => {
+            if (!state.running && JSON.stringify(state.draft || null) === JSON.stringify(serverAutomation?.definition || null)) return;
+            e.preventDefault();
+            // Modern browsers ignore the custom string but require setting returnValue.
+            e.returnValue = '';
+            return '';
+        };
+        window.addEventListener('beforeunload', handler);
+        return () => window.removeEventListener('beforeunload', handler);
+    }, [state.running, state.draft, serverAutomation]);
+
+    const onSaveStep = async (nextDef) => {
+        const aid = state.automationId || serverAutomation?.id;
+        if (!aid) throw new Error('No automation id — save once via the chat first.');
+        const r = await api.updateAutomation(aid, { definition: nextDef });
+        setServerAutomation(r.automation || r);
     };
 
     const isActive = !!serverAutomation?.isActive;
@@ -173,8 +232,13 @@ export default function BuilderShell({ automationId, onBack, user }) {
                 )}
             </div>
 
-            {error && <div className="bg-red-500/10 text-red-600 dark:text-red-400 px-4 py-2 text-sm border-b border-red-500/20">{error}</div>}
-            {state.error && <div className="bg-amber-500/10 text-amber-600 dark:text-amber-400 px-4 py-2 text-sm border-b border-amber-500/20">{state.error}</div>}
+            <BuilderErrorBanner
+                fatalError={error || state.error}
+                validation={state.validation}
+                aborted={state.aborted}
+                onDismiss={() => setError(null)}
+            />
+
 
             <div className="flex-1 flex min-h-0 relative">
                 {/* Chat side — same composer as direct chat, custom message timeline */}
@@ -248,7 +312,16 @@ export default function BuilderShell({ automationId, onBack, user }) {
                         </div>
                     )}
                 </div>
-                {selectedStep && <StepInspector step={selectedStep} runStep={selectedRunStep} onClose={() => setSelectedStepId(null)} />}
+                {selectedStep && (
+                    <StepInspector
+                        step={selectedStep}
+                        runStep={selectedRunStep}
+                        onClose={() => setSelectedStepId(null)}
+                        definition={effectiveDef}
+                        onSaveStep={onSaveStep}
+                        validation={state.validation}
+                    />
+                )}
             </div>
         </div>
     );
@@ -265,11 +338,74 @@ function MessageBubble({ msg }) {
             >
                 {isUser ? msg.content : <MarkdownRenderer content={msg.content || ''} />}
             </div>
+            {/* Auto-tier badge — same shape as direct chat's MessageItem.
+                Shown only when the server resolved 'auto' to a real tier
+                so the user knows which model produced this turn. */}
+            {!isUser && msg.autoSelectedTier && (
+                <div className="mt-1 text-[11px] text-[var(--text-tertiary)] px-1">
+                    Auto → {tierLabel(msg.autoSelectedTier)}
+                </div>
+            )}
             {!isUser && Array.isArray(msg.toolCalls) && msg.toolCalls.length > 0 && (
                 <div className="mt-1.5 flex flex-col gap-1">
                     {msg.toolCalls.map((tc, i) => <ToolCallChip key={i} tc={tc} />)}
                 </div>
             )}
+        </div>
+    );
+}
+
+/**
+ * Consolidated error banner. Replaces the two independent banners that
+ * used to render `error` and `state.error` separately so users couldn't
+ * tell which failed. Renders, in priority order:
+ *
+ *   1. fatalError       — a network / API failure (red)
+ *   2. aborted          — builder ran out of iterations (amber)
+ *   3. validation.errors — structured records, only shown when present
+ *
+ * Each structured record renders {code, message, hint} so the user (and,
+ * via the LLM feedback loop, the model) gets actionable text instead of
+ * a wall of free-form prose.
+ */
+function BuilderErrorBanner({ fatalError, validation, aborted, onDismiss }) {
+    const errors = (validation?.errors || []);
+    const warnings = (validation?.warnings || []);
+    if (!fatalError && !aborted && errors.length === 0 && warnings.length === 0) return null;
+
+    return (
+        <div className="border-b border-[var(--border-default)]">
+            {fatalError && (
+                <div className="bg-red-500/10 text-red-600 dark:text-red-400 px-4 py-2 text-sm flex items-start gap-2">
+                    <span className="flex-1">{fatalError}</span>
+                    {onDismiss && (
+                        <button onClick={onDismiss} className="text-xs underline hover:no-underline opacity-80">dismiss</button>
+                    )}
+                </div>
+            )}
+            {aborted && (
+                <div className="bg-amber-500/10 text-amber-600 dark:text-amber-400 px-4 py-2 text-sm">
+                    Builder stopped after {aborted.iterations} iterations without finalizing — review the validation issues below and ask the builder to fix them.
+                </div>
+            )}
+            {(errors.length > 0 || warnings.length > 0) && (
+                <div className="px-4 py-2 text-xs bg-[var(--bg-secondary)] max-h-40 overflow-y-auto">
+                    {errors.map((e, i) => <BannerRecord key={`e-${i}`} record={e} />)}
+                    {warnings.map((w, i) => <BannerRecord key={`w-${i}`} record={w} />)}
+                </div>
+            )}
+        </div>
+    );
+}
+
+function BannerRecord({ record }) {
+    const isErr = record.severity === 'error';
+    return (
+        <div className={`mb-1 ${isErr ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}>
+            <span className="font-mono text-[10px] mr-1.5 opacity-70">{record.code}</span>
+            <span className="text-[var(--text-tertiary)] mr-1">{record.path}</span>
+            {record.message}
+            {record.hint && <span className="text-[var(--text-tertiary)]"> — {record.hint}</span>}
         </div>
     );
 }

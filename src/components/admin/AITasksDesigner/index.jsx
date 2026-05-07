@@ -194,14 +194,34 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
                 const data = await res.json();
                 setTasks(data.tasks || []);
                 if (data.maxTasks) setMaxTasks(data.maxTasks);
+            } else {
+                console.error('[AITasksDesigner] fetchTasks failed:', res.status, res.statusText);
             }
-        } catch (err) { /* silent */ }
+        } catch (err) {
+            // Promoted from a silent catch — at minimum surface in devtools
+            // so a misconfigured route shows up during QA.
+            console.error('[AITasksDesigner] fetchTasks error:', err);
+        }
         setLoading(false);
     }, []);
 
     useEffect(() => {
         fetchTasks();
     }, [fetchTasks]);
+
+    // Snap sub-tab back to 'prompt' when the user loses access to the
+    // Automations beta. Replaces the old `setTimeout(setSubTab, 0)` in
+    // render which was a setState-in-render anti-pattern.
+    const automationsAllowedForGate = !!(
+        user?.isAdmin
+        || (user?.permissions || []).includes('all')
+        || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('automations'))
+    );
+    useEffect(() => {
+        if (subTab === 'automations' && !automationsAllowedForGate) {
+            setSubTab('prompt');
+        }
+    }, [subTab, automationsAllowedForGate]);
 
     // Load the user's own agents so a routine can be (re)assigned to one. Only
     // fetch when the beta is enabled — otherwise the selector stays hidden.
@@ -211,7 +231,8 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
             try {
                 const res = await authFetch(`${API_BASE}/agents/all`);
                 if (res.ok) setAgents(await res.json());
-            } catch { /* silent */ }
+                else console.error('[AITasksDesigner] agents/all failed:', res.status);
+            } catch (err) { console.error('[AITasksDesigner] agents/all error:', err); }
         })();
     }, [routinesAllowed]);
 
@@ -480,11 +501,8 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
             || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('automations'))
         );
 
-        // If the saved sub-tab is 'automations' but the feature is off, snap back.
-        if (subTab === 'automations' && !automationsAllowed) {
-            // setState in render is OK only when guarded — use effect-equivalent.
-            setTimeout(() => setSubTab('prompt'), 0);
-        }
+        // (Snap-back when access is lost is handled in a useEffect above
+        // so we never call setState during render.)
 
         const subTabBar = (
             <div className="flex items-center gap-1 px-3 py-2 border-b border-[var(--border-default)]">
