@@ -191,9 +191,13 @@ const MessageItem = ({
             };
             if (withConversation && allMessages?.length > 0) {
                 payload.conversationSnapshot = allMessages.map(m => ({
+                    id: m.id || null,
                     role: m.role,
                     content: m.content,
                     timestamp: m.timestamp,
+                    // Capture per-turn model so the org admin can see when a model was
+                    // switched mid-conversation; falls back to enrichment on the server.
+                    model: m.model || null,
                 }));
             }
             await authFetch(API, {

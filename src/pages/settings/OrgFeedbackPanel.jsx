@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     ThumbsUp, ThumbsDown, MessageCircle, MessageSquare, ChevronRight,
     Search, Cpu, User, Bot, ExternalLink, RefreshCw, Calendar,
+    Clock, Repeat,
 } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
@@ -69,6 +70,14 @@ function shortModel(m) {
     if (!m) return 'Unknown';
     return m.replace(/^(openai\/|anthropic\/|google\/|azure\/|mistral\/)/, '')
         .replace(/-\d{4}-\d{2}-\d{2}$/, '');
+}
+
+function fmtDuration(ms) {
+    if (ms == null || ms === '') return null;
+    const n = Number(ms);
+    if (!Number.isFinite(n) || n <= 0) return null;
+    if (n < 1000) return `${Math.round(n)} ms`;
+    return `${(n / 1000).toFixed(1)} s`;
 }
 
 function parseSnapshot(raw) {
@@ -479,58 +488,95 @@ export default function OrgFeedbackPanel() {
                                                 maxHeight: 360, overflowY: 'auto',
                                                 display: 'flex', flexDirection: 'column', gap: 6,
                                             }}>
-                                                {snapshot.map((msg, mi) => {
-                                                    const isUserMsg = msg.role === 'user';
-                                                    const content = typeof msg.content === 'string'
-                                                        ? msg.content
-                                                        : JSON.stringify(msg.content);
-                                                    if (!content || content.trim().length === 0) return null;
-                                                    const truncated = content.length > 800
-                                                        ? content.slice(0, 800) + '…'
-                                                        : content;
-                                                    return (
-                                                        <div key={mi} style={{
-                                                            display: 'flex',
-                                                            justifyContent: isUserMsg ? 'flex-end' : 'flex-start',
-                                                        }}>
-                                                            <div style={{
-                                                                maxWidth: '85%',
-                                                                padding: '8px 12px', borderRadius: 12,
-                                                                background: isUserMsg
-                                                                    ? 'var(--bg-secondary)'
-                                                                    : 'var(--bg-primary)',
-                                                                border: `1px solid ${isUserMsg
-                                                                    ? 'var(--border-subtle)'
-                                                                    : `${C.blue}25`}`,
+                                                {(() => {
+                                                    // Track the previous assistant turn's model so we can flag a switch.
+                                                    let prevAssistantModel = null;
+                                                    return snapshot.map((msg, mi) => {
+                                                        const isUserMsg = msg.role === 'user';
+                                                        const content = typeof msg.content === 'string'
+                                                            ? msg.content
+                                                            : JSON.stringify(msg.content);
+                                                        if (!content || content.trim().length === 0) return null;
+                                                        const truncated = content.length > 800
+                                                            ? content.slice(0, 800) + '…'
+                                                            : content;
+
+                                                        const duration = !isUserMsg ? fmtDuration(msg.duration_ms) : null;
+                                                        const turnModel = !isUserMsg ? (msg.model || null) : null;
+                                                        const switched = !isUserMsg && turnModel && prevAssistantModel && turnModel !== prevAssistantModel;
+                                                        if (!isUserMsg) prevAssistantModel = turnModel || prevAssistantModel;
+
+                                                        return (
+                                                            <div key={mi} style={{
+                                                                display: 'flex',
+                                                                justifyContent: isUserMsg ? 'flex-end' : 'flex-start',
                                                             }}>
                                                                 <div style={{
-                                                                    display: 'flex', alignItems: 'center', gap: 5,
-                                                                    marginBottom: 4,
+                                                                    maxWidth: '85%',
+                                                                    padding: '8px 12px', borderRadius: 12,
+                                                                    background: isUserMsg
+                                                                        ? 'var(--bg-secondary)'
+                                                                        : 'var(--bg-primary)',
+                                                                    border: `1px solid ${isUserMsg
+                                                                        ? 'var(--border-subtle)'
+                                                                        : `${C.blue}25`}`,
                                                                 }}>
-                                                                    {isUserMsg
-                                                                        ? <User style={{ width: 10, height: 10, color: 'var(--text-muted)' }} />
-                                                                        : <Bot style={{ width: 10, height: 10, color: C.blue }} />}
-                                                                    <span style={{
-                                                                        fontSize: 10, fontWeight: 600,
-                                                                        color: isUserMsg ? 'var(--text-muted)' : C.blue,
+                                                                    <div style={{
+                                                                        display: 'flex', alignItems: 'center', gap: 5,
+                                                                        marginBottom: 4, flexWrap: 'wrap',
                                                                     }}>
-                                                                        {isUserMsg ? t('org.feedback_role_user') : t('org.feedback_role_ai')}
-                                                                    </span>
-                                                                </div>
-                                                                <div style={{
-                                                                    fontSize: 13,
-                                                                    color: 'var(--text-primary)',
-                                                                    wordBreak: 'break-word',
-                                                                    lineHeight: 1.6,
-                                                                }} className="prose prose-sm dark:prose-invert max-w-none">
-                                                                    {isUserMsg
-                                                                        ? <span style={{ whiteSpace: 'pre-wrap' }}>{truncated}</span>
-                                                                        : <MarkdownRenderer content={truncated} />}
+                                                                        {isUserMsg
+                                                                            ? <User style={{ width: 10, height: 10, color: 'var(--text-muted)' }} />
+                                                                            : <Bot style={{ width: 10, height: 10, color: C.blue }} />}
+                                                                        <span style={{
+                                                                            fontSize: 10, fontWeight: 600,
+                                                                            color: isUserMsg ? 'var(--text-muted)' : C.blue,
+                                                                        }}>
+                                                                            {isUserMsg ? t('org.feedback_role_user') : t('org.feedback_role_ai')}
+                                                                        </span>
+                                                                        {turnModel && (
+                                                                            <span style={{
+                                                                                display: 'inline-flex', alignItems: 'center', gap: 3,
+                                                                                padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 600,
+                                                                                background: switched ? `${C.amber}20` : 'var(--bg-tertiary)',
+                                                                                color: switched ? C.amber : 'var(--text-secondary)',
+                                                                                border: switched ? `1px solid ${C.amber}40` : '1px solid transparent',
+                                                                            }} title={switched
+                                                                                ? `${t('org.feedback_model_switched')}: ${prevAssistantModel} → ${turnModel}`
+                                                                                : turnModel}>
+                                                                                {switched
+                                                                                    ? <Repeat style={{ width: 9, height: 9 }} />
+                                                                                    : <Cpu style={{ width: 9, height: 9 }} />}
+                                                                                {shortModel(turnModel)}
+                                                                            </span>
+                                                                        )}
+                                                                        {duration && (
+                                                                            <span style={{
+                                                                                display: 'inline-flex', alignItems: 'center', gap: 3,
+                                                                                padding: '1px 6px', borderRadius: 4, fontSize: 10, fontWeight: 600,
+                                                                                background: 'var(--bg-tertiary)',
+                                                                                color: 'var(--text-secondary)',
+                                                                            }} title={t('org.feedback_response_time')}>
+                                                                                <Clock style={{ width: 9, height: 9 }} />
+                                                                                {duration}
+                                                                            </span>
+                                                                        )}
+                                                                    </div>
+                                                                    <div style={{
+                                                                        fontSize: 13,
+                                                                        color: 'var(--text-primary)',
+                                                                        wordBreak: 'break-word',
+                                                                        lineHeight: 1.6,
+                                                                    }} className="prose prose-sm dark:prose-invert max-w-none">
+                                                                        {isUserMsg
+                                                                            ? <span style={{ whiteSpace: 'pre-wrap' }}>{truncated}</span>
+                                                                            : <MarkdownRenderer content={truncated} />}
+                                                                    </div>
                                                                 </div>
                                                             </div>
-                                                        </div>
-                                                    );
-                                                })}
+                                                        );
+                                                    });
+                                                })()}
                                             </div>
                                         </div>
                                     ) : (
