@@ -302,8 +302,13 @@ export default function BuilderShell({ automationId, onBack, user }) {
                         </div>
                     )}
                     <DryRunPanel run={state.dryRun} steps={state.steps} />
-                    <div className="border-t border-[var(--border-default)]">
-                        <DiagramPane definition={effectiveDef} runSteps={state.steps} onNodeClick={setSelectedStepId} />
+                    <div className="border-t border-[var(--border-default)] min-h-[420px]">
+                        <DiagramPane
+                            definition={effectiveDef}
+                            runSteps={state.steps}
+                            onNodeClick={setSelectedStepId}
+                            validation={state.validation}
+                        />
                     </div>
                     {(state.automationId || automationId) && (
                         <div className="border-t border-[var(--border-default)]">

@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { X, Save, RotateCcw } from 'lucide-react';
+import { matchValidationToStep } from './flow/matchValidationToStep';
 
 /**
  * Right-side detail panel for a step.
@@ -46,14 +47,11 @@ export default function StepInspector({ step, runStep, onClose, definition, onSa
 
     // Step-scoped validation records (filtered from the global validation
     // payload so the inspector shows only what's wrong with THIS step).
-    const stepIssues = useMemo(() => {
-        if (!step?.id || !validation) return { errors: [], warnings: [] };
-        const matches = (rec) => typeof rec?.path === 'string' && rec.path.includes(step.id);
-        return {
-            errors: (validation.errors || []).filter(matches),
-            warnings: (validation.warnings || []).filter(matches),
-        };
-    }, [step, validation]);
+    // Matcher is shared with the diagram via flow/matchValidationToStep.
+    const stepIssues = useMemo(
+        () => matchValidationToStep(validation, step?.id),
+        [step, validation],
+    );
 
     if (!step) return null;
 
