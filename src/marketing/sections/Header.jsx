@@ -28,6 +28,36 @@ export default function Header({ data }) {
 
     const initials = (data.logoText || 'B').slice(0, 1).toUpperCase();
 
+    // Nav fallback: if the user hasn't customized header.nav, auto-generate
+    // links from the site's pages. Filtering rules:
+    //   1. Exclude the homepage (it's reachable via the logo).
+    //   2. Exclude pages where showInNav === false (Sitemap toggle).
+    //   3. Sort by navOrder ascending (independent of array/page-creation order).
+    // When the user adds explicit navLinks in the Site chrome editor, those
+    // win and pages aren't auto-listed.
+    const userNav = Array.isArray(data.navLinks) ? data.navLinks : [];
+    const allPages = Array.isArray(data.pages) ? data.pages : [];
+    const autoNav = allPages
+        .filter(p => !p.isHomepage)
+        .filter(p => p.showInNav !== false)
+        .slice()                                    // don't mutate the upstream array
+        .sort((a, b) => (a.navOrder ?? 0) - (b.navOrder ?? 0))
+        .map(p => ({
+            label: p.title || p.slug,
+            // Public site is served at `/` (RootPathGate). Routing per page
+            // via `?slug=…` keeps the browser at the root path so the BeeFlow
+            // app router doesn't intercept and serve the AI chat.
+            href:  `/?slug=${encodeURIComponent(p.slug)}`,
+            slug:  p.slug,
+        }));
+    const navItems = userNav.length > 0 ? userNav : autoNav;
+    const activeSlug = data.activeSlug || '';
+    const isActive = (href, slug) => {
+        if (slug && slug === activeSlug) return true;
+        if (href === `/${activeSlug}` && activeSlug) return true;
+        return false;
+    };
+
     return (
         <SectionFrame id="header" name="Header" enabled={data.enabled}>
             <header className={`header ${scrolled ? 'scrolled' : ''}`}>
@@ -42,11 +72,23 @@ export default function Header({ data }) {
                         </span>
                     </a>
                     <nav className="header-nav">
-                        {(data.navLinks || []).map((link, i) => (
-                            <a key={i} href={link.href} onClick={navHandler}>
-                                <EditableText path={`header.navLinks.${i}.label`} placeholder="Link">
-                                    {link.label || ''}
-                                </EditableText>
+                        {navItems.map((link, i) => (
+                            <a
+                                key={i}
+                                href={link.href}
+                                onClick={navHandler}
+                                className={isActive(link.href, link.slug) ? 'active' : undefined}
+                            >
+                                {/* Only the user-customized nav is inline-editable
+                                    (auto-generated entries are derived from page
+                                    titles — edit those in the page meta strip). */}
+                                {userNav.length > 0 ? (
+                                    <EditableText path={`header.navLinks.${i}.label`} placeholder="Link">
+                                        {link.label || ''}
+                                    </EditableText>
+                                ) : (
+                                    link.label || ''
+                                )}
                             </a>
                         ))}
                     </nav>
@@ -74,8 +116,13 @@ export default function Header({ data }) {
             </header>
             <div className={`mobile-nav ${mobileOpen ? 'active' : ''}`}>
                 <div className="mobile-nav-inner">
-                    {(data.navLinks || []).map((link, i) => (
-                        <a key={i} href={link.href} onClick={(e) => { navHandler(e); setMobileOpen(false); }}>
+                    {navItems.map((link, i) => (
+                        <a
+                            key={i}
+                            href={link.href}
+                            onClick={(e) => { navHandler(e); setMobileOpen(false); }}
+                            className={isActive(link.href, link.slug) ? 'active' : undefined}
+                        >
                             {link.label}
                         </a>
                     ))}

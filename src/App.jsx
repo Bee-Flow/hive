@@ -187,6 +187,12 @@ function AppRoot() {
     if (chatMatch) {
         return <EmbedChat agentId={chatMatch[1]} />;
     }
+    // Dedicated CMS preview route — rendered inside the admin Product Website
+    // editor's iframe. Always shows the marketing site in preview mode, with
+    // no auth/enabled/redirect coupling.
+    if (window.location.pathname === '/__cms_preview__') {
+        return <CmsPreviewHost />;
+    }
     // Root-path marketing-site gate: when the CMS is enabled, intercept "/"
     // and render the public product website. When disabled, replace the URL
     // with /app so the login form lives there. Anything else falls through
@@ -195,6 +201,15 @@ function AppRoot() {
         return <RootPathGate />;
     }
     return <App />;
+}
+
+// Isolated host for the CMS preview iframe. Renders ProductWebsite with empty
+// content; the admin panel pushes the real content via cms-preview postMessage
+// immediately after ProductWebsite posts its cms-preview-ready handshake.
+// No fetch, no auth coupling, no redirect logic — the iframe always renders
+// the marketing site shell, never the chat app.
+function CmsPreviewHost() {
+    return <ProductWebsite content={{}} />;
 }
 
 function RootPathGate() {
@@ -207,6 +222,11 @@ function RootPathGate() {
         let cancelled = false;
         const params = new URLSearchParams(window.location.search);
         const locale = (params.get('locale') || (navigator.language || 'en').split('-')[0]).toLowerCase();
+        // Per-page routing: nav links and CTAs on the public site link to
+        // `/?slug=<slug>` so they stay inside the product-website renderer
+        // instead of falling through to the BeeFlow app router. When no slug
+        // is present, the API returns the homepage by default.
+        const slug = params.get('slug') || '';
 
         // Preview mode: always render the marketing site so the admin's iframe
         // shows something even when the public site is still disabled. Pull
@@ -223,7 +243,9 @@ function RootPathGate() {
             return;
         }
 
-        fetch(`${API_BASE}/api/cms/site?locale=${encodeURIComponent(locale)}`)
+        const qs = `locale=${encodeURIComponent(locale)}` +
+                   (slug ? `&slug=${encodeURIComponent(slug)}` : '');
+        fetch(`${API_BASE}/api/cms/site?${qs}`)
             .then(r => r.ok ? r.json() : { enabled: false })
             .catch(() => ({ enabled: false }))
             .then(data => {

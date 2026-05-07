@@ -210,3 +210,132 @@ export function RepeatableList({ items = [], onChange, renderItem, makeNew, labe
 }
 
 export const inputCls = inputClass;
+
+/**
+ * LinkField — edit a Link value object:
+ *   { kind: 'page',     pageId, anchor? }
+ *   { kind: 'external', url, newTab? }
+ *   { kind: 'anchor',   anchor }
+ *   { kind: 'app',      path }
+ *
+ * `pages` is the public page list [ { id, slug, title, isHomepage } ]
+ * from the admin payload, used to populate the internal-page dropdown.
+ */
+export function LinkField({ label, value, onChange, pages = [], hint }) {
+    const link = value && typeof value === 'object' ? value : { kind: 'external', url: '' };
+    const kind = link.kind || 'external';
+
+    const set = (patch) => onChange({ ...link, ...patch });
+
+    // Detect a dangling page reference: link kind is 'page' but the
+    // pageId no longer exists in the current site (page was deleted or
+    // the user switched sites). Surfaced as an inline warning so users
+    // notice the link is broken before publishing.
+    const linkedPage = kind === 'page'
+        ? pages.find(p => p.id === link.pageId)
+        : null;
+    const brokenPage = kind === 'page' && pages.length > 0 && link.pageId && !linkedPage;
+
+    return (
+        <FieldRow label={label} hint={hint}>
+            {/* kind selector */}
+            <select
+                className={inputClass}
+                value={kind}
+                onChange={e => {
+                    const next = e.target.value;
+                    if (next === 'page')     onChange({ kind: 'page', pageId: pages[0]?.id || '' });
+                    if (next === 'anchor')   onChange({ kind: 'anchor', anchor: '' });
+                    if (next === 'external') onChange({ kind: 'external', url: '' });
+                    if (next === 'app')      onChange({ kind: 'app', path: '/app' });
+                }}
+            >
+                <option value="page">Internal page</option>
+                <option value="anchor">Anchor on this page</option>
+                <option value="external">External URL</option>
+                <option value="app">App route</option>
+            </select>
+
+            {/* kind-specific fields */}
+            {kind === 'page' && (
+                <div className="flex flex-col gap-1.5 mt-1.5">
+                    <select
+                        className={`${inputClass} ${brokenPage ? 'border-red-500/50 focus:border-red-500' : ''}`}
+                        value={link.pageId || ''}
+                        onChange={e => set({ pageId: e.target.value })}
+                    >
+                        {pages.length === 0 && <option value="">— no pages —</option>}
+                        {/* If pageId is dangling, surface it in the dropdown so
+                            the user can see what's set and pick a replacement. */}
+                        {brokenPage && (
+                            <option value={link.pageId}>
+                                ⚠ Missing page ({link.pageId})
+                            </option>
+                        )}
+                        {pages.map(p => (
+                            <option key={p.id} value={p.id}>
+                                {p.title || p.slug} (/{p.slug}{p.isHomepage ? ' · home' : ''})
+                            </option>
+                        ))}
+                    </select>
+                    {brokenPage && (
+                        <span className="text-xs text-red-400">
+                            This link points to a page that no longer exists. Pick another page above.
+                        </span>
+                    )}
+                    {linkedPage && (
+                        <span className="text-xs text-[var(--text-muted)]">
+                            → {linkedPage.isHomepage ? '/' : `/${linkedPage.slug}`}
+                            {link.anchor ? `#${link.anchor}` : ''}
+                        </span>
+                    )}
+                    <input
+                        type="text"
+                        className={inputClass}
+                        placeholder="#section-anchor (optional)"
+                        value={link.anchor || ''}
+                        onChange={e => set({ anchor: e.target.value.replace(/^#/, '') })}
+                    />
+                </div>
+            )}
+            {kind === 'anchor' && (
+                <input
+                    type="text"
+                    className={`${inputClass} mt-1.5`}
+                    placeholder="section-id (without #)"
+                    value={link.anchor || ''}
+                    onChange={e => set({ anchor: e.target.value.replace(/^#/, '') })}
+                />
+            )}
+            {kind === 'external' && (
+                <div className="flex flex-col gap-1.5 mt-1.5">
+                    <input
+                        type="url"
+                        className={inputClass}
+                        placeholder="https://…"
+                        value={link.url || ''}
+                        onChange={e => set({ url: e.target.value })}
+                    />
+                    <label className="flex items-center gap-2 text-xs text-[var(--text-secondary)] cursor-pointer">
+                        <input
+                            type="checkbox"
+                            checked={!!link.newTab}
+                            onChange={e => set({ newTab: e.target.checked })}
+                            className="accent-[var(--accent-primary)]"
+                        />
+                        Open in new tab
+                    </label>
+                </div>
+            )}
+            {kind === 'app' && (
+                <input
+                    type="text"
+                    className={`${inputClass} mt-1.5`}
+                    placeholder="/app"
+                    value={link.path || ''}
+                    onChange={e => set({ path: e.target.value })}
+                />
+            )}
+        </FieldRow>
+    );
+}

@@ -1,37 +1,66 @@
 /* ────────────────────────────────────────────────────────────────────────────
-   Bee Flow — Product Website Stylesheet
+   Product Website Stylesheet
    All selectors scoped under `.marketing-root` so they cannot bleed into
    the rest of the app.
+
+   Tokens are layered:
+     --brand-* / --font-* / --radius-base   user-controlled design system
+                                            (overridden via inline style on
+                                            the root element by the renderer
+                                            from site.design)
+     legacy --bg-primary / --accent / etc.  preserved so existing rules
+                                            keep working — they alias the
+                                            brand tokens
    ──────────────────────────────────────────────────────────────────────────── */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+/* The dynamic font loader injects a <link> tag into the iframe head based on
+   site.design.fonts. Inter is kept as a system fallback so the page never
+   shows a flash of unstyled text before the loader runs. */
 
 .marketing-root {
-    /* ── Design Tokens ────────────────────────────────────────────────── */
-    --bg-primary:        #06090F;
-    --bg-secondary:      #0C1220;
-    --bg-card:           rgba(255, 255, 255, 0.03);
-    --bg-card-hover:     rgba(255, 255, 255, 0.06);
-    --bg-glass:          rgba(12, 18, 32, 0.7);
+    /* ── Brand / design-system tokens (user-controlled) ─────────────── */
+    --brand-primary:        #F5A623;
+    --brand-secondary:      #1F2937;
+    --brand-accent:         #FFD166;
+    --brand-bg:             #FFFFFF;
+    --brand-surface:        #F7F8FA;
+    --brand-text:           #0F172A;
+    --brand-text-secondary: #475569;
 
-    --accent:            #F5A623;
-    --accent-light:      #FFD080;
+    --font-heading: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --font-body:    'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+    --radius-base: 12px;
+
+    /* ── Legacy tokens — aliased to the brand tokens above ──────────── */
+    --bg-primary:        var(--brand-bg);
+    --bg-secondary:      var(--brand-surface);
+    --bg-card:           rgba(0, 0, 0, 0.03);
+    --bg-card-hover:     rgba(0, 0, 0, 0.06);
+    --bg-glass:          rgba(255, 255, 255, 0.7);
+
+    --accent:            var(--brand-primary);
+    --accent-light:      var(--brand-accent);
     --accent-glow:       rgba(245, 166, 35, 0.25);
-    --accent-gradient:   linear-gradient(135deg, #F5A623 0%, #FF6B35 100%);
+    /* Default fill is SOLID. The .cms-gradient class below upgrades it to a
+       linear gradient when the user opts in via the Design tab. */
+    --accent-gradient:   var(--brand-primary);
 
-    --text-primary:      #F0F2F5;
-    --text-secondary:    #8A92A6;
-    --text-muted:        #555D70;
+    --text-primary:      var(--brand-text);
+    --text-secondary:    var(--brand-text-secondary);
+    --text-muted:        rgba(15, 23, 42, 0.5);
 
-    --border-subtle:     rgba(255, 255, 255, 0.06);
+    --border-subtle:     rgba(15, 23, 42, 0.08);
     --border-accent:     rgba(245, 166, 35, 0.3);
 
-    --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-lg: 20px;
-    --radius-xl: 28px;
+    /* Radius scale derived from --radius-base so the global slider scales
+       buttons, cards, inputs proportionally. */
+    --radius-sm: calc(var(--radius-base) * 0.5);
+    --radius-md: var(--radius-base);
+    --radius-lg: calc(var(--radius-base) * 1.5);
+    --radius-xl: calc(var(--radius-base) * 2);
 
-    --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.3);
+    --shadow-card: 0 4px 24px rgba(15, 23, 42, 0.08);
     --shadow-glow: 0 0 60px rgba(245, 166, 35, 0.08);
 
     --transition-fast: 0.2s ease;
@@ -42,13 +71,27 @@
     --header-height: 72px;
 
     /* ── Base ─────────────────────────────────────────────────────────── */
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: var(--font-body);
     background: var(--bg-primary);
     color: var(--text-primary);
     line-height: 1.6;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     min-height: 100vh;
+}
+
+/* Heading font applies to all heading elements + the headline utility classes.
+   Body text inherits --font-body from .marketing-root. */
+.marketing-root h1,
+.marketing-root h2,
+.marketing-root h3,
+.marketing-root h4,
+.marketing-root h5,
+.marketing-root h6,
+.marketing-root .headline-xl,
+.marketing-root .headline-lg,
+.marketing-root .headline-md {
+    font-family: var(--font-heading);
 }
 
 .marketing-root *,
@@ -882,3 +925,348 @@
     .marketing-root .arch-layer-label { flex: none; }
     .marketing-root .footer-bottom { flex-direction: column; gap: 16px; }
 }
+
+/* ────────────────────────────────────────────────────────────────────────
+   Per-block style wrapper
+   ─────────────────────────────────────────────────────────────────────────
+   Each block in ProductWebsite.jsx is wrapped in a `.cms-block-wrap` div
+   that carries the user's per-block style overrides as inline CSS. The
+   classes below cover the structural pieces (max-width variants, text
+   alignment) so the inline style stays small and predictable.
+   The actual padding/margin/background/etc. come in via inline `style`. */
+
+.marketing-root .cms-block-wrap {
+    position: relative;        /* anchor for image-overlay pseudo */
+    isolation: isolate;        /* keep overlay z-index local */
+}
+.marketing-root .cms-block-wrap > * {
+    position: relative;
+    z-index: 1;                /* keep section content above the overlay */
+}
+
+/* Inner container clamps section content when a max-width preset is set.
+   Handlers in JSX add the right modifier class. The default (full) leaves
+   the section's own .container behavior intact. */
+.marketing-root .cms-block-wrap--narrow > * { max-width: 720px;  margin-inline: auto; }
+.marketing-root .cms-block-wrap--medium > * { max-width: 960px;  margin-inline: auto; }
+.marketing-root .cms-block-wrap--wide   > * { max-width: 1200px; margin-inline: auto; }
+.marketing-root .cms-block-wrap--full   > * { max-width: 100%; }
+
+.marketing-root .cms-block-wrap--align-left   { text-align: left; }
+.marketing-root .cms-block-wrap--align-center { text-align: center; }
+.marketing-root .cms-block-wrap--align-right  { text-align: right; }
+
+/* Background image overlay. The image is set as `background-image` on the
+   wrap; the overlay is a pseudo-element whose fill comes from
+   --cms-bg-overlay (a single CSS color string, e.g. rgba(0,0,0,0.5))
+   set per-block. When no image is set the pseudo isn't visible because
+   the wrapper lacks the .cms-block-wrap--has-image class. */
+.marketing-root .cms-block-wrap--has-image {
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+}
+.marketing-root .cms-block-wrap--has-image::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--cms-bg-overlay, transparent);
+    pointer-events: none;
+    z-index: 0;
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Dark theme — overrides the layout palette (bg/surface/text) but leaves
+   brand colors (primary/secondary/accent) intact. The renderer skips
+   setting --brand-bg/--brand-surface/--brand-text/--brand-text-secondary
+   inline when theme==='dark' so this class actually wins (otherwise inline
+   would beat the class). Border + card alphas are also flipped so they
+   read on a dark background. */
+.marketing-root.cms-theme-dark {
+    color-scheme: dark;
+    --brand-bg:             #0F172A;
+    --brand-surface:        #1E293B;
+    --brand-text:           #F1F5F9;
+    --brand-text-secondary: #94A3B8;
+
+    --bg-card:           rgba(255, 255, 255, 0.04);
+    --bg-card-hover:     rgba(255, 255, 255, 0.08);
+    --bg-glass:          rgba(15, 23, 42, 0.7);
+    --text-muted:        rgba(241, 245, 249, 0.5);
+    --border-subtle:     rgba(255, 255, 255, 0.08);
+    --shadow-card:       0 4px 24px rgba(0, 0, 0, 0.4);
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Gradient mode — opts user into a linear-gradient fill for primary
+   elements (CTAs, hero gradient text, feature card top border, chat-user
+   bubbles, header logo tile). Ramp goes primary → accent so users have
+   control over both endpoints via the Design tab. When the class is
+   absent, --accent-gradient is the solid var(--brand-primary). */
+.marketing-root.cms-gradient {
+    --accent-gradient: linear-gradient(135deg, var(--brand-primary) 0%, var(--brand-accent) 100%);
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Active nav link — applied to the link whose href matches the page
+   currently being previewed/rendered. Mirrors the hover state but locked. */
+.marketing-root .header-nav a.active        { color: var(--text-primary); }
+.marketing-root .header-nav a.active::after { width: 100%; }
+
+/* ────────────────────────────────────────────────────────────────────────
+   Content block — generic flexible section.
+   Three layout knobs from data:
+     backgroundVariant → fill + foreground (default | surface | primary | dark)
+     textAlign         → text alignment within the text column (left | center | right)
+     imagePosition     → flex-direction on the inner row (above | below | left | right)
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* Background variants. Default falls through to the page bg. Saturated
+   variants (primary/dark) flip text colors so body copy stays readable. */
+.marketing-root .content-block--bg-surface { background: var(--brand-surface); }
+.marketing-root .content-block--bg-primary { background: var(--brand-primary); color: #fff; }
+.marketing-root .content-block--bg-dark    { background: var(--brand-secondary); color: var(--brand-bg); }
+.marketing-root .content-block--bg-primary .content-block-subheading,
+.marketing-root .content-block--bg-primary .content-block-body,
+.marketing-root .content-block--bg-dark    .content-block-subheading,
+.marketing-root .content-block--bg-dark    .content-block-body {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+/* Text alignment scoped to the text column so the image keeps its grid
+   cell rather than shifting with the text. */
+.marketing-root .content-block--align-left   .content-block-text { text-align: left; }
+.marketing-root .content-block--align-center .content-block-text { text-align: center; }
+.marketing-root .content-block--align-right  .content-block-text { text-align: right; }
+
+/* Inner layout — flex-direction handles all four image-position variants
+   without changing source order. Above/below stack vertically; left/right
+   put image and text side-by-side with equal weight. */
+.marketing-root .content-block-inner {
+    display: flex;
+    gap: 48px;
+    align-items: center;
+    flex-direction: column;
+}
+.marketing-root .content-block-inner--image-above { flex-direction: column; }
+.marketing-root .content-block-inner--image-below { flex-direction: column-reverse; }
+.marketing-root .content-block-inner--image-left  { flex-direction: row; }
+.marketing-root .content-block-inner--image-right { flex-direction: row-reverse; }
+
+.marketing-root .content-block-inner--image-left  > *,
+.marketing-root .content-block-inner--image-right > * {
+    flex: 1 1 0;
+    min-width: 0;
+}
+
+/* Image rendering. Empty src shows a dashed placeholder so the layout
+   doesn't collapse while the user is editing in the panel. */
+.marketing-root .content-block-image          { border-radius: var(--radius-lg); overflow: hidden; }
+.marketing-root .content-block-image img      { width: 100%; height: auto; display: block; }
+.marketing-root .content-block-image-placeholder {
+    aspect-ratio: 16 / 9;
+    background: var(--bg-card);
+    border: 1px dashed var(--border-subtle);
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+}
+
+.marketing-root .content-block-heading    { margin-bottom: 16px; }
+.marketing-root .content-block-subheading { margin-bottom: 16px; font-size: 1.125rem; opacity: 0.9; }
+.marketing-root .content-block-body       { white-space: pre-line; line-height: 1.6; }
+.marketing-root .content-block-cta        { margin-top: 24px; }
+
+/* Responsive — collapse side-by-side to stacked on small screens. */
+@media (max-width: 768px) {
+    .marketing-root .content-block-inner--image-left,
+    .marketing-root .content-block-inner--image-right { flex-direction: column; }
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   Shared background-variant utilities.
+   Reusable across content-style blocks (Media + Text and any future block
+   that exposes a 'backgroundVariant' knob). Each block adds its own
+   block-scoped rules for inverse text colors on saturated backgrounds.
+   The 'default' variant intentionally has no rule — it falls through to
+   the page background. */
+
+.marketing-root .cms-bg--surface { background: var(--brand-surface); }
+.marketing-root .cms-bg--primary { background: var(--brand-primary);   color: #fff; }
+.marketing-root .cms-bg--dark    { background: var(--brand-secondary); color: var(--brand-bg); }
+
+/* ────────────────────────────────────────────────────────────────────────
+   Media + Text block.
+   Two layout knobs:
+     mediaPosition → flex-direction (left = row, right = row-reverse)
+     mediaSize     → flex-basis on the media column (half / third / two-thirds)
+   Below 768px the row collapses to a column with media first (markup
+   keeps media in source order so flex-direction:column lands it on top). */
+
+.marketing-root .media-text-block-inner {
+    display: flex;
+    gap: 48px;
+    align-items: center;
+    flex-direction: column;     /* default for narrow / no-position state */
+}
+.marketing-root .media-text-block-inner--position-left  { flex-direction: row; }
+.marketing-root .media-text-block-inner--position-right { flex-direction: row-reverse; }
+
+/* Default text expands to fill remaining space; media column's flex-basis
+   determines the split. */
+.marketing-root .media-text-block-text  { flex: 1 1 0; min-width: 0; }
+.marketing-root .media-text-block-media { flex: 1 1 0; min-width: 0; }
+
+/* Size variants override the media column's flex. Text stays flex:1. */
+.marketing-root .media-text-block-inner--size-third      .media-text-block-media { flex: 0 0 33%; }
+.marketing-root .media-text-block-inner--size-two-thirds .media-text-block-media { flex: 0 0 66%; }
+/* size-half keeps the default 1 1 0 / 1 1 0 → 50/50 */
+
+/* Media rendering — image, video iframe (16:9), or placeholder. */
+.marketing-root .media-text-block-media img {
+    width: 100%;
+    height: auto;
+    display: block;
+    border-radius: var(--radius-lg);
+}
+.marketing-root .media-text-block-video {
+    position: relative;
+    aspect-ratio: 16 / 9;
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    background: #000;
+}
+.marketing-root .media-text-block-video iframe {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    border: 0;
+}
+.marketing-root .media-text-block-media-placeholder {
+    aspect-ratio: 16 / 9;
+    background: var(--bg-card);
+    border: 1px dashed var(--border-subtle);
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    text-align: center;
+    padding: 16px;
+}
+
+.marketing-root .media-text-block-heading    { margin-bottom: 16px; }
+.marketing-root .media-text-block-subheading { margin-bottom: 16px; font-size: 1.125rem; opacity: 0.9; }
+.marketing-root .media-text-block-body       { white-space: pre-line; line-height: 1.6; }
+.marketing-root .media-text-block-cta        { margin-top: 24px; }
+
+/* Inverse text colors on saturated backgrounds — block-scoped so they
+   don't leak into other blocks that happen to share the bg utility. */
+.marketing-root .media-text-block.cms-bg--primary .media-text-block-subheading,
+.marketing-root .media-text-block.cms-bg--primary .media-text-block-body,
+.marketing-root .media-text-block.cms-bg--dark    .media-text-block-subheading,
+.marketing-root .media-text-block.cms-bg--dark    .media-text-block-body {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+/* Responsive — collapse side-by-side to stacked column with media on top.
+   The selector specificity matches the position variants above so it wins. */
+@media (max-width: 768px) {
+    .marketing-root .media-text-block-inner.media-text-block-inner--position-left,
+    .marketing-root .media-text-block-inner.media-text-block-inner--position-right {
+        flex-direction: column;
+    }
+    .marketing-root .media-text-block-inner--size-third      .media-text-block-media,
+    .marketing-root .media-text-block-inner--size-two-thirds .media-text-block-media {
+        flex: 1 1 100%;
+    }
+}
+
+/* ────────────────────────────────────────────────────────────────────────
+   CTA Banner block.
+   Two layouts:
+     centered → text + CTAs stacked, all centered
+     split    → text on the left (flex:1), CTAs on the right (shrink:0)
+   On screens <768px the split layout collapses to centered. */
+
+.marketing-root .cta-banner-block-inner {
+    display: flex;
+    gap: 32px;
+    align-items: center;
+}
+
+.marketing-root .cta-banner-block-inner--layout-centered {
+    flex-direction: column;
+    text-align: center;
+}
+
+.marketing-root .cta-banner-block-inner--layout-split {
+    flex-direction: row;
+    justify-content: space-between;
+}
+.marketing-root .cta-banner-block-inner--layout-split .cta-banner-block-text    { flex: 1 1 0; min-width: 0; }
+.marketing-root .cta-banner-block-inner--layout-split .cta-banner-block-actions { flex-shrink: 0; }
+
+.marketing-root .cta-banner-block-heading    { margin-bottom: 8px; }
+.marketing-root .cta-banner-block-subheading { font-size: 1.125rem; opacity: 0.9; margin: 0; }
+
+.marketing-root .cta-banner-block-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+.marketing-root .cta-banner-block-inner--layout-centered .cta-banner-block-actions {
+    justify-content: center;
+    margin-top: 24px;
+}
+
+/* Subheading contrast on saturated backgrounds. */
+.marketing-root .cta-banner-block.cms-bg--primary .cta-banner-block-subheading,
+.marketing-root .cta-banner-block.cms-bg--dark    .cta-banner-block-subheading {
+    color: rgba(255, 255, 255, 0.85);
+}
+
+/* On a primary-colored banner the .btn-primary fill (=brand-primary) would
+   blend invisibly into the background. Invert to a white pill so the CTA
+   stays readable. .btn-secondary becomes an outlined ghost button. Same
+   treatment on dark backgrounds for consistency. Selectors are scoped to
+   .cta-banner-block so they don't bleed into other blocks' buttons. */
+.marketing-root .cta-banner-block.cms-bg--primary .btn-primary,
+.marketing-root .cta-banner-block.cms-bg--dark    .btn-primary {
+    background: #fff;
+    color: var(--brand-primary);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+}
+.marketing-root .cta-banner-block.cms-bg--primary .btn-primary:hover,
+.marketing-root .cta-banner-block.cms-bg--dark    .btn-primary:hover {
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 8px 30px rgba(0, 0, 0, 0.2);
+}
+.marketing-root .cta-banner-block.cms-bg--primary .btn-secondary,
+.marketing-root .cta-banner-block.cms-bg--dark    .btn-secondary {
+    background: transparent;
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.4);
+    backdrop-filter: none;
+}
+.marketing-root .cta-banner-block.cms-bg--primary .btn-secondary:hover,
+.marketing-root .cta-banner-block.cms-bg--dark    .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.12);
+    border-color: rgba(255, 255, 255, 0.7);
+}
+
+@media (max-width: 768px) {
+    .marketing-root .cta-banner-block-inner--layout-split {
+        flex-direction: column;
+        text-align: center;
+    }
+    .marketing-root .cta-banner-block-inner--layout-split .cta-banner-block-actions {
+        justify-content: center;
+    }
+}
+
