@@ -166,10 +166,24 @@ const MessageItem = ({
     const submitFeedback = async (rating, comment = '', withConversation = false) => {
         try {
             const API = (typeof API_BASE !== 'undefined' ? API_BASE : '') + '/api/feedback';
+            // Surface model + tier in the admin feedback view. The agent's
+            // configured `model` is either a concrete model id or a `tier:*`
+            // string; the backend resolves the concrete model from the most
+            // recent usage_log row for this conversation when needed.
+            const agentModel = selectedAgent?.model || null;
+            const modelTier = (typeof agentModel === 'string' && agentModel.startsWith('tier:'))
+                ? agentModel.slice(5)
+                : null;
+            const concreteModel = (typeof agentModel === 'string' && !agentModel.startsWith('tier:'))
+                ? agentModel
+                : (msg.model || null);
             const payload = {
                 conversationId: conversationId || null,
                 messageId: msg.id || `msg-${idx}`,
                 agentId: agentId || null,
+                agentName: selectedAgent?.name || msg.respondingAgentName || null,
+                model: concreteModel,
+                modelTier,
                 rating,
                 comment: comment || null,
                 source: chatSource,

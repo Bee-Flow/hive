@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import {
     AlertTriangle, AlertOctagon, ZapOff, RefreshCcw, XCircle,
-    Clock, Filter, Search, Cpu, Bot
+    Clock, Filter, Search, Cpu, Bot, Paperclip, FileWarning
 } from 'lucide-react';
 import {
     fmt, fmtDuration, fmtTime, shortModel, COLORS,
@@ -48,6 +48,43 @@ function TypeBadge({ type }) {
         }}>
             <Icon style={{ width: 11, height: 11 }} />
             {meta.label}
+        </span>
+    );
+}
+
+function fmtBytes(n) {
+    if (!n || n <= 0) return '0 B';
+    if (n < 1024) return `${n} B`;
+    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+    if (n < 1024 * 1024 * 1024) return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+    return `${(n / (1024 * 1024 * 1024)).toFixed(2)} GB`;
+}
+
+// Heuristic: a stop is "input-driven" when the prompt was unusually large or
+// dominated the budget. Surfaces the case where a user uploads a big PDF and
+// the model truncates the answer because there is no room left for output.
+const LARGE_INPUT_TOKEN_THRESHOLD = 8000;
+const LARGE_ATTACHMENT_BYTES_THRESHOLD = 256 * 1024; // 256 KB
+
+function isLargeInput(row) {
+    if ((row.attachment_bytes || 0) >= LARGE_ATTACHMENT_BYTES_THRESHOLD) return true;
+    if ((row.prompt_tokens || 0) >= LARGE_INPUT_TOKEN_THRESHOLD) return true;
+    const total = (row.prompt_tokens || 0) + (row.completion_tokens || 0);
+    if (total > 0 && (row.prompt_tokens / total) >= 0.85 && row.termination_type === 'max_tokens') return true;
+    return false;
+}
+
+function LargeInputBadge() {
+    return (
+        <span title="Prompt or attachment was unusually large — likely cause of the stop"
+            style={{
+                display: 'inline-flex', alignItems: 'center', gap: 3,
+                padding: '2px 6px', borderRadius: 999, fontSize: 10, fontWeight: 600,
+                background: COLORS.amber + '15', color: COLORS.amber, border: `1px solid ${COLORS.amber}30`,
+                marginLeft: 6,
+            }}>
+            <FileWarning style={{ width: 10, height: 10 }} />
+            Large input
         </span>
     );
 }
@@ -166,11 +203,12 @@ export function TerminationsPage({ range = '7d', customStart, customEnd, refresh
 
     const total = summary?.total || 0;
     const by = summary?.by_type || {};
+    const largeInputCount = useMemo(() => rows.filter(isLargeInput).length, [rows]);
 
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, animation: 'fadeIn 0.3s ease' }}>
             {/* KPI cards */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 12 }}>
                 <MetricCard icon={AlertTriangle}  label="Total"          value={fmt(total)}                       color={COLORS.rose} />
                 <MetricCard icon={ZapOff}          label="Max tokens"    value={fmt(by.max_tokens || 0)}          color={COLORS.amber}
                     subtitle={total ? `${Math.round(((by.max_tokens || 0) / total) * 100)}% of stops` : ''} />
@@ -180,6 +218,8 @@ export function TerminationsPage({ range = '7d', customStart, customEnd, refresh
                     subtitle={total ? `${Math.round(((by.error || 0) / total) * 100)}% of stops` : ''} />
                 <MetricCard icon={XCircle}         label="Aborted"        value={fmt(by.aborted || 0)}            color={COLORS.cyan}
                     subtitle="Client disconnects" />
+                <MetricCard icon={FileWarning}     label="Large input"    value={fmt(largeInputCount)}            color={COLORS.amber}
+                    subtitle="Likely caused by big prompt / attachment" />
             </div>
 
             {/* Timeline chart */}
@@ -305,13 +345,24 @@ export function TerminationsPage({ range = '7d', customStart, customEnd, refresh
                                 <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-muted, #aaa)' }}>
                                     {shortModel(r.model)}
                                 </span>
-                                <span><TypeBadge type={r.termination_type} /></span>
+                                <span style={{ display: 'flex', alignItems: 'center', flexWrap: 'wrap' }}>
+                                    <TypeBadge type={r.termination_type} />
+                                    {isLargeInput(r) && <LargeInputBadge />}
+                                </span>
                                 <span style={{ fontSize: 11, color: r.error_code ? COLORS.rose : 'var(--text-muted, #666)' }}>
                                     {r.error_code || '—'}
                                 </span>
                                 <span style={{ textAlign: 'right', color: 'var(--text-muted, #aaa)' }}>{r.iteration_count || 0}</span>
                                 <span style={{ textAlign: 'right', color: 'var(--text-muted, #aaa)' }}>{fmtDuration(r.duration_ms)}</span>
-                                <span style={{ textAlign: 'right', color: 'var(--text-muted, #aaa)' }}>{fmt(r.total_tokens)}</span>
+                                <span style={{ textAlign: 'right', color: 'var(--text-muted, #aaa)', display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 4 }}>
+                                    {r.attachment_count > 0 && (
+                                        <Paperclip
+                                            title={`${r.attachment_count} attachment${r.attachment_count !== 1 ? 's' : ''} · ${fmtBytes(r.attachment_bytes || 0)}`}
+                                            style={{ width: 11, height: 11, color: COLORS.amber }}
+                                        />
+                                    )}
+                                    {fmt(r.total_tokens)}
+                                </span>
                                 <span style={{ color: meta.color || 'var(--text-muted, #666)', textAlign: 'right' }}>
                                     {isOpen ? '▾' : '▸'}
                                 </span>
@@ -331,7 +382,36 @@ export function TerminationsPage({ range = '7d', customStart, customEnd, refresh
                                     <DetailRow label="Error class" value={r.error_class} />
                                     <DetailRow label="Error"       value={r.error_first_line} mono />
                                     <DetailRow label="Stack"       value={r.stack_first_line} mono />
-                                    <DetailRow label="Tokens"      value={`prompt ${fmt(r.prompt_tokens)} · completion ${fmt(r.completion_tokens)} · total ${fmt(r.total_tokens)}`} />
+                                    <DetailRow label="Tokens"      value={(() => {
+                                        const total = (r.prompt_tokens || 0) + (r.completion_tokens || 0);
+                                        const ratio = total > 0 ? Math.round((r.prompt_tokens / total) * 100) : 0;
+                                        return `prompt ${fmt(r.prompt_tokens)} · completion ${fmt(r.completion_tokens)} · total ${fmt(r.total_tokens)}${total > 0 ? ` (prompt ${ratio}%)` : ''}`;
+                                    })()} />
+                                    <DetailRow
+                                        label="Attachments"
+                                        value={r.attachment_count > 0
+                                            ? `${r.attachment_count} file${r.attachment_count !== 1 ? 's' : ''} · ${fmtBytes(r.attachment_bytes || 0)}`
+                                            : null}
+                                    />
+                                    {isLargeInput(r) && (
+                                        <div style={{
+                                            marginTop: 6, padding: '8px 10px', borderRadius: 8,
+                                            background: COLORS.amber + '12', border: `1px solid ${COLORS.amber}30`,
+                                            fontSize: 11, color: COLORS.amber, display: 'flex', gap: 6, alignItems: 'flex-start',
+                                        }}>
+                                            <FileWarning style={{ width: 12, height: 12, marginTop: 1, flexShrink: 0 }} />
+                                            <span>
+                                                <strong>Likely caused by large input.</strong>{' '}
+                                                {r.attachment_bytes >= LARGE_ATTACHMENT_BYTES_THRESHOLD
+                                                    ? `Een attachment van ${fmtBytes(r.attachment_bytes)} werd meegestuurd; `
+                                                    : ''}
+                                                {r.prompt_tokens >= LARGE_INPUT_TOKEN_THRESHOLD
+                                                    ? `prompt was ${fmt(r.prompt_tokens)} tokens groot; `
+                                                    : ''}
+                                                Stel een kleinere context voor of split de upload op.
+                                            </span>
+                                        </div>
+                                    )}
                                     <div style={{ marginTop: 4, fontSize: 10, color: 'var(--text-muted, #666)', fontStyle: 'italic' }}>
                                         Privacy: berichten worden niet gelogd. Alleen gesanitiseerde metadata is hier zichtbaar.
                                     </div>
