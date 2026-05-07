@@ -1,12 +1,15 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Bot, Plus, Play, Pause, Pencil, Trash2, Clock, Repeat, X, Sparkles, ArrowLeft, Check, ChevronDown } from 'lucide-react';
+import { Bot, Plus, Play, Pause, Pencil, Trash2, Clock, Repeat, X, Sparkles, ArrowLeft, Check, ChevronDown, Search } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar, DEFAULT_AGENT_EMOJI } from '../../../utils/agentAvatar';
 import MarkdownRenderer from '../../MarkdownRenderer';
 import ModelTierSelector from '../../ModelTierSelector';
 import { tierLabel } from '../../tierMeta';
-import AutomationList from './Builder/AutomationList';
 import BuilderShell from './Builder/BuilderShell';
+import RoutineRow from '../Studio/RoutinesStudio/RoutineRow';
+import RoutinesEmptyState from '../Studio/RoutinesStudio/EmptyState';
+import QuickSwitcher from '../Studio/RoutinesStudio/QuickSwitcher';
+import useAutomationApi from '../../../hooks/useAutomationApi';
 
 const REPEAT_OPTIONS = [
     { value: '',          label: 'One-time (no repeat)' },
@@ -158,9 +161,19 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
     const [pendingDeleteTask, setPendingDeleteTask] = useState(null);
 
     // Sub-tab: prompt tasks (legacy) or automations (new conversational builder)
-    const [subTab, setSubTab] = useState('prompt'); // 'prompt' | 'automations'
+    const [subTab, setSubTab] = useState('prompt'); // 'prompt' | 'automations' (kept for back-compat with legacy non-embedded view)
+    const [segment, setSegment] = useState('automation'); // 'automation' | 'prompt_task' — controls which list shows in the unified sidebar
     const [builderAutomationId, setBuilderAutomationId] = useState(null); // null = list, string = open builder
     const [openingBuilder, setOpeningBuilder] = useState(false);
+    // Automation list — fetched up here so the sidebar shares one source of truth
+    // and we can power Cmd/Ctrl+K + the right-pane builder from the same data.
+    const automationApi = useAutomationApi();
+    const [automations, setAutomations] = useState([]);
+    const [automationsLoading, setAutomationsLoading] = useState(false);
+    const [pendingDeleteAutomation, setPendingDeleteAutomation] = useState(null);
+    const [presetChatInput, setPresetChatInput] = useState(''); // seeded from EmptyState examples
+    const [quickSwitcherOpen, setQuickSwitcherOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
     // Signal upward (Studio → AgentHub) when the BuilderShell is open so the
     // outer chrome can collapse for a fullscreen edit, mirroring AgentStudio.
     const automationEditing = subTab === 'automations' && (builderAutomationId !== null || openingBuilder);
@@ -344,6 +357,137 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
         }));
     }, []);
 
+    // ── Automations data + actions ───────────────────────────────────────
+    const fetchAutomations = useCallback(async () => {
+        setAutomationsLoading(true);
+        try {
+            const r = await automationApi.listAutomations();
+            setAutomations(r.automations || []);
+        } catch (err) {
+            console.warn('[AITasksDesigner] fetchAutomations failed:', err.message);
+        }
+        setAutomationsLoading(false);
+    }, [automationApi]);
+
+    useEffect(() => { fetchAutomations(); }, [fetchAutomations]);
+
+    // Refresh the automation list whenever the builder closes — covers the
+    // case where the user finalised a draft, renamed via the inline title,
+    // toggled active, etc. and the sidebar should show the new state.
+    useEffect(() => {
+        if (builderAutomationId === null && !openingBuilder) fetchAutomations();
+    }, [builderAutomationId, openingBuilder, fetchAutomations]);
+
+    const toggleAutomation = useCallback(async (a) => {
+        try {
+            if (a.isActive) await automationApi.deactivate(a.id);
+            else await automationApi.activate(a.id);
+            await fetchAutomations();
+        } catch (err) { console.warn('[AITasksDesigner] toggleAutomation failed:', err.message); }
+    }, [automationApi, fetchAutomations]);
+
+    const requestDeleteAutomation = useCallback((a) => setPendingDeleteAutomation(a), []);
+    const confirmDeleteAutomation = useCallback(async () => {
+        if (!pendingDeleteAutomation) return;
+        try {
+            await automationApi.deleteAutomation(pendingDeleteAutomation.id);
+            if (builderAutomationId === pendingDeleteAutomation.id) {
+                setBuilderAutomationId(null);
+                setOpeningBuilder(false);
+            }
+            await fetchAutomations();
+        } catch (err) { console.warn('[AITasksDesigner] deleteAutomation failed:', err.message); }
+        setPendingDeleteAutomation(null);
+    }, [pendingDeleteAutomation, automationApi, fetchAutomations, builderAutomationId]);
+
+    /** Duplicate an automation by reading its definition + creating a copy.
+     *  No server-side helper needed — everything's already in the existing
+     *  list/get/create endpoints. The new draft inherits the definition
+     *  but flips `isDraft:true,isActive:false` so the copy is editable. */
+    const duplicateAutomation = useCallback(async (a) => {
+        try {
+            const full = await automationApi.getAutomation(a.id);
+            const src = full.automation || full;
+            const created = await automationApi.createAutomation({
+                title: `${src.title || 'Untitled'} (copy)`,
+                description: src.description || null,
+                definition: src.definition || {},
+            });
+            await fetchAutomations();
+            const newId = created?.automation?.id || created?.id;
+            if (newId) {
+                setSegment('automation');
+                setBuilderAutomationId(newId);
+            }
+        } catch (err) {
+            console.warn('[AITasksDesigner] duplicateAutomation failed:', err.message);
+        }
+    }, [automationApi, fetchAutomations]);
+
+    const exportAutomationJson = useCallback(async (a) => {
+        try {
+            const full = await automationApi.getAutomation(a.id);
+            const blob = new Blob([JSON.stringify(full.automation || full, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${(a.title || 'automation').replace(/[^a-z0-9-_]+/gi, '_')}.json`;
+            link.click();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        } catch (err) { console.warn('[AITasksDesigner] exportAutomationJson failed:', err.message); }
+    }, [automationApi]);
+
+    const copyAutomationId = useCallback(async (a) => {
+        try { await navigator.clipboard.writeText(a.id); }
+        catch (err) { console.warn('[AITasksDesigner] copyAutomationId failed:', err.message); }
+    }, []);
+
+    // ── Cmd/Ctrl+K — quick switcher ──────────────────────────────────────
+    useEffect(() => {
+        if (!embedded) return;
+        const onKey = (e) => {
+            const isModK = (e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k';
+            if (!isModK) return;
+            // Only intercept when no other modifier surface owns it (ignore
+            // shift/alt combinations to leave room for browser shortcuts).
+            if (e.shiftKey || e.altKey) return;
+            e.preventDefault();
+            setQuickSwitcherOpen(true);
+        };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [embedded]);
+
+    const quickSwitcherItems = useMemo(() => {
+        const a = automations.map(it => ({
+            id: it.id,
+            kind: 'automation',
+            kindLabel: 'Automation',
+            title: it.title || 'Untitled automation',
+            subtitle: it.triggerType + (it.scheduleCron ? ` · ${it.scheduleCron}` : ''),
+        }));
+        const t = tasks.map(it => ({
+            id: it.id,
+            kind: 'prompt_task',
+            kindLabel: 'Routine',
+            title: it.title || 'Untitled routine',
+            subtitle: it.repeatInterval || 'one-time',
+        }));
+        return [...a, ...t];
+    }, [automations, tasks]);
+
+    const onPickFromSwitcher = useCallback((item) => {
+        setQuickSwitcherOpen(false);
+        if (item.kind === 'automation') {
+            setSegment('automation');
+            setBuilderAutomationId(item.id);
+        } else {
+            setSegment('prompt_task');
+            const task = tasks.find(t => t.id === item.id);
+            if (task) startEditTask(task);
+        }
+    }, [tasks]);
+
     const activeTasks = useMemo(() => tasks.filter(t => t.isActive), [tasks]);
     const inactiveTasks = useMemo(() => tasks.filter(t => !t.isActive), [tasks]);
     const editing = editingTaskId !== null;
@@ -491,231 +635,300 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
         `}</style>
     );
 
-    // ── Embedded split layout (inside Studio) ────────────────────────────────
+    // ── Embedded studio layout (the redesigned sidebar+detail shell) ─────
     if (embedded) {
-        // Hide the "Automations" sub-tab unless the user's org has the
-        // 'automations' beta feature enabled (or the user is a super-admin).
         const automationsAllowed = !!(
             user?.isAdmin
             || (user?.permissions || []).includes('all')
             || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('automations'))
         );
+        // When the user can't see Automations at all, force the sidebar to
+        // show the Prompt Tasks segment regardless of the persisted choice.
+        const effectiveSegment = automationsAllowed ? segment : 'prompt_task';
+        const showSegmented = automationsAllowed;
 
-        // (Snap-back when access is lost is handled in a useEffect above
-        // so we never call setState during render.)
+        // Filter the active list by the search query (case-insensitive
+        // match on title; cheap enough to do every render). Power-user
+        // search is also via Cmd/Ctrl+K — this input is the discoverable
+        // route for everyone else.
+        const q = searchQuery.trim().toLowerCase();
+        const visibleAutomations = q
+            ? automations.filter(a => (a.title || '').toLowerCase().includes(q))
+            : automations;
+        const visibleTasks = q
+            ? tasks.filter(t => (t.title || '').toLowerCase().includes(q))
+            : tasks;
 
-        const subTabBar = (
-            <div className="flex items-center gap-1 px-3 py-2 border-b border-[var(--border-default)]">
-                <button
-                    onClick={() => { setSubTab('prompt'); setBuilderAutomationId(null); }}
-                    className={`px-3 py-1.5 rounded-full text-xs font-semibold ${subTab === 'prompt' ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}
-                >
-                    Prompt Tasks
-                </button>
-                {automationsAllowed && (
+        // The sidebar's plus button creates the right thing per segment.
+        const onPlus = () => {
+            if (effectiveSegment === 'automation') {
+                if (!automationsAllowed) return;
+                setBuilderAutomationId('');
+                setPresetChatInput('');
+            } else {
+                startNewTask();
+            }
+        };
+
+        const sidebar = (
+            <aside className="w-[264px] flex-shrink-0 border-r border-[var(--border-default)] flex flex-col bg-[var(--bg-primary)]">
+                {/* Sidebar header — title + plus, mirrors SkillsStudio */}
+                <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
+                    <span className="text-sm font-semibold text-[var(--text-primary)]">Routines</span>
                     <button
-                        onClick={() => { setSubTab('automations'); }}
-                        className={`px-3 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1 ${subTab === 'automations' ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}
+                        onClick={onPlus}
+                        title={effectiveSegment === 'automation' ? 'New automation' : 'New routine'}
+                        className="p-1 rounded-lg hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)]"
                     >
-                        <Sparkles size={12} /> Automations
+                        <Plus size={16} />
                     </button>
+                </div>
+
+                {/* Segmented control — only shown when both segments are
+                    available. Makes the page feel native to the studio:
+                    one shell, one list, two filters. */}
+                {showSegmented && (
+                    <div className="px-2 pt-2">
+                        <div className="flex items-center bg-[var(--bg-secondary)] rounded-lg p-0.5 text-xs font-medium">
+                            <button
+                                onClick={() => { setSegment('automation'); }}
+                                className={`flex-1 px-2 py-1 rounded-md transition ${
+                                    effectiveSegment === 'automation'
+                                        ? 'bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-sm'
+                                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                                }`}
+                            >
+                                Automations
+                            </button>
+                            <button
+                                onClick={() => { setSegment('prompt_task'); }}
+                                className={`flex-1 px-2 py-1 rounded-md transition ${
+                                    effectiveSegment === 'prompt_task'
+                                        ? 'bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-sm'
+                                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                                }`}
+                            >
+                                Prompt Tasks
+                            </button>
+                        </div>
+                    </div>
                 )}
+
+                {/* Search — debounced filter on the visible list. */}
+                <div className="px-2 pt-2">
+                    <div className="relative">
+                        <Search size={12} className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)] pointer-events-none" />
+                        <input
+                            type="text"
+                            value={searchQuery}
+                            onChange={(e) => setSearchQuery(e.target.value)}
+                            placeholder="Filter…"
+                            className="w-full bg-[var(--bg-secondary)] border border-transparent focus:border-[var(--border-default)] rounded-md pl-7 pr-2 py-1 text-xs text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)] outline-none transition"
+                        />
+                    </div>
+                    <div className="text-[10px] text-[var(--text-tertiary)] mt-1 px-1">
+                        Tip: ⌘K for quick switch
+                    </div>
+                </div>
+
+                {/* List body */}
+                <div className="flex-1 overflow-y-auto p-1.5 mt-1">
+                    {effectiveSegment === 'automation' ? (
+                        <>
+                            {automationsLoading && automations.length === 0 && (
+                                <div className="text-xs text-[var(--text-tertiary)] p-3">Loading…</div>
+                            )}
+                            {!automationsLoading && visibleAutomations.length === 0 && (
+                                <div className="text-xs text-[var(--text-tertiary)] p-4 text-center">
+                                    {q ? 'No matches.' : 'No automations yet.'}
+                                </div>
+                            )}
+                            {visibleAutomations.map((a) => (
+                                <RoutineRow
+                                    key={a.id}
+                                    routine={a}
+                                    kind="automation"
+                                    selected={builderAutomationId === a.id}
+                                    onSelect={() => { setBuilderAutomationId(a.id); }}
+                                    onToggleActive={() => toggleAutomation(a)}
+                                    onDuplicate={() => duplicateAutomation(a)}
+                                    onExportJson={() => exportAutomationJson(a)}
+                                    onCopyId={() => copyAutomationId(a)}
+                                    onDelete={() => requestDeleteAutomation(a)}
+                                />
+                            ))}
+                        </>
+                    ) : (
+                        <>
+                            {loading && tasks.length === 0 && (
+                                <div className="text-xs text-[var(--text-tertiary)] p-3">Loading…</div>
+                            )}
+                            {!loading && visibleTasks.length === 0 && (
+                                <div className="text-xs text-[var(--text-tertiary)] p-4 text-center">
+                                    {q ? 'No matches.' : 'No routines yet.'}
+                                </div>
+                            )}
+                            {visibleTasks.map((t) => (
+                                <RoutineRow
+                                    key={t.id}
+                                    routine={t}
+                                    kind="prompt_task"
+                                    selected={editingTaskId === t.id}
+                                    onSelect={() => startEditTask(t)}
+                                    onDelete={() => requestDeleteTask(t)}
+                                />
+                            ))}
+                        </>
+                    )}
+                </div>
+            </aside>
+        );
+
+        // Right pane: empty state, Automations builder, or Prompt Task editor.
+        let rightPane;
+        if (effectiveSegment === 'automation') {
+            const builderOpen = (builderAutomationId !== null || openingBuilder) && automationsAllowed;
+            if (builderOpen) {
+                rightPane = (
+                    <BuilderShell
+                        automationId={builderAutomationId || null}
+                        onBack={() => { setBuilderAutomationId(null); setOpeningBuilder(false); setPresetChatInput(''); }}
+                        user={user}
+                        initialChatInput={presetChatInput}
+                    />
+                );
+            } else {
+                rightPane = (
+                    <RoutinesEmptyState
+                        segment="automation"
+                        onCreateAutomation={() => { setBuilderAutomationId(''); setPresetChatInput(''); }}
+                        onUseExample={(text) => { setPresetChatInput(text); setBuilderAutomationId(''); }}
+                    />
+                );
+            }
+        } else {
+            const currentTask = editingTaskId && editingTaskId !== 'new'
+                ? tasks.find(t => t.id === editingTaskId) || null
+                : null;
+            if (!editing) {
+                rightPane = (
+                    <RoutinesEmptyState
+                        segment="prompt_task"
+                        onCreateTask={startNewTask}
+                    />
+                );
+            } else {
+                rightPane = (
+                    <div className="overflow-y-auto h-full">
+                        {/* Task action bar for existing tasks (kept from previous design — quick run/pause/result). */}
+                        {currentTask && (
+                            <div className="flex items-center gap-2 px-6 pt-5 pb-1 flex-wrap">
+                                <button
+                                    onClick={() => runTaskNow(currentTask.id)}
+                                    disabled={currentTask.lastStatus === 'running'}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-50"
+                                    style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
+                                >
+                                    <Play size={12} /> Run Now
+                                </button>
+                                <button
+                                    onClick={() => toggleTask(currentTask.id)}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold"
+                                    style={{
+                                        background: currentTask.isActive ? 'rgba(245,158,11,0.08)' : 'rgba(34,197,94,0.08)',
+                                        color: currentTask.isActive ? '#f59e0b' : '#22c55e',
+                                    }}
+                                >
+                                    {currentTask.isActive ? <><Pause size={12} /> Pause</> : <><Play size={12} /> Resume</>}
+                                </button>
+                                {currentTask.lastResult && (
+                                    <button
+                                        onClick={() => setResultModal({ title: currentTask.title, content: currentTask.lastResult })}
+                                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold"
+                                        style={{ background: 'rgba(34,197,94,0.08)', color: '#22c55e' }}
+                                    >
+                                        View last result ↗
+                                    </button>
+                                )}
+                            </div>
+                        )}
+                        <EditorView
+                            title={title} setTitle={setTitle}
+                            prompt={prompt} setPrompt={setPrompt}
+                            date={date} setDate={setDate}
+                            time={time} setTime={setTime}
+                            repeatInterval={repeatInterval} setRepeatInterval={setRepeatInterval}
+                            tier={tier} setTier={setTier}
+                            modelTiers={modelTiers}
+                            agentId={agentId} setAgentId={setAgentId}
+                            agents={agents} routinesAllowed={routinesAllowed}
+                            canSave={canSave} isNewMode={isNewMode}
+                            onSave={saveTask} onCancel={resetForm}
+                            nextRunPreview={nextRunPreview}
+                        />
+                    </div>
+                );
+            }
+        }
+
+        // Confirm-delete modal for an automation (parallels the prompt-task one).
+        const deleteAutomationModal = pendingDeleteAutomation && (
+            <div
+                className="fixed inset-0 z-[1000] bg-black/50 flex items-center justify-center p-4"
+                onClick={() => setPendingDeleteAutomation(null)}
+            >
+                <div
+                    className="bg-[var(--bg-primary)] rounded-xl w-full max-w-md shadow-xl border border-[var(--border-default)]"
+                    onClick={(e) => e.stopPropagation()}
+                >
+                    <div className="flex items-start justify-between px-5 py-4 border-b border-[var(--border-default)]">
+                        <div className="text-sm font-semibold text-[var(--text-primary)]">Delete automation</div>
+                        <button onClick={() => setPendingDeleteAutomation(null)} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
+                            <X size={18} />
+                        </button>
+                    </div>
+                    <div className="px-5 py-4 text-sm text-[var(--text-secondary)]">
+                        Delete "<strong>{pendingDeleteAutomation.title || 'Untitled'}</strong>"? This removes the definition and all run history. Cannot be undone.
+                    </div>
+                    <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-[var(--border-default)]">
+                        <button
+                            onClick={() => setPendingDeleteAutomation(null)}
+                            className="px-4 py-2 rounded-full text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            onClick={confirmDeleteAutomation}
+                            className="px-4 py-2 rounded-full text-sm bg-red-500 text-white hover:bg-red-600"
+                        >
+                            Delete
+                        </button>
+                    </div>
+                </div>
             </div>
         );
 
-        if (subTab === 'automations' && automationsAllowed) {
-            return (
-                <div className="flex flex-col h-full bg-[var(--bg-primary)]">
-                    {!automationEditing && subTabBar}
-                    <div className="flex-1 min-h-0">
-                        {builderAutomationId === null && !openingBuilder && (
-                            <AutomationList onOpenBuilder={(id) => { setBuilderAutomationId(id || ''); }} />
-                        )}
-                        {(builderAutomationId !== null || openingBuilder) && (
-                            <BuilderShell
-                                automationId={builderAutomationId || null}
-                                onBack={() => { setBuilderAutomationId(null); setOpeningBuilder(false); }}
-                                user={user}
-                            />
-                        )}
-                    </div>
-                </div>
-            );
-        }
-
         return (
-          <div className="flex flex-col h-full bg-[var(--bg-primary)]">
-            {!automationEditing && subTabBar}
-            <div className="flex flex-1 min-h-0 bg-[var(--bg-primary)]">
-                {/* Sidebar — always visible so the user keeps the routine list
-                    in view while editing a single routine. */}
-                <aside className="w-64 flex-shrink-0 border-r border-[var(--border-default)] flex flex-col">
-                    <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                            <span className="text-sm font-semibold text-[var(--text-primary)]">Routines</span>
-                            <span className="text-xs text-[var(--text-tertiary)]">{tasks.length}/{maxTasks}</span>
-                        </div>
-                        <button
-                            onClick={startNewTask}
-                            disabled={tasks.length >= maxTasks}
-                            title="New routine"
-                            className="p-1 rounded-lg hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] disabled:opacity-50"
-                        >
-                            <Plus size={16} />
-                        </button>
-                    </div>
-                    <div className="flex-1 overflow-y-auto p-1.5">
-                        {loading && tasks.length === 0 && (
-                            <div className="text-xs text-[var(--text-tertiary)] p-3">…</div>
-                        )}
-                        {!loading && tasks.length === 0 && (
-                            <div className="text-xs text-[var(--text-tertiary)] p-4 text-center">
-                                No routines yet
-                            </div>
-                        )}
-                        {tasks.map((task) => {
-                            const sel = editingTaskId === task.id;
-                            const statusColor = (STATUS_COLORS[task.lastStatus] || STATUS_COLORS.pending).color;
-                            const isAgentRoutine = !!task.agentId;
-                            return (
-                                <div
-                                    key={task.id}
-                                    onClick={() => startEditTask(task)}
-                                    className={`group flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer text-sm transition ${sel ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}
-                                    title={isAgentRoutine ? `Routine for ${task.agentName || 'agent'}` : undefined}
-                                >
-                                    <span
-                                        className="w-1.5 h-1.5 rounded-full flex-shrink-0 mt-px"
-                                        style={{ background: statusColor, opacity: task.isActive ? 1 : 0.35 }}
-                                    />
-                                    {isAgentRoutine && (
-                                        <span className="text-sm flex-shrink-0" title={task.agentName}>{task.agentAvatar || '🤖'}</span>
-                                    )}
-                                    <span className="truncate flex-1">
-                                        {task.title}
-                                        {isAgentRoutine && task.agentName && (
-                                            <span className="ml-1.5 text-[10px] text-[var(--text-tertiary)]">· {task.agentName}</span>
-                                        )}
-                                    </span>
-                                    <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 flex-shrink-0">
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); runTaskNow(task.id); }}
-                                            title="Run now"
-                                            className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
-                                            disabled={task.lastStatus === 'running'}
-                                        >
-                                            <Play size={11} />
-                                        </button>
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); toggleTask(task.id); }}
-                                            title={task.isActive ? 'Pause' : 'Resume'}
-                                            className="p-1 rounded text-[var(--text-tertiary)] hover:text-amber-500"
-                                        >
-                                            {task.isActive ? <Pause size={11} /> : <Play size={11} />}
-                                        </button>
-                                        <button
-                                            onClick={(e) => { e.stopPropagation(); requestDeleteTask(task); }}
-                                            title="Delete"
-                                            className="p-1 rounded text-[var(--text-tertiary)] hover:text-red-500"
-                                        >
-                                            <Trash2 size={11} />
-                                        </button>
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </aside>
-
-                {/* Content */}
-                <section className="flex-1 min-w-0 overflow-y-auto">
-                    {!editing ? (
-                        <div className="h-full flex flex-col items-center justify-center px-6 py-12">
-                            <div
-                                className="w-16 h-16 rounded-2xl mb-4 flex items-center justify-center"
-                                style={{ background: 'var(--bg-secondary)' }}
-                            >
-                                <Bot size={28} style={{ color: 'var(--text-primary)', opacity: 0.6 }} />
-                            </div>
-                            <div className="text-lg font-semibold text-[var(--text-primary)] mb-2">
-                                Schedule routines
-                            </div>
-                            <div className="text-sm text-[var(--text-tertiary)] mb-6 max-w-sm text-center leading-relaxed">
-                                Automate recurring AI workflows — weekly digests, reports, lead summaries.
-                                Results land in your notifications when ready.
-                            </div>
-                            <button
-                                onClick={startNewTask}
-                                disabled={tasks.length >= maxTasks}
-                                className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold text-white disabled:opacity-50"
-                                style={{ background: 'var(--text-primary)' }}
-                            >
-                                <Plus size={15} />
-                                New routine
-                            </button>
-                        </div>
-                    ) : (() => {
-                        const currentTask = editingTaskId !== 'new'
-                            ? tasks.find(t => t.id === editingTaskId) || null
-                            : null;
-                        return (
-                            <>
-                                {/* Task action bar for existing tasks */}
-                                {currentTask && (
-                                    <div className="flex items-center gap-2 px-6 pt-5 pb-1 flex-wrap">
-                                        <button
-                                            onClick={() => runTaskNow(currentTask.id)}
-                                            disabled={currentTask.lastStatus === 'running'}
-                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold disabled:opacity-50"
-                                            style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)' }}
-                                        >
-                                            <Play size={12} /> Run Now
-                                        </button>
-                                        <button
-                                            onClick={() => toggleTask(currentTask.id)}
-                                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold"
-                                            style={{
-                                                background: currentTask.isActive ? 'rgba(245,158,11,0.08)' : 'rgba(34,197,94,0.08)',
-                                                color: currentTask.isActive ? '#f59e0b' : '#22c55e',
-                                            }}
-                                        >
-                                            {currentTask.isActive ? <><Pause size={12} /> Pause</> : <><Play size={12} /> Resume</>}
-                                        </button>
-                                        {currentTask.lastResult && (
-                                            <button
-                                                onClick={() => setResultModal({ title: currentTask.title, content: currentTask.lastResult })}
-                                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[12px] font-semibold"
-                                                style={{ background: 'rgba(34,197,94,0.08)', color: '#22c55e' }}
-                                            >
-                                                View last result ↗
-                                            </button>
-                                        )}
-                                    </div>
-                                )}
-                                <EditorView
-                                    title={title} setTitle={setTitle}
-                                    prompt={prompt} setPrompt={setPrompt}
-                                    date={date} setDate={setDate}
-                                    time={time} setTime={setTime}
-                                    repeatInterval={repeatInterval} setRepeatInterval={setRepeatInterval}
-                                    tier={tier} setTier={setTier}
-                                    modelTiers={modelTiers}
-                                    agentId={agentId} setAgentId={setAgentId}
-                                    agents={agents} routinesAllowed={routinesAllowed}
-                                    canSave={canSave} isNewMode={isNewMode}
-                                    onSave={saveTask} onCancel={resetForm}
-                                    nextRunPreview={nextRunPreview}
-                                />
-                            </>
-                        );
-                    })()}
+            <div className="flex h-full bg-[var(--bg-primary)]">
+                {/* Sidebar collapses while the BuilderShell is in fullscreen
+                    chrome-collapse mode so the user can use every pixel for
+                    the diagram. They get back via the back arrow inside the
+                    builder header. */}
+                {!automationEditing && sidebar}
+                <section className="flex-1 min-w-0 overflow-hidden">
+                    {rightPane}
                 </section>
-
+                <QuickSwitcher
+                    open={quickSwitcherOpen}
+                    items={quickSwitcherItems}
+                    onPick={onPickFromSwitcher}
+                    onClose={() => setQuickSwitcherOpen(false)}
+                />
                 {deleteModal}
+                {deleteAutomationModal}
                 {resultModalEl}
                 {styles}
             </div>
-          </div>
         );
     }
 

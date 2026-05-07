@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { CheckCircle2, AlertTriangle, AlertCircle, X, Loader2 } from 'lucide-react';
 
 /**
@@ -9,10 +9,64 @@ import { CheckCircle2, AlertTriangle, AlertCircle, X, Loader2 } from 'lucide-rea
  * the icon + colour. Optional `detail` payloads (cursor, lastPolledAt,
  * subject of latest match) are rendered as a monospace block under the
  * message so the user can spot the obvious thing without opening devtools.
+ *
+ * When `anchorRef` is provided, the panel positions itself just below the
+ * referenced element (typically the Diagnose header button) using fixed
+ * coordinates — feels like a popover rather than a free-floating panel.
+ * Falls back to the previous absolute `top-16 right-4` placement when
+ * no anchor is given (keeps callers that don't pass anchorRef working).
  */
-export default function TriggerDiagnosePanel({ result, loading, error, onClose }) {
+export default function TriggerDiagnosePanel({ result, loading, error, onClose, anchorRef }) {
+    const wrapRef = useRef(null);
+    const [pos, setPos] = useState(null);
+
+    // Re-measure whenever the panel mounts, the window resizes, or scroll
+    // shifts. The button might be inside a scrollable header so we listen
+    // for both window scroll and resize.
+    useEffect(() => {
+        if (!anchorRef?.current) return;
+        const measure = () => {
+            const r = anchorRef.current.getBoundingClientRect();
+            setPos({
+                top: Math.round(r.bottom + 8),
+                right: Math.max(8, Math.round(window.innerWidth - r.right)),
+            });
+        };
+        measure();
+        window.addEventListener('resize', measure);
+        window.addEventListener('scroll', measure, true);
+        return () => {
+            window.removeEventListener('resize', measure);
+            window.removeEventListener('scroll', measure, true);
+        };
+    }, [anchorRef]);
+
+    // Click-outside-to-close, only when anchored — the floating fallback
+    // mode is dismissed via its X button (the button has its own click
+    // handlers that would conflict with a global mousedown listener).
+    useEffect(() => {
+        if (!anchorRef) return;
+        const onDoc = (e) => {
+            if (!wrapRef.current) return;
+            if (wrapRef.current.contains(e.target)) return;
+            if (anchorRef.current && anchorRef.current.contains(e.target)) return;
+            onClose?.();
+        };
+        document.addEventListener('mousedown', onDoc);
+        return () => document.removeEventListener('mousedown', onDoc);
+    }, [anchorRef, onClose]);
+
+    const positioned = anchorRef && pos
+        ? { position: 'fixed', top: pos.top, right: pos.right }
+        : null;
+    const positionClass = positioned ? 'fixed' : 'absolute right-4 top-16';
+
     return (
-        <div className="absolute right-4 top-16 z-30 w-[420px] max-h-[70vh] overflow-y-auto rounded-lg border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-xl p-4">
+        <div
+            ref={wrapRef}
+            className={`${positionClass} z-30 w-[420px] max-h-[70vh] overflow-y-auto rounded-lg border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-xl p-4`}
+            style={positioned || undefined}
+        >
             <div className="flex items-center justify-between mb-3">
                 <div className="font-semibold text-sm text-[var(--text-primary)]">Trigger diagnose</div>
                 <button

@@ -136,7 +136,12 @@ export default function StepInspector({ step, runStep, onClose, definition, onSa
     };
 
     return (
-        <div className="absolute top-0 right-0 h-full w-[380px] z-10 flex flex-col bg-[var(--bg-primary)] border-l border-[var(--border-default)] shadow-[-4px_0_12px_rgba(0,0,0,0.06)] overflow-hidden">
+        // Drawer-style overlay sitting over the diagram on the Build tab.
+        // z-15 keeps it above the diagram (z-0) and the floating validation
+        // pill (z-20 — pill should still be reachable when inspector is
+        // open but to the right of it). Width starts at 400px so prompt
+        // text and JSON breathe.
+        <div className="absolute top-0 right-0 h-full w-[400px] z-[15] flex flex-col bg-[var(--bg-primary)] border-l border-[var(--border-default)] shadow-[-6px_0_16px_rgba(0,0,0,0.08)] overflow-hidden">
             <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-default)]">
                 <div className="min-w-0">
                     <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)]">{step.type}</div>

@@ -66,11 +66,14 @@ export default function DiagramPane({ definition, runSteps = [], onNodeClick, va
     }
 
     return (
-        // ReactFlow needs an explicit pixel height — `h-full` collapses to 0
-        // inside a parent that uses overflow-y-auto + min-height (which is
-        // exactly the BuilderShell layout), so the canvas would otherwise
-        // render into a 0-tall box and you'd see nothing.
-        <div style={{ width: '100%', height: 480 }}>
+        // ReactFlow needs the container to have a real, measurable height.
+        // Inside the new BuilderShell the parent uses `flex-1 min-h-0`, so
+        // a `h-full` here resolves to whatever vertical space is left in
+        // the Build tab — exactly what we want so the diagram fills as
+        // much of the screen as the chat / summary / dry-run panels free
+        // up. Falls back to a sensible minimum when used outside that
+        // flex context.
+        <div className="w-full h-full" style={{ minHeight: 320 }}>
             <ReactFlow
                 nodes={nodes}
                 edges={edges}

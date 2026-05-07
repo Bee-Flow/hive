@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Power, Eye, Sparkles, Wrench, ChevronDown, Stethoscope } from 'lucide-react';
+import { Sparkles, Wrench, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../../utils/helpers';
 import scopedStorage from '../../../../utils/scopedStorage';
 import InputArea from '../../../InputArea';
@@ -7,9 +7,13 @@ import MarkdownRenderer from '../../../MarkdownRenderer';
 import { tierLabel } from '../../../tierMeta';
 import DiagramPane from './DiagramPane';
 import StepInspector from './StepInspector';
-import RunHistory from './RunHistory';
 import DryRunPanel from './DryRunPanel';
 import TriggerDiagnosePanel from './TriggerDiagnosePanel';
+import BuilderHeader from './BuilderHeader';
+import FloatingValidationPill from './FloatingValidationPill';
+import SettingsTab from './SettingsTab';
+import RunHistoryTab from './RunHistoryTab';
+import JsonTab from './JsonTab';
 import useAutomationApi from '../../../../hooks/useAutomationApi';
 import useAutomationBuilderStream from '../../../../hooks/useAutomationBuilderStream';
 
@@ -21,7 +25,7 @@ import useAutomationBuilderStream from '../../../../hooks/useAutomationBuilderSt
  * attachments. State (tier, web-search, disabled media) lives in
  * scopedStorage so it persists across sessions just like direct chat.
  */
-export default function BuilderShell({ automationId, onBack, user }) {
+export default function BuilderShell({ automationId, onBack, user, initialChatInput = '' }) {
     const api = useAutomationApi();
     const { state, send, hydrate } = useAutomationBuilderStream({ automationId });
     const [serverAutomation, setServerAutomation] = useState(null);
@@ -30,10 +34,40 @@ export default function BuilderShell({ automationId, onBack, user }) {
     const [error, setError] = useState(null);
     const [hasHydrated, setHasHydrated] = useState(false);
 
+    // Tab navigation. Default to Build — the chat + diagram is what users
+    // open the builder to do; the other tabs are jump-points for specific
+    // tasks (settings, history, raw JSON).
+    const [tab, setTab] = useState('build');
+
+    // Focus mode collapses the chat column for max diagram real estate.
+    // Persisted in scopedStorage so it survives reload — power users who
+    // turn it on tend to leave it on for many sessions.
+    const [focusMode, setFocusMode] = useState(() => scopedStorage.getItem('routinesFocusMode') === '1');
+    useEffect(() => {
+        scopedStorage.setItem('routinesFocusMode', focusMode ? '1' : '0');
+    }, [focusMode]);
+
+    // Inline-rename saving state. Three transitions:
+    //   idle → saving → saved → idle (after 1.5s)
+    //   idle → saving → error
+    const [savingState, setSavingState] = useState('idle');
+    const savedTimer = useRef(null);
+
+    // Diagnose button anchor — the popover positions itself just below
+    // this element instead of floating in a fixed top-right corner.
+    const diagnoseAnchorRef = useRef(null);
+
     // ── InputArea state (mirrors direct chat) ────────────────────────────
-    const [chatInput, setChatInput] = useState('');
+    const [chatInput, setChatInput] = useState(initialChatInput || '');
     const [modelTiers, setModelTiers] = useState({});
     const [selectedTier, setSelectedTier] = useState(() => scopedStorage.getItem('automationBuilderTier') || 'auto');
+
+    // Re-seed when the parent passes a new example prompt — only when the
+    // input is currently empty so we don't clobber what the user is typing.
+    useEffect(() => {
+        if (initialChatInput && !chatInput) setChatInput(initialChatInput);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [initialChatInput]);
 
     useEffect(() => {
         scopedStorage.setItem('automationBuilderTier', selectedTier);
@@ -195,6 +229,34 @@ export default function BuilderShell({ automationId, onBack, user }) {
         setServerAutomation(r.automation || r);
     };
 
+    /**
+     * Save automation-level fields (title / description / definition).
+     * Used by:
+     *   - inline rename in BuilderHeader (`onRename` → `onSaveAutomation({title})`)
+     *   - SettingsTab apply
+     * Drives the saving pill state machine.
+     */
+    const onSaveAutomation = async (patch) => {
+        const aid = state.automationId || serverAutomation?.id;
+        if (!aid) throw new Error('No automation id yet — finalise the chat first.');
+        if (savedTimer.current) { clearTimeout(savedTimer.current); savedTimer.current = null; }
+        setSavingState('saving');
+        try {
+            const r = await api.updateAutomation(aid, patch);
+            setServerAutomation(r.automation || r);
+            setSavingState('saved');
+            savedTimer.current = setTimeout(() => setSavingState('idle'), 1500);
+        } catch (e) {
+            setSavingState('error');
+            throw e;
+        }
+    };
+
+    const onRename = async (nextTitle) => {
+        try { await onSaveAutomation({ title: nextTitle }); }
+        catch (e) { console.warn('[BuilderShell] rename failed:', e.message); }
+    };
+
     const isActive = !!serverAutomation?.isActive;
     const isDraft = !!serverAutomation?.isDraft;
     const title = serverAutomation?.title || 'New automation';
@@ -208,62 +270,31 @@ export default function BuilderShell({ automationId, onBack, user }) {
             ? 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400'
             : 'bg-amber-500/15 text-amber-600 dark:text-amber-400';
 
+    const triggerKind = effectiveDef?.trigger?.kind || serverAutomation?.triggerType;
+    const aidForHistory = state.automationId || automationId;
+
     return (
         <div className="flex flex-col h-full min-h-0 bg-[var(--bg-primary)]">
-            {/* Top header — matches the agent editor's chrome. */}
-            <div className="flex items-center gap-3 px-6 py-3 border-b border-[var(--border-default)]">
-                <button
-                    onClick={onBack}
-                    className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)] transition"
-                    title="Back"
-                >
-                    <ArrowLeft size={18} />
-                </button>
-                <div className="w-9 h-9 rounded-xl bg-[var(--bg-secondary)] flex items-center justify-center text-lg flex-shrink-0">
-                    <Sparkles size={16} className="text-[var(--accent)]" />
-                </div>
-                <div className="flex-1 min-w-0">
-                    <div className="text-base font-semibold text-[var(--text-primary)] truncate">{title}</div>
-                </div>
-                <span className={`text-[11px] uppercase tracking-wide font-medium px-2 py-1 rounded-full ${statusBadgeClass}`}>
-                    {statusLabel}
-                </span>
-                <button
-                    onClick={onDryRun}
-                    disabled={busy}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-[var(--bg-secondary)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition disabled:opacity-50"
-                >
-                    <Eye size={14} /> Dry-run
-                </button>
-                {isAppEventTrigger && (
-                    <button
-                        onClick={onDiagnose}
-                        disabled={busy}
-                        title="Probe the trigger pipeline (subscription, credentials, Gmail, filter)"
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm bg-[var(--bg-secondary)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition disabled:opacity-50"
-                    >
-                        <Stethoscope size={14} /> Diagnose
-                    </button>
-                )}
-                {isActive ? (
-                    <button
-                        onClick={onDeactivate}
-                        disabled={busy}
-                        className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium bg-[var(--accent)]/15 text-[var(--accent)] ring-1 ring-[var(--accent)]/40 hover:bg-[var(--accent)]/25 transition disabled:opacity-50"
-                    >
-                        <Power size={14} /> Pause
-                        <ChevronDown size={12} className="opacity-60" />
-                    </button>
-                ) : (
-                    <button
-                        onClick={onActivate}
-                        disabled={busy}
-                        className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-medium bg-[var(--accent)] text-white hover:opacity-90 ring-1 ring-[var(--accent)] transition disabled:opacity-50 shadow-sm"
-                    >
-                        <Power size={14} /> Activate
-                    </button>
-                )}
-            </div>
+            <BuilderHeader
+                title={title}
+                triggerKind={triggerKind}
+                isActive={isActive}
+                isDraft={isDraft}
+                statusLabel={statusLabel}
+                statusBadgeClass={statusBadgeClass}
+                canDiagnose={isAppEventTrigger}
+                busy={busy}
+                onBack={onBack}
+                onActivate={onActivate}
+                onDeactivate={onDeactivate}
+                onDryRun={onDryRun}
+                onDiagnose={onDiagnose}
+                onRename={onRename}
+                diagnoseAnchorRef={diagnoseAnchorRef}
+                savingState={savingState}
+                tab={tab}
+                onTabChange={setTab}
+            />
 
             {diagnoseOpen && (
                 <TriggerDiagnosePanel
@@ -271,45 +302,92 @@ export default function BuilderShell({ automationId, onBack, user }) {
                     loading={diagnoseLoading}
                     error={diagnoseError}
                     onClose={() => setDiagnoseOpen(false)}
+                    anchorRef={diagnoseAnchorRef}
                 />
             )}
 
-            <BuilderErrorBanner
-                fatalError={error || state.error}
-                validation={state.validation}
-                aborted={state.aborted}
-                onDismiss={() => setError(null)}
-            />
+            <div className="flex-1 min-h-0 relative">
+                {tab === 'build' && (
+                    <BuildTab
+                        focusMode={focusMode}
+                        setFocusMode={setFocusMode}
+                        state={state}
+                        effectiveDef={effectiveDef}
+                        chatInput={chatInput}
+                        setChatInput={setChatInput}
+                        modelTiers={modelTiers}
+                        selectedTier={selectedTier}
+                        setSelectedTier={setSelectedTier}
+                        user={user}
+                        onSend={onSend}
+                        messagesContainerRef={messagesContainerRef}
+                        messagesEndRef={messagesEndRef}
+                        onNodeClick={setSelectedStepId}
+                        selectedStep={selectedStep}
+                        selectedRunStep={selectedRunStep}
+                        onCloseInspector={() => setSelectedStepId(null)}
+                        onSaveStep={onSaveStep}
+                        fatalError={error || state.error}
+                        onDismissFatal={() => setError(null)}
+                    />
+                )}
+                {tab === 'settings' && (
+                    <SettingsTab
+                        automation={serverAutomation}
+                        onSave={onSaveAutomation}
+                    />
+                )}
+                {tab === 'history' && (
+                    <RunHistoryTab automationId={aidForHistory} />
+                )}
+                {tab === 'json' && (
+                    <JsonTab automation={serverAutomation} />
+                )}
+            </div>
+        </div>
+    );
+}
 
-
-            <div className="flex-1 flex min-h-0 relative">
-                {/* Chat side — same composer as direct chat, custom message timeline */}
-                <div className="flex-1 min-w-0 border-r border-[var(--border-default)] flex flex-col bg-[var(--bg-primary)]">
+/**
+ * Build tab body — extracted so BuilderShell stays compact and the
+ * floating validation pill, focus-mode toggle, and inspector overlay
+ * have a clear scope.
+ */
+function BuildTab({
+    focusMode, setFocusMode,
+    state, effectiveDef,
+    chatInput, setChatInput, modelTiers, selectedTier, setSelectedTier, user,
+    onSend, messagesContainerRef, messagesEndRef,
+    onNodeClick, selectedStep, selectedRunStep, onCloseInspector, onSaveStep,
+    fatalError, onDismissFatal,
+}) {
+    return (
+        <div className="flex h-full">
+            {/* Chat column — collapses entirely in Focus mode. The expand
+                handle lives at the top of the diagram column when collapsed. */}
+            {!focusMode && (
+                <div className="flex flex-col bg-[var(--bg-primary)] border-r border-[var(--border-default)] w-[460px] flex-shrink-0 min-w-0">
+                    <div className="flex items-center justify-between px-3 py-1.5 border-b border-[var(--border-default)]">
+                        <div className="text-[10px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)]">
+                            Chat
+                        </div>
+                        <button
+                            onClick={() => setFocusMode(true)}
+                            title="Focus mode (hide chat)"
+                            className="p-1 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]"
+                        >
+                            <PanelLeftClose size={14} />
+                        </button>
+                    </div>
                     <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-6 custom-scrollbar">
                         {state.messages.length === 0 && (
                             <div className="h-full flex flex-col items-center justify-center text-center px-4">
                                 <div className="w-12 h-12 rounded-full bg-[var(--bg-secondary)] flex items-center justify-center mb-3">
                                     <Sparkles size={20} className="text-[var(--accent)]" />
                                 </div>
-                                <div className="text-sm font-medium text-[var(--text-primary)] mb-1">Build an automation with AI</div>
-                                <div className="text-xs text-[var(--text-tertiary)] mb-5 max-w-xs">
-                                    Describe the trigger and what should happen. I'll wire the steps for you.
-                                </div>
-                                <div className="flex flex-col gap-2 w-full max-w-sm">
-                                    {[
-                                        'Every Monday at 9am, summarise unread Gmail labelled "invoices" to #finance',
-                                        'When a new GitHub issue is created with label "bug", send a Slack DM',
-                                        'Every weekday at 18:00, email me a digest of today\'s calendar events',
-                                    ].map((p) => (
-                                        <button
-                                            key={p}
-                                            type="button"
-                                            onClick={() => setChatInput(p)}
-                                            className="text-left text-xs px-3 py-2 rounded-lg bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition"
-                                        >
-                                            {p}
-                                        </button>
-                                    ))}
+                                <div className="text-sm font-medium text-[var(--text-primary)] mb-1">Describe what you want</div>
+                                <div className="text-xs text-[var(--text-tertiary)] max-w-xs">
+                                    The builder wires the trigger and steps for you.
                                 </div>
                             </div>
                         )}
@@ -339,35 +417,51 @@ export default function BuilderShell({ automationId, onBack, user }) {
                         />
                     </div>
                 </div>
-                {/* Diagram + summary + dry-run + run history */}
-                <div className="flex-1 min-w-0 overflow-y-auto">
-                    {state.summary && (
-                        <div className="p-4 border-b border-[var(--border-default)]">
-                            <div className="text-xs uppercase tracking-wide text-[var(--text-tertiary)] mb-2">What this automation does</div>
-                            <div className="text-sm text-[var(--text-primary)] whitespace-pre-wrap">{state.summary}</div>
-                        </div>
-                    )}
-                    <DryRunPanel run={state.dryRun} steps={state.steps} />
-                    <div className="border-t border-[var(--border-default)]">
-                        <DiagramPane
-                            definition={effectiveDef}
-                            runSteps={state.steps}
-                            onNodeClick={setSelectedStepId}
-                            validation={state.validation}
-                        />
+            )}
+
+            {/* Diagram column — fills remaining width and (most of) the height.
+                Summary + DryRunPanel sit on top so they don't compete with the
+                canvas for vertical space. */}
+            <div className="flex-1 min-w-0 flex flex-col relative bg-[var(--bg-primary)]">
+                {focusMode && (
+                    <button
+                        onClick={() => setFocusMode(false)}
+                        title="Exit focus mode (show chat)"
+                        className="absolute left-3 top-3 z-20 p-1.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] shadow-sm"
+                    >
+                        <PanelLeftOpen size={14} />
+                    </button>
+                )}
+                {state.summary && (
+                    <div className="px-4 py-2 border-b border-[var(--border-default)] flex-shrink-0">
+                        <div className="text-[10px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1">What this automation does</div>
+                        <div className="text-xs text-[var(--text-secondary)] whitespace-pre-wrap line-clamp-3">{state.summary}</div>
                     </div>
-                    {(state.automationId || automationId) && (
-                        <div className="border-t border-[var(--border-default)]">
-                            <div className="px-4 py-2 text-xs uppercase tracking-wide text-[var(--text-tertiary)]">Run history</div>
-                            <RunHistory automationId={state.automationId || automationId} />
-                        </div>
-                    )}
+                )}
+                {state.dryRun && (
+                    <div className="flex-shrink-0">
+                        <DryRunPanel run={state.dryRun} steps={state.steps} />
+                    </div>
+                )}
+                <div className="flex-1 min-h-0">
+                    <DiagramPane
+                        definition={effectiveDef}
+                        runSteps={state.steps}
+                        onNodeClick={onNodeClick}
+                        validation={state.validation}
+                    />
                 </div>
+                <FloatingValidationPill
+                    fatalError={fatalError}
+                    validation={state.validation}
+                    aborted={state.aborted}
+                    onDismissFatal={onDismissFatal}
+                />
                 {selectedStep && (
                     <StepInspector
                         step={selectedStep}
                         runStep={selectedRunStep}
-                        onClose={() => setSelectedStepId(null)}
+                        onClose={onCloseInspector}
                         definition={effectiveDef}
                         onSaveStep={onSaveStep}
                         validation={state.validation}
@@ -418,60 +512,9 @@ function MessageBubble({ msg }) {
     );
 }
 
-/**
- * Consolidated error banner. Replaces the two independent banners that
- * used to render `error` and `state.error` separately so users couldn't
- * tell which failed. Renders, in priority order:
- *
- *   1. fatalError       — a network / API failure (red)
- *   2. aborted          — builder ran out of iterations (amber)
- *   3. validation.errors — structured records, only shown when present
- *
- * Each structured record renders {code, message, hint} so the user (and,
- * via the LLM feedback loop, the model) gets actionable text instead of
- * a wall of free-form prose.
- */
-function BuilderErrorBanner({ fatalError, validation, aborted, onDismiss }) {
-    const errors = (validation?.errors || []);
-    const warnings = (validation?.warnings || []);
-    if (!fatalError && !aborted && errors.length === 0 && warnings.length === 0) return null;
-
-    return (
-        <div className="border-b border-[var(--border-default)]">
-            {fatalError && (
-                <div className="bg-red-500/10 text-red-600 dark:text-red-400 px-4 py-2 text-sm flex items-start gap-2">
-                    <span className="flex-1">{fatalError}</span>
-                    {onDismiss && (
-                        <button onClick={onDismiss} className="text-xs underline hover:no-underline opacity-80">dismiss</button>
-                    )}
-                </div>
-            )}
-            {aborted && (
-                <div className="bg-amber-500/10 text-amber-600 dark:text-amber-400 px-4 py-2 text-sm">
-                    Builder stopped after {aborted.iterations} iterations without finalizing — review the validation issues below and ask the builder to fix them.
-                </div>
-            )}
-            {(errors.length > 0 || warnings.length > 0) && (
-                <div className="px-4 py-2 text-xs bg-[var(--bg-secondary)] max-h-40 overflow-y-auto">
-                    {errors.map((e, i) => <BannerRecord key={`e-${i}`} record={e} />)}
-                    {warnings.map((w, i) => <BannerRecord key={`w-${i}`} record={w} />)}
-                </div>
-            )}
-        </div>
-    );
-}
-
-function BannerRecord({ record }) {
-    const isErr = record.severity === 'error';
-    return (
-        <div className={`mb-1 ${isErr ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'}`}>
-            <span className="font-mono text-[10px] mr-1.5 opacity-70">{record.code}</span>
-            <span className="text-[var(--text-tertiary)] mr-1">{record.path}</span>
-            {record.message}
-            {record.hint && <span className="text-[var(--text-tertiary)]"> — {record.hint}</span>}
-        </div>
-    );
-}
+// BuilderErrorBanner moved to FloatingValidationPill.jsx — the redesign
+// surfaces these records as a sticky bottom-right pill on the Build tab
+// instead of a top-of-canvas row that pushes content down.
 
 function ToolCallChip({ tc }) {
     const [open, setOpen] = useState(false);
