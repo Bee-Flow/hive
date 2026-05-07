@@ -198,9 +198,6 @@ export default function BuilderShell({ automationId, onBack, user }) {
                 </div>
                 <div className="flex-1 min-w-0">
                     <div className="text-base font-semibold text-[var(--text-primary)] truncate">{title}</div>
-                    {serverAutomation?.needsFirstRunConfirm && !isDraft && (
-                        <div className="text-xs text-amber-600 dark:text-amber-400">Awaiting first-run confirmation</div>
-                    )}
                 </div>
                 <span className={`text-[11px] uppercase tracking-wide font-medium px-2 py-1 rounded-full ${statusBadgeClass}`}>
                     {statusLabel}
