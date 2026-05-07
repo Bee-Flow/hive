@@ -282,6 +282,7 @@ const EN_DEFAULTS = {
     "admin.mon_costs": "Costs",
     "admin.mon_feedback": "Feedback",
     "admin.mon_activity": "Activity Log",
+    "admin.mon_terminations": "Terminations",
     "admin.mon_today": "Today",
     "admin.mon_7d": "7 Days",
     "admin.mon_30d": "30 Days",

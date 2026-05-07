@@ -2,13 +2,14 @@ import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { useTranslation } from '../../../hooks/useTranslation';
 import {
     Activity, BarChart3, RefreshCw, DollarSign, Bot,
-    ChevronRight, MessageSquare, ThumbsUp, Clock, Calendar
+    ChevronRight, MessageSquare, ThumbsUp, Clock, Calendar, AlertTriangle
 } from 'lucide-react';
 import { COLORS, fmt, fmtCost } from './shared';
 import { OverviewPage } from './OverviewPage';
 import { UsageExplorerPage } from './UsageExplorerPage';
 import { FeedbackPage } from './FeedbackPage';
 import { ActivityPage } from './ActivityPage';
+import { TerminationsPage } from './TerminationsPage';
 import { DetailDrawer } from './DetailDrawer';
 
 const API = (import.meta.env.VITE_API_URL || '') + '/api/usage';
@@ -90,6 +91,7 @@ const PAGES = [
     { id: 'usage', labelKey: 'admin.mon_usage_explorer', icon: Activity, description: 'Explore models, agents, users & conversations' },
     { id: 'feedback', labelKey: 'admin.mon_feedback', icon: ThumbsUp, description: 'User feedback on AI responses' },
     { id: 'activity', labelKey: 'admin.mon_activity', icon: Clock, description: 'Recent API call log' },
+    { id: 'terminations', labelKey: 'admin.mon_terminations', icon: AlertTriangle, description: 'Voortijdig beëindigde taken & errors' },
 ];
 
 async function fetchJson(url) {
@@ -358,6 +360,13 @@ export default function MonitoringPanel({ activeSection = '', onNavigate }) {
                         <ActivityPage
                             recent={recent} modelCosts={modelCosts}
                             filterSources={filterSources} filterModels={filterModels}
+                        />
+                    )}
+                    {page === 'terminations' && (
+                        <TerminationsPage
+                            range={range}
+                            customStart={customStart}
+                            customEnd={customEnd}
                         />
                     )}
                 </div>

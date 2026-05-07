@@ -514,6 +514,27 @@ export default function NotificationCenter() {
                                                                     </button>
                                                                 </div>
                                                             )}
+                                                            {n.category === 'ai_task' && !cleanedBody && !reauthProvider && (
+                                                                <div style={{ marginBottom: 10 }}>
+                                                                    <p style={{
+                                                                        fontSize: 13, color: 'var(--text-secondary, #64748b)',
+                                                                        margin: '0 0 8px 0', lineHeight: 1.6,
+                                                                    }}>
+                                                                        De routine is uitgevoerd, maar er is geen tekstresultaat opgeslagen. Open de chat om de uitvoering te bekijken.
+                                                                    </p>
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); openInDirectChat(n.title, '', n.id); }}
+                                                                        style={{
+                                                                            display: 'flex', alignItems: 'center', gap: 5,
+                                                                            padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                                                                            border: 'none', cursor: 'pointer',
+                                                                            background: 'var(--bg-secondary, rgba(0,0,0,0.04))', color: 'var(--text-primary, #0f172a)',
+                                                                        }}
+                                                                    >
+                                                                        Open chat
+                                                                    </button>
+                                                                </div>
+                                                            )}
                                                             {cleanedBody && (
                                                                 n.category === 'ai_task' && !reauthProvider ? (
                                                                     <div style={{
