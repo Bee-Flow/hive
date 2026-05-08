@@ -35,6 +35,15 @@ export default function useAutomationApi() {
         diagnoseTrigger: (id) => send('POST', `/${id}/diagnose-trigger`),
         listRuns: (id) => get(`/${id}/runs`),
         listRecentRuns: (limit = 50) => get(`/_runs/recent?limit=${encodeURIComponent(limit)}`),
+        // Cross-route helper: read the user's Ticket Assistant connections
+        // so the trigger settings form can render a connection picker.
+        // Bypasses the /api/automation prefix because the TA route lives
+        // at /api/ticket-assistant.
+        listTicketAssistantConnections: async () => {
+            const r = await authFetch(`${API_BASE}/api/ticket-assistant/connections`);
+            if (!r.ok) throw new Error((await safeText(r)) || 'GET /ticket-assistant/connections failed');
+            return r.json();
+        },
         getRun: (runId) => get(`/runs/${runId}`),
         getRunSteps: (runId) => get(`/runs/${runId}/steps`),
         approveRun: (runId) => send('POST', `/runs/${runId}/approve`),

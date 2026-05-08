@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Save, RotateCcw, Plus, Trash2 } from 'lucide-react';
 import { tierLabel } from '../../../../tierMeta';
+import useAutomationApi from '../../../../../hooks/useAutomationApi';
 
 /**
  * Per-step-type form-based editor. Each subcomponent owns its own draft
@@ -202,6 +203,7 @@ function AppEventFields({ draft, set, setNested }) {
                     <option value="google-calendar">Google Calendar</option>
                     <option value="google-drive">Google Drive</option>
                     <option value="nextcloud">Nextcloud</option>
+                    <option value="ticket-assistant">Ticket Assistant</option>
                 </select>
             </FormRow>
             <FormRow label="Event">
@@ -239,6 +241,12 @@ function AppEventFields({ draft, set, setNested }) {
             {provider === 'nextcloud' && event === 'notification.new' && (
                 <NextcloudNotificationFilterFields filter={filter} setFilter={setF} />
             )}
+            {provider === 'ticket-assistant' && event === 'ticket.new' && (
+                <TicketAssistantTicketFilterFields filter={filter} setFilter={setF} />
+            )}
+            {provider === 'ticket-assistant' && event === 'sync.completed' && (
+                <TicketAssistantSyncFilterFields filter={filter} setFilter={setF} />
+            )}
         </>
     );
 }
@@ -248,6 +256,7 @@ const DEFAULT_EVENT = {
     'google-calendar': 'event.changed',
     'google-drive': 'file.new',
     'nextcloud': 'file.new',
+    'ticket-assistant': 'ticket.new',
 };
 const EVENTS_BY_PROVIDER = {
     'gmail': [
@@ -267,6 +276,10 @@ const EVENTS_BY_PROVIDER = {
         ['share.received',   'Share received'],
         ['activity.new',     'Any activity (advanced)'],
         ['notification.new', 'Notification received'],
+    ],
+    'ticket-assistant': [
+        ['ticket.new',      'New ticket ingested'],
+        ['sync.completed',  'Sync run finished'],
     ],
 };
 
@@ -523,6 +536,143 @@ function NextcloudNotificationFilterFields({ filter, setFilter }) {
             <FormRow label="Subject contains">
                 <input type="text" value={filter.subjectContains || ''} onChange={(e) => setFilter('subjectContains', e.target.value || undefined)}
                     className={inputClass()} />
+            </FormRow>
+        </FilterShell>
+    );
+}
+
+/**
+ * Picker for the org's Ticket Assistant connections — lazy-loads the
+ * list once on mount via `useAutomationApi.listTicketAssistantConnections`.
+ * Falls back to a free-text input on fetch error so the user can still
+ * paste a connectionId they know.
+ */
+function TicketAssistantConnectionPicker({ value, onChange }) {
+    const api = useAutomationApi();
+    const [conns, setConns] = useState(null); // null = loading; [] = loaded empty; array = loaded
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        let alive = true;
+        api.listTicketAssistantConnections()
+            .then(d => { if (alive) setConns(d.connections || []); })
+            .catch(e => { if (alive) setError(e.message || 'Failed to load connections'); })
+            // eslint-disable-next-line no-unused-vars
+            .finally(() => {});
+        return () => { alive = false; };
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    if (error) {
+        return (
+            <input
+                type="text"
+                value={value || ''}
+                onChange={(e) => onChange(e.target.value || undefined)}
+                placeholder="connection id"
+                className={inputClass() + ' font-mono'}
+            />
+        );
+    }
+    if (conns === null) {
+        return <div className="text-xs text-[var(--text-tertiary)] py-1.5">Loading connections…</div>;
+    }
+    return (
+        <select
+            value={value || ''}
+            onChange={(e) => onChange(e.target.value || undefined)}
+            className={inputClass()}
+        >
+            <option value="">Any connection</option>
+            {conns.map(c => (
+                <option key={c.id} value={c.id}>
+                    {c.display_name || c.email_address} ({c.provider})
+                </option>
+            ))}
+        </select>
+    );
+}
+
+function TicketAssistantTicketFilterFields({ filter, setFilter }) {
+    return (
+        <FilterShell title="Ticket Assistant ticket.new filter">
+            <FormRow label="Connection" hint="Restrict to one of the org's Ticket Assistant connections.">
+                <TicketAssistantConnectionPicker
+                    value={filter.connectionId}
+                    onChange={(v) => setFilter('connectionId', v)}
+                />
+            </FormRow>
+            <FormRow label="Provider">
+                <select
+                    value={filter.provider || ''}
+                    onChange={(e) => setFilter('provider', e.target.value || undefined)}
+                    className={inputClass()}
+                >
+                    <option value="">Any provider</option>
+                    <option value="gmail">Gmail</option>
+                    <option value="outlook">Outlook</option>
+                    <option value="jira">Jira</option>
+                    <option value="servicenow">ServiceNow</option>
+                    <option value="zendesk">Zendesk</option>
+                    <option value="freshservice">Freshservice</option>
+                    <option value="topdesk">TopDesk</option>
+                </select>
+            </FormRow>
+            <FormRow label="Subject contains">
+                <input type="text" value={filter.subjectContains || ''} onChange={(e) => setFilter('subjectContains', e.target.value || undefined)}
+                    className={inputClass()} />
+            </FormRow>
+            <FormRow label="Body contains">
+                <input type="text" value={filter.bodyContains || ''} onChange={(e) => setFilter('bodyContains', e.target.value || undefined)}
+                    className={inputClass()} />
+            </FormRow>
+            <FormRow label="Category equals" hint="The AI-classified category (post-summarise). Free text — no enum yet.">
+                <input type="text" value={filter.categoryEquals || ''} onChange={(e) => setFilter('categoryEquals', e.target.value || undefined)}
+                    className={inputClass()} />
+            </FormRow>
+            <FormRow label="Priority equals">
+                <select
+                    value={filter.priorityEquals || ''}
+                    onChange={(e) => setFilter('priorityEquals', e.target.value || undefined)}
+                    className={inputClass()}
+                >
+                    <option value="">Any</option>
+                    <option value="low">low</option>
+                    <option value="medium">medium</option>
+                    <option value="high">high</option>
+                    <option value="urgent">urgent</option>
+                </select>
+            </FormRow>
+            <FormRow label="Status equals" hint="Provider-native status (e.g. 'Open', 'In Progress') OR a normalised bucket: open / pending / resolved / closed.">
+                <input type="text" value={filter.statusEquals || ''} onChange={(e) => setFilter('statusEquals', e.target.value || undefined)}
+                    className={inputClass()} />
+            </FormRow>
+            <div className="text-[11px] text-[var(--text-tertiary)] leading-snug">
+                Manual runs of this trigger use a <code>null</code> payload — set a sample under Settings → Manual trigger payload to test bindings before activating.
+            </div>
+        </FilterShell>
+    );
+}
+
+function TicketAssistantSyncFilterFields({ filter, setFilter }) {
+    return (
+        <FilterShell title="Ticket Assistant sync.completed filter">
+            <FormRow label="Connection">
+                <TicketAssistantConnectionPicker
+                    value={filter.connectionId}
+                    onChange={(v) => setFilter('connectionId', v)}
+                />
+            </FormRow>
+            <FormRow label="Outcome">
+                <select
+                    value={filter.outcomeEquals || ''}
+                    onChange={(e) => setFilter('outcomeEquals', e.target.value || undefined)}
+                    className={inputClass()}
+                >
+                    <option value="">Any outcome</option>
+                    <option value="success">success</option>
+                    <option value="partial">partial (some errors)</option>
+                    <option value="error">error</option>
+                </select>
             </FormRow>
         </FilterShell>
     );
