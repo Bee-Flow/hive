@@ -791,6 +791,13 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
             if (builderOpen) {
                 rightPane = (
                     <BuilderShell
+                        // `key` forces a fresh mount when the user switches
+                        // between automations in the sidebar — without it the
+                        // BuilderShell reuses its internal state (chat input,
+                        // tab, selectedStepId, hydrated server snapshot) from
+                        // the previously-opened automation, which made it
+                        // look like the second click did nothing.
+                        key={builderAutomationId || 'new'}
                         automationId={builderAutomationId || null}
                         onBack={() => { setBuilderAutomationId(null); setOpeningBuilder(false); setPresetChatInput(''); }}
                         user={user}
@@ -803,6 +810,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
                         segment="automation"
                         onCreateAutomation={() => { setBuilderAutomationId(''); setPresetChatInput(''); }}
                         onUseExample={(text) => { setPresetChatInput(text); setBuilderAutomationId(''); }}
+                        onOpenAutomation={(id) => { setBuilderAutomationId(id); }}
                     />
                 );
             }

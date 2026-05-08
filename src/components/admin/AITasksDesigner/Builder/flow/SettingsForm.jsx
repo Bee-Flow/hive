@@ -164,33 +164,111 @@ function TriggerFields({ draft, set, setNested }) {
                 </>
             )}
             {kind === 'app_event' && (
-                <>
-                    <FormRow label="Provider">
-                        <select
-                            value={draft.appProvider || 'gmail'}
-                            onChange={(e) => set('appProvider', e.target.value)}
-                            className={inputClass()}
-                        >
-                            <option value="gmail">Gmail</option>
-                        </select>
-                    </FormRow>
-                    <FormRow label="Event">
-                        <select
-                            value={draft.appEventName || 'mail.new'}
-                            onChange={(e) => set('appEventName', e.target.value)}
-                            className={inputClass()}
-                        >
-                            <option value="mail.new">New email</option>
-                        </select>
-                    </FormRow>
-                    {draft.appProvider === 'gmail' && draft.appEventName === 'mail.new' && (
-                        <GmailFilterFields filter={draft.filter || {}} setFilter={(k, v) => setNested('filter', k, v)} />
-                    )}
-                </>
+                <AppEventFields draft={draft} set={set} setNested={setNested} />
             )}
         </>
     );
 }
+
+/**
+ * Provider + event selects with per-event filter sub-form. Switching the
+ * provider auto-snaps the event to a sensible default for that provider
+ * AND clears the filter — different events have incompatible filter
+ * shapes, so carrying old fields over would just produce validation warnings.
+ */
+function AppEventFields({ draft, set, setNested }) {
+    const provider = draft.appProvider || 'gmail';
+    const event = draft.appEventName || DEFAULT_EVENT[provider] || 'mail.new';
+
+    const onProviderChange = (next) => {
+        set('appProvider', next);
+        const nextEvent = DEFAULT_EVENT[next] || 'mail.new';
+        set('appEventName', nextEvent);
+        set('filter', {});
+    };
+    const onEventChange = (next) => {
+        set('appEventName', next);
+        set('filter', {});
+    };
+
+    const setF = (k, v) => setNested('filter', k, v);
+    const filter = draft.filter || {};
+
+    return (
+        <>
+            <FormRow label="Provider">
+                <select value={provider} onChange={(e) => onProviderChange(e.target.value)} className={inputClass()}>
+                    <option value="gmail">Gmail</option>
+                    <option value="google-calendar">Google Calendar</option>
+                    <option value="google-drive">Google Drive</option>
+                    <option value="nextcloud">Nextcloud</option>
+                </select>
+            </FormRow>
+            <FormRow label="Event">
+                <select value={event} onChange={(e) => onEventChange(e.target.value)} className={inputClass()}>
+                    {EVENTS_BY_PROVIDER[provider].map(([id, label]) => (
+                        <option key={id} value={id}>{label}</option>
+                    ))}
+                </select>
+            </FormRow>
+
+            {provider === 'gmail' && event === 'mail.new' && (
+                <GmailFilterFields filter={filter} setFilter={setF} />
+            )}
+            {provider === 'gmail' && event === 'label.added' && (
+                <GmailLabelFilterFields filter={filter} setFilter={setF} />
+            )}
+            {provider === 'google-calendar' && event === 'event.changed' && (
+                <CalendarChangedFilterFields filter={filter} setFilter={setF} />
+            )}
+            {provider === 'google-calendar' && event === 'event.upcoming' && (
+                <CalendarUpcomingFilterFields filter={filter} setFilter={setF} />
+            )}
+            {provider === 'google-drive' && event === 'file.new' && (
+                <DriveFileNewFilterFields filter={filter} setFilter={setF} />
+            )}
+            {provider === 'nextcloud' && (event === 'file.new' || event === 'file.changed') && (
+                <NextcloudFileFilterFields filter={filter} setFilter={setF} />
+            )}
+            {provider === 'nextcloud' && event === 'share.received' && (
+                <NextcloudShareFilterFields filter={filter} setFilter={setF} />
+            )}
+            {provider === 'nextcloud' && event === 'activity.new' && (
+                <NextcloudActivityFilterFields filter={filter} setFilter={setF} />
+            )}
+            {provider === 'nextcloud' && event === 'notification.new' && (
+                <NextcloudNotificationFilterFields filter={filter} setFilter={setF} />
+            )}
+        </>
+    );
+}
+
+const DEFAULT_EVENT = {
+    'gmail': 'mail.new',
+    'google-calendar': 'event.changed',
+    'google-drive': 'file.new',
+    'nextcloud': 'file.new',
+};
+const EVENTS_BY_PROVIDER = {
+    'gmail': [
+        ['mail.new',     'New email'],
+        ['label.added',  'Label added'],
+    ],
+    'google-calendar': [
+        ['event.changed',  'Event changed'],
+        ['event.upcoming', 'Event upcoming (lead-time before start)'],
+    ],
+    'google-drive': [
+        ['file.new', 'New file'],
+    ],
+    'nextcloud': [
+        ['file.new',         'New file'],
+        ['file.changed',     'File changed'],
+        ['share.received',   'Share received'],
+        ['activity.new',     'Any activity (advanced)'],
+        ['notification.new', 'Notification received'],
+    ],
+};
 
 function GmailFilterFields({ filter, setFilter }) {
     return (
@@ -231,6 +309,222 @@ function GmailFilterFields({ filter, setFilter }) {
                 />
             </FormRow>
         </div>
+    );
+}
+
+// ── Trigger filter sub-forms (one per (provider, event)) ───────────────
+//
+// All filters reuse FilterShell as chrome and the standard input/textarea
+// helpers — keeps the visual language consistent with the Gmail filter
+// users already know. Each field's onChange clears its key when the
+// input is empty (`undefined`) so the persisted filter object stays
+// minimal and the matcher's "if filter.X is set" checks short-circuit.
+
+function FilterShell({ title, children }) {
+    return (
+        <div className="rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] p-3 space-y-3">
+            <div className="text-[11px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)]">{title}</div>
+            {children}
+        </div>
+    );
+}
+
+function GmailLabelFilterFields({ filter, setFilter }) {
+    return (
+        <FilterShell title="Gmail label.added filter (labelId is required)">
+            <FormRow label="Label id" hint="Gmail label ids look like Label_3 or system ids like IMPORTANT / STARRED. Use a gmail_search step once to find the id if needed.">
+                <input type="text" value={filter.labelId || ''} onChange={(e) => setFilter('labelId', e.target.value || undefined)}
+                    placeholder="Label_3" className={inputClass()} />
+            </FormRow>
+            <FormRow label="From contains">
+                <input type="text" value={filter.from || ''} onChange={(e) => setFilter('from', e.target.value || undefined)} className={inputClass()} />
+            </FormRow>
+            <FormRow label="Subject contains">
+                <input type="text" value={filter.subjectContains || ''} onChange={(e) => setFilter('subjectContains', e.target.value || undefined)} className={inputClass()} />
+            </FormRow>
+            <FormRow label="Exclude labels (comma-separated)" hint="Drops messages that already carry any of these labels.">
+                <input
+                    type="text"
+                    value={Array.isArray(filter.excludeLabelIds) ? filter.excludeLabelIds.join(',') : ''}
+                    onChange={(e) => {
+                        const arr = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
+                        setFilter('excludeLabelIds', arr.length ? arr : undefined);
+                    }}
+                    className={inputClass() + ' font-mono'}
+                />
+            </FormRow>
+        </FilterShell>
+    );
+}
+
+function CalendarChangedFilterFields({ filter, setFilter }) {
+    return (
+        <FilterShell title="Calendar event.changed filter (all optional)">
+            <FormRow label="Calendar id" hint="Default 'primary'. Use a different calendar id if you've connected secondary calendars.">
+                <input type="text" value={filter.calendarId || ''} onChange={(e) => setFilter('calendarId', e.target.value || undefined)}
+                    placeholder="primary" className={inputClass() + ' font-mono'} />
+            </FormRow>
+            <FormRow label="Status">
+                <select
+                    value={filter.statusEquals || ''}
+                    onChange={(e) => setFilter('statusEquals', e.target.value || undefined)}
+                    className={inputClass()}
+                >
+                    <option value="">Any</option>
+                    <option value="confirmed">confirmed</option>
+                    <option value="cancelled">cancelled</option>
+                    <option value="tentative">tentative</option>
+                </select>
+            </FormRow>
+            <FormRow label="Attendee email contains">
+                <input type="text" value={filter.attendeeEmailContains || ''} onChange={(e) => setFilter('attendeeEmailContains', e.target.value || undefined)}
+                    className={inputClass()} />
+            </FormRow>
+        </FilterShell>
+    );
+}
+
+function CalendarUpcomingFilterFields({ filter, setFilter }) {
+    return (
+        <FilterShell title="Calendar event.upcoming filter">
+            <FormRow label="Lead minutes" hint="Fire this many minutes before the event starts. Default 15.">
+                <input
+                    type="number"
+                    min={1}
+                    max={240}
+                    value={filter.leadMinutes ?? 15}
+                    onChange={(e) => setFilter('leadMinutes', e.target.value === '' ? undefined : Number(e.target.value))}
+                    className={inputClass()}
+                />
+            </FormRow>
+            <FormRow label="Calendar id">
+                <input type="text" value={filter.calendarId || ''} onChange={(e) => setFilter('calendarId', e.target.value || undefined)}
+                    placeholder="primary" className={inputClass() + ' font-mono'} />
+            </FormRow>
+            <FormRow label="Include all-day events">
+                <label className="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={filter.includeAllDay === true} onChange={(e) => setFilter('includeAllDay', e.target.checked || undefined)} />
+                    Yes — fire on all-day events too
+                </label>
+            </FormRow>
+            <FormRow label="Attendee email contains">
+                <input type="text" value={filter.attendeeEmailContains || ''} onChange={(e) => setFilter('attendeeEmailContains', e.target.value || undefined)}
+                    className={inputClass()} />
+            </FormRow>
+        </FilterShell>
+    );
+}
+
+function DriveFileNewFilterFields({ filter, setFilter }) {
+    return (
+        <FilterShell title="Drive file.new filter (all optional)">
+            <FormRow label="Folder id" hint="Drive folder id. Find via drive_search or by copying from the URL: drive.google.com/drive/folders/<id>.">
+                <input type="text" value={filter.folderId || ''} onChange={(e) => setFilter('folderId', e.target.value || undefined)}
+                    className={inputClass() + ' font-mono'} />
+            </FormRow>
+            <FormRow label="MIME type" hint="e.g. application/pdf, image/jpeg, application/vnd.google-apps.document.">
+                <input type="text" value={filter.mimeType || ''} onChange={(e) => setFilter('mimeType', e.target.value || undefined)}
+                    placeholder="application/pdf" className={inputClass() + ' font-mono'} />
+            </FormRow>
+            <FormRow label="Name contains">
+                <input type="text" value={filter.nameContains || ''} onChange={(e) => setFilter('nameContains', e.target.value || undefined)}
+                    className={inputClass()} />
+            </FormRow>
+            <FormRow label="Exclude my own uploads">
+                <label className="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={filter.excludeOwnUploads === true} onChange={(e) => setFilter('excludeOwnUploads', e.target.checked || undefined)} />
+                    Skip files I uploaded
+                </label>
+            </FormRow>
+        </FilterShell>
+    );
+}
+
+function NextcloudFileFilterFields({ filter, setFilter }) {
+    return (
+        <FilterShell title="Nextcloud file filter (all optional)">
+            <FormRow label="In folder" hint="Path prefix, e.g. /Invoices. Files outside this folder are skipped.">
+                <input type="text" value={filter.inFolder || ''} onChange={(e) => setFilter('inFolder', e.target.value || undefined)}
+                    placeholder="/Invoices" className={inputClass() + ' font-mono'} />
+            </FormRow>
+            <FormRow label="Extension" hint="Without dot, e.g. pdf.">
+                <input type="text" value={filter.extension || ''} onChange={(e) => setFilter('extension', e.target.value || undefined)}
+                    placeholder="pdf" className={inputClass() + ' font-mono'} />
+            </FormRow>
+            <FormRow label="Name contains">
+                <input type="text" value={filter.nameContains || ''} onChange={(e) => setFilter('nameContains', e.target.value || undefined)}
+                    className={inputClass()} />
+            </FormRow>
+            <FormRow label="Exclude my own actions">
+                <label className="inline-flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={filter.excludeOwnUploads === true} onChange={(e) => setFilter('excludeOwnUploads', e.target.checked || undefined)} />
+                    Skip files I created/edited
+                </label>
+            </FormRow>
+            <div className="text-[11px] text-[var(--text-tertiary)] leading-snug">
+                Manual runs use a <code>null</code> trigger payload — set a sample under Settings → Manual trigger payload to test bindings.
+            </div>
+        </FilterShell>
+    );
+}
+
+function NextcloudShareFilterFields({ filter, setFilter }) {
+    return (
+        <FilterShell title="Nextcloud share.received filter">
+            <FormRow label="Sharer (actor) equals" hint="Nextcloud username (uid) of the person who shared the item.">
+                <input type="text" value={filter.actorEquals || ''} onChange={(e) => setFilter('actorEquals', e.target.value || undefined)}
+                    className={inputClass() + ' font-mono'} />
+            </FormRow>
+            <FormRow label="Kind">
+                <select
+                    value={filter.kindEquals || ''}
+                    onChange={(e) => setFilter('kindEquals', e.target.value || undefined)}
+                    className={inputClass()}
+                >
+                    <option value="">Any (file or folder)</option>
+                    <option value="file">file</option>
+                    <option value="folder">folder</option>
+                </select>
+            </FormRow>
+            <FormRow label="Name contains">
+                <input type="text" value={filter.nameContains || ''} onChange={(e) => setFilter('nameContains', e.target.value || undefined)}
+                    className={inputClass()} />
+            </FormRow>
+        </FilterShell>
+    );
+}
+
+function NextcloudActivityFilterFields({ filter, setFilter }) {
+    return (
+        <FilterShell title="Nextcloud activity filter (advanced)">
+            <FormRow label="Activity type" hint="Raw activity slug (e.g. file_created, comments, deck). Leave empty to match every type — and prefer file.new / file.changed / share.received as dedicated triggers.">
+                <input type="text" value={filter.type || ''} onChange={(e) => setFilter('type', e.target.value || undefined)}
+                    placeholder="comments" className={inputClass() + ' font-mono'} />
+            </FormRow>
+            <FormRow label="Object name contains">
+                <input type="text" value={filter.objectNameContains || ''} onChange={(e) => setFilter('objectNameContains', e.target.value || undefined)}
+                    className={inputClass()} />
+            </FormRow>
+            <FormRow label="Actor equals">
+                <input type="text" value={filter.actorEquals || ''} onChange={(e) => setFilter('actorEquals', e.target.value || undefined)}
+                    className={inputClass() + ' font-mono'} />
+            </FormRow>
+        </FilterShell>
+    );
+}
+
+function NextcloudNotificationFilterFields({ filter, setFilter }) {
+    return (
+        <FilterShell title="Nextcloud notification filter">
+            <FormRow label="App" hint="Source app id (e.g. spreed, files_sharing, dav, updatenotification).">
+                <input type="text" value={filter.app || ''} onChange={(e) => setFilter('app', e.target.value || undefined)}
+                    placeholder="spreed" className={inputClass() + ' font-mono'} />
+            </FormRow>
+            <FormRow label="Subject contains">
+                <input type="text" value={filter.subjectContains || ''} onChange={(e) => setFilter('subjectContains', e.target.value || undefined)}
+                    className={inputClass()} />
+            </FormRow>
+        </FilterShell>
     );
 }
 

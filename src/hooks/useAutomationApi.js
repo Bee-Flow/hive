@@ -34,6 +34,7 @@ export default function useAutomationApi() {
         dryRun: (id, body) => send('POST', `/${id}/dry-run`, body || {}),
         diagnoseTrigger: (id) => send('POST', `/${id}/diagnose-trigger`),
         listRuns: (id) => get(`/${id}/runs`),
+        listRecentRuns: (limit = 50) => get(`/_runs/recent?limit=${encodeURIComponent(limit)}`),
         getRun: (runId) => get(`/runs/${runId}`),
         getRunSteps: (runId) => get(`/runs/${runId}/steps`),
         approveRun: (runId) => send('POST', `/runs/${runId}/approve`),

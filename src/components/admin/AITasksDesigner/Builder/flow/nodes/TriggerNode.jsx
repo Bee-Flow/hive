@@ -1,5 +1,8 @@
 import React from 'react';
-import { Clock, Zap, Webhook, MousePointer2, Mail, Calendar } from 'lucide-react';
+import {
+    Clock, Zap, Webhook, MousePointer2, Mail, Calendar,
+    Tag, BellRing, FileUp, FilePlus, FilePen, Share2, Activity, Bell,
+} from 'lucide-react';
 import StepNodeBase, { NodeChip } from './StepNodeBase';
 
 const KIND_META = {
@@ -15,8 +18,16 @@ const KIND_META = {
  * generic "App-event trigger" lightning bolt.
  */
 const APP_EVENT_META = {
-    'gmail.mail.new':              { icon: Mail,     label: 'New email (Gmail)' },
-    'google-calendar.event.changed': { icon: Calendar, label: 'Calendar event changed' },
+    'gmail.mail.new':                  { icon: Mail,      label: 'New email (Gmail)' },
+    'gmail.label.added':               { icon: Tag,       label: 'Email labelled (Gmail)' },
+    'google-calendar.event.changed':   { icon: Calendar,  label: 'Calendar event changed' },
+    'google-calendar.event.upcoming':  { icon: BellRing,  label: 'Calendar event upcoming' },
+    'google-drive.file.new':           { icon: FileUp,    label: 'New file (Drive)' },
+    'nextcloud.file.new':              { icon: FilePlus,  label: 'New file (Nextcloud)' },
+    'nextcloud.file.changed':          { icon: FilePen,   label: 'File changed (Nextcloud)' },
+    'nextcloud.share.received':        { icon: Share2,    label: 'Share received (Nextcloud)' },
+    'nextcloud.activity.new':          { icon: Activity,  label: 'Nextcloud activity' },
+    'nextcloud.notification.new':      { icon: Bell,      label: 'Nextcloud notification' },
 };
 
 export default function TriggerNode({ data }) {
@@ -50,7 +61,7 @@ export default function TriggerNode({ data }) {
             )}
             {kind === 'app_event' && filter && Object.keys(filter).length > 0 && (
                 <div className="mt-1 flex items-center gap-1 flex-wrap">
-                    {summariseFilter(filter).slice(0, 4).map(({ key, label }) => (
+                    {summariseFilter(filter, step.appEvent).slice(0, 4).map(({ key, label }) => (
                         <NodeChip key={key} title={key}>
                             {label}
                         </NodeChip>
@@ -91,23 +102,87 @@ export default function TriggerNode({ data }) {
 }
 
 /**
- * Render Gmail trigger filter as readable chips.
- * Returns [{key, label}] in the order users expect to read them.
+ * Render the trigger filter as readable chips. Per-provider branches
+ * keep the language idiomatic — "labels: Label_3" reads naturally for a
+ * Gmail user but would be confusing in a Drive trigger.
  */
-function summariseFilter(filter) {
+function summariseFilter(filter, appEvent) {
+    const provider = appEvent?.provider;
+    const event = appEvent?.event;
+    const key = `${provider}.${event}`;
+
     const out = [];
-    if (filter.from)              out.push({ key: 'from',            label: `from: ${truncate(filter.from, 22)}` });
-    if (filter.to)                out.push({ key: 'to',              label: `to: ${truncate(filter.to, 22)}` });
-    if (filter.cc)                out.push({ key: 'cc',              label: `cc: ${truncate(filter.cc, 22)}` });
-    if (filter.subjectContains)   out.push({ key: 'subjectContains', label: `subject ~ "${truncate(filter.subjectContains, 18)}"` });
-    if (filter.subjectRegex)      out.push({ key: 'subjectRegex',    label: `subject /${truncate(filter.subjectRegex, 16)}/` });
-    if (Array.isArray(filter.labelIds) && filter.labelIds.length)
-        out.push({ key: 'labelIds', label: `labels: ${filter.labelIds.slice(0, 2).join(',')}${filter.labelIds.length > 2 ? '+' + (filter.labelIds.length - 2) : ''}` });
-    if (Array.isArray(filter.excludeLabelIds) && filter.excludeLabelIds.length)
-        out.push({ key: 'excludeLabelIds', label: `not: ${filter.excludeLabelIds.slice(0, 2).join(',')}` });
-    if (filter.hasAttachment === true)   out.push({ key: 'hasAttachment',   label: 'has attachment' });
-    if (filter.excludeFromSelf === true) out.push({ key: 'excludeFromSelf', label: 'not sent by me' });
-    if (typeof filter.maxAgeMinutes === 'number') out.push({ key: 'maxAgeMinutes', label: `≤ ${filter.maxAgeMinutes}m old` });
+    const push = (k, label) => out.push({ key: k, label });
+
+    // Gmail (mail.new + label.added share most fields)
+    if (provider === 'gmail') {
+        if (filter.labelId)          push('labelId',         `label: ${truncate(filter.labelId, 18)}`);
+        if (filter.from)              push('from',            `from: ${truncate(filter.from, 22)}`);
+        if (filter.to)                push('to',              `to: ${truncate(filter.to, 22)}`);
+        if (filter.cc)                push('cc',              `cc: ${truncate(filter.cc, 22)}`);
+        if (filter.subjectContains)   push('subjectContains', `subject ~ "${truncate(filter.subjectContains, 18)}"`);
+        if (filter.subjectRegex)      push('subjectRegex',    `subject /${truncate(filter.subjectRegex, 16)}/`);
+        if (Array.isArray(filter.labelIds) && filter.labelIds.length)
+            push('labelIds', `labels: ${filter.labelIds.slice(0, 2).join(',')}${filter.labelIds.length > 2 ? '+' + (filter.labelIds.length - 2) : ''}`);
+        if (Array.isArray(filter.excludeLabelIds) && filter.excludeLabelIds.length)
+            push('excludeLabelIds', `not: ${filter.excludeLabelIds.slice(0, 2).join(',')}`);
+        if (filter.hasAttachment === true)   push('hasAttachment',   'has attachment');
+        if (filter.excludeFromSelf === true) push('excludeFromSelf', 'not sent by me');
+        if (typeof filter.maxAgeMinutes === 'number') push('maxAgeMinutes', `≤ ${filter.maxAgeMinutes}m old`);
+        return out;
+    }
+
+    if (provider === 'google-calendar') {
+        if (typeof filter.leadMinutes === 'number') push('leadMinutes', `≤ ${filter.leadMinutes}m before`);
+        if (filter.calendarId && filter.calendarId !== 'primary')
+            push('calendarId', `cal: ${truncate(filter.calendarId, 14)}`);
+        if (filter.statusEquals)             push('statusEquals',          `status: ${filter.statusEquals}`);
+        if (filter.attendeeEmailContains)    push('attendeeEmailContains', `attendee ~ ${truncate(filter.attendeeEmailContains, 16)}`);
+        if (filter.includeAllDay === true)   push('includeAllDay',         'incl. all-day');
+        return out;
+    }
+
+    if (provider === 'google-drive') {
+        if (filter.folderId)        push('folderId',        `folder: ${truncate(filter.folderId, 16)}`);
+        if (filter.mimeType)        push('mimeType',        truncate(filter.mimeType.split('/').pop() || filter.mimeType, 14));
+        if (filter.nameContains)    push('nameContains',    `name ~ "${truncate(filter.nameContains, 14)}"`);
+        if (filter.excludeOwnUploads === true) push('excludeOwnUploads', 'not uploaded by me');
+        return out;
+    }
+
+    if (provider === 'nextcloud') {
+        if (key === 'nextcloud.file.new' || key === 'nextcloud.file.changed') {
+            if (filter.inFolder)     push('inFolder',     `in ${truncate(filter.inFolder, 18)}`);
+            if (filter.extension)    push('extension',    `.${String(filter.extension).replace(/^\./, '')}`);
+            if (filter.nameContains) push('nameContains', `name ~ "${truncate(filter.nameContains, 14)}"`);
+            if (filter.excludeOwnUploads === true) push('excludeOwnUploads', 'not by me');
+            return out;
+        }
+        if (key === 'nextcloud.share.received') {
+            if (filter.actorEquals)  push('actorEquals',  `from: ${truncate(filter.actorEquals, 16)}`);
+            if (filter.kindEquals)   push('kindEquals',   filter.kindEquals);
+            if (filter.nameContains) push('nameContains', `name ~ "${truncate(filter.nameContains, 14)}"`);
+            return out;
+        }
+        if (key === 'nextcloud.activity.new') {
+            if (filter.type)              push('type',              `type: ${truncate(filter.type, 16)}`);
+            if (filter.objectNameContains) push('objectNameContains', `obj ~ ${truncate(filter.objectNameContains, 14)}`);
+            if (filter.actorEquals)       push('actorEquals',       `actor: ${truncate(filter.actorEquals, 16)}`);
+            return out;
+        }
+        if (key === 'nextcloud.notification.new') {
+            if (filter.app)             push('app',             `app: ${truncate(filter.app, 16)}`);
+            if (filter.subjectContains) push('subjectContains', `subject ~ "${truncate(filter.subjectContains, 14)}"`);
+            return out;
+        }
+    }
+
+    // Unknown provider — fall back to dumping each key.
+    for (const k of Object.keys(filter)) {
+        const v = filter[k];
+        if (v == null || v === '' || (Array.isArray(v) && v.length === 0)) continue;
+        out.push({ key: k, label: `${k}: ${truncate(String(v), 18)}` });
+    }
     return out;
 }
 
