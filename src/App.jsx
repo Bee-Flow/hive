@@ -18,6 +18,7 @@ import DlpPreviewModal from './components/DlpPreviewModal';
 import { LicenseProvider, RequireTier } from './components/LicenseGate';
 import NcOnboardingWizard from './components/NcOnboardingWizard';
 import NcOnboardingPending from './components/NcOnboardingPending';
+import NcBindingApprovalModal from './components/NcBindingApprovalModal';
 import ProductWebsite from './marketing/ProductWebsite';
 
 import { LogOut, User, Shield, Settings, ChevronDown } from 'lucide-react';
@@ -371,6 +372,10 @@ function App() {
     // mount normally.
     const [ncOnboardingState, setNcOnboardingState] = useState(null);
     const [ncOrgName, setNcOrgName] = useState(null);
+    // Pending NC connector binding awaiting org-admin confirmation. When
+    // present (and user is org_admin), <NcBindingApprovalModal/> takes
+    // precedence over the onboarding wizard.
+    const [pendingNcBinding, setPendingNcBinding] = useState(null);
     const profileMenuRef = useRef(null);
 
     // Parse initial agent/conversation from URL
@@ -449,6 +454,7 @@ function App() {
                         else if (data.ncOnboardingPending) setNcOnboardingState('pending');
                         else setNcOnboardingState(null);
                         if (data.organizationName) setNcOrgName(data.organizationName);
+                        setPendingNcBinding(data.pendingNcBinding || null);
                         // Also fetch dynamic permissions
                         const permsRes = await authFetch(`${API_BASE}/auth/my-permissions`);
                         let permissions = [];
@@ -885,6 +891,37 @@ function App() {
                 mode="recovery"
                 recoveryKeyProp={encryptionState.recoveryKey}
                 onComplete={() => setEncryptionState(null)}
+            />
+        );
+    }
+
+    // NC connector binding approval — gated before the onboarding wizard.
+    // When the connector bootstrap is awaiting an authenticated approval
+    // from this org's admin, show the modal first; the wizard takes over
+    // afterwards via the next /auth/user refresh.
+    if (pendingNcBinding && user && (user.orgRole === 'org_admin' || user.isAdmin)) {
+        return (
+            <NcBindingApprovalModal
+                pending={pendingNcBinding}
+                organizationName={ncOrgName}
+                onResolved={async () => {
+                    // Re-pull /auth/user so the next gate (wizard or app) renders.
+                    try {
+                        const res = await authFetch(`${API_BASE}/auth/user`, { cache: 'no-store' });
+                        if (res.ok) {
+                            const data = await res.json();
+                            setPendingNcBinding(data.pendingNcBinding || null);
+                            if (data.ncOnboardingNeeded) setNcOnboardingState('admin');
+                            else if (data.ncOnboardingPending) setNcOnboardingState('pending');
+                            else setNcOnboardingState(null);
+                            if (data.organizationName) setNcOrgName(data.organizationName);
+                        } else {
+                            setPendingNcBinding(null);
+                        }
+                    } catch (_) {
+                        setPendingNcBinding(null);
+                    }
+                }}
             />
         );
     }
