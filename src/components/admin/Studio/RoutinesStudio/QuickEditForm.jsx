@@ -142,14 +142,61 @@ export default function QuickEditForm({
     const { preset: schedulePreset, time: scheduleTime } = cronToPreset(trigger.schedule?.cron);
 
     const [catalog, setCatalog] = useState(null);
+    // Whether the user has any Ticket Assistant connections. TA isn't part
+    // of the tools catalog (it's a separate beta feature), so we probe the
+    // dedicated connections endpoint to decide whether to show that
+    // provider in the trigger picker.
+    const [hasTaConnections, setHasTaConnections] = useState(false);
     useEffect(() => {
         let alive = true;
         authFetch(`${API_BASE}/api/automation/catalog`)
             .then(r => r.ok ? r.json() : null)
             .then(d => { if (alive) setCatalog(d); })
             .catch(() => {});
+        // 401 / 403 / 404 / network — silently treat as "no TA". The user
+        // sees a provider list without TA, which is the right outcome
+        // when they don't have access anyway.
+        authFetch(`${API_BASE}/api/ticket-assistant/connections`)
+            .then(r => r.ok ? r.json() : null)
+            .then(d => {
+                if (!alive) return;
+                const conns = Array.isArray(d) ? d : (d?.connections || []);
+                setHasTaConnections(conns.length > 0);
+            })
+            .catch(() => {});
         return () => { alive = false; };
     }, []);
+
+    // Decide which app_event providers are visible to this user. The
+    // catalog returns one entry per registry app with an `available`
+    // flag (true when the user has at least one tool from that app
+    // connected). We collapse multiple registry entries into a single
+    // surface where it makes sense:
+    //   - 'msgraph' is shown when ANY of outlook / ms-calendar / onedrive
+    //     is available (those three together cover the events msgraph
+    //     emits in our trigger taxonomy).
+    //   - 'nextcloud' is shown when ANY nextcloud-prefixed app is
+    //     available (file events live under the bare 'nextcloud' app id,
+    //     calendar/talk/deck events under their dedicated apps).
+    //   - 'ticket-assistant' is shown when the user has at least one TA
+    //     connection.
+    // Until the catalog loads we keep the picker empty rather than show
+    // a list the user can't use — picking an unavailable provider would
+    // fail at activate-time anyway.
+    const enabledProviders = useMemo(() => {
+        if (!catalog) return [];
+        const apps = Array.isArray(catalog?.apps) ? catalog.apps : [];
+        const isAvailable = (id) => apps.find(a => a.id === id)?.available;
+        const anyAvailable = (ids) => ids.some(isAvailable);
+        return APP_EVENT_PROVIDERS.filter((p) => {
+            if (p.value === 'msgraph') return anyAvailable(['outlook', 'ms-calendar', 'onedrive']);
+            if (p.value === 'nextcloud') {
+                return apps.some(a => typeof a.id === 'string' && a.id.startsWith('nextcloud') && a.available);
+            }
+            if (p.value === 'ticket-assistant') return hasTaConnections;
+            return isAvailable(p.value);
+        });
+    }, [catalog, hasTaConnections]);
 
     const commit = (next) => {
         onChange?.(next);
@@ -314,8 +361,27 @@ export default function QuickEditForm({
                                     className={inputClass()}
                                     style={inputStyle()}
                                 >
-                                    <option value="">— pick a provider —</option>
-                                    {APP_EVENT_PROVIDERS.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
+                                    <option value="">
+                                        {catalog === null
+                                            ? 'Loading providers…'
+                                            : enabledProviders.length === 0
+                                                ? 'No connected integrations'
+                                                : '— pick a provider —'}
+                                    </option>
+                                    {/* Catalog has loaded but the saved provider on this
+                                        automation is no longer enabled (user revoked the
+                                        integration). Surface it as "(no longer connected)"
+                                        so the dropdown still shows the current value
+                                        instead of silently snapping back to "pick a
+                                        provider". */}
+                                    {trigger.appEvent?.provider
+                                        && enabledProviders.length > 0
+                                        && !enabledProviders.find(p => p.value === trigger.appEvent.provider) && (
+                                            <option value={trigger.appEvent.provider} disabled>
+                                                {trigger.appEvent.provider} (no longer connected)
+                                            </option>
+                                        )}
+                                    {enabledProviders.map(p => <option key={p.value} value={p.value}>{p.label}</option>)}
                                 </select>
                             </div>
                             <div>

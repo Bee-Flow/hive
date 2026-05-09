@@ -106,15 +106,6 @@ const NcConsentGate = ({ user, onAccept }) => {
                         >
                             Terms <ExternalLink className="w-3 h-3" />
                         </a>
-                        <a
-                            href="https://docs.beeflow.ai/license-model"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1 hover:underline"
-                            style={{ color: 'var(--accent-primary)' }}
-                        >
-                            License model <ExternalLink className="w-3 h-3" />
-                        </a>
                     </div>
 
                     {error && (

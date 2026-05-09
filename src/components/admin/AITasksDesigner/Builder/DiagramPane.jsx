@@ -80,7 +80,13 @@ export default function DiagramPane({ definition, runSteps = [], onNodeClick, va
                 nodeTypes={NODE_TYPES}
                 edgeTypes={edgeTypes}
                 fitView
-                fitViewOptions={{ padding: 0.18 }}
+                // `duration: 0` skips the default fit-view animation. Without
+                // it, parent re-renders that pass the same definition object
+                // still trigger ReactFlow's smooth re-fit, which the user
+                // sees as a flicker (the diagram briefly fades during the
+                // animation). Stable definition references via the parent's
+                // useMemo + zero-duration fit kills the perceived flicker.
+                fitViewOptions={{ padding: 0.18, duration: 0 }}
                 panOnDrag={!readOnly}
                 zoomOnScroll={!readOnly}
                 zoomOnPinch={!readOnly}

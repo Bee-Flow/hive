@@ -96,7 +96,7 @@ We welcome bug reports, feature requests, and PRs.
 
 ## Security
 
-Found a vulnerability? Please disclose responsibly via **security@beeflow.ai**.
+Found a vulnerability? Please disclose responsibly via **tomkooy@beeflow.nl**.
 See [SECURITY.md](./SECURITY.md).
 
 ## Trademarks
@@ -107,6 +107,4 @@ the Bee Flow name.
 
 ## Questions
 
-- Self-hosting: [docs.beeflow.ai/self-hosting](https://docs.beeflow.ai/self-hosting)
-- License model: [docs.beeflow.ai/license-model](https://docs.beeflow.ai/license-model)
-- Commercial / hosted SaaS: **licensing@beeflow.ai**
+- Commercial / hosted SaaS: **tomkooy@beeflow.nl**

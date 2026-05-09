@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowLeft, Sparkles, ListChecks, Code2, Play, Save, Power, PowerOff, Settings2 } from 'lucide-react';
 import scopedStorage from '../../../../utils/scopedStorage';
 import useAutomationApi from '../../../../hooks/useAutomationApi';
@@ -150,7 +150,17 @@ export default function RoutineEditor({
         }
     };
 
-    const effectiveDef = localDef || automation?.definition || null;
+    // Stable reference for the diagram preview. Without useMemo, every
+    // unrelated re-render (e.g. savingState transitions, title typing, the
+    // `setAutomation(r.automation)` after a debounced save) produces a new
+    // expression result, even though the underlying object is unchanged.
+    // ReactFlow's `fitView` then re-runs its animation, producing a
+    // visible flicker in the Preview pane. Memoising on the actual sources
+    // keeps the prop reference stable across cosmetic re-renders.
+    const effectiveDef = useMemo(
+        () => localDef || automation?.definition || null,
+        [localDef, automation?.definition],
+    );
 
     if (loading) {
         return (

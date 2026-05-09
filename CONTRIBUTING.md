@@ -73,5 +73,5 @@ maintaining. See [CODE_OF_CONDUCT.md](./CODE_OF_CONDUCT.md).
 ## Questions
 
 - Architecture / "why is X like this": GitHub Discussions
-- Security issues: **security@beeflow.ai** (do *not* open a public issue)
-- Commercial: **licensing@beeflow.ai**
+- Security issues: **tomkooy@beeflow.nl** (do *not* open a public issue)
+- Commercial: **tomkooy@beeflow.nl**

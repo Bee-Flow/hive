@@ -113,4 +113,4 @@ licenses.
 
 If you want to use Bee Flow in a way this licence does not allow — most
 commonly: hosting it as a paid service for third parties — please contact
-**licensing@beeflow.ai** for a commercial agreement.
+**tomkooy@beeflow.nl** for a commercial agreement.
