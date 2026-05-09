@@ -111,9 +111,6 @@ licenses.
 
 ---
 
-This license is based on the **n8n Sustainable Use License** and its
-predecessor the Polyform Shield/Strict family. Adapted for Bee Flow B.V.
-
 If you want to use Bee Flow in a way this licence does not allow — most
 commonly: hosting it as a paid service for third parties — please contact
 **licensing@beeflow.ai** for a commercial agreement.
