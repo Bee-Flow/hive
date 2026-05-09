@@ -5,6 +5,7 @@ import N8nSection from './N8nSection';
 import UsageSection from './UsageSection';
 import GitHubSyncPanel from '../../components/admin/GitHubSyncPanel';
 import NextcloudSyncPanel from '../../components/admin/NextcloudSyncPanel';
+import OrgNcIntegrationsPanel from '../../components/admin/OrgNcIntegrationsPanel';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 
@@ -107,6 +108,9 @@ const OrganisationSection = ({ user, activeSection = 'license' }) => {
     const ei = user?.enabledIntegrations;
     const showN8n = !ei || ei.includes('n8n');
     const showGoogleMaps = !ei || ei.includes('google-maps');
+    // NC-bound orgs get an additional org-admin panel for Nextcloud
+    // integration management (Fase G). Standalone orgs never see it.
+    const isNcOrg = !!user?.ncOrg?.instanceId;
 
     const isInfoSection = INFO_SECTIONS.some(s => s.id === activeSection);
 
@@ -171,7 +175,9 @@ const OrganisationSection = ({ user, activeSection = 'license' }) => {
                             {t('org.integ_subtitle')}
                         </p>
                     </div>
-                    {!showN8n && !showGoogleMaps ? (
+                    {/* Nextcloud integration management (NC-bound orgs only) */}
+                    {isNcOrg && <OrgNcIntegrationsPanel user={user} />}
+                    {!showN8n && !showGoogleMaps && !isNcOrg ? (
                         <div className="rounded-xl px-5 py-4" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}>
                             <p className="text-[13px]" style={{ color: 'var(--text-muted)' }}>
                                 {t('org.integ_none')}

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronRight, Play, AlertTriangle, CheckCircle2, Clock, RotateCw, X, Ban } from 'lucide-react';
+import { ChevronRight, Play, AlertTriangle, CheckCircle2, Clock, RotateCw, X, Ban, ShieldCheck, ShieldX } from 'lucide-react';
 import useAutomationApi from '../../../../hooks/useAutomationApi';
 
 const statusIcon = (s) => {
@@ -57,6 +57,19 @@ export default function RunHistory({ automationId }) {
         setRuns(d.runs || []);
     };
 
+    const decideApproval = async (run, decision, e) => {
+        e.stopPropagation();
+        const reason = decision === 'reject' ? (window.prompt('Reason for rejection (optional):') || '') : null;
+        try {
+            await api.approveStep(run.id, decision, reason);
+        } catch (err) {
+            window.alert(`${decision === 'approve' ? 'Approve' : 'Reject'} failed: ${err.message}`);
+            return;
+        }
+        const d = await api.listRuns(automationId);
+        setRuns(d.runs || []);
+    };
+
     const cancel = async (run, e) => {
         e.stopPropagation();
         try {
@@ -99,6 +112,24 @@ export default function RunHistory({ automationId }) {
                             <button onClick={(e) => approve(run, e)} style={{ marginLeft: 8, background: '#16a34a', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>
                                 Approve
                             </button>
+                        )}
+                        {run.status === 'awaiting_approval' && (
+                            <>
+                                <button
+                                    onClick={(e) => decideApproval(run, 'approve', e)}
+                                    title="Approve and resume"
+                                    style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 4, background: '#16a34a', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}
+                                >
+                                    <ShieldCheck size={12} /> Approve
+                                </button>
+                                <button
+                                    onClick={(e) => decideApproval(run, 'reject', e)}
+                                    title="Reject and stop the flow"
+                                    style={{ marginLeft: 4, display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fff', color: '#dc2626', border: '1px solid #fca5a5', padding: '4px 8px', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}
+                                >
+                                    <ShieldX size={12} /> Reject
+                                </button>
+                            </>
                         )}
                         {run.status === 'error' && (
                             <button

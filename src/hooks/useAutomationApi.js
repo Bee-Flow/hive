@@ -54,6 +54,7 @@ export default function useAutomationApi() {
         // controller (cross-pod safe).
         retryRun: (id, runId) => send('POST', `/${id}/runs/${runId}/retry`),
         cancelRun: (runId) => send('POST', `/runs/${runId}/cancel`),
+        approveStep: (runId, decision, reason) => send('POST', `/runs/${runId}/approve-step`, { decision, reason }),
         listVersions: (id) => get(`/${id}/versions`),
         getVersion: (id, versionId) => get(`/${id}/versions/${versionId}`),
         // Restore a historical version. Server validates the stored
@@ -69,6 +70,11 @@ export default function useAutomationApi() {
         rotateWebhook: (id, slug) => send('POST', `/${id}/webhook/${slug}/rotate`),
         deleteWebhook: (id, slug) => send('DELETE', `/${id}/webhook/${slug}`),
         getCatalog: () => get('/catalog'),
+        // Curated template gallery shown in the EmptyState. listTemplates
+        // returns metadata only; getTemplate fetches the full definition
+        // so the builder can pre-fill via createAutomation.
+        listTemplates: () => get('/templates'),
+        getTemplate: (templateId) => get(`/templates/${templateId}`),
     };
 }
 

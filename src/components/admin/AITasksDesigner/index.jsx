@@ -806,12 +806,34 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
                     />
                 );
             } else {
+                const onPickTemplate = async (templateId) => {
+                    try {
+                        const r = await automationApi.getTemplate(templateId);
+                        const tmpl = r?.template;
+                        if (!tmpl) return;
+                        const created = await automationApi.createAutomation({
+                            title: tmpl.title,
+                            description: tmpl.description || null,
+                            definition: tmpl.definition || {},
+                        });
+                        await fetchAutomations();
+                        const newId = created?.automation?.id || created?.id;
+                        if (newId) {
+                            setSegment('automation');
+                            setBuilderAutomationId(newId);
+                        }
+                    } catch (err) {
+                        console.warn('[AITasksDesigner] template pick failed:', err.message);
+                        alert(`Could not load template: ${err.message}`);
+                    }
+                };
                 rightPane = (
                     <RoutinesEmptyState
                         segment="automation"
                         onCreateAutomation={() => { setBuilderAutomationId(''); setPresetChatInput(''); }}
                         onUseExample={(text) => { setPresetChatInput(text); setBuilderAutomationId(''); }}
                         onOpenAutomation={(id) => { setBuilderAutomationId(id); }}
+                        onPickTemplate={onPickTemplate}
                     />
                 );
             }

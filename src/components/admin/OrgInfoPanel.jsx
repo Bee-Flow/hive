@@ -3,6 +3,8 @@ import { Building2, Save, Upload, Palette, FileText, Check, Lock, KeyRound, Aler
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 import GuardrailsPanel from './GuardrailsPanel';
+import LicenseKeyActivation from './LicenseKeyActivation';
+import { useLicenseContext } from '../LicenseGate';
 
 // Skeleton loader
 const Skeleton = () => (
@@ -318,6 +320,8 @@ const OrgDefaultLanguage = () => {
 
 const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange }) => {
     const { t } = useTranslation();
+    const licenseCtx = useLicenseContext();
+    const hasActiveLicenseKey = licenseCtx?.source === 'license_key';
     const deploymentMode = user?.featureFlags?.deploymentMode || 'cloud';
     const isPrivateCloud = deploymentMode === 'private-cloud';
     const ncOrg = user?.ncOrg || null;
@@ -645,11 +649,19 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                             <p className="text-sm text-[var(--text-muted)] mt-0.5">{t('org.license_subtitle')}</p>
                         </div>
 
+                        {/* License key activation (Community → Pro/Enterprise/Full via signed JWT) */}
+                        <LicenseKeyActivation />
+
                         {subLoading ? (
                             <div className="space-y-4 animate-pulse">
                                 <div className="h-28 rounded-2xl bg-[var(--bg-tertiary)]" />
                                 <div className="h-40 rounded-2xl bg-[var(--bg-tertiary)]" />
                             </div>
+                        ) : !sub && hasActiveLicenseKey ? (
+                            // License-key activation already shown above; the legacy
+                            // Stripe "No subscription" placeholder would just confuse
+                            // self-hosted users who paid via license key.
+                            null
                         ) : !sub ? (
                             <div className="space-y-5">
                                 <div className="p-6 rounded-2xl border-2 border-dashed border-[var(--border-subtle)] text-center">

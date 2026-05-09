@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Sparkles, Plus, Mail, Clock, MessageSquare, CheckCircle2, AlertTriangle, Clock as ClockIcon, Play } from 'lucide-react';
 import useAutomationApi from '../../../../hooks/useAutomationApi';
+import TemplateGallery from './TemplateGallery';
 
 /**
  * Right-pane empty state shown when no routine is selected. Mirrors
@@ -11,7 +12,7 @@ import useAutomationApi from '../../../../hooks/useAutomationApi';
  * Selecting an example prefills the chat input via `onUseExample(text)`.
  * The parent then opens a fresh builder draft.
  */
-export default function RoutinesEmptyState({ segment, onCreateAutomation, onCreateTask, onUseExample, onOpenAutomation }) {
+export default function RoutinesEmptyState({ segment, onCreateAutomation, onCreateTask, onUseExample, onOpenAutomation, onPickTemplate }) {
     if (segment === 'prompt_task') {
         return (
             <div className="h-full flex flex-col items-center justify-center px-6 py-12">
@@ -84,6 +85,15 @@ export default function RoutinesEmptyState({ segment, onCreateAutomation, onCrea
                         })}
                     </div>
                 </div>
+
+                {onPickTemplate && (
+                    <div className="mt-10">
+                        <div className="text-[11px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)] mb-3 text-center">
+                            Or pick a ready-made template
+                        </div>
+                        <TemplateGallery onPick={onPickTemplate} />
+                    </div>
+                )}
 
                 <RecentRunsFeed onOpenAutomation={onOpenAutomation} />
             </div>

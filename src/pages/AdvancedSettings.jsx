@@ -439,7 +439,17 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
                             {t('settings.profile_section')}
                         </p>
 
-                        {NAV_ITEMS.map(item => (
+                        {NAV_ITEMS.filter(item => {
+                            // Personal Access Tokens is a beta feature — hidden
+                            // unless the user's org has it enabled (or the user
+                            // is a super-admin).
+                            if (item.id === 'api_tokens') {
+                                const isSuperAdminPerm = perms.includes('all') || user?.role === 'admin';
+                                const hasPatBeta = Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('personal_access_tokens');
+                                return isSuperAdminPerm || hasPatBeta;
+                            }
+                            return true;
+                        }).map(item => (
                             <NavItem
                                 key={item.id}
                                 {...item}

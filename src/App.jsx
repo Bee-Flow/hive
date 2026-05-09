@@ -15,6 +15,7 @@ import LoginPage from './pages/LoginPage';
 import EncryptionSetup from './pages/EncryptionSetup';
 import EmbedChat from './pages/EmbedChat';
 import DlpPreviewModal from './components/DlpPreviewModal';
+import { LicenseProvider, RequireTier } from './components/LicenseGate';
 import NcOnboardingWizard from './components/NcOnboardingWizard';
 import NcOnboardingPending from './components/NcOnboardingPending';
 import ProductWebsite from './marketing/ProductWebsite';
@@ -227,7 +228,7 @@ function AppRoot() {
     if (isCmsPathCandidate(window.location.pathname)) {
         return <RootPathGate />;
     }
-    return <App />;
+    return <LicenseProvider><App /></LicenseProvider>;
 }
 
 // Isolated host for the CMS preview iframe. Renders ProductWebsite with empty
@@ -1005,7 +1006,11 @@ function App() {
 
         if (currentPage === 'meetingNotes') {
             if (user?.featureFlags?.meeting_notes === false) return navigateToPage('agents');
-            return <MeetingNotesPage user={user} onBack={() => navigateToPage('agents')} />;
+            return (
+                <RequireTier feature="meeting_notes" tier="pro" onNavigateToLicense={() => navigateToPage('orgSettings')}>
+                    <MeetingNotesPage user={user} onBack={() => navigateToPage('agents')} />
+                </RequireTier>
+            );
         }
         if (currentPage === 'templates') {
             if (user?.featureFlags?.templates === false) return navigateToPage('agents');

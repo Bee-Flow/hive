@@ -1,14 +1,36 @@
 {
-    "name": "beeflow-agent-hub",
-    "private": true,
+    "name": "@beeflow/frontend",
     "version": "1.0.0",
     "type": "module",
-    "description": "Standalone Agent Hub chat interface for Bee Flow",
+    "description": "Bee Flow — frontend SPA. The React + Vite client for every Bee Flow deployment (SaaS, self-hosted, Nextcloud ExApp).",
+    "license": "SEE LICENSE IN LICENSE.md",
+    "homepage": "https://beeflow.ai",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/Bee-Flow/hive.git"
+    },
+    "bugs": {
+        "url": "https://github.com/Bee-Flow/hive/issues"
+    },
+    "keywords": [
+        "bee-flow",
+        "ai",
+        "agents",
+        "nextcloud",
+        "react",
+        "vite"
+    ],
+    "files": [
+        "dist",
+        "LICENSE.md",
+        "README.md"
+    ],
     "scripts": {
         "dev": "vite",
         "build": "vite build",
         "lint": "eslint .",
-        "preview": "vite preview"
+        "preview": "vite preview",
+        "prepublishOnly": "npm run build"
     },
     "dependencies": {
         "@dnd-kit/core": "^6.3.1",

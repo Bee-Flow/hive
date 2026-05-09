@@ -2202,7 +2202,35 @@ const EN_DEFAULTS = {
     "meetings.upload_from_nextcloud":    "Pick from Nextcloud",
     "meetings.nc_picker_title":          "Pick a recording from Nextcloud",
     "meetings.nc_picker_hint":           "Showing audio files in /Recordings",
-    "meetings.nc_picker_empty":          "No audio files in /Recordings. Drop a file there in Nextcloud and try again."
+    "meetings.nc_picker_empty":          "No audio files in /Recordings. Drop a file there in Nextcloud and try again.",
+
+    // ── License key activation ──
+    "license.tier_label":                "License tier",
+    "license.community_subtitle":        "No license key — running on the free Community tier",
+    "license.activated_subtitle":        "Activated via license key",
+    "license.community_explainer":       "You can activate Pro, Enterprise, or a custom plan with a license key purchased at beeflow.ai. Activation unlocks features like automations, multi-user, guardrails, and more.",
+    "license.enter_key":                 "Enter license key",
+    "license.replace_key":               "Replace key",
+    "license.deactivate":                "Deactivate",
+    "license.confirm_deactivate":        "Remove the active license? Your instance will fall back to the free Community tier.",
+    "license.activate":                  "Activate",
+    "license.refresh":                   "Refresh",
+    "license.refresh_now":               "Re-check with license server",
+    "license.paste_token":               "Paste your license key (JWT)",
+    "license.buy_at_beeflow":            "Buy at beeflow.ai",
+    "license.expires_on":                "Expires on",
+    "license.expired":                   "expired",
+    "license.in_days":                   "{n} days",
+    "license.billing_interval":          "Billing",
+    "license.last_refresh":              "Last refresh",
+    "license.license_id":                "License ID",
+    "license.tier_community":            "Community",
+    "license.tier_pro":                  "Pro",
+    "license.tier_enterprise":           "Enterprise",
+    "license.tier_full":                 "Full",
+    "license.feature_locked":            "Requires {tier} license",
+    "license.upgrade_at_beeflow":        "Upgrade at beeflow.ai",
+    "license.refresh_no_server":         "No license server configured — JWT signature is authoritative. Refresh has no effect."
 };
 
 export default EN_DEFAULTS;
