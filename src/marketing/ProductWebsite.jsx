@@ -343,7 +343,13 @@ export default function ProductWebsite({ content: initialContent }) {
     // Preview-mode listener — admin panel posts structural + design updates.
     useEffect(() => {
         if (!isPreviewMode()) return;
+        // Same-origin-only: the admin panel that posts cms-preview lives on
+        // the same origin as this page. Without this check a malicious
+        // parent frame could inject arbitrary content + design (CSS vars
+        // including font URLs) into our DOM via postMessage.
+        const expectedOrigin = window.location.origin;
         const onMessage = (e) => {
+            if (e.origin !== expectedOrigin) return;
             if (e.data?.type === 'cms-preview') {
                 if (e.data.content) setContent(e.data.content);
                 // Allow null/undefined design to mean "no override", but
@@ -355,8 +361,8 @@ export default function ProductWebsite({ content: initialContent }) {
         window.addEventListener('message', onMessage);
         // Mark the root with a class so CSS can adapt (e.g., un-fix the header).
         rootRef.current?.classList.add('cms-preview');
-        // Tell the parent we're ready.
-        window.parent?.postMessage({ type: 'cms-preview-ready' }, '*');
+        // Tell the parent we're ready — explicit target origin (no '*').
+        window.parent?.postMessage({ type: 'cms-preview-ready' }, expectedOrigin);
         return () => window.removeEventListener('message', onMessage);
     }, []);
 

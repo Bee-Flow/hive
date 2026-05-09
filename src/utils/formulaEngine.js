@@ -7,6 +7,20 @@
  *   // cells is { "A1": { value: 10, formula: null }, "B2": { value: 20 } }
  */
 
+import { Parser } from 'expr-eval';
+
+// Reusable parser instance — expr-eval is dep-free, sandboxed (no access
+// to globals/Function/eval), and supports +, -, *, /, %, parens, and
+// comparison operators. We use this instead of `new Function()` so a
+// regex-bypass on user-supplied formula text can't reach the JS runtime.
+const exprParser = new Parser({
+    operators: {
+        add: true, subtract: true, multiply: true, divide: true,
+        remainder: true, comparison: true, logical: true,
+        in: false, assignment: false, conditional: false,
+    },
+});
+
 // ─── Cell Reference Helpers ──────────────────────────────────────
 
 function parseCellRef(ref) {
@@ -205,14 +219,12 @@ function evaluateExpression(expr, cells, visited) {
             return '#VALUE!';
         }
 
-        // Handle comparison operators for IF conditions
-        evalStr = evalStr.replace(/<>/g, '!==')
-            .replace(/(?<!=)=(?!=)/g, '===')
-            .replace(/>=/g, '>=')
-            .replace(/<=/g, '<=');
+        // expr-eval grammar: `=` and `<>` aren't supported as comparison
+        // operators (it expects `==` / `!=`). Normalize before parsing.
+        evalStr = evalStr.replace(/<>/g, '!=')
+            .replace(/(?<!=|!|<|>)=(?!=)/g, '==');
 
-        // eslint-disable-next-line no-eval
-        const result = Function(`"use strict"; return (${evalStr})`)();
+        const result = exprParser.evaluate(evalStr);
         if (typeof result === 'number' && !isFinite(result)) return '#DIV/0!';
         return result;
     } catch {
