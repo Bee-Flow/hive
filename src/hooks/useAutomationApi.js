@@ -47,9 +47,27 @@ export default function useAutomationApi() {
         getRun: (runId) => get(`/runs/${runId}`),
         getRunSteps: (runId) => get(`/runs/${runId}/steps`),
         approveRun: (runId) => send('POST', `/runs/${runId}/approve`),
+        // Run cancel + retry — wire UI buttons in RunHistory to these.
+        // retryRun re-fires `executeAutomation` server-side with a
+        // parent_run_id link so the history shows the lineage; cancelRun
+        // flips cancel_requested in the DB and aborts the in-process
+        // controller (cross-pod safe).
+        retryRun: (id, runId) => send('POST', `/${id}/runs/${runId}/retry`),
+        cancelRun: (runId) => send('POST', `/runs/${runId}/cancel`),
         listVersions: (id) => get(`/${id}/versions`),
+        getVersion: (id, versionId) => get(`/${id}/versions/${versionId}`),
+        // Restore a historical version. Server validates the stored
+        // definition (some step types or tool names may have been removed
+        // since) and bumps the version counter so the restore itself shows
+        // up as a new entry in the history.
+        restoreVersion: (id, versionId) => send('POST', `/${id}/versions/${versionId}/restore`),
         createWebhook: (id) => send('POST', `/${id}/webhook`),
         listWebhooks: (id) => get(`/${id}/webhooks`),
+        // Webhook secret rotation invalidates the previous secret
+        // immediately. The new secret is returned ONCE — surface it in the
+        // UI so the user copies it before navigating away.
+        rotateWebhook: (id, slug) => send('POST', `/${id}/webhook/${slug}/rotate`),
+        deleteWebhook: (id, slug) => send('DELETE', `/${id}/webhook/${slug}`),
         getCatalog: () => get('/catalog'),
     };
 }

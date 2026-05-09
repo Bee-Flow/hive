@@ -5,6 +5,7 @@ import { getModelMeta, CAT_COLORS } from './modelMeta';
 
 import DirectChatConfig from './DirectChatConfig';
 import TicketAssistantTiersConfig from './TicketAssistantTiersConfig';
+import WebSearchInferenceConfig from './WebSearchInferenceConfig';
 
 import MistralApiKeyCard from './ProviderCards/MistralCard';
 import OpenAIApiKeyCard from './ProviderCards/OpenAICard';
@@ -38,7 +39,7 @@ const AIConfigPanel = () => {
     }, []);
 
     useEffect(() => {
-        if (providers.length > 0 && (activeTab === 'providers' || activeTab === 'chatModels')) {
+        if (providers.length > 0 && (activeTab === 'providers' || activeTab === 'chatModels' || activeTab === 'webSearchInference')) {
             fetchAllModels();
         }
     }, [activeTab, providers]);
@@ -105,6 +106,7 @@ const AIConfigPanel = () => {
         { id: 'chatModels', label: t('admin.ai_chat_models'), icon: '🗨️' },
         { id: 'directChat', label: t('admin.ai_direct_chat'), icon: '💬' },
         { id: 'ticketAssistantTiers', label: t('admin.ai_ticket_assistant_tiers', 'Ticket Assistant Models'), icon: '🎫' },
+        { id: 'webSearchInference', label: t('admin.ai_web_search_inference', 'Web Search Inference'), icon: '🌐' },
 
     ];
 
@@ -235,6 +237,11 @@ const AIConfigPanel = () => {
                 {/* Ticket Assistant Tiers Tab — per-stage model tier picker */}
                 {activeTab === 'ticketAssistantTiers' && (
                     <TicketAssistantTiersConfig />
+                )}
+
+                {/* Web Search Inference Tab — embed inherits global, rerank method-only, cleanup uses chat-model picker */}
+                {activeTab === 'webSearchInference' && (
+                    <WebSearchInferenceConfig allModels={allModels} />
                 )}
 
             </div>

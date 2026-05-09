@@ -9,6 +9,7 @@ import BuilderShell from './Builder/BuilderShell';
 import RoutineRow from '../Studio/RoutinesStudio/RoutineRow';
 import RoutinesEmptyState from '../Studio/RoutinesStudio/EmptyState';
 import QuickSwitcher from '../Studio/RoutinesStudio/QuickSwitcher';
+import RoutineEditor from '../Studio/RoutinesStudio/RoutineEditor';
 import useAutomationApi from '../../../hooks/useAutomationApi';
 
 const REPEAT_OPTIONS = [
@@ -790,17 +791,17 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
             const builderOpen = (builderAutomationId !== null || openingBuilder) && automationsAllowed;
             if (builderOpen) {
                 rightPane = (
-                    <BuilderShell
+                    <RoutineEditor
                         // `key` forces a fresh mount when the user switches
                         // between automations in the sidebar — without it the
-                        // BuilderShell reuses its internal state (chat input,
-                        // tab, selectedStepId, hydrated server snapshot) from
-                        // the previously-opened automation, which made it
-                        // look like the second click did nothing.
+                        // editor (and the BuilderShell it embeds) reuses
+                        // internal state from the previously-opened automation,
+                        // which made the second click look like a no-op.
                         key={builderAutomationId || 'new'}
                         automationId={builderAutomationId || null}
                         onBack={() => { setBuilderAutomationId(null); setOpeningBuilder(false); setPresetChatInput(''); }}
                         user={user}
+                        agents={agents}
                         initialChatInput={presetChatInput}
                     />
                 );

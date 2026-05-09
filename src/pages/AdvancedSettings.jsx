@@ -22,6 +22,7 @@ const BASE_ORG_SUB_ITEMS = [
     { id: 'org_users', labelKey: 'settings.users_groups', icon: Users, color: '#3b82f6' },
     { id: 'org_integrations', labelKey: 'settings.integrations', icon: Link2, color: '#0ea5e9' },
     { id: 'org_github_sync', labelKey: 'settings.github_sync', icon: FolderGit2, color: '#8b5cf6' },
+    { id: 'org_nextcloud_sync', labelKey: 'settings.nextcloud_sync', icon: Cloud, color: '#0082C9' },
 ];
 const AZURE_SUB_ITEM = { id: 'org_azure', labelKey: 'settings.azure_config', icon: Cloud, color: '#0078D4' };
 
@@ -42,6 +43,7 @@ const ORG_ID_TO_URL = {
     org_users: 'users',
     org_integrations: 'integrations',
     org_github_sync: 'github-sync',
+    org_nextcloud_sync: 'nextcloud-sync',
     org_azure: 'azure',
 };
 const ORG_URL_TO_ID = Object.fromEntries(Object.entries(ORG_ID_TO_URL).map(([id, url]) => [url, id]));
@@ -214,28 +216,29 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
     const isConsumerAccount = !!user?.isConsumerAccount;
     const ei = user?.enabledIntegrations;
     const hasOrgIntegrations = !ei || (Array.isArray(ei) && ei.length > 0);
-    const orgSubItems = useMemo(() => {
-        const items = BASE_ORG_SUB_ITEMS.filter(s => {
-            if (s.id === 'org_users') return canManageUsers;
-            if (s.id === 'org_integrations') return canSeeOrg && hasOrgIntegrations;
-            // In private-cloud mode, license is managed externally
-            if (isPrivateCloud && s.id === 'license') return false;
+    // Users coming in through the Nextcloud ExApp connector authenticate via
+    // their NC session — the Bee Flow "Sign-in Method" panel (password/SSO/
+    // OAuth provider config) doesn't apply because identity is delegated to
+    // Nextcloud. Hide that section to avoid the false impression that they
+    // can configure auth here. We hide based on org-level binding (ncOrg)
+    // rather than the current user's provider so the original creator who
+    // bootstrapped the NC org also sees the same gated UI.
+    const isNcConnectorUser = user?.provider === 'nextcloud_connector';
+    const isNcOrg = !!user?.ncOrg?.instanceId;
+    // Super-admins (perms 'all' or role 'admin') manage every org in the
+    // deployment, so they should see NC-related sections even if their own
+    // session isn't tied to an NC-bound org. Org-admins only see the section
+    // when their own org is NC-bound.
+    const isSuperAdmin = perms.includes('all') || user?.role === 'admin';
+    const showNcSync = isNcOrg || isSuperAdmin;
 
-            // Hide privacy shield in local host
-            const isLocalhost = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-            if (isLocalhost && s.id === 'privacy') return false;
-
-            return true;
-        });
-        // Azure config only in private-cloud mode for org admins
-        if (isPrivateCloud && canSeeOrg) {
-            items.push(AZURE_SUB_ITEM);
-        }
-        return items;
-    }, [canSeeOrg, canManageUsers, isPrivateCloud, hasOrgIntegrations]);
-
-    const ALL_ORG_IDS = [...BASE_ORG_SUB_ITEMS.map(s => s.id), AZURE_SUB_ITEM.id, 'org_github_sync'];
+    const ALL_ORG_IDS = [...BASE_ORG_SUB_ITEMS.map(s => s.id), AZURE_SUB_ITEM.id, 'org_github_sync', 'org_nextcloud_sync'];
     const isOrgSubTab = ALL_ORG_IDS.includes(activeTab);
+
+    // orgSubItems is computed below — it depends on `statuses.githubConnected`
+    // which is hydrated in fetchSettingsStatuses() and the `statuses` state
+    // declared further down. The actual filter lives in the useMemo block
+    // immediately after `statuses` is declared.
 
     // If user navigates to an org sub-tab, keep org expanded
     useEffect(() => {
@@ -249,7 +252,36 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
         hasFirefliesKey: false, hasYouTrackConfig: false, hasGammaKey: false,
         hasN8nConfig: false, linkedInConnected: false, linkedInName: null, hasLinkedInConfig: false,
         hasNextcloudAppPassword: false, isNextcloudUser: false,
+        githubConnected: false,
     });
+    const orgSubItems = useMemo(() => {
+        const items = BASE_ORG_SUB_ITEMS.filter(s => {
+            if (s.id === 'org_users') return canManageUsers;
+            if (s.id === 'org_integrations') return canSeeOrg && hasOrgIntegrations;
+            // In private-cloud mode, license is managed externally
+            if (isPrivateCloud && s.id === 'license') return false;
+            // NC-bound orgs: auth is delegated to Nextcloud entirely. The
+            // Sign-in Method panel configures username/password + OAuth
+            // providers which are no-ops once identity comes from NC, so
+            // hide it for everyone — including super-admins.
+            if ((isNcOrg || isNcConnectorUser) && s.id === 'auth') return false;
+            // Nextcloud Sync — visible when the user's own org is NC-bound,
+            // OR when the user is a super-admin who could be managing NC orgs.
+            if (s.id === 'org_nextcloud_sync' && !showNcSync) return false;
+            // GitHub Sync only matters once the org has actually connected a
+            // GitHub account in Settings → Integrations. Hide the menu item
+            // until then so admins aren't dropped on a "Not connected" stub.
+            if (s.id === 'org_github_sync' && !statuses.githubConnected) return false;
+
+            return true;
+        });
+        // Azure config only in private-cloud mode for org admins
+        if (isPrivateCloud && canSeeOrg) {
+            items.push(AZURE_SUB_ITEM);
+        }
+        return items;
+    }, [canSeeOrg, canManageUsers, isPrivateCloud, hasOrgIntegrations, isNcConnectorUser, isNcOrg, isSuperAdmin, showNcSync, statuses.githubConnected]);
+
     // User-scoped: these are personal "which agent do I start on?" preferences.
     const [defaultAgentMode, setDefaultAgentMode] = useState(() => scopedStorage.getItem('defaultAgentMode') || 'last-used');
     const [defaultAgentId, setDefaultAgentId] = useState(() => scopedStorage.getItem('defaultAgentId') || '');
@@ -286,6 +318,14 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
             const ncRes = await authFetch(`${API_BASE}/auth/app-password-status`);
             if (ncRes.ok) { const d = await ncRes.json(); setStatuses(p => ({ ...p, hasNextcloudAppPassword: !!d.hasAppPassword, isNextcloudUser: !!d.isNextcloudUser })); }
         } catch (e) { }
+        // GitHub Sync menu item is hidden until the org-admin connects a
+        // GitHub account in Settings → Integrations. The org-sync panel
+        // itself prompts for that step, but there's no point exposing the
+        // sub-tab to admins who haven't reached integration setup yet.
+        try {
+            const ghRes = await authFetch(`${API_BASE}/api/integrations/github/status`);
+            if (ghRes.ok) { const d = await ghRes.json(); setStatuses(p => ({ ...p, githubConnected: !!d.connected })); }
+        } catch (e) { }
     };
     const handleIntegrationSaved = (key) => {
         const keyMap = { fireflies: 'hasFirefliesKey', youtrack: 'hasYouTrackConfig', gamma: 'hasGammaKey' };
@@ -300,7 +340,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
 
     // Map org sub-tab ids to the activeSection prop OrganisationSection expects
     const orgActiveSection = isOrgSubTab
-        ? (activeTab === 'org_users' ? 'users' : activeTab === 'org_integrations' ? 'integrations' : activeTab === 'org_usage' ? 'usage' : activeTab === 'org_azure' ? 'azure' : activeTab === 'org_github_sync' ? 'github_sync' : activeTab)
+        ? (activeTab === 'org_users' ? 'users' : activeTab === 'org_integrations' ? 'integrations' : activeTab === 'org_usage' ? 'usage' : activeTab === 'org_azure' ? 'azure' : activeTab === 'org_github_sync' ? 'github_sync' : activeTab === 'org_nextcloud_sync' ? 'nextcloud_sync' : activeTab)
         : 'license';
 
     const renderContent = () => {

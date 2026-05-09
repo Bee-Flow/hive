@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import useChatEngine from '../hooks/useChatEngine';
 import { useViewport } from '../hooks/useViewport';
+import { useTranslation } from '../hooks/useTranslation';
 import MessageItem from '../components/chat/MessageItem';
 import InputArea from '../components/InputArea';
 import MarkdownRenderer from '../components/MarkdownRenderer';
@@ -151,6 +152,7 @@ function platformBadge(platform) {
 }
 
 export default function MeetingNotesPage({ user, onBack }) {
+    const { t } = useTranslation();
     const [transcriptions, setTranscriptions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [selectedId, setSelectedId] = useState(null);
@@ -166,6 +168,16 @@ export default function MeetingNotesPage({ user, onBack }) {
     const [dragOver, setDragOver] = useState(false);
     const [uploadMode, setUploadMode] = useState('record'); // 'record' | 'upload' | 'bot'
     const fileInputRef = useRef(null);
+    // Per-upload provider override. Empty string ('') = use server default.
+    const [uploadProvider, setUploadProvider] = useState('');
+    // Server config for the provider picker — populated from /api/admin/ai-config.
+    const [serverDefaultProvider, setServerDefaultProvider] = useState('voxtral');
+    const [localWhisperEnabled, setLocalWhisperEnabled] = useState(true);
+    // Nextcloud picker state
+    const [showNcPicker, setShowNcPicker] = useState(false);
+    const [ncFiles, setNcFiles] = useState([]);
+    const [ncLoading, setNcLoading] = useState(false);
+    const [ncError, setNcError] = useState(null);
 
     // Recording state
     const [isRecording, setIsRecording] = useState(false);
@@ -395,14 +407,16 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
 
     useEffect(() => { loadTranscriptions(); }, [loadTranscriptions]);
 
-    // DEBUG: log active transcription provider from server config
+    // Pull active transcription provider + local-whisper toggle so the
+    // upload picker only offers options the server actually supports.
     useEffect(() => {
         authFetch(`${API_BASE}/api/admin/ai-config`)
             .then(r => r.json())
             .then(cfg => {
-                console.log('[Transcription] Active provider from server config:', cfg.transcriptionProvider);
-                console.log('[Transcription] Azure configured:', cfg.hasAzureSpeechKey, '| region:', cfg.azureSpeechRegion);
-                console.log('[Transcription] WhisperX configured:', cfg.hasWhisperxUrl);
+                if (cfg.transcriptionProvider) setServerDefaultProvider(cfg.transcriptionProvider);
+                setLocalWhisperEnabled(cfg.localWhisperEnabled !== false);
+                console.log('[Transcription] Server config: provider=%s local=%s azure=%s whisperx=%s',
+                    cfg.transcriptionProvider, cfg.localWhisperEnabled, cfg.hasAzureSpeechKey, cfg.hasWhisperxUrl);
             })
             .catch(e => console.warn('[Transcription] Could not fetch config:', e.message));
     }, []);
@@ -516,6 +530,7 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
         formData.append('language', uploadLang);
         formData.append('title', title);
         if (uploadTerms) formData.append('context_terms', uploadTerms);
+        if (uploadProvider) formData.append('provider', uploadProvider);
 
         console.log('[Transcription] Starting upload:', {
             fileName: file.name,
@@ -555,6 +570,60 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
         } catch (err) {
             clearInterval(stageTimer);
             console.error('[Transcription] Network/client error:', err);
+            setUploadProgress(`Error: ${err.message}`);
+            setTimeout(() => setUploadProgress(''), 6000);
+        }
+        setUploading(false);
+    };
+
+    // ── Nextcloud picker ─────────────────────────────────────
+    const openNcPicker = async () => {
+        setShowNcPicker(true);
+        setNcLoading(true);
+        setNcError(null);
+        try {
+            const res = await authFetch(`${API_BASE}/api/transcriptions/nextcloud-audio-files?folder=/Recordings`);
+            if (res.ok) {
+                const data = await res.json();
+                setNcFiles(data.items || []);
+            } else {
+                const err = await res.json().catch(() => ({}));
+                setNcError(err.error || `HTTP ${res.status}`);
+            }
+        } catch (err) {
+            setNcError(err.message);
+        }
+        setNcLoading(false);
+    };
+
+    const handleNcSelect = async (item) => {
+        setShowNcPicker(false);
+        setUploading(true);
+        setUploadProgress(t('meetings.upload_processing', 'Processing…'));
+        try {
+            const res = await authFetch(`${API_BASE}/api/transcriptions/from-nextcloud`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    nextcloud_path: item.path,
+                    language: uploadLang,
+                    provider: uploadProvider || undefined,
+                    title: item.name?.replace(/\.[^/.]+$/, ''),
+                    context_terms: uploadTerms,
+                }),
+            });
+            if (res.ok) {
+                const result = await res.json();
+                setShowUpload(false);
+                setUploadProgress('');
+                await loadTranscriptions();
+                loadDetail(result.id);
+            } else {
+                const err = await res.json().catch(() => ({}));
+                setUploadProgress(`Error: ${err.error || res.status}`);
+                setTimeout(() => setUploadProgress(''), 6000);
+            }
+        } catch (err) {
             setUploadProgress(`Error: ${err.message}`);
             setTimeout(() => setUploadProgress(''), 6000);
         }
@@ -959,10 +1028,10 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
                                 </button>
                             </div>
 
-                            {/* Language + Context (shared) — Provider is set in Admin → Integrations → Transcription */}
+                            {/* Language + Provider + Context (shared) */}
                             <div className="flex gap-3 mb-4">
                                 <div className="flex-1">
-                                    <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>Language</label>
+                                    <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>{t('meetings.upload_language', 'Language')}</label>
                                     <select
                                         value={uploadLang}
                                         onChange={e => setUploadLang(e.target.value)}
@@ -973,8 +1042,25 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
                                     </select>
                                 </div>
                                 <div className="flex-1">
+                                    <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>{t('meetings.upload_provider', 'Transcription engine')}</label>
+                                    <select
+                                        value={uploadProvider}
+                                        onChange={e => setUploadProvider(e.target.value)}
+                                        className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
+                                        style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                                    >
+                                        <option value="">{t('meetings.upload_provider_default', 'Server default')} ({serverDefaultProvider})</option>
+                                        <option value="voxtral">{t('meetings.provider_voxtral', 'Cloud — Voxtral (fast, multilingual)')}</option>
+                                        <option value="whisperx">{t('meetings.provider_whisperx', 'Cloud — WhisperX (best diarization)')}</option>
+                                        <option value="azure">{t('meetings.provider_azure', 'Cloud — Azure Speech')}</option>
+                                        {localWhisperEnabled && (
+                                            <option value="local">{t('meetings.provider_local', 'Local CPU — Whisper-base (private, slower, no diarization)')}</option>
+                                        )}
+                                    </select>
+                                </div>
+                                <div className="flex-1">
                                     <label className="text-xs font-medium mb-1 block" style={{ color: 'var(--text-secondary)' }}>
-                                        Context Terms <span className="font-normal" style={{ color: 'var(--text-muted)' }}>(optional)</span>
+                                        {t('meetings.upload_context_terms', 'Context terms')} <span className="font-normal" style={{ color: 'var(--text-muted)' }}>{t('meetings.upload_optional', '(optional)')}</span>
                                     </label>
                                     <input
                                         value={uploadTerms}
@@ -985,6 +1071,11 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
                                     />
                                 </div>
                             </div>
+                            {uploadProvider === 'local' && (
+                                <p className="-mt-2 mb-4 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                    {t('meetings.local_hint', 'The local model runs on your own server. Audio never leaves the host. Best for recordings up to ~10 minutes; longer files will be rejected.')}
+                                </p>
+                            )}
 
                             {uploadMode === 'record' ? (
                                 /* Record mode */
@@ -1039,28 +1130,41 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
                                 </div>
                             ) : uploadMode === 'upload' ? (
                                 /* Upload mode */
-                                <div
-                                    onDragOver={e => { e.preventDefault(); setDragOver(true); }}
-                                    onDragLeave={() => setDragOver(false)}
-                                    onDrop={e => { e.preventDefault(); setDragOver(false); handleUpload(e.dataTransfer.files?.[0]); }}
-                                    onClick={() => !uploading && fileInputRef.current?.click()}
-                                    className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all ${dragOver ? 'border-[var(--accent-primary)]' : 'border-[var(--border-default)] hover:border-[var(--accent-primary)]'}`}
-                                    style={{ background: dragOver ? 'var(--accent-glow)' : 'var(--bg-secondary)' }}
-                                >
-                                    {uploading ? (
-                                        <div className="flex flex-col items-center gap-3">
-                                            <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--accent-primary)' }} />
-                                            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{uploadProgress}</p>
-                                            <p className="text-xs" style={{ color: 'var(--text-muted)' }}>This may take a few minutes for long recordings...</p>
-                                        </div>
-                                    ) : (
-                                        <>
-                                            <FileAudio className="w-10 h-10 mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
-                                            <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Drop an audio file here or click to browse</p>
-                                            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>Supports MP3, WAV, M4A, OGG, WEBM, FLAC • Up to 3 hours</p>
-                                        </>
+                                <div className="space-y-3">
+                                    <div
+                                        onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                                        onDragLeave={() => setDragOver(false)}
+                                        onDrop={e => { e.preventDefault(); setDragOver(false); handleUpload(e.dataTransfer.files?.[0]); }}
+                                        onClick={() => !uploading && fileInputRef.current?.click()}
+                                        className={`border-2 border-dashed rounded-2xl p-8 text-center cursor-pointer transition-all ${dragOver ? 'border-[var(--accent-primary)]' : 'border-[var(--border-default)] hover:border-[var(--accent-primary)]'}`}
+                                        style={{ background: dragOver ? 'var(--accent-glow)' : 'var(--bg-secondary)' }}
+                                    >
+                                        {uploading ? (
+                                            <div className="flex flex-col items-center gap-3">
+                                                <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--accent-primary)' }} />
+                                                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{uploadProgress}</p>
+                                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{t('meetings.upload_long_hint', 'This may take a few minutes for long recordings...')}</p>
+                                            </div>
+                                        ) : (
+                                            <>
+                                                <FileAudio className="w-10 h-10 mx-auto mb-3" style={{ color: 'var(--text-muted)' }} />
+                                                <p className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{t('meetings.upload_drop_hint', 'Drop an audio file here or click to browse')}</p>
+                                                <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{t('meetings.upload_format_hint', 'Supports MP3, WAV, M4A, OGG, WEBM, FLAC • Up to 3 hours')}</p>
+                                            </>
+                                        )}
+                                        <input ref={fileInputRef} type="file" accept="audio/*,.mp3,.wav,.m4a,.ogg,.webm,.flac,.mp4,.aac" className="hidden" onChange={e => handleUpload(e.target.files?.[0])} />
+                                    </div>
+                                    {!uploading && (
+                                        <button
+                                            type="button"
+                                            onClick={openNcPicker}
+                                            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium border transition-colors hover:bg-white/5"
+                                            style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                                        >
+                                            <span>📂</span>
+                                            {t('meetings.upload_from_nextcloud', 'Pick from Nextcloud')}
+                                        </button>
                                     )}
-                                    <input ref={fileInputRef} type="file" accept="audio/*,.mp3,.wav,.m4a,.ogg,.webm,.flac,.mp4,.aac" className="hidden" onChange={e => handleUpload(e.target.files?.[0])} />
                                 </div>
                             ) : (
                                 /* Meet Bot mode */
@@ -1801,6 +1905,69 @@ Answer in the same language as the transcript unless the user asks otherwise.`;
                     )}
                 </div>
             </div>
+
+            {/* Nextcloud audio picker modal */}
+            {showNcPicker && (
+                <div
+                    className="fixed inset-0 z-[10000] flex items-center justify-center p-4"
+                    style={{ background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(4px)' }}
+                    onClick={(e) => { if (e.target === e.currentTarget) setShowNcPicker(false); }}
+                >
+                    <div className="w-full max-w-xl rounded-2xl border shadow-2xl flex flex-col"
+                        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', maxHeight: '70vh' }}>
+                        <div className="px-5 pt-5 pb-3 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>
+                                    {t('meetings.nc_picker_title', 'Pick a recording from Nextcloud')}
+                                </h3>
+                                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                                    {t('meetings.nc_picker_hint', 'Showing audio files in /Recordings')}
+                                </p>
+                            </div>
+                            <button onClick={() => setShowNcPicker(false)}
+                                className="w-8 h-8 rounded-lg flex items-center justify-center hover:bg-white/10"
+                                style={{ color: 'var(--text-muted)' }}>✕</button>
+                        </div>
+                        <div className="flex-1 overflow-y-auto px-3 pb-4">
+                            {ncLoading && (
+                                <div className="flex items-center justify-center py-12">
+                                    <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--accent-primary)' }} />
+                                </div>
+                            )}
+                            {ncError && (
+                                <div className="m-3 p-3 rounded-lg text-xs" style={{ background: 'rgba(239,68,68,0.1)', color: '#dc2626' }}>
+                                    {ncError}
+                                </div>
+                            )}
+                            {!ncLoading && !ncError && ncFiles.length === 0 && (
+                                <div className="text-center py-12">
+                                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                        {t('meetings.nc_picker_empty', 'No audio files in /Recordings. Drop a file there in Nextcloud and try again.')}
+                                    </p>
+                                </div>
+                            )}
+                            {ncFiles.map(item => (
+                                <button
+                                    key={item.path}
+                                    type="button"
+                                    onClick={() => handleNcSelect(item)}
+                                    className="w-full text-left px-4 py-3 rounded-lg flex items-center gap-3 hover:bg-white/5 transition-colors"
+                                    style={{ color: 'var(--text-primary)' }}
+                                >
+                                    <FileAudio className="w-5 h-5 shrink-0" style={{ color: 'var(--text-muted)' }} />
+                                    <div className="flex-1 min-w-0">
+                                        <div className="text-sm font-medium truncate">{item.name}</div>
+                                        <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                                            {item.size != null && `${(item.size / (1024 * 1024)).toFixed(1)} MB`}
+                                            {item.lastModified && ` · ${new Date(item.lastModified).toLocaleString()}`}
+                                        </div>
+                                    </div>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }

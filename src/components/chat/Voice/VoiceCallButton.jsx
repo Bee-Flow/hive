@@ -6,7 +6,7 @@
  *
  * Visibility rules (the button renders nothing unless ALL are true):
  *   1. The current user has the `voice_chat` beta feature enabled
- *      (admins and demo users always do).
+ *      (admins always do).
  *   2. The server probe /ai/config reports `voiceChatReady: true`
  *      (a Mistral API key is configured).
  */

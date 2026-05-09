@@ -490,7 +490,7 @@ const GitHubIntegration = ({ onSaved, last }) => {
 // WebDAV / OCS Basic auth. Manually-generated app passwords (Nextcloud
 // Settings → Security → Devices & sessions) are recommended over OAuth-minted
 // ones, which inherit the access-token TTL (~10 min).
-const NextcloudIntegration = ({ hasNextcloudAppPassword, isNextcloudUser, onSaved, last }) => {
+const NextcloudIntegration = ({ hasNextcloudAppPassword, isNextcloudUser, isConnectorUser, onSaved, last }) => {
     const { t } = useTranslation();
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
@@ -498,6 +498,22 @@ const NextcloudIntegration = ({ hasNextcloudAppPassword, isNextcloudUser, onSave
     const [disconnecting, setDisconnecting] = useState(false);
     const [autoCreating, setAutoCreating] = useState(false);
     const [notice, setNotice] = useState(null);
+
+    // When the user signs into Bee Flow via the Nextcloud ExApp connector,
+    // every NC call is proxied back through the connector with AppAPI
+    // shared-secret + impersonation. There's no app password to enter and
+    // nothing the user can disconnect — the binding lives on the org level.
+    if (isConnectorUser) {
+        return (
+            <IntegrationRow
+                last={last}
+                connected
+                name="Nextcloud"
+                description="Connected via Bee Flow Nextcloud connector — files, calendar, mail and more are available to agents automatically. No app password needed."
+                icon={<svg viewBox="0 0 32 32" fill="none" style={{ width: '20px', height: '20px' }}><circle cx="16" cy="16" r="16" fill="#0082C9" /><path d="M11.5 11.2c-2 0-3.7 1.4-4.2 3.3a3.5 3.5 0 1 0 0 3 4.4 4.4 0 0 0 7 1.7l1.5-1.4 1.6 1.4a4.4 4.4 0 0 0 7-1.7 3.5 3.5 0 1 0 0-3 4.4 4.4 0 0 0-7-1.7l-1.6 1.4-1.5-1.4a4.4 4.4 0 0 0-2.8-1.6zm0 2.2a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8zm9 0a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8z" fill="white" /></svg>}
+            />
+        );
+    }
 
     const save = async () => {
         if (!username.trim() || !password.trim()) return;
@@ -676,7 +692,7 @@ const IntegrationsSection = ({ statuses, onSaved, enabledIntegrations, isOrgAdmi
                         {showYouTrack && <YouTrackIntegration hasYouTrackConfig={statuses.hasYouTrackConfig} onSaved={() => onSaved('youtrack')} last={!showSignRequest && !showGamma && !showNextcloud} />}
                         {showSignRequest && <SignRequestIntegration hasSignRequestConfig={statuses.hasSignRequestConfig} onSaved={() => onSaved('signrequest')} last={!showGamma && !showNextcloud} />}
                         {showGamma && <GammaIntegration hasGammaKey={statuses.hasGammaKey} onSaved={() => onSaved('gamma')} last={!showNextcloud} />}
-                        {showNextcloud && <NextcloudIntegration hasNextcloudAppPassword={statuses.hasNextcloudAppPassword} isNextcloudUser={statuses.isNextcloudUser} onSaved={() => onSaved('nextcloud')} last />}
+                        {showNextcloud && <NextcloudIntegration hasNextcloudAppPassword={statuses.hasNextcloudAppPassword} isNextcloudUser={statuses.isNextcloudUser} isConnectorUser={user?.provider === 'nextcloud_connector'} onSaved={() => onSaved('nextcloud')} last />}
                     </div>
                 </div>
             )}

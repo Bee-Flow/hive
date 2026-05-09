@@ -320,6 +320,8 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
     const { t } = useTranslation();
     const deploymentMode = user?.featureFlags?.deploymentMode || 'cloud';
     const isPrivateCloud = deploymentMode === 'private-cloud';
+    const ncOrg = user?.ncOrg || null;
+    const isNcOrg = !!ncOrg?.instanceId;
     const [organizations, setOrganizations] = useState([]);
     const [groups, setGroups] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -354,6 +356,20 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                 let myOrg = null;
                 if (user?.organizationId) {
                     myOrg = orgs.find(o => o.id === user.organizationId);
+                }
+                // Self-heal: cached user prop may predate an org rename or
+                // NC-bootstrap re-binding (or simply be empty for a fresh
+                // session). Always re-query /auth/user when we got orgs back
+                // but couldn't match against user.organizationId — the SaaS
+                // is the authority for the current binding.
+                if (!myOrg) {
+                    try {
+                        const fresh = await authFetch(`${API_BASE}/auth/user`).then(r => r.ok ? r.json() : null);
+                        const freshOrgId = fresh?.user?.organizationId;
+                        if (freshOrgId) {
+                            myOrg = orgs.find(o => o.id === freshOrgId);
+                        }
+                    } catch (_) { /* best-effort */ }
                 }
                 // Fallback: detect from group membership
                 if (!myOrg) {
@@ -959,6 +975,41 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                 {/* ── Organisation Info (Branding + Legal combined) ── */}
                 {activeSection === 'info' && (
                     <div className="max-w-xl mx-auto space-y-8 animate-fadeIn">
+                        {/* NC binding banner — read-only summary of which Nextcloud
+                            instance owns this org's identity. Reminds admins that
+                            users come from NC and points them to the Sync panel. */}
+                        {isNcOrg && (
+                            <div
+                                className="rounded-2xl p-4 flex items-start gap-3"
+                                style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}
+                            >
+                                <div
+                                    className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                                    style={{ background: 'rgba(0, 130, 201, 0.12)' }}
+                                >
+                                    <svg viewBox="0 0 24 24" width="18" height="18" fill="#0082C9">
+                                        <path d="M12.018 6.537a5.5 5.5 0 00-5.142 3.547 3.62 3.62 0 100 3.832 5.498 5.498 0 0010.284 0 3.62 3.62 0 100-3.832 5.5 5.5 0 00-5.142-3.547zm0 1.987a3.518 3.518 0 11-.001 7.035 3.518 3.518 0 010-7.035z" />
+                                    </svg>
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-[13px] font-semibold mb-0.5" style={{ color: 'var(--text-primary)' }}>
+                                        Provisioned through Nextcloud
+                                    </p>
+                                    <p className="text-[12px] mb-2" style={{ color: 'var(--text-muted)' }}>
+                                        User accounts and authentication are managed by your Nextcloud instance. Sign-in method and allowed-domain settings are not shown here.
+                                    </p>
+                                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                                        {ncOrg.baseUrl && (
+                                            <span><span className="opacity-70">Instance:</span> <code className="px-1 rounded" style={{ background: 'var(--bg-tertiary)' }}>{ncOrg.baseUrl}</code></span>
+                                        )}
+                                        {ncOrg.adminUid && (
+                                            <span><span className="opacity-70">Bootstrap admin:</span> <code className="px-1 rounded" style={{ background: 'var(--bg-tertiary)' }}>{ncOrg.adminUid}</code></span>
+                                        )}
+                                        <span><span className="opacity-70">Sync:</span> {(ncOrg.syncMode || 'mirror_all').replace('_', ' ')}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                         {/* ── Branding section ── */}
                         <div className="space-y-5">
                             <div>

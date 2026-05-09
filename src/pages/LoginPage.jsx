@@ -16,7 +16,7 @@ import SignupStepAuth from './login/SignupStepAuth';
 import SignupStepPrivacy from './login/SignupStepPrivacy';
 import SignupStepAccount from './login/SignupStepAccount';
 
-const LoginPage = ({ onLogin, onDemoLogin }) => {
+const LoginPage = ({ onLogin }) => {
     const { t, locale, setLocale } = useTranslation();
     const [availableLocales, setAvailableLocales] = useState([]);
     const [username, setUsername] = useState('');
@@ -29,7 +29,6 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
     const [isGoogleConfigured, setIsGoogleConfigured] = useState(false);
     const [isMicrosoftConfigured, setIsMicrosoftConfigured] = useState(false);
     const [isSetupComplete, setIsSetupComplete] = useState(true);
-    const [isDemoEnabled, setIsDemoEnabled] = useState(true);
     const [allowSignups, setAllowSignups] = useState(null);
     const [allowOrgSignups, setAllowOrgSignups] = useState(true);
     const [allowConsumerSignups, setAllowConsumerSignups] = useState(true);
@@ -64,12 +63,6 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
     useEffect(() => {
         const checkSetup = async () => {
             try {
-                const healthRes = await authFetch(`${API_BASE}/api/health`);
-                if (healthRes.ok) {
-                    const healthData = await healthRes.json();
-                    setIsDemoEnabled(healthData.demoEnabled !== false);
-                }
-
                 const res = await authFetch(`${API_BASE}/auth/setup-status`);
                 if (res.ok) {
                     const data = await res.json();
@@ -324,24 +317,6 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                 onLogin(data.user, data.recoveryKey);
             } else {
                 setError(data.error || t('login.signup_failed'));
-            }
-        } catch (err) {
-            setError('Connection error. Please try again.');
-        } finally {
-            setIsLoading(false);
-        }
-    };
-
-    const handleDemoLogin = async () => {
-        setError('');
-        setIsLoading(true);
-        try {
-            const res = await authFetch(`${API_BASE}/auth/demo-login`, { method: 'POST' });
-            const data = await res.json();
-            if (res.ok && data.success) {
-                onDemoLogin(data.user);
-            } else {
-                setError(data.error || 'Demo login failed');
             }
         } catch (err) {
             setError('Connection error. Please try again.');
@@ -652,11 +627,9 @@ const LoginPage = ({ onLogin, onDemoLogin }) => {
                             confirmPassword={confirmPassword} setConfirmPassword={setConfirmPassword}
                             setupMode={setupMode} isLoading={isLoading}
                             handleSubmit={handleSubmit}
-                            handleDemoLogin={handleDemoLogin}
                             handleOAuthLogin={handleOAuthLogin}
                             handleGoogleLogin={handleGoogleLogin}
                             handleMicrosoftLogin={handleMicrosoftLogin}
-                            isDemoEnabled={isDemoEnabled}
                             isOAuthConfigured={isOAuthConfigured}
                             isGoogleConfigured={isGoogleConfigured}
                             isMicrosoftConfigured={isMicrosoftConfigured}

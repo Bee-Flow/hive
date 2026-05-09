@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ChevronRight, Play, AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
+import { ChevronRight, Play, AlertTriangle, CheckCircle2, Clock, RotateCw, X, Ban } from 'lucide-react';
 import useAutomationApi from '../../../../hooks/useAutomationApi';
 
 const statusIcon = (s) => {
@@ -7,6 +7,7 @@ const statusIcon = (s) => {
     if (s === 'error') return <AlertTriangle size={14} color="#dc2626" />;
     if (s === 'running') return <Clock size={14} color="#d97706" />;
     if (s === 'awaiting_confirm') return <AlertTriangle size={14} color="#d97706" />;
+    if (s === 'cancelled') return <Ban size={14} color="#6b7280" />;
     return <Play size={14} color="#6b7280" />;
 };
 
@@ -41,6 +42,38 @@ export default function RunHistory({ automationId }) {
         setRuns(d.runs || []);
     };
 
+    const retry = async (run, e) => {
+        e.stopPropagation();
+        try {
+            await api.retryRun(automationId, run.id);
+        } catch (err) {
+            // Surface enough that the user can see the failure without
+            // having to open devtools — failed retries are common (a tool
+            // permission may have been revoked since the original run).
+            window.alert(`Retry failed: ${err.message}`);
+            return;
+        }
+        const d = await api.listRuns(automationId);
+        setRuns(d.runs || []);
+    };
+
+    const cancel = async (run, e) => {
+        e.stopPropagation();
+        try {
+            await api.cancelRun(run.id);
+        } catch (err) {
+            window.alert(`Cancel failed: ${err.message}`);
+            return;
+        }
+        // Best-effort refresh; the runner finalises the row when it next
+        // checks the cancel flag, so the UI may still show "running" for
+        // a few seconds.
+        setTimeout(async () => {
+            const d = await api.listRuns(automationId);
+            setRuns(d.runs || []);
+        }, 1000);
+    };
+
     if (loading) return <div style={{ padding: 12, color: '#6b7280' }}>Loading runs…</div>;
     if (runs.length === 0) return <div style={{ padding: 12, color: '#9ca3af' }}>No runs yet.</div>;
 
@@ -65,6 +98,24 @@ export default function RunHistory({ automationId }) {
                         {run.status === 'awaiting_confirm' && (
                             <button onClick={(e) => approve(run, e)} style={{ marginLeft: 8, background: '#16a34a', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}>
                                 Approve
+                            </button>
+                        )}
+                        {run.status === 'error' && (
+                            <button
+                                onClick={(e) => retry(run, e)}
+                                title="Re-run with the original trigger payload"
+                                style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 4, background: 'var(--accent-primary, #0ea5e9)', color: '#fff', border: 'none', padding: '4px 8px', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}
+                            >
+                                <RotateCw size={12} /> Retry
+                            </button>
+                        )}
+                        {(run.status === 'running' || run.status === 'queued') && (
+                            <button
+                                onClick={(e) => cancel(run, e)}
+                                title="Stop this run at the next step boundary"
+                                style={{ marginLeft: 8, display: 'inline-flex', alignItems: 'center', gap: 4, background: '#fff', color: '#dc2626', border: '1px solid #fca5a5', padding: '4px 8px', borderRadius: 6, fontSize: 12, cursor: 'pointer' }}
+                            >
+                                <X size={12} /> Cancel
                             </button>
                         )}
                     </button>

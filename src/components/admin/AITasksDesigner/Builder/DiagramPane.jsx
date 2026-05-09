@@ -39,7 +39,7 @@ const NODE_TYPES = {
     notification:       NotificationNode,
 };
 
-export default function DiagramPane({ definition, runSteps = [], onNodeClick, validation = null }) {
+export default function DiagramPane({ definition, runSteps = [], onNodeClick, validation = null, readOnly = false }) {
     // Build look-up maps once per change so layout work is amortised.
     const runByStep = useMemo(() => {
         const m = new Map();
@@ -81,13 +81,15 @@ export default function DiagramPane({ definition, runSteps = [], onNodeClick, va
                 edgeTypes={edgeTypes}
                 fitView
                 fitViewOptions={{ padding: 0.18 }}
-                panOnDrag
-                zoomOnScroll
+                panOnDrag={!readOnly}
+                zoomOnScroll={!readOnly}
+                zoomOnPinch={!readOnly}
+                zoomOnDoubleClick={!readOnly}
                 proOptions={{ hideAttribution: true }}
-                onNodeClick={(_evt, node) => onNodeClick?.(node.id)}
+                onNodeClick={readOnly ? undefined : ((_evt, node) => onNodeClick?.(node.id))}
                 nodesDraggable={false}
                 nodesConnectable={false}
-                elementsSelectable
+                elementsSelectable={!readOnly}
             >
                 <Background gap={16} size={1} color="var(--border-default)" />
                 <Controls showInteractive={false} />

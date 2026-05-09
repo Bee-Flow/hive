@@ -15,6 +15,8 @@ import LoginPage from './pages/LoginPage';
 import EncryptionSetup from './pages/EncryptionSetup';
 import EmbedChat from './pages/EmbedChat';
 import DlpPreviewModal from './components/DlpPreviewModal';
+import NcOnboardingWizard from './components/NcOnboardingWizard';
+import NcOnboardingPending from './components/NcOnboardingPending';
 import ProductWebsite from './marketing/ProductWebsite';
 
 import { LogOut, User, Shield, Settings, ChevronDown } from 'lucide-react';
@@ -363,6 +365,11 @@ function App() {
     const [encryptionState, setEncryptionState] = useState(null); // null | 'setup' | 'pin' | { recoveryKey: string }
     const [noOrganization, setNoOrganization] = useState(false);
     const [pendingApproval, setPendingApproval] = useState(false);
+    // NC App Store onboarding gate: 'admin' renders the 4-step wizard,
+    // 'pending' shows the "Setup in progress" screen, null lets the SPA
+    // mount normally.
+    const [ncOnboardingState, setNcOnboardingState] = useState(null);
+    const [ncOrgName, setNcOrgName] = useState(null);
     const profileMenuRef = useRef(null);
 
     // Parse initial agent/conversation from URL
@@ -399,7 +406,11 @@ function App() {
                     return;
                 }
 
-                const res = await authFetch(`${API_BASE}/auth/user`);
+                // cache: 'no-store' avoids stale auth state after the NC
+                // onboarding wizard flips ncOnboardingNeeded server-side
+                // — browsers may otherwise serve a cached "needed=true"
+                // response on subsequent refreshes.
+                const res = await authFetch(`${API_BASE}/auth/user`, { cache: 'no-store' });
                 if (res.ok) {
                     const data = await res.json();
                     if (data.authenticated && data.user) {
@@ -423,6 +434,20 @@ function App() {
                         if (data.pendingApproval) {
                             setPendingApproval(true);
                         }
+                        // NC App Store onboarding wizard. Admin sees the
+                        // wizard, others see "Setup in progress" — until
+                        // the admin's POST /auth/admin/.../nc-onboarding/complete
+                        // flips the flag.
+                        console.log('[NcOnboarding] /auth/user flags:', {
+                            needed: data.ncOnboardingNeeded,
+                            pending: data.ncOnboardingPending,
+                            isOrgAdmin: data.isOrgAdmin,
+                            orgName: data.organizationName,
+                        });
+                        if (data.ncOnboardingNeeded) setNcOnboardingState('admin');
+                        else if (data.ncOnboardingPending) setNcOnboardingState('pending');
+                        else setNcOnboardingState(null);
+                        if (data.organizationName) setNcOrgName(data.organizationName);
                         // Also fetch dynamic permissions
                         const permsRes = await authFetch(`${API_BASE}/auth/my-permissions`);
                         let permissions = [];
@@ -839,7 +864,7 @@ function App() {
 
     // Not authenticated → show login page directly
     if (!isAuthenticated) {
-        return <LoginPage onLogin={handleLogin} onDemoLogin={handleLogin} />;
+        return <LoginPage onLogin={handleLogin} />;
     }
 
     // Show encryption setup/unlock gate for SSO users
@@ -861,6 +886,14 @@ function App() {
                 onComplete={() => setEncryptionState(null)}
             />
         );
+    }
+
+    // NC App Store onboarding wizard — admin sees this first time after install
+    if (ncOnboardingState === 'admin' && user) {
+        return <NcOnboardingWizard user={user} orgName={ncOrgName} onComplete={() => setNcOnboardingState(null)} />;
+    }
+    if (ncOnboardingState === 'pending') {
+        return <NcOnboardingPending orgName={ncOrgName} onRefresh={() => window.location.reload()} />;
     }
 
     // Show no-organisation gate for SSO users without org membership

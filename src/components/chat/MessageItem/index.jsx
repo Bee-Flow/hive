@@ -729,7 +729,7 @@ const MessageItem = ({
                                         const counts = new Map();
                                         for (const c of (info.categories || [])) counts.set(c, (counts.get(c) || 0) + 1);
                                         const categoryList = [...counts.entries()].map(([label, n]) => `${label}${n > 1 ? ` ×${n}` : ''}`).join(', ');
-                                        const actionLabel = info.action === 'block' ? 'Blocked' : info.source === 'dlp' ? 'Tokenised (DLP)' : 'Tokenised (Azure PII)';
+                                        const actionLabel = info.action === 'block' ? 'Blocked' : info.source === 'dlp' ? 'Tokenised (DLP)' : 'Tokenised';
                                         return (
                                             <details className="group/privacy">
                                                 <summary className="flex items-center gap-2 cursor-pointer text-[11px] px-2 py-1.5 rounded-lg select-none list-none [&::-webkit-details-marker]:hidden transition-colors hover:bg-[var(--bg-tertiary)]" style={{ color: 'var(--text-secondary)' }}>

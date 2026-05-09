@@ -88,8 +88,8 @@ const LoginForm = ({
     username, setUsername, password, setPassword,
     confirmPassword, setConfirmPassword,
     setupMode, isLoading, handleSubmit,
-    handleDemoLogin, handleOAuthLogin, handleGoogleLogin, handleMicrosoftLogin,
-    isDemoEnabled, isOAuthConfigured, isGoogleConfigured, isMicrosoftConfigured,
+    handleOAuthLogin, handleGoogleLogin, handleMicrosoftLogin,
+    isOAuthConfigured, isGoogleConfigured, isMicrosoftConfigured,
     setSignupMode, setError,
     allowSignups = true, allowPasswordLogin = true,
     inputClass, labelClass
@@ -134,8 +134,7 @@ const LoginForm = ({
         (preferredMethod !== 'password' && allowPasswordLogin) ||
         (preferredMethod !== 'google' && isGoogleConfigured) ||
         (preferredMethod !== 'microsoft' && isMicrosoftConfigured) ||
-        (preferredMethod !== 'nextcloud' && isOAuthConfigured) ||
-        isDemoEnabled;
+        (preferredMethod !== 'nextcloud' && isOAuthConfigured);
 
     const showDedicated = !setupMode && preferredMethod && isPreferredAvailable && !showAllMethods;
 
@@ -261,14 +260,6 @@ const LoginForm = ({
                     {allowPasswordLogin && <Divider label={t('login.or_continue_with')} />}
 
                     <div className="space-y-3">
-                        {isDemoEnabled && (
-                            <button onClick={handleDemoLogin} disabled={isLoading}
-                                data-testid="demo-login-button"
-                                className="w-full py-2.5 bg-gradient-to-r from-amber-500/10 to-orange-500/10 hover:from-amber-500/20 hover:to-orange-500/20 text-amber-600 dark:text-amber-400 border border-amber-500/20 rounded-xl font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-50">
-                                <Zap className="w-5 h-5" /> {t('login.demo_mode')}
-                            </button>
-                        )}
-
                         {isOAuthConfigured && (
                             <button onClick={handleOAuthWithCookie} disabled={isLoading}
                                 data-testid="sso-nextcloud-button"

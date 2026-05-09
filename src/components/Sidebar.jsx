@@ -923,9 +923,6 @@ const Sidebar = ({
                                 <span className="text-[13px] font-medium truncate text-[var(--text-primary)]">
                                     {user?.displayName || user?.id || 'User'}
                                 </span>
-                                {user?.isDemo && (
-                                    <span className="text-[9px] px-1 py-px rounded bg-amber-500/10 text-amber-600/70 font-medium flex-shrink-0">demo</span>
-                                )}
                             </div>
                             <ChevronDown className={`w-4 h-4 flex-shrink-0 text-[var(--text-tertiary)] transition-transform duration-200 ${showProfileMenu ? 'rotate-180' : ''}`} />
                         </>

@@ -27,8 +27,10 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     // Direct Chat Guardrails State
     const [dcEnabled, setDcEnabled] = useState(false);
     const [dcCollections, setDcCollections] = useState([]);
-    const [dcScope, setDcScope] = useState({ userInput: true, agentOutput: true });
-    const [dcAction, setDcAction] = useState('delete');
+    // Note: scope is hardcoded to scan both user input and AI output, action
+    // is hardcoded to 'delete'. The per-rule UI used to expose these — it was
+    // removed; admins manage detection actions via the PII "Action on
+    // Detection" picker (block / tokenize) instead.
     const [dcSaving, setDcSaving] = useState(false);
     const [dcMessage, setDcMessage] = useState(null);
 
@@ -37,8 +39,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     const [selectedOrgId, setSelectedOrgId] = useState('');
     const [orgShieldEnabled, setOrgShieldEnabled] = useState(false);
     const [orgShieldCollections, setOrgShieldCollections] = useState([]);
-    const [orgShieldScope, setOrgShieldScope] = useState({ userInput: true, agentOutput: true });
-    const [orgShieldAction, setOrgShieldAction] = useState('delete');
+    // Org-shield scope/action UI was removed (always scan input+output, action='delete').
     const [orgShieldSaving, setOrgShieldSaving] = useState(false);
     const [orgShieldMessage, setOrgShieldMessage] = useState(null);
     const [orgShieldLoading, setOrgShieldLoading] = useState(false);
@@ -50,6 +51,9 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     const [orgMonitorIntegrations, setOrgMonitorIntegrations] = useState(false);
     const [webSearchGuardPiiCategories, setWebSearchGuardPiiCategories] = useState([]);
     const [orgAzurePiiEnabled, setOrgAzurePiiEnabled] = useState(false);
+    // In-process Transformers.js fallback (Apache-2.0 OpenAI Privacy Filter).
+    // Default true so a fresh org without Azure creds still gets PII protection.
+    const [orgLocalPiiEnabled, setOrgLocalPiiEnabled] = useState(true);
     const [activeModerationProvider, setActiveModerationProvider] = useState('llamaguard');
     const [hasAzureEndpoint, setHasAzureEndpoint] = useState(false);
     const [hasEuModelsConfigured, setHasEuModelsConfigured] = useState(false);
@@ -63,16 +67,10 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     const [orgShowRawPayload, setOrgShowRawPayload] = useState(false);
 
     // DLP (Data Loss Prevention) state
-    const [dlpEnabled, setDlpEnabled] = useState(false);
-    const [dlpScope, setDlpScope] = useState('external');
-    const [dlpMode, setDlpMode] = useState('ask');
-    const [dlpFailureMode, setDlpFailureMode] = useState('fail_closed');
-    const [dlpAllowlistedHosts, setDlpAllowlistedHosts] = useState([]);
-    const [customSensitiveTerms, setCustomSensitiveTerms] = useState([]);
-    const [newTermLabel, setNewTermLabel] = useState('');
-    const [newTermPattern, setNewTermPattern] = useState('');
-    const [newTermType, setNewTermType] = useState('literal');
-    const [newTermCaseSensitive, setNewTermCaseSensitive] = useState(false);
+    // DLP (pre-flight outbound scanning) was removed. The PII detector
+    // already scans messages before they reach external providers; the
+    // separate DLP gate added confusion and a parallel set of knobs without
+    // measurable additional value. Server-side defaults apply.
 
     // PII Detection State
     const [piiEnabled, setPiiEnabled] = useState(false);
@@ -84,7 +82,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     const [piiSaving, setPiiSaving] = useState(false);
     const [piiMessage, setPiiMessage] = useState(null);
 
-    const PII_CATEGORIES_LIST = [
+    const ALL_PII_CATEGORIES = [
         // Personal
         { id: 'Person',                           label: t('pii.person_name'),      group: 'Personal',   icon: '👤' },
         { id: 'PersonType',                       label: t('pii.person_type'),      group: 'Personal',   icon: '👥' },
@@ -114,6 +112,28 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
         // EU / Netherlands
         { id: 'EUNationalIdentificationNumber',   label: t('pii.eu_national_id'),  group: 'EU',         icon: '🇪🇺' },
     ];
+
+    // The on-server PII model (OpenAI Privacy Filter) labels exactly these
+    // 8 categories — see server/core/localPiiDetection.js LABEL_TO_CATEGORY.
+    // Showing the other 13 when only the local detector is active would let
+    // admins toggle categories that silently never fire. Azure AI Language
+    // (when configured) supports the full set.
+    const LOCAL_PII_CATEGORIES = new Set([
+        'Person', 'Email', 'PhoneNumber', 'Address', 'URL',
+        'DateOfBirth', 'BankAccountNumber', 'AzureStorageAccountKey',
+    ]);
+    // The Privacy Filter's `secret` token is generic (any password/API key/
+    // credential) — relabel for the local-only case so admins aren't told
+    // it's Azure-specific.
+    const LOCAL_OVERRIDE_LABELS = {
+        AzureStorageAccountKey: { label: t('pii.api_key_or_secret', 'API key / secret'), icon: '🔑', group: 'Digital' },
+    };
+    const showFullSet = orgAzurePiiEnabled || hasAzureEndpoint;
+    const PII_CATEGORIES_LIST = showFullSet
+        ? ALL_PII_CATEGORIES
+        : ALL_PII_CATEGORIES
+            .filter(c => LOCAL_PII_CATEGORIES.has(c.id))
+            .map(c => LOCAL_OVERRIDE_LABELS[c.id] ? { ...c, ...LOCAL_OVERRIDE_LABELS[c.id] } : c);
 
     // Moved to a shared util so the admin UI and the end-user violation toast
     // use the same human-friendly labels. See agent-hub/src/utils/guardrailCategories.js.
@@ -150,8 +170,6 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                     const dc = data.directChatRegexGuardrails;
                     setDcEnabled(dc.enabled === true);
                     setDcCollections(dc.collectionIds || []);
-                    setDcScope(dc.scope || { userInput: true, agentOutput: true });
-                    setDcAction(dc.action || 'delete');
                 }
                 setActiveModerationProvider(data.moderationProvider || 'llamaguard');
                 setHasAzureEndpoint(data.hasAzureContentSafetyEndpoint || false);
@@ -201,8 +219,6 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 const data = await res.json();
                 setOrgShieldEnabled(data.enabled || false);
                 setOrgShieldCollections(data.collectionIds || []);
-                setOrgShieldScope(data.scope || { userInput: true, agentOutput: true });
-                setOrgShieldAction(data.action || 'delete');
                 setOrgShieldModeration(data.moderationEnabled || false);
                 setOrgShieldCategories(data.moderationCategories?.length > 0 ? data.moderationCategories : MODERATION_CATEGORIES.map(c => c.id));
                 setEuModeEnabled(data.euModeEnabled || false);
@@ -211,6 +227,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 setOrgMonitorIntegrations(data.monitorIntegrations || false);
                 setWebSearchGuardPiiCategories(data.webSearchGuardPiiCategories || []);
                 setOrgAzurePiiEnabled(data.azurePiiEnabled || false);
+                setOrgLocalPiiEnabled(data.localPiiEnabled !== false);
                 setOrgSeverityThreshold(data.azureSeverityThreshold ?? 2);
                 setOrgAzureCategories(data.azureEnabledCategories?.length > 0 ? data.azureEnabledCategories : ['Hate', 'Violence', 'Sexual', 'SelfHarm']);
                 const validIds = new Set(PII_CATEGORIES_LIST.map(c => c.id));
@@ -219,13 +236,6 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 setOrgPiiConfidenceThreshold(data.piiDetectionConfidenceThreshold ?? 0.7);
                 setOrgPiiAction(data.piiDetectionAction || 'block');
                 setOrgShowRawPayload(!!data.showRawPayload);
-                // DLP
-                setDlpEnabled(!!data.dlpEnabled);
-                setDlpScope(data.dlpScope === 'all' ? 'all' : 'external');
-                setDlpMode(['ask', 'auto_redact', 'block'].includes(data.dlpMode) ? data.dlpMode : 'ask');
-                setDlpFailureMode(data.dlpFailureMode === 'fail_open' ? 'fail_open' : 'fail_closed');
-                setDlpAllowlistedHosts(Array.isArray(data.dlpAllowlistedHosts) ? data.dlpAllowlistedHosts : []);
-                setCustomSensitiveTerms(Array.isArray(data.customSensitiveTerms) ? data.customSensitiveTerms : []);
             }
         } catch (e) {
             console.error('Failed to fetch org shield', e);
@@ -251,9 +261,16 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 body: JSON.stringify({
                     enabled: orgShieldEnabled,
                     collectionIds: orgShieldCollections,
-                    scope: orgShieldScope,
-                    action: orgShieldAction,
-                    moderationEnabled: orgShieldModeration,
+                    // Scope and action are no longer admin-tunable — the
+                    // detector always scans both directions and takes the
+                    // action selected under "Action on Detection" (PII).
+                    scope: { userInput: true, agentOutput: true },
+                    action: 'delete',
+                    // Moderation is only exposed when Azure AI Content Safety
+                    // is configured. Without Azure we force-disable so the
+                    // setting can't accidentally stay on after credentials
+                    // are removed.
+                    moderationEnabled: hasAzureEndpoint ? orgShieldModeration : false,
                     moderationCategories: orgShieldCategories,
                     euModeEnabled: euModeEnabled,
                     webSearchGuardEnabled: orgWebSearchGuard,
@@ -261,19 +278,15 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                     monitorIntegrations: orgMonitorIntegrations,
                     webSearchGuardPiiCategories: webSearchGuardPiiCategories,
                     azurePiiEnabled: orgAzurePiiEnabled,
+                    localPiiEnabled: orgLocalPiiEnabled,
                     azureSeverityThreshold: orgSeverityThreshold,
                     azureEnabledCategories: orgAzureCategories,
                     piiDetectionCategories: orgPiiCategories,
                     piiDetectionConfidenceThreshold: orgPiiConfidenceThreshold,
                     piiDetectionAction: orgPiiAction,
                     showRawPayload: orgShowRawPayload,
-                    // DLP
-                    dlpEnabled,
-                    dlpScope,
-                    dlpMode,
-                    dlpFailureMode,
-                    dlpAllowlistedHosts,
-                    customSensitiveTerms,
+                    // DLP (pre-flight) was removed from the UI; force-disabled.
+                    dlpEnabled: false,
                 })
             });
             if (res.ok) {
@@ -405,8 +418,11 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                     directChatRegexGuardrails: {
                         enabled: dcEnabled,
                         collectionIds: dcCollections,
-                        scope: dcScope,
-                        action: dcAction
+                        // Scope/action UI was removed — defaults: scan both,
+                        // action 'delete'. Detection action is controlled in
+                        // the PII section's "Action on Detection".
+                        scope: { userInput: true, agentOutput: true },
+                        action: 'delete',
                     }
                 })
             });
@@ -734,43 +750,6 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                         </div>
                                     </div>
 
-                                    <div className="grid grid-cols-2 gap-6">
-                                        {/* Scope */}
-                                        <div>
-                                            <label className="text-xs font-medium text-muted mb-3 block">Monitoring Scope</label>
-                                            <div className="space-y-2">
-                                                {[
-                                                    { key: 'userInput', label: 'User Input' },
-                                                    { key: 'agentOutput', label: 'AI Output' },
-                                                ].map(s => (
-                                                    <label key={s.key} className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer hover:text-primary transition-colors">
-                                                        <input
-                                                            type="checkbox"
-                                                            checked={dcScope[s.key]}
-                                                            onChange={(e) => setDcScope(prev => ({ ...prev, [s.key]: e.target.checked }))}
-                                                            className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0"
-                                                        />
-                                                        {s.label}
-                                                    </label>
-                                                ))}
-                                            </div>
-                                        </div>
-
-                                        {/* Action */}
-                                        <div>
-                                            <label className="text-xs font-medium text-muted mb-3 block">Violation Action</label>
-                                            <div className="flex flex-col gap-3">
-                                                <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer hover:text-primary transition-colors">
-                                                    <input type="radio" name="dcAction" value="delete" checked={dcAction === 'delete'} onChange={e => setDcAction(e.target.value)} className="w-4 h-4 border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0" />
-                                                    Delete message
-                                                </label>
-                                                <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer hover:text-primary transition-colors">
-                                                    <input type="radio" name="dcAction" value="redact" checked={dcAction === 'redact'} onChange={e => setDcAction(e.target.value)} className="w-4 h-4 border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0" />
-                                                    Redact information
-                                                </label>
-                                            </div>
-                                        </div>
-                                    </div>
                                 </div>
                             )}
 
@@ -838,7 +817,13 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
 
                                         {orgShieldEnabled && (
                                             <div className="space-y-8 animate-fadeIn">
-                                                {/* AI Content Moderation Toggle */}
+                                                {/* AI Content Moderation — only shown when Azure AI Content
+                                                    Safety is configured. Without Azure credentials Llama Guard
+                                                    would silently take over and the admin would think Azure was
+                                                    handling things; hiding the section keeps responsibility
+                                                    explicit. */}
+                                                {hasAzureEndpoint && (
+                                                <>
                                                 <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
                                                     <div>
                                                         <span className="text-sm font-medium text-[var(--text-primary)] block">{t('admin.shield_moderation')}</span>
@@ -901,24 +886,52 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                         </div>
                                                     </div>
                                                 )}
+                                                </>
+                                                )}
 
-                                                {/* Azure PII Detection — only shown when Azure is configured */}
-                                                {hasAzureEndpoint && (
-                                                <>
+                                                {/* PII detection master toggle — controls the on-server detector
+                                                    that always ships with Bee Flow (8 categories: Person, Email,
+                                                    Phone, Address, URL, Date of Birth, Bank Account, Secret).
+                                                    Azure AI Language adds the broader 21-category set when its
+                                                    endpoint + key are also configured below. */}
                                                 <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
-                                                    <div>
-                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">🔍 {t('admin.shield_pii_title')}</span>
-                                                        <span className="text-xs text-muted">{t('admin.shield_pii_desc')}</span>
+                                                    <div className="pr-4">
+                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">🛡️ {t('admin.shield_pii_master_title', 'PII detection')}</span>
+                                                        <span className="text-xs text-muted block mt-0.5 leading-relaxed">
+                                                            {t('admin.shield_pii_master_desc', 'Scan messages for personal data — names, emails, phone numbers, addresses, dates of birth, bank accounts and secrets — and block or replace it with placeholders before it reaches the AI. Runs on-server by default; Azure AI Language extends coverage when configured.')}
+                                                        </span>
                                                     </div>
-                                                    <label className="relative inline-flex items-center cursor-pointer">
-                                                        <input type="checkbox" checked={orgAzurePiiEnabled} onChange={e => setOrgAzurePiiEnabled(e.target.checked)} className="sr-only peer" />
+                                                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                                                        <input type="checkbox" checked={orgLocalPiiEnabled} onChange={e => setOrgLocalPiiEnabled(e.target.checked)} className="sr-only peer" />
                                                         <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
                                                     </label>
                                                 </div>
 
-                                                {orgAzurePiiEnabled && (
+                                                {/* Azure AI Language extension — only shown when Azure is
+                                                    configured. Promotes detection from the on-server 8
+                                                    categories to Azure's full 21-category taxonomy (BSN,
+                                                    SSN, IBAN, passport, driver's licence, etc.) */}
+                                                {hasAzureEndpoint && (
+                                                <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
+                                                    <div className="pr-4">
+                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">☁️ {t('admin.shield_pii_azure_title', 'Azure AI Language extension')}</span>
+                                                        <span className="text-xs text-muted block mt-0.5 leading-relaxed">{t('admin.shield_pii_azure_desc', "Send detections to Azure for the full 21-category taxonomy (BSN, SSN, IBAN, passport, driver's licence, ABA, SWIFT). On-server detection still runs first.")}</span>
+                                                    </div>
+                                                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                                                        <input type="checkbox" checked={orgAzurePiiEnabled} onChange={e => setOrgAzurePiiEnabled(e.target.checked)} className="sr-only peer" />
+                                                        <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                                                    </label>
+                                                </div>
+                                                )}
+
+                                                {(orgAzurePiiEnabled || orgLocalPiiEnabled) && (
                                                     <div className="space-y-4 animate-fadeIn">
-                                                        {/* PII Confidence Threshold */}
+                                                        {/* PII Confidence Threshold + Action + Categories.
+                                                            Both Azure and Local detectors honour the same
+                                                            shield fields (piiDetectionConfidenceThreshold,
+                                                            piiDetectionAction, piiDetectionCategories), so
+                                                            we surface this single config block whenever
+                                                            EITHER detector is on. */}
                                                         <div className="p-4 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
                                                             <div className="flex items-center justify-between mb-2">
                                                                 <label className="text-xs font-medium text-muted">{t('admin.shield_pii_confidence')}</label>
@@ -1048,8 +1061,6 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                         </div>
                                                     </div>
                                                 )}
-                                                </>
-                                                )}
 
                                                 {/* EU-Only Models */}
                                                 {hasEuModelsConfigured && (
@@ -1147,165 +1158,8 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                         <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
                                                     </label>
                                                 </div>
-                                                <div className="grid grid-cols-2 gap-6">
-                                                    {/* Scope */}
-                                                    <div>
-                                                        <label className="text-xs font-medium text-muted mb-3 block">{t('admin.shield_scope')}</label>
-                                                        <div className="space-y-2">
-                                                            {[
-                                                                { key: 'userInput', label: t('admin.shield_scope_user') },
-                                                                { key: 'agentOutput', label: t('admin.shield_scope_ai') },
-                                                            ].map(s => (
-                                                                <label key={s.key} className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer hover:text-primary transition-colors">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={orgShieldScope[s.key]}
-                                                                        onChange={(e) => setOrgShieldScope(prev => ({ ...prev, [s.key]: e.target.checked }))}
-                                                                        className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0"
-                                                                    />
-                                                                    {s.label}
-                                                                </label>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Action */}
-                                                    <div>
-                                                        <label className="text-xs font-medium text-muted mb-3 block">{t('admin.shield_action')}</label>
-                                                        <div className="flex flex-col gap-3">
-                                                            <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer hover:text-primary transition-colors">
-                                                                <input type="radio" name="orgAction" value="delete" checked={orgShieldAction === 'delete'} onChange={e => setOrgShieldAction(e.target.value)} className="w-4 h-4 border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0" />
-                                                                {t('admin.shield_action_delete')}
-                                                            </label>
-                                                            <label className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer hover:text-primary transition-colors">
-                                                                <input type="radio" name="orgAction" value="redact" checked={orgShieldAction === 'redact'} onChange={e => setOrgShieldAction(e.target.value)} className="w-4 h-4 border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0" />
-                                                                {t('admin.shield_action_redact')}
-                                                            </label>
-                                                        </div>
-                                                    </div>
-                                                </div>
                                             </div>
                                         )}
-
-                                        {/* ═══ Data Loss Prevention (pre-flight DLP) ═══ */}
-                                        <div className="p-4 rounded-lg border mt-4" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)' }}>
-                                            <div className="flex items-center justify-between mb-3">
-                                                <div>
-                                                    <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                                                        {t('admin.dlp_title', 'Data Loss Prevention (pre-flight)')}
-                                                    </div>
-                                                    <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                                        {t('admin.dlp_desc', 'Scan outbound prompts for PII + custom terms before they reach an external LLM.')}
-                                                    </div>
-                                                </div>
-                                                <label className="relative inline-flex items-center cursor-pointer">
-                                                    <input type="checkbox" checked={dlpEnabled} onChange={e => setDlpEnabled(e.target.checked)} className="sr-only peer" />
-                                                    <div className="w-11 h-6 bg-gray-600 rounded-full peer-checked:bg-[var(--accent-primary)] transition-colors" />
-                                                    <div className="absolute left-[2px] top-[2px] bg-white w-5 h-5 rounded-full transition-transform peer-checked:translate-x-5" />
-                                                </label>
-                                            </div>
-
-                                            {dlpEnabled && (
-                                                <div className="space-y-3">
-                                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                                                        <div>
-                                                            <label className="block text-[11px] font-medium mb-1 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{t('admin.dlp_mode_label', 'Default action')}</label>
-                                                            <select value={dlpMode} onChange={e => setDlpMode(e.target.value)} className="w-full px-2.5 py-1.5 rounded-lg border text-xs bg-[var(--bg-primary)] text-[var(--text-primary)]" style={{ borderColor: 'var(--border-subtle)' }}>
-                                                                <option value="ask">{t('admin.dlp_mode_ask', 'Ask user (Redact / Block / Allow)')}</option>
-                                                                <option value="auto_redact">{t('admin.dlp_mode_auto', 'Auto-redact (no prompt)')}</option>
-                                                                <option value="block">{t('admin.dlp_mode_block', 'Block on any finding')}</option>
-                                                            </select>
-                                                        </div>
-                                                        <div>
-                                                            <label className="block text-[11px] font-medium mb-1 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{t('admin.dlp_scope_label', 'Scope')}</label>
-                                                            <select value={dlpScope} onChange={e => setDlpScope(e.target.value)} className="w-full px-2.5 py-1.5 rounded-lg border text-xs bg-[var(--bg-primary)] text-[var(--text-primary)]" style={{ borderColor: 'var(--border-subtle)' }}>
-                                                                <option value="external">{t('admin.dlp_scope_external', 'External providers only')}</option>
-                                                                <option value="all">{t('admin.dlp_scope_all', 'Every provider (including self-hosted)')}</option>
-                                                            </select>
-                                                        </div>
-                                                        <div>
-                                                            <label className="block text-[11px] font-medium mb-1 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{t('admin.dlp_failmode_label', 'If scan fails')}</label>
-                                                            <select value={dlpFailureMode} onChange={e => setDlpFailureMode(e.target.value)} className="w-full px-2.5 py-1.5 rounded-lg border text-xs bg-[var(--bg-primary)] text-[var(--text-primary)]" style={{ borderColor: 'var(--border-subtle)' }}>
-                                                                <option value="fail_closed">{t('admin.dlp_failmode_closed', 'Block (fail-closed)')}</option>
-                                                                <option value="fail_open">{t('admin.dlp_failmode_open', 'Allow (fail-open)')}</option>
-                                                            </select>
-                                                        </div>
-                                                    </div>
-
-                                                    {/* Custom sensitive terms */}
-                                                    <div>
-                                                        <div className="text-[11px] font-medium mb-2 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>
-                                                            {t('admin.dlp_terms_title', 'Custom sensitive terms')} ({customSensitiveTerms.length})
-                                                        </div>
-                                                        {customSensitiveTerms.length > 0 && (
-                                                            <div className="space-y-1.5 mb-2 max-h-48 overflow-auto">
-                                                                {customSensitiveTerms.map((term, idx) => (
-                                                                    <div key={term.id || idx} className="flex items-center gap-2 text-xs px-2 py-1.5 rounded" style={{ background: 'var(--bg-primary)' }}>
-                                                                        <span className="text-[10px] px-1.5 py-0.5 rounded uppercase" style={{ background: term.type === 'regex' ? 'rgba(139, 92, 246, 0.12)' : 'rgba(59, 130, 246, 0.12)', color: term.type === 'regex' ? '#8b5cf6' : '#3b82f6' }}>{term.type || 'literal'}</span>
-                                                                        <span className="font-medium" style={{ color: 'var(--text-primary)' }}>{term.label}</span>
-                                                                        <code className="text-[11px] flex-1 min-w-0 truncate" style={{ color: 'var(--text-muted)' }}>{term.pattern}</code>
-                                                                        {term.caseSensitive && <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>case</span>}
-                                                                        <button onClick={() => setCustomSensitiveTerms(prev => prev.filter((_, i) => i !== idx))} className="text-[11px] px-1.5 py-0.5 rounded hover:bg-red-500/10 hover:text-red-500" style={{ color: 'var(--text-muted)' }}>×</button>
-                                                                    </div>
-                                                                ))}
-                                                            </div>
-                                                        )}
-                                                        <div className="flex items-center gap-1.5 flex-wrap">
-                                                            <input
-                                                                type="text"
-                                                                value={newTermLabel}
-                                                                onChange={e => setNewTermLabel(e.target.value)}
-                                                                placeholder={t('admin.dlp_term_label_ph', 'Label (e.g. "Project Falcon")')}
-                                                                className="flex-1 min-w-[140px] px-2 py-1.5 rounded-lg border text-xs bg-[var(--bg-primary)] text-[var(--text-primary)]"
-                                                                style={{ borderColor: 'var(--border-subtle)' }}
-                                                            />
-                                                            <input
-                                                                type="text"
-                                                                value={newTermPattern}
-                                                                onChange={e => setNewTermPattern(e.target.value)}
-                                                                placeholder={t('admin.dlp_term_pattern_ph', 'Pattern or regex')}
-                                                                className="flex-[2] min-w-[180px] px-2 py-1.5 rounded-lg border text-xs bg-[var(--bg-primary)] text-[var(--text-primary)] font-mono"
-                                                                style={{ borderColor: 'var(--border-subtle)' }}
-                                                            />
-                                                            <select value={newTermType} onChange={e => setNewTermType(e.target.value)} className="px-2 py-1.5 rounded-lg border text-xs bg-[var(--bg-primary)] text-[var(--text-primary)]" style={{ borderColor: 'var(--border-subtle)' }}>
-                                                                <option value="literal">{t('admin.dlp_term_literal', 'Literal')}</option>
-                                                                <option value="regex">{t('admin.dlp_term_regex', 'Regex')}</option>
-                                                            </select>
-                                                            <label className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                                                <input type="checkbox" checked={newTermCaseSensitive} onChange={e => setNewTermCaseSensitive(e.target.checked)} />
-                                                                {t('admin.dlp_term_case', 'Case')}
-                                                            </label>
-                                                            <button
-                                                                onClick={() => {
-                                                                    const label = newTermLabel.trim();
-                                                                    const pattern = newTermPattern.trim();
-                                                                    if (!label || !pattern) return;
-                                                                    if (newTermType === 'regex') {
-                                                                        try { new RegExp(pattern, newTermCaseSensitive ? '' : 'i'); }
-                                                                        catch (err) { alert(`Invalid regex: ${err.message}`); return; }
-                                                                    }
-                                                                    setCustomSensitiveTerms(prev => [...prev, {
-                                                                        id: `term-${Date.now()}`,
-                                                                        label, pattern,
-                                                                        type: newTermType,
-                                                                        caseSensitive: newTermCaseSensitive,
-                                                                    }]);
-                                                                    setNewTermLabel('');
-                                                                    setNewTermPattern('');
-                                                                }}
-                                                                className="px-3 py-1.5 rounded-lg text-xs font-medium text-white"
-                                                                style={{ background: 'var(--accent-primary)' }}
-                                                            >
-                                                                {t('admin.dlp_term_add', 'Add')}
-                                                            </button>
-                                                        </div>
-                                                        <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>
-                                                            {t('admin.dlp_term_hint', 'Examples: project codenames ("Project Falcon"), contract-number regex (e.g. C-\\d{6}), internal product names.')}
-                                                        </p>
-                                                    </div>
-                                                </div>
-                                            )}
-                                        </div>
 
                                         <div className="flex items-center justify-end gap-3 pt-4 mt-6 border-t border-white/5">
                                             {orgShieldMessage && <span className={`text-sm ${orgShieldMessage.type === 'success' ? 'text-green-500' : 'text-red-500'}`}>{orgShieldMessage.text}</span>}

@@ -4,6 +4,7 @@ import OrgUsersPanel from '../../components/admin/OrgUsersPanel';
 import N8nSection from './N8nSection';
 import UsageSection from './UsageSection';
 import GitHubSyncPanel from '../../components/admin/GitHubSyncPanel';
+import NextcloudSyncPanel from '../../components/admin/NextcloudSyncPanel';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 
@@ -201,6 +202,11 @@ const OrganisationSection = ({ user, activeSection = 'license' }) => {
             {/* GitHub Sync */}
             {activeSection === 'github_sync' && isOrgAdmin && (
                 <GitHubSyncPanel user={user} />
+            )}
+
+            {/* Nextcloud Sync */}
+            {activeSection === 'nextcloud_sync' && isOrgAdmin && (
+                <NextcloudSyncPanel user={user} />
             )}
         </div>
     );

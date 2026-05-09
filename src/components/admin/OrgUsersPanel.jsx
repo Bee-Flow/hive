@@ -482,7 +482,6 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
         { id: 'users', label: 'Users', icon: Users, count: orgUsers.length },
         { id: 'groups', label: 'Groups', icon: UserPlus, count: orgGroups.length },
         { id: 'roles', label: 'Roles', icon: Shield, count: orgRoles.length },
-        { id: 'customTiers', label: 'Custom Tiers', icon: Sparkles, count: null },
     ];
 
     return (
