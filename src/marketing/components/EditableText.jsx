@@ -43,18 +43,16 @@ export default function EditableText({
     const childrenStr = String(children ?? '');
     // Capture-on-focus snapshot so Escape can restore it.
     const focusValueRef = useRef(childrenStr);
-
-    // If we're not in preview mode, render as plain text — no edit affordance.
-    if (!isPreviewMode()) {
-        return <Tag className={className} style={style}>{children}</Tag>;
-    }
+    const previewMode = isPreviewMode();
 
     // Sync external prop changes into the contentEditable element. Bails
     // when the element is focused so the user's typing isn't disturbed —
     // their pending text is committed via handleBlur. Runs after every
     // render rather than on a `[childrenStr]` dep so newly-mounted nodes
-    // pick up their initial textContent before paint.
+    // pick up their initial textContent before paint. No-op when not in
+    // preview mode (we render a plain Tag in that case, ref isn't set).
     useLayoutEffect(() => {
+        if (!previewMode) return;
         const el = ref.current;
         if (!el) return;
         if (typeof document !== 'undefined' && document.activeElement === el) return;
@@ -67,6 +65,11 @@ export default function EditableText({
         if (childrenStr) el.removeAttribute('data-cms-empty');
         else             el.setAttribute('data-cms-empty', 'true');
     });
+
+    // If we're not in preview mode, render as plain text — no edit affordance.
+    if (!previewMode) {
+        return <Tag className={className} style={style}>{children}</Tag>;
+    }
 
     const handleBlur = (e) => {
         const next = (e.currentTarget.textContent || '').replace(/ /g, ' ');

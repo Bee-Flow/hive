@@ -28,10 +28,6 @@ function formatTime(ts) {
 /* ── GenerationOverlay                              ── */
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 export default function GenerationOverlay({ generation, history, onClose, onSelectHistory, onInsertToDocument, onSourceClick }) {
-    if (!generation) return null;
-
-    const meta = TYPE_META[generation.type] || { icon: FileText, label: generation.type, color: '#6b7280', group: 'Other' };
-    const Icon = meta.icon;
     const [showHistory, setShowHistory] = useState(false);
 
     // Close on Escape
@@ -40,6 +36,11 @@ export default function GenerationOverlay({ generation, history, onClose, onSele
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
     }, [onClose]);
+
+    if (!generation) return null;
+
+    const meta = TYPE_META[generation.type] || { icon: FileText, label: generation.type, color: '#6b7280', group: 'Other' };
+    const Icon = meta.icon;
 
     const handleExportPdf = () => {
         const printWindow = window.open('', '_blank', 'width=800,height=600');

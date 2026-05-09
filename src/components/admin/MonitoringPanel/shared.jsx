@@ -204,6 +204,8 @@ export function InOutLabel({ input, output, inputCost, outputCost, showCost }) {
 // ── SVG Area Chart ──────────────────────────────────────────────────────────
 
 export function SvgAreaChart({ data, yKey = 'total_tokens', label = 'value', color = COLORS.primary, height = 140, formatY = fmt, formatLabel }) {
+    const [hover, setHover] = useState(null);
+
     if (!data || data.length === 0) return <Empty text="No data to display" />;
 
     const maxY = Math.max(...data.map(d => d[yKey] || 0), 1);
@@ -215,8 +217,6 @@ export function SvgAreaChart({ data, yKey = 'total_tokens', label = 'value', col
 
     const linePath = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x},${p.y}`).join(' ');
     const areaPath = `${linePath} L100,100 L0,100 Z`;
-
-    const [hover, setHover] = useState(null);
 
     return (
         <div style={{ position: 'relative', height }}>
