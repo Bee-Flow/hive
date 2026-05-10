@@ -208,22 +208,24 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
                                     key={p.id}
                                     type="button"
                                     onClick={() => setSelectedPlanId(p.id)}
-                                    className="w-full text-left p-4 rounded-xl border relative"
+                                    className="w-full text-left p-4 rounded-xl border"
                                     style={{
                                         borderColor: active ? 'var(--accent-primary)' : 'var(--border-subtle)',
                                         background: active ? 'var(--bg-tertiary)' : 'transparent',
                                     }}
                                 >
                                     {p.ncRecommended && (
-                                        <span
-                                            className="absolute top-3 right-3 inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                                            style={{ background: '#0082C9', color: '#fff' }}
-                                        >
-                                            <Star className="w-2.5 h-2.5" /> Recommended for Nextcloud
-                                        </span>
+                                        <div className="mb-2">
+                                            <span
+                                                className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                                                style={{ background: '#0082C9', color: '#fff' }}
+                                            >
+                                                <Star className="w-2.5 h-2.5" /> Recommended for Nextcloud
+                                            </span>
+                                        </div>
                                     )}
-                                    <div className="flex items-baseline justify-between gap-3 pr-32">
-                                        <div>
+                                    <div className="flex items-baseline justify-between gap-3">
+                                        <div className="min-w-0 flex-1">
                                             <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{p.name}</div>
                                             {p.tagline && (
                                                 <div className="text-xs mt-0.5 inline-flex items-center gap-1" style={{ color: 'var(--text-secondary)' }}>
@@ -231,7 +233,7 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
                                                 </div>
                                             )}
                                         </div>
-                                        <div className="text-sm font-semibold whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
+                                        <div className="text-sm font-semibold whitespace-nowrap shrink-0" style={{ color: 'var(--text-primary)' }}>
                                             {fmtPrice(p)}
                                             {p.trialDays > 0 && <span className="ml-2 text-[10px] font-medium" style={{ color: '#22c55e' }}>{p.trialDays}d trial</span>}
                                         </div>
