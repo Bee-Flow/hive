@@ -6,6 +6,7 @@ import { getModelMeta, CAT_COLORS } from './modelMeta';
 import DirectChatConfig from './DirectChatConfig';
 import TicketAssistantTiersConfig from './TicketAssistantTiersConfig';
 import WebSearchInferenceConfig from './WebSearchInferenceConfig';
+import LimitsConfig from './LimitsConfig';
 
 import MistralApiKeyCard from './ProviderCards/MistralCard';
 import OpenAIApiKeyCard from './ProviderCards/OpenAICard';
@@ -106,6 +107,7 @@ const AIConfigPanel = () => {
         { id: 'directChat', label: t('admin.ai_direct_chat'), icon: '💬' },
         { id: 'ticketAssistantTiers', label: t('admin.ai_ticket_assistant_tiers', 'Ticket Assistant Models'), icon: '🎫' },
         { id: 'webSearchInference', label: t('admin.ai_web_search_inference', 'Web Search Inference'), icon: '🌐' },
+        { id: 'limits', label: t('admin.ai_limits', 'Limits'), icon: '⚙️' },
 
     ];
 
@@ -240,6 +242,11 @@ const AIConfigPanel = () => {
                 {/* Web Search Inference Tab — embed inherits global, rerank method-only, cleanup uses chat-model picker */}
                 {activeTab === 'webSearchInference' && (
                     <WebSearchInferenceConfig allModels={allModels} />
+                )}
+
+                {/* Limits Tab — runtime caps applied to chat surfaces */}
+                {activeTab === 'limits' && (
+                    <LimitsConfig />
                 )}
 
             </div>
