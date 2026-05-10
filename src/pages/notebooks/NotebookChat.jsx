@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { FileText, ArrowDown } from 'lucide-react';
+import { FileText, ArrowDown, MessageSquare, Sparkles } from 'lucide-react';
 import MessageItem from '../../components/chat/MessageItem';
 import InputArea from '../../components/InputArea';
 
@@ -27,9 +27,10 @@ export default function NotebookChat({
 
     return (
         <div className="flex flex-col h-full">
-            {/* Chat header */}
+            {/* Chat header (Studio-aligned: icon + title + subtitle) */}
             <div className="shrink-0 px-3 py-2 border-b flex items-center gap-2" style={{ borderColor: 'var(--border-subtle)' }}>
-                <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>💬 AI Chat</span>
+                <MessageSquare className="w-3.5 h-3.5" style={{ color: 'var(--accent-primary)' }} />
+                <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>AI Chat</span>
                 <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
                     Ask questions about your sources
                 </span>
@@ -39,14 +40,11 @@ export default function NotebookChat({
             <div ref={containerRef} className="flex-1 overflow-y-auto custom-scrollbar px-3 py-3 space-y-3">
                 {messages.length === 0 && (
                     <div className="flex flex-col items-center justify-center h-full text-center py-8">
-                        <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3"
-                            style={{ background: 'var(--brand-gradient)' }}>
-                            <span className="text-lg">🤖</span>
-                        </div>
-                        <p className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
+                        <Sparkles size={28} className="mb-3" style={{ color: 'var(--accent-primary)', opacity: 0.5 }} />
+                        <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
                             Ask me anything
                         </p>
-                        <p className="text-[10px] mt-1 max-w-[200px]" style={{ color: 'var(--text-tertiary)' }}>
+                        <p className="text-[10px] mt-1 max-w-[200px] leading-relaxed" style={{ color: 'var(--text-tertiary)' }}>
                             I'll use your notebook sources to provide accurate answers with citations
                         </p>
                     </div>

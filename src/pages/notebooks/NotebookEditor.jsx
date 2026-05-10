@@ -198,8 +198,8 @@ const PALETTE = [
     '#ef4444', '#f97316', '#eab308', '#84cc16',
     // Greens / Teals / Blues
     '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6',
-    // Purples / Pinks
-    '#8b5cf6', '#a855f7', '#ec4899', '#f43f5e',
+    // Pinks / Roses
+    '#ec4899', '#f43f5e', '#fb7185', '#fda4af',
     // Grays / Neutrals
     '#64748b', '#94a3b8', '#cbd5e1', '#000000',
 ];
@@ -675,9 +675,9 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
                 <div
                     className="flex items-center justify-center rounded cursor-grab transition-all"
                     style={{
-                        background: dragNodeType ? 'rgba(99,102,241,0.12)' : 'transparent',
-                        border: dragNodeType ? '1px solid rgba(99,102,241,0.3)' : '1px solid transparent',
-                        color: dragNodeType ? '#818cf8' : 'var(--text-tertiary)',
+                        background: dragNodeType ? 'rgba(59,130,246,0.12)' : 'transparent',
+                        border: dragNodeType ? '1px solid rgba(59,130,246,0.3)' : '1px solid transparent',
+                        color: dragNodeType ? '#60a5fa' : 'var(--text-tertiary)',
                         padding: dragNodeType ? '1px 4px' : '2px',
                         borderRadius: '5px',
                         minWidth: '20px',
@@ -705,7 +705,7 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
                     <div className="flex flex-col items-center gap-3 pointer-events-auto px-6 py-5 rounded-2xl shadow-2xl border" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)' }}>
                         <div className="relative">
                             <div className="absolute inset-0 rounded-full animate-ping" style={{ background: 'var(--accent-primary)', opacity: 0.15 }} />
-                            <div className="relative w-12 h-12 rounded-full flex items-center justify-center" style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.1), rgba(139,92,246,0.15))' }}>
+                            <div className="relative w-12 h-12 rounded-full flex items-center justify-center" style={{ background: 'var(--brand-gradient-soft)' }}>
                                 <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--accent-primary)' }} />
                             </div>
                         </div>
@@ -901,7 +901,7 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
                                 className="px-3 pt-2.5 pb-1.5 text-[10px] leading-snug border-b"
                                 style={{
                                     borderColor: 'var(--border-subtle)',
-                                    background: 'rgba(99,102,241,0.04)',
+                                    background: 'var(--bg-tertiary)',
                                     color: 'var(--text-secondary)',
                                 }}
                             >

@@ -785,7 +785,7 @@ pre.hljs {
 /* Tiptap table interactive styles */
 .notebook-editor .tiptap table td.selectedCell,
 .notebook-editor .tiptap table th.selectedCell {
-    background: rgba(99, 102, 241, 0.15);
+    background: rgba(59, 130, 246, 0.15);
 }
 
 .notebook-editor .tiptap table .column-resize-handle {
@@ -938,7 +938,7 @@ pre.hljs {
     outline: 2px solid var(--accent-primary);
     outline-offset: 1px;
     border-color: var(--accent-primary);
-    box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.12);
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.12);
 }
 
 /* Resizing state */
@@ -1036,15 +1036,15 @@ pre.hljs {
 
 /* ── Section Drag Highlight (SectionDragExtension) ─── */
 .notebook-editor .tiptap .section-drag-highlight {
-    background: rgba(99, 102, 241, 0.08);
-    border-left: 3px solid rgba(99, 102, 241, 0.5);
+    background: rgba(59, 130, 246, 0.08);
+    border-left: 3px solid rgba(59, 130, 246, 0.5);
     border-radius: 4px;
     transition: background 0.15s ease, border-color 0.15s ease;
 }
 
 [data-theme="light"] .notebook-editor .tiptap .section-drag-highlight {
-    background: rgba(99, 102, 241, 0.06);
-    border-left-color: rgba(99, 102, 241, 0.4);
+    background: rgba(59, 130, 246, 0.06);
+    border-left-color: rgba(59, 130, 246, 0.4);
 }
 
 /* ── Text Color: TipTap applies color as style="color:#xxx" inline.
@@ -1056,23 +1056,23 @@ pre.hljs {
 .notebook-mermaid-block {
     margin: 20px 0;
     border-radius: 16px;
-    border: 1px solid rgba(99, 102, 241, 0.15);
+    border: 1px solid rgba(59, 130, 246, 0.15);
     background: linear-gradient(145deg,
-        rgba(99, 102, 241, 0.04) 0%,
-        rgba(139, 92, 246, 0.03) 40%,
+        rgba(59, 130, 246, 0.04) 0%,
+        rgba(16, 185, 129, 0.03) 40%,
         rgba(59, 130, 246, 0.02) 100%);
     overflow: hidden;
     box-shadow:
-        0 1px 3px rgba(99, 102, 241, 0.06),
-        0 4px 16px rgba(99, 102, 241, 0.04);
+        0 1px 3px rgba(59, 130, 246, 0.06),
+        0 4px 16px rgba(59, 130, 246, 0.04);
     transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .notebook-mermaid-block:hover {
-    border-color: rgba(99, 102, 241, 0.28);
+    border-color: rgba(59, 130, 246, 0.28);
     box-shadow:
-        0 2px 8px rgba(99, 102, 241, 0.08),
-        0 8px 32px rgba(99, 102, 241, 0.06);
+        0 2px 8px rgba(59, 130, 246, 0.08),
+        0 8px 32px rgba(59, 130, 246, 0.06);
     transform: translateY(-1px);
 }
 
@@ -1082,10 +1082,10 @@ pre.hljs {
     align-items: center;
     justify-content: space-between;
     padding: 8px 14px;
-    border-bottom: 1px solid rgba(99, 102, 241, 0.08);
+    border-bottom: 1px solid rgba(59, 130, 246, 0.08);
     background: linear-gradient(135deg,
-        rgba(99, 102, 241, 0.06) 0%,
-        rgba(139, 92, 246, 0.04) 50%,
+        rgba(59, 130, 246, 0.06) 0%,
+        rgba(16, 185, 129, 0.04) 50%,
         rgba(255, 255, 255, 0.02) 100%);
     backdrop-filter: blur(12px);
     -webkit-backdrop-filter: blur(12px);
@@ -1094,7 +1094,7 @@ pre.hljs {
 .mermaid-block-title {
     font-size: 12px;
     font-weight: 650;
-    color: #6366f1;
+    color: #3b82f6;
     display: flex;
     align-items: center;
     gap: 7px;
@@ -1108,8 +1108,8 @@ pre.hljs {
     width: 22px;
     height: 22px;
     border-radius: 7px;
-    background: rgba(99, 102, 241, 0.12);
-    color: #6366f1;
+    background: rgba(59, 130, 246, 0.12);
+    color: #3b82f6;
 }
 
 .mermaid-toolbar {
@@ -1122,9 +1122,9 @@ pre.hljs {
     font-family: Inter, system-ui, sans-serif !important;
 }
 .mermaid-toolbar-btn:hover {
-    background: rgba(99, 102, 241, 0.12) !important;
-    border-color: rgba(99, 102, 241, 0.2) !important;
-    color: #4f46e5 !important;
+    background: rgba(59, 130, 246, 0.12) !important;
+    border-color: rgba(59, 130, 246, 0.2) !important;
+    color: #1d4ed8 !important;
 }
 
 /* Diagram Render Area */
@@ -1171,7 +1171,7 @@ pre.hljs {
 }
 
 .mermaid-skeleton-spinner {
-    color: #a5b4fc;
+    color: #93c5fd;
 }
 
 @keyframes spin {
@@ -1183,7 +1183,7 @@ pre.hljs {
     width: 100%;
     min-height: 140px;
     background: #0f172a;
-    border: 1px solid rgba(99, 102, 241, 0.15);
+    border: 1px solid rgba(59, 130, 246, 0.15);
     border-radius: 10px;
     padding: 14px 16px;
     color: #e2e8f0;
@@ -1197,8 +1197,8 @@ pre.hljs {
 }
 
 .mermaid-code-editor:focus {
-    border-color: rgba(99, 102, 241, 0.4);
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.08);
+    border-color: rgba(59, 130, 246, 0.4);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.08);
 }
 
 /* Error State */
@@ -1216,16 +1216,16 @@ pre.hljs {
     margin-top: 10px;
     padding: 6px 16px;
     border-radius: 20px;
-    background: rgba(99, 102, 241, 0.1);
-    border: 1px solid rgba(99, 102, 241, 0.2);
-    color: #4f46e5;
+    background: rgba(59, 130, 246, 0.1);
+    border: 1px solid rgba(59, 130, 246, 0.2);
+    color: #1d4ed8;
     cursor: pointer;
     font-size: 11px;
     font-weight: 600;
     transition: all 0.2s;
 }
 .mermaid-error-btn:hover {
-    background: rgba(99, 102, 241, 0.18);
+    background: rgba(59, 130, 246, 0.18);
 }
 
 /* ── Fullscreen Modal ── */
@@ -1246,7 +1246,7 @@ pre.hljs {
 .mermaid-fullscreen-modal {
     background: #0f172a;
     border-radius: 20px;
-    border: 1px solid rgba(99, 102, 241, 0.2);
+    border: 1px solid rgba(59, 130, 246, 0.2);
     box-shadow: 0 25px 60px rgba(0, 0, 0, 0.5);
     width: 95vw;
     max-width: 1400px;
@@ -1289,28 +1289,28 @@ pre.hljs {
 
 /* ── Light Mode Overrides ── */
 [data-theme="light"] .notebook-mermaid-block {
-    border-color: rgba(99, 102, 241, 0.12);
+    border-color: rgba(59, 130, 246, 0.12);
     background: linear-gradient(145deg,
-        rgba(99, 102, 241, 0.03) 0%,
-        rgba(139, 92, 246, 0.02) 40%,
+        rgba(59, 130, 246, 0.03) 0%,
+        rgba(16, 185, 129, 0.02) 40%,
         rgba(59, 130, 246, 0.015) 100%);
     box-shadow:
         0 1px 3px rgba(0, 0, 0, 0.04),
-        0 4px 16px rgba(99, 102, 241, 0.03);
+        0 4px 16px rgba(59, 130, 246, 0.03);
 }
 
 [data-theme="light"] .notebook-mermaid-block:hover {
-    border-color: rgba(99, 102, 241, 0.22);
+    border-color: rgba(59, 130, 246, 0.22);
     box-shadow:
         0 2px 8px rgba(0, 0, 0, 0.05),
-        0 8px 32px rgba(99, 102, 241, 0.05);
+        0 8px 32px rgba(59, 130, 246, 0.05);
 }
 
 [data-theme="light"] .mermaid-block-header {
-    border-bottom-color: rgba(99, 102, 241, 0.06);
+    border-bottom-color: rgba(59, 130, 246, 0.06);
     background: linear-gradient(135deg,
-        rgba(99, 102, 241, 0.04) 0%,
-        rgba(139, 92, 246, 0.02) 50%,
+        rgba(59, 130, 246, 0.04) 0%,
+        rgba(16, 185, 129, 0.02) 50%,
         rgba(255, 255, 255, 0.5) 100%);
 }
 

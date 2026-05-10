@@ -14,7 +14,6 @@ import NotebookSources from './notebooks/NotebookSources';
 import NotebookTOC from './notebooks/NotebookTOC';
 import NotebookVersions from './notebooks/NotebookVersions';
 import CitationOverlay from './notebooks/CitationOverlay';
-import NotebookCard from './notebooks/components/NotebookCard';
 
 import GenerationOverlay from './notebooks/GenerationOverlay';
 import SendForSigningModal from './notebooks/SendForSigningModal';
@@ -1265,17 +1264,19 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     }
 
     /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-    /* ── NOTEBOOK LIST VIEW (Studio-aligned: sidebar + grid) ── */
+    /* ── NOTEBOOK LIST VIEW (Studio-aligned: sidebar + detail) ─ */
     /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-    // Scroll the matching card into view when the user clicks an item in the
-    // sidebar — gives the sidebar selection an in-grid affordance without
-    // forcing navigation.
-    const focusCardInGrid = (id) => {
-        setTimeout(() => {
-            const el = document.querySelector(`[data-notebook-id="${id}"]`);
-            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        }, 0);
+    const focusedNotebook = filtered.find(n => n.id === sidebarFocusId) || null;
+    const stripHtml = (html) => {
+        if (!html) return '';
+        if (typeof document === 'undefined') return '';
+        const tmp = document.createElement('div');
+        tmp.innerHTML = html;
+        return (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
     };
+    const focusedPreview = focusedNotebook
+        ? (focusedNotebook.preview || stripHtml(focusedNotebook.documentContent).slice(0, 480))
+        : '';
 
     return (
         <div className="h-full flex flex-col" style={{ background: 'var(--bg-primary)' }}>
@@ -1291,24 +1292,6 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                     </div>
                     <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Upload sources, chat with your documents, and generate content</p>
                 </div>
-                <div className="flex items-center gap-2">
-                    <div className="relative">
-                        <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
-                        <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search notebooks..."
-                            className="pl-8 pr-3 py-1.5 text-sm rounded-lg border w-56 focus:outline-none focus:ring-1"
-                            style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }} />
-                    </div>
-                    <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleCreate()}
-                        placeholder="New notebook name..."
-                        className="px-3 py-1.5 text-sm rounded-lg border w-52 focus:outline-none focus:ring-1"
-                        style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }} />
-                    <button onClick={handleCreate} disabled={!newName.trim() || creating}
-                        className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-semibold text-white transition-opacity disabled:opacity-40"
-                        style={{ background: 'var(--accent-primary)' }}>
-                        {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                        Create
-                    </button>
-                </div>
             </div>
 
             {error && (
@@ -1319,20 +1302,26 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                 </div>
             )}
 
-            {/* ─── Body: sidebar + grid ─── */}
+            {/* ─── Body: Studio sidebar + detail pane ─── */}
             <div className="flex-1 flex min-h-0 overflow-hidden">
-                {/* Sidebar */}
-                <aside className="w-64 flex-shrink-0 border-r flex flex-col" style={{ borderColor: 'var(--border-default)' }}>
-                    <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-default)' }}>
-                        <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Notebooks</span>
+                {/* Sidebar — list of all notebooks (single source of truth) */}
+                <aside className="w-72 flex-shrink-0 border-r flex flex-col" style={{ borderColor: 'var(--border-default)' }}>
+                    <div className="px-3 py-2.5 border-b flex items-center gap-2" style={{ borderColor: 'var(--border-default)' }}>
+                        <div className="relative flex-1">
+                            <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+                            <input
+                                value={search}
+                                onChange={e => setSearch(e.target.value)}
+                                placeholder="Search…"
+                                className="w-full pl-8 pr-2 py-1.5 text-sm rounded-lg border focus:outline-none focus:ring-1"
+                                style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
+                            />
+                        </div>
                         <button
-                            onClick={() => {
-                                const input = document.querySelector('input[placeholder="New notebook name..."]');
-                                input?.focus();
-                            }}
-                            title="Create notebook"
-                            className="p-1 rounded-lg hover:bg-[var(--bg-secondary)]"
-                            style={{ color: 'var(--text-tertiary)' }}
+                            onClick={() => { setNewName(''); setSidebarFocusId('__new__'); }}
+                            title="New notebook"
+                            className="p-1.5 rounded-lg hover:bg-[var(--bg-secondary)]"
+                            style={{ color: 'var(--accent-primary)' }}
                         >
                             <Plus size={16} />
                         </button>
@@ -1349,15 +1338,20 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                             return (
                                 <div
                                     key={nb.id}
-                                    onClick={() => { setSidebarFocusId(nb.id); focusCardInGrid(nb.id); }}
+                                    onClick={() => setSidebarFocusId(nb.id)}
                                     onDoubleClick={() => selectNotebook(nb)}
-                                    title="Click to focus · Double-click to open"
+                                    title="Click to preview · Double-click to open"
                                     className={`group flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer text-sm transition ${isFocused
                                         ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)]'
                                         : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}
                                 >
                                     <BookOpen className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--brand-primary)' }} />
-                                    <span className="truncate flex-1">{nb.name}</span>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="truncate">{nb.name}</div>
+                                        <div className="text-[10px] truncate" style={{ color: 'var(--text-tertiary)' }}>
+                                            {(nb.sourceCount || 0)} src · {timeAgo(nb.updatedAt || nb.createdAt)}
+                                        </div>
+                                    </div>
                                     <button
                                         onClick={(e) => { e.stopPropagation(); handleDelete(nb.id); }}
                                         title="Delete notebook"
@@ -1372,56 +1366,186 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                     </div>
                 </aside>
 
-                {/* Grid content */}
-                <section className="flex-1 min-w-0 overflow-auto p-6">
+                {/* Detail pane — empty state OR new-notebook form OR focused-notebook preview */}
+                <section className="flex-1 min-w-0 overflow-y-auto" style={{ background: 'var(--bg-secondary)' }}>
                     {loading ? (
                         <div className="flex items-center justify-center h-full">
                             <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--text-muted)' }} />
                         </div>
-                    ) : filtered.length === 0 ? (
-                        <div className="flex items-center justify-center h-full">
-                            <div className="text-center max-w-sm">
-                                <BookOpen size={32} className="mb-4 mx-auto" style={{ color: 'var(--accent-primary)', opacity: 0.5 }} />
-                                <h3 className="text-base font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
-                                    {search ? 'No notebooks found' : 'Create your first notebook'}
-                                </h3>
-                                <p className="text-sm mb-4 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                                    {search ? 'Try a different search' : 'Upload PDFs, documents, and URLs — then chat with your sources and generate summaries, briefings, and more.'}
-                                </p>
-                                {!search && (
+                    ) : sidebarFocusId === '__new__' ? (
+                        <div className="h-full flex flex-col items-center justify-center px-6">
+                            <div className="w-full max-w-md">
+                                <div className="flex items-center gap-3 mb-6">
+                                    <div className="w-12 h-12 rounded-xl border-[1.5px] flex items-center justify-center" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)' }}>
+                                        <Plus className="w-5 h-5" style={{ color: 'var(--accent-primary)' }} />
+                                    </div>
+                                    <div>
+                                        <h2 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>New notebook</h2>
+                                        <p className="text-xs" style={{ color: 'var(--text-tertiary)' }}>Give it a name to get started</p>
+                                    </div>
+                                </div>
+                                <input
+                                    autoFocus
+                                    value={newName}
+                                    onChange={e => setNewName(e.target.value)}
+                                    onKeyDown={e => {
+                                        if (e.key === 'Enter') handleCreate();
+                                        if (e.key === 'Escape') { setSidebarFocusId(null); setNewName(''); }
+                                    }}
+                                    placeholder="Notebook name…"
+                                    className="w-full px-4 py-3 text-base rounded-xl border-[1.5px] focus:outline-none transition-colors focus:border-[var(--accent-primary)]"
+                                    style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }}
+                                />
+                                <div className="flex items-center justify-end gap-2 mt-4">
                                     <button
-                                        onClick={() => {
-                                            const input = document.querySelector('input[placeholder="New notebook name..."]');
-                                            input?.focus();
-                                        }}
-                                        className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold text-white mx-auto"
+                                        onClick={() => { setSidebarFocusId(null); setNewName(''); }}
+                                        className="px-4 py-2 rounded-full text-sm hover:bg-[var(--bg-tertiary)]"
+                                        style={{ color: 'var(--text-secondary)' }}
+                                    >
+                                        Cancel
+                                    </button>
+                                    <button
+                                        onClick={handleCreate}
+                                        disabled={!newName.trim() || creating}
+                                        className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold text-white disabled:opacity-40"
                                         style={{ background: 'var(--accent-primary)' }}
                                     >
-                                        <Plus size={15} /> Create notebook
+                                        {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                                        Create notebook
                                     </button>
-                                )}
+                                </div>
                             </div>
                         </div>
+                    ) : !focusedNotebook ? (
+                        <div className="h-full flex flex-col items-center justify-center px-6 py-12">
+                            <BookOpen size={36} className="mb-4" style={{ color: 'var(--accent-primary)', opacity: 0.5 }} />
+                            <h3 className="text-lg font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>
+                                {filtered.length === 0 && !search ? 'Create your first notebook' : 'Pick a notebook'}
+                            </h3>
+                            <p className="text-sm max-w-md text-center leading-relaxed mb-6" style={{ color: 'var(--text-tertiary)' }}>
+                                {filtered.length === 0 && !search
+                                    ? 'Upload PDFs, documents, and URLs — then chat with your sources and generate summaries, briefings, and more.'
+                                    : 'Click a notebook in the sidebar to preview it, or create a new one.'}
+                            </p>
+                            <button
+                                onClick={() => { setNewName(''); setSidebarFocusId('__new__'); }}
+                                className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold text-white"
+                                style={{ background: 'var(--accent-primary)' }}
+                            >
+                                <Plus size={15} /> New notebook
+                            </button>
+                        </div>
                     ) : (
-                        <div
-                            className="max-w-6xl mx-auto grid gap-5"
-                            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}
-                        >
-                            {filtered.map(nb => (
-                                <NotebookCard
-                                    key={nb.id}
-                                    nb={nb}
-                                    isActive={sidebarFocusId === nb.id}
-                                    renamingId={renamingId}
-                                    renameValue={renameValue}
-                                    setRenameValue={setRenameValue}
-                                    setRenamingId={setRenamingId}
-                                    onRename={handleRename}
-                                    onDelete={handleDelete}
-                                    onSelect={selectNotebook}
-                                    timeAgo={timeAgo}
-                                />
-                            ))}
+                        // ─── Focused notebook preview (Studio "editor pane" equivalent) ───
+                        <div className="flex flex-col h-full">
+                            {/* Header: icon tile + name + meta + actions */}
+                            <div className="flex items-center gap-3 px-6 pt-5 pb-4 border-b flex-shrink-0" style={{ borderColor: 'var(--border-subtle)' }}>
+                                <div className="w-12 h-12 rounded-xl border-[1.5px] flex items-center justify-center flex-shrink-0" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)' }}>
+                                    <BookOpen className="w-6 h-6" style={{ color: 'var(--brand-primary)' }} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    {renamingId === focusedNotebook.id ? (
+                                        <input
+                                            autoFocus
+                                            value={renameValue}
+                                            onChange={e => setRenameValue(e.target.value)}
+                                            onKeyDown={e => {
+                                                if (e.key === 'Enter') handleRename(focusedNotebook.id);
+                                                if (e.key === 'Escape') setRenamingId(null);
+                                            }}
+                                            onBlur={() => handleRename(focusedNotebook.id)}
+                                            className="w-full text-lg font-bold bg-transparent outline-none border-b-[1.5px] focus:border-[var(--accent-primary)]"
+                                            style={{ color: 'var(--text-primary)', borderColor: 'var(--border-subtle)' }}
+                                        />
+                                    ) : (
+                                        <h2
+                                            className="text-lg font-bold truncate cursor-text"
+                                            style={{ color: 'var(--text-primary)' }}
+                                            onDoubleClick={() => { setRenamingId(focusedNotebook.id); setRenameValue(focusedNotebook.name); }}
+                                            title="Double-click to rename"
+                                        >
+                                            {focusedNotebook.name}
+                                        </h2>
+                                    )}
+                                    <p className="text-xs mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
+                                        {(focusedNotebook.sourceCount || 0)} source{(focusedNotebook.sourceCount || 0) !== 1 ? 's' : ''}
+                                        {focusedNotebook.messageCount > 0 && ` · ${focusedNotebook.messageCount} message${focusedNotebook.messageCount !== 1 ? 's' : ''}`}
+                                        {' · '}Updated {timeAgo(focusedNotebook.updatedAt || focusedNotebook.createdAt)}
+                                    </p>
+                                </div>
+                                <div className="flex-shrink-0 flex items-center gap-2">
+                                    <button
+                                        onClick={() => { setRenamingId(focusedNotebook.id); setRenameValue(focusedNotebook.name); }}
+                                        title="Rename"
+                                        className="p-2 rounded-lg hover:bg-[var(--bg-tertiary)]"
+                                        style={{ color: 'var(--text-tertiary)' }}
+                                    >
+                                        <Pencil size={16} />
+                                    </button>
+                                    <button
+                                        onClick={() => handleDelete(focusedNotebook.id)}
+                                        title="Delete notebook"
+                                        className="p-2 rounded-lg hover:bg-red-500/10 hover:text-red-500"
+                                        style={{ color: 'var(--text-tertiary)' }}
+                                    >
+                                        <Trash2 size={16} />
+                                    </button>
+                                    <button
+                                        onClick={() => selectNotebook(focusedNotebook)}
+                                        className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold text-white"
+                                        style={{ background: 'var(--accent-primary)' }}
+                                    >
+                                        Open notebook <ChevronRight className="w-4 h-4" />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Body: preview + quick stats */}
+                            <div className="flex-1 overflow-auto px-6 py-6">
+                                <div className="max-w-3xl">
+                                    {/* Stats row */}
+                                    <div className="grid grid-cols-3 gap-3 mb-6">
+                                        <StatCard
+                                            label="Sources"
+                                            value={focusedNotebook.sourceCount || 0}
+                                            icon={FileText}
+                                        />
+                                        <StatCard
+                                            label="Messages"
+                                            value={focusedNotebook.messageCount || 0}
+                                            icon={ClipboardList}
+                                        />
+                                        <StatCard
+                                            label="Created"
+                                            value={new Date(focusedNotebook.createdAt).toLocaleDateString()}
+                                            icon={History}
+                                            small
+                                        />
+                                    </div>
+
+                                    {/* Preview */}
+                                    <div className="rounded-xl border-[1.5px] p-5" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
+                                        <div className="text-[11px] uppercase font-semibold tracking-wide mb-2" style={{ color: 'var(--text-tertiary)' }}>
+                                            Document preview
+                                        </div>
+                                        {focusedPreview ? (
+                                            <p className="text-sm leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--text-primary)' }}>
+                                                {focusedPreview}
+                                                {focusedPreview.length >= 480 && '…'}
+                                            </p>
+                                        ) : (
+                                            <p className="text-sm italic" style={{ color: 'var(--text-tertiary)' }}>
+                                                This notebook is empty. Open it to add sources and start writing.
+                                            </p>
+                                        )}
+                                    </div>
+
+                                    {/* Hint */}
+                                    <p className="mt-4 text-xs text-center" style={{ color: 'var(--text-tertiary)' }}>
+                                        Tip: double-click any notebook in the sidebar to open it directly.
+                                    </p>
+                                </div>
+                            </div>
                         </div>
                     )}
                 </section>
@@ -1485,6 +1609,28 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
             )}
 
 
+        </div>
+    );
+}
+
+/* ── StatCard — small stat tile for the notebook preview pane ─── */
+function StatCard({ label, value, icon: Icon, small = false }) {
+    return (
+        <div
+            className="rounded-xl border-[1.5px] px-4 py-3 flex items-center gap-3"
+            style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}
+        >
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0" style={{ background: 'var(--surface-1)' }}>
+                <Icon className="w-4 h-4" style={{ color: 'var(--brand-primary)' }} />
+            </div>
+            <div className="min-w-0">
+                <div className={`font-bold truncate ${small ? 'text-sm' : 'text-lg'}`} style={{ color: 'var(--text-primary)' }}>
+                    {value}
+                </div>
+                <div className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--text-tertiary)' }}>
+                    {label}
+                </div>
+            </div>
         </div>
     );
 }

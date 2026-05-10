@@ -16,8 +16,8 @@ const TYPE_META = {
     briefing_doc: { icon: Layers, label: 'Briefing Doc', color: '#3b82f6', group: 'Reports' },
     blog_post:    { icon: FileText, label: 'Blog Post', color: '#3b82f6', group: 'Reports' },
     faq:          { icon: HelpCircle, label: 'FAQ', color: '#3b82f6', group: 'Reports' },
-    mind_map:     { icon: Activity, label: 'Mind Map', color: '#8b5cf6', group: 'Visuals' },
-    data_table:   { icon: Table2, label: 'Data Table', color: '#8b5cf6', group: 'Visuals' },
+    mind_map:     { icon: Activity, label: 'Mind Map', color: '#10b981', group: 'Visuals' },
+    data_table:   { icon: Table2, label: 'Data Table', color: '#10b981', group: 'Visuals' },
 };
 
 function formatTime(ts) {

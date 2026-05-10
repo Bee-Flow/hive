@@ -1,8 +1,8 @@
 /**
  * MermaidBlock — Premium React component for rendering Mermaid diagrams.
- * 
+ *
  * Features:
- * - Rich indigo-violet theme with deep customization
+ * - Calm blue-teal theme aligned with Studio
  * - SVG post-processing: drop-shadows, rounded corners, glow effects
  * - Glassmorphism container with animated loading skeleton
  * - Fullscreen modal for large diagrams
@@ -23,42 +23,42 @@ const MERMAID_CONFIG = {
         darkMode: false,
         background: '#ffffff',
 
-        // Core palette — deep indigo-violet
-        primaryColor: '#eef2ff',
-        primaryTextColor: '#312e81',
-        primaryBorderColor: '#6366f1',
+        // Core palette — calm blue-teal (Studio-aligned)
+        primaryColor: '#eff6ff',
+        primaryTextColor: '#1e3a8a',
+        primaryBorderColor: '#3b82f6',
 
-        secondaryColor: '#f5f3ff',
-        secondaryTextColor: '#3b0764',
-        secondaryBorderColor: '#a78bfa',
+        secondaryColor: '#ecfdf5',
+        secondaryTextColor: '#064e3b',
+        secondaryBorderColor: '#34d399',
 
         tertiaryColor: '#f0fdf4',
         tertiaryTextColor: '#14532d',
         tertiaryBorderColor: '#86efac',
 
         // Edges & labels
-        lineColor: '#6366f1',
+        lineColor: '#3b82f6',
         textColor: '#1e293b',
         edgeLabelBackground: '#ffffff',
 
         // Flowchart nodes
-        mainBkg: '#eef2ff',
-        nodeBorder: '#6366f1',
-        nodeTextColor: '#312e81',
+        mainBkg: '#eff6ff',
+        nodeBorder: '#3b82f6',
+        nodeTextColor: '#1e3a8a',
 
         // Clusters / subgraphs
-        clusterBkg: '#faf5ff',
-        clusterBorder: '#c4b5fd',
+        clusterBkg: '#f0f9ff',
+        clusterBorder: '#7dd3fc',
 
         // Title
-        titleColor: '#312e81',
+        titleColor: '#1e3a8a',
 
         // Sequence diagram
-        actorTextColor: '#312e81',
-        actorBorder: '#6366f1',
-        actorBkg: '#eef2ff',
-        signalColor: '#4338ca',
-        labelBoxBkgColor: '#eef2ff',
+        actorTextColor: '#1e3a8a',
+        actorBorder: '#3b82f6',
+        actorBkg: '#eff6ff',
+        signalColor: '#1d4ed8',
+        labelBoxBkgColor: '#eff6ff',
 
         // Notes
         noteBkgColor: '#fffbeb',
@@ -117,7 +117,7 @@ function postProcessSVG(svgElement) {
         filter.setAttribute('width', '130%');
         filter.setAttribute('height', '140%');
         filter.innerHTML = `
-            <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="rgba(99, 102, 241, 0.15)" flood-opacity="1"/>
+            <feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="rgba(59, 130, 246, 0.15)" flood-opacity="1"/>
         `;
         defs.appendChild(filter);
     }
@@ -174,7 +174,7 @@ function postProcessSVG(svgElement) {
     const markers = svgElement.querySelectorAll('marker polygon, marker path');
     markers.forEach(el => {
         if (!el.style.fill || el.style.fill === '#333') {
-            el.style.fill = '#6366f1';
+            el.style.fill = '#3b82f6';
         }
     });
 
@@ -373,10 +373,10 @@ export default function MermaidBlock({ code, onCodeChange, editable = true }) {
                 display: 'flex', alignItems: 'center', gap: '4px',
                 padding: '4px 10px', borderRadius: '20px',
                 background: active
-                    ? 'rgba(99, 102, 241, 0.18)'
+                    ? 'rgba(59, 130, 246, 0.18)'
                     : 'rgba(255, 255, 255, 0.6)',
-                border: `1px solid ${active ? 'rgba(99, 102, 241, 0.3)' : 'rgba(0, 0, 0, 0.06)'}`,
-                color: active ? '#4f46e5' : '#64748b',
+                border: `1px solid ${active ? 'rgba(59, 130, 246, 0.3)' : 'rgba(0, 0, 0, 0.06)'}`,
+                color: active ? '#1d4ed8' : '#64748b',
                 cursor: 'pointer', fontSize: '11px', fontWeight: 600,
                 transition: 'all 0.2s ease',
                 backdropFilter: 'blur(8px)',
@@ -460,7 +460,7 @@ export default function MermaidBlock({ code, onCodeChange, editable = true }) {
                                 {/* Loading skeleton */}
                                 {!ready && (
                                     <div className="mermaid-skeleton">
-                                        <Loader2 size={20} className="mermaid-skeleton-spinner" style={{ animation: 'spin 1s linear infinite', color: '#a5b4fc' }} />
+                                        <Loader2 size={20} className="mermaid-skeleton-spinner" style={{ animation: 'spin 1s linear infinite', color: '#93c5fd' }} />
                                         <span style={{ fontSize: '12px', color: '#94a3b8', marginTop: '8px' }}>Rendering diagram…</span>
                                     </div>
                                 )}
@@ -485,7 +485,7 @@ export default function MermaidBlock({ code, onCodeChange, editable = true }) {
                     <div className="mermaid-fullscreen-modal" onClick={e => e.stopPropagation()}>
                         <div className="mermaid-fullscreen-header">
                             <span className="mermaid-block-title" style={{ color: '#f8fafc' }}>
-                                <span className="mermaid-block-icon" style={{ background: 'rgba(99,102,241,0.3)', color: '#a5b4fc' }}>
+                                <span className="mermaid-block-icon" style={{ background: 'rgba(59,130,246,0.3)', color: '#93c5fd' }}>
                                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                                         <path d="M3 3v18h18" /><path d="M18 17V9" /><path d="M13 17V5" /><path d="M8 17v-3" />
                                     </svg>

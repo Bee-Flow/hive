@@ -25,7 +25,7 @@ const STUDIO_GROUPS = [
         id: 'visuals',
         label: 'Visuals',
         icon: Activity,
-        color: '#8b5cf6', // purple
+        color: '#10b981', // emerald
         items: [
             { key: 'mind_map', icon: Activity, label: 'Mind Map', desc: 'Mermaid visualization of concepts' },
             { key: 'data_table', icon: Table2, label: 'Data Table', desc: 'Extract info into Markdown tables' },
@@ -53,13 +53,13 @@ function DropdownMenu({ group, onSelect, generating, disabled }) {
             <button
                 disabled={disabled}
                 onClick={() => setOpen(!open)}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border ${
-                    open ? 'bg-white border-gray-200 shadow-sm' : 'bg-transparent border-transparent hover:bg-black/5'
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-full text-sm font-medium transition-colors border ${
+                    open ? 'bg-[var(--bg-tertiary)] border-[var(--border-default)]' : 'bg-transparent border-transparent hover:bg-[var(--bg-tertiary)]'
                 } disabled:opacity-50 disabled:cursor-not-allowed`}
                 style={{ color: 'var(--text-primary)' }}
             >
                 {isGeneratingHere ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-purple-600" />
+                    <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--accent-primary)' }} />
                 ) : (
                     <GroupIcon className="w-4 h-4" style={{ color: group.color }} />
                 )}
@@ -68,9 +68,9 @@ function DropdownMenu({ group, onSelect, generating, disabled }) {
             </button>
 
             {open && !disabled && (
-                <div 
-                    className="absolute top-full left-0 mt-1 w-56 bg-white rounded-xl shadow-xl border overflow-hidden z-50 text-left"
-                    style={{ borderColor: 'var(--border-subtle)', animation: 'slideDown 0.2s ease-out' }}
+                <div
+                    className="absolute top-full left-0 mt-1 w-56 rounded-xl shadow-xl border overflow-hidden z-50 text-left"
+                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', animation: 'slideDown 0.2s ease-out' }}
                 >
                     <div className="p-1">
                         {group.items.map(item => {
@@ -84,7 +84,7 @@ function DropdownMenu({ group, onSelect, generating, disabled }) {
                                         setOpen(false);
                                         onSelect(item.key);
                                     }}
-                                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-black/5 flex items-start gap-3 disabled:opacity-50 transition-colors"
+                                    className="w-full text-left px-3 py-2 rounded-lg hover:bg-[var(--bg-tertiary)] flex items-start gap-3 disabled:opacity-50 transition-colors"
                                 >
                                     <div className="mt-0.5 p-1 rounded-md" style={{ background: `${group.color}15`, color: group.color }}>
                                         {isActive ? <Loader2 className="w-4 h-4 animate-spin" /> : <ItemIcon className="w-4 h-4" />}
@@ -109,7 +109,7 @@ export default function NotebookStudio({ onGenerate, generating, onExport, expor
 
     return (
         <div className="flex items-center space-x-2 pl-4 border-l ml-3" style={{ borderColor: 'var(--border-subtle)' }}>
-            <div className="flex items-center bg-[var(--bg-secondary)] rounded-xl border p-1" style={{ borderColor: 'var(--border-subtle)' }}>
+            <div className="flex items-center rounded-full border p-1 gap-0.5" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)' }}>
                 {groups.map(group => (
                     <DropdownMenu
                         key={group.id}
@@ -120,12 +120,13 @@ export default function NotebookStudio({ onGenerate, generating, onExport, expor
                     />
                 ))}
             </div>
-            
+
             <div className="flex items-center gap-1 pl-2">
                 <button
                     disabled={!hasContent || !!exporting}
                     onClick={() => onExport('pdf')}
-                    className="p-1.5 rounded-lg hover:bg-black/5 text-[var(--text-secondary)] disabled:opacity-40 transition-colors"
+                    className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] disabled:opacity-40 transition-colors"
+                    style={{ color: 'var(--text-secondary)' }}
                     title="Export PDF"
                 >
                     {exporting === 'pdf' ? <Loader2 className="w-4 h-4 text-red-500 animate-spin" /> : <FileDown className="w-4 h-4 text-red-500" />}
@@ -133,7 +134,8 @@ export default function NotebookStudio({ onGenerate, generating, onExport, expor
                 <button
                     disabled={!hasContent || !!exporting}
                     onClick={() => onExport('docx')}
-                    className="p-1.5 rounded-lg hover:bg-black/5 text-[var(--text-secondary)] disabled:opacity-40 transition-colors"
+                    className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] disabled:opacity-40 transition-colors"
+                    style={{ color: 'var(--text-secondary)' }}
                     title="Export Word"
                 >
                     {exporting === 'docx' ? <Loader2 className="w-4 h-4 text-blue-500 animate-spin" /> : <Download className="w-4 h-4 text-blue-500" />}
@@ -142,7 +144,8 @@ export default function NotebookStudio({ onGenerate, generating, onExport, expor
                     <button
                         disabled={!hasContent || !!exporting}
                         onClick={onSignRequest}
-                        className="p-1.5 rounded-lg hover:bg-black/5 text-[var(--text-secondary)] disabled:opacity-40 transition-colors"
+                        className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] disabled:opacity-40 transition-colors"
+                        style={{ color: 'var(--text-secondary)' }}
                         title="Send for Signing (SignRequest)"
                     >
                         <PenTool className="w-4 h-4 text-green-500" />
@@ -152,7 +155,8 @@ export default function NotebookStudio({ onGenerate, generating, onExport, expor
                     <button
                         disabled={!hasContent || !!exporting || !!nextcloudExporting}
                         onClick={onNextcloudExport}
-                        className="p-1.5 rounded-lg hover:bg-black/5 text-[var(--text-secondary)] disabled:opacity-40 transition-colors"
+                        className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] disabled:opacity-40 transition-colors"
+                        style={{ color: 'var(--text-secondary)' }}
                         title="Save PDF to Nextcloud"
                     >
                         {nextcloudExporting
@@ -164,14 +168,15 @@ export default function NotebookStudio({ onGenerate, generating, onExport, expor
                 {generationCount > 0 && (
                     <button
                         onClick={onHistoryClick}
-                        className="relative p-1.5 rounded-lg hover:bg-black/5 text-[var(--text-secondary)] transition-colors ml-1"
+                        className="relative p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors ml-1"
+                        style={{ color: 'var(--text-secondary)' }}
                         title={`${generationCount} generation${generationCount !== 1 ? 's' : ''} — click to view`}
                     >
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-purple-500">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ color: 'var(--accent-primary)' }}>
                             <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
                         </svg>
                         <span className="absolute -top-0.5 -right-0.5 min-w-[16px] h-4 flex items-center justify-center rounded-full text-[9px] font-bold text-white px-1"
-                            style={{ background: 'var(--brand-gradient)', boxShadow: 'var(--shadow-sm)' }}>
+                            style={{ background: 'var(--accent-primary)', boxShadow: 'var(--shadow-sm)' }}>
                             {generationCount}
                         </span>
                     </button>

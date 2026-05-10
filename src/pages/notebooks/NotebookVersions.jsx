@@ -68,7 +68,7 @@ function formatSize(chars) {
 
 const SUMMARY_STYLES = {
     'Auto-save':       { bg: 'rgba(100, 116, 139, 0.12)', color: 'rgb(148, 163, 184)', icon: Clock },
-    'AI edit':         { bg: 'rgba(139, 92, 246, 0.12)',   color: 'rgb(167, 139, 250)', icon: GitCompare },
+    'AI edit':         { bg: 'rgba(16, 185, 129, 0.12)',   color: 'rgb(52, 211, 153)',  icon: GitCompare },
     'Manual snapshot': { bg: 'rgba(59, 130, 246, 0.12)',   color: 'rgb(96, 165, 250)',  icon: Camera },
     'Before restore':  { bg: 'rgba(245, 158, 11, 0.12)',   color: 'rgb(251, 191, 36)',  icon: RotateCcw },
 };
@@ -220,10 +220,10 @@ export default function NotebookVersions({
                 >
                     <div className="flex items-center gap-2 flex-1">
                         <div
-                            className="w-8 h-8 rounded-xl flex items-center justify-center"
-                            style={{ background: 'rgba(139, 92, 246, 0.12)' }}
+                            className="w-10 h-10 rounded-xl border-[1.5px] flex items-center justify-center"
+                            style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)' }}
                         >
-                            <History className="w-4 h-4" style={{ color: 'rgb(167, 139, 250)' }} />
+                            <History className="w-4 h-4" style={{ color: 'var(--brand-primary)' }} />
                         </div>
                         <div>
                             <h2 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
@@ -249,8 +249,8 @@ export default function NotebookVersions({
                         <button
                             onClick={handleSnapshot}
                             disabled={creating}
-                            className="px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
-                            style={{ background: 'rgb(139, 92, 246)', color: 'white' }}
+                            className="px-4 py-1.5 rounded-full text-xs font-semibold flex items-center gap-1.5 transition-opacity disabled:opacity-50"
+                            style={{ background: 'var(--accent-primary)', color: 'white' }}
                         >
                             {creating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
                             Snapshot
