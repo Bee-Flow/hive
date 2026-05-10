@@ -1,25 +1,6 @@
 import React from 'react';
 import { BookOpen, Pencil, Trash2, ChevronRight, FileText } from 'lucide-react';
 
-const COVER_SWATCHES = [
-    'linear-gradient(135deg, rgba(99,102,241,0.18), rgba(139,92,246,0.14))',
-    'linear-gradient(135deg, rgba(16,185,129,0.18), rgba(20,184,166,0.14))',
-    'linear-gradient(135deg, rgba(245,158,11,0.18), rgba(251,191,36,0.14))',
-    'linear-gradient(135deg, rgba(236,72,153,0.18), rgba(244,63,94,0.14))',
-    'linear-gradient(135deg, rgba(59,130,246,0.18), rgba(14,165,233,0.14))',
-    'linear-gradient(135deg, rgba(168,85,247,0.18), rgba(217,70,239,0.14))',
-    'linear-gradient(135deg, rgba(107,114,128,0.18), rgba(156,163,175,0.14))',
-    'linear-gradient(135deg, rgba(14,165,233,0.18), rgba(6,182,212,0.14))',
-];
-
-function hashIndex(str, mod) {
-    let h = 0;
-    for (let i = 0; i < (str || '').length; i++) {
-        h = (h * 31 + str.charCodeAt(i)) >>> 0;
-    }
-    return h % mod;
-}
-
 function stripHtml(html) {
     if (!html) return '';
     if (typeof document === 'undefined') return '';
@@ -28,27 +9,30 @@ function stripHtml(html) {
     return (tmp.textContent || tmp.innerText || '').replace(/\s+/g, ' ').trim();
 }
 
-function NotebookCard({ nb, renamingId, renameValue, setRenameValue, setRenamingId, onRename, onDelete, onSelect, timeAgo }) {
-    const coverGradient = COVER_SWATCHES[hashIndex(String(nb.id || nb.name), COVER_SWATCHES.length)];
+function NotebookCard({ nb, renamingId, renameValue, setRenameValue, setRenamingId, onRename, onDelete, onSelect, timeAgo, isActive }) {
     const preview = nb.preview || stripHtml(nb.documentContent).slice(0, 140);
     const sourceCount = nb.sourceCount || 0;
     const messageCount = nb.messageCount || 0;
 
     return (
         <div
+            data-notebook-id={nb.id}
             onClick={() => onSelect(nb)}
             className="group relative overflow-hidden cursor-pointer flex flex-col border transition-all"
             style={{
                 background: 'var(--surface-2)',
-                borderColor: 'var(--border-subtle)',
+                borderColor: isActive ? 'var(--accent-primary)' : 'var(--border-subtle)',
                 borderRadius: 'var(--radius-lg)',
                 boxShadow: 'var(--shadow-card)',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.boxShadow = 'var(--shadow-card-hover)'; e.currentTarget.style.borderColor = 'var(--border-default)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'var(--shadow-card)'; e.currentTarget.style.borderColor = 'var(--border-subtle)'; }}
+            onMouseEnter={(e) => { e.currentTarget.style.boxShadow = 'var(--shadow-card-hover)'; if (!isActive) e.currentTarget.style.borderColor = 'var(--border-default)'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.boxShadow = 'var(--shadow-card)'; if (!isActive) e.currentTarget.style.borderColor = 'var(--border-subtle)'; }}
         >
-            {/* Cover band */}
-            <div className="relative h-14 flex items-center px-4" style={{ background: coverGradient }}>
+            {/* Neutral header strip — Studio-aligned, no per-card colour */}
+            <div
+                className="relative h-12 flex items-center px-4 border-b"
+                style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}
+            >
                 <div
                     className="w-9 h-9 rounded-xl flex items-center justify-center"
                     style={{ background: 'var(--surface-1)', boxShadow: 'var(--shadow-sm)' }}
@@ -56,7 +40,7 @@ function NotebookCard({ nb, renamingId, renameValue, setRenameValue, setRenaming
                     <BookOpen style={{ color: 'var(--brand-primary)', width: 18, height: 18 }} />
                 </div>
                 <div
-                    className="absolute top-2 right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute top-1.5 right-2 flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={e => e.stopPropagation()}
                 >
                     <button

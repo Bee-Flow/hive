@@ -29,7 +29,7 @@ export const SOURCE_META = {
     docx:     { color: '#3b82f6', bg: 'rgba(59,130,246,0.1)',  label: 'Word',    Icon: FileText },
     xlsx:     { color: '#22c55e', bg: 'rgba(34,197,94,0.1)',   label: 'Excel',   Icon: Table2 },
     csv:      { color: '#22c55e', bg: 'rgba(34,197,94,0.1)',   label: 'CSV',     Icon: Table2 },
-    text:     { color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)', label: 'Text',    Icon: FileText },
+    text:     { color: '#10b981', bg: 'rgba(16,185,129,0.1)', label: 'Text',    Icon: FileText },
     url:      { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', label: 'URL',     Icon: Link2 },
     gdrive:   { color: '#4285f4', bg: 'rgba(66,133,244,0.1)', label: 'Drive',   Icon: File },
     onedrive: { color: '#0078d4', bg: 'rgba(0,120,212,0.1)',  label: 'OneDrive',Icon: File },
@@ -46,9 +46,9 @@ const shimmerStyle = {
 
 /* ── Button variants for add-source ─────────────────────────────── */
 const ADD_BUTTONS = [
-    { key: 'file',    label: 'File',    Icon: Upload,  accent: '#6366f1' },
+    { key: 'file',    label: 'File',    Icon: Upload,  accent: '#3b82f6' },
     { key: 'url',     label: 'URL',     Icon: Globe,   accent: '#f59e0b' },
-    { key: 'text',    label: 'Text',    Icon: Type,    accent: '#8b5cf6' },
+    { key: 'text',    label: 'Text',    Icon: Type,    accent: '#10b981' },
     { key: 'meeting', label: 'Notes',   Icon: Mic,     accent: '#ec4899' },
 ];
 
@@ -499,9 +499,9 @@ export default function NotebookSources({
 
             {/* ── Text Panel ── */}
             {activePanel === 'text' && (
-                <div className="shrink-0 mx-3 mb-2 rounded-xl border p-3 space-y-2" style={{ background: 'var(--bg-secondary)', borderColor: 'rgba(139,92,246,0.3)', animation: 'fadeSlideDown 0.18s ease-out' }}>
+                <div className="shrink-0 mx-3 mb-2 rounded-xl border p-3 space-y-2" style={{ background: 'var(--bg-secondary)', borderColor: 'rgba(16,185,129,0.3)', animation: 'fadeSlideDown 0.18s ease-out' }}>
                     <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: '#8b5cf6' }}>Paste Text</span>
+                        <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: '#10b981' }}>Paste Text</span>
                         <button onClick={() => setActivePanel(null)} className="p-0.5 rounded hover:bg-black/10 transition-colors">
                             <X className="w-3 h-3" style={{ color: 'var(--text-tertiary)' }} />
                         </button>
@@ -525,7 +525,7 @@ export default function NotebookSources({
                         onClick={submitText}
                         disabled={!textInput.trim()}
                         className="w-full py-1.5 rounded-lg text-[10px] font-bold transition-opacity disabled:opacity-40"
-                        style={{ background: '#8b5cf6', color: 'white' }}
+                        style={{ background: '#10b981', color: 'white' }}
                     >
                         Add Text
                     </button>

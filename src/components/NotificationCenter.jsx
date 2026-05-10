@@ -44,13 +44,16 @@ const TIME_GROUP_LABELS = {
 };
 
 /**
- * Notifications panel: a sidebar-style row that opens an inbox popover.
+ * Notifications panel: trigger + inbox popover.
  *
- * Renders as a full-width row (icon + label + unread badge) so it sits
- * unambiguously next to the user-profile row instead of competing with it
- * for clicks. The popover floats above the row.
+ * Two variants:
+ *  - 'row'  (default): full-width sidebar-style row with icon + label + badge.
+ *                      Popover floats above the trigger.
+ *  - 'icon'           : compact icon-only button (badge overlaid). Popover
+ *                       drops downward from the trigger. Use this when the
+ *                       trigger sits in a top bar.
  */
-export default function NotificationCenter() {
+export default function NotificationCenter({ variant = 'row' } = {}) {
     const [open, setOpen] = useState(false);
     const [notifications, setNotifications] = useState([]);
     const [unreadCount, setUnreadCount] = useState(0);
@@ -213,42 +216,75 @@ export default function NotificationCenter() {
         return groups;
     }, [filteredNotifications]);
 
+    const isIcon = variant === 'icon';
+
     return (
         <div ref={panelRef} style={{ position: 'relative' }}>
-            {/* Sidebar-style trigger row */}
-            <button
-                onClick={() => setOpen(o => !o)}
-                aria-label="Notifications"
-                title="Notifications"
-                className={`w-full flex items-center gap-2.5 px-3 h-9 rounded-lg transition-colors text-left ${open ? 'bg-[var(--item-active-bg)]' : 'hover:bg-[var(--item-hover-bg)]'}`}
-                data-testid="sidebar-notifications"
-            >
-                <Bell className={`w-4 h-4 ${open ? 'text-[var(--accent-primary)]' : 'text-[var(--text-tertiary)]'}`} strokeWidth={1.75} />
-                <span className={`text-[13px] ${open ? 'font-bold text-black' : 'text-black'}`}>
-                    Notifications
-                </span>
-                {unreadCount > 0 && (
-                    <span style={{
-                        marginLeft: 'auto',
-                        minWidth: 18, height: 18,
-                        borderRadius: 9, padding: '0 5px',
-                        background: 'linear-gradient(135deg, #ef4444, #dc2626)',
-                        color: '#fff',
-                        fontSize: 10, fontWeight: 700,
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        lineHeight: 1,
-                        boxShadow: '0 2px 4px rgba(220,38,38,0.3)',
-                    }}>
-                        {unreadCount > 99 ? '99+' : unreadCount}
+            {isIcon ? (
+                /* Compact icon-only trigger (sits in top bar) */
+                <button
+                    onClick={() => setOpen(o => !o)}
+                    aria-label="Notifications"
+                    title="Notifications"
+                    className={`relative p-1.5 rounded-lg transition-colors ${open ? 'bg-[var(--bg-tertiary)] text-[var(--accent-primary)]' : 'hover:bg-[var(--bg-tertiary)] text-[var(--text-tertiary)]'}`}
+                    data-testid="sidebar-notifications"
+                >
+                    <Bell className="w-[18px] h-[18px]" strokeWidth={1.75} />
+                    {unreadCount > 0 && (
+                        <span style={{
+                            position: 'absolute',
+                            top: 1, right: 1,
+                            minWidth: 14, height: 14,
+                            borderRadius: 7, padding: '0 3px',
+                            background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                            color: '#fff',
+                            fontSize: 9, fontWeight: 700,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            lineHeight: 1,
+                            boxShadow: '0 2px 4px rgba(220,38,38,0.3)',
+                        }}>
+                            {unreadCount > 9 ? '9+' : unreadCount}
+                        </span>
+                    )}
+                </button>
+            ) : (
+                /* Sidebar-style trigger row */
+                <button
+                    onClick={() => setOpen(o => !o)}
+                    aria-label="Notifications"
+                    title="Notifications"
+                    className={`w-full flex items-center gap-2.5 px-3 h-9 rounded-lg transition-colors text-left ${open ? 'bg-[var(--item-active-bg)]' : 'hover:bg-[var(--item-hover-bg)]'}`}
+                    data-testid="sidebar-notifications"
+                >
+                    <Bell className={`w-4 h-4 ${open ? 'text-[var(--accent-primary)]' : 'text-[var(--text-tertiary)]'}`} strokeWidth={1.75} />
+                    <span className={`text-[13px] ${open ? 'font-bold text-black' : 'text-black'}`}>
+                        Notifications
                     </span>
-                )}
-            </button>
+                    {unreadCount > 0 && (
+                        <span style={{
+                            marginLeft: 'auto',
+                            minWidth: 18, height: 18,
+                            borderRadius: 9, padding: '0 5px',
+                            background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+                            color: '#fff',
+                            fontSize: 10, fontWeight: 700,
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                            lineHeight: 1,
+                            boxShadow: '0 2px 4px rgba(220,38,38,0.3)',
+                        }}>
+                            {unreadCount > 99 ? '99+' : unreadCount}
+                        </span>
+                    )}
+                </button>
+            )}
 
             {/* Dropdown panel */}
             {open && (
                 <div style={{
-                    position: 'absolute', bottom: '100%', left: 0,
-                    marginBottom: 8,
+                    position: 'absolute',
+                    ...(isIcon
+                        ? { top: '100%', left: 0, marginTop: 8 }
+                        : { bottom: '100%', left: 0, marginBottom: 8 }),
                     width: 520,
                     maxHeight: 680,
                     background: 'var(--bg-card, #ffffff)',
@@ -257,7 +293,7 @@ export default function NotificationCenter() {
                     boxShadow: '0 20px 60px rgba(0,0,0,0.15), 0 4px 16px rgba(0,0,0,0.08)',
                     display: 'flex', flexDirection: 'column',
                     zIndex: 1000,
-                    animation: 'notifSlideUp 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
+                    animation: `${isIcon ? 'notifSlideDown' : 'notifSlideUp'} 0.2s cubic-bezier(0.16, 1, 0.3, 1)`,
                     overflow: 'hidden',
                 }}>
                     {/* Header */}
@@ -679,6 +715,10 @@ export default function NotificationCenter() {
             <style>{`
                 @keyframes notifSlideUp {
                     from { opacity: 0; transform: translateY(8px) scale(0.98); }
+                    to { opacity: 1; transform: translateY(0) scale(1); }
+                }
+                @keyframes notifSlideDown {
+                    from { opacity: 0; transform: translateY(-8px) scale(0.98); }
                     to { opacity: 1; transform: translateY(0) scale(1); }
                 }
                 @keyframes notifFadeIn {

@@ -75,6 +75,24 @@ export const authFetch = async (url, options = {}) => {
         !url.includes('/api/health') &&
         !url.includes('/api/languages/')
     ) {
+        // Loop breaker: if a 401 caused a reload within the last 30s, the
+        // reload didn't fix the underlying problem (bad JWT, wrong audience,
+        // unprovisioned user). A second reload would just spin forever and
+        // hide the actual broken endpoint. Suppress and let the caller see
+        // the 401.
+        const RELOAD_FLAG = 'bf_auth_reload_at';
+        const COOLDOWN_MS = 30_000;
+        let lastReload = 0;
+        try { lastReload = parseInt(sessionStorage.getItem(RELOAD_FLAG) || '0', 10) || 0; }
+        catch (_) { /* sessionStorage unavailable */ }
+
+        if (Date.now() - lastReload < COOLDOWN_MS) {
+            console.warn(`[authFetch] 401 on ${url} — suppressing reload (cooldown active)`);
+            return response;
+        }
+
+        try { sessionStorage.setItem(RELOAD_FLAG, String(Date.now())); }
+        catch (_) { /* sessionStorage unavailable */ }
         window.location.reload();
         return response;
     }

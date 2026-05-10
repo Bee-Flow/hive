@@ -664,14 +664,17 @@ const Sidebar = ({
                         <div className="flex items-center gap-2.5">
                             <img src="/bee-flow-logo.svg" alt="Bee Flow" className="w-[4.5rem] h-[4.5rem] rounded-xl object-cover" />
                         </div>
-                        <button
-                            onClick={toggleSidebar}
-                            className="p-1.5 hover:bg-[var(--bg-tertiary)] rounded-lg text-[var(--text-tertiary)] transition-colors"
-                            aria-label="Toggle sidebar"
-                            data-testid="toggle-sidebar"
-                        >
-                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M9 3v18" /></svg>
-                        </button>
+                        <div className="flex items-center gap-1">
+                            <NotificationCenter variant="icon" />
+                            <button
+                                onClick={toggleSidebar}
+                                className="p-1.5 hover:bg-[var(--bg-tertiary)] rounded-lg text-[var(--text-tertiary)] transition-colors"
+                                aria-label="Toggle sidebar"
+                                data-testid="toggle-sidebar"
+                            >
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect width="18" height="18" x="3" y="3" rx="2" /><path d="M9 3v18" /></svg>
+                            </button>
+                        </div>
                     </>
                 ) : (
                     <button
@@ -888,13 +891,6 @@ const Sidebar = ({
             </div>
 
             </div>{/* ── End scrollable middle region ── */}
-
-            {/* ── Notifications row (own click target, separated from profile) ── */}
-            {isOpen && (
-                <div className="flex-shrink-0 px-1.5 pt-1.5 pb-0.5 border-t border-[var(--border-subtle)]">
-                    <NotificationCenter />
-                </div>
-            )}
 
             {/* ── Account footer ── */}
             <div className={`flex-shrink-0 mt-auto relative ${isOpen ? 'border-t border-[var(--border-subtle)]' : 'flex justify-center flex-shrink-0 border-t border-[var(--border-subtle)]'}`} ref={profileRef}>

@@ -93,7 +93,7 @@ const SOURCE_META = {
     docx:     { icon: '📝', color: '#3b82f6', label: 'Word' },
     xlsx:     { icon: '📊', color: '#22c55e', label: 'Excel' },
     csv:      { icon: '📊', color: '#22c55e', label: 'CSV' },
-    text:     { icon: '📋', color: '#8b5cf6', label: 'Text' },
+    text:     { icon: '📋', color: '#10b981', label: 'Text' },
     url:      { icon: '🌐', color: '#f59e0b', label: 'URL' },
     gdrive:   { icon: '🔵', color: '#4285f4', label: 'Drive' },
     onedrive: { icon: '☁️', color: '#0078d4', label: 'OneDrive' },
@@ -154,6 +154,8 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     const [renamingId, setRenamingId] = useState(null);
     const [renameValue, setRenameValue] = useState('');
     const [dragOver, setDragOver] = useState(false);
+    const [pendingDelete, setPendingDelete] = useState(null); // notebook pending delete confirmation
+    const [sidebarFocusId, setSidebarFocusId] = useState(null); // sidebar-focused notebook in list view
 
     // SignRequest modal state
     const [signModalOpen, setSignModalOpen] = useState(false);
@@ -857,13 +859,23 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     };
 
     /* ── Delete notebook ─────────────────────────────────────── */
-    const handleDelete = async (id) => {
-        if (!confirm('Delete this notebook and all its sources?')) return;
+    // Opens the Studio-style confirmation modal. The actual delete runs in
+    // confirmDeleteNotebook below — separated so the modal pattern matches
+    // SkillsStudio exactly.
+    const handleDelete = (id) => {
+        const nb = notebooks.find(n => n.id === id);
+        if (nb) setPendingDelete(nb);
+    };
+
+    const confirmDeleteNotebook = async () => {
+        const nb = pendingDelete;
+        if (!nb?.id) return;
         try {
-            await api(`/${id}`, { method: 'DELETE' });
-            if (selected?.id === id) { setSelected(null); setSources([]); }
+            await api(`/${nb.id}`, { method: 'DELETE' });
+            if (selected?.id === nb.id) { setSelected(null); setSources([]); }
             fetchNotebooks();
-        } catch (e) { setError(e.message); }
+            setPendingDelete(null);
+        } catch (e) { setError(e.message); setPendingDelete(null); }
     };
 
     /* ── Rename notebook ─────────────────────────────────────── */
@@ -989,8 +1001,8 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                     accept=".pdf,.doc,.docx,.txt,.md,.csv,.xlsx" 
                 />
                 
-                {/* ── Header ── */}
-                <div className="shrink-0 px-5 py-3 border-b flex items-center gap-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--surface-1)' }}>
+                {/* ── Header (Studio-aligned: icon tile + title + subtitle + status) ── */}
+                <div className="shrink-0 flex items-center gap-3 px-5 py-3 border-b" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
                     {/* Back */}
                     <button
                         onClick={() => { setSelected(null); setSources([]); setChatMessages([]); setDocumentContent(''); }}
@@ -1000,62 +1012,72 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                         <ArrowLeft className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
                     </button>
 
+                    {/* Icon tile (Studio pattern) */}
+                    <div
+                        className="w-10 h-10 rounded-xl border-[1.5px] flex items-center justify-center shrink-0"
+                        style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)' }}
+                    >
+                        <BookOpen className="w-5 h-5" style={{ color: 'var(--brand-primary)' }} />
+                    </div>
+
                     {/* Title + meta */}
                     <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                            <h2 className="text-[15px] font-semibold truncate" style={{ color: 'var(--text-primary)' }} title={selected.name}>
-                                {selected.name}
-                            </h2>
-                            {saveState === 'saving' && (
-                                <span className="flex items-center gap-1 text-[10px] shrink-0" style={{ color: 'var(--text-muted)' }}>
-                                    <Loader2 className="w-3 h-3 animate-spin" />Saving…
-                                </span>
-                            )}
-                            {saveState === 'error' && (
-                                <button
-                                    onClick={() => pendingContentRef.current && handleDocSave(pendingContentRef.current)}
-                                    className="flex items-center gap-1 text-[10px] text-red-500 hover:underline shrink-0"
-                                    title="Click to retry"
-                                >
-                                    <AlertCircle className="w-3 h-3" />Save failed — retry
-                                </button>
-                            )}
-                            {saveState === 'idle' && lastSavedAt && (Date.now() - lastSavedAt < 4000) && (
-                                <span className="flex items-center gap-1 text-[10px] shrink-0" style={{ color: 'var(--text-muted)' }}>
-                                    <CheckCircle2 className="w-3 h-3" />Saved
-                                </span>
-                            )}
-                        </div>
-                        <p className="text-[11px] mt-0.5 truncate" style={{ color: 'var(--text-muted)' }}>
+                        <h2 className="text-base font-bold truncate" style={{ color: 'var(--text-primary)' }} title={selected.name}>
+                            {selected.name}
+                        </h2>
+                        <p className="text-[11px] truncate mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
                             {sources.length} source{sources.length !== 1 ? 's' : ''} · {totalWords.toLocaleString()} words · Created {timeAgo(selected.createdAt)}
                         </p>
                     </div>
 
+                    {/* Save state */}
+                    <div className="shrink-0 flex items-center">
+                        {saveState === 'saving' && (
+                            <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                                <Loader2 className="w-3 h-3 animate-spin" />Saving…
+                            </span>
+                        )}
+                        {saveState === 'error' && (
+                            <button
+                                onClick={() => pendingContentRef.current && handleDocSave(pendingContentRef.current)}
+                                className="flex items-center gap-1 text-xs text-red-500 hover:underline"
+                                title="Click to retry"
+                            >
+                                <AlertCircle className="w-3 h-3" />Save failed — retry
+                            </button>
+                        )}
+                        {saveState === 'idle' && lastSavedAt && (Date.now() - lastSavedAt < 4000) && (
+                            <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-tertiary)' }}>
+                                <CheckCircle2 className="w-3 h-3" />Saved
+                            </span>
+                        )}
+                    </div>
+
                     {/* Layout toggles */}
-                    <div className="flex items-center gap-0.5 shrink-0 pr-2 mr-1 border-r" style={{ borderColor: 'var(--border-subtle)' }}>
+                    <div className="flex items-center gap-0.5 shrink-0 pl-2 ml-1 border-l" style={{ borderColor: 'var(--border-subtle)' }}>
                         <button
                             onClick={() => setLeftPanelOpen(p => !p)}
                             className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors"
                             title="Toggle Sources"
-                            style={{ background: leftPanelOpen ? 'var(--brand-gradient-soft)' : 'transparent' }}
+                            style={{ background: leftPanelOpen ? 'var(--bg-tertiary)' : 'transparent' }}
                         >
-                            <PanelLeft className="w-4 h-4" style={{ color: leftPanelOpen ? 'var(--brand-primary)' : 'var(--text-secondary)' }} />
+                            <PanelLeft className="w-4 h-4" style={{ color: leftPanelOpen ? 'var(--accent-primary)' : 'var(--text-secondary)' }} />
                         </button>
                         <button
                             onClick={() => setTocOpen(p => !p)}
                             className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors"
                             title={tocItems.length > 0 ? 'Toggle Table of Contents' : 'Add headings to enable Table of Contents'}
-                            style={{ background: tocOpen ? 'var(--brand-gradient-soft)' : 'transparent' }}
+                            style={{ background: tocOpen ? 'var(--bg-tertiary)' : 'transparent' }}
                         >
-                            <BookOpen className="w-4 h-4" style={{ color: tocOpen ? 'var(--brand-primary)' : tocItems.length > 0 ? 'var(--text-secondary)' : 'var(--text-tertiary)' }} />
+                            <BookOpen className="w-4 h-4" style={{ color: tocOpen ? 'var(--accent-primary)' : tocItems.length > 0 ? 'var(--text-secondary)' : 'var(--text-tertiary)' }} />
                         </button>
                         <button
                             onClick={() => setVersionsOpen(p => !p)}
                             className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors"
                             title="Version History"
-                            style={{ background: versionsOpen ? 'var(--brand-gradient-soft)' : 'transparent' }}
+                            style={{ background: versionsOpen ? 'var(--bg-tertiary)' : 'transparent' }}
                         >
-                            <History className="w-4 h-4" style={{ color: versionsOpen ? 'var(--brand-primary)' : 'var(--text-secondary)' }} />
+                            <History className="w-4 h-4" style={{ color: versionsOpen ? 'var(--accent-primary)' : 'var(--text-secondary)' }} />
                         </button>
                     </div>
 
@@ -1243,41 +1265,49 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     }
 
     /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
-    /* ── NOTEBOOK LIST VIEW ──────────────────────────────────── */
+    /* ── NOTEBOOK LIST VIEW (Studio-aligned: sidebar + grid) ── */
     /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+    // Scroll the matching card into view when the user clicks an item in the
+    // sidebar — gives the sidebar selection an in-grid affordance without
+    // forcing navigation.
+    const focusCardInGrid = (id) => {
+        setTimeout(() => {
+            const el = document.querySelector(`[data-notebook-id="${id}"]`);
+            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 0);
+    };
+
     return (
         <div className="h-full flex flex-col" style={{ background: 'var(--bg-primary)' }}>
-            <div className="shrink-0 px-6 py-4 border-b flex items-center gap-4" style={{ borderColor: 'var(--border-subtle)' }}>
+            {/* ─── Top header (Studio-style) ─── */}
+            <div className="shrink-0 px-6 py-3 border-b flex items-center gap-4" style={{ borderColor: 'var(--border-default)' }}>
                 <button onClick={onBack} className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors">
                     <ArrowLeft className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
                 </button>
-                <div className="flex-1">
+                <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                         <BookOpen className="w-5 h-5" style={{ color: 'var(--accent-primary)' }} />
                         <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Notebooks</h1>
                     </div>
                     <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Upload sources, chat with your documents, and generate content</p>
                 </div>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-2">
                     <div className="relative">
                         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
                         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Search notebooks..."
-                            className="pl-8 pr-3 py-1.5 text-sm rounded-lg border w-48 focus:outline-none focus:ring-1"
+                            className="pl-8 pr-3 py-1.5 text-sm rounded-lg border w-56 focus:outline-none focus:ring-1"
                             style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }} />
                     </div>
-                    <div className="flex gap-2">
-                        <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleCreate()}
-                            placeholder="New notebook name..."
-                            className="px-3 py-1.5 text-sm rounded-lg border w-48 focus:outline-none focus:ring-1"
-                            style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }} />
-                        <button onClick={handleCreate} disabled={!newName.trim() || creating}
-                            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white transition-all hover:scale-[1.02] disabled:opacity-40"
-                            style={{ background: 'var(--brand-gradient)' }}>
-                            {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
-                            Create
-                        </button>
-
-                    </div>
+                    <input value={newName} onChange={e => setNewName(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleCreate()}
+                        placeholder="New notebook name..."
+                        className="px-3 py-1.5 text-sm rounded-lg border w-52 focus:outline-none focus:ring-1"
+                        style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }} />
+                    <button onClick={handleCreate} disabled={!newName.trim() || creating}
+                        className="flex items-center gap-1.5 px-4 py-1.5 rounded-full text-sm font-semibold text-white transition-opacity disabled:opacity-40"
+                        style={{ background: 'var(--accent-primary)' }}>
+                        {creating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />}
+                        Create
+                    </button>
                 </div>
             </div>
 
@@ -1289,51 +1319,154 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                 </div>
             )}
 
-            <div className="flex-1 overflow-auto p-6">
-                {loading ? (
-                    <div className="flex items-center justify-center h-full">
-                        <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--text-muted)' }} />
+            {/* ─── Body: sidebar + grid ─── */}
+            <div className="flex-1 flex min-h-0 overflow-hidden">
+                {/* Sidebar */}
+                <aside className="w-64 flex-shrink-0 border-r flex flex-col" style={{ borderColor: 'var(--border-default)' }}>
+                    <div className="px-4 py-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-default)' }}>
+                        <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Notebooks</span>
+                        <button
+                            onClick={() => {
+                                const input = document.querySelector('input[placeholder="New notebook name..."]');
+                                input?.focus();
+                            }}
+                            title="Create notebook"
+                            className="p-1 rounded-lg hover:bg-[var(--bg-secondary)]"
+                            style={{ color: 'var(--text-tertiary)' }}
+                        >
+                            <Plus size={16} />
+                        </button>
                     </div>
-                ) : filtered.length === 0 ? (
-                    <div className="flex items-center justify-center h-full">
-                        <div className="text-center max-w-sm">
-                            <div
-                                className="w-20 h-20 mx-auto mb-4 rounded-2xl flex items-center justify-center"
-                                style={{ background: 'var(--brand-gradient-soft)' }}
-                            >
-                                <BookOpen className="w-10 h-10" style={{ color: 'var(--brand-primary)', opacity: 0.8 }} />
+                    <div className="flex-1 overflow-y-auto custom-scrollbar p-1.5">
+                        {loading && <div className="text-xs p-3" style={{ color: 'var(--text-tertiary)' }}>…</div>}
+                        {!loading && filtered.length === 0 && (
+                            <div className="text-xs p-4 text-center" style={{ color: 'var(--text-tertiary)' }}>
+                                {search ? 'No matches' : 'No notebooks yet'}
                             </div>
-                            <h3 className="text-base font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
-                                {search ? 'No notebooks found' : 'Create your first notebook'}
-                            </h3>
-                            <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
-                                {search ? 'Try a different search' : 'Upload PDFs, documents, and URLs — then chat with your sources and generate summaries, study guides, and more.'}
-                            </p>
+                        )}
+                        {filtered.map((nb) => {
+                            const isFocused = sidebarFocusId === nb.id;
+                            return (
+                                <div
+                                    key={nb.id}
+                                    onClick={() => { setSidebarFocusId(nb.id); focusCardInGrid(nb.id); }}
+                                    onDoubleClick={() => selectNotebook(nb)}
+                                    title="Click to focus · Double-click to open"
+                                    className={`group flex items-center gap-2 px-2 py-2 rounded-lg cursor-pointer text-sm transition ${isFocused
+                                        ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)]'
+                                        : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}
+                                >
+                                    <BookOpen className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--brand-primary)' }} />
+                                    <span className="truncate flex-1">{nb.name}</span>
+                                    <button
+                                        onClick={(e) => { e.stopPropagation(); handleDelete(nb.id); }}
+                                        title="Delete notebook"
+                                        className="opacity-0 group-hover:opacity-100 transition-opacity hover:text-red-500"
+                                        style={{ color: 'var(--text-tertiary)' }}
+                                    >
+                                        <Trash2 size={13} />
+                                    </button>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </aside>
+
+                {/* Grid content */}
+                <section className="flex-1 min-w-0 overflow-auto p-6">
+                    {loading ? (
+                        <div className="flex items-center justify-center h-full">
+                            <Loader2 className="w-8 h-8 animate-spin" style={{ color: 'var(--text-muted)' }} />
+                        </div>
+                    ) : filtered.length === 0 ? (
+                        <div className="flex items-center justify-center h-full">
+                            <div className="text-center max-w-sm">
+                                <BookOpen size={32} className="mb-4 mx-auto" style={{ color: 'var(--accent-primary)', opacity: 0.5 }} />
+                                <h3 className="text-base font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+                                    {search ? 'No notebooks found' : 'Create your first notebook'}
+                                </h3>
+                                <p className="text-sm mb-4 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                                    {search ? 'Try a different search' : 'Upload PDFs, documents, and URLs — then chat with your sources and generate summaries, briefings, and more.'}
+                                </p>
+                                {!search && (
+                                    <button
+                                        onClick={() => {
+                                            const input = document.querySelector('input[placeholder="New notebook name..."]');
+                                            input?.focus();
+                                        }}
+                                        className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold text-white mx-auto"
+                                        style={{ background: 'var(--accent-primary)' }}
+                                    >
+                                        <Plus size={15} /> Create notebook
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                    ) : (
+                        <div
+                            className="max-w-6xl mx-auto grid gap-5"
+                            style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}
+                        >
+                            {filtered.map(nb => (
+                                <NotebookCard
+                                    key={nb.id}
+                                    nb={nb}
+                                    isActive={sidebarFocusId === nb.id}
+                                    renamingId={renamingId}
+                                    renameValue={renameValue}
+                                    setRenameValue={setRenameValue}
+                                    setRenamingId={setRenamingId}
+                                    onRename={handleRename}
+                                    onDelete={handleDelete}
+                                    onSelect={selectNotebook}
+                                    timeAgo={timeAgo}
+                                />
+                            ))}
+                        </div>
+                    )}
+                </section>
+            </div>
+
+            <style>{`@keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+
+            {/* ─── Delete confirmation modal (Studio pattern) ─── */}
+            {pendingDelete && (
+                <div
+                    className="fixed inset-0 z-[1000] bg-black/50 flex items-center justify-center p-4"
+                    onClick={() => setPendingDelete(null)}
+                >
+                    <div
+                        className="rounded-xl w-full max-w-md shadow-xl border"
+                        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)' }}
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="flex items-start justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border-default)' }}>
+                            <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Delete notebook</div>
+                            <button onClick={() => setPendingDelete(null)} className="hover:text-[var(--text-primary)]" style={{ color: 'var(--text-tertiary)' }}>
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="px-5 py-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
+                            Delete <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>{pendingDelete.name}</span> and all its sources? This can't be undone.
+                        </div>
+                        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t" style={{ borderColor: 'var(--border-default)' }}>
+                            <button
+                                onClick={() => setPendingDelete(null)}
+                                className="px-4 py-2 rounded-full text-sm hover:bg-[var(--bg-secondary)]"
+                                style={{ color: 'var(--text-secondary)' }}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={confirmDeleteNotebook}
+                                className="px-4 py-2 rounded-full text-sm bg-red-500 text-white hover:bg-red-600"
+                            >
+                                Delete
+                            </button>
                         </div>
                     </div>
-                ) : (
-                    <div
-                        className="max-w-6xl mx-auto grid gap-5"
-                        style={{ gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))' }}
-                    >
-                        {filtered.map(nb => (
-                            <NotebookCard
-                                key={nb.id}
-                                nb={nb}
-                                renamingId={renamingId}
-                                renameValue={renameValue}
-                                setRenameValue={setRenameValue}
-                                setRenamingId={setRenamingId}
-                                onRename={handleRename}
-                                onDelete={handleDelete}
-                                onSelect={selectNotebook}
-                                timeAgo={timeAgo}
-                            />
-                        ))}
-                    </div>
-                )}
-            </div>
-            <style>{`@keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }`}</style>
+                </div>
+            )}
 
             {/* ═══ Version History Overlay ═══ */}
             {versionsOpen && selected && (
