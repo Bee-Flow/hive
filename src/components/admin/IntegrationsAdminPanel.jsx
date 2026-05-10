@@ -1254,7 +1254,8 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                                                 headers: { 'Content-Type': 'application/json' },
                                                 body: JSON.stringify({ searchProvider: val }),
                                             });
-                                            setMessage({ type: 'success', text: `Search provider set to ${val === 'disabled' ? 'Disabled' : val === 'bing' ? 'Azure Bing Search' : 'Self-hosted Agent Search'}` });
+                                            const labels = { 'disabled': 'Disabled', 'bing': 'Azure Bing Search', 'node-search': 'Cloud-only (Serper + provider APIs)', 'agent-search': 'Self-hosted Agent Search' };
+                                            setMessage({ type: 'success', text: `Search provider set to ${labels[val] || val}` });
                                         } catch (e) {
                                             setMessage({ type: 'error', text: 'Failed to save search provider' });
                                         }
@@ -1264,6 +1265,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                                     style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
                                 >
                                     <option value="agent-search">Self-hosted (Agent Search + Serper)</option>
+                                    <option value="node-search">Cloud-only (Serper + provider APIs)</option>
                                     <option value="bing">Azure Bing Web Search</option>
                                     <option value="disabled">Disabled</option>
                                 </select>
@@ -1341,10 +1343,9 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                             </>
                         )}
 
-                        {/* Self-hosted Agent Search Settings — only shown when agent-search is selected */}
+                        {/* Self-hosted Agent Search Service URL — only when agent-search */}
                         {searchProvider === 'agent-search' && (
                             <div className="space-y-4">
-                                {/* Agent Search Service URL — read-only from env var */}
                                 <div>
                                     <label className="text-sm font-medium flex items-center gap-2 mb-2" style={{ color: 'var(--text-primary)' }}>
                                         Agent Search Service URL
@@ -1357,6 +1358,19 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                                         Controlled by the <code>SEARCH_SERVICE_URL</code> environment variable on the server.
                                     </p>
                                 </div>
+                            </div>
+                        )}
+
+                        {/* Node-search hint — only when node-search */}
+                        {searchProvider === 'node-search' && (
+                            <div className="px-3 py-2.5 rounded-lg text-sm border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>
+                                No GPU service required — the search loop (SERP, page fetch, embed, rerank, cleanup) runs in this server using the providers configured under <strong>AI Configuratie → Web Search Inference</strong>.
+                            </div>
+                        )}
+
+                        {/* Serper API Key — shown for both agent-search and node-search */}
+                        {(searchProvider === 'agent-search' || searchProvider === 'node-search') && (
+                            <div className="space-y-4">
                                 <div className="pt-3 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
                                     <label className="text-sm font-medium flex items-center gap-2 mb-2" style={{ color: 'var(--text-primary)' }}>
                                         Serper.dev API Key
@@ -1406,7 +1420,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                             </div>
                         )}
 
-                        {searchProvider === 'agent-search' && (
+                        {(searchProvider === 'agent-search' || searchProvider === 'node-search') && (
                             <div className="mt-4 pt-3 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
                                 <label className="text-sm font-medium flex items-center gap-2 mb-3" style={{ color: 'var(--text-primary)' }}>
                                     <Settings className="w-4 h-4" /> Agent Search Default Options

@@ -40,7 +40,7 @@ const getFamily = (modelId) => {
 
 // Searchable model picker — overlay with filter chips. Same UX shape as
 // ChatModelTiersConfig.SearchableModelSelect.
-function SearchableModelSelect({ value, label, groups, onChange }) {
+function SearchableModelSelect({ value, label, groups, onChange, title = 'Select model', clearLabel = '— Disabled —' }) {
     const [open, setOpen] = useState(false);
     const [search, setSearch] = useState('');
     const [activeProvider, setActiveProvider] = useState(null);
@@ -109,7 +109,7 @@ function SearchableModelSelect({ value, label, groups, onChange }) {
                         style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', maxHeight: '80vh' }}>
                         <div className="flex items-center justify-between px-5 pt-5 pb-3">
                             <div>
-                                <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Select cleanup model</h3>
+                                <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</h3>
                                 <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                                     {totalResults} model{totalResults !== 1 ? 's' : ''}{search ? ` matching "${search}"` : ' available'}
                                 </p>
@@ -162,7 +162,7 @@ function SearchableModelSelect({ value, label, groups, onChange }) {
                             <button type="button" onClick={() => { onChange({ providerId: '', modelId: '' }); setOpen(false); }}
                                 className="w-full text-left px-4 py-2.5 rounded-lg text-sm hover:bg-white/5 transition-colors mb-1"
                                 style={{ color: 'var(--text-muted)' }}>
-                                — Disabled (skip cleanup) —
+                                {clearLabel}
                             </button>
 
                             {Object.entries(filteredGroups).map(([provName, models]) => (
@@ -222,9 +222,14 @@ const RERANK_METHODS = [
         desc: 'Reuses the query and document embeddings — no extra model. Works with whichever provider you picked for embeddings.',
     },
     {
+        id: 'provider',
+        label: 'Provider model',
+        desc: 'Use a configured chat model (LLM-as-rerank) to score results. Pick any model from a configured provider below.',
+    },
+    {
         id: 'local',
         label: 'Local cross-encoder',
-        desc: 'A vLLM-served reranker on your own GPU. Highest quality at the cost of dedicated hardware.',
+        desc: 'A vLLM-served reranker on your own GPU. Highest quality at the cost of dedicated hardware. Falls back to cosine when running cloud-only search.',
     },
     {
         id: 'disabled',
@@ -234,7 +239,11 @@ const RERANK_METHODS = [
 ];
 
 const WebSearchInferenceConfig = ({ allModels = [], onNavigateToTab }) => {
-    const [config, setConfig] = useState({ rerank: { method: 'cosine' }, cleanup: { providerId: '', modelId: '' } });
+    const [config, setConfig] = useState({
+        embed: { providerId: '', modelId: '' },
+        rerank: { method: 'cosine', providerId: '', modelId: '' },
+        cleanup: { providerId: '', modelId: '' },
+    });
     const [embedSummary, setEmbedSummary] = useState({ providerId: null, providerName: null, modelId: null });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
@@ -294,6 +303,15 @@ const WebSearchInferenceConfig = ({ allModels = [], onNavigateToTab }) => {
         cleanupGroups[key].push(m);
     });
 
+    // Embedding-only models — for the per-feature embed override.
+    const embedModels = (allModels || []).filter(m => getModelMeta(m.id)?.cat === 'Embedding');
+    const embedGroups = {};
+    embedModels.forEach(m => {
+        const key = m.providerName || 'Unknown';
+        if (!embedGroups[key]) embedGroups[key] = [];
+        embedGroups[key].push(m);
+    });
+
     const cleanupSelected = chatModels.find(m =>
         m.id === config.cleanup.modelId && m.providerId === config.cleanup.providerId
     );
@@ -301,11 +319,25 @@ const WebSearchInferenceConfig = ({ allModels = [], onNavigateToTab }) => {
         ? `${getDisplayName(cleanupSelected)} · ${cleanupSelected.providerName}`
         : '— Disabled (no cleanup model selected) —';
 
-    // Embed display — derived from the global Embeddings config
+    // Embed override — picker; empty falls back to global Embeddings config.
+    const embedOverride = embedModels.find(m =>
+        m.id === config.embed.modelId && m.providerId === config.embed.providerId
+    );
     const embedConfigured = !!(embedSummary.providerId && embedSummary.modelId);
-    const embedDisplayName = embedConfigured
-        ? (getModelMeta(embedSummary.modelId)?.name || embedSummary.modelId)
+    const embedFallbackName = embedConfigured
+        ? `${getModelMeta(embedSummary.modelId)?.name || embedSummary.modelId} · ${embedSummary.providerName || embedSummary.providerId}`
         : null;
+    const embedLabel = embedOverride
+        ? `${getDisplayName(embedOverride)} · ${embedOverride.providerName}`
+        : (embedFallbackName ? `Inherit global · ${embedFallbackName}` : 'Inherit global · (none configured)');
+
+    // Rerank model picker — only relevant when method='provider'.
+    const rerankSelected = chatModels.find(m =>
+        m.id === config.rerank.modelId && m.providerId === config.rerank.providerId
+    );
+    const rerankLabel = rerankSelected
+        ? `${getDisplayName(rerankSelected)} · ${rerankSelected.providerName}`
+        : '— Pick a model —';
 
     return (
         <div className="p-6 rounded-xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
@@ -323,13 +355,13 @@ const WebSearchInferenceConfig = ({ allModels = [], onNavigateToTab }) => {
             )}
 
             <div className="space-y-4">
-                {/* ── Embeddings (read-only) ────────────────────────── */}
+                {/* ── Embeddings (per-feature picker; empty -> inherit global) ── */}
                 <div className="rounded-xl border p-4" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)' }}>
-                    <div className="flex items-center justify-between gap-4">
+                    <div className="flex items-center justify-between gap-4 mb-3">
                         <div className="flex-1">
                             <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Embeddings</div>
                             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                Vectorise queries and KB chunks for semantic search. Inherited from your global Embeddings settings.
+                                Vectorise queries and pages for semantic search. Pick a model to override, or leave on “Inherit global” to use the model from the Embeddings tab.
                             </p>
                         </div>
                         {onNavigateToTab && (
@@ -342,20 +374,19 @@ const WebSearchInferenceConfig = ({ allModels = [], onNavigateToTab }) => {
                             </button>
                         )}
                     </div>
-                    <div className="mt-3 px-3 py-2.5 rounded-lg border text-sm" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
-                        {embedConfigured ? (
-                            <span style={{ color: 'var(--text-primary)' }}>
-                                <span className="font-medium">{embedDisplayName}</span>
-                                <span className="text-xs ml-2" style={{ color: 'var(--text-muted)' }}>
-                                    via {embedSummary.providerName || embedSummary.providerId}
-                                </span>
-                            </span>
-                        ) : (
-                            <span style={{ color: 'var(--text-muted)' }}>
-                                No embedding model configured. Set one in the Embeddings tab to enable semantic search.
-                            </span>
-                        )}
-                    </div>
+                    <SearchableModelSelect
+                        value={config.embed}
+                        label={embedLabel}
+                        groups={embedGroups}
+                        title="Select embedding model"
+                        clearLabel="— Inherit from global Embeddings settings —"
+                        onChange={({ providerId, modelId }) => setConfig(prev => ({ ...prev, embed: { providerId, modelId } }))}
+                    />
+                    {Object.keys(embedGroups).length === 0 && (
+                        <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+                            No embedding models found in your configured providers — add a provider with embeddings (e.g. OpenAI, Mistral) or set one globally in the Embeddings tab.
+                        </p>
+                    )}
                 </div>
 
                 {/* ── Reranking ─────────────────────────────────────── */}
@@ -364,13 +395,18 @@ const WebSearchInferenceConfig = ({ allModels = [], onNavigateToTab }) => {
                     <p className="text-xs mt-0.5 mb-3" style={{ color: 'var(--text-muted)' }}>
                         Re-score search results to surface the most relevant. Provider-agnostic.
                     </p>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
                         {RERANK_METHODS.map(opt => {
                             const selected = config.rerank.method === opt.id;
                             return (
                                 <button
                                     key={opt.id}
-                                    onClick={() => setConfig(prev => ({ ...prev, rerank: { method: opt.id } }))}
+                                    onClick={() => setConfig(prev => ({
+                                        ...prev,
+                                        rerank: opt.id === 'provider'
+                                            ? { method: 'provider', providerId: prev.rerank.providerId, modelId: prev.rerank.modelId }
+                                            : { method: opt.id, providerId: '', modelId: '' },
+                                    }))}
                                     className="text-left p-3 rounded-lg border transition-all"
                                     style={{
                                         background: selected ? 'rgba(16, 185, 129, 0.1)' : 'var(--bg-secondary)',
@@ -391,6 +427,23 @@ const WebSearchInferenceConfig = ({ allModels = [], onNavigateToTab }) => {
                             );
                         })}
                     </div>
+                    {config.rerank.method === 'provider' && (
+                        <div className="mt-3">
+                            <SearchableModelSelect
+                                value={{ providerId: config.rerank.providerId, modelId: config.rerank.modelId }}
+                                label={rerankLabel}
+                                groups={cleanupGroups}
+                                title="Select rerank model"
+                                clearLabel="— Pick a model (required for provider rerank) —"
+                                onChange={({ providerId, modelId }) => setConfig(prev => ({ ...prev, rerank: { method: 'provider', providerId, modelId } }))}
+                            />
+                            {!config.rerank.modelId && (
+                                <p className="text-xs mt-1.5" style={{ color: 'var(--text-muted)' }}>
+                                    Pick a model — without one, “Provider model” falls back to cosine similarity at runtime.
+                                </p>
+                            )}
+                        </div>
+                    )}
                 </div>
 
                 {/* ── Cleanup ───────────────────────────────────────── */}
@@ -403,6 +456,8 @@ const WebSearchInferenceConfig = ({ allModels = [], onNavigateToTab }) => {
                         value={config.cleanup}
                         label={cleanupLabel}
                         groups={cleanupGroups}
+                        title="Select cleanup model"
+                        clearLabel="— Disabled (skip cleanup) —"
                         onChange={({ providerId, modelId }) => setConfig(prev => ({ ...prev, cleanup: { providerId, modelId } }))}
                     />
                     {Object.keys(cleanupGroups).length === 0 && (

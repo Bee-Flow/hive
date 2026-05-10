@@ -403,14 +403,6 @@ const EmbedChat = ({ agentId }) => {
                                 setMessages(prev => prev.map(m =>
                                     m.id === assistantMsgId ? { ...m, linkedInDrafts: [...(m.linkedInDrafts || []), { ...data, status: 'pending' }] } : m
                                 ));
-                            } else if (currentEvent === 'whatsapp_draft') {
-                                const draftKey = JSON.stringify({ to: data.to, message: data.message });
-                                setMessages(prev => prev.map(m => {
-                                    if (m.id !== assistantMsgId) return m;
-                                    const existing = m.whatsappDrafts || [];
-                                    if (existing.some(d => JSON.stringify({ to: d.to, message: d.message }) === draftKey)) return m;
-                                    return { ...m, whatsappDrafts: [...existing, { ...data, status: 'pending' }] };
-                                }));
                             } else if (currentEvent === 'contacts_draft') {
                                 const draftKey = JSON.stringify({ name: data.name, email: data.email, phone: data.phone });
                                 setMessages(prev => prev.map(m => {

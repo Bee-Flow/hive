@@ -635,17 +635,6 @@ export default function useChatEngine({
                 break;
             }
 
-            case 'whatsapp_draft': {
-                const draftKey = JSON.stringify({ to: data.to, message: data.message });
-                setMessages(prev => prev.map(m => {
-                    if (m.id !== assistantMsgId) return m;
-                    const existing = m.whatsappDrafts || [];
-                    if (existing.some(d => JSON.stringify({ to: d.to, message: d.message }) === draftKey)) return m;
-                    return { ...m, whatsappDrafts: [...existing, { ...data, status: 'pending' }] };
-                }));
-                break;
-            }
-
             case 'contacts_draft': {
                 const draftKey = JSON.stringify({ name: data.name, email: data.email, phone: data.phone });
                 setMessages(prev => prev.map(m => {

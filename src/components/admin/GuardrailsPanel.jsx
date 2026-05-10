@@ -818,10 +818,8 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                         {orgShieldEnabled && (
                                             <div className="space-y-8 animate-fadeIn">
                                                 {/* AI Content Moderation — only shown when Azure AI Content
-                                                    Safety is configured. Without Azure credentials Llama Guard
-                                                    would silently take over and the admin would think Azure was
-                                                    handling things; hiding the section keeps responsibility
-                                                    explicit. */}
+                                                    Safety is configured. Hiding the section keeps responsibility
+                                                    explicit when no provider credentials are present. */}
                                                 {hasAzureEndpoint && (
                                                 <>
                                                 <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
@@ -1193,12 +1191,12 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
 };
 
 // ----------------------------------------------------------------------
-// AI Moderation Config Component — Guard Service (Llama Guard) + Azure Content Safety
+// AI Moderation Config Component — Azure Content Safety
 // ----------------------------------------------------------------------
 const AIModerationConfig = () => {
     const { t } = useTranslation();
     const [config, setConfig] = useState({ enabled: false, threshold: 0.7 });
-    const [moderationProvider, setModerationProvider] = useState('llamaguard');
+    const [moderationProvider, setModerationProvider] = useState('azure');
     const [azureEndpoint, setAzureEndpoint] = useState('');
     const [azureKey, setAzureKey] = useState('');
     const [hasAzureEndpoint, setHasAzureEndpoint] = useState(false);
@@ -1259,7 +1257,8 @@ const AIModerationConfig = () => {
                         threshold: data.llamaGuardConfig.threshold || 0.7
                     });
                 }
-                setModerationProvider(data.moderationProvider || 'llamaguard');
+                // Llama Guard provider has been removed; always use Azure Content Safety.
+                setModerationProvider('azure');
                 setHasAzureEndpoint(data.hasAzureContentSafetyEndpoint || false);
                 setHasAzureKey(data.hasAzureContentSafetyKey || false);
                 setSeverityThreshold(data.azureContentSafetySeverityThreshold ?? 2);
@@ -1345,58 +1344,23 @@ const AIModerationConfig = () => {
                 <p className="text-sm text-muted">{t('admin.guard_mod_desc')}</p>
             </div>
 
-            {/* Provider Selector */}
+            {/* Provider info */}
             <div className="p-6 rounded-xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
                 <label className="block text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>Moderation Provider</label>
-                <div className="grid grid-cols-2 gap-3">
-                    <button
-                        onClick={() => setModerationProvider('llamaguard')}
-                        className={`p-4 rounded-xl border-2 text-left transition-all ${!isAzure
-                            ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/5 shadow-md'
-                            : 'border-[var(--border-default)] hover:border-[var(--border-subtle)] bg-white/5'}`}
-                    >
-                        <div className="flex items-center gap-3 mb-2">
-                            <span className="text-xl">🦙</span>
-                            <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Llama Guard</span>
-                        </div>
-                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Self-hosted • No data leaves your servers • 14 categories</p>
-                    </button>
-                    <button
-                        onClick={() => setModerationProvider('azure')}
-                        className={`p-4 rounded-xl border-2 text-left transition-all ${isAzure
-                            ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/5 shadow-md'
-                            : 'border-[var(--border-default)] hover:border-[var(--border-subtle)] bg-white/5'}`}
-                    >
-                        <div className="flex items-center gap-3 mb-2">
-                            <span className="text-xl">🔷</span>
-                            <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Azure AI Content Safety</span>
-                        </div>
-                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Cloud-based • Microsoft Azure • 4 categories with severity levels</p>
-                    </button>
+                <div className="p-4 rounded-xl border-2 border-[var(--accent-primary)] bg-[var(--accent-primary)]/5 shadow-md text-left">
+                    <div className="flex items-center gap-3 mb-2">
+                        <span className="text-xl">🔷</span>
+                        <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Azure AI Content Safety</span>
+                    </div>
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Cloud-based • Microsoft Azure • 4 categories with severity levels</p>
                 </div>
             </div>
 
             {/* Provider-Specific Config */}
             <div className="p-6 rounded-xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
 
-                {/* Header — different per provider */}
-                {!isAzure ? (
-                    <div className="flex items-center gap-4 mb-6">
-                        <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl" style={{ background: 'rgba(16, 185, 129, 0.15)' }}>🛡️</div>
-                        <div className="flex-1">
-                            <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>Guard Service</h3>
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                Powered by <code className="px-1.5 py-0.5 rounded text-xs" style={{ background: 'var(--bg-tertiary)' }}>Llama-Guard-3-1B</code> — self-hosted
-                            </p>
-                        </div>
-                        {guardHealth && (
-                            <div className={`flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium ${guardOnline ? 'bg-emerald-500/15 text-emerald-400' : 'bg-red-500/15 text-red-400'}`}>
-                                <span className={`w-2 h-2 rounded-full ${guardOnline ? 'bg-emerald-400' : 'bg-red-400'}`}></span>
-                                {guardOnline ? (guardFastOk ? 'Online' : 'Degraded') : 'Offline'}
-                            </div>
-                        )}
-                    </div>
-                ) : (
+                {/* Header — Azure Content Safety */}
+                {(
                     <div className="flex items-center gap-4 mb-6">
                         <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl" style={{ background: 'rgba(59, 130, 246, 0.15)' }}>🔷</div>
                         <div className="flex-1">
@@ -1649,7 +1613,7 @@ const AIModerationConfig = () => {
                         </>
                     ) : (
                         <>
-                            <strong style={{ color: 'var(--text-primary)' }}>Self-hosted:</strong> AI Moderation runs on your own infrastructure using <code className="text-xs px-1 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)' }}>Llama Guard</code>. No data leaves your servers and there are no per-token costs.
+                            <strong style={{ color: 'var(--text-primary)' }}>Cloud-based:</strong> AI Moderation runs on Azure Content Safety. Configure Azure credentials to enable.
                         </>
                     )}
                 </p>

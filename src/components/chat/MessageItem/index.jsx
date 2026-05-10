@@ -22,7 +22,6 @@ import TokenisedBadge from '../TokenisedBadge';
 import EmailDraftCard from './EmailDraftCard';
 import CalendarDraftCard from './CalendarDraftCard';
 import LinkedInDraftCard from './LinkedInDraftCard';
-import WhatsAppDraftCard from './WhatsAppDraftCard';
 import ContactsDraftCard from './ContactsDraftCard';
 import KeepDraftCard from './KeepDraftCard';
 
@@ -57,7 +56,6 @@ const MessageItem = ({
     const [emailDraftStatuses, setEmailDraftStatuses] = useState({});
     const [calendarDraftStatuses, setCalendarDraftStatuses] = useState({});
     const [linkedInDraftStatuses, setLinkedInDraftStatuses] = useState({});
-    const [whatsappDraftStatuses, setWhatsappDraftStatuses] = useState({});
     const [contactsDraftStatuses, setContactsDraftStatuses] = useState({});
     const [keepDraftStatuses, setKeepDraftStatuses] = useState({});
 
@@ -501,9 +499,6 @@ const MessageItem = ({
                     )}
                     {!isUser && msg.linkedInDrafts && (
                         <LinkedInDraftCard msg={msg} linkedInDraftStatuses={linkedInDraftStatuses} setLinkedInDraftStatuses={setLinkedInDraftStatuses} />
-                    )}
-                    {!isUser && msg.whatsappDrafts && (
-                        <WhatsAppDraftCard msg={msg} whatsappDraftStatuses={whatsappDraftStatuses} setWhatsappDraftStatuses={setWhatsappDraftStatuses} />
                     )}
                     {!isUser && msg.contactsDrafts && (
                         <ContactsDraftCard msg={msg} contactsDraftStatuses={contactsDraftStatuses} setContactsDraftStatuses={setContactsDraftStatuses} />

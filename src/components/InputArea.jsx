@@ -1115,7 +1115,6 @@ const InputArea = ({
                                                         case 'fireflies': setInput('List my recent meeting transcripts'); break;
                                                         case 'youtrack': setInput('Search my YouTrack issues'); break;
                                                         case 'gamma': setInput('Create a presentation about '); break;
-                                                        case 'whatsapp': setInput('List my recent WhatsApp chats'); break;
                                                         case 'outlook': setInput('Show my recent Outlook emails'); break;
                                                         case 'ms-calendar': setInput("What's on my calendar this week?"); break;
                                                         case 'onedrive': setInput('List my OneDrive files'); break;

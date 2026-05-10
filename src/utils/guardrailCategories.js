@@ -6,11 +6,11 @@
  *   - the end-user violation toast so "S5" becomes "Defamation"
  *   - the "What the end user sees" preview cards
  *
- * Keep the raw `id` stable — that's what the server stores and what Llama
- * Guard / Azure return. Only the `label` and `icon` are for humans.
+ * Keep the raw `id` stable — that's what the server stores and what
+ * Azure Content Safety mappings return. Only the `label` and `icon` are for humans.
  */
 
-// Llama Guard safety taxonomy (S1-S14). Source: meta-llama/Llama-Guard-3-8B card.
+// MLCommons-aligned safety taxonomy (S1-S14) used by the moderation pipeline.
 export const LLAMA_GUARD_CATEGORIES = [
     { id: 'S1',  label: 'Violent Crimes',            icon: '⚔️' },
     { id: 'S2',  label: 'Non-Violent Crimes',        icon: '⚠️' },
