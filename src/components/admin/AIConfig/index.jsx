@@ -14,7 +14,6 @@ import GoogleApiKeyCard from './ProviderCards/GoogleCard';
 import ElevenLabsApiKeyCard from './ProviderCards/ElevenLabsCard';
 import AzureConfigCard from './ProviderCards/AzureCard';
 import GoogleVertexConfigCard from './ProviderCards/GoogleVertexCard';
-import MiniMaxApiKeyCard from './ProviderCards/MiniMaxCard';
 import RerankerConfig from './RerankerConfig';
 import ChatModelTiersConfig from '../ChatModelTiersConfig';
 
@@ -119,7 +118,6 @@ const AIConfigPanel = () => {
         { name: 'ElevenLabs', component: ElevenLabsApiKeyCard },
         { name: 'Google Vertex', component: GoogleVertexConfigCard },
         { name: 'Azure', component: AzureConfigCard },
-        { name: 'MiniMax', component: MiniMaxApiKeyCard },
     ];
 
     return (
