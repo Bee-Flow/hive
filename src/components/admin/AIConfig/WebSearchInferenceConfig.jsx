@@ -222,13 +222,18 @@ const RERANK_METHODS = [
         desc: 'Reuses the query and document embeddings — no extra model. Works with whichever provider you picked for embeddings.',
     },
     {
+        id: 'cpu',
+        label: 'CPU cross-encoder',
+        desc: 'Runs a small bge-reranker-base model in this Node process via Transformers.js. ~280 MB RAM, no GPU, no API call. Best quality-per-resource for self-hosted setups.',
+    },
+    {
         id: 'provider',
         label: 'Provider model',
         desc: 'Use a configured chat model (LLM-as-rerank) to score results. Pick any model from a configured provider below.',
     },
     {
         id: 'local',
-        label: 'Local cross-encoder',
+        label: 'Local cross-encoder (GPU)',
         desc: 'A vLLM-served reranker on your own GPU. Highest quality at the cost of dedicated hardware. Falls back to cosine when running cloud-only search.',
     },
     {

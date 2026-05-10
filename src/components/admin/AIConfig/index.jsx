@@ -7,6 +7,7 @@ import DirectChatConfig from './DirectChatConfig';
 import TicketAssistantTiersConfig from './TicketAssistantTiersConfig';
 import WebSearchInferenceConfig from './WebSearchInferenceConfig';
 import LimitsConfig from './LimitsConfig';
+import EmbeddingsConfig from './EmbeddingsConfig';
 
 import MistralApiKeyCard from './ProviderCards/MistralCard';
 import OpenAIApiKeyCard from './ProviderCards/OpenAICard';
@@ -39,7 +40,7 @@ const AIConfigPanel = () => {
     }, []);
 
     useEffect(() => {
-        if (providers.length > 0 && (activeTab === 'providers' || activeTab === 'chatModels' || activeTab === 'webSearchInference')) {
+        if (providers.length > 0 && (activeTab === 'providers' || activeTab === 'chatModels' || activeTab === 'webSearchInference' || activeTab === 'embeddings')) {
             fetchAllModels();
         }
     }, [activeTab, providers]);
@@ -104,10 +105,11 @@ const AIConfigPanel = () => {
     const navItems = [
         { id: 'providers', label: t('admin.ai_api_keys'), icon: '🔑' },
         { id: 'chatModels', label: t('admin.ai_chat_models'), icon: '🗨️' },
+        { id: 'embeddings', label: t('admin.ai_embeddings', 'Embeddings'), icon: '🧬' },
         { id: 'directChat', label: t('admin.ai_direct_chat'), icon: '💬' },
         { id: 'ticketAssistantTiers', label: t('admin.ai_ticket_assistant_tiers', 'Ticket Assistant Models'), icon: '🎫' },
         { id: 'webSearchInference', label: t('admin.ai_web_search_inference', 'Web Search Inference'), icon: '🌐' },
-        { id: 'limits', label: t('admin.ai_limits', 'Limits'), icon: '⚙️' },
+        { id: 'limits', label: t('admin.ai_limits', 'Limits & Self-host'), icon: '⚙️' },
 
     ];
 
@@ -229,6 +231,11 @@ const AIConfigPanel = () => {
                     <ChatModelTiersConfig allModels={allModels} />
                 )}
 
+                {/* Embeddings Tab — global embedding provider + model picker */}
+                {activeTab === 'embeddings' && (
+                    <EmbeddingsConfig providers={providers} allModels={allModels} fetchAllModels={fetchAllModels} />
+                )}
+
                 {/* Direct Chat Tab — System Prompt only */}
                 {activeTab === 'directChat' && (
                     <DirectChatConfig />
@@ -241,12 +248,12 @@ const AIConfigPanel = () => {
 
                 {/* Web Search Inference Tab — embed inherits global, rerank method-only, cleanup uses chat-model picker */}
                 {activeTab === 'webSearchInference' && (
-                    <WebSearchInferenceConfig allModels={allModels} />
+                    <WebSearchInferenceConfig allModels={allModels} onNavigateToTab={setActiveTab} />
                 )}
 
                 {/* Limits Tab — runtime caps applied to chat surfaces */}
                 {activeTab === 'limits' && (
-                    <LimitsConfig />
+                    <LimitsConfig onNavigateToTab={setActiveTab} />
                 )}
 
             </div>

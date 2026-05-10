@@ -1649,9 +1649,9 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                                 badge: 'Self-hosted',
                                 emoji: '🏠',
                                 catalogId: 'integration.local',
-                                badgeColor: '#8b5cf6',
-                                desc: 'Fully private. Run Whisper on your own server — audio never leaves your infrastructure.',
-                                requires: 'Self-hosted server URL',
+                                badgeColor: '#10B981',
+                                desc: 'Fully private. Run Whisper on your own server — audio never leaves your infrastructure. For CPU-only voice capture (chat input, no GPU required), the in-process whisper.cpp path is used automatically.',
+                                requires: 'Self-hosted server URL (optional — CPU whisper.cpp runs without it)',
                                 ready: hasWhisperxUrl,
                             },
                         ].map((p) => (

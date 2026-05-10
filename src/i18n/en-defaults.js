@@ -28,6 +28,10 @@ const EN_DEFAULTS = {
     "admin.ai_direct_chat": "Direct Chat",
     "admin.ai_model_costs": "Model Costs",
     "admin.ai_configuration": "AI Configuration",
+    "admin.ai_ticket_assistant_tiers": "Ticket Assistant Models",
+    "admin.ai_web_search_inference": "Web Search Inference",
+    "admin.ai_limits": "Limits & Self-host",
+    "admin.ai_embeddings": "Embeddings",
 
     "admin.sec_users": "Users",
     "admin.sec_guardrails": "Guardrails",
