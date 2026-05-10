@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Users, UserPlus, Shield, Trash2, Edit2, Check, X, Plus, ChevronDown, ChevronRight, Mail, Clock, Send, Link2, AlertCircle, Search, Sparkles } from 'lucide-react';
+import { Users, UserPlus, Shield, Trash2, Edit2, Check, X, Plus, ChevronDown, ChevronRight, Mail, Clock, Send, Link2, AlertCircle, Search, Sparkles, Cloud } from 'lucide-react';
 import OrgCustomTiersPanel from './OrgCustomTiersPanel';
+import NextcloudSyncPanel from './NextcloudSyncPanel';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 import { useUrlTab } from '../../hooks/useUrlTab';
@@ -9,7 +10,7 @@ import { ORG_ROLES } from '../../config/orgRoles';
 // The three sub-tabs map to /app/org-settings/users/{list|groups|roles}.
 // The 'list' URL corresponds to the 'users' internal id so the URL segment
 // doesn't collide with the parent path (`.../users`).
-const ORG_USERS_SECTIONS = ['users', 'groups', 'roles', 'customTiers'];
+const ORG_USERS_SECTIONS = ['users', 'groups', 'roles', 'customTiers', 'sync'];
 const ORG_USERS_URL_ALIASES = { users: 'list' };
 
 // Skeleton loader
@@ -478,10 +479,12 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
         );
     }
 
+    const isNcOrg = !!user?.ncOrg?.instanceId;
     const sections = [
         { id: 'users', label: 'Users', icon: Users, count: orgUsers.length },
         { id: 'groups', label: 'Groups', icon: UserPlus, count: orgGroups.length },
         { id: 'roles', label: 'Roles', icon: Shield, count: orgRoles.length },
+        ...(isNcOrg ? [{ id: 'sync', label: 'Nextcloud Sync', icon: Cloud, count: null }] : []),
     ];
 
     return (
@@ -1335,6 +1338,11 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
             {/* ═══════════════ CUSTOM TIERS SECTION ═══════════════ */}
             {activeSection === 'customTiers' && (
                 <OrgCustomTiersPanel />
+            )}
+
+            {/* ═══════════════ NEXTCLOUD SYNC SECTION ═══════════════ */}
+            {activeSection === 'sync' && isNcOrg && (
+                <NextcloudSyncPanel user={user} />
             )}
         </div>
     );

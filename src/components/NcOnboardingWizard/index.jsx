@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Cloud, Users, Shield, CheckCircle2, ChevronRight, ChevronLeft, Loader2 } from 'lucide-react';
+import { Cloud, Users, Shield, CheckCircle2, ChevronRight, ChevronLeft, Loader2, Server, Tag, Star } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 
 /**
@@ -7,12 +7,14 @@ import { API_BASE, authFetch } from '../../utils/helpers';
  *
  * Mounted by App.jsx when /auth/user reports `ncOnboardingNeeded: true`
  * (org has nc_instance_id but nc_onboarding_completed_at is NULL and the
- * caller is the org admin). Four required steps. Submitting writes every
- * choice in one POST and flips the onboarding flag — only after that does
- * connectorJwt unblock auto-provisioning for everyone else.
+ * caller is the org admin). Submitting writes every choice in one POST and
+ * flips the onboarding flag — only after that does connectorJwt unblock
+ * auto-provisioning for everyone else.
  */
 
-const STEPS = ['welcome', 'sync', 'shield', 'done'];
+// 'subscription' is auto-skipped when deployment === 'self-hosted' (admin
+// running their own Bee Flow stack doesn't need a hosted plan).
+const STEPS = ['welcome', 'deployment', 'subscription', 'sync', 'shield', 'done'];
 
 // Categories the Local PII detector (Transformers.js, OpenAI Privacy Filter)
 // actually emits — see server/core/localPiiDetection.js LABEL_TO_CATEGORY.
@@ -39,6 +41,11 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState(null);
 
+    const [deploymentMode, setDeploymentMode] = useState('cloud');
+    const [selectedPlanId, setSelectedPlanId] = useState(null);
+    const [plans, setPlans] = useState([]);
+    const [plansLoading, setPlansLoading] = useState(true);
+
     const [syncMode, setSyncMode] = useState('mirror_all');
     const [syncGroups, setSyncGroups] = useState([]);
     const [excludedGroups, setExcludedGroups] = useState(['admin']);
@@ -59,11 +66,39 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
         return () => { cancelled = true; };
     }, [orgId]);
 
+    useEffect(() => {
+        let cancelled = false;
+        authFetch(`${API_BASE}/api/billing/offered-plans`).then(r => r.ok ? r.json() : { plans: [] }).then(j => {
+            if (cancelled) return;
+            const list = j.plans || [];
+            setPlans(list);
+            // Pre-select the nc_recommended plan if one exists, else the default.
+            const ncPick = list.find(p => p.ncRecommended) || list.find(p => p.isDefault) || list[0];
+            if (ncPick) setSelectedPlanId(ncPick.id);
+            setPlansLoading(false);
+        }).catch(() => { if (!cancelled) setPlansLoading(false); });
+        return () => { cancelled = true; };
+    }, []);
+
     const step = STEPS[stepIdx];
-    const next = () => setStepIdx(i => Math.min(i + 1, STEPS.length - 1));
-    const prev = () => setStepIdx(i => Math.max(i - 1, 0));
+
+    // Skip subscription step when admin chose self-hosted.
+    const skipNext = (idx, dir) => {
+        let i = idx;
+        while (i >= 0 && i < STEPS.length) {
+            if (STEPS[i] === 'subscription' && deploymentMode === 'self-hosted') {
+                i += dir;
+                continue;
+            }
+            return i;
+        }
+        return idx;
+    };
+    const next = () => setStepIdx(i => skipNext(Math.min(i + 1, STEPS.length - 1), +1));
+    const prev = () => setStepIdx(i => skipNext(Math.max(i - 1, 0), -1));
 
     const canAdvance = () => {
+        if (step === 'subscription' && plans.length > 0 && !selectedPlanId) return false;
         if (step === 'sync' && syncMode === 'selective_groups' && syncGroups.length === 0) return false;
         if (step === 'shield' && shieldEnabled && shieldCategories.length === 0) return false;
         return true;
@@ -82,6 +117,8 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
+                    deploymentMode,
+                    selectedPlanId: deploymentMode === 'cloud' ? (selectedPlanId || null) : null,
                     syncMode,
                     syncGroups: syncMode === 'selective_groups' ? syncGroups : [],
                     excludedGroups,
@@ -105,6 +142,129 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
         }
     };
 
+    // ── Step renderers ────────────────────────────────────────────────────
+    const renderDeployment = () => (
+        <div className="space-y-4">
+            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                How will Bee Flow run for your team?
+            </p>
+            {[
+                {
+                    v: 'cloud', t: 'Bee Flow Cloud', icon: Cloud,
+                    d: 'Hosted by Bee Flow B.V. on EU infrastructure. Zero ops — updates, backups and uptime are managed for you. Pick a subscription on the next step.',
+                },
+                {
+                    v: 'self-hosted', t: 'Self-hosted', icon: Server,
+                    d: 'Run the Bee Flow server on your own infrastructure. No subscription required for the Community tier. After finishing, redeploy this connector with BEEFLOW_API_BASE_URL pointing at your installation.',
+                },
+            ].map(opt => {
+                const Icon = opt.icon;
+                const active = deploymentMode === opt.v;
+                return (
+                    <button
+                        key={opt.v}
+                        type="button"
+                        onClick={() => setDeploymentMode(opt.v)}
+                        className="w-full flex items-start gap-3 p-4 rounded-xl border text-left"
+                        style={{
+                            borderColor: active ? 'var(--accent-primary)' : 'var(--border-subtle)',
+                            background: active ? 'var(--bg-tertiary)' : 'transparent',
+                        }}
+                    >
+                        <Icon className="w-5 h-5 mt-0.5" style={{ color: active ? 'var(--accent-primary)' : 'var(--text-secondary)' }} />
+                        <div className="flex-1">
+                            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{opt.t}</div>
+                            <div className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>{opt.d}</div>
+                        </div>
+                    </button>
+                );
+            })}
+        </div>
+    );
+
+    const renderSubscription = () => {
+        const fmtPrice = (p) => {
+            if (p.price == null || p.price === 0) return 'Free';
+            const sym = p.currency === 'USD' ? '$' : p.currency === 'GBP' ? '£' : '€';
+            return `${sym}${p.price}/${p.billingInterval === 'yearly' ? 'yr' : 'mo'}`;
+        };
+        return (
+            <div className="space-y-4">
+                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
+                    Pick a starting subscription. You can upgrade or cancel anytime under <span className="font-medium">Settings → Organisation → License & Usage</span>; nothing is charged from this wizard.
+                </p>
+                {plansLoading ? (
+                    <div className="flex justify-center py-8"><Loader2 className="w-5 h-5 animate-spin" /></div>
+                ) : plans.length === 0 ? (
+                    <div className="rounded-xl border p-4 text-sm" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                        No subscription plans are configured yet. Your administrator can set them up later — Bee Flow will start on the free Community tier in the meantime.
+                    </div>
+                ) : (
+                    <div className="space-y-2">
+                        {plans.map(p => {
+                            const active = selectedPlanId === p.id;
+                            return (
+                                <button
+                                    key={p.id}
+                                    type="button"
+                                    onClick={() => setSelectedPlanId(p.id)}
+                                    className="w-full text-left p-4 rounded-xl border relative"
+                                    style={{
+                                        borderColor: active ? 'var(--accent-primary)' : 'var(--border-subtle)',
+                                        background: active ? 'var(--bg-tertiary)' : 'transparent',
+                                    }}
+                                >
+                                    {p.ncRecommended && (
+                                        <span
+                                            className="absolute top-3 right-3 inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                                            style={{ background: '#0082C9', color: '#fff' }}
+                                        >
+                                            <Star className="w-2.5 h-2.5" /> Recommended for Nextcloud
+                                        </span>
+                                    )}
+                                    <div className="flex items-baseline justify-between gap-3 pr-32">
+                                        <div>
+                                            <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{p.name}</div>
+                                            {p.tagline && (
+                                                <div className="text-xs mt-0.5 inline-flex items-center gap-1" style={{ color: 'var(--text-secondary)' }}>
+                                                    <Tag className="w-3 h-3" /> {p.tagline}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="text-sm font-semibold whitespace-nowrap" style={{ color: 'var(--text-primary)' }}>
+                                            {fmtPrice(p)}
+                                            {p.trialDays > 0 && <span className="ml-2 text-[10px] font-medium" style={{ color: '#22c55e' }}>{p.trialDays}d trial</span>}
+                                        </div>
+                                    </div>
+                                    {p.description && (
+                                        <div className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>{p.description}</div>
+                                    )}
+                                    <div className="flex flex-wrap gap-1 mt-2">
+                                        {p.maxUsers != null && p.maxUsers > 0 && (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                                                Up to {p.maxUsers} users
+                                            </span>
+                                        )}
+                                        {p.maxAgents != null && p.maxAgents > 0 && (
+                                            <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                                                {p.maxAgents} agents
+                                            </span>
+                                        )}
+                                        {(p.allowedFeatures || []).slice(0, 3).map(f => (
+                                            <span key={f} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                                                {f}
+                                            </span>
+                                        ))}
+                                    </div>
+                                </button>
+                            );
+                        })}
+                    </div>
+                )}
+            </div>
+        );
+    };
+
     return (
         <div className="h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(160deg, var(--bg-primary) 0%, var(--bg-secondary) 50%, var(--bg-tertiary) 100%)' }}>
             <div className="w-full max-w-2xl">
@@ -117,6 +277,8 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
                         <div className="flex-1">
                             <h1 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
                                 {step === 'welcome' && `Welcome to Bee Flow${orgName ? ` for ${orgName}` : ''}`}
+                                {step === 'deployment' && 'Choose your deployment'}
+                                {step === 'subscription' && 'Pick your subscription'}
                                 {step === 'sync' && 'Nextcloud user sync'}
                                 {step === 'shield' && 'Privacy Shield'}
                                 {step === 'done' && 'You\'re ready'}
@@ -136,7 +298,7 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
                     {step === 'welcome' && (
                         <div className="space-y-4">
                             <p className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                                Bee Flow is now connected to your Nextcloud instance. We'll walk you through three quick decisions about how Bee Flow handles your team and their data.
+                                Bee Flow is now connected to your Nextcloud instance. We'll walk you through a few quick decisions about how Bee Flow runs and how it handles your team and their data.
                             </p>
                             <div className="rounded-xl border p-4 space-y-2 text-sm" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-tertiary)' }}>
                                 <div><span className="font-medium">Organisation:</span> {orgName || 'Nextcloud'}</div>
@@ -147,6 +309,9 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
                             </div>
                         </div>
                     )}
+
+                    {step === 'deployment' && renderDeployment()}
+                    {step === 'subscription' && renderSubscription()}
 
                     {step === 'sync' && (
                         <div className="space-y-4">
@@ -263,6 +428,10 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
                         <div className="space-y-4">
                             <p className="text-sm" style={{ color: 'var(--text-primary)' }}>Review your choices and finish setup. You can change any of this later under Settings → Organisation.</p>
                             <div className="rounded-xl border p-4 space-y-2 text-sm" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-tertiary)' }}>
+                                <div><span className="font-medium">Deployment:</span> {deploymentMode === 'cloud' ? 'Bee Flow Cloud' : 'Self-hosted'}</div>
+                                {deploymentMode === 'cloud' && selectedPlanId && (
+                                    <div><span className="font-medium">Subscription:</span> {plans.find(p => p.id === selectedPlanId)?.name || selectedPlanId}</div>
+                                )}
                                 <div><span className="font-medium">Sync mode:</span> {syncMode}{syncMode === 'selective_groups' ? ` (${syncGroups.length} groups)` : ''}</div>
                                 <div><span className="font-medium">Excluded groups:</span> {excludedGroups.length === 0 ? 'none' : excludedGroups.join(', ')}</div>
                                 <div><span className="font-medium">Default user status:</span> {newUserDefaultStatus}</div>

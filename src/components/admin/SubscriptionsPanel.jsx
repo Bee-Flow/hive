@@ -278,6 +278,8 @@ const PlanEditor = ({ plan, onSave, onCancel }) => {
         sort_order: plan?.sort_order ?? 0,
         is_public: plan?.is_public || false,
         plan_type: plan?.plan_type || 'organization',
+        nc_recommended: plan?.nc_recommended || false,
+        tagline: plan?.tagline || '',
     });
 
     const update = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
@@ -321,6 +323,10 @@ const PlanEditor = ({ plan, onSave, onCancel }) => {
                 <div style={{ marginBottom: '12px' }}>
                     <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>Plan Name *</label>
                     <input value={form.name} onChange={e => update('name', e.target.value)} placeholder="e.g. Pro, Enterprise" style={input} />
+                </div>
+                <div style={{ marginBottom: '12px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>Tagline <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>— short marketing line shown in onboarding cards</span></label>
+                    <input value={form.tagline} onChange={e => update('tagline', e.target.value)} placeholder="e.g. Best for Nextcloud teams" style={input} />
                 </div>
                 <div style={{ marginBottom: '16px' }}>
                     <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>Description</label>
@@ -395,6 +401,13 @@ const PlanEditor = ({ plan, onSave, onCancel }) => {
                         <span style={{ fontSize: '13px', color: 'var(--text-primary)' }}>
                             {form.is_public ? <Eye style={{ width: 14, height: 14, color: '#3b82f6', display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} /> : <EyeOff style={{ width: 14, height: 14, color: 'var(--text-muted)', display: 'inline', verticalAlign: 'middle', marginRight: '4px' }} />}
                             Visible on public pricing page
+                        </span>
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 12px', borderRadius: '8px', background: 'var(--bg-tertiary)', cursor: 'pointer' }}>
+                        <input type="checkbox" checked={form.nc_recommended} onChange={e => update('nc_recommended', e.target.checked)} style={{ accentColor: '#0082C9' }} />
+                        <span style={{ fontSize: '13px', color: 'var(--text-primary)' }}>
+                            <span style={{ display: 'inline-block', width: 14, height: 14, borderRadius: '3px', background: '#0082C9', marginRight: '4px', verticalAlign: 'middle' }} />
+                            Recommended for Nextcloud — featured in the App Store onboarding wizard (only one plan can carry this flag)
                         </span>
                     </label>
                 </div>
