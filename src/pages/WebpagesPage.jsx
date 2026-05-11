@@ -6,6 +6,7 @@ import {
 import { API_BASE, authFetch } from '../utils/helpers';
 import useChatEngine from '../hooks/useChatEngine';
 import WebpageIDE from './webpages/WebpageIDE';
+import WebpagePreview from './webpages/WebpagePreview';
 import downloadWebpageZip from '../utils/downloadWebpageZip';
 import computeWebpageDiff from '../utils/computeWebpageDiff';
 import scopedStorage from '../utils/scopedStorage';
@@ -53,6 +54,10 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
 
     const [webpages, setWebpages] = useState([]);
     const [selected, setSelected] = useState(null); // metadata row
+    // viewMode=true renders the sandboxed iframe only (read-only "open the page").
+    // viewMode=false renders the full IDE (chat + editor). Card-click opens view;
+    // the pencil opens the editor.
+    const [viewMode, setViewMode] = useState(true);
     const [sources, setSources] = useState([]);
     const [versions, setVersions] = useState([]);
     const [showVersions, setShowVersions] = useState(false);
@@ -371,10 +376,11 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
     useEffect(() => { if (canUseWebpages) fetchWebpages(); }, [fetchWebpages, canUseWebpages]);
 
     /* ── Load a webpage (deep-link or click) ─────────────────── */
-    const loadWebpage = useCallback(async (id) => {
+    const loadWebpage = useCallback(async (id, { edit = false } = {}) => {
         try {
             const { webpage, sources: srcs, files, chatMessages: persistedChat, extraFiles: extras } = await api(`/${id}`);
             setSelected(webpage);
+            setViewMode(!edit);
             setSources(srcs || []);
             const fHtml = files?.html || '', fCss = files?.css || '', fJs = files?.js || '';
             setHtml(fHtml);
@@ -762,7 +768,7 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                             {filteredWebpages.map(w => (
                                 <div key={w.id}
-                                     onClick={() => loadWebpage(w.id)}
+                                     onClick={() => loadWebpage(w.id, { edit: false })}
                                      className="group p-4 rounded-xl border hover:shadow-md cursor-pointer transition-all"
                                      style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}>
                                     <div className="flex items-start gap-2 mb-2">
@@ -783,7 +789,16 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                                             />
                                         ) : (
                                             <div className="flex-1 min-w-0">
-                                                <div className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
+                                                <div
+                                                    className="text-sm font-semibold truncate"
+                                                    style={{ color: 'var(--text-primary)' }}
+                                                    onDoubleClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setRenamingId(w.id);
+                                                        setRenameValue(w.name);
+                                                    }}
+                                                    title="Double-click to rename"
+                                                >
                                                     {w.name}
                                                 </div>
                                                 <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
@@ -792,8 +807,8 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                                             </div>
                                         )}
                                         <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
-                                            <button onClick={(e) => { e.stopPropagation(); setRenamingId(w.id); setRenameValue(w.name); }}
-                                                    className="p-1 rounded hover:bg-white/40" title="Rename">
+                                            <button onClick={(e) => { e.stopPropagation(); loadWebpage(w.id, { edit: true }); }}
+                                                    className="p-1 rounded hover:bg-white/40" title="Edit in IDE">
                                                 <Pencil className="w-3 h-3" style={{ color: 'var(--text-secondary)' }} />
                                             </button>
                                             <button onClick={(e) => { e.stopPropagation(); handleDelete(w.id); }}
@@ -827,6 +842,19 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                     <ArrowLeft className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
                 </button>
                 <span className="text-sm font-semibold truncate flex-1" style={{ color: 'var(--text-primary)' }}>{selected.name}</span>
+                {/* Toggle between read-only preview and the full IDE editor.
+                    Visible only to the owner — viewers always see the preview. */}
+                {selected.userId === user?.id && (
+                    <button
+                        onClick={() => setViewMode(v => !v)}
+                        className="p-1 rounded hover:bg-[var(--bg-secondary)]"
+                        title={viewMode ? 'Open editor' : 'Back to preview'}
+                    >
+                        {viewMode
+                            ? <Pencil className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+                            : <Globe className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />}
+                    </button>
+                )}
                 {selected.userId === user?.id && (
                     <PublishMenu
                         t={t}
@@ -845,8 +873,18 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                 )}
             </div>
 
-            {/* IDE shell — fills the rest of the height */}
+            {/* Body: sandboxed preview (view mode) OR full IDE (edit mode). */}
             <div className="flex-1 min-h-0">
+                {viewMode ? (
+                    <WebpagePreview
+                        webpageId={selected.id}
+                        html={html}
+                        css={css}
+                        js={js}
+                        extraFiles={extraFiles}
+                        extraContents={extraContents}
+                    />
+                ) : (
                 <WebpageIDE
                     selected={selected}
                     html={html} css={css} js={js}
@@ -886,6 +924,7 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                     onDownload={handleDownloadZip}
                     user={user}
                 />
+                )}
             </div>
 
             {/* Versions overlay */}
