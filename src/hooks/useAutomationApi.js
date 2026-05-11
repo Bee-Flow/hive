@@ -1,9 +1,16 @@
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { API_BASE, authFetch } from '../utils/helpers';
 
 /**
  * REST helpers for the automation builder. Thin wrapper over authFetch so
  * components don't have to repeat the URL prefix and JSON handshake.
+ *
+ * The returned object is memoised with useMemo so callers can use it as a
+ * stable useEffect dependency. Without this, each render produced a new
+ * object literal with new arrow-function members; consumers like
+ * VersionHistoryPanel and WebhookPanel keyed a reload callback on `api`,
+ * which then re-fired on every render and ran the browser out of sockets
+ * (ERR_INSUFFICIENT_RESOURCES).
  */
 export default function useAutomationApi() {
     const get = useCallback(async (path) => {
@@ -22,7 +29,7 @@ export default function useAutomationApi() {
         return r.json();
     }, []);
 
-    return {
+    return useMemo(() => ({
         listAutomations: () => get('/'),
         getAutomation: (id) => get(`/${id}`),
         createAutomation: (body) => send('POST', '/', body),
@@ -75,7 +82,7 @@ export default function useAutomationApi() {
         // so the builder can pre-fill via createAutomation.
         listTemplates: () => get('/templates'),
         getTemplate: (templateId) => get(`/templates/${templateId}`),
-    };
+    }), [get, send]);
 }
 
 async function safeText(r) {

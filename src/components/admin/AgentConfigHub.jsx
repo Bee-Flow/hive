@@ -5,7 +5,7 @@ import AgentDesigner from './AgentDesigner';
 
 /**
  * AgentConfigHub — Unified agent configuration page
- * Wraps all agent-type panels behind a compact left sidebar.
+ * Wraps all  agent-type panels behind a compact left sidebar.
  */
 const SECTIONS = [
     { id: 'chat', labelKey: 'admin.agents_chat', icon: Bot, color: '#6366f1' },

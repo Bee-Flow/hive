@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import Button from '../components/Button';
 import EditableText from '../components/EditableText';
 import SectionFrame from '../components/SectionFrame';
+import { inlineTextStyle } from './textStyle';
 
 const isPreview = () =>
     typeof window !== 'undefined' &&
@@ -32,12 +33,27 @@ export default function Header({ data }) {
     const logo       = data.logo || {};
     const brandText  = (logo.text !== undefined ? logo.text : data.logoText) || '';
     const initials   = (brandText || 'B').slice(0, 1).toUpperCase();
-    const fontSizePx = logo.fontSize === 'small'  ? 14
-                     : logo.fontSize === 'large'  ? 24
-                     : logo.fontSize === 'medium' ? 18 : undefined;
+    // Size: prefer the new numeric `titleSize` (px) from the chrome
+    // editor; fall back to the legacy t-shirt-size `fontSize` so blocks
+    // stored before the editor refresh still render at the user's
+    // previously-picked size.
+    const legacySizePx = logo.fontSize === 'small'  ? 14
+                       : logo.fontSize === 'large'  ? 24
+                       : logo.fontSize === 'medium' ? 18 : 0;
+    const effectiveSize = Number.isFinite(logo.titleSize) && logo.titleSize > 0
+        ? logo.titleSize
+        : legacySizePx;
     const brandTextStyle = {};
-    if (logo.textColor) brandTextStyle.color    = logo.textColor;
-    if (fontSizePx)     brandTextStyle.fontSize = `${fontSizePx}px`;
+    if (logo.textColor) brandTextStyle.color = logo.textColor;
+    if (effectiveSize)  brandTextStyle.fontSize = `${effectiveSize}px`;
+    // New: font family from the chrome editor's "Title font" picker.
+    // Quoted when it contains spaces; always falls back to the page's
+    // body stack so the page renders before Google Fonts has loaded.
+    if (typeof logo.titleFont === 'string' && logo.titleFont.trim()) {
+        const name = logo.titleFont.trim().replace(/"/g, '');
+        const quoted = /\s/.test(name) ? `"${name}"` : name;
+        brandTextStyle.fontFamily = `${quoted}, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
+    }
 
     // Nav is fully owned by the user via Site chrome → Nav links. Pages
     // no longer auto-merge into the nav — adding a page in the Pages
@@ -45,6 +61,10 @@ export default function Header({ data }) {
     // add an item with link kind = "Internal page".
     const navItems = Array.isArray(data.navLinks) ? data.navLinks : [];
     const activeSlug = data.activeSlug || '';
+    // Master nav-link style from Site chrome → Link style. Returns
+    // `undefined` when nothing is set so the inline-style attribute is
+    // simply not emitted (CSS file defaults still win).
+    const navLinkStyle = inlineTextStyle(data.navStyle);
     // A nav item is "active" when its href matches the slug of the page
     // currently being viewed. Page-kind links resolve to `/slug` (or `/`
     // for the homepage) via resolveLink / resolvePreviewHref, so a plain
@@ -95,6 +115,7 @@ export default function Header({ data }) {
                                         rel={link.rel}
                                         onClick={navHandler}
                                         className={isActive(link.href) ? 'active' : undefined}
+                                        style={navLinkStyle}
                                     >
                                         <EditableText path={`header.navLinks.${i}.label`} placeholder="Link">
                                             {link.label || ''}
@@ -110,6 +131,7 @@ export default function Header({ data }) {
                                         rel={link.rel}
                                         onClick={navHandler}
                                         className={isActive(link.href) ? 'active' : undefined}
+                                        style={navLinkStyle}
                                     >
                                         <EditableText path={`header.navLinks.${i}.label`} placeholder="Link">
                                             {link.label || ''}
@@ -124,6 +146,7 @@ export default function Header({ data }) {
                                                     rel={child.rel}
                                                     onClick={navHandler}
                                                     className={isActive(child.href) ? 'active' : undefined}
+                                                    style={navLinkStyle}
                                                 >
                                                     <EditableText
                                                         path={`header.navLinks.${i}.children.${j}.label`}
@@ -140,7 +163,17 @@ export default function Header({ data }) {
                         })}
                     </nav>
                     <div className="header-actions">
-                        {(data.ctas || []).map((cta, i) => (
+                        {(data.ctas || []).map((cta, i) => {
+                            // Per-button label styling. The Button component
+                            // owns the variant background / border / radius;
+                            // typography overrides ride on an inner span so
+                            // they don't fight the variant's color rules.
+                            const labelStyle = inlineTextStyle({
+                                fontFamily: cta.labelFont,
+                                fontSize:   cta.labelSize,
+                                color:      cta.labelColor,
+                            });
+                            return (
                             <Button
                                 key={cta.id || i}
                                 variant={cta.style || 'primary'}
@@ -148,11 +181,14 @@ export default function Header({ data }) {
                                 target={cta.target}
                                 rel={cta.rel}
                             >
-                                <EditableText path={`header.ctas.${i}.label`} placeholder="Button">
-                                    {cta.label || ''}
-                                </EditableText>
+                                <span style={labelStyle}>
+                                    <EditableText path={`header.ctas.${i}.label`} placeholder="Button">
+                                        {cta.label || ''}
+                                    </EditableText>
+                                </span>
                             </Button>
-                        ))}
+                            );
+                        })}
                         <button
                             type="button"
                             aria-label="Toggle menu"
@@ -176,6 +212,7 @@ export default function Header({ data }) {
                                     rel={link.rel}
                                     onClick={(e) => { navHandler(e); setMobileOpen(false); }}
                                     className={isActive(link.href) ? 'active' : undefined}
+                                    style={navLinkStyle}
                                 >
                                     {link.label}
                                 </a>
@@ -192,6 +229,7 @@ export default function Header({ data }) {
                                                 rel={child.rel}
                                                 onClick={(e) => { navHandler(e); setMobileOpen(false); }}
                                                 className={isActive(child.href) ? 'active' : undefined}
+                                                style={navLinkStyle}
                                             >
                                                 {child.label}
                                             </a>

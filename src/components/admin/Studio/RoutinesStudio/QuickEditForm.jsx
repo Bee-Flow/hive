@@ -142,6 +142,9 @@ export default function QuickEditForm({
     const { preset: schedulePreset, time: scheduleTime } = cronToPreset(trigger.schedule?.cron);
 
     const [catalog, setCatalog] = useState(null);
+    // Webpages the current user can target — owner + org/group-shared. Used
+    // by the picker that appears when the selected tool needs a webpageId.
+    const [webpages, setWebpages] = useState([]);
     // Whether the user has any Ticket Assistant connections. TA isn't part
     // of the tools catalog (it's a separate beta feature), so we probe the
     // dedicated connections endpoint to decide whether to show that
@@ -162,6 +165,14 @@ export default function QuickEditForm({
                 if (!alive) return;
                 const conns = Array.isArray(d) ? d : (d?.connections || []);
                 setHasTaConnections(conns.length > 0);
+            })
+            .catch(() => {});
+        authFetch(`${API_BASE}/api/webpages`)
+            .then(r => r.ok ? r.json() : null)
+            .then(d => {
+                if (!alive) return;
+                const list = Array.isArray(d?.webpages) ? d.webpages : [];
+                setWebpages(list);
             })
             .catch(() => {});
         return () => { alive = false; };
@@ -487,10 +498,38 @@ export default function QuickEditForm({
                             style={inputStyle()}
                         >
                             <option value="">— pick a tool —</option>
-                            {(catalog?.tools || []).map(t => (
+                            {(Array.isArray(catalog?.tools) && catalog.tools.length
+                                ? catalog.tools
+                                : (Array.isArray(catalog?.apps) ? catalog.apps : []).filter(a => a.available).flatMap(a => (a.actions || []).map(act => ({ name: act.name, label: `${a.label}: ${act.label || act.name}` })))
+                            ).map(t => (
                                 <option key={t.name || t.id} value={t.name || t.id}>{t.label || t.name || t.id}</option>
                             ))}
                         </select>
+                        {primary?.tool?.startsWith('webpage_') && primary.tool !== 'webpage_create' && primary.tool !== 'webpages_list' && (
+                            <div className="mt-2">
+                                <label className="block text-[12px] font-medium text-[var(--text-secondary)] mb-1">Webpage</label>
+                                <select
+                                    value={primary?.inputs?.webpageId?.value || ''}
+                                    onChange={(e) => {
+                                        const id = e.target.value;
+                                        const nextInputs = { ...(primary?.inputs || {}) };
+                                        if (id) nextInputs.webpageId = { kind: 'literal', value: id };
+                                        else delete nextInputs.webpageId;
+                                        updatePrimary({ inputs: nextInputs });
+                                    }}
+                                    className={inputClass()}
+                                    style={inputStyle()}
+                                >
+                                    <option value="">— pick a webpage —</option>
+                                    {webpages.map(wp => (
+                                        <option key={wp.id} value={wp.id}>{wp.name || '(untitled)'}</option>
+                                    ))}
+                                </select>
+                                <div className="text-[11px] text-[var(--text-tertiary)] mt-1">
+                                    The AI builder can override this at run time via <code>webpages_list</code>.
+                                </div>
+                            </div>
+                        )}
                         <div className="text-[11px] text-[var(--text-tertiary)]">
                             Inputs are best filled in via the AI builder — Quick mode just picks the tool.
                             Switch to Build with AI when you're ready to wire arguments.

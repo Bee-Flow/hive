@@ -5,6 +5,7 @@ import { Loader2, ToggleLeft, ToggleRight, Check, Settings, Plus, Trash2, Refres
 import McpMarketplace from './McpMarketplace';
 import MeetBotSdkConfigPanel from './MeetBotSdkConfigPanel';
 import AppEmoji from '../AppEmoji';
+import { INTEGRATION_CATALOG } from '../../config/integrationCatalog';
 
 const SECTIONS = [
     { id: 'features', labelKey: 'admin.integ_features', icon: Layers, color: '#10b981' },
@@ -17,43 +18,14 @@ const SECTIONS = [
     { id: 'mcp', labelKey: 'admin.integ_mcp', icon: Plug, color: '#f59e0b' },
 ];
 
-const ALL_INTEGRATIONS = [
-    { id: 'gmail', label: 'Gmail', description: 'Send and read emails', category: 'Google' },
-    { id: 'google-calendar', label: 'Calendar', description: 'Manage calendar events', category: 'Google' },
-    { id: 'google-drive', label: 'Drive', description: 'Access and manage files', category: 'Google' },
-    { id: 'google-slides', label: 'Slides', description: 'Create presentations', category: 'Google' },
-    { id: 'google-sheets', label: 'Sheets', description: 'Work with spreadsheets', category: 'Google' },
-    { id: 'google-docs', label: 'Docs', description: 'Create and edit documents', category: 'Google' },
-    { id: 'google-contacts', label: 'Contacts', description: 'Search, create & update contacts', category: 'Google' },
-    { id: 'google-keep', label: 'Keep', description: 'List, create & delete notes (Workspace only)', category: 'Google' },
-    { id: 'outlook', label: 'Outlook', description: 'Send and read emails', category: 'Microsoft' },
-    { id: 'outlook-readonly', label: 'Outlook (Read-Only)', description: 'Search and read emails only', category: 'Microsoft' },
-    { id: 'ms-calendar', label: 'Calendar', description: 'Manage calendar events', category: 'Microsoft' },
-    { id: 'onedrive', label: 'OneDrive', description: 'Access and manage files', category: 'Microsoft' },
-    { id: 'ms-contacts', label: 'Contacts', description: 'Search, create & update contacts', category: 'Microsoft' },
-    { id: 'image-gen', label: 'Image Generation', description: 'Generate images with AI', category: 'AI' },
-    { id: 'music-gen', label: 'Music Generation', description: 'Generate music with AI (ElevenLabs)', category: 'AI' },
-    { id: 'video-gen', label: 'Video Generation', description: 'Generate short videos with AI (Veo)', category: 'AI' },
-    { id: 'elevenlabs', label: 'ElevenLabs', description: 'Music with vocals, TTS & sound effects', category: 'AI' },
-    { id: 'agent-search', label: 'Agent Search', description: 'AI-powered web search with reranking', category: 'AI' },
-    { id: 'transcription', label: 'Meeting Transcription', description: 'Transcribe audio with speaker diarization (Voxtral or Azure AI Speech)', category: 'AI' },
-    { id: 'fireflies', label: 'Fireflies', description: 'Meeting transcripts', category: 'Third-Party' },
-    { id: 'youtrack', label: 'YouTrack', description: 'Issue tracking', category: 'Third-Party' },
-    { id: 'gamma', label: 'Gamma', description: 'Create presentations', category: 'Third-Party' },
-    { id: 'n8n', label: 'n8n', description: 'Workflow automation', category: 'Third-Party' },
-    { id: 'linkedin', label: 'LinkedIn', description: 'Post to LinkedIn', category: 'Third-Party' },
-    { id: 'github', label: 'GitHub', description: 'Repository management, view code', category: 'Third-Party' },
-    { id: 'nextcloud', label: 'Nextcloud', description: 'Files & WebDAV (list, search, read, upload, share)', category: 'Third-Party' },
-    { id: 'nextcloud-calendar', label: 'Nextcloud Calendar', description: 'CalDAV — list, search, create, update, delete events', category: 'Third-Party' },
-    { id: 'nextcloud-contacts', label: 'Nextcloud Contacts', description: 'CardDAV — list, search, create, update, delete contacts', category: 'Third-Party' },
-    { id: 'nextcloud-deck', label: 'Nextcloud Deck', description: 'Kanban — boards, stacks, cards, labels, comments', category: 'Third-Party' },
-    { id: 'nextcloud-notifications', label: 'Nextcloud Notifications', description: 'List and dismiss Nextcloud notifications', category: 'Third-Party' },
-    { id: 'nextcloud-talk', label: 'Nextcloud Talk', description: 'Chat rooms, messages, reactions', category: 'Third-Party' },
-    { id: 'nextcloud-tasks', label: 'Nextcloud Tasks', description: 'VTODO via CalDAV — list, create, update, complete, delete tasks', category: 'Third-Party' },
-    { id: 'nextcloud-notes', label: 'Nextcloud Notes', description: 'Plain-text / markdown notes — list, search, create, update, delete', category: 'Third-Party' },
-    { id: 'nextcloud-activity', label: 'Nextcloud Activity', description: 'Read-only feed of recent file changes, shares, mentions', category: 'Third-Party' },
-    { id: 'nextcloud-status', label: 'Nextcloud User Status', description: 'Get / set / clear the user\'s availability and custom message', category: 'Third-Party' },
-];
+// All known integration IDs + labels live in src/config/integrationCatalog.js
+// so the super-admin panel and the org-admin OrgFeatureTogglesPanel use the
+// same source. The admin UI shows NC integrations grouped with "Third-Party"
+// here for historical layout reasons.
+const ALL_INTEGRATIONS = INTEGRATION_CATALOG.map(i => ({
+    ...i,
+    category: i.category === 'Nextcloud' ? 'Third-Party' : i.category,
+}));
 
 export default function IntegrationsAdminPanel({ activeSection: activeProp = 'features', onNavigate }) {
     const { t } = useTranslation();

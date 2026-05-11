@@ -13,6 +13,16 @@ import scopedStorage from '../utils/scopedStorage';
 import PublishMenu from '../components/admin/AgentWizard/pickers/PublishMenu';
 import useTranslation from '../hooks/useTranslation';
 
+// Deterministic accent fallback when the AI hasn't set one yet — keeps every
+// card distinguishable from neighbours without saving anything to the DB.
+const ACCENT_FALLBACKS = ['#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899', '#84cc16'];
+function fallbackAccent(id) {
+    if (!id) return ACCENT_FALLBACKS[0];
+    let hash = 0;
+    for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0;
+    return ACCENT_FALLBACKS[hash % ACCENT_FALLBACKS.length];
+}
+
 function timeAgo(dateStr) {
     const d = new Date(dateStr);
     const now = new Date();
@@ -766,65 +776,96 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                         </div>
                     ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                            {filteredWebpages.map(w => (
+                            {filteredWebpages.map(w => {
+                                const accent = w.accentColor || fallbackAccent(w.id);
+                                const icon = w.icon || '🌐';
+                                // Cache-bust on sha so a fresh thumbnail replaces a stale one
+                                // without long-lived stale data. Falls back to the emoji tile
+                                // when the page has no rendered thumbnail yet.
+                                const thumbnailUrl = w.thumbnailSha
+                                    ? `${API_BASE}/api/webpages/${w.id}/thumbnail?v=${w.thumbnailSha.slice(0, 8)}`
+                                    : null;
+                                return (
                                 <div key={w.id}
                                      onClick={() => loadWebpage(w.id, { edit: false })}
-                                     className="group p-4 rounded-xl border hover:shadow-md cursor-pointer transition-all"
+                                     className="group rounded-xl border hover:shadow-md cursor-pointer transition-all overflow-hidden"
                                      style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}>
-                                    <div className="flex items-start gap-2 mb-2">
-                                        <FileCode2 className="w-4 h-4 shrink-0 mt-0.5" style={{ color: 'var(--accent-primary)' }} />
-                                        {renamingId === w.id ? (
-                                            <input
-                                                value={renameValue}
-                                                onChange={(e) => setRenameValue(e.target.value)}
-                                                onBlur={() => handleRename(w.id)}
-                                                onKeyDown={(e) => {
-                                                    if (e.key === 'Enter') handleRename(w.id);
-                                                    if (e.key === 'Escape') { setRenamingId(null); setRenameValue(''); }
-                                                }}
-                                                onClick={(e) => e.stopPropagation()}
-                                                autoFocus
-                                                className="flex-1 px-1 py-0.5 text-sm rounded outline-none border"
-                                                style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)', borderColor: 'var(--accent-primary)' }}
+                                    {/* Visual: thumbnail when present, otherwise an emoji-on-accent tile. */}
+                                    <div className="relative w-full h-32 flex items-center justify-center" style={{ background: thumbnailUrl ? '#fff' : `${accent}1a` }}>
+                                        {thumbnailUrl ? (
+                                            <img
+                                                src={thumbnailUrl}
+                                                alt=""
+                                                className="w-full h-full object-cover object-top"
+                                                onError={(e) => { e.currentTarget.style.display = 'none'; }}
                                             />
                                         ) : (
-                                            <div className="flex-1 min-w-0">
-                                                <div
-                                                    className="text-sm font-semibold truncate"
-                                                    style={{ color: 'var(--text-primary)' }}
-                                                    onDoubleClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setRenamingId(w.id);
-                                                        setRenameValue(w.name);
-                                                    }}
-                                                    title="Double-click to rename"
-                                                >
-                                                    {w.name}
-                                                </div>
-                                                <div className="text-[11px] mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                                                    {timeAgo(w.updatedAt)} · {w.sourceCount} source{w.sourceCount === 1 ? '' : 's'}
-                                                </div>
-                                            </div>
+                                            <span className="text-4xl select-none" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.08))' }}>
+                                                {icon}
+                                            </span>
                                         )}
-                                        <div className="opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
+                                        {/* Hover actions overlay */}
+                                        <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
                                             <button onClick={(e) => { e.stopPropagation(); loadWebpage(w.id, { edit: true }); }}
-                                                    className="p-1 rounded hover:bg-white/40" title="Edit in IDE">
+                                                    className="p-1 rounded-md bg-white/80 hover:bg-white shadow-sm" title="Edit in IDE">
                                                 <Pencil className="w-3 h-3" style={{ color: 'var(--text-secondary)' }} />
                                             </button>
                                             <button onClick={(e) => { e.stopPropagation(); handleDelete(w.id); }}
-                                                    className="p-1 rounded hover:bg-white/40" title="Delete">
+                                                    className="p-1 rounded-md bg-white/80 hover:bg-white shadow-sm" title="Delete">
                                                 <Trash2 className="w-3 h-3" style={{ color: '#ef4444' }} />
                                             </button>
                                         </div>
                                     </div>
-                                    <div className="flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
-                                        <span>HTML {(w.htmlSize / 1024).toFixed(1)}KB</span>
-                                        <span>·</span>
-                                        <span>CSS {(w.cssSize / 1024).toFixed(1)}KB</span>
-                                        {w.jsSize > 0 && <><span>·</span><span>JS {(w.jsSize / 1024).toFixed(1)}KB</span></>}
+                                    <div className="p-3">
+                                        <div className="flex items-start gap-2 mb-1">
+                                            <span className="text-base shrink-0" aria-hidden>{icon}</span>
+                                            {renamingId === w.id ? (
+                                                <input
+                                                    value={renameValue}
+                                                    onChange={(e) => setRenameValue(e.target.value)}
+                                                    onBlur={() => handleRename(w.id)}
+                                                    onKeyDown={(e) => {
+                                                        if (e.key === 'Enter') handleRename(w.id);
+                                                        if (e.key === 'Escape') { setRenamingId(null); setRenameValue(''); }
+                                                    }}
+                                                    onClick={(e) => e.stopPropagation()}
+                                                    autoFocus
+                                                    className="flex-1 px-1 py-0.5 text-sm rounded outline-none border"
+                                                    style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)', borderColor: 'var(--accent-primary)' }}
+                                                />
+                                            ) : (
+                                                <div className="flex-1 min-w-0">
+                                                    <div
+                                                        className="text-sm font-semibold truncate"
+                                                        style={{ color: 'var(--text-primary)' }}
+                                                        onDoubleClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setRenamingId(w.id);
+                                                            setRenameValue(w.name);
+                                                        }}
+                                                        title="Double-click to rename"
+                                                    >
+                                                        {w.name}
+                                                    </div>
+                                                    {w.tagline && (
+                                                        <div className="text-[11px] mt-0.5 line-clamp-2" style={{ color: 'var(--text-secondary)' }}>
+                                                            {w.tagline}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                        <div className="flex items-center gap-2 text-[10px]" style={{ color: 'var(--text-tertiary)' }}>
+                                            <span>{timeAgo(w.updatedAt)}</span>
+                                            <span>·</span>
+                                            <span>HTML {(w.htmlSize / 1024).toFixed(1)}KB</span>
+                                            {w.cssSize > 0 && <><span>·</span><span>CSS {(w.cssSize / 1024).toFixed(1)}KB</span></>}
+                                            {w.jsSize > 0 && <><span>·</span><span>JS {(w.jsSize / 1024).toFixed(1)}KB</span></>}
+                                        </div>
                                     </div>
                                 </div>
-                            ))}
+                                );
+                            })}
                         </div>
                     )}
                 </div>

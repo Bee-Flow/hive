@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Cloud, Users, Shield, CheckCircle2, ChevronRight, ChevronLeft, Loader2, Server, Tag, Star, Building2, Key } from 'lucide-react';
+import { Cloud, Users, Shield, CheckCircle2, ChevronRight, ChevronLeft, Loader2, Server, Tag, Star, Building2, Key, CreditCard } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 
 /**
@@ -112,10 +112,29 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
 
     const canAdvance = () => {
         if (step === 'org' && !org.name.trim()) return false;
+        // Cloud mode is the hosted offering — Community is hidden and the
+        // admin must pick a paid plan before continuing.
+        if (step === 'subscription' && deploymentMode === 'cloud' && !selectedPlanId) return false;
         if (step === 'sync' && syncMode === 'selective_groups' && syncGroups.length === 0) return false;
         if (step === 'shield' && shieldEnabled && shieldCategories.length === 0) return false;
         return true;
     };
+
+    // When the admin switches between deployment modes, reset the plan
+    // selection so a stale "Community" pick from self-hosted doesn't block
+    // cloud's gate (and vice-versa).
+    useEffect(() => {
+        if (deploymentMode === 'cloud') {
+            // Pre-select the NC-recommended plan if there is one; otherwise the
+            // admin will need to click a plan card before advancing.
+            if (selectedPlanId === null) {
+                const pick = plans.find(p => p.ncRecommended) || plans.find(p => Number(p.price) > 0) || null;
+                if (pick) setSelectedPlanId(pick.id);
+            }
+        }
+        // Self-hosted leaves the previous selection alone — Community (null)
+        // is a valid choice and is shown again as a card.
+    }, [deploymentMode, plans]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const toggle = (list, setter, val) => {
         setter(list.includes(val) ? list.filter(x => x !== val) : [...list, val]);
@@ -316,32 +335,37 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
             return `${sym}${p.price}/${p.billingInterval === 'yearly' ? 'yr' : 'mo'}`;
         };
         const communityActive = selectedPlanId === null;
+        const isCloud = deploymentMode === 'cloud';
         return (
             <div className="space-y-3">
                 <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    Pick a starting subscription. You can upgrade or cancel anytime under <span className="font-medium">Settings → Organisation → License & Usage</span>.
+                    {isCloud
+                        ? <>Bee Flow Cloud is a paid service. Pick the plan that fits your team — you'll complete payment via Stripe on the next step.</>
+                        : <>Pick a starting subscription. You can upgrade or cancel anytime under <span className="font-medium">Settings → Organisation → License & Usage</span>.</>}
                 </p>
 
-                {/* Community / free card — always present */}
-                <button
-                    type="button"
-                    onClick={() => setSelectedPlanId(null)}
-                    className="w-full text-left p-4 rounded-xl border"
-                    style={{
-                        borderColor: communityActive ? 'var(--accent-primary)' : 'var(--border-subtle)',
-                        background: communityActive ? 'var(--bg-tertiary)' : 'transparent',
-                    }}
-                >
-                    <div className="flex items-baseline justify-between gap-3">
-                        <div>
-                            <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Community</div>
-                            <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                                Single-user chat, local knowledge base, no payment required.
+                {/* Community / free card — only on self-hosted (cloud is paid-only). */}
+                {!isCloud && (
+                    <button
+                        type="button"
+                        onClick={() => setSelectedPlanId(null)}
+                        className="w-full text-left p-4 rounded-xl border"
+                        style={{
+                            borderColor: communityActive ? 'var(--accent-primary)' : 'var(--border-subtle)',
+                            background: communityActive ? 'var(--bg-tertiary)' : 'transparent',
+                        }}
+                    >
+                        <div className="flex items-baseline justify-between gap-3">
+                            <div>
+                                <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Community</div>
+                                <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
+                                    Single-user chat, local knowledge base, no payment required.
+                                </div>
                             </div>
+                            <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Free</div>
                         </div>
-                        <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Free</div>
-                    </div>
-                </button>
+                    </button>
+                )}
 
                 {plansLoading ? (
                     <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin" /></div>
@@ -587,13 +611,23 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
                                 <div><span className="font-medium">Privacy Shield:</span> {shieldEnabled ? `${shieldAction} • ${shieldCategories.length} categories` : 'disabled'}</div>
                             </div>
                             {isPaid && (
-                                <div className="rounded-xl border p-3 text-xs space-y-1" style={{ borderColor: 'rgba(59,130,246,0.4)', background: 'rgba(59,130,246,0.08)', color: 'var(--text-primary)' }}>
-                                    <div className="font-medium">Next: payment</div>
-                                    <div style={{ color: 'var(--text-secondary)' }}>
-                                        Clicking <span className="font-medium">Continue to payment</span> takes you to Stripe. Your wizard answers are already saved — if you cancel checkout you can pay later under Settings → License & Usage.
+                                <div className="rounded-xl border p-4 space-y-2" style={{ borderColor: 'rgba(59,130,246,0.4)', background: 'rgba(59,130,246,0.08)', color: 'var(--text-primary)' }}>
+                                    <div className="inline-flex items-center gap-2 text-sm font-semibold">
+                                        <CreditCard className="w-4 h-4" style={{ color: '#3b82f6' }} />
+                                        Pay with Stripe
+                                    </div>
+                                    <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                                        {selectedPlan?.name} — {(() => {
+                                            const sym = selectedPlan?.currency === 'USD' ? '$' : selectedPlan?.currency === 'GBP' ? '£' : '€';
+                                            return `${sym}${selectedPlan?.price}/${selectedPlan?.billingInterval === 'yearly' ? 'year' : 'month'}`;
+                                        })()}
+                                        {selectedPlan?.trialDays > 0 && <span className="ml-1" style={{ color: '#22c55e' }}>• {selectedPlan.trialDays}-day free trial</span>}
+                                    </div>
+                                    <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                                        Clicking <span className="font-medium">Continue to payment</span> opens Stripe's hosted checkout in this tab. Your wizard answers are already saved — if you cancel checkout you can pay later under Settings → License & Usage.
                                     </div>
                                     {deploymentMode === 'self-hosted' && (
-                                        <div className="pt-2 inline-flex items-start gap-1" style={{ color: 'var(--text-secondary)' }}>
+                                        <div className="inline-flex items-start gap-1 pt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
                                             <Key className="w-3 h-3 mt-0.5 shrink-0" />
                                             <span>After payment you'll receive a license key — paste it into <span className="font-medium">Settings → License & Usage</span> on your own Bee Flow installation to activate {selectedPlan?.name}.</span>
                                         </div>

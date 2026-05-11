@@ -1,7 +1,7 @@
 import React, { useEffect } from 'react';
 import AppIcon from '../../AppIcon';
 import { Toggle, ImageField, FieldRow } from './fields';
-import { GOOGLE_FONTS, buildFontsHref, fontStack } from './googleFonts';
+import { GOOGLE_FONTS, buildFontsHrefs, fontStack } from './googleFonts';
 
 /**
  * Design tab — site-wide branding controls.
@@ -37,17 +37,21 @@ const FALLBACK_DESIGN = {
 export default function DesignEditor({ design, onChange }) {
     const d = design || FALLBACK_DESIGN;
 
-    // Preload the curated Google Fonts at regular weight in the parent
-    // window so the in-panel previews render in the chosen face. The
-    // iframe loads its own (larger) bundle of weights independently.
+    // Preload the curated font library at regular + semibold weights in
+    // the parent window so the in-panel previews render in the chosen
+    // face. The iframe loads its own (larger) bundle of weights
+    // independently. One <link> per source (Google + Fontshare) because
+    // the CDNs use different URL formats.
     useEffect(() => {
-        const id = 'cms-design-editor-fonts';
-        if (document.getElementById(id)) return;
-        const link = document.createElement('link');
-        link.id = id;
-        link.rel = 'stylesheet';
-        link.href = buildFontsHref(GOOGLE_FONTS, [400, 600]);
-        document.head.appendChild(link);
+        const hrefs = buildFontsHrefs(GOOGLE_FONTS, [400, 600]);
+        for (const { id, href } of hrefs) {
+            if (document.getElementById(id)) continue;
+            const link = document.createElement('link');
+            link.id = id;
+            link.rel = 'stylesheet';
+            link.href = href;
+            document.head.appendChild(link);
+        }
         // Don't remove on unmount — keeps fonts cached across tab switches.
     }, []);
 
@@ -117,7 +121,7 @@ function SectionDivider({ label }) {
     );
 }
 
-function ColorRow({ label, value, onChange, hint }) {
+export function ColorRow({ label, value, onChange, hint }) {
     const hex = typeof value === 'string' ? value : '';
     const safeHex = /^#[0-9a-fA-F]{6}$/.test(hex) ? hex : '#000000';
     return (
@@ -143,7 +147,7 @@ function ColorRow({ label, value, onChange, hint }) {
     );
 }
 
-function FontRow({ label, value, onChange, sample, weight }) {
+export function FontRow({ label, value, onChange, sample, weight }) {
     const stack = fontStack(value);
     return (
         <FieldRow label={label}>

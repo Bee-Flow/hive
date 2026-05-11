@@ -1,5 +1,9 @@
 import React, { useState } from 'react';
 import { TextField, Toggle, IconField, ImageField, RepeatableList, LinkField, FieldRow, inputCls } from './fields';
+// Reused for per-block text styling (Social Proof eyebrow / title).
+// FontRow + ColorRow are the same components the site-wide Design tab
+// uses, so the affordance is consistent across the editor.
+import { FontRow, ColorRow } from './DesignEditor';
 
 /**
  * Block editors — structural controls only. Text is edited inline via
@@ -17,22 +21,405 @@ const InlineHint = ({ children }) => (
     <p className="text-xs text-[var(--text-muted)] italic mb-3 leading-relaxed">✎ {children}</p>
 );
 
+// Section-level collapsible card. Mirrors the row-level collapse pattern
+// used by RepeatableList (chevron, clickable header, default-expanded)
+// without dragging that component's repeat-list machinery in. Used by
+// the chrome editors (HeaderEditor / FooterEditor) to fold long sections.
+function CollapsibleCard({ title, defaultOpen = true, children }) {
+    const [open, setOpen] = useState(defaultOpen);
+    return (
+        <div className="rounded-md border border-[var(--border-subtle)] mb-3">
+            <button
+                type="button"
+                onClick={() => setOpen(o => !o)}
+                className="flex w-full items-center gap-1.5 px-3 py-2 text-xs font-semibold text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
+                aria-expanded={open}
+            >
+                <span
+                    className="shrink-0 inline-block transition-transform"
+                    style={{ transform: open ? 'rotate(0deg)' : 'rotate(-90deg)' }}
+                    aria-hidden="true"
+                >▾</span>
+                <span className="truncate">{title}</span>
+            </button>
+            {open ? <div className="px-3 pb-3">{children}</div> : null}
+        </div>
+    );
+}
+
+// Small inline color swatch — used when a full ColorRow (with hex input +
+// label + hint) would be visually heavy. Mirrors `<input type="color">`
+// in dimensions to the rest of the compact field controls (height ~28px).
+function ColorSwatch({ value, onChange, title }) {
+    const hex = typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value) ? value : '#000000';
+    return (
+        <input
+            type="color"
+            value={hex}
+            onChange={(e) => onChange(e.target.value)}
+            title={title}
+            className="h-7 w-7 rounded border border-[var(--border-default)] bg-[var(--bg-tertiary)] cursor-pointer p-0 shrink-0"
+            style={{ minWidth: '28px' }}
+        />
+    );
+}
+
+// Compact px-size input — narrow numeric field used by chrome typography
+// controls. Empty value (and value of 0) display as "inherit" placeholder
+// so users can see they're falling back to the page CSS / Design tab.
+function PxSizeInput({ value, onChange, min = 8, max = 96, ariaLabel }) {
+    const numeric = Number.isFinite(value) && value > 0 ? value : '';
+    return (
+        <input
+            type="number"
+            min={min}
+            max={max}
+            step={1}
+            value={numeric}
+            placeholder="inherit"
+            aria-label={ariaLabel}
+            onChange={(e) => onChange(Number(e.target.value) || 0)}
+            className={inputCls + ' shrink-0'}
+            style={{ width: '70px' }}
+        />
+    );
+}
+
+// ── Shared editor helpers ───────────────────────────────────────────
+//
+// SectionHeaderFields — the eyebrow / title / lead group shared by
+// every "list-section" block (Features, Steps, Security, Integrations,
+// Architecture, Tech Stats, Social Proof). Each subsection is a
+// CollapsibleCard with text + font/size/color triplet. The data writes
+// to `eyebrow` / `title` / `lead` plus `*Style.{fontFamily,fontSize,color}`
+// sub-objects — additive to any block that didn't have *Style before,
+// so existing renderers keep working until they pick up the styles in a
+// later wire-up pass.
+//
+// `showLead` defaults to true; pass false for blocks that don't have a
+// `lead` field in their stored shape (e.g. Tech Stats, Social Proof).
+function SectionHeaderFields({ data = {}, onChange, showLead = true }) {
+    const eyebrowStyle = data.eyebrowStyle || {};
+    const titleStyle   = data.titleStyle   || {};
+    const leadStyle    = data.leadStyle    || {};
+    const setEyebrowStyle = (patch) => onChange(set(data, 'eyebrowStyle', { ...eyebrowStyle, ...patch }));
+    const setTitleStyle   = (patch) => onChange(set(data, 'titleStyle',   { ...titleStyle,   ...patch }));
+    const setLeadStyle    = (patch) => onChange(set(data, 'leadStyle',    { ...leadStyle,    ...patch }));
+
+    return (
+        <>
+            <CollapsibleCard title="Eyebrow" defaultOpen={false}>
+                <TextField
+                    label="Text"
+                    value={data.eyebrow || ''}
+                    onChange={v => onChange(set(data, 'eyebrow', v))}
+                    placeholder="Small label above the title"
+                />
+                <FontRow
+                    label="Font"
+                    value={eyebrowStyle.fontFamily || ''}
+                    onChange={v => setEyebrowStyle({ fontFamily: v })}
+                    sample={data.eyebrow || 'Eyebrow preview'}
+                    weight={600}
+                />
+                <FieldRow label="Size & color">
+                    <div className="flex items-center gap-2">
+                        <PxSizeInput
+                            value={Number.isFinite(eyebrowStyle.fontSize) ? eyebrowStyle.fontSize : 0}
+                            onChange={v => setEyebrowStyle({ fontSize: v })}
+                            min={8}
+                            max={48}
+                            ariaLabel="Eyebrow size in pixels"
+                        />
+                        <ColorSwatch
+                            value={eyebrowStyle.color || ''}
+                            onChange={v => setEyebrowStyle({ color: v })}
+                            title="Eyebrow color"
+                        />
+                    </div>
+                </FieldRow>
+            </CollapsibleCard>
+
+            <CollapsibleCard title="Title" defaultOpen={false}>
+                <TextField
+                    label="Text"
+                    value={data.title || ''}
+                    onChange={v => onChange(set(data, 'title', v))}
+                    placeholder="Section heading"
+                />
+                <FontRow
+                    label="Font"
+                    value={titleStyle.fontFamily || ''}
+                    onChange={v => setTitleStyle({ fontFamily: v })}
+                    sample={data.title || 'The quick brown fox jumps'}
+                    weight={700}
+                />
+                <FieldRow label="Size & color">
+                    <div className="flex items-center gap-2">
+                        <PxSizeInput
+                            value={Number.isFinite(titleStyle.fontSize) ? titleStyle.fontSize : 0}
+                            onChange={v => setTitleStyle({ fontSize: v })}
+                            min={12}
+                            max={128}
+                            ariaLabel="Title size in pixels"
+                        />
+                        <ColorSwatch
+                            value={titleStyle.color || ''}
+                            onChange={v => setTitleStyle({ color: v })}
+                            title="Title color"
+                        />
+                    </div>
+                </FieldRow>
+            </CollapsibleCard>
+
+            {showLead ? (
+                <CollapsibleCard title="Lead" defaultOpen={false}>
+                    <FieldRow label="Text">
+                        <textarea
+                            rows={3}
+                            className={inputCls + ' resize-y'}
+                            value={data.lead || ''}
+                            onChange={e => onChange(set(data, 'lead', e.target.value))}
+                            placeholder="Short paragraph below the title."
+                        />
+                    </FieldRow>
+                    <FontRow
+                        label="Font"
+                        value={leadStyle.fontFamily || ''}
+                        onChange={v => setLeadStyle({ fontFamily: v })}
+                        sample={data.lead || 'The quick brown fox jumps over the lazy dog.'}
+                        weight={400}
+                    />
+                    <FieldRow label="Size & color">
+                        <div className="flex items-center gap-2">
+                            <PxSizeInput
+                                value={Number.isFinite(leadStyle.fontSize) ? leadStyle.fontSize : 0}
+                                onChange={v => setLeadStyle({ fontSize: v })}
+                                min={10}
+                                max={48}
+                                ariaLabel="Lead size in pixels"
+                            />
+                            <ColorSwatch
+                                value={leadStyle.color || ''}
+                                onChange={v => setLeadStyle({ color: v })}
+                                title="Lead color"
+                            />
+                        </div>
+                    </FieldRow>
+                </CollapsibleCard>
+            ) : null}
+        </>
+    );
+}
+
+// CtaButtonField — shared button editor used by CtaBanner / CTA /
+// MediaText. Stores `{label, link, style}` on whatever object the
+// caller passes via `value`; the caller decides whether to wrap this
+// in a CollapsibleCard. Hero CTAs intentionally keep their own
+// enabled-toggle structure; Header chrome CTAs have per-label F/S/C
+// fields that aren't covered here.
+function CtaButtonField({ value = {}, onChange, pages = [] /* label kept for callers; not rendered */, label: _label = 'CTA' }) {
+    const setField = (key, v) => onChange({ ...value, [key]: v });
+    return (
+        <>
+            <TextField
+                label="Button label"
+                value={value.label || ''}
+                onChange={v => setField('label', v)}
+            />
+            <LinkField
+                label="Destination"
+                value={value.link}
+                pages={pages}
+                onChange={v => setField('link', v)}
+            />
+            <FieldRow label="Style">
+                <select
+                    className={inputCls}
+                    value={value.style || 'primary'}
+                    onChange={e => setField('style', e.target.value)}
+                >
+                    <option value="primary">Primary (filled)</option>
+                    <option value="secondary">Secondary (outlined)</option>
+                    <option value="ghost">Ghost (no border)</option>
+                    <option value="link">Link (underlined)</option>
+                </select>
+            </FieldRow>
+        </>
+    );
+}
+
+// GroupedItemsField — reusable nested-RepeatableList editor for blocks
+// that store "groups of items" (Integrations categories → tools,
+// Architecture layers → tags). Storage keys vary per block: Integrations
+// uses `heading` + `items[]` of `{icon, label}`; Architecture uses
+// `label` + `tags[]` of bare strings. Callers pass `headingKey` and
+// `itemsKey` so this helper writes to the right keys without changing
+// any persisted data shape.
+function GroupedItemsField({
+    groups = [],
+    onChange,
+    groupLabel = 'Group',
+    itemKind = 'string',     // 'string' | 'icon-label'
+    headingKey = 'heading',
+    itemsKey = 'items',
+}) {
+    const newGroup = () => ({
+        [headingKey]: `New ${groupLabel.toLowerCase()}`,
+        [itemsKey]: [],
+    });
+    const newItem = () => itemKind === 'icon-label'
+        ? { icon: 'Plug', label: 'New item' }
+        : 'tag';
+
+    const innerLabel    = itemKind === 'icon-label' ? 'Items' : 'Tags';
+    const innerAddLabel = itemKind === 'icon-label' ? 'Add item' : 'Add tag';
+
+    return (
+        <RepeatableList
+            label={`${groupLabel}s`}
+            items={groups}
+            onChange={onChange}
+            makeNew={newGroup}
+            itemLabel={(g) => g?.[headingKey] || `(no ${headingKey})`}
+            collapsible
+            renderItem={(group, updateGroup) => (
+                <>
+                    <TextField
+                        label={`${groupLabel} name`}
+                        value={group?.[headingKey] || ''}
+                        onChange={v => updateGroup({ ...group, [headingKey]: v })}
+                    />
+                    <RepeatableList
+                        label={innerLabel}
+                        items={group?.[itemsKey] || []}
+                        onChange={v => updateGroup({ ...group, [itemsKey]: v })}
+                        makeNew={newItem}
+                        itemLabel={(it) => itemKind === 'icon-label'
+                            ? (it?.label || '(no label)')
+                            : (it || '(empty)')}
+                        renderItem={(it, updateItem) => (
+                            itemKind === 'icon-label' ? (
+                                <>
+                                    <IconField
+                                        label="Icon"
+                                        value={it?.icon}
+                                        onChange={v => updateItem({ ...(it || {}), icon: v })}
+                                    />
+                                    <TextField
+                                        label="Label"
+                                        value={it?.label || ''}
+                                        onChange={v => updateItem({ ...(it || {}), label: v })}
+                                    />
+                                </>
+                            ) : (
+                                // Bare string item — update(newString)
+                                // replaces it in place in the array.
+                                <TextField
+                                    label="Text"
+                                    value={it || ''}
+                                    onChange={updateItem}
+                                    placeholder="e.g. Postgres"
+                                />
+                            )
+                        )}
+                        addLabel={innerAddLabel}
+                    />
+                </>
+            )}
+            addLabel={`Add ${groupLabel.toLowerCase()}`}
+        />
+    );
+}
+
+// StyleTriplet — Font + Size + Color trio for one *Style sub-object.
+// Used by the "Text styles" cards in MediaText / Content text element /
+// CtaBanner, and by per-item style controls. Empty / 0 values mean
+// "inherit" — the renderer skips inline styles for those, so old blocks
+// without these keys render identically to today.
+function StyleTriplet({
+    label,
+    style = {},
+    onChange,
+    sample,
+    weight = 500,
+    min = 8,
+    max = 96,
+}) {
+    const setStyle = (patch) => onChange({ ...style, ...patch });
+    return (
+        <>
+            <FontRow
+                label={`${label} font`}
+                value={style.fontFamily || ''}
+                onChange={v => setStyle({ fontFamily: v })}
+                sample={sample || `${label} preview`}
+                weight={weight}
+            />
+            <FieldRow label={`${label} size & color`}>
+                <div className="flex items-center gap-2">
+                    <PxSizeInput
+                        value={Number.isFinite(style.fontSize) ? style.fontSize : 0}
+                        onChange={v => setStyle({ fontSize: v })}
+                        min={min}
+                        max={max}
+                        ariaLabel={`${label} size in pixels`}
+                    />
+                    <ColorSwatch
+                        value={style.color || ''}
+                        onChange={v => setStyle({ color: v })}
+                        title={`${label} color`}
+                    />
+                </div>
+            </FieldRow>
+        </>
+    );
+}
+
+// BackgroundCard — the standard background-variant picker, wrapped in
+// a CollapsibleCard. Defaults to closed because the user only opens it
+// occasionally. Block-side storage: `data.backgroundVariant`. Renderer
+// behaviour unchanged — every block that already reads this field keeps
+// working; blocks that didn't have it before treat it as the no-op
+// default until their renderer picks it up in a later pass.
+function BackgroundCard({ data, onChange }) {
+    return (
+        <CollapsibleCard title="Background" defaultOpen={false}>
+            <FieldSelect
+                label="Variant"
+                value={data.backgroundVariant || 'default'}
+                options={[
+                    { value: 'default', label: 'Default (page bg)' },
+                    { value: 'surface', label: 'Surface (alt bg)' },
+                    { value: 'primary', label: 'Primary (brand color)' },
+                    { value: 'dark',    label: 'Dark (secondary color)' },
+                ]}
+                onChange={v => onChange(set(data, 'backgroundVariant', v))}
+            />
+        </CollapsibleCard>
+    );
+}
+
 // ── Header ────────────────────────────────────────────────────────────
 
 export function HeaderEditor({ data = {}, pages = [], onChange }) {
     const nav = data.nav || [];
     const logo = data.logo || {};
     const ctas = Array.isArray(data.ctas) ? data.ctas : [];
+    // Master nav-link styling. `data.nav` is already the array of items
+    // so the style fields live on a sibling `navStyle` blob (matching
+    // the existing *Style naming used by Hero / SocialProof).
+    const navStyle = data.navStyle || {};
 
-    const updateLogo = (patch) => onChange(set(data, 'logo', { ...logo, ...patch }));
+    const updateLogo     = (patch) => onChange(set(data, 'logo',     { ...logo,     ...patch }));
+    const updateNavStyle = (patch) => onChange(set(data, 'navStyle', { ...navStyle, ...patch }));
 
     return (
         <>
             <InlineHint>Click logo text, link labels, and button labels in the preview to edit them inline.</InlineHint>
 
             {/* ── Logo & brand ──────────────────────────────────────── */}
-            <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
-                <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Logo & brand</div>
+            <CollapsibleCard title="Logo & brand">
                 <ImageField
                     label="Logo image (optional)"
                     value={logo.src || ''}
@@ -43,73 +430,134 @@ export function HeaderEditor({ data = {}, pages = [], onChange }) {
                     value={logo.text !== undefined ? logo.text : (data.logoText || '')}
                     onChange={v => updateLogo({ text: v })}
                 />
-                <FieldRow label="Title color">
-                    <input
-                        type="color"
-                        className={inputCls + ' h-9 p-1 cursor-pointer'}
-                        value={logo.textColor || '#000000'}
-                        onChange={e => updateLogo({ textColor: e.target.value })}
-                    />
+                <FontRow
+                    label="Title font"
+                    value={logo.titleFont || ''}
+                    onChange={v => updateLogo({ titleFont: v })}
+                    sample={logo.text || data.logoText || 'Brand title preview'}
+                    weight={700}
+                />
+                {/* Title size + color share a row — size as a compact
+                    px input (replaces the wide t-shirt-size dropdown),
+                    color as a small swatch (replaces the wide bar). */}
+                <FieldRow label="Title size & color">
+                    <div className="flex items-center gap-2">
+                        <PxSizeInput
+                            value={Number.isFinite(logo.titleSize) ? logo.titleSize : 0}
+                            onChange={v => updateLogo({ titleSize: v })}
+                            min={10}
+                            max={72}
+                            ariaLabel="Title size in pixels"
+                        />
+                        <ColorSwatch
+                            value={logo.textColor || ''}
+                            onChange={v => updateLogo({ textColor: v })}
+                            title="Title color"
+                        />
+                    </div>
                 </FieldRow>
-                <FieldRow label="Title size">
-                    <select
-                        className={inputCls}
-                        value={logo.fontSize || 'medium'}
-                        onChange={e => updateLogo({ fontSize: e.target.value })}
-                    >
-                        <option value="small">Small (14px)</option>
-                        <option value="medium">Medium (18px)</option>
-                        <option value="large">Large (24px)</option>
-                    </select>
-                </FieldRow>
-            </div>
+            </CollapsibleCard>
 
             {/* ── Header action buttons (multi-CTA) ─────────────────── */}
-            <RepeatableList
-                label="Header buttons"
-                items={ctas}
-                onChange={v => onChange(set(data, 'ctas', v))}
-                makeNew={() => ({
-                    id: `cta_${Math.random().toString(36).slice(2, 8)}`,
-                    label: 'Get started',
-                    link: { kind: 'app', path: '/app' },
-                    style: 'primary',
-                })}
-                itemLabel={(c) => c.label}
-                renderItem={(item, update) => (
-                    <>
-                        <TextField
-                            label="Label"
-                            value={item.label}
-                            onChange={v => update({ ...item, label: v })}
-                        />
-                        <LinkField
-                            label="Link"
-                            value={item.link}
-                            pages={pages}
-                            onChange={v => update({ ...item, link: v })}
-                        />
-                        <FieldRow label="Style">
-                            <select
-                                className={inputCls}
-                                value={item.style || 'primary'}
-                                onChange={e => update({ ...item, style: e.target.value })}
-                            >
-                                <option value="primary">Primary (filled)</option>
-                                <option value="secondary">Secondary (outlined)</option>
-                                <option value="ghost">Ghost (no border)</option>
-                                <option value="link">Link (underlined)</option>
-                            </select>
-                        </FieldRow>
-                    </>
-                )}
-                addLabel="Add button"
-            />
+            <CollapsibleCard title="Header buttons">
+                <RepeatableList
+                    items={ctas}
+                    onChange={v => onChange(set(data, 'ctas', v))}
+                    makeNew={() => ({
+                        id: `cta_${Math.random().toString(36).slice(2, 8)}`,
+                        label: 'Get started',
+                        link: { kind: 'app', path: '/app' },
+                        style: 'primary',
+                    })}
+                    itemLabel={(c) => c.label || '(no label)'}
+                    collapsible
+                    renderItem={(item, update) => (
+                        <>
+                            <TextField
+                                label="Label"
+                                value={item.label}
+                                onChange={v => update({ ...item, label: v })}
+                            />
+                            <LinkField
+                                label="Link"
+                                value={item.link}
+                                pages={pages}
+                                onChange={v => update({ ...item, link: v })}
+                            />
+                            <FieldRow label="Style">
+                                <select
+                                    className={inputCls}
+                                    value={item.style || 'primary'}
+                                    onChange={e => update({ ...item, style: e.target.value })}
+                                >
+                                    <option value="primary">Primary (filled)</option>
+                                    <option value="secondary">Secondary (outlined)</option>
+                                    <option value="ghost">Ghost (no border)</option>
+                                    <option value="link">Link (underlined)</option>
+                                </select>
+                            </FieldRow>
+                            {/* Per-button label typography — empty values
+                                = inherit page CSS / Design tab. Renderer
+                                wire-up is part of the later pass. */}
+                            <FontRow
+                                label="Label font"
+                                value={item.labelFont || ''}
+                                onChange={v => update({ ...item, labelFont: v })}
+                                sample={item.label || 'Button label'}
+                                weight={600}
+                            />
+                            <FieldRow label="Label size & color">
+                                <div className="flex items-center gap-2">
+                                    <PxSizeInput
+                                        value={Number.isFinite(item.labelSize) ? item.labelSize : 0}
+                                        onChange={v => update({ ...item, labelSize: v })}
+                                        min={10}
+                                        max={48}
+                                        ariaLabel="Button label size in pixels"
+                                    />
+                                    <ColorSwatch
+                                        value={item.labelColor || ''}
+                                        onChange={v => update({ ...item, labelColor: v })}
+                                        title="Button label color"
+                                    />
+                                </div>
+                            </FieldRow>
+                        </>
+                    )}
+                    addLabel="Add button"
+                />
+            </CollapsibleCard>
 
-            {/* ── Nav links (collapsible rows) ──────────────────────── */}
-            <RepeatableList
-                label="Nav links"
-                items={nav}
+            {/* ── Navigation — master link style + the list ─────────── */}
+            <CollapsibleCard title="Navigation">
+                {/* Master link style — applied to every nav link and
+                    every dropdown child. No per-link overrides. */}
+                <FontRow
+                    label="Link font"
+                    value={navStyle.fontFamily || ''}
+                    onChange={v => updateNavStyle({ fontFamily: v })}
+                    sample="Pricing  ·  Docs  ·  Blog"
+                    weight={500}
+                />
+                <FieldRow label="Link size & color">
+                    <div className="flex items-center gap-2">
+                        <PxSizeInput
+                            value={Number.isFinite(navStyle.fontSize) ? navStyle.fontSize : 0}
+                            onChange={v => updateNavStyle({ fontSize: v })}
+                            min={10}
+                            max={32}
+                            ariaLabel="Nav link size in pixels"
+                        />
+                        <ColorSwatch
+                            value={navStyle.color || ''}
+                            onChange={v => updateNavStyle({ color: v })}
+                            title="Nav link color"
+                        />
+                    </div>
+                </FieldRow>
+                <RepeatableList
+                    label="Nav links"
+                    items={nav}
                 onChange={v => onChange(set(data, 'nav', v))}
                 makeNew={() => ({ id: `nav_${Math.random().toString(36).slice(2,8)}`, label: 'New link', link: { kind: 'external', url: '#' } })}
                 itemLabel={(item) => item.label}
@@ -143,7 +591,8 @@ export function HeaderEditor({ data = {}, pages = [], onChange }) {
                         />
                     </>
                 )}
-            />
+                />
+            </CollapsibleCard>
         </>
     );
 }
@@ -151,65 +600,311 @@ export function HeaderEditor({ data = {}, pages = [], onChange }) {
 // ── Hero ──────────────────────────────────────────────────────────────
 
 export function HeroEditor({ data = {}, pages = [], onChange }) {
-    const badge     = data.badge || {};
-    const primary   = data.primaryCta || {};
-    const secondary = data.secondaryCta || {};
-    const mockup    = data.mockup || {};
+    const badge       = data.badge       || {};
+    const badgeStyle  = data.badgeStyle  || {};
+    const titleStyle  = data.titleStyle  || {};
+    const leadStyle   = data.leadStyle   || {};
+    const primary     = data.primaryCta  || {};
+    const secondary   = data.secondaryCta|| {};
+    const mockup      = data.mockup      || {};
+
+    // Helpers — each one lets a card's contents read/write a sub-object
+    // without re-implementing the spread on every onChange.
+    const setBadge        = (patch) => onChange(set(data, 'badge',        { ...badge,       ...patch }));
+    const setBadgeStyle   = (patch) => onChange(set(data, 'badgeStyle',   { ...badgeStyle,  ...patch }));
+    const setTitleStyle   = (patch) => onChange(set(data, 'titleStyle',   { ...titleStyle,  ...patch }));
+    const setLeadStyle    = (patch) => onChange(set(data, 'leadStyle',    { ...leadStyle,   ...patch }));
+    const setPrimary      = (patch) => onChange(set(data, 'primaryCta',   { ...primary,     ...patch }));
+    const setSecondary    = (patch) => onChange(set(data, 'secondaryCta', { ...secondary,   ...patch }));
+    const setMockup       = (patch) => onChange(set(data, 'mockup',       { ...mockup,      ...patch }));
+
+    // `enabled` defaults to true for old blocks that never stored the
+    // field, so the toggles all start in the "on" position.
+    const badgeOn     = badge.enabled     !== false;
+    const leadOn      = data.leadEnabled  !== false;
+    const primaryOn   = primary.enabled   !== false;
+    const secondaryOn = secondary.enabled !== false;
+    const mockupOn    = mockup.enabled    !== false;
+
+    const CTA_STYLE_OPTIONS = [
+        { value: 'primary',   label: 'Primary (filled)' },
+        { value: 'secondary', label: 'Secondary (outlined)' },
+        { value: 'ghost',     label: 'Ghost (no border)' },
+        { value: 'link',      label: 'Link (underlined)' },
+    ];
+
     return (
         <>
-            <InlineHint>Click eyebrow, title segments, lead, badge text, CTA labels, and chat bubbles to edit inline.</InlineHint>
+            <InlineHint>Click the badge, title segments, lead, CTA labels, and chat bubbles in the preview to edit them inline. Use the panels below for structure and styling.</InlineHint>
 
-            <RepeatableList
-                label="Title segments"
-                items={data.titleParts || []}
-                onChange={v => onChange(set(data, 'titleParts', v))}
-                makeNew={() => ({ text: '', gradient: false })}
-                renderItem={(item, update) => (
-                    <Toggle label="Gradient fill" value={!!item.gradient} onChange={v => update({ ...item, gradient: v })} />
-                )}
-                addLabel="Add segment"
-            />
-
+            {/* ── Badge ───────────────────────────────────────────── */}
             <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
                 <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Badge</div>
-                <IconField label="Icon" value={badge.icon} onChange={v => onChange(set(data, 'badge', { ...badge, icon: v }))} />
+                <Toggle
+                    label="Show badge"
+                    value={badgeOn}
+                    onChange={v => setBadge({ enabled: v })}
+                />
+                {badgeOn ? (
+                    <>
+                        <TextField
+                            label="Text"
+                            value={badge.text || ''}
+                            onChange={v => setBadge({ text: v })}
+                            placeholder="e.g. New · v2.0"
+                        />
+                        <IconField
+                            label="Icon"
+                            value={badge.icon}
+                            onChange={v => setBadge({ icon: v })}
+                        />
+                        <FontRow
+                            label="Font"
+                            value={badgeStyle.fontFamily || ''}
+                            onChange={v => setBadgeStyle({ fontFamily: v })}
+                            sample="New · just shipped"
+                            weight={500}
+                        />
+                        <FieldRow label="Size (px)">
+                            <input
+                                type="number"
+                                min={8}
+                                max={48}
+                                step={1}
+                                className={inputCls}
+                                value={Number.isFinite(badgeStyle.fontSize) && badgeStyle.fontSize > 0 ? badgeStyle.fontSize : ''}
+                                placeholder="inherit"
+                                onChange={e => setBadgeStyle({ fontSize: Number(e.target.value) || 0 })}
+                            />
+                        </FieldRow>
+                        <ColorRow
+                            label="Color"
+                            value={badgeStyle.color || ''}
+                            onChange={v => setBadgeStyle({ color: v })}
+                        />
+                    </>
+                ) : null}
             </div>
 
+            {/* ── Headline ────────────────────────────────────────── */}
+            <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
+                <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Headline</div>
+                <RepeatableList
+                    label="Title segments"
+                    items={data.titleParts || []}
+                    onChange={v => onChange(set(data, 'titleParts', v))}
+                    makeNew={() => ({ text: '', gradient: false })}
+                    itemLabel={(it) => it.text || '(empty segment)'}
+                    collapsible
+                    renderItem={(item, update) => (
+                        <>
+                            <TextField
+                                label="Text"
+                                value={item.text || ''}
+                                onChange={v => update({ ...item, text: v })}
+                                placeholder="Segment text"
+                            />
+                            <Toggle
+                                label="Gradient fill"
+                                value={!!item.gradient}
+                                onChange={v => update({ ...item, gradient: v })}
+                            />
+                        </>
+                    )}
+                    addLabel="Add segment"
+                />
+                <FontRow
+                    label="Font"
+                    value={titleStyle.fontFamily || ''}
+                    onChange={v => setTitleStyle({ fontFamily: v })}
+                    sample="The quick brown fox jumps"
+                    weight={800}
+                />
+                <FieldRow label="Size (px)">
+                    <input
+                        type="number"
+                        min={16}
+                        max={160}
+                        step={1}
+                        className={inputCls}
+                        value={Number.isFinite(titleStyle.fontSize) && titleStyle.fontSize > 0 ? titleStyle.fontSize : ''}
+                        placeholder="inherit"
+                        onChange={e => setTitleStyle({ fontSize: Number(e.target.value) || 0 })}
+                    />
+                </FieldRow>
+                <ColorRow
+                    label="Color"
+                    value={titleStyle.color || ''}
+                    onChange={v => setTitleStyle({ color: v })}
+                />
+            </div>
+
+            {/* ── Lead ────────────────────────────────────────────── */}
+            <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
+                <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Lead paragraph</div>
+                <Toggle
+                    label="Show lead"
+                    value={leadOn}
+                    onChange={v => onChange(set(data, 'leadEnabled', v))}
+                />
+                {leadOn ? (
+                    <>
+                        <FieldRow label="Text">
+                            <textarea
+                                rows={3}
+                                className={inputCls + ' resize-y'}
+                                value={data.lead || ''}
+                                onChange={e => onChange(set(data, 'lead', e.target.value))}
+                                placeholder="Short paragraph below the headline."
+                            />
+                        </FieldRow>
+                        <FontRow
+                            label="Font"
+                            value={leadStyle.fontFamily || ''}
+                            onChange={v => setLeadStyle({ fontFamily: v })}
+                            sample="The quick brown fox jumps over the lazy dog."
+                            weight={400}
+                        />
+                        <FieldRow label="Size (px)">
+                            <input
+                                type="number"
+                                min={12}
+                                max={48}
+                                step={1}
+                                className={inputCls}
+                                value={Number.isFinite(leadStyle.fontSize) && leadStyle.fontSize > 0 ? leadStyle.fontSize : ''}
+                                placeholder="inherit"
+                                onChange={e => setLeadStyle({ fontSize: Number(e.target.value) || 0 })}
+                            />
+                        </FieldRow>
+                        <ColorRow
+                            label="Color"
+                            value={leadStyle.color || ''}
+                            onChange={v => setLeadStyle({ color: v })}
+                        />
+                    </>
+                ) : null}
+            </div>
+
+            {/* ── Primary CTA ─────────────────────────────────────── */}
             <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
                 <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Primary CTA</div>
-                <LinkField
-                    label="Destination"
-                    value={primary.link}
-                    pages={pages}
-                    onChange={v => onChange(set(data, 'primaryCta', { ...primary, link: v }))}
+                <Toggle
+                    label="Show primary CTA"
+                    value={primaryOn}
+                    onChange={v => setPrimary({ enabled: v })}
                 />
+                {primaryOn ? (
+                    <>
+                        <TextField
+                            label="Label"
+                            value={primary.label || ''}
+                            onChange={v => setPrimary({ label: v })}
+                            placeholder="Get started"
+                        />
+                        <LinkField
+                            label="Destination"
+                            value={primary.link}
+                            pages={pages}
+                            onChange={v => setPrimary({ link: v })}
+                        />
+                        <FieldSelect
+                            label="Style"
+                            value={primary.style || 'primary'}
+                            options={CTA_STYLE_OPTIONS}
+                            onChange={v => setPrimary({ style: v })}
+                        />
+                    </>
+                ) : null}
             </div>
 
+            {/* ── Secondary CTA ───────────────────────────────────── */}
             <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
                 <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Secondary CTA</div>
-                <LinkField
-                    label="Destination"
-                    value={secondary.link}
-                    pages={pages}
-                    onChange={v => onChange(set(data, 'secondaryCta', { ...secondary, link: v }))}
+                <Toggle
+                    label="Show secondary CTA"
+                    value={secondaryOn}
+                    onChange={v => setSecondary({ enabled: v })}
                 />
+                {secondaryOn ? (
+                    <>
+                        <TextField
+                            label="Label"
+                            value={secondary.label || ''}
+                            onChange={v => setSecondary({ label: v })}
+                            placeholder="Learn more"
+                        />
+                        <LinkField
+                            label="Destination"
+                            value={secondary.link}
+                            pages={pages}
+                            onChange={v => setSecondary({ link: v })}
+                        />
+                        <FieldSelect
+                            label="Style"
+                            value={secondary.style || 'secondary'}
+                            options={CTA_STYLE_OPTIONS}
+                            onChange={v => setSecondary({ style: v })}
+                        />
+                    </>
+                ) : null}
             </div>
 
-            <RepeatableList
-                label="Mockup chat bubbles"
-                items={mockup.chatBubbles || []}
-                onChange={v => onChange(set(data, 'mockup', { ...mockup, chatBubbles: v }))}
-                makeNew={() => ({ role: 'user', text: '' })}
-                renderItem={(item, update) => (
-                    <FieldSelect
-                        label="Speaker"
-                        value={item.role}
-                        options={[{ value: 'user', label: 'User' }, { value: 'ai', label: 'AI' }]}
-                        onChange={v => update({ ...item, role: v })}
+            {/* ── Mockup ──────────────────────────────────────────── */}
+            <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
+                <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Mockup</div>
+                <Toggle
+                    label="Show mockup"
+                    value={mockupOn}
+                    onChange={v => setMockup({ enabled: v })}
+                />
+                {mockupOn ? (
+                    <RepeatableList
+                        label="Chat bubbles"
+                        items={mockup.chatBubbles || []}
+                        onChange={v => setMockup({ chatBubbles: v })}
+                        makeNew={() => ({ role: 'user', text: '' })}
+                        itemLabel={(b) => b.text || '(empty)'}
+                        collapsible
+                        renderItem={(item, update) => (
+                            <>
+                                <FieldSelect
+                                    label="Speaker"
+                                    value={item.role}
+                                    options={[{ value: 'user', label: 'User' }, { value: 'ai', label: 'AI' }]}
+                                    onChange={v => update({ ...item, role: v })}
+                                />
+                                <FieldRow label="Text">
+                                    <textarea
+                                        rows={2}
+                                        className={inputCls + ' resize-y'}
+                                        value={item.text || ''}
+                                        onChange={e => update({ ...item, text: e.target.value })}
+                                        placeholder="Bubble text"
+                                    />
+                                </FieldRow>
+                            </>
+                        )}
+                        addLabel="Add bubble"
                     />
-                )}
-                addLabel="Add bubble"
-            />
+                ) : null}
+            </div>
+
+            {/* ── Background ──────────────────────────────────────── */}
+            <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
+                <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Background</div>
+                <FieldSelect
+                    label="Variant"
+                    value={data.backgroundVariant || 'default'}
+                    options={[
+                        { value: 'default', label: 'Default (page bg)' },
+                        { value: 'surface', label: 'Surface (alt bg)'  },
+                        { value: 'primary', label: 'Primary (brand)'   },
+                        { value: 'dark',    label: 'Dark (secondary)'  },
+                    ]}
+                    onChange={v => onChange(set(data, 'backgroundVariant', v))}
+                />
+            </div>
         </>
     );
 }
@@ -217,16 +912,27 @@ export function HeroEditor({ data = {}, pages = [], onChange }) {
 // ── Social Proof ──────────────────────────────────────────────────────
 
 export function SocialProofEditor({ data = {}, onChange }) {
+    // Eyebrow + Title (style controls + text fields) come from the
+    // shared header helper. Social Proof has no `lead`, so showLead
+    // is disabled — the helper skips that subsection entirely.
     return (
         <>
-            <InlineHint>Click the eyebrow text to edit. Logos with no image fall back to text.</InlineHint>
+            <InlineHint>Click the eyebrow and title text in the preview to edit them inline. Style each independently below.</InlineHint>
+
+            <SectionHeaderFields data={data} onChange={onChange} showLead={false} />
+
+            {/* ── Logos ───────────────────────────────────────── */}
             <RepeatableList
                 label="Logos"
                 items={data.logos || []}
                 onChange={v => onChange(set(data, 'logos', v))}
                 makeNew={() => ({ src: '', alt: 'New logo' })}
+                itemLabel={(item) => item.alt}
                 renderItem={(item, update) => (
-                    <ImageField label="Logo image (optional)" value={item.src} onChange={v => update({ ...item, src: v })} />
+                    <>
+                        <ImageField label="Logo image (optional)" value={item.src} onChange={v => update({ ...item, src: v })} />
+                        <TextField label="Alt text" value={item.alt || ''} onChange={v => update({ ...item, alt: v })} placeholder="Used as the logo's accessible name" />
+                    </>
                 )}
                 addLabel="Add logo"
             />
@@ -335,8 +1041,7 @@ export function ContentEditor({ data = {}, pages = [], onChange }) {
             </InlineHint>
 
             {/* ── Layout ─────────────────────────────────────────── */}
-            <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
-                <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Layout</div>
+            <CollapsibleCard title="Layout" defaultOpen={true}>
                 <FieldRow label="Column layout">
                     <div className="flex flex-wrap gap-1.5">
                         {COLUMN_LAYOUTS.map(opt => (
@@ -368,7 +1073,7 @@ export function ContentEditor({ data = {}, pages = [], onChange }) {
                     options={BACKGROUNDS}
                     onChange={v => setField('background', v)}
                 />
-            </div>
+            </CollapsibleCard>
 
             {/* ── Columns ────────────────────────────────────────── */}
             <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Columns</div>
@@ -497,6 +1202,34 @@ function ElementFields({ el, pages, update }) {
                         options={ALIGNS}
                         onChange={v => update({ ...el, align: v })}
                     />
+                    {/* Per-text-element typography. Stored under
+                        element.headingStyle / subheadingStyle / bodyStyle. */}
+                    <CollapsibleCard title="Text styles" defaultOpen={false}>
+                        <StyleTriplet
+                            label="Heading"
+                            style={el.headingStyle}
+                            onChange={v => update({ ...el, headingStyle: v })}
+                            sample={el.heading || 'Heading preview'}
+                            weight={700}
+                            min={12} max={96}
+                        />
+                        <StyleTriplet
+                            label="Subheading"
+                            style={el.subheadingStyle}
+                            onChange={v => update({ ...el, subheadingStyle: v })}
+                            sample={el.subheading || 'Subheading preview'}
+                            weight={500}
+                            min={10} max={48}
+                        />
+                        <StyleTriplet
+                            label="Body"
+                            style={el.bodyStyle}
+                            onChange={v => update({ ...el, bodyStyle: v })}
+                            sample={el.body || 'The quick brown fox jumps over the lazy dog.'}
+                            weight={400}
+                            min={10} max={32}
+                        />
+                    </CollapsibleCard>
                 </>
             ) : null}
 
@@ -662,17 +1395,17 @@ export function MediaTextEditor({ data = {}, pages = [], onChange }) {
             <Toggle label="Show CTA"        value={showCta}        onChange={toggleCta} />
 
             {showCta ? (
-                <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
-                    <LinkField
-                        label="Destination"
-                        value={data.cta?.link}
+                <CollapsibleCard title="CTA" defaultOpen={true}>
+                    <CtaButtonField
+                        value={data.cta || {}}
                         pages={pages}
-                        onChange={v => updateCta('link', v)}
+                        onChange={v => setField('cta', v)}
+                        label="CTA"
                     />
-                </div>
+                </CollapsibleCard>
             ) : null}
 
-            <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
+            <CollapsibleCard title="Media" defaultOpen={true}>
                 <FieldSelect
                     label="Media type"
                     value={media.kind || 'image'}
@@ -706,7 +1439,7 @@ export function MediaTextEditor({ data = {}, pages = [], onChange }) {
                         hint="Use the embed URL, not the public watch URL."
                     />
                 )}
-            </div>
+            </CollapsibleCard>
 
             <FieldSelect
                 label="Media position"
@@ -729,6 +1462,35 @@ export function MediaTextEditor({ data = {}, pages = [], onChange }) {
                 onChange={v => setField('mediaSize', v)}
             />
 
+            {/* Text styles — heading / subheading / body. Empty values
+                = inherit page CSS / Design tab. */}
+            <CollapsibleCard title="Text styles" defaultOpen={false}>
+                <StyleTriplet
+                    label="Heading"
+                    style={data.headingStyle}
+                    onChange={v => setField('headingStyle', v)}
+                    sample={data.heading || 'Heading preview'}
+                    weight={700}
+                    min={12} max={96}
+                />
+                <StyleTriplet
+                    label="Subheading"
+                    style={data.subheadingStyle}
+                    onChange={v => setField('subheadingStyle', v)}
+                    sample={data.subheading || 'Subheading preview'}
+                    weight={500}
+                    min={10} max={48}
+                />
+                <StyleTriplet
+                    label="Body"
+                    style={data.bodyStyle}
+                    onChange={v => setField('bodyStyle', v)}
+                    sample={data.body || 'The quick brown fox jumps over the lazy dog.'}
+                    weight={400}
+                    min={10} max={32}
+                />
+            </CollapsibleCard>
+
             <FieldSelect
                 label="Background"
                 value={data.backgroundVariant || 'default'}
@@ -750,16 +1512,38 @@ export function FeaturesEditor({ data = {}, onChange }) {
     return (
         <>
             <InlineHint>Eyebrow, title, lead, and each card's title / body / tag are editable in the preview.</InlineHint>
+            <SectionHeaderFields data={data} onChange={onChange} />
             <RepeatableList
                 label="Feature cards"
                 items={data.items || []}
                 onChange={v => onChange(set(data, 'items', v))}
                 makeNew={() => ({ icon: 'Sparkles', title: 'New feature', body: '', techTag: '' })}
+                itemLabel={(item) => item.title || '(no title)'}
                 renderItem={(item, update) => (
-                    <IconField label="Icon" value={item.icon} onChange={v => update({ ...item, icon: v })} />
+                    <>
+                        <IconField label="Icon" value={item.icon} onChange={v => update({ ...item, icon: v })} />
+                        {/* Per-card text colors. Single hex string, no
+                            sub-object — matches the spec for these two
+                            fields specifically. Empty = inherit. */}
+                        <FieldRow label="Title color">
+                            <ColorSwatch
+                                value={item.titleColor || ''}
+                                onChange={v => update({ ...item, titleColor: v })}
+                                title="Card title color"
+                            />
+                        </FieldRow>
+                        <FieldRow label="Body color">
+                            <ColorSwatch
+                                value={item.bodyColor || ''}
+                                onChange={v => update({ ...item, bodyColor: v })}
+                                title="Card body color"
+                            />
+                        </FieldRow>
+                    </>
                 )}
                 addLabel="Add card"
             />
+            <BackgroundCard data={data} onChange={onChange} />
         </>
     );
 }
@@ -770,14 +1554,54 @@ export function StepsEditor({ data = {}, onChange }) {
     return (
         <>
             <InlineHint>Click any step's number, title, body, or example in the preview to edit.</InlineHint>
+            <SectionHeaderFields data={data} onChange={onChange} />
             <RepeatableList
                 label="Steps"
                 items={data.items || []}
                 onChange={v => onChange(set(data, 'items', v))}
                 makeNew={() => ({ number: '', title: 'New step', body: '', example: '' })}
-                renderItem={() => null}
+                itemLabel={(item) => item.title || '(no title)'}
+                renderItem={(item, update) => (
+                    <>
+                        <TextField
+                            label="Number"
+                            value={item.number || ''}
+                            onChange={v => update({ ...item, number: v })}
+                            placeholder="e.g. 1"
+                        />
+                        <TextField
+                            label="Title"
+                            value={item.title || ''}
+                            onChange={v => update({ ...item, title: v })}
+                        />
+                        <FieldRow label="Body">
+                            <textarea
+                                rows={3}
+                                className={inputCls + ' resize-y'}
+                                value={item.body || ''}
+                                onChange={e => update({ ...item, body: e.target.value })}
+                                placeholder="Describe what happens in this step."
+                            />
+                        </FieldRow>
+                        <TextField
+                            label="Example"
+                            value={item.example || ''}
+                            onChange={v => update({ ...item, example: v })}
+                            placeholder="Optional caption / example"
+                        />
+                        {/* Per-step title color — single hex string. */}
+                        <FieldRow label="Title color">
+                            <ColorSwatch
+                                value={item.titleColor || ''}
+                                onChange={v => update({ ...item, titleColor: v })}
+                                title="Step title color"
+                            />
+                        </FieldRow>
+                    </>
+                )}
                 addLabel="Add step"
             />
+            <BackgroundCard data={data} onChange={onChange} />
         </>
     );
 }
@@ -788,11 +1612,13 @@ export function SecurityEditor({ data = {}, onChange }) {
     return (
         <>
             <InlineHint>Click any card's title, summary, or detail bullet to edit.</InlineHint>
+            <SectionHeaderFields data={data} onChange={onChange} />
             <RepeatableList
                 label="Security cards"
                 items={data.cards || []}
                 onChange={v => onChange(set(data, 'cards', v))}
                 makeNew={() => ({ icon: 'ShieldCheck', title: 'New card', summary: '', details: [] })}
+                itemLabel={(item) => item.title || '(no title)'}
                 renderItem={(item, update) => (
                     <>
                         <IconField label="Icon" value={item.icon} onChange={v => update({ ...item, icon: v })} />
@@ -801,13 +1627,24 @@ export function SecurityEditor({ data = {}, onChange }) {
                             items={item.details || []}
                             onChange={v => update({ ...item, details: v })}
                             makeNew={() => 'New detail'}
-                            renderItem={() => null}
+                            renderItem={(detail, updateDetail) => (
+                                // Detail bullets are bare strings in the
+                                // array — update(newString) replaces the
+                                // string in place at this index.
+                                <TextField
+                                    label="Text"
+                                    value={detail || ''}
+                                    onChange={updateDetail}
+                                    placeholder="Bullet text"
+                                />
+                            )}
                             addLabel="Add detail"
                         />
                     </>
                 )}
                 addLabel="Add card"
             />
+            <BackgroundCard data={data} onChange={onChange} />
         </>
     );
 }
@@ -818,25 +1655,16 @@ export function IntegrationsEditor({ data = {}, onChange }) {
     return (
         <>
             <InlineHint>Category headings and tool names are editable in the preview.</InlineHint>
-            <RepeatableList
-                label="Categories"
-                items={data.categories || []}
+            <SectionHeaderFields data={data} onChange={onChange} />
+            <GroupedItemsField
+                groups={data.categories || []}
                 onChange={v => onChange(set(data, 'categories', v))}
-                makeNew={() => ({ heading: 'New category', items: [] })}
-                renderItem={(cat, updateCat) => (
-                    <RepeatableList
-                        label="Tools"
-                        items={cat.items || []}
-                        onChange={v => updateCat({ ...cat, items: v })}
-                        makeNew={() => ({ icon: 'Plug', label: 'Tool' })}
-                        renderItem={(it, updIt) => (
-                            <IconField label="Icon" value={it.icon} onChange={v => updIt({ ...it, icon: v })} />
-                        )}
-                        addLabel="Add tool"
-                    />
-                )}
-                addLabel="Add category"
+                groupLabel="Category"
+                itemKind="icon-label"
+                headingKey="heading"
+                itemsKey="items"
             />
+            <BackgroundCard data={data} onChange={onChange} />
         </>
     );
 }
@@ -847,23 +1675,16 @@ export function ArchitectureEditor({ data = {}, onChange }) {
     return (
         <>
             <InlineHint>Click layer labels and tags in the preview to edit them.</InlineHint>
-            <RepeatableList
-                label="Layers"
-                items={data.layers || []}
+            <SectionHeaderFields data={data} onChange={onChange} />
+            <GroupedItemsField
+                groups={data.layers || []}
                 onChange={v => onChange(set(data, 'layers', v))}
-                makeNew={() => ({ label: 'New layer', tags: [] })}
-                renderItem={(layer, updateLayer) => (
-                    <RepeatableList
-                        label="Tags"
-                        items={layer.tags || []}
-                        onChange={v => updateLayer({ ...layer, tags: v })}
-                        makeNew={() => 'tag'}
-                        renderItem={() => null}
-                        addLabel="Add tag"
-                    />
-                )}
-                addLabel="Add layer"
+                groupLabel="Layer"
+                itemKind="string"
+                headingKey="label"
+                itemsKey="tags"
             />
+            <BackgroundCard data={data} onChange={onChange} />
         </>
     );
 }
@@ -874,14 +1695,44 @@ export function TechStatsEditor({ data = {}, onChange }) {
     return (
         <>
             <InlineHint>Click any number or label in the preview to edit.</InlineHint>
+            {/* Stats blocks don't store a `lead` field — skip that subsection. */}
+            <SectionHeaderFields data={data} onChange={onChange} showLead={false} />
             <RepeatableList
                 label="Stats"
                 items={data.stats || []}
                 onChange={v => onChange(set(data, 'stats', v))}
                 makeNew={() => ({ number: '0', label: 'New metric' })}
-                renderItem={() => null}
+                itemLabel={(item) => item.label || '(no label)'}
+                renderItem={(item, update) => (
+                    <>
+                        <TextField
+                            label="Number"
+                            value={item.number || ''}
+                            onChange={v => update({ ...item, number: v })}
+                            placeholder="e.g. 99%"
+                        />
+                        <TextField
+                            label="Label"
+                            value={item.label || ''}
+                            onChange={v => update({ ...item, label: v })}
+                            placeholder="e.g. Uptime"
+                        />
+                        {/* Per-stat number typography. The big number is
+                            the visual centrepiece of a stat; lets users
+                            scale + colour it independently of the label. */}
+                        <StyleTriplet
+                            label="Number style"
+                            style={item.numberStyle}
+                            onChange={v => update({ ...item, numberStyle: v })}
+                            sample={item.number || '99%'}
+                            weight={800}
+                            min={16} max={160}
+                        />
+                    </>
+                )}
                 addLabel="Add stat"
             />
+            <BackgroundCard data={data} onChange={onChange} />
         </>
     );
 }
@@ -893,12 +1744,13 @@ export function CTAEditor({ data = {}, pages = [], onChange }) {
     return (
         <>
             <InlineHint>Title, lead, and button label are editable in the preview.</InlineHint>
-            <LinkField
-                label="Button destination"
-                value={button.link}
+            <CtaButtonField
+                value={button}
                 pages={pages}
-                onChange={v => onChange(set(data, 'button', { ...button, link: v }))}
+                onChange={v => onChange(set(data, 'button', v))}
+                label="Button"
             />
+            <BackgroundCard data={data} onChange={onChange} />
         </>
     );
 }
@@ -942,39 +1794,48 @@ export function CtaBannerEditor({ data = {}, pages = [], onChange }) {
                 onChange={v => setField('backgroundVariant', v)}
             />
 
-            <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
-                <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Primary CTA</div>
-                <TextField
-                    label="Button label"
-                    value={primary.label || ''}
-                    onChange={v => updatePrimary('label', v)}
-                />
-                <LinkField
-                    label="Destination"
-                    value={primary.link}
+            <CollapsibleCard title="Primary CTA" defaultOpen={true}>
+                <CtaButtonField
+                    value={primary}
                     pages={pages}
-                    onChange={v => updatePrimary('link', v)}
+                    onChange={v => setField('primaryCta', v)}
+                    label="Primary CTA"
                 />
-            </div>
+            </CollapsibleCard>
 
             <Toggle label="Show secondary CTA" value={showSecondary} onChange={toggleSecondary} />
 
             {showSecondary ? (
-                <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
-                    <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Secondary CTA</div>
-                    <TextField
-                        label="Button label"
-                        value={data.secondaryCta?.label || ''}
-                        onChange={v => updateSecondary('label', v)}
-                    />
-                    <LinkField
-                        label="Destination"
-                        value={data.secondaryCta?.link}
+                <CollapsibleCard title="Secondary CTA" defaultOpen={true}>
+                    <CtaButtonField
+                        value={data.secondaryCta || {}}
                         pages={pages}
-                        onChange={v => updateSecondary('link', v)}
+                        onChange={v => setField('secondaryCta', v)}
+                        label="Secondary CTA"
                     />
-                </div>
+                </CollapsibleCard>
             ) : null}
+
+            {/* Text styles — heading + subheading only (CTA Banner has
+                no body paragraph; its text is just headline + tagline). */}
+            <CollapsibleCard title="Text styles" defaultOpen={false}>
+                <StyleTriplet
+                    label="Heading"
+                    style={data.headingStyle}
+                    onChange={v => setField('headingStyle', v)}
+                    sample={data.heading || 'Heading preview'}
+                    weight={700}
+                    min={12} max={96}
+                />
+                <StyleTriplet
+                    label="Subheading"
+                    style={data.subheadingStyle}
+                    onChange={v => setField('subheadingStyle', v)}
+                    sample={data.subheading || 'Subheading preview'}
+                    weight={500}
+                    min={10} max={48}
+                />
+            </CollapsibleCard>
         </>
     );
 }
@@ -983,83 +1844,122 @@ export function CtaBannerEditor({ data = {}, pages = [], onChange }) {
 
 export function FooterEditor({ data = {}, pages = [], onChange }) {
     const themeSwitcherEnabled = !!data.themeSwitcher?.enabled;
+    // Master footer-link styling. Sibling to columns/socials so it
+    // applies across all footer link labels (both inside columns and
+    // socials when wired). Matches the *Style naming used elsewhere.
+    const linkStyle = data.linkStyle || {};
+    const updateLinkStyle = (patch) => onChange(set(data, 'linkStyle', { ...linkStyle, ...patch }));
+
     return (
         <>
             <InlineHint>Brand text, blurb, column headings, link labels, and copyright are editable in the preview.</InlineHint>
-            <Toggle
-                label="Show theme switcher"
-                value={themeSwitcherEnabled}
-                onChange={v => onChange(set(data, 'themeSwitcher', { ...(data.themeSwitcher || {}), enabled: v }))}
-            />
-            <RepeatableList
-                label="Columns"
-                items={data.columns || []}
-                onChange={v => onChange(set(data, 'columns', v))}
-                makeNew={() => ({ id: `fcol_${Math.random().toString(36).slice(2,8)}`, heading: 'New column', links: [] })}
-                itemLabel={(c) => c.heading}
-                renderItem={(col, updateCol) => (
-                    <>
-                        <TextField
-                            label="Heading"
-                            value={col.heading || ''}
-                            onChange={v => updateCol({ ...col, heading: v })}
+
+            {/* Outer "Footer" card wraps the entire editor body. The
+                SectionDivider above (rendered by SiteChromeEditor) is
+                redundant — flagged for cleanup in a follow-up pass. */}
+            <CollapsibleCard title="Footer">
+                <Toggle
+                    label="Show theme switcher"
+                    value={themeSwitcherEnabled}
+                    onChange={v => onChange(set(data, 'themeSwitcher', { ...(data.themeSwitcher || {}), enabled: v }))}
+                />
+
+                {/* ── Master link style (no per-link overrides) ─── */}
+                <CollapsibleCard title="Link style">
+                    <FontRow
+                        label="Link font"
+                        value={linkStyle.fontFamily || ''}
+                        onChange={v => updateLinkStyle({ fontFamily: v })}
+                        sample="Pricing  ·  Docs  ·  Blog"
+                        weight={500}
+                    />
+                    <FieldRow label="Link color">
+                        <ColorSwatch
+                            value={linkStyle.color || ''}
+                            onChange={v => updateLinkStyle({ color: v })}
+                            title="Footer link color"
                         />
-                        <RepeatableList
-                            label="Links"
-                            items={col.links || []}
-                            onChange={v => updateCol({ ...col, links: v })}
-                            makeNew={() => ({ id: `fl_${Math.random().toString(36).slice(2,8)}`, label: 'New link', link: { kind: 'external', url: '#' } })}
-                            itemLabel={(l) => l.label}
-                            renderItem={(l, updL) => (
-                                <>
-                                    <TextField
-                                        label="Label"
-                                        value={l.label || ''}
-                                        onChange={v => updL({ ...l, label: v })}
-                                    />
-                                    <LinkField
-                                        label="Link"
-                                        value={l.link}
-                                        pages={pages}
-                                        onChange={v => updL({ ...l, link: v })}
-                                    />
-                                </>
-                            )}
-                            addLabel="Add link"
-                        />
-                    </>
-                )}
-                addLabel="Add column"
-            />
-            <RepeatableList
-                label="Social links"
-                items={data.socials || []}
-                onChange={v => onChange(set(data, 'socials', v))}
-                makeNew={() => ({ id: `soc_${Math.random().toString(36).slice(2,8)}`, platform: 'github', link: { kind: 'external', url: '' } })}
-                itemLabel={(s) => s.platform}
-                renderItem={(s, updS) => (
-                    <>
-                        <FieldSelect
-                            label="Platform"
-                            value={s.platform}
-                            options={[
-                                { value: 'github',   label: 'GitHub' },
-                                { value: 'twitter',  label: 'Twitter / X' },
-                                { value: 'linkedin', label: 'LinkedIn' },
-                                { value: 'other',    label: 'Other' },
-                            ]}
-                            onChange={v => updS({ ...s, platform: v })}
-                        />
-                        <LinkField
-                            label="URL"
-                            value={s.link}
-                            pages={pages}
-                            onChange={v => updS({ ...s, link: v })}
-                        />
-                    </>
-                )}
-                addLabel="Add social"
-            />
+                    </FieldRow>
+                </CollapsibleCard>
+
+                {/* ── Columns ───────────────────────────────────── */}
+                <CollapsibleCard title="Columns">
+                    <RepeatableList
+                        items={data.columns || []}
+                        onChange={v => onChange(set(data, 'columns', v))}
+                        makeNew={() => ({ id: `fcol_${Math.random().toString(36).slice(2,8)}`, heading: 'New column', links: [] })}
+                        itemLabel={(c) => c.heading || '(no heading)'}
+                        collapsible
+                        renderItem={(col, updateCol) => (
+                            <>
+                                <TextField
+                                    label="Heading"
+                                    value={col.heading || ''}
+                                    onChange={v => updateCol({ ...col, heading: v })}
+                                />
+                                <RepeatableList
+                                    label="Links"
+                                    items={col.links || []}
+                                    onChange={v => updateCol({ ...col, links: v })}
+                                    makeNew={() => ({ id: `fl_${Math.random().toString(36).slice(2,8)}`, label: 'New link', link: { kind: 'external', url: '#' } })}
+                                    itemLabel={(l) => l.label || '(no label)'}
+                                    collapsible
+                                    renderItem={(l, updL) => (
+                                        <>
+                                            <TextField
+                                                label="Label"
+                                                value={l.label || ''}
+                                                onChange={v => updL({ ...l, label: v })}
+                                            />
+                                            <LinkField
+                                                label="Link"
+                                                value={l.link}
+                                                pages={pages}
+                                                onChange={v => updL({ ...l, link: v })}
+                                            />
+                                        </>
+                                    )}
+                                    addLabel="Add link"
+                                />
+                            </>
+                        )}
+                        addLabel="Add column"
+                    />
+                </CollapsibleCard>
+
+                {/* ── Social links ──────────────────────────────── */}
+                <CollapsibleCard title="Social links">
+                    <RepeatableList
+                        items={data.socials || []}
+                        onChange={v => onChange(set(data, 'socials', v))}
+                        makeNew={() => ({ id: `soc_${Math.random().toString(36).slice(2,8)}`, platform: 'github', link: { kind: 'external', url: '' } })}
+                        itemLabel={(s) => s.platform || '(no platform)'}
+                        collapsible
+                        renderItem={(s, updS) => (
+                            <>
+                                <FieldSelect
+                                    label="Platform"
+                                    value={s.platform}
+                                    options={[
+                                        { value: 'github',   label: 'GitHub' },
+                                        { value: 'twitter',  label: 'Twitter / X' },
+                                        { value: 'linkedin', label: 'LinkedIn' },
+                                        { value: 'other',    label: 'Other' },
+                                    ]}
+                                    onChange={v => updS({ ...s, platform: v })}
+                                />
+                                <LinkField
+                                    label="URL"
+                                    value={s.link}
+                                    pages={pages}
+                                    onChange={v => updS({ ...s, link: v })}
+                                />
+                            </>
+                        )}
+                        addLabel="Add social"
+                    />
+                </CollapsibleCard>
+            </CollapsibleCard>
         </>
     );
 }
@@ -1123,15 +2023,37 @@ export const BLOCK_EDITORS = {
 export const BLOCK_DEFAULTS = {
     hero: {
         eyebrow: '',
-        badge: { text: '', icon: '' },
+        // Each toggle-able piece carries an `enabled: true` so the panel's
+        // "Show …" toggles can flip it off. Old hero blocks stored without
+        // this field render as before because the renderer treats missing
+        // `enabled` as truthy via `!== false`.
+        badge: { enabled: true, text: '', icon: '' },
+        // Per-text styling — empty strings / 0 = inherit the page CSS and
+        // the Design tab, so blocks stored without these keys read as
+        // undefined and the renderer skips inline-style application.
+        badgeStyle: { fontFamily: '', fontSize: 0, color: '' },
         titleParts: [{ text: 'Your headline here', gradient: false }],
+        titleStyle: { fontFamily: '', fontSize: 0, color: '' },
         lead: 'Describe your product or service',
-        primaryCta:   { label: 'Get started', link: { kind: 'anchor', anchor: '' } },
-        secondaryCta: { label: 'Learn more',  link: { kind: 'anchor', anchor: '' } },
-        mockup: { chatBubbles: [] },
+        leadStyle: { fontFamily: '', fontSize: 0, color: '' },
+        // CTAs grew an explicit `style` field (matching site-chrome /
+        // multi-CTA patterns) and an `enabled` toggle. Defaults preserve
+        // the original visual: primary = filled orange, secondary = outline.
+        primaryCta:   { enabled: true, label: 'Get started', style: 'primary',   link: { kind: 'anchor', anchor: '' } },
+        secondaryCta: { enabled: true, label: 'Learn more',  style: 'secondary', link: { kind: 'anchor', anchor: '' } },
+        mockup: { enabled: true, chatBubbles: [] },
+        // 'default' / 'surface' / 'primary' / 'dark' — same scale as
+        // Media + Text and Content blocks. Default keeps the page bg.
+        backgroundVariant: 'default',
     },
     socialProof: {
         eyebrow: 'Add your client logos',
+        title: '',
+        // Empty strings = inherit the page CSS / Design tab. Old blocks
+        // saved without these keys read as `undefined` and the renderer
+        // skips inline-style application, so backwards-compat is free.
+        eyebrowStyle: { fontFamily: '', fontSize: 14, color: '' },
+        titleStyle:   { fontFamily: '', fontSize: 32, color: '' },
         logos: [],
     },
     content: {

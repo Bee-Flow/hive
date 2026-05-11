@@ -16,6 +16,24 @@ import { CSS } from '@dnd-kit/utilities';
 import AppIcon from '../../AppIcon';
 import { BLOCK_CATALOGUE } from './editors';
 
+// Derive the row label shown in the left sidebar. Defaults to the block
+// catalogue's static label, but a few block types expose a more useful
+// title from their content (e.g. Social Proof's title / eyebrow). Add new
+// branches here when other blocks want the same treatment — keep the
+// switch tightly scoped so a typo in one block's content can't affect
+// another block's row label.
+function deriveBlockLabel(block, meta) {
+    const fallback = meta?.label || block.type;
+    const content = block?.content;
+    if (!content || typeof content !== 'object') return fallback;
+    if (block.type === 'socialProof') {
+        const title   = typeof content.title   === 'string' ? content.title.trim()   : '';
+        const eyebrow = typeof content.eyebrow === 'string' ? content.eyebrow.trim() : '';
+        return title || eyebrow || fallback;
+    }
+    return fallback;
+}
+
 // ── Single draggable block row ────────────────────────────────────────
 
 function BlockRow({ block, isActive, onClick, onToggle, onDuplicate, onDelete }) {
@@ -30,6 +48,7 @@ function BlockRow({ block, isActive, onClick, onToggle, onDuplicate, onDelete })
     };
 
     const meta = BLOCK_CATALOGUE[block.type] || { label: block.type, icon: 'Square' };
+    const displayLabel = deriveBlockLabel(block, meta);
 
     return (
         <div
@@ -57,7 +76,7 @@ function BlockRow({ block, isActive, onClick, onToggle, onDuplicate, onDelete })
             {/* block icon + label */}
             <span className={`flex items-center gap-1.5 flex-1 min-w-0 ${isActive ? 'text-[var(--accent-primary)]' : 'text-[var(--text-muted)]'}`}>
                 <AppIcon name={meta.icon} className="w-3.5 h-3.5 shrink-0" />
-                <span className="text-sm text-[var(--text-primary)] truncate">{meta.label}</span>
+                <span className="text-sm text-[var(--text-primary)] truncate">{displayLabel}</span>
             </span>
 
             {/* visibility toggle */}

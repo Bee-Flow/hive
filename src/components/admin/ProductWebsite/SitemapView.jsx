@@ -1,181 +1,397 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { authFetch } from '../../../utils/helpers';
 import { cmsApi } from './cmsApi';
 import AppIcon from '../../AppIcon';
 
 /**
- * SitemapView — read-only directed graph of the site's pages.
+ * SitemapView — top-down tree of the site's pages.
  *
- * Nodes  = pages (from /api/cms/sites/:siteId/graph)
- * Edges  = every internal Link.kind==="page" reference across all blocks
- *          and site chrome, deduped per (source, target).
+ *   Site Chrome (pseudo-node, header/footer)
+ *           │
+ *        Homepage   (rank 0)
+ *      ┌────┼────┐
+ *      page  page  page          (rank 1 — chrome targets + BFS children)
+ *       │
+ *       page                     (rank 2 — internal block links)
  *
- * Layout: iterative force-directed simulation run in a useEffect so it's
- * pure JS — no additional library needed.
- *   - Repulsion between all node pairs.
- *   - Attraction along edges.
- *   - Gravity toward centre.
- *   - Nodes are draggable so the user can tidy the layout.
+ *   ── Unlinked pages ──
+ *     orphanA   orphanB           (no inbound nav / link)
+ *
+ * Layout is BFS-based: homepage at rank 0, chrome targets become rank 1
+ * children of the homepage, internal block-content links extend the
+ * tree to rank 2+. Pages never reached are bucketed at the bottom.
+ *
+ * Edges are typed:
+ *   NAV       — chrome (header / footer)            solid, accent
+ *   INTERNAL  — block-content edge that follows the BFS tree
+ *               (source IS the target's tree parent) — dashed, muted
+ *   BACKLINK  — block-content edge that doesn't follow the tree — dotted, warning
+ *
+ * Chrome edges are routed through a single "Site Chrome" pseudo-node so
+ * the graph doesn't get the N×C inflation the previous version had (one
+ * edge per page × chrome target).
+ *
+ * The component fetches the full admin payload (`cmsApi.site`) so it can
+ * derive typed edges client-side — block content isn't on the
+ * `/graph` endpoint and we'd otherwise lose the chrome-vs-internal
+ * distinction.
  */
 
-const NODE_R      = 28;   // node circle radius (px)
-const CANVAS_W    = 900;
-const CANVAS_H    = 600;
-const ITERATIONS  = 200;  // force simulation steps on load
-const REPULSION   = 8000;
-const ATTRACTION  = 0.04;
-const GRAVITY     = 0.02;
-const DAMPING     = 0.85;
+// ── Layout constants ─────────────────────────────────────────────────
 
-// ── force simulation ─────────────────────────────────────────────────
+const NODE_W = 200;
+const NODE_H = 78;
+const RANK_GAP = 90;        // vertical gap between rank rows (above NODE_H)
+const COL_GAP = 36;         // horizontal gap between cards in a rank
+const PADDING = 64;         // outer canvas padding
+const ORPHAN_GAP = 60;      // gap above the orphan row
+const CHROME_W = 160;
+const CHROME_H = 30;
+const CHROME_GAP = 60;      // gap between chrome pseudo-node and homepage
+const DRAG_THRESHOLD = 8;   // px movement before a mousedown becomes a drag
 
-function runLayout(nodes, edges) {
-    // Place nodes in a circle initially so the layout starts spread out.
-    const n = nodes.length;
-    const positions = nodes.map((node, i) => ({
-        id: node.id,
-        x: CANVAS_W / 2 + Math.cos((2 * Math.PI * i) / n) * Math.min(CANVAS_W, CANVAS_H) * 0.3,
-        y: CANVAS_H / 2 + Math.sin((2 * Math.PI * i) / n) * Math.min(CANVAS_W, CANVAS_H) * 0.3,
-        vx: 0,
-        vy: 0,
-    }));
+// ── Graph derivation helpers ─────────────────────────────────────────
 
-    const posById = new Map(positions.map(p => [p.id, p]));
-
-    for (let iter = 0; iter < ITERATIONS; iter++) {
-        // Repulsion between all pairs.
-        for (let i = 0; i < positions.length; i++) {
-            for (let j = i + 1; j < positions.length; j++) {
-                const a = positions[i];
-                const b = positions[j];
-                const dx = b.x - a.x;
-                const dy = b.y - a.y;
-                const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-                const force = REPULSION / (dist * dist);
-                const fx = (dx / dist) * force;
-                const fy = (dy / dist) * force;
-                a.vx -= fx; a.vy -= fy;
-                b.vx += fx; b.vy += fy;
-            }
+// Collect every page-kind link target found in the header + footer.
+// Returns:
+//   targets : Set<pageId>
+//   sources : Map<pageId, [{location:'header'|'footer'}]>  (for info popover)
+function collectChromeTargets(site) {
+    const targets = new Set();
+    const sources = new Map();
+    const walk = (location, node) => {
+        if (Array.isArray(node)) { node.forEach(n => walk(location, n)); return; }
+        if (!node || typeof node !== 'object') return;
+        if (node.kind === 'page' && node.pageId) {
+            targets.add(node.pageId);
+            if (!sources.has(node.pageId)) sources.set(node.pageId, []);
+            sources.get(node.pageId).push({ location });
         }
-        // Attraction along edges.
-        for (const edge of edges) {
-            const a = posById.get(edge.source);
-            const b = posById.get(edge.target);
-            if (!a || !b) continue;
-            const dx = b.x - a.x;
-            const dy = b.y - a.y;
-            a.vx += dx * ATTRACTION;
-            a.vy += dy * ATTRACTION;
-            b.vx -= dx * ATTRACTION;
-            b.vy -= dy * ATTRACTION;
+        for (const v of Object.values(node)) walk(location, v);
+    };
+    walk('header', site?.header);
+    walk('footer', site?.footer);
+    return { targets, sources };
+}
+
+// Walk every block on every page; emit (source, target) per page-kind link.
+// Returns:
+//   edges : [{ source, target }] deduped by pair
+//   meta  : Map<"src->tgt", [{blockType, blockId}]> (which block defines it)
+function collectInternalEdges(pages) {
+    const edges = [];
+    const seen  = new Set();
+    const meta  = new Map();
+    const addEdge = (source, target, blockType, blockId) => {
+        if (!source || !target || source === target) return;
+        const k = `${source}->${target}`;
+        if (!seen.has(k)) {
+            seen.add(k);
+            edges.push({ source, target });
         }
-        // Gravity toward centre.
-        for (const p of positions) {
-            p.vx += (CANVAS_W / 2 - p.x) * GRAVITY;
-            p.vy += (CANVAS_H / 2 - p.y) * GRAVITY;
+        if (!meta.has(k)) meta.set(k, []);
+        const existing = meta.get(k);
+        if (!existing.some(e => e.blockId === blockId)) {
+            existing.push({ blockType, blockId });
         }
-        // Apply velocity + damping + clamp to canvas.
-        for (const p of positions) {
-            p.vx *= DAMPING;
-            p.vy *= DAMPING;
-            p.x = Math.max(NODE_R + 4, Math.min(CANVAS_W - NODE_R - 4, p.x + p.vx));
-            p.y = Math.max(NODE_R + 4, Math.min(CANVAS_H - NODE_R - 4, p.y + p.vy));
+    };
+    const walk = (sourceId, blockType, blockId, node) => {
+        if (Array.isArray(node)) { node.forEach(n => walk(sourceId, blockType, blockId, n)); return; }
+        if (!node || typeof node !== 'object') return;
+        if (node.kind === 'page' && node.pageId) addEdge(sourceId, node.pageId, blockType, blockId);
+        for (const v of Object.values(node)) walk(sourceId, blockType, blockId, v);
+    };
+    for (const page of pages) {
+        (page.blocks || []).forEach(block => walk(page.id, block.type, block.id, block));
+    }
+    return { edges, meta };
+}
+
+// BFS rank assignment from the homepage. Chrome targets seed rank 1 (the
+// homepage's "nav children"). Internal edges extend the tree from there.
+// Pages never visited become orphans.
+//
+// Returns:
+//   positions    : Map<pageId, {x, y}>
+//   parent       : Map<pageId, pageId>     tree parent (for edge classification)
+//   chromePos    : { x, y } | null         only when chrome targets exist
+//   orphanIds    : Set<pageId>             pages not reached by BFS
+//   width, height: number                  computed canvas bounds
+function bfsLayout(pages, internalEdges, chromeTargets) {
+    const homepage = pages.find(p => p.isHomepage) || pages[0] || null;
+    const outgoing = new Map();
+    for (const e of internalEdges) {
+        if (!outgoing.has(e.source)) outgoing.set(e.source, []);
+        outgoing.get(e.source).push(e.target);
+    }
+
+    const rank   = new Map();
+    const parent = new Map();
+    const queue  = [];
+
+    if (homepage) {
+        rank.set(homepage.id, 0);
+        queue.push(homepage.id);
+        // Chrome targets become rank-1 children of the homepage.
+        for (const t of chromeTargets) {
+            if (t === homepage.id || rank.has(t)) continue;
+            rank.set(t, 1);
+            parent.set(t, homepage.id);
+            queue.push(t);
         }
     }
 
-    return positions;
+    // BFS through internal edges.
+    let cursor = 0;
+    while (cursor < queue.length) {
+        const id = queue[cursor++];
+        const idRank = rank.get(id);
+        const children = outgoing.get(id) || [];
+        for (const child of children) {
+            if (rank.has(child)) continue;
+            rank.set(child, idRank + 1);
+            parent.set(child, id);
+            queue.push(child);
+        }
+    }
+
+    // Bucket pages by rank.
+    const byRank = new Map();
+    const orphanIds = new Set();
+    for (const p of pages) {
+        if (rank.has(p.id)) {
+            const r = rank.get(p.id);
+            if (!byRank.has(r)) byRank.set(r, []);
+            byRank.get(r).push(p);
+        } else {
+            orphanIds.add(p.id);
+        }
+    }
+    const orphans = pages.filter(p => orphanIds.has(p.id));
+    const ranks = Array.from(byRank.keys()).sort((a, b) => a - b);
+
+    // Canvas width — widest row drives it. Plus padding.
+    let widestRow = NODE_W;
+    for (const items of byRank.values()) {
+        const w = items.length * NODE_W + Math.max(0, items.length - 1) * COL_GAP;
+        if (w > widestRow) widestRow = w;
+    }
+    if (orphans.length > 0) {
+        const w = orphans.length * NODE_W + Math.max(0, orphans.length - 1) * COL_GAP;
+        if (w > widestRow) widestRow = w;
+    }
+    const canvasWidth = widestRow + 2 * PADDING;
+    const centerX = canvasWidth / 2;
+
+    // Reserve space above rank 0 for the chrome pseudo-node when present.
+    const hasChrome = chromeTargets.size > 0;
+    const topPad = PADDING + (hasChrome ? CHROME_H + CHROME_GAP : 0);
+
+    const positions = new Map();
+    for (const r of ranks) {
+        const items = byRank.get(r);
+        const rowWidth = items.length * NODE_W + Math.max(0, items.length - 1) * COL_GAP;
+        const startX = centerX - rowWidth / 2;
+        const y = topPad + r * (NODE_H + RANK_GAP);
+        items.forEach((p, idx) => {
+            positions.set(p.id, { x: startX + idx * (NODE_W + COL_GAP), y });
+        });
+    }
+
+    const maxPageRank = ranks.length > 0 ? ranks[ranks.length - 1] : 0;
+    const bottomOfTree = topPad + maxPageRank * (NODE_H + RANK_GAP) + NODE_H;
+
+    // Orphan row at the bottom.
+    let orphanRowY = 0;
+    if (orphans.length > 0) {
+        orphanRowY = bottomOfTree + ORPHAN_GAP;
+        const rowWidth = orphans.length * NODE_W + Math.max(0, orphans.length - 1) * COL_GAP;
+        const startX = centerX - rowWidth / 2;
+        orphans.forEach((p, idx) => {
+            positions.set(p.id, { x: startX + idx * (NODE_W + COL_GAP), y: orphanRowY });
+        });
+    }
+
+    // Chrome pseudo-node centred above the homepage.
+    let chromePos = null;
+    if (hasChrome && homepage) {
+        const hpPos = positions.get(homepage.id);
+        if (hpPos) {
+            chromePos = {
+                x: hpPos.x + (NODE_W - CHROME_W) / 2,
+                y: hpPos.y - CHROME_H - CHROME_GAP,
+            };
+        }
+    }
+
+    const canvasHeight = (orphans.length > 0 ? orphanRowY + NODE_H : bottomOfTree) + PADDING;
+
+    return {
+        positions,
+        parent,
+        chromePos,
+        orphanIds,
+        orphanRowY,
+        canvasWidth,
+        canvasHeight,
+        homepageId: homepage?.id || null,
+    };
 }
 
-// Compute arrowhead endpoint so it sits on the target circle's edge,
-// not at the centre.
-function edgePoints(ax, ay, bx, by) {
-    const dx = bx - ax;
-    const dy = by - ay;
-    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
-    // Shorten by NODE_R so the line ends at the circle boundary.
-    const ex = bx - (dx / dist) * (NODE_R + 3);
-    const ey = by - (dy / dist) * (NODE_R + 3);
-    // Also start at source boundary.
-    const sx = ax + (dx / dist) * (NODE_R + 3);
-    const sy = ay + (dy / dist) * (NODE_R + 3);
+// Edge endpoint geometry — shorten the line so the arrowhead lands on
+// the card edge, not its centre.
+function edgeEndpoints(srcCx, srcCy, srcH, tgtCx, tgtCy, tgtH) {
+    // For top-down trees most edges go roughly downward — start from the
+    // bottom of the source rect's centre, end at the top of the target's.
+    // For lateral / upward edges (backlinks) we still anchor on the centre
+    // and let the visual handle it — good enough for the read-only graph.
+    const sx = srcCx;
+    const sy = srcCy + srcH / 2 - 2;
+    const ex = tgtCx;
+    const ey = tgtCy - tgtH / 2 + 2;
     return { sx, sy, ex, ey };
+}
+
+// Edge classification — returns 'tree' or 'backlink' for internal edges.
+function classifyInternal(edge, parent) {
+    return parent.get(edge.target) === edge.source ? 'tree' : 'backlink';
 }
 
 // ── SitemapView ──────────────────────────────────────────────────────
 
-export default function SitemapView({ siteId, activePageId, onSelectPage }) {
-    const [graph, setGraph]       = useState(null);
-    const [loading, setLoading]   = useState(true);
-    const [error, setError]       = useState(null);
-    const [positions, setPositions] = useState([]);
-    const [dragging, setDragging] = useState(null); // { id, ox, oy }
-    const svgRef = useRef(null);
+export default function SitemapView({ siteId, /* eslint-disable-next-line no-unused-vars */ activePageId, onSelectPage }) {
+    const containerRef = useRef(null);
+    const [adminPayload, setAdminPayload] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError]     = useState(null);
 
-    // Fetch graph data — refetch whenever the active site changes.
-    useEffect(() => {
-        if (!siteId) { setLoading(false); setGraph({ nodes: [], edges: [] }); setPositions([]); return; }
-        let cancelled = false;
-        setLoading(true);
-        authFetch(cmsApi.siteGraph(siteId))
-            .then(r => r.ok ? r.json() : r.json().then(d => Promise.reject(d.error || 'Failed')))
-            .then(data => {
-                if (cancelled) return;
-                setGraph(data);
-                setPositions(runLayout(data.nodes, data.edges));
-            })
-            .catch(err => { if (!cancelled) setError(String(err)); })
-            .finally(() => { if (!cancelled) setLoading(false); });
-        return () => { cancelled = true; };
-    }, [siteId]);
+    // Manual position overrides (drag results). Survive Refresh so the
+    // user's tidying isn't lost when the layout recomputes.
+    const [overrides, setOverrides] = useState({});
 
-    const posById = new Map(positions.map(p => [p.id, p]));
+    // Drag state — `candidate` is the pre-threshold mousedown record;
+    // `dragging` is the actual drag once movement exceeds DRAG_THRESHOLD.
+    const [candidate, setCandidate] = useState(null);
+    const [dragging,  setDragging]  = useState(null);
 
-    // ── drag logic ───────────────────────────────────────────────────
+    // UI overlays
+    const [flyout, setFlyout]           = useState(null); // { pageId, anchorX, anchorY }
+    const [edgePopover, setEdgePopover] = useState(null); // { x, y, info }
 
-    const onNodeMouseDown = useCallback((e, id) => {
-        e.preventDefault();
-        const svg = svgRef.current;
-        if (!svg) return;
-        const pt = svg.createSVGPoint();
-        pt.x = e.clientX; pt.y = e.clientY;
-        const svgPt = pt.matrixTransform(svg.getScreenCTM().inverse());
-        const pos = posById.get(id);
-        if (!pos) return;
-        setDragging({ id, ox: svgPt.x - pos.x, oy: svgPt.y - pos.y });
-    }, [posById]);
-
-    const onSvgMouseMove = useCallback((e) => {
-        if (!dragging) return;
-        const svg = svgRef.current;
-        if (!svg) return;
-        const pt = svg.createSVGPoint();
-        pt.x = e.clientX; pt.y = e.clientY;
-        const svgPt = pt.matrixTransform(svg.getScreenCTM().inverse());
-        const nx = Math.max(NODE_R + 4, Math.min(CANVAS_W - NODE_R - 4, svgPt.x - dragging.ox));
-        const ny = Math.max(NODE_R + 4, Math.min(CANVAS_H - NODE_R - 4, svgPt.y - dragging.oy));
-        setPositions(prev => prev.map(p => p.id === dragging.id ? { ...p, x: nx, y: ny } : p));
-    }, [dragging]);
-
-    const onSvgMouseUp = useCallback(() => setDragging(null), []);
-
-    const handleRefresh = async () => {
-        if (!siteId) return;
+    // ── Fetch admin payload (site + pages with blocks) ──────────────
+    const fetchData = useCallback(async () => {
+        if (!siteId) { setLoading(false); setAdminPayload(null); return; }
         setLoading(true);
         setError(null);
         try {
-            const r = await authFetch(cmsApi.siteGraph(siteId));
-            const data = await r.json();
-            setGraph(data);
-            setPositions(runLayout(data.nodes, data.edges));
+            const res = await authFetch(cmsApi.site(siteId));
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body.error || `Failed to load (${res.status})`);
+            }
+            const data = await res.json();
+            setAdminPayload(data);
         } catch (err) {
-            setError(String(err));
+            setError(String(err.message || err));
         } finally {
             setLoading(false);
         }
-    };
+    }, [siteId]);
 
-    // ── render ───────────────────────────────────────────────────────
+    useEffect(() => { fetchData(); }, [fetchData]);
+
+    // ── Derived graph + layout ──────────────────────────────────────
+    const derived = useMemo(() => {
+        if (!adminPayload?.site) return null;
+        const site = adminPayload.site;
+        // Merge page index (has isHomepage) with page docs (have blocks).
+        const docById = new Map((adminPayload.pages || []).map(p => [p.id, p]));
+        const pages = (site.pages || []).map(entry => ({
+            ...entry,
+            blocks: docById.get(entry.id)?.blocks || [],
+        }));
+        const { targets: chromeTargets, sources: chromeSources } = collectChromeTargets(site);
+        const { edges: internalEdges, meta: internalMeta } = collectInternalEdges(pages);
+        const layout = bfsLayout(pages, internalEdges, chromeTargets);
+        return { site, pages, chromeTargets, chromeSources, internalEdges, internalMeta, layout };
+    }, [adminPayload]);
+
+    // Positions: layout-computed unless the user has dragged the node.
+    const effectivePositions = useMemo(() => {
+        const out = new Map();
+        if (!derived) return out;
+        for (const [id, pos] of derived.layout.positions) {
+            out.set(id, overrides[id] || pos);
+        }
+        return out;
+    }, [derived, overrides]);
+
+    // ── Drag handling ────────────────────────────────────────────────
+    // Mousedown captures the candidate node + offset; we don't enter
+    // drag mode until the mouse moves past DRAG_THRESHOLD pixels. This
+    // lets click handlers on the gear icon fire cleanly without ever
+    // triggering a "click after drag" miss.
+    const handleNodeMouseDown = useCallback((e, nodeId) => {
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left + containerRef.current.scrollLeft;
+        const mouseY = e.clientY - rect.top  + containerRef.current.scrollTop;
+        const pos = effectivePositions.get(nodeId);
+        if (!pos) return;
+        setCandidate({
+            id: nodeId,
+            startMouseX: mouseX,
+            startMouseY: mouseY,
+            offsetX: mouseX - pos.x,
+            offsetY: mouseY - pos.y,
+        });
+    }, [effectivePositions]);
+
+    const handleMouseMove = useCallback((e) => {
+        if (!candidate && !dragging) return;
+        if (!containerRef.current) return;
+        const rect = containerRef.current.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left + containerRef.current.scrollLeft;
+        const mouseY = e.clientY - rect.top  + containerRef.current.scrollTop;
+
+        if (candidate && !dragging) {
+            const dx = mouseX - candidate.startMouseX;
+            const dy = mouseY - candidate.startMouseY;
+            if (Math.hypot(dx, dy) > DRAG_THRESHOLD) {
+                setDragging({
+                    id: candidate.id,
+                    offsetX: candidate.offsetX,
+                    offsetY: candidate.offsetY,
+                });
+            }
+        }
+        if (dragging) {
+            setOverrides(prev => ({
+                ...prev,
+                [dragging.id]: {
+                    x: Math.max(0, mouseX - dragging.offsetX),
+                    y: Math.max(0, mouseY - dragging.offsetY),
+                },
+            }));
+        }
+    }, [candidate, dragging]);
+
+    const handleMouseUp = useCallback(() => {
+        setCandidate(null);
+        setDragging(null);
+    }, []);
+
+    // ── Refresh ─────────────────────────────────────────────────────
+    // Re-fetches the payload (layout is re-derived in `derived` useMemo).
+    // We deliberately do NOT clear `overrides`, so manual node tidying
+    // survives a refresh. Reset Layout button below clears them.
+    const handleRefresh = useCallback(() => { fetchData(); }, [fetchData]);
+    const handleResetLayout = useCallback(() => { setOverrides({}); }, []);
+
+    // ── Flyout open + page-mutation handlers ────────────────────────
+    const openFlyout = useCallback((pageId, posX, posY) => {
+        setFlyout({ pageId, anchorX: posX + NODE_W + 12, anchorY: posY });
+    }, []);
 
     if (loading) {
         return (
@@ -194,18 +410,35 @@ export default function SitemapView({ siteId, activePageId, onSelectPage }) {
             </div>
         );
     }
+    if (!derived) return null;
 
-    const nodes = graph?.nodes || [];
-    const edges = graph?.edges || [];
-    const isEmpty = nodes.length === 0;
+    const { pages, chromeTargets, chromeSources, internalEdges, internalMeta, layout, site } = derived;
+    const { positions, parent, chromePos, orphanIds, orphanRowY, canvasWidth, canvasHeight } = layout;
+    const isEmpty = pages.length === 0;
 
     return (
         <div className="flex-1 flex flex-col min-h-0">
-            {/* toolbar */}
+            {/* Toolbar */}
             <div className="flex items-center gap-3 px-4 py-2 border-b border-[var(--border-subtle)] text-xs text-[var(--text-muted)] shrink-0">
-                <span>{nodes.length} page{nodes.length !== 1 ? 's' : ''} · {edges.length} internal link{edges.length !== 1 ? 's' : ''}</span>
+                <span>
+                    {pages.length} page{pages.length !== 1 ? 's' : ''}
+                    {' · '}
+                    {chromeTargets.size} chrome link{chromeTargets.size !== 1 ? 's' : ''}
+                    {' · '}
+                    {internalEdges.length} internal link{internalEdges.length !== 1 ? 's' : ''}
+                </span>
                 <div className="flex-1" />
-                <span className="italic">Drag nodes to rearrange</span>
+                {Object.keys(overrides).length > 0 ? (
+                    <button
+                        type="button"
+                        onClick={handleResetLayout}
+                        className="flex items-center gap-1 text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                        title="Reset manual node positions"
+                    >
+                        <AppIcon name="RotateCcw" className="w-3.5 h-3.5" />
+                        Reset layout
+                    </button>
+                ) : null}
                 <button
                     type="button"
                     onClick={handleRefresh}
@@ -222,138 +455,597 @@ export default function SitemapView({ siteId, activePageId, onSelectPage }) {
                     No pages yet. Add a page to see the sitemap.
                 </div>
             ) : (
-                <div className="flex-1 overflow-auto bg-[var(--bg-secondary)]">
-                    <svg
-                        ref={svgRef}
-                        viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`}
-                        width={CANVAS_W}
-                        height={CANVAS_H}
-                        className="block"
-                        style={{ cursor: dragging ? 'grabbing' : 'default' }}
-                        onMouseMove={onSvgMouseMove}
-                        onMouseUp={onSvgMouseUp}
-                        onMouseLeave={onSvgMouseUp}
-                    >
-                        <defs>
-                            <marker
-                                id="arrow"
-                                markerWidth="8" markerHeight="8"
-                                refX="6" refY="3"
-                                orient="auto"
-                            >
-                                <path d="M0,0 L0,6 L8,3 z" fill="var(--border-default)" />
-                            </marker>
-                            <marker
-                                id="arrow-active"
-                                markerWidth="8" markerHeight="8"
-                                refX="6" refY="3"
-                                orient="auto"
-                            >
-                                <path d="M0,0 L0,6 L8,3 z" fill="#6366f1" />
-                            </marker>
-                        </defs>
+                <div
+                    ref={containerRef}
+                    className="flex-1 overflow-auto bg-[var(--bg-secondary)] relative"
+                    onMouseMove={handleMouseMove}
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={handleMouseUp}
+                >
+                    <div style={{ width: canvasWidth, height: canvasHeight, position: 'relative' }}>
+                        {/* SVG edge layer — sits behind the cards via DOM order. */}
+                        <svg
+                            width={canvasWidth}
+                            height={canvasHeight}
+                            style={{ position: 'absolute', left: 0, top: 0 }}
+                        >
+                            <defs>
+                                <marker id="sm-arrow-nav" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                                    <path d="M0,0 L0,6 L8,3 z" fill="var(--accent-primary)" />
+                                </marker>
+                                <marker id="sm-arrow-internal" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                                    <path d="M0,0 L0,6 L8,3 z" fill="var(--text-secondary)" />
+                                </marker>
+                                <marker id="sm-arrow-backlink" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                                    <path d="M0,0 L0,6 L8,3 z" fill="#f59e0b" />
+                                </marker>
+                            </defs>
 
-                        {/* edges */}
-                        {edges.map((edge, i) => {
-                            const a = posById.get(edge.source);
-                            const b = posById.get(edge.target);
-                            if (!a || !b) return null;
-                            const { sx, sy, ex, ey } = edgePoints(a.x, a.y, b.x, b.y);
-                            const isHighlighted = edge.source === activePageId || edge.target === activePageId;
+                            {/* NAV edges from the chrome pseudo-node. */}
+                            {chromePos && Array.from(chromeTargets).map(targetId => {
+                                const tpos = effectivePositions.get(targetId);
+                                if (!tpos) return null;
+                                const srcCx = chromePos.x + CHROME_W / 2;
+                                const srcCy = chromePos.y + CHROME_H / 2;
+                                const tgtCx = tpos.x + NODE_W / 2;
+                                const tgtCy = tpos.y + NODE_H / 2;
+                                const { sx, sy, ex, ey } = edgeEndpoints(srcCx, srcCy, CHROME_H, tgtCx, tgtCy, NODE_H);
+                                const onClick = () => {
+                                    const srcs = chromeSources.get(targetId) || [];
+                                    const where = srcs.map(s => s.location).join(' / ');
+                                    setEdgePopover({
+                                        x: (sx + ex) / 2,
+                                        y: (sy + ey) / 2,
+                                        info: {
+                                            kind: 'chrome',
+                                            text: `Defined in ${where || 'site chrome'} — edit it in Site chrome.`,
+                                        },
+                                    });
+                                };
+                                return (
+                                    <g key={`nav-${targetId}`} onClick={onClick} style={{ cursor: 'pointer' }}>
+                                        <line x1={sx} y1={sy} x2={ex} y2={ey}
+                                            stroke="transparent" strokeWidth={12} />
+                                        <line x1={sx} y1={sy} x2={ex} y2={ey}
+                                            stroke="var(--accent-primary)"
+                                            strokeWidth={1.75}
+                                            markerEnd="url(#sm-arrow-nav)" />
+                                    </g>
+                                );
+                            })}
+
+                            {/* INTERNAL / BACKLINK edges, page → page. */}
+                            {internalEdges.map((edge, i) => {
+                                const s = effectivePositions.get(edge.source);
+                                const t = effectivePositions.get(edge.target);
+                                if (!s || !t) return null;
+                                const cls = classifyInternal(edge, parent);
+                                const srcCx = s.x + NODE_W / 2;
+                                const srcCy = s.y + NODE_H / 2;
+                                const tgtCx = t.x + NODE_W / 2;
+                                const tgtCy = t.y + NODE_H / 2;
+                                const { sx, sy, ex, ey } = edgeEndpoints(srcCx, srcCy, NODE_H, tgtCx, tgtCy, NODE_H);
+                                const dash = cls === 'tree' ? '6,4' : '2,4';
+                                const stroke = cls === 'tree' ? 'var(--text-secondary)' : '#f59e0b';
+                                const marker = cls === 'tree' ? 'url(#sm-arrow-internal)' : 'url(#sm-arrow-backlink)';
+                                const blocks = internalMeta.get(`${edge.source}->${edge.target}`) || [];
+                                const onClick = () => {
+                                    const where = blocks.length
+                                        ? `block${blocks.length > 1 ? 's' : ''}: ${blocks.map(b => b.blockType).join(', ')}`
+                                        : 'block content';
+                                    setEdgePopover({
+                                        x: (sx + ex) / 2,
+                                        y: (sy + ey) / 2,
+                                        info: {
+                                            kind: cls,
+                                            text: `Defined inside ${where} on the source page — edit it from that block.`,
+                                        },
+                                    });
+                                };
+                                return (
+                                    <g key={`int-${i}`} onClick={onClick} style={{ cursor: 'pointer' }}>
+                                        <line x1={sx} y1={sy} x2={ex} y2={ey}
+                                            stroke="transparent" strokeWidth={12} />
+                                        <line x1={sx} y1={sy} x2={ex} y2={ey}
+                                            stroke={stroke}
+                                            strokeWidth={1.5}
+                                            strokeOpacity={0.85}
+                                            strokeDasharray={dash}
+                                            markerEnd={marker} />
+                                    </g>
+                                );
+                            })}
+                        </svg>
+
+                        {/* Chrome pseudo-node — pill, not interactive. */}
+                        {chromePos ? (
+                            <div
+                                style={{
+                                    position: 'absolute',
+                                    left: chromePos.x,
+                                    top: chromePos.y,
+                                    width: CHROME_W,
+                                    height: CHROME_H,
+                                }}
+                                className="flex items-center justify-center gap-1.5 px-3 rounded-full bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] text-[10px] uppercase tracking-wider text-[var(--text-secondary)] select-none pointer-events-none"
+                                aria-label="Site chrome — header and footer"
+                            >
+                                <AppIcon name="LayoutTemplate" className="w-3 h-3" />
+                                Header / Footer
+                            </div>
+                        ) : null}
+
+                        {/* Orphan row label, drawn only when there are orphans. */}
+                        {orphanIds.size > 0 ? (
+                            <div
+                                style={{
+                                    position: 'absolute',
+                                    left: PADDING,
+                                    top: orphanRowY - 28,
+                                }}
+                                className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] pointer-events-none"
+                            >
+                                Unlinked pages
+                            </div>
+                        ) : null}
+
+                        {/* Page nodes (cards). */}
+                        {pages.map(page => {
+                            const pos = effectivePositions.get(page.id);
+                            if (!pos) return null;
+                            const isHomepage = !!page.isHomepage;
+                            const isOrphan   = orphanIds.has(page.id);
+                            const isActive   = page.id === activePageId;
+                            const inNav      = chromeTargets.has(page.id);
                             return (
-                                <line
-                                    key={i}
-                                    x1={sx} y1={sy} x2={ex} y2={ey}
-                                    stroke={isHighlighted ? '#6366f1' : 'var(--border-default)'}
-                                    strokeWidth={isHighlighted ? 2 : 1.5}
-                                    strokeOpacity={isHighlighted ? 0.9 : 0.6}
-                                    markerEnd={isHighlighted ? 'url(#arrow-active)' : 'url(#arrow)'}
+                                <NodeCard
+                                    key={page.id}
+                                    page={page}
+                                    pos={pos}
+                                    isHomepage={isHomepage}
+                                    isOrphan={isOrphan}
+                                    isActive={isActive}
+                                    inNav={inNav}
+                                    onMouseDown={(e) => handleNodeMouseDown(e, page.id)}
+                                    onGear={() => openFlyout(page.id, pos.x, pos.y)}
                                 />
                             );
                         })}
 
-                        {/* nodes */}
-                        {nodes.map(node => {
-                            const pos = posById.get(node.id);
-                            if (!pos) return null;
-                            const isActive   = node.id === activePageId;
-                            const isHomepage = node.isHomepage;
+                        {/* Edge popover (info-only). */}
+                        {edgePopover ? (
+                            <EdgePopover
+                                edgePopover={edgePopover}
+                                onClose={() => setEdgePopover(null)}
+                            />
+                        ) : null}
 
+                        {/* Page settings flyout. */}
+                        {flyout ? (() => {
+                            const target = pages.find(p => p.id === flyout.pageId);
+                            if (!target) return null;
                             return (
-                                <g
-                                    key={node.id}
-                                    transform={`translate(${pos.x},${pos.y})`}
-                                    style={{ cursor: 'grab' }}
-                                    onMouseDown={e => onNodeMouseDown(e, node.id)}
-                                    onClick={() => !dragging && onSelectPage(node.id)}
-                                >
-                                    {/* outer glow for active */}
-                                    {isActive && (
-                                        <circle r={NODE_R + 5} fill="#6366f1" fillOpacity={0.15} />
-                                    )}
-                                    <circle
-                                        r={NODE_R}
-                                        fill={isActive ? '#6366f1' : isHomepage ? 'var(--bg-tertiary)' : 'var(--bg-primary)'}
-                                        stroke={isActive ? '#6366f1' : isHomepage ? 'var(--accent-primary)' : 'var(--border-default)'}
-                                        strokeWidth={isHomepage ? 2 : 1.5}
-                                    />
-                                    {/* homepage star icon */}
-                                    {isHomepage && !isActive && (
-                                        <text
-                                            textAnchor="middle"
-                                            dominantBaseline="central"
-                                            y={-8}
-                                            fontSize={12}
-                                            fill="var(--accent-primary)"
-                                        >⌂</text>
-                                    )}
-                                    {/* slug label */}
-                                    <text
-                                        textAnchor="middle"
-                                        dominantBaseline="central"
-                                        y={isHomepage && !isActive ? 6 : 0}
-                                        fontSize={10}
-                                        fontFamily="monospace"
-                                        fill={isActive ? '#fff' : 'var(--text-secondary)'}
-                                    >
-                                        /{node.slug}
-                                    </text>
-                                    {/* title below */}
-                                    <text
-                                        textAnchor="middle"
-                                        y={NODE_R + 14}
-                                        fontSize={10}
-                                        fill={isActive ? '#6366f1' : 'var(--text-muted)'}
-                                    >
-                                        {node.title.length > 14 ? node.title.slice(0, 13) + '…' : node.title}
-                                    </text>
-                                </g>
+                                <SettingsFlyout
+                                    key={target.id}
+                                    page={target}
+                                    pages={pages}
+                                    site={site}
+                                    siteId={siteId}
+                                    anchorPos={{ x: flyout.anchorX, y: flyout.anchorY }}
+                                    canvasWidth={canvasWidth}
+                                    onClose={() => setFlyout(null)}
+                                    onOpenInEditor={() => {
+                                        // Optional bridge to the page editor — preserves
+                                        // the existing onSelectPage API even though
+                                        // node clicks no longer fire it.
+                                        if (typeof onSelectPage === 'function') onSelectPage(target.id);
+                                        setFlyout(null);
+                                    }}
+                                    onChanged={() => { setFlyout(null); fetchData(); }}
+                                />
                             );
-                        })}
-                    </svg>
+                        })() : null}
+                    </div>
                 </div>
             )}
 
-            {/* legend */}
-            <div className="px-4 py-2 border-t border-[var(--border-subtle)] shrink-0 flex items-center gap-6 text-[10px] text-[var(--text-muted)]">
-                <span className="flex items-center gap-1.5">
-                    <svg width="16" height="16"><circle cx="8" cy="8" r="6" fill="none" stroke="var(--accent-primary)" strokeWidth="2" /></svg>
-                    Homepage
-                </span>
-                <span className="flex items-center gap-1.5">
-                    <svg width="16" height="16"><circle cx="8" cy="8" r="6" fill="#6366f1" /></svg>
-                    Active page
-                </span>
-                <span className="flex items-center gap-1.5">
-                    <svg width="28" height="10">
-                        <line x1="0" y1="5" x2="20" y2="5" stroke="var(--border-default)" strokeWidth="1.5" markerEnd="url(#arrow)" />
-                        <polygon points="20,2 28,5 20,8" fill="var(--border-default)" />
-                    </svg>
-                    Internal link
-                </span>
-                <span className="flex-1" />
-                <span>Click a node to switch pages</span>
+            {/* Legend (bottom-left corner of toolbar strip). */}
+            <div className="px-4 py-2 border-t border-[var(--border-subtle)] shrink-0 flex items-center gap-4 text-[10px] text-[var(--text-muted)]">
+                <LegendItem color="var(--accent-primary)" style="solid"  label="Nav link" />
+                <LegendItem color="var(--text-secondary)" style="dashed" label="Internal link" />
+                <LegendItem color="#f59e0b"               style="dotted" label="Backlink" />
+                <div className="flex-1" />
+                <span>Drag a card to tidy · Click ⚙ to edit a page</span>
             </div>
         </div>
+    );
+}
+
+// ── Node card ────────────────────────────────────────────────────────
+
+function NodeCard({ page, pos, isHomepage, isOrphan, isActive, inNav, onMouseDown, onGear }) {
+    const title = page.title || '(untitled)';
+    const truncated = title.length > 20 ? title.slice(0, 19) + '…' : title;
+    const borderColor = isActive
+        ? 'var(--accent-primary)'
+        : (isOrphan ? 'var(--border-default)' : 'var(--border-subtle)');
+    const handleGearKey = (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            onGear();
+        }
+    };
+    return (
+        <div
+            style={{
+                position: 'absolute',
+                left: pos.x,
+                top: pos.y,
+                width: NODE_W,
+                height: NODE_H,
+                borderColor,
+            }}
+            className={`group flex flex-col rounded-lg border bg-[var(--bg-primary)] shadow-sm
+                ${isActive ? 'ring-2 ring-[var(--accent-primary)]/30' : ''}
+                ${isOrphan ? 'opacity-90' : ''}
+                select-none cursor-grab active:cursor-grabbing
+                transition-shadow transition-colors duration-150
+                hover:shadow-md hover:border-[var(--accent-primary)]/60`}
+            onMouseDown={onMouseDown}
+        >
+            {/* Header strip: title + gear */}
+            <div className="flex items-start justify-between px-3 pt-2 gap-2 min-w-0">
+                <span
+                    className="text-sm font-medium text-[var(--text-primary)] leading-tight truncate"
+                    title={title}
+                >
+                    {truncated}
+                </span>
+                <button
+                    type="button"
+                    role="button"
+                    tabIndex={0}
+                    aria-label={`Edit page ${title}`}
+                    title="Edit page"
+                    onMouseDown={(e) => e.stopPropagation()}
+                    onClick={(e) => { e.stopPropagation(); onGear(); }}
+                    onKeyDown={handleGearKey}
+                    className="shrink-0 -mr-1 mt-0.5 w-6 h-6 inline-flex items-center justify-center rounded
+                        text-[var(--text-muted)] hover:text-[var(--accent-primary)]
+                        opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+                >
+                    <AppIcon name="Settings" className="w-3.5 h-3.5" />
+                </button>
+            </div>
+            {/* Slug */}
+            <span className="px-3 text-[11px] font-mono text-[var(--text-muted)] truncate" title={`/${page.slug}`}>
+                /{page.slug}
+            </span>
+            {/* Badges */}
+            <div className="px-3 pb-2 mt-auto flex items-center gap-1 text-[9px] uppercase tracking-wider">
+                {isHomepage ? <Badge variant="home">Home</Badge> : null}
+                {!isHomepage && inNav ? <Badge variant="nav">In nav</Badge> : null}
+                {!isHomepage && isOrphan ? <Badge variant="orphan">Orphan</Badge> : null}
+            </div>
+        </div>
+    );
+}
+
+function Badge({ variant, children }) {
+    const cls = variant === 'home'
+        ? 'bg-[var(--accent-primary)]/15 text-[var(--accent-primary)]'
+        : variant === 'orphan'
+            ? 'bg-[var(--bg-tertiary)] text-[var(--text-muted)]'
+            : 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)]';
+    return (
+        <span className={`px-1.5 py-0.5 rounded ${cls} font-medium`}>{children}</span>
+    );
+}
+
+// ── Edge popover (info-only) ─────────────────────────────────────────
+//
+// The spec described a "Break link?" confirm action; implementing
+// destructive edge removal cleanly requires walking the source block's
+// content tree to a specific path, which is non-trivial and out of
+// scope for this rebuild. The popover currently surfaces *where* a link
+// is defined so the user can navigate to that surface and edit it
+// there. Marked as a follow-up.
+
+function EdgePopover({ edgePopover, onClose }) {
+    const ref = useRef(null);
+    useEffect(() => {
+        const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+        const onClick = (e) => {
+            if (ref.current && !ref.current.contains(e.target)) onClose();
+        };
+        document.addEventListener('keydown', onKey);
+        // Defer so the click that opened us doesn't immediately close us.
+        const t = setTimeout(() => document.addEventListener('mousedown', onClick), 0);
+        return () => {
+            clearTimeout(t);
+            document.removeEventListener('keydown', onKey);
+            document.removeEventListener('mousedown', onClick);
+        };
+    }, [onClose]);
+
+    const kindLabel = edgePopover.info.kind === 'chrome'
+        ? 'Nav link (Site chrome)'
+        : edgePopover.info.kind === 'tree'
+            ? 'Internal link'
+            : 'Backlink';
+
+    return (
+        <div
+            ref={ref}
+            style={{
+                position: 'absolute',
+                left: edgePopover.x,
+                top: edgePopover.y,
+                transform: 'translate(-50%, -100%)',
+                zIndex: 60,
+            }}
+            className="bg-[var(--bg-primary)] border border-[var(--border-default)] rounded-md shadow-lg px-3 py-2 text-xs text-[var(--text-primary)] min-w-[200px] max-w-[280px]"
+        >
+            <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1">
+                {kindLabel}
+            </div>
+            <p className="leading-snug text-[var(--text-secondary)]">{edgePopover.info.text}</p>
+        </div>
+    );
+}
+
+// ── Settings flyout ──────────────────────────────────────────────────
+
+function SettingsFlyout({ page, pages, site, siteId, anchorPos, canvasWidth, onClose, onChanged, onOpenInEditor }) {
+    const [title, setTitle] = useState(page.title || '');
+    const [slug, setSlug]   = useState(page.slug  || '');
+    const [busy, setBusy]   = useState(false);
+    const [err,  setErr]    = useState(null);
+    const ref = useRef(null);
+
+    // In-nav membership lives on the site doc's header.nav, not on the
+    // page itself. Detect by scanning for a page-kind nav entry that
+    // points at this page.
+    const inNav = useMemo(() => {
+        const nav = site?.header?.nav || [];
+        return nav.some(n => n?.link?.kind === 'page' && n.link.pageId === page.id);
+    }, [site, page.id]);
+
+    // Close on Escape / click outside.
+    useEffect(() => {
+        const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+        const onClick = (e) => {
+            if (ref.current && !ref.current.contains(e.target)) onClose();
+        };
+        document.addEventListener('keydown', onKey);
+        const t = setTimeout(() => document.addEventListener('mousedown', onClick), 0);
+        return () => {
+            clearTimeout(t);
+            document.removeEventListener('keydown', onKey);
+            document.removeEventListener('mousedown', onClick);
+        };
+    }, [onClose]);
+
+    // Anchor — clamp so the flyout doesn't overflow the canvas on the right.
+    const FLYOUT_W = 280;
+    const clampedLeft = Math.min(anchorPos.x, Math.max(0, canvasWidth - FLYOUT_W - 16));
+
+    const handleSaveMeta = async () => {
+        const titleChanged = title.trim() !== page.title;
+        const slugChanged  = slug.trim()  !== page.slug;
+        if (!titleChanged && !slugChanged) { onClose(); return; }
+        setBusy(true); setErr(null);
+        try {
+            const patch = {};
+            if (titleChanged) patch.title = title.trim();
+            if (slugChanged)  patch.slug  = slug.trim();
+            const res = await authFetch(cmsApi.pageMeta(siteId, page.id), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(patch),
+            });
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body.error || `Save failed (${res.status})`);
+            }
+            onChanged();
+        } catch (e) { setErr(String(e.message || e)); }
+        finally { setBusy(false); }
+    };
+
+    const handleToggleNav = async (next) => {
+        // "Show in nav" maps to adding/removing a nav item pointing at
+        // this page. We mutate the full site doc and PUT it back.
+        setBusy(true); setErr(null);
+        try {
+            const navItems = site?.header?.nav || [];
+            let nextNav;
+            if (next) {
+                // Add an entry if there isn't one already.
+                if (!navItems.some(n => n?.link?.kind === 'page' && n.link.pageId === page.id)) {
+                    nextNav = [
+                        ...navItems,
+                        {
+                            id: `nav_${Math.random().toString(36).slice(2, 8)}`,
+                            label: page.title || page.slug || 'Page',
+                            link: { kind: 'page', pageId: page.id },
+                        },
+                    ];
+                } else {
+                    nextNav = navItems;
+                }
+            } else {
+                nextNav = navItems.filter(n => !(n?.link?.kind === 'page' && n.link.pageId === page.id));
+            }
+            const nextSite = { ...site, header: { ...(site.header || {}), nav: nextNav } };
+            const res = await authFetch(cmsApi.site(siteId), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ site: nextSite }),
+            });
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body.error || `Save failed (${res.status})`);
+            }
+            onChanged();
+        } catch (e) { setErr(String(e.message || e)); }
+        finally { setBusy(false); }
+    };
+
+    const handleSetHomepage = async () => {
+        setBusy(true); setErr(null);
+        try {
+            const res = await authFetch(cmsApi.pageHomepage(siteId, page.id), { method: 'PUT' });
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body.error || `Save failed (${res.status})`);
+            }
+            onChanged();
+        } catch (e) { setErr(String(e.message || e)); }
+        finally { setBusy(false); }
+    };
+
+    const handleDelete = async () => {
+        // eslint-disable-next-line no-alert
+        if (!window.confirm(`Delete page "${page.title || page.slug}"? This cannot be undone.`)) return;
+        setBusy(true); setErr(null);
+        try {
+            const res = await authFetch(cmsApi.page(siteId, page.id), { method: 'DELETE' });
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body.error || `Delete failed (${res.status})`);
+            }
+            onChanged();
+        } catch (e) { setErr(String(e.message || e)); }
+        finally { setBusy(false); }
+    };
+
+    return (
+        <div
+            ref={ref}
+            style={{
+                position: 'absolute',
+                left: clampedLeft,
+                top: anchorPos.y,
+                width: FLYOUT_W,
+                zIndex: 80,
+            }}
+            className="bg-[var(--bg-primary)] border border-[var(--border-default)] rounded-md shadow-xl"
+            onMouseDown={(e) => e.stopPropagation()}
+        >
+            <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-subtle)]">
+                <span className="text-xs font-semibold text-[var(--text-primary)]">Page settings</span>
+                <button
+                    type="button"
+                    onClick={onClose}
+                    className="text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                    title="Close"
+                >
+                    <AppIcon name="X" className="w-3.5 h-3.5" />
+                </button>
+            </div>
+            <div className="p-3 flex flex-col gap-2.5">
+                <label className="flex flex-col gap-1">
+                    <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Title</span>
+                    <input
+                        type="text"
+                        value={title}
+                        onChange={e => setTitle(e.target.value)}
+                        disabled={busy}
+                        className="px-2 py-1.5 rounded text-xs border border-[var(--border-default)] bg-[var(--bg-tertiary)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)]"
+                    />
+                </label>
+                <label className="flex flex-col gap-1">
+                    <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">Slug</span>
+                    <input
+                        type="text"
+                        value={slug}
+                        onChange={e => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
+                        disabled={busy}
+                        className="px-2 py-1.5 rounded text-xs font-mono border border-[var(--border-default)] bg-[var(--bg-tertiary)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)]"
+                    />
+                </label>
+                <div className="flex items-center justify-between pt-1">
+                    <span className="text-xs text-[var(--text-secondary)]">Show in nav</span>
+                    <button
+                        type="button"
+                        onClick={() => handleToggleNav(!inNav)}
+                        disabled={busy}
+                        role="switch"
+                        aria-checked={inNav}
+                        className={`relative inline-flex items-center w-9 h-5 rounded-full transition-colors
+                            ${inNav ? 'bg-[var(--accent-primary)]' : 'bg-[var(--bg-tertiary)] border border-[var(--border-default)]'}
+                            ${busy ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                    >
+                        <span
+                            className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform shadow
+                                ${inNav ? 'translate-x-4' : 'translate-x-0.5'}`}
+                        />
+                    </button>
+                </div>
+                {err ? <p className="text-xs text-red-400">{err}</p> : null}
+
+                <div className="flex items-center gap-2 pt-1">
+                    <button
+                        type="button"
+                        onClick={handleSaveMeta}
+                        disabled={busy}
+                        className="flex-1 px-3 py-1.5 text-xs rounded-md bg-[var(--accent-primary)] text-white disabled:opacity-50"
+                    >
+                        {busy ? 'Saving…' : 'Save'}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={onOpenInEditor}
+                        disabled={busy}
+                        className="px-3 py-1.5 text-xs rounded-md border border-[var(--border-default)] text-[var(--text-secondary)] hover:border-[var(--accent-primary)]/60 hover:text-[var(--accent-primary)] disabled:opacity-50"
+                    >
+                        Open in editor
+                    </button>
+                </div>
+
+                <div className="border-t border-[var(--border-subtle)] pt-2.5 flex items-center justify-between gap-2">
+                    <button
+                        type="button"
+                        onClick={handleSetHomepage}
+                        disabled={busy || page.isHomepage}
+                        className="text-xs text-[var(--text-secondary)] hover:text-[var(--accent-primary)] disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={page.isHomepage ? 'Already the homepage' : 'Promote to homepage'}
+                    >
+                        Set as homepage
+                    </button>
+                    <button
+                        type="button"
+                        onClick={handleDelete}
+                        disabled={busy || (page.isHomepage && pages.length > 1)}
+                        className="text-xs text-red-400 hover:text-red-300 disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={page.isHomepage && pages.length > 1
+                            ? 'Promote another page to homepage first'
+                            : 'Delete this page'}
+                    >
+                        Delete page
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+}
+
+// ── Legend item ──────────────────────────────────────────────────────
+
+function LegendItem({ color, style, label }) {
+    const dash = style === 'solid' ? '0' : style === 'dashed' ? '6,4' : '2,4';
+    return (
+        <span className="inline-flex items-center gap-1.5">
+            <svg width="28" height="6" aria-hidden="true">
+                <line
+                    x1="0" y1="3" x2="28" y2="3"
+                    stroke={color}
+                    strokeWidth="2"
+                    strokeDasharray={dash}
+                />
+            </svg>
+            {label}
+        </span>
     );
 }

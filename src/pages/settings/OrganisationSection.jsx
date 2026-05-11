@@ -6,6 +6,7 @@ import UsageSection from './UsageSection';
 import GitHubSyncPanel from '../../components/admin/GitHubSyncPanel';
 import NextcloudSyncPanel from '../../components/admin/NextcloudSyncPanel';
 import OrgNcIntegrationsPanel from '../../components/admin/OrgNcIntegrationsPanel';
+import OrgFeatureTogglesPanel from '../../components/admin/OrgFeatureTogglesPanel';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 
@@ -175,6 +176,10 @@ const OrganisationSection = ({ user, activeSection = 'license' }) => {
                             {t('org.integ_subtitle')}
                         </p>
                     </div>
+                    {/* Generic toggle UI for beta features + non-NC integrations.
+                        Rendered first so org admins see their granted capabilities
+                        before the legacy n8n / Maps / NC blocks. */}
+                    <OrgFeatureTogglesPanel user={user} />
                     {/* Nextcloud integration management (NC-bound orgs only) */}
                     {isNcOrg && <OrgNcIntegrationsPanel user={user} />}
                     {!showN8n && !showGoogleMaps && !isNcOrg ? (

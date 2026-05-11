@@ -2,15 +2,38 @@ import React from 'react';
 import { Globe, ArrowRight } from 'lucide-react';
 
 /**
- * Renders a clickable card for /app/webpages/:id links inside chat messages.
- * Replaces the plain anchor that would otherwise be emitted by MarkdownRenderer.
+ * Renders a clickable card for /app/webpages/:id (and /app/studio/webpages/:id)
+ * links inside chat messages. Replaces the plain anchor that would otherwise
+ * be emitted by MarkdownRenderer.
+ *
+ * Click behaviour: dispatch a cancellable `beeflow:open-webpage-side` event
+ * so AgentHub can open the webpage in its right-hand panel without losing
+ * chat context. If no listener handles it (e.g. card rendered outside the
+ * chat shell), fall back to plain in-app navigation.
  */
+function extractWebpageId(href) {
+    if (typeof href !== 'string') return null;
+    const m = href.match(/\/app\/(?:studio\/)?webpages\/([a-zA-Z0-9_-]+)/);
+    return m ? m[1] : null;
+}
+
 export default function WebpageLinkCard({ href, label }) {
     const handleClick = (e) => {
         e.preventDefault();
-        // Push the URL and fire popstate so App.jsx picks it up
-        window.history.pushState({ page: 'webpages' }, '', href);
-        window.dispatchEvent(new PopStateEvent('popstate', { state: { page: 'webpages' } }));
+        const id = extractWebpageId(href);
+        if (id) {
+            const evt = new CustomEvent('beeflow:open-webpage-side', {
+                detail: { id, href },
+                cancelable: true,
+            });
+            const wasHandled = !window.dispatchEvent(evt);
+            // Listener calls preventDefault() to claim the event. If nothing
+            // handled it (e.g. user is on a non-chat page), fall back to nav.
+            if (wasHandled) return;
+        }
+        const target = href || (id ? `/app/studio/webpages/${id}` : '/app/studio/webpages');
+        window.history.pushState({ page: 'studio' }, '', target);
+        window.dispatchEvent(new PopStateEvent('popstate', { state: { page: 'studio' } }));
     };
 
     return (

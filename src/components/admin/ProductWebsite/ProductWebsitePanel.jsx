@@ -1423,13 +1423,22 @@ function buildPreviewContent(site, activePage) {
             logo: site.header.logo || undefined,
             loginLabel: site.header.loginLabel,
             // Header buttons (multi-CTA). Each entry carries label, href
-            // (resolved), style, and any target/rel from "Open in new tab".
+            // (resolved), style, and per-button label typography (font /
+            // size / color) for the renderer to apply via inline style.
             ctas: (site.header.ctas || []).map(cta => ({
                 id: cta.id,
                 label: cta.label,
                 href: resolvePreviewHref(cta.link, site?.pages),
                 style: cta.style || 'primary',
+                labelFont:  cta.labelFont  || '',
+                labelSize:  Number.isFinite(cta.labelSize) ? cta.labelSize : 0,
+                labelColor: cta.labelColor || '',
             })),
+            // Master nav-link style (font / size / color) — applied to
+            // every nav link + dropdown child by Header.jsx. Sits as a
+            // sibling to navLinks because the items array can't carry
+            // string keys.
+            navStyle: site.header.navStyle || undefined,
             navLinks: (site.header.nav || []).map(n => ({
                 label: n.label,
                 href: resolvePreviewHref(n.link, site?.pages),
@@ -1454,6 +1463,9 @@ function buildPreviewContent(site, activePage) {
                 ? { enabled: true }
                 : undefined,
             brand: { logoText: site.footer.brandText, blurb: site.footer.blurb },
+            // Master footer-link style (font + color), applied to every
+            // column link AND every social link by Footer.jsx.
+            linkStyle: site.footer.linkStyle || undefined,
             columns: (site.footer.columns || []).map(c => ({
                 heading: c.heading,
                 links: (c.links || []).map(l => ({
@@ -1477,7 +1489,18 @@ function buildPreviewContent(site, activePage) {
     if (activePage?.blocks) {
         const blocksOut = [];
         for (const block of activePage.blocks) {
-            const legacy = { enabled: block.enabled !== false, ...(block.content || {}) };
+            // legacyifyLinks mutates `node.link` → `node.href` in place,
+            // so we MUST deep-clone before calling it. A shallow spread
+            // would share nested objects (block.content.cta, every nav
+            // item, every Content-block element) with panel state — and
+            // the next preview push would silently delete `link` off the
+            // user's source-of-truth shape, snapping LinkField back to
+            // its default kind on the next render and persisting the
+            // corruption on the next auto-save.
+            const legacy = JSON.parse(JSON.stringify({
+                enabled: block.enabled !== false,
+                ...(block.content || {}),
+            }));
             legacyifyLinks(legacy, site?.pages);
             out[block.type] = legacy;
             blocksOut.push({

@@ -13,6 +13,8 @@ import MessageItem from './components/chat/MessageItem';
 import MemoryPanel from './components/MemoryPanel';
 import WorkspaceNotebook from './components/WorkspaceNotebook';
 import GammaPreviewPanel from './components/GammaPreviewPanel';
+import SideWebpagePanel from './components/SideWebpagePanel';
+import WebpagePickerPopover from './components/WebpagePickerPopover';
 import DirectChatWelcome from './components/DirectChatWelcome';
 import ProjectsPage from './components/ProjectsPage';
 import ProjectDetailPage from './components/ProjectDetailPage';
@@ -117,11 +119,36 @@ const AgentHub = ({
     const [notebookLinkedId, setNotebookLinkedId] = useState(null);
     const [showGammaPreview, setShowGammaPreview] = useState(false);
     const [gammaPreview, setGammaPreview] = useState(null);
+    // Webpage side panel — mutually exclusive with the notebook / gamma slot.
+    // Holds the id of the webpage currently displayed (null = panel closed).
+    const [sidePanelWebpageId, setSidePanelWebpageId] = useState(null);
+    // Metadata for the open webpage (resolved once the panel loads it). Used
+    // to surface { id, name } to the chat backend so the AI knows what the
+    // user is looking at. Server reads sidePanelWebpageId and pulls fresh
+    // html/css/js itself — we don't ship the bytes on every chat turn.
+    const [sidePanelWebpage, setSidePanelWebpage] = useState(null);
+    // Mirror the latest html/css/js of the open webpage. We ship these with
+    // every webpage-chat turn so the AI sees the user's current page, and
+    // update them locally whenever it edits via webpage_doc_update SSE.
+    const [sidePanelWebpageFiles, setSidePanelWebpageFiles] = useState({ html: '', css: '', js: '' });
+    // Selection captured from the iframe selection bridge — shown as a chip
+    // above the chat input and shipped as `webpageSelection` on next send.
+    const [attachedWebpageSelection, setAttachedWebpageSelection] = useState(null);
+    // Bumped to force SideWebpagePanel to re-fetch after AI edits land —
+    // simpler than threading mutable state through the preview.
+    const [sidePanelReloadKey, setSidePanelReloadKey] = useState(0);
+    const [webpagePickerOpen, setWebpagePickerOpen] = useState(false);
+    const webpageButtonRef = useRef(null);
+    const webpageButtonRefDirect = useRef(null);
+    const canUseWebpagesSide = !!(user?.permissions?.includes('all') || user?.betaFeatures?.includes('webpages'));
 
     const toggleNotebookPanel = useCallback(() => {
         setShowNotebook(prev => {
             const next = !prev;
-            if (next) setShowGammaPreview(false);
+            if (next) {
+                setShowGammaPreview(false);
+                setSidePanelWebpageId(null);
+            }
             return next;
         });
     }, []);
@@ -129,7 +156,45 @@ const AgentHub = ({
     const closeSidePreview = useCallback(() => {
         setShowNotebook(false);
         setShowGammaPreview(false);
+        setSidePanelWebpageId(null);
     }, []);
+
+    const openWebpageInSidePanel = useCallback((id) => {
+        if (!id) return;
+        setSidePanelWebpageId(prev => {
+            // Drop stale metadata when switching to a different webpage so the
+            // chat payload doesn't carry the previous page's name briefly.
+            if (prev !== id) setSidePanelWebpage(null);
+            return id;
+        });
+        setShowNotebook(false);
+        setShowGammaPreview(false);
+        setWebpagePickerOpen(false);
+    }, []);
+
+    const closeWebpagePanel = useCallback(() => {
+        setSidePanelWebpageId(null);
+        setSidePanelWebpage(null);
+        setSidePanelWebpageFiles({ html: '', css: '', js: '' });
+        setAttachedWebpageSelection(null);
+    }, []);
+
+    const clearWebpageSelection = useCallback(() => setAttachedWebpageSelection(null), []);
+
+    // WebpageLinkCard in a chat message dispatches this event so we can host
+    // the webpage in the side slot without losing chat context. Listener
+    // calls preventDefault() to claim it — the card falls back to navigation
+    // when no listener (e.g. message rendered outside the chat shell).
+    useEffect(() => {
+        const onOpenSide = (e) => {
+            const id = e?.detail?.id;
+            if (!id) return;
+            e.preventDefault();
+            openWebpageInSidePanel(id);
+        };
+        window.addEventListener('beeflow:open-webpage-side', onOpenSide);
+        return () => window.removeEventListener('beeflow:open-webpage-side', onOpenSide);
+    }, [openWebpageInSidePanel]);
 
     // Direct Chat State
     const [directChatMode, setDirectChatMode] = useState(() => window.innerWidth < 768);
@@ -171,6 +236,10 @@ const AgentHub = ({
     // Hydrate user-scoped preferences once the user id is known.
     useEffect(() => {
         if (!user?.id) return;
+        // React fires child effects before parent effects on mount, so App.jsx's
+        // scopedStorage.setCurrentUser hasn't run yet on first hydration. Set it
+        // here (idempotent) so getItem returns the stored value instead of null.
+        scopedStorage.setCurrentUser(user.id);
         const storedMode = scopedStorage.getItem('chatHistoryMode');
         if (storedMode) setChatHistoryMode(storedMode);
         const storedSkills = scopedStorage.getJSON('activeSkillIds', null);
@@ -219,18 +288,30 @@ const AgentHub = ({
             }
         }, [selectedAgent]),
         getNotebookPayload: useCallback(() => {
-            if (!showNotebook) return {};
-            // Ship `notebookspaceContent` as an empty string (not a single space)
-            // when the notebook is open but blank — the server treats
-            // `undefined` as "no notebook" and `""` as "notebook present,
-            // blank", so the AI still knows the notebook tools are available.
-            // Previously we sent `' '` to dodge a truthy-check; server now
-            // checks `!== undefined` explicitly.
+            // `notebookspaceAvailable: true` flags that the Notebook panel exists
+            // in this UI even when it's currently closed — so the model can call
+            // notebook_write to start a memo and the panel auto-opens via the
+            // workspace_update SSE event. `notebookspaceContent` is only sent
+            // when the panel is open (server treats `undefined` as "no notebook
+            // currently rendered", `""` as "open but blank").
             return {
-                notebookspaceContent: notebookContent || '',
-                notebookspaceSelection: notebookSelection || '',
+                notebookspaceAvailable: true,
+                ...(showNotebook ? {
+                    notebookspaceContent: notebookContent || '',
+                    notebookspaceSelection: notebookSelection || '',
+                } : {}),
+                // Webpage side panel — tell the AI which page the user is
+                // currently viewing. Server fetches the latest html/css/js
+                // by id; we only send the metadata so chat payloads stay small.
+                ...(sidePanelWebpageId ? {
+                    sidePanelWebpage: {
+                        id: sidePanelWebpageId,
+                        ...(sidePanelWebpage?.name ? { name: sidePanelWebpage.name } : {}),
+                        ...(sidePanelWebpage?.description ? { description: sidePanelWebpage.description } : {}),
+                    },
+                } : {}),
             };
-        }, [notebookContent, notebookSelection, showNotebook]),
+        }, [notebookContent, notebookSelection, showNotebook, sidePanelWebpageId, sidePanelWebpage]),
         onNotebookUpdate: useCallback((content) => {
             // On mobile, silently ignore notebook writes from AI
             if (window.innerWidth < 768) return;
@@ -247,12 +328,43 @@ const AgentHub = ({
         directMode: directChatMode ? {
             enabled: true,
             modelTier: selectedTier,
+            // When the user has a webpage open in the side panel we reroute the
+            // chat to the dedicated webpage endpoint — same one the standalone
+            // Webpage Editor uses, so the AI gets the full toolbelt
+            // (file/multi-file/db tools + sources).
+            ...(sidePanelWebpageId ? { customEndpoint: '/ai/chat/webpage/stream' } : {}),
             getExtraPayload: () => ({
                 ...(Array.isArray(directSessionSkills) && directSessionSkills.length > 0 ? { sessionSkills: directSessionSkills } : {}),
                 ...(Array.isArray(directActivatedSessionSkillIds) && directActivatedSessionSkillIds.length > 0 ? { activatedSessionSkillIds: directActivatedSessionSkillIds } : {}),
                 ...(Array.isArray(directChatKBIds) && directChatKBIds.length > 0 ? { knowledgeBaseIds: directChatKBIds } : {}),
+                ...(sidePanelWebpageId ? {
+                    webpageId: sidePanelWebpageId,
+                    htmlContent: sidePanelWebpageFiles.html,
+                    cssContent: sidePanelWebpageFiles.css,
+                    jsContent: sidePanelWebpageFiles.js,
+                    chatMode: 'auto',
+                    ...(attachedWebpageSelection ? {
+                        webpageSelection: {
+                            text: attachedWebpageSelection.text,
+                            file: 'html',
+                        },
+                    } : {}),
+                } : {}),
             }),
         } : undefined,
+        onWebpageDocUpdate: useCallback((data) => {
+            const { file, content } = data || {};
+            if (!file) return;
+            setSidePanelWebpageFiles(prev => ({ ...prev, [file]: content || '' }));
+            setSidePanelReloadKey(k => k + 1);
+        }, []),
+        onWebpageExtraUpdate: useCallback(() => {
+            setSidePanelReloadKey(k => k + 1);
+        }, []),
+        onWebpageExtraDeleted: useCallback(() => {
+            setSidePanelReloadKey(k => k + 1);
+        }, []),
+        onWebpageSourceAdded: useCallback(() => { /* surfaced inline in chat; no panel action */ }, []),
         activeProject,
         onDirectConversationCreated: useCallback(({ conversationId, title }) => {
             if (conversationId && !currentDirectConversation?.id) {
@@ -1834,7 +1946,7 @@ const AgentHub = ({
                                     )}
                                 </div>
                             </div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 relative">
                                 {!isMobile && notebooksEnabled && (
                                     <button
                                         onClick={toggleNotebookPanel}
@@ -1843,6 +1955,27 @@ const AgentHub = ({
                                     >
                                         📓 {showNotebook ? 'Close' : 'Notebook'}
                                     </button>
+                                )}
+                                {!isMobile && canUseWebpagesSide && (
+                                    <>
+                                        <button
+                                            ref={webpageButtonRef}
+                                            onClick={() => {
+                                                if (sidePanelWebpageId) closeWebpagePanel();
+                                                else setWebpagePickerOpen(v => !v);
+                                            }}
+                                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors border text-xs font-medium ${sidePanelWebpageId ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] border-[var(--accent-primary)]/30' : 'bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-[var(--border-subtle)]'}`}
+                                            title={sidePanelWebpageId ? 'Close Webpage' : 'Open Webpage'}
+                                        >
+                                            🌐 {sidePanelWebpageId ? 'Close' : 'Webpage'}
+                                        </button>
+                                        <WebpagePickerPopover
+                                            anchorRef={webpageButtonRef}
+                                            open={webpagePickerOpen && !sidePanelWebpageId}
+                                            onClose={() => setWebpagePickerOpen(false)}
+                                            onSelect={openWebpageInSidePanel}
+                                        />
+                                    </>
                                 )}
                             </div>
                         </div>
@@ -1929,7 +2062,7 @@ const AgentHub = ({
                             </div>
 
                             {/* Notebook Pane — split on desktop, drawer on compact */}
-                            {!isMobile && (showNotebook || showGammaPreview) && isCompact && (
+                            {!isMobile && (showNotebook || showGammaPreview || sidePanelWebpageId) && isCompact && (
                                 <div className="fixed inset-0 bg-black/30 z-20 animate-in fade-in duration-200" onClick={closeSidePreview} aria-hidden="true" />
                             )}
                             {!isMobile && notebooksEnabled && showNotebook && !showGammaPreview && (
@@ -1961,6 +2094,25 @@ const AgentHub = ({
                                     />
                                 </div>
                             )}
+                            {!isMobile && sidePanelWebpageId && !showNotebook && !showGammaPreview && (
+                                <div className={notebookWrapperClass}>
+                                    <SideWebpagePanel
+                                        webpageId={sidePanelWebpageId}
+                                        onClose={closeWebpagePanel}
+                                        user={user}
+                                        onLoaded={setSidePanelWebpage}
+                                        onFilesLoaded={(files) => {
+                                            if (files) setSidePanelWebpageFiles({
+                                                html: files.html || '',
+                                                css: files.css || '',
+                                                js: files.js || '',
+                                            });
+                                        }}
+                                        onSelectionAttach={(sel) => { if (sel?.text) setAttachedWebpageSelection(sel); }}
+                                        reloadKey={sidePanelReloadKey}
+                                    />
+                                </div>
+                            )}
                         </div>
                     </>
                 ) : directChatMode ? (
@@ -1979,7 +2131,7 @@ const AgentHub = ({
                                         </button>
                                     )}
                                 </div>
-                                <div className="flex items-center gap-2">
+                                <div className="flex items-center gap-2 relative">
                                     {!isMobile && notebooksEnabled && (
                                         <button
                                             onClick={toggleNotebookPanel}
@@ -1988,6 +2140,27 @@ const AgentHub = ({
                                         >
                                             📓 {showNotebook ? 'Close' : 'Notebook'}
                                         </button>
+                                    )}
+                                    {!isMobile && canUseWebpagesSide && (
+                                        <>
+                                            <button
+                                                ref={webpageButtonRefDirect}
+                                                onClick={() => {
+                                                    if (sidePanelWebpageId) closeWebpagePanel();
+                                                    else setWebpagePickerOpen(v => !v);
+                                                }}
+                                                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-colors border text-xs font-medium ${sidePanelWebpageId ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] border-[var(--accent-primary)]/30' : 'bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border-[var(--border-subtle)]'}`}
+                                                title={sidePanelWebpageId ? 'Close Webpage' : 'Open Webpage'}
+                                            >
+                                                🌐 {sidePanelWebpageId ? 'Close' : 'Webpage'}
+                                            </button>
+                                            <WebpagePickerPopover
+                                                anchorRef={webpageButtonRefDirect}
+                                                open={webpagePickerOpen && !sidePanelWebpageId}
+                                                onClose={() => setWebpagePickerOpen(false)}
+                                                onSelect={openWebpageInSidePanel}
+                                            />
+                                        </>
                                     )}
                                 </div>
                             </div>
@@ -2057,8 +2230,35 @@ const AgentHub = ({
                                 </div>
                                 {messages.length > 0 && (
                                     <div className="w-full flex flex-col shrink-0">
+                                        {attachedWebpageSelection && sidePanelWebpageId && (
+                                            <div className="mx-4 mb-2 px-3 py-2 rounded-lg border flex items-start gap-2"
+                                                 style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
+                                                <div className="text-[11px] mt-0.5" style={{ color: 'var(--accent-primary)' }}>↳</div>
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="text-[11px] font-medium mb-0.5" style={{ color: 'var(--text-secondary)' }}>
+                                                        Selection from page{attachedWebpageSelection.tagName ? ` · <${attachedWebpageSelection.tagName}>` : ''}
+                                                    </div>
+                                                    <div className="text-[12px] truncate" style={{ color: 'var(--text-primary)' }}>
+                                                        {attachedWebpageSelection.text.length > 140 ? attachedWebpageSelection.text.slice(0, 140) + '…' : attachedWebpageSelection.text}
+                                                    </div>
+                                                </div>
+                                                <button
+                                                    onClick={clearWebpageSelection}
+                                                    className="p-0.5 rounded hover:bg-[var(--bg-tertiary)]"
+                                                    title="Remove selection"
+                                                >
+                                                    <X className="w-3.5 h-3.5" style={{ color: 'var(--text-tertiary)' }} />
+                                                </button>
+                                            </div>
+                                        )}
                                         <InputArea
-                                            onSendMessage={(text, attachments) => { shouldForceScrollRef.current = true; sendMessage(text, attachments); }}
+                                            onSendMessage={(text, attachments) => {
+                                                shouldForceScrollRef.current = true;
+                                                sendMessage(text, attachments);
+                                                // Single-shot — the user implicitly cleared their pick
+                                                // by sending; next message starts fresh.
+                                                if (attachedWebpageSelection) setAttachedWebpageSelection(null);
+                                            }}
                                             onStopGenerating={stopGenerating}
                                             isLoading={isLoading}
                                             directMode={true}
@@ -2085,7 +2285,7 @@ const AgentHub = ({
                             </div>
 
                             {/* Notebook Pane — split on desktop, drawer on compact */}
-                            {!isMobile && (showNotebook || showGammaPreview) && isCompact && (
+                            {!isMobile && (showNotebook || showGammaPreview || sidePanelWebpageId) && isCompact && (
                                 <div className="fixed inset-0 bg-black/30 z-20 animate-in fade-in duration-200" onClick={closeSidePreview} aria-hidden="true" />
                             )}
                             {!isMobile && notebooksEnabled && showNotebook && !showGammaPreview && (
@@ -2114,6 +2314,25 @@ const AgentHub = ({
                                         preview={gammaPreview}
                                         onClose={() => setShowGammaPreview(false)}
                                         onUpdate={setGammaPreview}
+                                    />
+                                </div>
+                            )}
+                            {!isMobile && sidePanelWebpageId && !showNotebook && !showGammaPreview && (
+                                <div className={notebookWrapperClass}>
+                                    <SideWebpagePanel
+                                        webpageId={sidePanelWebpageId}
+                                        onClose={closeWebpagePanel}
+                                        user={user}
+                                        onLoaded={setSidePanelWebpage}
+                                        onFilesLoaded={(files) => {
+                                            if (files) setSidePanelWebpageFiles({
+                                                html: files.html || '',
+                                                css: files.css || '',
+                                                js: files.js || '',
+                                            });
+                                        }}
+                                        onSelectionAttach={(sel) => { if (sel?.text) setAttachedWebpageSelection(sel); }}
+                                        reloadKey={sidePanelReloadKey}
                                     />
                                 </div>
                             )}

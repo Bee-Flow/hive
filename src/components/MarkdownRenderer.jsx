@@ -646,7 +646,7 @@ const MarkdownRenderer = ({ content, className = '', isLoading = false, ...props
                     // Links — anchor links scroll within message, external open in new tab
                     a({ node, children, href, ...props }) {
                         // Webpage links render as a clickable card instead of a plain anchor
-                        if (href && /^\/app\/webpages\/[a-zA-Z0-9_-]+$/.test(href)) {
+                        if (href && /^\/app\/(?:studio\/)?webpages\/[a-zA-Z0-9_-]+$/.test(href)) {
                             const label = typeof children === 'string' ? children : (Array.isArray(children) ? children.join('') : String(href));
                             return <WebpageLinkCard href={href} label={label} />;
                         }

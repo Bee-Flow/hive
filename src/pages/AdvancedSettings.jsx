@@ -9,6 +9,7 @@ import MemorySection from './settings/MemorySection';
 import IntegrationsSection from './settings/IntegrationsSection';
 import PersonalAccessTokensSection from './settings/PersonalAccessTokensSection';
 import OrganisationSection from './settings/OrganisationSection';
+import HouseStyleSection from './settings/HouseStyleSection';
 import ConsumerLicenseSection from './settings/ConsumerLicenseSection';
 import ConsumerPrivacySection from './settings/ConsumerPrivacySection';
 import { SECTIONS as ORG_SECTIONS } from '../components/admin/OrgInfoPanel';
@@ -33,7 +34,7 @@ const AZURE_SUB_ITEM = { id: 'org_azure', labelKey: 'settings.azure_config', ico
  * friendlier URL names (`users`, `license`) — disambiguated by the parent
  * path segment.
  */
-const TOP_LEVEL_TAB_IDS = ['preferences', 'memory', 'integrations', 'api_tokens'];
+const TOP_LEVEL_TAB_IDS = ['preferences', 'memory', 'integrations', 'api_tokens', 'house_style'];
 const ORG_ID_TO_URL = {
     license: 'license',
     auth: 'auth',
@@ -111,6 +112,10 @@ const NAV_ITEMS = [
     {
         id: 'api_tokens', label: 'API Tokens',
         icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>,
+    },
+    {
+        id: 'house_style', label: 'Kantoorstijl',
+        icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>,
     },
 ];
 
@@ -215,7 +220,12 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
     const isPrivateCloud = deploymentMode === 'private-cloud';
     const isConsumerAccount = !!user?.isConsumerAccount;
     const ei = user?.enabledIntegrations;
-    const hasOrgIntegrations = !ei || (Array.isArray(ei) && ei.length > 0);
+    // The Integrations sub-item is shown when the org has anything to toggle —
+    // either a super-admin integration allow-list (legacy gate) OR a beta-
+    // feature grant. Orgs that only have beta features granted still need the
+    // item so the org admin can flip those on/off.
+    const hasOrgBetaFeatures = Array.isArray(user?.betaFeatures) && user.betaFeatures.length > 0;
+    const hasOrgIntegrations = !ei || (Array.isArray(ei) && ei.length > 0) || hasOrgBetaFeatures;
     // Users coming in through the Nextcloud ExApp connector authenticate via
     // their NC session — the Bee Flow "Sign-in Method" panel (password/SSO/
     // OAuth provider config) doesn't apply because identity is delegated to
@@ -257,7 +267,10 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
     const orgSubItems = useMemo(() => {
         const items = BASE_ORG_SUB_ITEMS.filter(s => {
             if (s.id === 'org_users') return canManageUsers;
-            if (s.id === 'org_integrations') return canSeeOrg && hasOrgIntegrations;
+            // Always show Integrations to org admins — the panel inside
+            // displays empty states for orgs without grants, and beta-feature
+            // toggling lives here too (not just integrations).
+            if (s.id === 'org_integrations') return canSeeOrg;
             // In private-cloud mode, license is managed externally
             if (isPrivateCloud && s.id === 'license') return false;
             // NC-bound orgs: auth is delegated to Nextcloud entirely. The
@@ -354,6 +367,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
             case 'memory': return <MemorySection memoryStats={memoryStats} onOpenMemory={() => setShowMemoryPanel(true)} user={user} />;
             case 'integrations': return <IntegrationsSection statuses={statuses} onSaved={handleIntegrationSaved} enabledIntegrations={user?.enabledIntegrations} isOrgAdmin={canSeeOrg} user={user} showOrgIntegrations={isConsumerAccount} />;
             case 'api_tokens': return <PersonalAccessTokensSection />;
+            case 'house_style': return <HouseStyleSection user={user} />;
             case 'organisation': return canSeeOrg ? <OrganisationSection user={user} activeSection="license" /> : null;
             default: return null;
         }

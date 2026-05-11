@@ -445,6 +445,18 @@
     bottom: -100px; right: -100px;
     animation: orbFloat 15s ease-in-out infinite reverse;
 }
+/* Background-variant override — when the user picks a non-default fill
+   (surface / primary / dark), the animated accent orbs would clash with
+   the saturated background. Fade them way down so the variant reads
+   cleanly while keeping a subtle hint of motion. */
+.marketing-root .hero.cms-bg--surface::before,
+.marketing-root .hero.cms-bg--surface::after,
+.marketing-root .hero.cms-bg--primary::before,
+.marketing-root .hero.cms-bg--primary::after,
+.marketing-root .hero.cms-bg--dark::before,
+.marketing-root .hero.cms-bg--dark::after {
+    opacity: 0.1;
+}
 .marketing-root .hero-content {
     position: relative;
     z-index: 1;
@@ -541,19 +553,27 @@
 }
 .marketing-root .social-proof-eyebrow {
     text-align: center;
-    margin-bottom: 32px;
+    margin-bottom: 16px;
+}
+.marketing-root .social-proof-title {
+    text-align: center;
+    margin: 0 0 32px;
+    font-weight: 700;
+    line-height: 1.2;
 }
 .marketing-root .social-proof-logos {
     display: flex;
-    justify-content: space-around;
+    justify-content: center;        /* logos cluster from the centre and grow outward */
     align-items: center;
     flex-wrap: wrap;
-    gap: 40px;
-    opacity: 0.5;
+    gap: 2rem;
+    /* No opacity / filter here on purpose. Logos render in full color
+       at full opacity — see the editor's "Logo image" upload. */
 }
 .marketing-root .social-proof-logos img {
     max-height: 32px;
-    filter: grayscale(1) brightness(2);
+    /* Intentionally no `filter` rule. Earlier `grayscale(1) brightness(2)`
+       washed every logo to white; removed so brand colors render correctly. */
 }
 .marketing-root .social-proof-logos .logo-placeholder {
     color: var(--text-muted);

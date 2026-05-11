@@ -115,38 +115,104 @@ function cssFontStack(name) {
     return `${quoted}, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif`;
 }
 
-// ── Google Fonts loader ─────────────────────────────────────────────
+// ── Font loader ─────────────────────────────────────────────────────
 //
-// Maintain a single <link rel="stylesheet"> in the iframe head whose
-// href is rebuilt whenever heading/body fonts change. We update href
-// rather than recreating the element — same network entry, no flash.
-const FONTS_LINK_ID = 'cms-google-fonts';
+// Maintain one <link rel="stylesheet"> per font source (Google +
+// Fontshare today) in the iframe head. Hrefs are rebuilt whenever the
+// picked-font set changes; the existing <link> elements are updated in
+// place rather than recreated so the browser keeps the same network
+// entries and avoids a flash of unstyled text.
+import { buildFontsHrefs } from '../components/admin/ProductWebsite/googleFonts';
 
-function ensureFontsLink(doc, headingFont, bodyFont) {
+// Legacy ID, kept around so an old <link> from a previous build of the
+// iframe gets cleaned up cleanly when the new multi-source loader
+// initialises. New links use the per-source IDs returned by
+// buildFontsHrefs (e.g. cms-fonts-google, cms-fonts-fontshare).
+const LEGACY_FONTS_LINK_ID = 'cms-google-fonts';
+
+function ensureFontsLink(doc, headingFont, bodyFont, extras = []) {
     if (!doc) return;
-    const heading = (headingFont || '').trim();
-    const body    = (bodyFont    || '').trim();
-    if (!heading && !body) {
-        const existing = doc.getElementById(FONTS_LINK_ID);
-        if (existing) existing.remove();
-        return;
-    }
-    const families = new Set();
-    if (heading) families.add(heading);
-    if (body)    families.add(body);
-    const familyParam = Array.from(families)
-        .map(f => `family=${encodeURIComponent(f)}:wght@400;500;600;700;800`)
-        .join('&');
-    const href = `https://fonts.googleapis.com/css2?${familyParam}&display=swap`;
 
-    let link = doc.getElementById(FONTS_LINK_ID);
-    if (!link) {
-        link = doc.createElement('link');
-        link.id = FONTS_LINK_ID;
-        link.rel = 'stylesheet';
-        doc.head.appendChild(link);
+    // Drop the legacy single-source <link> from older builds. Idempotent
+    // — first call wins, subsequent calls are no-ops.
+    const legacy = doc.getElementById(LEGACY_FONTS_LINK_ID);
+    if (legacy) legacy.remove();
+
+    const families = new Set();
+    const add = (raw) => {
+        if (typeof raw !== 'string') return;
+        const f = raw.trim();
+        if (f) families.add(f);
+    };
+    add(headingFont);
+    add(bodyFont);
+    for (const f of extras) add(f);
+
+    // Source-aware URL bundle — one entry per CDN. We pass the rich
+    // weight set (400…800) here because the iframe renders production
+    // typography, not just dropdown previews.
+    const hrefs = buildFontsHrefs(
+        Array.from(families),
+        [400, 500, 600, 700, 800],
+    );
+
+    // Track which source IDs are needed THIS pass. Anything previously
+    // injected for a source no longer in the list (e.g. last Fontshare
+    // family was deleted) gets removed so we don't keep unused CSS
+    // bytes lingering in the iframe head.
+    const wantedIds = new Set(hrefs.map(h => h.id));
+    for (const id of ['cms-fonts-google', 'cms-fonts-fontshare']) {
+        if (wantedIds.has(id)) continue;
+        const stale = doc.getElementById(id);
+        if (stale) stale.remove();
     }
-    if (link.getAttribute('href') !== href) link.setAttribute('href', href);
+
+    for (const { id, href } of hrefs) {
+        let link = doc.getElementById(id);
+        if (!link) {
+            link = doc.createElement('link');
+            link.id = id;
+            link.rel = 'stylesheet';
+            doc.head.appendChild(link);
+        }
+        if (link.getAttribute('href') !== href) link.setAttribute('href', href);
+    }
+}
+
+// Walk the current content + design to collect every per-field font name
+// the user has picked outside the site Design tab. Returned as an array
+// of strings (deduped by `ensureFontsLink`). Without this, picking a
+// non-Design font for e.g. the brand title saves correctly but the
+// browser falls back to a system font because the family is never
+// downloaded.
+function collectCustomFontFamilies(content) {
+    const out = [];
+    const push = (v) => { if (typeof v === 'string' && v.trim()) out.push(v.trim()); };
+    if (!content || typeof content !== 'object') return out;
+
+    const header = content.header || {};
+    push(header.logo?.titleFont);
+    push(header.navStyle?.fontFamily);
+    for (const cta of header.ctas || []) push(cta?.labelFont);
+
+    const footer = content.footer || {};
+    push(footer.linkStyle?.fontFamily);
+
+    // Block-level per-text fonts — every block currently using textStyle
+    // helpers stores fonts under *Style.fontFamily. Walk shallowly across
+    // known fields to avoid descending into untyped user content.
+    for (const block of content.blocks || []) {
+        const c = block?.content;
+        if (!c || typeof c !== 'object') continue;
+        // Hero
+        push(c.badgeStyle?.fontFamily);
+        push(c.titleStyle?.fontFamily);
+        push(c.leadStyle?.fontFamily);
+        // Social Proof
+        push(c.eyebrowStyle?.fontFamily);
+        // (titleStyle already covered above — both blocks reuse the key)
+    }
+    return out;
 }
 
 // ── Per-block style wrapper ─────────────────────────────────────────
@@ -371,8 +437,18 @@ export default function ProductWebsite({ content: initialContent }) {
     // the visitor toggles the footer switcher.
     useEffect(() => {
         applyDesignToRoot(rootRef.current, design, effectiveTheme);
-        ensureFontsLink(rootRef.current?.ownerDocument, design?.fonts?.heading, design?.fonts?.body);
-    }, [design, effectiveTheme]);
+        // Also load any per-field fonts the user picked outside the
+        // Design tab — Brand title, nav links, footer links, header
+        // buttons, block-level *Style.fontFamily. Without this branch
+        // those picks save fine but the browser falls back to a system
+        // font because the family was never downloaded.
+        ensureFontsLink(
+            rootRef.current?.ownerDocument,
+            design?.fonts?.heading,
+            design?.fonts?.body,
+            collectCustomFontFamilies(content),
+        );
+    }, [design, effectiveTheme, content]);
 
     useScrollReveal(rootRef);
 

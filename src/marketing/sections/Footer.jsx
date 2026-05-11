@@ -2,6 +2,7 @@ import React from 'react';
 import AppIcon from '../../components/AppIcon';
 import EditableText from '../components/EditableText';
 import SectionFrame from '../components/SectionFrame';
+import { inlineTextStyle } from './textStyle';
 
 const isPreview = () =>
     typeof window !== 'undefined' &&
@@ -10,6 +11,10 @@ const isPreview = () =>
 export default function Footer({ data, isDark, onToggleTheme }) {
     if (!data?.enabled) return null;
     const showThemeSwitcher = !!data.themeSwitcher?.enabled;
+    // Master footer-link style — applied to every column link and every
+    // social link. Returns undefined when nothing is set so the style
+    // attribute is omitted entirely (CSS file defaults still win).
+    const linkStyle = inlineTextStyle(data.linkStyle);
     return (
         <SectionFrame id="footer" name="Footer" enabled={data.enabled}>
             <footer className="site-footer">
@@ -52,6 +57,7 @@ export default function Footer({ data, isDark, onToggleTheme }) {
                                                 target={link.target}
                                                 rel={link.rel}
                                                 onClick={(e) => isPreview() && e.preventDefault()}
+                                                style={linkStyle}
                                             >
                                                 <EditableText
                                                     path={`footer.columns.${i}.links.${j}.label`}
@@ -81,6 +87,7 @@ export default function Footer({ data, isDark, onToggleTheme }) {
                                             rel={s.rel}
                                             aria-label={s.platform}
                                             onClick={(e) => isPreview() && e.preventDefault()}
+                                            style={linkStyle}
                                         >
                                             <AppIcon
                                                 name={
