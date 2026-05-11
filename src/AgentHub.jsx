@@ -1263,6 +1263,7 @@ const AgentHub = ({
             setNotebookSelection('');
             setShowNotebook(false);
             setNotebookLinkedId(null);
+            setSelectedTier('auto');
             updateDirectChatUrl(null);
             return;
         }
@@ -1278,6 +1279,7 @@ const AgentHub = ({
             setNotebookSelection('');
             setShowNotebook(false);
             setNotebookLinkedId(null);
+            setSelectedTier('auto');
             scopedStorage.setItem('lastUsedMode', 'direct-chat');
             loadDirectConversations();
             loadModelTiers();
@@ -1286,6 +1288,7 @@ const AgentHub = ({
         }
         setCurrentConversation({ id: null, title: 'New Chat', messages: [] });
         setMessages([]);
+        setSelectedTier('auto');
         setNotebookContent('');
         setNotebookSelection('');
         setShowNotebook(false);
@@ -1633,6 +1636,7 @@ const AgentHub = ({
                         initialSkillId={studioRoute.section === 'skills' ? studioRoute.id : null}
                         initialKbId={studioRoute.section === 'knowledge' ? studioRoute.id : null}
                         initialTaskId={studioRoute.section === 'aiTasks' ? studioRoute.id : null}
+                        initialWebpageId={studioRoute.section === 'webpages' ? studioRoute.id : null}
                         onClose={onCloseStudio}
                         onNavigate={onNavigate}
                         modelTiers={modelTiers}

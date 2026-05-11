@@ -1843,6 +1843,7 @@ const EN_DEFAULTS = {
     "studio.tab.skills": "Skills",
     "studio.tab.knowledge": "Knowledge",
     "studio.tab.ai_tasks": "Routines",
+    "studio.tab.webpages": "Webpages",
 
     // Routines (formerly AI Tasks)
     "routines.title": "Routines",

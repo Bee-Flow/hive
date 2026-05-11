@@ -1,20 +1,22 @@
 import React, { useState } from 'react';
-import { Bot, Sparkles, ListChecks, BookOpen } from 'lucide-react';
+import { Bot, Sparkles, ListChecks, BookOpen, Globe } from 'lucide-react';
 import useTranslation from '../../../hooks/useTranslation';
 import AgentStudio from '../AgentStudio';
 import AITasksDesigner from '../AITasksDesigner';
 import SkillsStudio from './SkillsStudio';
 import KBsStudio from './KBsStudio';
+import WebpagesPage from '../../../pages/WebpagesPage';
 
 // Unified Studio: a single shell hosting Agents, Skills, Knowledge Bases, and AI Tasks.
 // All sections share a sidebar-list + editor-right split layout.
 export default function Studio({
     user,
-    section = 'agents',     // 'agents' | 'skills' | 'knowledge' | 'aiTasks'
+    section = 'agents',     // 'agents' | 'skills' | 'knowledge' | 'aiTasks' | 'webpages'
     initialAgentId = null,
     initialSkillId = null,
     initialKbId = null,
     initialTaskId = null,
+    initialWebpageId = null,
     onClose,
     onNavigate,
     hasPermission = () => true,
@@ -34,11 +36,13 @@ export default function Studio({
         onEditingChange?.(next || agentEditing);
     };
 
+    const canSeeWebpages = !!(user?.permissions?.includes('all') || user?.betaFeatures?.includes('webpages'));
     const tabs = [
         { id: 'agents',    label: t('studio.tab.agents'),    icon: <Bot size={14} /> },
         { id: 'skills',    label: t('studio.tab.skills'),    icon: <Sparkles size={14} /> },
         { id: 'knowledge', label: t('studio.tab.knowledge'), icon: <BookOpen size={14} /> },
         { id: 'aiTasks',   label: t('studio.tab.ai_tasks'),  icon: <ListChecks size={14} /> },
+        ...(canSeeWebpages ? [{ id: 'webpages', label: t('studio.tab.webpages') || 'Webpages', icon: <Globe size={14} /> }] : []),
     ];
 
     const switchTo = (id) => {
@@ -95,6 +99,15 @@ export default function Studio({
                         user={user}
                         initialKbId={initialKbId}
                         onNavigate={onNavigate}
+                        hasPermission={hasPermission}
+                    />
+                )}
+                {section === 'webpages' && (
+                    <WebpagesPage
+                        user={user}
+                        initialWebpageId={initialWebpageId}
+                        onWebpageChange={(id) => onNavigate && onNavigate(id ? `studio/webpages/${id}` : 'studio/webpages')}
+                        embedded
                         hasPermission={hasPermission}
                     />
                 )}

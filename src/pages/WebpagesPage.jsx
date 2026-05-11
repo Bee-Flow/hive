@@ -9,6 +9,8 @@ import WebpageIDE from './webpages/WebpageIDE';
 import downloadWebpageZip from '../utils/downloadWebpageZip';
 import computeWebpageDiff from '../utils/computeWebpageDiff';
 import scopedStorage from '../utils/scopedStorage';
+import PublishMenu from '../components/admin/AgentWizard/pickers/PublishMenu';
+import useTranslation from '../hooks/useTranslation';
 
 function timeAgo(dateStr) {
     const d = new Date(dateStr);
@@ -34,8 +36,20 @@ async function api(path, opts = {}) {
     return res.json();
 }
 
-export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpageChange }) {
+export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpageChange, embedded = false }) {
     const canUseWebpages = !!(user?.permissions?.includes('all') || user?.betaFeatures?.includes('webpages'));
+    const { t } = useTranslation();
+    const [orgGroups, setOrgGroups] = useState([]);
+    const [publishMenuOpen, setPublishMenuOpen] = useState(false);
+
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/auth/groups`);
+                if (res.ok) setOrgGroups(await res.json());
+            } catch (_) { /* ignore */ }
+        })();
+    }, []);
 
     const [webpages, setWebpages] = useState([]);
     const [selected, setSelected] = useState(null); // metadata row
@@ -585,6 +599,46 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
         }
     };
 
+    /* ── Publishing (org / group visibility) ─────────────────── */
+    const callPublish = useCallback(async (nextPublished, nextSharedGroups) => {
+        if (!selected?.id) return;
+        try {
+            const res = await authFetch(`${API_BASE}/api/webpages/${selected.id}/publish`, {
+                method: 'PATCH',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    isPublished: nextPublished,
+                    ...(nextSharedGroups !== undefined ? { sharedGroups: nextSharedGroups } : {}),
+                }),
+            });
+            if (!res.ok) {
+                const data = await res.json().catch(() => ({}));
+                throw new Error(data.error || `Publish failed (${res.status})`);
+            }
+            setSelected(prev => prev ? {
+                ...prev,
+                isPublished: nextPublished,
+                ...(nextSharedGroups !== undefined ? { sharedGroups: nextSharedGroups } : {}),
+            } : prev);
+        } catch (err) {
+            setError(err.message);
+        }
+    }, [selected?.id]);
+
+    const handleSetPersonal = useCallback(() => {
+        callPublish(false, []);
+        setPublishMenuOpen(false);
+    }, [callPublish]);
+    const handleSetEntireOrg = useCallback(() => {
+        callPublish(true, []);
+        setPublishMenuOpen(false);
+    }, [callPublish]);
+    const handleToggleGroup = useCallback((gid) => {
+        const current = Array.isArray(selected?.sharedGroups) ? selected.sharedGroups : [];
+        const next = current.includes(gid) ? current.filter(x => x !== gid) : [...current, gid];
+        callPublish(true, next);
+    }, [callPublish, selected?.sharedGroups]);
+
     const handleDownloadZip = useCallback(async () => {
         if (!selected) return;
         // Flush any pending edits before zipping so the zip matches what's saved.
@@ -634,6 +688,7 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
     if (!selected) {
         return (
             <div className="flex flex-col h-full" style={{ background: 'var(--bg-primary)' }}>
+                {!embedded && (
                 <div className="shrink-0 px-4 py-3 border-b flex items-center gap-3" style={{ borderColor: 'var(--border-subtle)' }}>
                     {onBack && (
                         <button onClick={onBack} className="p-1 rounded-md hover:bg-white/40">
@@ -645,6 +700,7 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                         <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Webpages</h2>
                     </div>
                 </div>
+                )}
 
                 <div className="shrink-0 px-4 py-3 border-b flex flex-wrap items-center gap-2" style={{ borderColor: 'var(--border-subtle)' }}>
                     <form onSubmit={handleCreate} className="flex items-center gap-2 flex-1 min-w-[260px]">
@@ -765,12 +821,28 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
     return (
         <div className="relative flex flex-col h-full">
             {/* Back-to-list header */}
-            <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b"
+            <div className="shrink-0 flex items-center gap-2 px-3 py-1.5 border-b relative"
                  style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}>
                 <button onClick={handleClose} className="p-1 rounded-md hover:bg-white/40" title="Back to list">
                     <ArrowLeft className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
                 </button>
-                <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{selected.name}</span>
+                <span className="text-sm font-semibold truncate flex-1" style={{ color: 'var(--text-primary)' }}>{selected.name}</span>
+                {selected.userId === user?.id && (
+                    <PublishMenu
+                        t={t}
+                        agent={selected}
+                        open={publishMenuOpen}
+                        onToggle={() => setPublishMenuOpen(v => !v)}
+                        onClose={() => setPublishMenuOpen(false)}
+                        isPublished={!!selected.isPublished}
+                        onSetPersonal={handleSetPersonal}
+                        onSetEntireOrg={handleSetEntireOrg}
+                        embedEnabled={false}
+                        orgGroups={orgGroups.filter(g => !user?.organizationId || g.organizationId === user.organizationId)}
+                        sharedGroups={Array.isArray(selected.sharedGroups) ? selected.sharedGroups : []}
+                        onToggleGroup={handleToggleGroup}
+                    />
+                )}
             </div>
 
             {/* IDE shell — fills the rest of the height */}

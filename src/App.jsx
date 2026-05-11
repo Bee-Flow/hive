@@ -92,8 +92,8 @@ function pageFromPath(pathname) {
     if (pathname === '/app/ai-tasks' || pathname.startsWith('/app/ai-tasks/')) return 'aiTasks';
     // /app/notebooks/:id → notebooks page (must come before generic /app/*)
     if (pathname.startsWith('/app/notebooks')) return 'notebooks';
-    // /app/webpages/:id → webpages page
-    if (pathname.startsWith('/app/webpages')) return 'webpages';
+    // /app/webpages/:id → unified Studio (Webpages tab)
+    if (pathname.startsWith('/app/webpages')) return 'studio';
 
     // /app/a/:shortId or /app/agent/:id → agents page
     if (pathname.startsWith('/app/a/') || pathname.startsWith('/app/agent/')) return 'agents';
@@ -140,12 +140,16 @@ function parseAgentDesignerUrl(pathname) {
 // Parse /app/studio/{section}/{id?} → { section: 'agents'|'skills'|'aiTasks'|'knowledge', id?: string }
 // 'routines' is the canonical URL slug; 'ai-tasks' is accepted for backward compat.
 function parseStudioUrl(pathname) {
+    // Legacy /app/webpages[/<id>] paths route into Studio's Webpages section.
+    const wp = pathname.match(/^\/app\/webpages(?:\/([^/]+))?/);
+    if (wp) return { section: 'webpages', id: wp[1] || null };
     const m = pathname.match(/^\/app\/studio(?:\/([^/]+))?(?:\/([^/]+))?/);
     const seg = m?.[1] || 'agents';
     const id = m?.[2] || null;
     const section = (seg === 'routines' || seg === 'ai-tasks') ? 'aiTasks'
         : seg === 'skills' ? 'skills'
         : seg === 'knowledge' ? 'knowledge'
+        : seg === 'webpages' ? 'webpages'
         : 'agents';
     return { section, id };
 }
@@ -557,6 +561,7 @@ function App() {
             const section = (sectionRaw === 'routines' || sectionRaw === 'ai-tasks') ? 'aiTasks'
                 : sectionRaw === 'skills' ? 'skills'
                 : sectionRaw === 'knowledge' ? 'knowledge'
+                : sectionRaw === 'webpages' ? 'webpages'
                 : 'agents';
             const pathSegment = section === 'aiTasks' ? 'routines' : section;
             const path = id ? `/app/studio/${pathSegment}/${id}` : `/app/studio/${pathSegment}`;
@@ -706,24 +711,26 @@ function App() {
             }
             return;
         }
-        // Webpages — same inline-render pattern as notebooks.
+        // Webpages — now lives inside Studio under /app/studio/webpages.
+        // Legacy 'webpages' / 'webpages/<id>' navigations are rerouted so the
+        // sidebar entry and any old deep links land in the unified shell.
         if (page === 'webpages' || page.startsWith('webpages/')) {
             const webpageId = page.startsWith('webpages/') ? page.slice('webpages/'.length) : null;
-            setInitialWebpageId(webpageId);
-            setShowWebpages(true);
+            setStudioRoute({ section: 'webpages', id: webpageId });
+            setShowStudio(true);
+            setShowWebpages(false);
             setShowNotebooks(false);
             setShowSettings(false);
             setShowAgentDesigner(false);
             setShowSkillsPanel(false);
             setShowEmailKB(false);
             setShowAITasks(false);
-            setShowStudio(false);
-            setCurrentPage('webpages');
-            setShowProfileMenu(false);
-            const path = webpageId ? `/app/webpages/${webpageId}` : '/app/webpages';
+            const path = webpageId ? `/app/studio/webpages/${webpageId}` : '/app/studio/webpages';
             if (window.location.pathname !== path) {
-                window.history.pushState({ page: 'webpages', webpageId }, '', path);
+                window.history.pushState({ page: 'studio' }, '', path);
             }
+            setCurrentPage('studio');
+            setShowProfileMenu(false);
             return;
         }
         setCurrentPage(page);
