@@ -1,15 +1,19 @@
 import React from 'react';
 import { GitBranch } from 'lucide-react';
 import StepNodeBase from './StepNodeBase';
+import { humanizeExpression } from '../displayHelpers';
 
-export default function ConditionNode({ data }) {
-    const { step, runStep, issues } = data;
+export default function ConditionNode({ id, data }) {
+    const { step, runStep, issues, onAddAfter, stepLabelById } = data;
     const expr = step.expr || '';
+    const friendlyExpr = humanizeExpression(expr, stepLabelById);
 
     const body = (
         <div>
             <div className="font-semibold truncate">{step.label || 'Condition'}</div>
-            <div className="mt-0.5 font-mono text-[10px] text-[var(--text-secondary)] line-clamp-2 break-all">{expr || <span className="italic">no expression</span>}</div>
+            <div className="mt-0.5 text-[10px] text-[var(--text-secondary)] line-clamp-2 break-words" title={expr}>
+                {friendlyExpr || <span className="italic">no expression</span>}
+            </div>
         </div>
     );
 
@@ -36,6 +40,8 @@ export default function ConditionNode({ data }) {
             hoverDetail={hoverDetail}
             runStep={runStep}
             issues={issues}
+            nodeId={id}
+            onAddAfter={onAddAfter}
         />
     );
 }

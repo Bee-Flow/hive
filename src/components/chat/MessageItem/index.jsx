@@ -72,6 +72,7 @@ const MessageItem = ({
     const retryBtnRef = useRef(null);
     const copyMenuRef = useRef(null);
     const contentRef = useRef(null);
+    const editTextareaRef = useRef(null);
     const [includeConversation, setIncludeConversation] = useState(false);
 
     // Resolve server-relative URLs (e.g. /api/storage/file/...) to full server URL
@@ -93,6 +94,40 @@ const MessageItem = ({
         document.addEventListener('mousedown', handler);
         return () => document.removeEventListener('mousedown', handler);
     }, [showRetryMenu]);
+
+    // Auto-resize edit textarea (mirrors InputArea behavior)
+    useEffect(() => {
+        if (!isEditing || !editTextareaRef.current) return;
+        editTextareaRef.current.style.height = 'auto';
+        editTextareaRef.current.style.height =
+            Math.min(editTextareaRef.current.scrollHeight, 180) + 'px';
+    }, [editContent, isEditing]);
+
+    // Focus + select-all when entering edit mode
+    useEffect(() => {
+        if (isEditing && editTextareaRef.current) {
+            editTextareaRef.current.focus();
+            editTextareaRef.current.select();
+        }
+    }, [isEditing]);
+
+    const submitEdit = () => {
+        const trimmed = editContent.trim();
+        if (trimmed && onEditMessage) {
+            onEditMessage(idx, trimmed);
+            setIsEditing(false);
+        }
+    };
+
+    const handleEditKeyDown = (e) => {
+        if (e.key === 'Escape') {
+            e.preventDefault();
+            setIsEditing(false);
+        } else if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+            e.preventDefault();
+            submitEdit();
+        }
+    };
 
     // Compute fixed position for the portal-based retry menu
     const handleToggleRetryMenu = () => {
@@ -377,6 +412,7 @@ const MessageItem = ({
                 </div>
             )}
 
+            {!(isUser && isEditing) && (
             <div
                 onCopy={(e) => {
                     const sel = window.getSelection();
@@ -677,7 +713,7 @@ const MessageItem = ({
 
                 {/* How I got this answer — comprehensive collapsed section */}
                 {!isUser && !isTool && !msg.isStreaming && msg.content && (
-                    (msg.thinking || msg.toolHistory?.length > 0 || msg.autoSelectedTier || msg.kbSources?.length > 0 || msg.tokenisationInfo?.count > 0) && (() => {
+                    (msg.thinking || msg.toolHistory?.length > 0 || msg.autoSelectedTier || msg.kbSources?.length > 0 || msg.tokenisationInfo?.count > 0 || (msg.tokenisationInfo?.attachments || []).some(a => a?.timeout)) && (() => {
                         const visibleTools = msg.toolHistory?.filter(t => t.name !== 'sequentialthinking') || [];
                         const totalMs = visibleTools.reduce((acc, t) => acc + (t.endTime && t.startTime ? t.endTime - t.startTime : 0), 0);
                         const totalSec = totalMs > 0 ? (totalMs / 1000).toFixed(1) : null;
@@ -719,7 +755,7 @@ const MessageItem = ({
                                 <div className="mt-3 space-y-2">
 
                                     {/* Privacy protection — shows PII/DLP tokenisation applied to this turn. */}
-                                    {msg.tokenisationInfo?.count > 0 && (() => {
+                                    {(msg.tokenisationInfo?.count > 0 || (msg.tokenisationInfo?.attachments || []).some(a => a?.timeout)) && (() => {
                                         const info = msg.tokenisationInfo;
                                         const counts = new Map();
                                         for (const c of (info.categories || [])) counts.set(c, (counts.get(c) || 0) + 1);
@@ -745,6 +781,42 @@ const MessageItem = ({
                                                         <p className="mb-1.5">
                                                             <span className="opacity-70">Detected:</span> {categoryList}
                                                         </p>
+                                                    )}
+                                                    {Array.isArray(info.attachments) && info.attachments.length > 0 && (
+                                                        <div className="mb-1.5">
+                                                            <span className="opacity-70">From attachments:</span>
+                                                            <ul className="mt-0.5 ml-3 list-disc">
+                                                                {info.attachments.map((att, i) => {
+                                                                    const fileLine = Object.entries(att.byCategory || {})
+                                                                        .map(([cat, n]) => `${n} ${cat.toLowerCase()}${n > 1 ? 's' : ''}`).join(', ');
+                                                                    const pageEntries = Object.entries(att.pages || {});
+                                                                    if (att.timeout) {
+                                                                        return (
+                                                                            <li key={`${att.filename}-${i}`}>
+                                                                                <strong style={{ color: 'var(--text-primary)' }}>{att.filename}</strong>
+                                                                                <span className="ml-1" style={{ color: 'rgb(180, 83, 9)' }}>— ⚠️ scan timed out, content passed through unredacted</span>
+                                                                            </li>
+                                                                        );
+                                                                    }
+                                                                    return (
+                                                                        <li key={`${att.filename}-${i}`}>
+                                                                            <strong style={{ color: 'var(--text-primary)' }}>{att.filename}</strong>
+                                                                            {fileLine && <> — {fileLine}</>}
+                                                                            {att.overflow && <span className="ml-1 opacity-70">(scan limited to first 50 pages)</span>}
+                                                                            {pageEntries.length > 0 && (
+                                                                                <ul className="ml-4 list-[circle]">
+                                                                                    {pageEntries.map(([page, byCat]) => {
+                                                                                        const pageLine = Object.entries(byCat)
+                                                                                            .map(([cat, n]) => `${n} ${cat.toLowerCase()}${n > 1 ? 's' : ''}`).join(', ');
+                                                                                        return <li key={page}>p.{page} — {pageLine}</li>;
+                                                                                    })}
+                                                                                </ul>
+                                                                            )}
+                                                                        </li>
+                                                                    );
+                                                                })}
+                                                            </ul>
+                                                        </div>
                                                     )}
                                                     <p className="opacity-70">
                                                         The AI only saw placeholders like <code className="px-1 rounded" style={{ background: 'var(--bg-primary)' }}>[email_1]</code>. Real values were restored in the reply before you saw it.
@@ -1217,12 +1289,13 @@ const MessageItem = ({
                     </div>
                 )}
             </div>
+            )}
 
             {/* PII / DLP tokenisation badge — visible confirmation that the user's
                 message had sensitive values replaced with placeholders before
                 reaching the LLM. `dlpRedactedCount` is set by the DLP path;
                 `piiTokenizedCount` by the legacy Azure-PII path. Take the max. */}
-            {isUser && (msg.dlpRedactedCount || msg.piiTokenizedCount) ? (
+            {isUser && !isEditing && (msg.dlpRedactedCount || msg.piiTokenizedCount) ? (
                 <div className="mt-1 mr-1 flex justify-end">
                     <TokenisedBadge
                         count={Math.max(msg.dlpRedactedCount || 0, msg.piiTokenizedCount || 0)}
@@ -1232,7 +1305,7 @@ const MessageItem = ({
             ) : null}
 
             {/* User message actions + timestamp */}
-            {isUser && !msg.isStreaming && (
+            {isUser && !isEditing && !msg.isStreaming && (
                 <div className="mt-1.5 text-[10px] text-[var(--text-tertiary)] flex items-center gap-1 mr-1 justify-end">
                     {onEditMessage && (
                         <button
@@ -1248,17 +1321,38 @@ const MessageItem = ({
                     )}
                 </div>
             )}
-            {/* Inline edit mode for user messages */}
+            {/* Inline edit mode for user messages — replaces the bubble in place */}
             {isUser && isEditing && (
-                <div className="mt-2 animate-fade-in">
-                    <textarea
-                        value={editContent}
-                        onChange={(e) => setEditContent(e.target.value)}
-                        className="w-full text-sm p-3 rounded-lg bg-[var(--bg-secondary)] border border-[var(--accent-primary)] text-[var(--text-primary)] resize-none focus:outline-none min-h-[60px]"
-                        rows={3}
-                        autoFocus
-                    />
-                    <div className="flex items-center gap-2 mt-1.5 justify-end">
+                <div className="max-w-[85%] w-full animate-fade-in">
+                    <div className="bg-[var(--bg-secondary)] rounded-2xl border border-[var(--border-subtle)] shadow-md focus-within:border-[var(--accent-primary)] focus-within:shadow-lg transition-all px-3 py-2">
+                        {msg.attachments && msg.attachments.length > 0 && (
+                            <div className="mb-2 flex flex-wrap gap-2">
+                                {msg.attachments.map((att, i) => {
+                                    const isImage = att.type?.startsWith('image/');
+                                    const previewSrc = isImage ? (resolveUrl(att.url) || att.content) : null;
+                                    return (
+                                        <div key={i} className="rounded-lg overflow-hidden text-xs border bg-[var(--bg-primary)] border-[var(--border-subtle)] flex items-center gap-1.5 opacity-80">
+                                            {previewSrc && (
+                                                <img src={previewSrc} alt={att.name} className="w-10 h-10 object-cover flex-shrink-0" />
+                                            )}
+                                            <div className="px-2 py-1.5 min-w-0">
+                                                <span className="font-medium truncate block max-w-[200px] text-[var(--text-secondary)]">{att.name || 'Attachment'}</span>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                        <textarea
+                            ref={editTextareaRef}
+                            value={editContent}
+                            onChange={(e) => setEditContent(e.target.value)}
+                            onKeyDown={handleEditKeyDown}
+                            className="w-full max-h-[180px] bg-transparent border-none focus:ring-0 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] resize-none py-2 text-[15px] leading-relaxed overflow-y-auto outline-none"
+                            rows={1}
+                        />
+                    </div>
+                    <div className="flex items-center justify-end gap-2 mt-1.5">
                         <button
                             onClick={() => setIsEditing(false)}
                             className="px-3 py-1 text-xs font-medium rounded-md text-[var(--text-tertiary)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] transition-colors"
@@ -1266,13 +1360,9 @@ const MessageItem = ({
                             Cancel
                         </button>
                         <button
-                            onClick={() => {
-                                if (editContent.trim() && onEditMessage) {
-                                    onEditMessage(idx, editContent.trim());
-                                    setIsEditing(false);
-                                }
-                            }}
-                            className="px-3 py-1 text-xs font-semibold rounded-md bg-[var(--accent-primary)] text-white hover:brightness-110 transition-all flex items-center gap-1.5"
+                            onClick={submitEdit}
+                            disabled={!editContent.trim()}
+                            className="px-3 py-1 text-xs font-semibold rounded-md bg-[var(--accent-primary)] text-white hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center gap-1.5"
                         >
                             <Send className="w-3 h-3" /> Save & Regenerate
                         </button>

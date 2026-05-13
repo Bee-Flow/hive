@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { API_BASE, authFetch } from '../../../../utils/helpers';
+import { filterVisibleModels, fetchAllowedModelsByAgentType } from '../../../../utils/modelMeta.js';
 
 /**
  * All API operations for the AgentDesigner: fetch, save, delete, duplicate, publish.
@@ -75,7 +76,6 @@ export default function useAgentApi(state, { systemMode, securityMode, initialAg
             const res = await authFetch(`${API_BASE}/agents/meta/models`);
             const data = await res.json();
             if (data.models) {
-                const { filterVisibleModels, fetchAllowedModelsByAgentType } = await import('../../../../utils/modelMeta.js');
                 const allowedConfig = await fetchAllowedModelsByAgentType();
                 const visibleModels = filterVisibleModels(data.models, 'chat', allowedConfig);
                 setAvailableModels(visibleModels);

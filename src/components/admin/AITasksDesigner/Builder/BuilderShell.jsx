@@ -1,11 +1,13 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Sparkles, Wrench, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../../utils/helpers';
 import scopedStorage from '../../../../utils/scopedStorage';
 import InputArea from '../../../InputArea';
 import MarkdownRenderer from '../../../MarkdownRenderer';
 import { tierLabel } from '../../../tierMeta';
-import DiagramPane from './DiagramPane';
+import DiagramPane, { applyAddNode } from './DiagramPane';
+import NodePalette from './flow/NodePalette';
+import AddNodeFab from './flow/AddNodeFab';
 import StepInspector from './StepInspector';
 import DryRunPanel from './DryRunPanel';
 import TriggerDiagnosePanel from './TriggerDiagnosePanel';
@@ -27,7 +29,7 @@ import useAutomationBuilderStream from '../../../../hooks/useAutomationBuilderSt
  */
 export default function BuilderShell({ automationId, onBack, user, initialChatInput = '' }) {
     const api = useAutomationApi();
-    const { state, send, hydrate } = useAutomationBuilderStream({ automationId });
+    const { state, send, hydrate, setDraft, markServerConfirmed, acceptExternalDraft, dismissExternalDraft } = useAutomationBuilderStream({ automationId });
     const [serverAutomation, setServerAutomation] = useState(null);
     const [selectedStepId, setSelectedStepId] = useState(null);
     const [busy, setBusy] = useState(false);
@@ -159,26 +161,34 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
     };
 
     const onActivate = async () => {
-        const aid = state.automationId || serverAutomation?.id;
-        if (!aid) return;
         setBusy(true);
-        try { const r = await api.activate(aid); setServerAutomation(r.automation); }
+        try {
+            const aid = await ensureAutomationCreated();
+            if (!aid) { setError('Add a trigger and at least one step before activating.'); return; }
+            const r = await api.activate(aid);
+            setServerAutomation(r.automation);
+        }
         catch (e) { setError(e.message); }
         setBusy(false);
     };
     const onDeactivate = async () => {
-        const aid = state.automationId || serverAutomation?.id;
-        if (!aid) return;
         setBusy(true);
-        try { const r = await api.deactivate(aid); setServerAutomation(r.automation); }
+        try {
+            const aid = state.automationId || serverAutomation?.id;
+            if (!aid) return;
+            const r = await api.deactivate(aid);
+            setServerAutomation(r.automation);
+        }
         catch (e) { setError(e.message); }
         setBusy(false);
     };
     const onDryRun = async () => {
-        const aid = state.automationId || serverAutomation?.id;
-        if (!aid) return;
         setBusy(true); setError(null);
-        try { await api.dryRun(aid); }
+        try {
+            const aid = await ensureAutomationCreated();
+            if (!aid) { setError('Add a trigger and at least one step before running.'); return; }
+            await api.dryRun(aid);
+        }
         catch (e) { setError(e.message); }
         setBusy(false);
     };
@@ -212,7 +222,13 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
     // the local draft diverges from the last server snapshot.
     useEffect(() => {
         const handler = (e) => {
-            if (!state.running && JSON.stringify(state.draft || null) === JSON.stringify(serverAutomation?.definition || null)) return;
+            // Block if a chat turn is mid-flight or the local draft hasn't
+            // been confirmed by the server yet. We prefer `state.lastServerDraft`
+            // (set by markServerConfirmed after each PUT) over the HTTP-side
+            // serverAutomation.definition because the HTTP path can lag the
+            // SSE path during a save round-trip.
+            const baseline = state.lastServerDraft || serverAutomation?.definition || null;
+            if (!state.running && deepEqualDef(state.draft || null, baseline)) return;
             e.preventDefault();
             // Modern browsers ignore the custom string but require setting returnValue.
             e.returnValue = '';
@@ -220,14 +236,92 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
         };
         window.addEventListener('beforeunload', handler);
         return () => window.removeEventListener('beforeunload', handler);
-    }, [state.running, state.draft, serverAutomation]);
+    }, [state.running, state.draft, state.lastServerDraft, serverAutomation]);
 
     const onSaveStep = async (nextDef) => {
-        const aid = state.automationId || serverAutomation?.id;
-        if (!aid) throw new Error('No automation id — save once via the chat first.');
+        // Lazy-create when the user clicked Save in the inspector before
+        // any other persist round-trip happened (e.g. they only added
+        // nodes via the palette, then opened the inspector to set inputs
+        // / mappings, then hit Save). The visual-edit debounce may not
+        // have fired yet, so we must create here too.
+        const aid = await ensureAutomationCreated(nextDef);
+        if (!aid) throw new Error('Could not create automation. Refresh and try again.');
         const r = await api.updateAutomation(aid, { definition: nextDef });
-        setServerAutomation(r.automation || r);
+        const persisted = r.automation || r;
+        setServerAutomation(persisted);
+        // Sync the SSE-hook's draft + baseline with what the server now
+        // holds. Without this, a later SSE `draft` event would see a
+        // local/baseline mismatch and surface a phantom conflict.
+        const persistedDef = persisted?.definition || nextDef;
+        setDraft(persistedDef);
+        markServerConfirmed(persistedDef);
     };
+
+    /**
+     * Lazy-create the automation when the user starts building via the
+     * visual editor (palette / drag) before sending a chat message.
+     * Returns the resolved aid. Re-entrant safe: concurrent callers
+     * share the same in-flight create promise so the user can't end up
+     * with two stub automations from a flurry of clicks.
+     */
+    const createInflightRef = useRef(null);
+    const ensureAutomationCreated = useCallback(async (defForCreate) => {
+        const existing = state.automationId || serverAutomation?.id;
+        if (existing) return existing;
+        if (createInflightRef.current) return createInflightRef.current;
+        const body = {
+            title: serverAutomation?.title || 'Untitled automation',
+            definition: defForCreate || state.draft || serverAutomation?.definition || null,
+        };
+        createInflightRef.current = (async () => {
+            try {
+                const r = await api.createAutomation(body);
+                const created = r.automation || r;
+                setServerAutomation(created);
+                hydrate({ automationId: created.id });
+                return created.id;
+            } finally {
+                createInflightRef.current = null;
+            }
+        })();
+        return createInflightRef.current;
+    }, [api, state.automationId, state.draft, serverAutomation, hydrate]);
+
+    /**
+     * Visual-editor write path. Updates the local draft immediately so the
+     * canvas stays responsive, then debounces the actual PUT so a 5-pixel
+     * drag doesn't fire five round-trips. Mirrors the saving pill states
+     * used by onSaveAutomation so the user sees the same feedback.
+     *
+     * When no automation exists yet we lazy-create one (the user clicked
+     * a node in the palette but never sent a chat message). After creation
+     * subsequent edits flow through the normal PUT round-trip.
+     */
+    const visualSaveTimer = useRef(null);
+    const onVisualEdit = useCallback((nextDef) => {
+        setDraft(nextDef);
+        if (visualSaveTimer.current) clearTimeout(visualSaveTimer.current);
+        setSavingState('saving');
+        visualSaveTimer.current = setTimeout(async () => {
+            try {
+                const aid = await ensureAutomationCreated(nextDef);
+                if (!aid) { setSavingState('error'); return; }
+                const r = await api.updateAutomation(aid, { definition: nextDef });
+                const persisted = r.automation || r;
+                setServerAutomation(persisted);
+                markServerConfirmed(persisted?.definition || nextDef);
+                setSavingState('saved');
+                if (savedTimer.current) clearTimeout(savedTimer.current);
+                savedTimer.current = setTimeout(() => setSavingState('idle'), 1500);
+            } catch (e) {
+                console.warn('[BuilderShell] visual save failed:', e.message);
+                setSavingState('error');
+            }
+        }, 500);
+    }, [api, setDraft, ensureAutomationCreated, markServerConfirmed]);
+    useEffect(() => () => {
+        if (visualSaveTimer.current) clearTimeout(visualSaveTimer.current);
+    }, []);
 
     /**
      * Save automation-level fields (title / description / definition).
@@ -237,13 +331,15 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
      * Drives the saving pill state machine.
      */
     const onSaveAutomation = async (patch) => {
-        const aid = state.automationId || serverAutomation?.id;
-        if (!aid) throw new Error('No automation id yet — finalise the chat first.');
+        const aid = await ensureAutomationCreated();
+        if (!aid) throw new Error('Could not create automation. Refresh and try again.');
         if (savedTimer.current) { clearTimeout(savedTimer.current); savedTimer.current = null; }
         setSavingState('saving');
         try {
             const r = await api.updateAutomation(aid, patch);
-            setServerAutomation(r.automation || r);
+            const persisted = r.automation || r;
+            setServerAutomation(persisted);
+            if (persisted?.definition) markServerConfirmed(persisted.definition);
             setSavingState('saved');
             savedTimer.current = setTimeout(() => setSavingState('idle'), 1500);
         } catch (e) {
@@ -327,6 +423,7 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
                         selectedRunStep={selectedRunStep}
                         onCloseInspector={() => setSelectedStepId(null)}
                         onSaveStep={onSaveStep}
+                        onVisualEdit={onVisualEdit}
                         fatalError={error || state.error}
                         onDismissFatal={() => setError(null)}
                     />
@@ -352,6 +449,11 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
  * Build tab body — extracted so BuilderShell stays compact and the
  * floating validation pill, focus-mode toggle, and inspector overlay
  * have a clear scope.
+ *
+ * Owns the slide-in NodePalette state because three different events
+ * open it (auto on empty draft, FAB click, edge-end-drop) and they all
+ * need to round-trip through the same handler that runs
+ * `applyAddNode(definition, payload, position, sourceId)`.
  */
 function BuildTab({
     focusMode, setFocusMode,
@@ -359,8 +461,126 @@ function BuildTab({
     chatInput, setChatInput, modelTiers, selectedTier, setSelectedTier, user,
     onSend, messagesContainerRef, messagesEndRef,
     onNodeClick, selectedStep, selectedRunStep, onCloseInspector, onSaveStep,
+    onVisualEdit,
     fatalError, onDismissFatal,
 }) {
+    // Imperative handle to DiagramPane — we need getCenter() for the
+    // click-to-add path (when the user clicks rather than drags an item).
+    const diagramRef = useRef(null);
+
+    // Palette state. `position` and `edgeSource` are populated only when
+    // the panel was opened via React Flow's onConnectEnd (edge dragged
+    // into empty space) — both null means "open from FAB or auto-open"
+    // and the parent inserts at canvas centre with no source edge.
+    const [palette, setPalette] = useState({ open: false, position: null, edgeSource: null });
+    const paletteMode = effectiveDef?.trigger ? 'step' : 'trigger';
+
+    // Auto-open the palette ONCE per session when there is no trigger
+    // yet — covers both fresh automations (effectiveDef still null
+    // because no chat / server snapshot has populated it) and loaded
+    // automations whose draft has no trigger. After the user closes
+    // it (or places a trigger) we don't re-open automatically — they
+    // have the empty-state CTA and the FAB if they want to come back.
+    const autoOpenedRef = useRef(false);
+    useEffect(() => {
+        if (autoOpenedRef.current) return;
+        if (effectiveDef?.trigger) return; // already has a trigger → nothing to pick
+        // eslint-disable-next-line react-hooks/set-state-in-effect
+        setPalette(p => p.open ? p : { open: true, position: null, edgeSource: null });
+        autoOpenedRef.current = true;
+    }, [effectiveDef]);
+
+    const closePalette = useCallback(() => {
+        setPalette({ open: false, position: null, edgeSource: null });
+    }, []);
+
+    const openPaletteFromFab = useCallback(() => {
+        // FAB always opens "blank" — no edge anchor, no drop position.
+        setPalette({ open: true, position: null, edgeSource: null });
+    }, []);
+
+    const onRequestAddNodeFromEdge = useCallback(({ sourceId, position }) => {
+        // Clear any inspector overlay so the panel slot isn't already
+        // occupied (both slide in from the right).
+        setPalette({ open: true, position, edgeSource: sourceId });
+    }, []);
+
+    // Triggered by the n8n-style "+" hover button on each node. Opens
+    // the palette in step-mode with `edgeSource` set so the next pick
+    // is auto-wired to the clicked node. No drop position — the
+    // handleAddNode below derives it from the source node's position.
+    const onRequestAddAfter = useCallback((nodeId) => {
+        if (!nodeId) return;
+        setPalette({ open: true, position: null, edgeSource: nodeId });
+    }, []);
+
+    const handleAddNode = useCallback((payload) => {
+        if (!payload) return;
+        // Fresh automations have no draft and no server snapshot yet —
+        // the user is adding their first node. Seed a minimal skeleton
+        // so applyAddNode has something to attach to. onVisualEdit will
+        // setDraft regardless and the chat flow can save it later.
+        const baseDef = effectiveDef || { trigger: null, steps: [], edges: [] };
+
+        let position = palette.position;
+        const sourceId = palette.edgeSource;
+
+        if (!position) {
+            // Edge-aware positioning. Three fallbacks in order:
+            //   1. If we're wiring from a specific source node (n8n
+            //      "+ next step" button or edge-drop), drop just to the
+            //      right of THAT node so the new step lines up with its
+            //      origin, not whichever node happens to be rightmost.
+            //   2. Otherwise (FAB / auto-open / search), drop to the
+            //      right of the rightmost existing node so we don't
+            //      stack on top of anything.
+            //   3. Triggers and bare-canvas additions fall through to
+            //      the canvas centre.
+            if (sourceId) {
+                const src = [baseDef.trigger, ...(baseDef.steps || [])]
+                    .find(n => n?.id === sourceId);
+                if (src?.position) {
+                    position = { x: src.position.x + 280, y: src.position.y };
+                }
+            }
+            if (!position && payload.kind !== 'trigger') {
+                const allNodes = [baseDef.trigger, ...(baseDef.steps || [])].filter(Boolean);
+                const rightmost = allNodes.reduce((acc, n) => {
+                    const x = n?.position?.x;
+                    if (typeof x !== 'number') return acc;
+                    return (!acc || x > acc.position.x) ? n : acc;
+                }, null);
+                if (rightmost?.position) {
+                    position = { x: rightmost.position.x + 280, y: rightmost.position.y };
+                }
+            }
+            if (!position) {
+                position = diagramRef.current?.getCenter?.() || { x: 0, y: 0 };
+            }
+        }
+
+        const next = applyAddNode(baseDef, payload, position, sourceId);
+        onVisualEdit?.(next);
+
+        // Keep the panel open so the user can add multiple nodes in a
+        // row without re-opening it each time. Edge-drop continuation
+        // is the only case that closes (single insert is the goal).
+        if (sourceId) closePalette();
+        else setPalette(p => ({ ...p, position: null, edgeSource: null }));
+    }, [effectiveDef, palette.position, palette.edgeSource, onVisualEdit, closePalette]);
+
+    // Clicking a node opens the inspector — close the palette first so
+    // they don't fight for the right edge.
+    const onNodeClickWrapped = useCallback((id) => {
+        if (palette.open) closePalette();
+        onNodeClick?.(id);
+    }, [palette.open, closePalette, onNodeClick]);
+
+    // Opening the palette must close any open inspector (same reason).
+    useEffect(() => {
+        if (palette.open && selectedStep) onCloseInspector?.();
+    }, [palette.open, selectedStep, onCloseInspector]);
+
     return (
         <div className="flex h-full">
             {/* Chat column — collapses entirely in Focus mode. The expand
@@ -438,6 +658,27 @@ function BuildTab({
                         <div className="text-xs text-[var(--text-secondary)] whitespace-pre-wrap line-clamp-3">{state.summary}</div>
                     </div>
                 )}
+                {state.pendingExternalDraft && (
+                    <div className="px-4 py-2 border-b border-amber-500/30 bg-amber-500/10 flex items-center justify-between gap-3 flex-shrink-0">
+                        <div className="text-xs text-amber-700 dark:text-amber-400">
+                            The chat assistant proposed changes while you were editing. Accept them, or keep your local edits.
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <button
+                                onClick={dismissExternalDraft}
+                                className="px-2 py-1 text-xs rounded text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]"
+                            >
+                                Keep mine
+                            </button>
+                            <button
+                                onClick={acceptExternalDraft}
+                                className="px-2 py-1 text-xs rounded bg-[var(--accent)] text-white hover:opacity-90"
+                            >
+                                Accept chat changes
+                            </button>
+                        </div>
+                    </div>
+                )}
                 {state.dryRun && (
                     <div className="flex-shrink-0">
                         <DryRunPanel run={state.dryRun} steps={state.steps} />
@@ -445,10 +686,17 @@ function BuildTab({
                 )}
                 <div className="flex-1 min-h-0">
                     <DiagramPane
+                        ref={diagramRef}
                         definition={effectiveDef}
                         runSteps={state.steps}
-                        onNodeClick={onNodeClick}
+                        onNodeClick={onNodeClickWrapped}
                         validation={state.validation}
+                        editable
+                        structuralEditsBlocked={state.running}
+                        onDefinitionChange={onVisualEdit}
+                        onRequestAddNode={onRequestAddNodeFromEdge}
+                        onRequestOpenPalette={openPaletteFromFab}
+                        onRequestAddAfter={onRequestAddAfter}
                     />
                 </div>
                 <FloatingValidationPill
@@ -456,6 +704,16 @@ function BuildTab({
                     validation={state.validation}
                     aborted={state.aborted}
                     onDismissFatal={onDismissFatal}
+                />
+                {effectiveDef?.trigger && !palette.open && !selectedStep && (
+                    <AddNodeFab onClick={openPaletteFromFab} disabled={state.running} />
+                )}
+                <NodePalette
+                    open={palette.open}
+                    onClose={closePalette}
+                    mode={paletteMode}
+                    disabled={state.running}
+                    onAddNode={handleAddNode}
                 />
                 {selectedStep && (
                     <StepInspector
@@ -515,6 +773,17 @@ function MessageBubble({ msg }) {
 // BuilderErrorBanner moved to FloatingValidationPill.jsx — the redesign
 // surfaces these records as a sticky bottom-right pill on the Build tab
 // instead of a top-of-canvas row that pushes content down.
+
+/**
+ * Cheap structural-equality check between two automation definitions.
+ * Used by the beforeunload guard to detect unsaved changes without
+ * tripping over JSON.stringify's key-ordering instability.
+ */
+function deepEqualDef(a, b) {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    try { return JSON.stringify(a) === JSON.stringify(b); } catch { return false; }
+}
 
 function ToolCallChip({ tc }) {
     const [open, setOpen] = useState(false);

@@ -5,6 +5,21 @@ import {
     Ticket, RefreshCw,
 } from 'lucide-react';
 import StepNodeBase, { NodeChip } from './StepNodeBase';
+import IntegrationLogo from './IntegrationLogo';
+
+/**
+ * Trigger provider id → integration id used by INTEGRATION_META.
+ * Map only providers whose event surface is a brand the user recognises;
+ * `manual` / `schedule` / `webhook` triggers stay on lucide glyphs.
+ */
+const PROVIDER_TO_INTEGRATION = {
+    'gmail':            'gmail',
+    'google-calendar':  'google_calendar',
+    'google-drive':     'google_drive',
+    'msgraph':          'outlook',
+    'github':           'github',
+    'nextcloud':        'nextcloud',
+};
 
 const KIND_META = {
     schedule:   { icon: Clock,         label: 'Schedule trigger' },
@@ -33,8 +48,8 @@ const APP_EVENT_META = {
     'ticket-assistant.sync.completed': { icon: RefreshCw, label: 'Ticket sync finished' },
 };
 
-export default function TriggerNode({ data }) {
-    const { step, runStep, issues } = data;
+export default function TriggerNode({ id, data }) {
+    const { step, runStep, issues, onAddAfter } = data;
     const kind = step.kind || 'manual';
 
     let meta = KIND_META[kind] || KIND_META.manual;
@@ -43,6 +58,9 @@ export default function TriggerNode({ data }) {
         if (APP_EVENT_META[key]) meta = APP_EVENT_META[key];
     }
     const Icon = meta.icon;
+    const providerIntegration = (kind === 'app_event' && step.appEvent?.provider)
+        ? PROVIDER_TO_INTEGRATION[step.appEvent.provider] || null
+        : null;
 
     const cron = step.schedule?.cron;
     const tz = step.schedule?.tz;
@@ -92,14 +110,20 @@ export default function TriggerNode({ data }) {
         </div>
     );
 
+    const iconEl = providerIntegration
+        ? <IntegrationLogo integrationId={providerIntegration} size={16} fallback={<Icon size={14} />} />
+        : <Icon size={14} />;
+
     return (
         <StepNodeBase
-            icon={<Icon size={14} />}
+            icon={iconEl}
             typeLabel={meta.label}
             body={body}
             hoverDetail={hoverDetail}
             runStep={runStep}
             issues={issues}
+            nodeId={id}
+            onAddAfter={onAddAfter}
         />
     );
 }

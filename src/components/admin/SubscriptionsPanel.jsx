@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { Package, Building2, Plus, Pencil, Trash2, Save, X, Star, AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Shield, Infinity, ScrollText, Euro, Eye, EyeOff, CreditCard, Settings, ExternalLink, Loader2, Tag, Percent, Users, ToggleLeft, ToggleRight, Clock, Hash, ShieldCheck } from 'lucide-react';
+import { Package, Building2, Plus, Pencil, Trash2, Save, X, Star, AlertTriangle, CheckCircle, ChevronDown, ChevronRight, Shield, Infinity, ScrollText, Euro, Eye, EyeOff, CreditCard, Settings, ExternalLink, Loader2, Tag, Percent, Users, ToggleLeft, ToggleRight, Clock, Hash, ShieldCheck, KeyRound, Copy, Upload, CalendarPlus } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 const FEATURE_OPTIONS = [
@@ -15,6 +15,7 @@ const FEATURE_OPTIONS = [
 const SECTIONS = [
     { id: 'plans', label: 'Plans', icon: Package, color: '#8b5cf6' },
     { id: 'organizations', label: 'Orgs', icon: Building2, color: '#3b82f6' },
+    { id: 'grants', label: 'Grants', icon: KeyRound, color: '#0ea5e9' },
     { id: 'access', label: 'Access', icon: ShieldCheck, color: '#f97316' },
     { id: 'promos', label: 'Promos', icon: Tag, color: '#10b981' },
     { id: 'settings', label: 'Stripe', icon: CreditCard, color: '#635bff' },
@@ -280,6 +281,7 @@ const PlanEditor = ({ plan, onSave, onCancel }) => {
         plan_type: plan?.plan_type || 'organization',
         nc_recommended: plan?.nc_recommended || false,
         tagline: plan?.tagline || '',
+        tier: plan?.tier || '',
     });
 
     const update = (key, val) => setForm(prev => ({ ...prev, [key]: val }));
@@ -331,6 +333,22 @@ const PlanEditor = ({ plan, onSave, onCancel }) => {
                 <div style={{ marginBottom: '16px' }}>
                     <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>Description</label>
                     <textarea value={form.description} onChange={e => update('description', e.target.value)} placeholder="Brief description of this plan" rows={2} style={{ ...input, resize: 'vertical' }} />
+                </div>
+
+                {/* Tier — explicit mapping into the license tier system. Without
+                    this set, Stripe-paid customers fall back to community even
+                    after payment succeeds (the SaaS tier fallback in
+                    server/license/index.js reads sp.tier). */}
+                <div style={{ marginBottom: '16px' }}>
+                    <label style={{ fontSize: '12px', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px', display: 'block' }}>
+                        Tier <span style={{ fontSize: '10px', color: 'var(--text-muted)' }}>— drives feature gating; required for Stripe-paid plans</span>
+                    </label>
+                    <select value={form.tier} onChange={e => update('tier', e.target.value)} style={{ ...input, cursor: 'pointer' }}>
+                        <option value="">— Unset (community fallback) —</option>
+                        <option value="community">Community (free)</option>
+                        <option value="pro">Pro</option>
+                        <option value="enterprise">Enterprise</option>
+                    </select>
                 </div>
 
                 {/* Limits */}
@@ -1938,6 +1956,353 @@ const AccessView = () => {
 
 
 // ═══════════════════════════════════════════
+//  Admin Grants View — direct license issuance, no Stripe required
+// ═══════════════════════════════════════════
+const TIER_PRESETS = ['community', 'pro', 'enterprise'];
+const EXPIRY_PRESETS = [
+    { label: '30 days', days: 30 },
+    { label: '90 days', days: 90 },
+    { label: '1 year', days: 365 },
+    { label: '2 years', days: 730 },
+];
+
+const AdminGrantsView = () => {
+    const [orgs, setOrgs] = useState([]);
+    const [grants, setGrants] = useState([]);
+    const [caps, setCaps] = useState({ tiers: TIER_PRESETS, fullTierEnabled: false, tierFeatures: {}, tierLimits: {} });
+    const [loading, setLoading] = useState(true);
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState(null);
+    const [lastBlob, setLastBlob] = useState(null);
+
+    const [form, setForm] = useState({
+        organizationId: '',
+        tier: 'pro',
+        expiresAt: new Date(Date.now() + 365 * 86400000).toISOString().slice(0, 10),
+        billingInterval: 'yearly',
+        notes: '',
+        showAdvanced: false,
+        featuresOverride: '',
+        limitsOverrideJson: '',
+        maxSeats: '',
+        deliverEmail: '',
+    });
+    const [lastDelivery, setLastDelivery] = useState(null);
+
+    const loadAll = useCallback(async () => {
+        setLoading(true);
+        try {
+            const [orgsRes, capsRes, listRes] = await Promise.all([
+                authFetch(`${API_BASE}/auth/organizations`),
+                authFetch(`${API_BASE}/api/admin/licenses/capabilities`),
+                authFetch(`${API_BASE}/api/admin/licenses?includeInactive=true`),
+            ]);
+            if (orgsRes.ok) {
+                const data = await orgsRes.json();
+                const list = Array.isArray(data) ? data : (data.organizations || data.orgs || []);
+                setOrgs(list.map(o => ({ id: o.id, name: o.name || o.id })).filter(o => o.id));
+            }
+            if (capsRes.ok) setCaps(await capsRes.json());
+            if (listRes.ok) {
+                const j = await listRes.json();
+                setGrants(j.licenses || []);
+            }
+        } catch (e) { setError(e.message); }
+        finally { setLoading(false); }
+    }, []);
+
+    useEffect(() => { loadAll(); }, [loadAll]);
+
+    const applyExpiryPreset = (days) => {
+        const d = new Date(Date.now() + days * 86400000);
+        setForm(f => ({ ...f, expiresAt: d.toISOString().slice(0, 10) }));
+    };
+
+    const handleGrant = async (e) => {
+        e.preventDefault();
+        setError(null);
+        setBusy(true);
+        try {
+            const body = {
+                organizationId: form.organizationId,
+                tier: form.tier,
+                expiresAt: new Date(form.expiresAt + 'T23:59:59Z').toISOString(),
+                billingInterval: form.billingInterval,
+                notes: form.notes || null,
+            };
+            if (form.deliverEmail.trim()) body.deliverEmail = form.deliverEmail.trim();
+            if (form.showAdvanced) {
+                if (form.featuresOverride.trim()) {
+                    body.featuresOverride = form.featuresOverride.split(',').map(s => s.trim()).filter(Boolean);
+                }
+                if (form.limitsOverrideJson.trim()) {
+                    try { body.limitsOverride = JSON.parse(form.limitsOverrideJson); }
+                    catch { throw new Error('Limits override must be valid JSON, e.g. {"max_users":50}'); }
+                }
+                if (form.maxSeats) body.maxSeats = parseInt(form.maxSeats, 10);
+            }
+            const res = await authFetch(`${API_BASE}/api/admin/licenses/grant`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            const j = await res.json();
+            if (!res.ok) throw new Error(j.error || 'Grant failed');
+            setLastBlob(j.blob);
+            setLastDelivery(j.emailDelivery || null);
+            await loadAll();
+        } catch (err) { setError(err.message); }
+        finally { setBusy(false); }
+    };
+
+    const handleRevoke = async (id) => {
+        if (!window.confirm('Revoke this license? Members of the org will fall back to community tier.')) return;
+        setBusy(true); setError(null);
+        try {
+            const res = await authFetch(`${API_BASE}/api/admin/licenses/${id}/revoke`, { method: 'POST' });
+            if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error || 'Revoke failed'); }
+            await loadAll();
+        } catch (err) { setError(err.message); } finally { setBusy(false); }
+    };
+
+    const handleExtend = async (id, current) => {
+        const def = current ? new Date(current).toISOString().slice(0, 10) : '';
+        const next = window.prompt('New expiry date (YYYY-MM-DD):', def);
+        if (!next) return;
+        setBusy(true); setError(null);
+        try {
+            const res = await authFetch(`${API_BASE}/api/admin/licenses/${id}/extend`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ expiresAt: new Date(next + 'T23:59:59Z').toISOString() }),
+            });
+            if (!res.ok) { const j = await res.json().catch(() => ({})); throw new Error(j.error || 'Extend failed'); }
+            await loadAll();
+        } catch (err) { setError(err.message); } finally { setBusy(false); }
+    };
+
+    const handleImport = async () => {
+        const blob = window.prompt('Paste a beeflow-admin-v1.* license blob to import:');
+        if (!blob) return;
+        const orgId = window.prompt('Target organization id (leave blank to use the org embedded in the blob):', '');
+        setBusy(true); setError(null);
+        try {
+            const res = await authFetch(`${API_BASE}/api/admin/licenses/import`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ blob: blob.trim(), organizationId: orgId || null }),
+            });
+            const j = await res.json();
+            if (!res.ok) throw new Error(j.error || 'Import failed');
+            await loadAll();
+        } catch (err) { setError(err.message); } finally { setBusy(false); }
+    };
+
+    const copyBlob = async (blob) => {
+        if (!blob) return;
+        try { await navigator.clipboard.writeText(blob); } catch { window.prompt('Copy this blob:', blob); }
+    };
+
+    const fmtDate = (s) => s ? new Date(s).toLocaleDateString() : '—';
+    const statusColor = (s) => ({ active: '#22c55e', pending: '#22c55e', grace: '#f59e0b', expired: '#9ca3af', revoked: '#ef4444' }[s] || '#9ca3af');
+
+    return (
+        <div style={{ padding: '24px', maxWidth: 1200, margin: '0 auto' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+                <div>
+                    <h2 style={{ margin: 0, color: 'var(--text-primary)', fontSize: 18 }}>Admin License Grants</h2>
+                    <p style={{ margin: '4px 0 0', color: 'var(--text-muted)', fontSize: 12 }}>
+                        Mint licenses directly without Stripe. Org members pick up the new tier on next request.
+                    </p>
+                </div>
+                <button style={btnSecondary} onClick={handleImport} disabled={busy}>
+                    <Upload style={{ width: 14, height: 14 }} /> Import blob
+                </button>
+            </div>
+
+            {error && (
+                <div style={{ ...card, borderColor: '#ef4444', color: '#ef4444', marginBottom: 16, fontSize: 13 }}>
+                    <AlertTriangle style={{ width: 14, height: 14, display: 'inline', verticalAlign: 'middle', marginRight: 6 }} />
+                    {error}
+                </div>
+            )}
+
+            {lastBlob && (
+                <div style={{ ...card, borderColor: '#22c55e', marginBottom: 16 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                        <strong style={{ color: '#22c55e', fontSize: 13 }}>License granted — copy the blob to re-import on another install:</strong>
+                        <button style={{ ...btnSecondary, padding: '4px 10px' }} onClick={() => { setLastBlob(null); setLastDelivery(null); }}><X style={{ width: 12, height: 12 }} /></button>
+                    </div>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                        <code style={{ flex: 1, padding: 8, background: 'var(--bg-tertiary)', borderRadius: 6, fontSize: 11, wordBreak: 'break-all', color: 'var(--text-secondary)' }}>{lastBlob}</code>
+                        <button style={btnPrimary} onClick={() => copyBlob(lastBlob)}><Copy style={{ width: 14, height: 14 }} /> Copy</button>
+                    </div>
+                    {lastDelivery && (
+                        <div style={{ marginTop: 10, fontSize: 12, color: lastDelivery.success ? '#22c55e' : '#f59e0b' }}>
+                            {lastDelivery.success
+                                ? `Emailed to customer (message id: ${lastDelivery.messageId || 'n/a'})`
+                                : `Email delivery failed: ${lastDelivery.error || 'unknown error'} — copy the blob above and send manually.`}
+                        </div>
+                    )}
+                </div>
+            )}
+
+            {/* Grant form */}
+            <form onSubmit={handleGrant} style={{ ...card, marginBottom: 24 }}>
+                <h3 style={{ margin: '0 0 12px', fontSize: 14, color: 'var(--text-primary)' }}>Grant a license</h3>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                    <div>
+                        <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Organization</label>
+                        <select required value={form.organizationId} onChange={e => setForm(f => ({ ...f, organizationId: e.target.value }))} style={input}>
+                            <option value="">— select organization —</option>
+                            {orgs.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Tier</label>
+                        <select value={form.tier} onChange={e => setForm(f => ({ ...f, tier: e.target.value }))} style={input}>
+                            {(caps.tiers || TIER_PRESETS).map(t => <option key={t} value={t}>{t}</option>)}
+                        </select>
+                    </div>
+                    <div>
+                        <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Expires on</label>
+                        <input type="date" required value={form.expiresAt} onChange={e => setForm(f => ({ ...f, expiresAt: e.target.value }))} style={input} />
+                        <div style={{ display: 'flex', gap: 6, marginTop: 6, flexWrap: 'wrap' }}>
+                            {EXPIRY_PRESETS.map(p => (
+                                <button type="button" key={p.label} onClick={() => applyExpiryPreset(p.days)}
+                                    style={{ ...btnSecondary, padding: '4px 10px', fontSize: 11 }}>{p.label}</button>
+                            ))}
+                        </div>
+                    </div>
+                    <div>
+                        <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Billing interval</label>
+                        <select value={form.billingInterval} onChange={e => setForm(f => ({ ...f, billingInterval: e.target.value }))} style={input}>
+                            <option value="monthly">Monthly</option>
+                            <option value="yearly">Yearly</option>
+                        </select>
+                    </div>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                        <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Notes (audit log only)</label>
+                        <input type="text" value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))}
+                            placeholder="e.g. Comp for partner X — internal trial through end of Q2" style={input} />
+                    </div>
+                    <div style={{ gridColumn: '1 / -1' }}>
+                        <label style={{ fontSize: 12, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                            Email blob to customer <span style={{ color: 'var(--text-muted)' }}>— optional, requires service email configured</span>
+                        </label>
+                        <input type="email" value={form.deliverEmail} onChange={e => setForm(f => ({ ...f, deliverEmail: e.target.value }))}
+                            placeholder="customer@example.com" style={input} />
+                    </div>
+                </div>
+
+                <div style={{ marginTop: 12 }}>
+                    <button type="button" onClick={() => setForm(f => ({ ...f, showAdvanced: !f.showAdvanced }))}
+                        style={{ ...btnSecondary, fontSize: 12 }}>
+                        {form.showAdvanced ? <ChevronDown style={{ width: 12, height: 12 }} /> : <ChevronRight style={{ width: 12, height: 12 }} />}
+                        Advanced overrides
+                    </button>
+                </div>
+
+                {form.showAdvanced && (
+                    <div style={{ marginTop: 12, padding: 12, background: 'var(--bg-tertiary)', borderRadius: 8, display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                        <div style={{ gridColumn: '1 / -1' }}>
+                            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                                Features override (comma-separated; leave blank to use tier defaults)
+                            </label>
+                            <input type="text" value={form.featuresOverride} onChange={e => setForm(f => ({ ...f, featuresOverride: e.target.value }))}
+                                placeholder="automations, multi_user, kb_unlimited" style={input} />
+                        </div>
+                        <div>
+                            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>
+                                Limits override (JSON; merged into tier defaults)
+                            </label>
+                            <input type="text" value={form.limitsOverrideJson} onChange={e => setForm(f => ({ ...f, limitsOverrideJson: e.target.value }))}
+                                placeholder='{"max_users":100,"max_agents":50}' style={input} />
+                        </div>
+                        <div>
+                            <label style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'block', marginBottom: 4 }}>Max seats</label>
+                            <input type="number" min="0" value={form.maxSeats} onChange={e => setForm(f => ({ ...f, maxSeats: e.target.value }))}
+                                placeholder="(empty = no cap)" style={input} />
+                        </div>
+                    </div>
+                )}
+
+                <div style={{ marginTop: 16, display: 'flex', justifyContent: 'flex-end' }}>
+                    <button type="submit" disabled={busy || !form.organizationId} style={btnPrimary}>
+                        {busy ? <Loader2 style={{ width: 14, height: 14 }} className="spin" /> : <Plus style={{ width: 14, height: 14 }} />}
+                        Grant license
+                    </button>
+                </div>
+            </form>
+
+            {/* Active grants table */}
+            <div style={card}>
+                <h3 style={{ margin: '0 0 12px', fontSize: 14, color: 'var(--text-primary)' }}>
+                    Issued admin grants {loading && <Loader2 style={{ width: 12, height: 12, display: 'inline' }} className="spin" />}
+                </h3>
+                {!loading && grants.length === 0 && (
+                    <div style={{ color: 'var(--text-muted)', fontSize: 13, padding: 12 }}>No admin-issued licenses yet.</div>
+                )}
+                {grants.length > 0 && (
+                    <div style={{ overflowX: 'auto' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                            <thead>
+                                <tr style={{ textAlign: 'left', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-default)' }}>
+                                    <th style={{ padding: '8px' }}>Organization</th>
+                                    <th style={{ padding: '8px' }}>Tier</th>
+                                    <th style={{ padding: '8px' }}>Status</th>
+                                    <th style={{ padding: '8px' }}>Issued</th>
+                                    <th style={{ padding: '8px' }}>Expires</th>
+                                    <th style={{ padding: '8px' }}>Notes</th>
+                                    <th style={{ padding: '8px', textAlign: 'right' }}>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {grants.map(g => (
+                                    <tr key={g.id} style={{ borderBottom: '1px solid var(--border-default)' }}>
+                                        <td style={{ padding: '8px' }}>{g.organizationName || g.organizationId}</td>
+                                        <td style={{ padding: '8px', textTransform: 'capitalize' }}>{g.tier}</td>
+                                        <td style={{ padding: '8px' }}>
+                                            <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: statusColor(g.refreshStatus), marginRight: 6 }} />
+                                            {g.refreshStatus}
+                                        </td>
+                                        <td style={{ padding: '8px' }}>{fmtDate(g.issuedAt)}</td>
+                                        <td style={{ padding: '8px' }}>{fmtDate(g.expiresAt)}</td>
+                                        <td style={{ padding: '8px', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={g.metadata?.admin_notes || ''}>
+                                            {g.metadata?.admin_notes || '—'}
+                                        </td>
+                                        <td style={{ padding: '8px', textAlign: 'right', whiteSpace: 'nowrap' }}>
+                                            {g.blob && (
+                                                <button style={{ ...btnSecondary, padding: '4px 8px', fontSize: 11, marginRight: 4 }} onClick={() => copyBlob(g.blob)} title="Copy blob">
+                                                    <Copy style={{ width: 12, height: 12 }} />
+                                                </button>
+                                            )}
+                                            {g.refreshStatus !== 'revoked' && (
+                                                <>
+                                                    <button style={{ ...btnSecondary, padding: '4px 8px', fontSize: 11, marginRight: 4 }}
+                                                        onClick={() => handleExtend(g.id, g.expiresAt)} disabled={busy} title="Extend expiry">
+                                                        <CalendarPlus style={{ width: 12, height: 12 }} />
+                                                    </button>
+                                                    <button style={{ ...btnDanger, padding: '4px 8px', fontSize: 11 }}
+                                                        onClick={() => handleRevoke(g.id)} disabled={busy} title="Revoke">
+                                                        <Trash2 style={{ width: 12, height: 12 }} />
+                                                    </button>
+                                                </>
+                                            )}
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+
+// ═══════════════════════════════════════════
 //  Main SubscriptionsPanel
 // ═══════════════════════════════════════════
 const SubscriptionsPanel = () => {
@@ -2011,6 +2376,11 @@ const SubscriptionsPanel = () => {
                 {active === 'access' && (
                     <div style={{ position: 'absolute', inset: 0, overflowY: 'auto' }}>
                         <AccessView />
+                    </div>
+                )}
+                {active === 'grants' && (
+                    <div style={{ position: 'absolute', inset: 0, overflowY: 'auto' }}>
+                        <AdminGrantsView />
                     </div>
                 )}
             </div>

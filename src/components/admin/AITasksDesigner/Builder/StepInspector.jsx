@@ -1,7 +1,11 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { X, Save, RotateCcw } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { X, Save, RotateCcw, PanelRightClose, PanelRightOpen, Loader2, Check, AlertCircle } from 'lucide-react';
 import { matchValidationToStep } from './flow/matchValidationToStep';
 import SettingsForm from './flow/SettingsForm';
+import VariableTree from './mapping/VariableTree';
+import useUpstreamVariables from '../../../../hooks/useUpstreamVariables';
+import useAutomationApi from '../../../../hooks/useAutomationApi';
+import scopedStorage from '../../../../utils/scopedStorage';
 
 /**
  * Right-side detail panel for a step.
@@ -26,9 +30,58 @@ export default function StepInspector({ step, runStep, onClose, definition, onSa
     const [parseError, setParseError] = useState(null);
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState(null);
+    // Toast-style status: 'idle' | 'saving' | 'saved' | 'error'. Drives the
+    // small chip in the inspector header so the user always knows whether
+    // their last edit landed. Auto-fades from 'saved' back to 'idle'.
+    const [saveStatus, setSaveStatus] = useState('idle');
+    const savedFadeRef = useRef(null);
+    useEffect(() => {
+        if (saving) { setSaveStatus('saving'); return; }
+        if (saveError) { setSaveStatus('error'); return; }
+        // Saving just transitioned false → success.
+        if (saveStatus === 'saving') {
+            setSaveStatus('saved');
+            if (savedFadeRef.current) clearTimeout(savedFadeRef.current);
+            savedFadeRef.current = setTimeout(() => setSaveStatus('idle'), 1500);
+        }
+    }, [saving, saveError]); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => () => { if (savedFadeRef.current) clearTimeout(savedFadeRef.current); }, []);
     const [Monaco, setMonaco] = useState(null);
     const [monacoFailed, setMonacoFailed] = useState(false);
     const lastStepIdRef = useRef(step?.id);
+
+    // Mapping side panel state. Catalog is fetched once; groups are
+    // derived from the definition + current step. activeField holds the
+    // most recently focused BindingField/TemplateField so VariableTree
+    // clicks know where to insert.
+    const api = useAutomationApi();
+    const [catalog, setCatalog] = useState(null);
+    useEffect(() => {
+        let alive = true;
+        api.getCatalog().then(c => { if (alive) setCatalog(c); }).catch(() => {});
+        return () => { alive = false; };
+    }, [api]);
+
+    const groups = useUpstreamVariables(definition, step?.id, catalog);
+    const previewSample = useMemo(() => buildSampleRoot(groups), [groups]);
+
+    const activeFieldRef = useRef(null);
+    const [activeLabel, setActiveLabel] = useState(null);
+    const onFocusField = (handle) => {
+        activeFieldRef.current = handle;
+        setActiveLabel(handle?.label || null);
+    };
+    const onInsertFromTree = (path) => {
+        const handle = activeFieldRef.current;
+        if (handle?.insert) handle.insert(path);
+    };
+
+    // VariableTree can be collapsed for users who prefer pure JSON work.
+    // Preference persists via scopedStorage.
+    const [treeOpen, setTreeOpen] = useState(() => scopedStorage.getItem('inspectorVariableTreeOpen') !== '0');
+    useEffect(() => {
+        scopedStorage.setItem('inspectorVariableTreeOpen', treeOpen ? '1' : '0');
+    }, [treeOpen]);
 
     // Reset editor when the user clicks a different step.
     useEffect(() => {
@@ -56,6 +109,59 @@ export default function StepInspector({ step, runStep, onClose, definition, onSa
         () => matchValidationToStep(validation, step?.id),
         [step, validation],
     );
+
+    /**
+     * Merge `patch` onto the existing step, preserving id. Used by the
+     * Settings form — only the fields the user touches are overwritten;
+     * everything else (inputs map, edges, outputSchema, etc.) stays intact.
+     *
+     * Concurrency: rapid autosaves used to race here — two PUTs against
+     * different `step` baselines could clobber each other. We now
+     * serialize: if a save is in flight we stash the latest patch in
+     * `queuedRef` (coalesced — only the newest pending patch survives)
+     * and fire it once the current save resolves.
+     */
+    const saveInflightRef = useRef(null);
+    const saveQueuedRef = useRef(null);
+    const persistStepPatch = useCallback(async (patch) => {
+        if (!definition || typeof onSaveStep !== 'function' || !step) return;
+        if (saveInflightRef.current) {
+            saveQueuedRef.current = patch;
+            return saveInflightRef.current;
+        }
+        const doSave = async (currentPatch) => {
+            const next = { ...definition };
+            const merged = { ...step, ...currentPatch, id: step.id };
+            if (definition.trigger?.id === step.id) {
+                next.trigger = merged;
+            } else {
+                next.steps = (definition.steps || []).map(s => s.id === step.id ? merged : s);
+            }
+            setSaving(true);
+            setSaveError(null);
+            try {
+                await onSaveStep(next);
+                setEditorText(safeStringify(merged));
+            } catch (e) {
+                setSaveError(e.message || 'Save failed');
+            }
+            setSaving(false);
+        };
+        saveInflightRef.current = (async () => {
+            try {
+                await doSave(patch);
+            } finally {
+                const queued = saveQueuedRef.current;
+                saveQueuedRef.current = null;
+                saveInflightRef.current = null;
+                if (queued) {
+                    // Tail-call the next coalesced patch.
+                    await persistStepPatch(queued);
+                }
+            }
+        })();
+        return saveInflightRef.current;
+    }, [definition, step, onSaveStep]);
 
     if (!step) return null;
 
@@ -110,50 +216,40 @@ export default function StepInspector({ step, runStep, onClose, definition, onSa
         setSaving(false);
     };
 
-    /**
-     * Merge `patch` onto the existing step, preserving id. Used by the
-     * Settings form — only the fields the user touches are overwritten;
-     * everything else (inputs map, edges, outputSchema, etc.) stays intact.
-     */
-    const persistStepPatch = async (patch) => {
-        if (!definition || typeof onSaveStep !== 'function') return;
-        const next = { ...definition };
-        const merged = { ...step, ...patch, id: step.id };
-        if (definition.trigger?.id === step.id) {
-            next.trigger = merged;
-        } else {
-            next.steps = (definition.steps || []).map(s => s.id === step.id ? merged : s);
-        }
-        setSaving(true);
-        setSaveError(null);
-        try {
-            await onSaveStep(next);
-            setEditorText(safeStringify(merged));
-        } catch (e) {
-            setSaveError(e.message || 'Save failed');
-        }
-        setSaving(false);
-    };
+    const inspectorWidth = treeOpen ? 'w-[720px]' : 'w-[420px]';
 
     return (
         // Drawer-style overlay sitting over the diagram on the Build tab.
         // z-15 keeps it above the diagram (z-0) and the floating validation
         // pill (z-20 — pill should still be reachable when inspector is
-        // open but to the right of it). Width starts at 400px so prompt
-        // text and JSON breathe.
-        <div className="absolute top-0 right-0 h-full w-[400px] z-[15] flex flex-col bg-[var(--bg-primary)] border-l border-[var(--border-default)] shadow-[-6px_0_16px_rgba(0,0,0,0.08)] overflow-hidden">
+        // open but to the right of it). Width is 720px when the variable
+        // tree is open (split: 420 form + 300 tree), 420px when collapsed.
+        <div className={`absolute top-0 right-0 h-full ${inspectorWidth} z-[15] flex flex-col bg-[var(--bg-primary)] border-l border-[var(--border-default)] shadow-[-6px_0_16px_rgba(0,0,0,0.08)] overflow-hidden transition-[width] duration-150`}>
             <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-default)]">
-                <div className="min-w-0">
-                    <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)]">{step.type}</div>
-                    <div className="text-sm font-semibold text-[var(--text-primary)] truncate">{step.label || step.tool || step.id}</div>
+                <div className="min-w-0 flex-1 flex items-center gap-2">
+                    <div className="min-w-0">
+                        <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)]">{step.type}</div>
+                        <div className="text-sm font-semibold text-[var(--text-primary)] truncate">{step.label || step.tool || step.id}</div>
+                    </div>
+                    <SaveStatusChip status={saveStatus} error={saveError} />
                 </div>
-                <button
-                    onClick={onClose}
-                    className="p-1 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition"
-                    aria-label="Close inspector"
-                >
-                    <X size={16} />
-                </button>
+                <div className="flex items-center gap-1">
+                    <button
+                        onClick={() => setTreeOpen(o => !o)}
+                        title={treeOpen ? 'Hide variables panel' : 'Show variables panel'}
+                        aria-label={treeOpen ? 'Hide variables panel' : 'Show variables panel'}
+                        className="p-1 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition"
+                    >
+                        {treeOpen ? <PanelRightClose size={14} /> : <PanelRightOpen size={14} />}
+                    </button>
+                    <button
+                        onClick={onClose}
+                        className="p-1 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition"
+                        aria-label="Close inspector"
+                    >
+                        <X size={16} />
+                    </button>
+                </div>
             </div>
             <div className="flex border-b border-[var(--border-default)] text-xs">
                 <TabBtn active={tab === 'settings'} onClick={() => setTab('settings')}>Settings</TabBtn>
@@ -163,15 +259,21 @@ export default function StepInspector({ step, runStep, onClose, definition, onSa
                 </TabBtn>
             </div>
 
-            <div className="flex-1 min-h-0 overflow-y-auto">
+            <div className="flex-1 min-h-0 flex">
+                <div className="flex-1 min-w-0 min-h-0 flex flex-col">
                 {tab === 'settings' && (
                     <SettingsForm
+                        key={step?.id}
                         step={step}
                         modelTiers={modelTiers}
                         stepIssues={stepIssues}
                         saving={saving}
                         saveError={saveError}
                         onPatch={persistStepPatch}
+                        onFocusField={onFocusField}
+                        previewSample={previewSample}
+                        catalog={catalog}
+                        groups={groups}
                     />
                 )}
                 {tab === 'definition' && (
@@ -238,7 +340,7 @@ export default function StepInspector({ step, runStep, onClose, definition, onSa
                     </div>
                 )}
                 {tab === 'last_run' && runStep && (
-                    <div className="p-3 space-y-3 text-xs">
+                    <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3 text-xs">
                         <KV label="Status" value={runStep.status} />
                         {runStep.error && <ErrPre value={runStep.error} />}
                         <Section title="Input"><Pre value={runStep.input} /></Section>
@@ -248,9 +350,42 @@ export default function StepInspector({ step, runStep, onClose, definition, onSa
                 {tab === 'last_run' && !runStep && (
                     <div className="p-4 text-xs text-[var(--text-tertiary)]">No run output for this step yet — try a dry-run.</div>
                 )}
+                </div>
+                {treeOpen && (
+                    <div className="w-[300px] flex-shrink-0 border-l border-[var(--border-default)] bg-[var(--bg-secondary)]/40 min-h-0">
+                        <VariableTree
+                            groups={groups}
+                            onInsert={onInsertFromTree}
+                            activeFieldLabel={activeLabel}
+                        />
+                    </div>
+                )}
             </div>
         </div>
     );
+}
+
+/**
+ * Merge every upstream group's sample into a single root tree shaped
+ * like the runtime resolver's runState — so walkPath('steps.s1.output.x')
+ * resolves to the right placeholder. Used by BindingField / TemplateField
+ * preview lines.
+ */
+function buildSampleRoot(groups) {
+    const root = { trigger: { output: {} }, steps: {}, loop: {} };
+    for (const g of groups || []) {
+        if (g.kind === 'trigger') {
+            root.trigger.output = g.sample || {};
+        } else if (g.kind === 'loop') {
+            // groups id of a loop step is the loop step id; basePath uses
+            // loop.<itemVar>. Mirror that into the root.
+            const tail = String(g.basePath || '').split('.').slice(1).join('.');
+            if (tail) root.loop[tail] = g.sample || {};
+        } else {
+            root.steps[g.id] = { output: g.sample || {} };
+        }
+    }
+    return root;
 }
 
 function TabBtn({ active, onClick, disabled, children }) {
@@ -298,4 +433,41 @@ function ErrPre({ value }) {
 
 function safeStringify(step) {
     try { return JSON.stringify(step, null, 2); } catch { return ''; }
+}
+
+/**
+ * Small status chip rendered next to the step title. Tells the user
+ * whether their last edit was persisted — answers the recurring "did
+ * my change actually save?" question without needing a Network panel.
+ */
+function SaveStatusChip({ status, error }) {
+    if (status === 'idle') return null;
+    if (status === 'saving') {
+        return (
+            <span className="inline-flex items-center gap-1 text-[10px] text-[var(--text-tertiary)]">
+                <Loader2 size={11} className="animate-spin" />
+                Saving…
+            </span>
+        );
+    }
+    if (status === 'saved') {
+        return (
+            <span className="inline-flex items-center gap-1 text-[10px] text-emerald-600 dark:text-emerald-400">
+                <Check size={11} />
+                Saved
+            </span>
+        );
+    }
+    if (status === 'error') {
+        return (
+            <span
+                className="inline-flex items-center gap-1 text-[10px] text-red-600 dark:text-red-400"
+                title={error || 'Save failed'}
+            >
+                <AlertCircle size={11} />
+                Save failed
+            </span>
+        );
+    }
+    return null;
 }

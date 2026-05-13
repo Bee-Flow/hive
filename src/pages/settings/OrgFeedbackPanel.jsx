@@ -2,11 +2,16 @@ import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
     ThumbsUp, ThumbsDown, MessageCircle, MessageSquare, ChevronRight,
     Search, Cpu, User, Bot, ExternalLink, RefreshCw, Calendar,
-    Clock, Repeat,
+    Clock, Repeat, AlertTriangle,
 } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 import MarkdownRenderer from '../../components/MarkdownRenderer';
+
+// Trigger the Action-required banner when positive feedback drops below this
+// threshold AND sample is large enough to be meaningful.
+const FEEDBACK_POSITIVE_ALERT_PCT = 60;
+const FEEDBACK_MIN_SAMPLE = 5;
 
 const PAGE_SIZE = 10;
 const FEEDBACK_API = `${API_BASE}/api/feedback/org`;
@@ -293,17 +298,71 @@ export default function OrgFeedbackPanel() {
                 </div>
             </div>
 
-            {/* KPI Cards — note: NO purple, "With Comments" uses amber */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 10 }}>
-                <KpiCard icon={ThumbsUp} label={t('org.feedback_positive')} color={C.green}
-                    value={posCount} subtitle={`${posRate} ${t('org.feedback_approval')}`} />
-                <KpiCard icon={ThumbsDown} label={t('org.feedback_negative')} color={C.rose}
-                    value={negCount} />
-                <KpiCard icon={MessageCircle} label={t('org.feedback_with_comments')} color={C.amber}
-                    value={Number(summary?.with_comments) || 0} />
-                <KpiCard icon={MessageSquare} label={t('org.feedback_with_conversation')} color={C.blue}
-                    value={withConvoCount} subtitle={t('org.feedback_shared_context')} />
-            </div>
+            {/* Action-required banner when positive rate drops below threshold
+                on a meaningful sample. */}
+            {(() => {
+                const posPct = total > 0 ? Math.round((posCount / total) * 100) : null;
+                if (posPct === null || total < FEEDBACK_MIN_SAMPLE || posPct >= FEEDBACK_POSITIVE_ALERT_PCT) return null;
+                const severity = posPct < 40 ? 'red' : 'amber';
+                const bc = severity === 'red' ? '#ef4444' : '#f59e0b';
+                return (
+                    <div style={{
+                        padding: '12px 16px', borderRadius: 12,
+                        background: `${bc}10`, border: `1px solid ${bc}55`,
+                        display: 'flex', alignItems: 'center', gap: 12,
+                    }}>
+                        <div style={{ width: 32, height: 32, borderRadius: 8, background: `${bc}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                            <AlertTriangle style={{ width: 16, height: 16, color: bc }} />
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: bc }}>Action required</div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginTop: 1 }}>
+                                Positive rate {posPct}% on {total} feedback item{total === 1 ? '' : 's'} — review negative comments.
+                            </div>
+                        </div>
+                        <button
+                            onClick={() => { setFilter('negative'); setPageNum(0); }}
+                            style={{
+                                padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                                background: bc, color: 'white', fontWeight: 700, fontSize: 12,
+                                display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
+                            }}
+                        >
+                            Review negatives <ChevronRight style={{ width: 14, height: 14 }} />
+                        </button>
+                    </div>
+                );
+            })()}
+
+            {/* Positive-rate hero — big colored score on the left, supporting KPIs on the right */}
+            {(() => {
+                const posPct = total > 0 ? Math.round((posCount / total) * 100) : null;
+                const c = posPct === null ? '#94a3b8' : posPct >= 80 ? '#10b981' : posPct >= 60 ? '#f59e0b' : '#ef4444';
+                const label = posPct === null ? 'No data' : posPct >= 80 ? 'Excellent' : posPct >= 60 ? 'Watch' : 'Critical';
+                return (
+                    <div style={{ borderRadius: 14, padding: 18, background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', overflow: 'hidden', position: 'relative' }}>
+                        <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(ellipse at top left, ${c}12, transparent 60%)`, pointerEvents: 'none' }} />
+                        <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 24, alignItems: 'center' }}>
+                            <div>
+                                <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 4 }}>Positive rate</div>
+                                <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6, flexWrap: 'wrap' }}>
+                                    <span style={{ fontSize: 54, fontWeight: 800, color: c, letterSpacing: '-0.04em', lineHeight: 1 }}>{posPct === null ? '—' : `${posPct}%`}</span>
+                                    <span style={{ padding: '3px 9px', borderRadius: 6, background: `${c}15`, color: c, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
+                                </div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>
+                                    {posCount} thumbs up · {negCount} thumbs down · {total} total
+                                </div>
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                <KpiCard icon={ThumbsUp} label={t('org.feedback_positive')} color={C.green} value={posCount} />
+                                <KpiCard icon={ThumbsDown} label={t('org.feedback_negative')} color={C.rose} value={negCount} />
+                                <KpiCard icon={MessageCircle} label={t('org.feedback_with_comments')} color={C.amber} value={Number(summary?.with_comments) || 0} />
+                                <KpiCard icon={MessageSquare} label={t('org.feedback_with_conversation')} color={C.blue} value={withConvoCount} />
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
 
             {/* Filter chips + search + list */}
             <Card>

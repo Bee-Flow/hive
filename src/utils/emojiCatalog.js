@@ -106,6 +106,46 @@ export const EMOJI_CATEGORIES = [
             { id: 'status.processing', label: 'Processing', defaultEmoji: '⏳' },
         ],
     },
+    /**
+     * Integration brand marks — overridable by uploading a logo in the
+     * Icons pack editor. The Automation Builder picks these up via
+     * useIntegrationIcon() so orgs can swap in their own branded variants
+     * (e.g. a corporate Nextcloud favicon) without touching code.
+     *
+     * Ids match server/core/integrationToolMap.js INTEGRATION_PREFIXES.
+     */
+    {
+        name: 'Integrations',
+        entries: [
+            { id: 'integration.gmail',                   label: 'Gmail',                       defaultEmoji: '📧' },
+            { id: 'integration.google_calendar',         label: 'Google Calendar',             defaultEmoji: '📅' },
+            { id: 'integration.google_drive',            label: 'Google Drive',                defaultEmoji: '📁' },
+            { id: 'integration.google_docs',             label: 'Google Docs',                 defaultEmoji: '📝' },
+            { id: 'integration.google_contacts',         label: 'Google Contacts',             defaultEmoji: '👥' },
+            { id: 'integration.google_keep',             label: 'Google Keep',                 defaultEmoji: '🗒️' },
+            { id: 'integration.outlook',                 label: 'Outlook',                     defaultEmoji: '📧' },
+            { id: 'integration.ms_calendar',             label: 'Microsoft Calendar',          defaultEmoji: '📅' },
+            { id: 'integration.onedrive',                label: 'OneDrive',                    defaultEmoji: '☁️' },
+            { id: 'integration.nextcloud',               label: 'Nextcloud Files',             defaultEmoji: '☁️' },
+            { id: 'integration.nextcloud_calendar',      label: 'Nextcloud Calendar',          defaultEmoji: '📅' },
+            { id: 'integration.nextcloud_contacts',      label: 'Nextcloud Contacts',          defaultEmoji: '👥' },
+            { id: 'integration.nextcloud_deck',          label: 'Nextcloud Deck',              defaultEmoji: '🗂️' },
+            { id: 'integration.nextcloud_talk',          label: 'Nextcloud Talk',              defaultEmoji: '💬' },
+            { id: 'integration.nextcloud_tasks',         label: 'Nextcloud Tasks',             defaultEmoji: '✅' },
+            { id: 'integration.nextcloud_notes',         label: 'Nextcloud Notes',             defaultEmoji: '🗒️' },
+            { id: 'integration.nextcloud_mail',          label: 'Nextcloud Mail',              defaultEmoji: '📧' },
+            { id: 'integration.github',                  label: 'GitHub',                      defaultEmoji: '🐙' },
+            { id: 'integration.linkedin',                label: 'LinkedIn',                    defaultEmoji: '💼' },
+            { id: 'integration.youtrack',                label: 'YouTrack',                    defaultEmoji: '🎫' },
+            { id: 'integration.fireflies',               label: 'Fireflies',                   defaultEmoji: '🎙️' },
+            { id: 'integration.signrequest',             label: 'SignRequest',                 defaultEmoji: '✍️' },
+            { id: 'integration.gamma',                   label: 'Gamma',                       defaultEmoji: '📊' },
+            { id: 'integration.n8n',                     label: 'n8n',                         defaultEmoji: '🔁' },
+            { id: 'integration.maps',                    label: 'Google Maps',                 defaultEmoji: '🗺️' },
+            { id: 'integration.web_search',              label: 'Web Search',                  defaultEmoji: '🌐' },
+            { id: 'integration.kb_search',               label: 'Knowledge Base',              defaultEmoji: '📚' },
+        ],
+    },
 ];
 
 export const EMOJI_BY_ID = Object.fromEntries(

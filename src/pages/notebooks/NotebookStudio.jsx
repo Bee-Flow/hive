@@ -2,7 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
     FileText, HelpCircle, ClipboardList,
     Layers, Activity,
-    Download, FileDown, Loader2, ChevronDown, Table2, PenTool
+    Download, FileDown, Loader2, ChevronDown, Table2, PenTool, FileType2
 } from 'lucide-react';
 
 // Generation types kept after the NotebookLM-gimmick cut:
@@ -103,6 +103,73 @@ function DropdownMenu({ group, onSelect, generating, disabled }) {
     );
 }
 
+function ExportMenu({ onExport, exporting, disabled }) {
+    const [open, setOpen] = useState(false);
+    const ref = useRef(null);
+
+    useEffect(() => {
+        const handleOutside = (e) => {
+            if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+        };
+        document.addEventListener('mousedown', handleOutside);
+        return () => document.removeEventListener('mousedown', handleOutside);
+    }, []);
+
+    const isExporting = !!exporting;
+    const select = (format) => {
+        setOpen(false);
+        onExport(format);
+    };
+
+    return (
+        <div className="relative" ref={ref}>
+            <button
+                disabled={disabled || isExporting}
+                onClick={() => setOpen(!open)}
+                className="flex items-center gap-1.5 p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] disabled:opacity-40 transition-colors"
+                style={{ color: 'var(--text-secondary)' }}
+                title="Export"
+            >
+                {isExporting
+                    ? <Loader2 className="w-4 h-4 animate-spin" style={{ color: 'var(--accent-primary)' }} />
+                    : <Download className="w-4 h-4" />}
+                <span className="text-sm font-medium">Export</span>
+                <ChevronDown className={`w-3 h-3 opacity-60 transition-transform ${open ? 'rotate-180' : ''}`} />
+            </button>
+
+            {open && !disabled && (
+                <div
+                    className="absolute top-full right-0 mt-1 w-52 rounded-xl shadow-xl border overflow-hidden z-50 text-left"
+                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', animation: 'slideDown 0.2s ease-out' }}
+                >
+                    <div className="p-1">
+                        <button
+                            disabled={isExporting}
+                            onClick={() => select('pdf')}
+                            className="w-full text-left px-3 py-2 rounded-lg hover:bg-[var(--bg-tertiary)] flex items-center gap-3 disabled:opacity-50 transition-colors"
+                        >
+                            <div className="p-1 rounded-md" style={{ background: '#ef444415', color: '#ef4444' }}>
+                                {exporting === 'pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileDown className="w-4 h-4" />}
+                            </div>
+                            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Download as PDF</div>
+                        </button>
+                        <button
+                            disabled={isExporting}
+                            onClick={() => select('docx')}
+                            className="w-full text-left px-3 py-2 rounded-lg hover:bg-[var(--bg-tertiary)] flex items-center gap-3 disabled:opacity-50 transition-colors"
+                        >
+                            <div className="p-1 rounded-md" style={{ background: '#3b82f615', color: '#3b82f6' }}>
+                                {exporting === 'docx' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileType2 className="w-4 h-4" />}
+                            </div>
+                            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Download as Word</div>
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+}
+
 export default function NotebookStudio({ onGenerate, generating, onExport, exporting, hasContent, readySourceCount, generationCount = 0, onHistoryClick, onSignRequest, signRequestConfigured, nextcloudConfigured, onNextcloudExport, nextcloudExporting }) {
     const disabled = readySourceCount === 0;
     const groups = STUDIO_GROUPS;
@@ -122,24 +189,7 @@ export default function NotebookStudio({ onGenerate, generating, onExport, expor
             </div>
 
             <div className="flex items-center gap-1 pl-2">
-                <button
-                    disabled={!hasContent || !!exporting}
-                    onClick={() => onExport('pdf')}
-                    className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] disabled:opacity-40 transition-colors"
-                    style={{ color: 'var(--text-secondary)' }}
-                    title="Export PDF"
-                >
-                    {exporting === 'pdf' ? <Loader2 className="w-4 h-4 text-red-500 animate-spin" /> : <FileDown className="w-4 h-4 text-red-500" />}
-                </button>
-                <button
-                    disabled={!hasContent || !!exporting}
-                    onClick={() => onExport('docx')}
-                    className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] disabled:opacity-40 transition-colors"
-                    style={{ color: 'var(--text-secondary)' }}
-                    title="Export Word"
-                >
-                    {exporting === 'docx' ? <Loader2 className="w-4 h-4 text-blue-500 animate-spin" /> : <Download className="w-4 h-4 text-blue-500" />}
-                </button>
+                <ExportMenu onExport={onExport} exporting={exporting} disabled={!hasContent} />
                 {signRequestConfigured && (
                     <button
                         disabled={!hasContent || !!exporting}

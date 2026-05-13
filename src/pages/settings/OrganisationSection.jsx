@@ -176,37 +176,39 @@ const OrganisationSection = ({ user, activeSection = 'license' }) => {
                             {t('org.integ_subtitle')}
                         </p>
                     </div>
-                    {/* Generic toggle UI for beta features + non-NC integrations.
-                        Rendered first so org admins see their granted capabilities
-                        before the legacy n8n / Maps / NC blocks. */}
-                    <OrgFeatureTogglesPanel user={user} />
-                    {/* Nextcloud integration management (NC-bound orgs only) */}
-                    {isNcOrg && <OrgNcIntegrationsPanel user={user} />}
-                    {!showN8n && !showGoogleMaps && !isNcOrg ? (
-                        <div className="rounded-xl px-5 py-4" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}>
-                            <p className="text-[13px]" style={{ color: 'var(--text-muted)' }}>
-                                {t('org.integ_none')}
-                            </p>
-                        </div>
-                    ) : (
-                        <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
-                            {showN8n && (
-                                <div style={{ borderBottom: showGoogleMaps ? '1px solid var(--border-subtle)' : 'none' }}>
-                                    <div className="flex items-center gap-3 px-5 py-3.5" style={{ background: 'var(--bg-secondary)' }}>
-                                        <img src="/n8n-color.png" alt="n8n" style={{ width: '20px', height: '20px', objectFit: 'contain', flexShrink: 0 }} />
-                                        <div className="flex-1">
-                                            <p className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>n8n</p>
-                                            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{t('org.integ_n8n_desc')}</p>
-                                        </div>
+                    <OrgFeatureTogglesPanel
+                        user={user}
+                        settingsSlot={(
+                            <div className="space-y-4">
+                                {isNcOrg && <OrgNcIntegrationsPanel user={user} />}
+                                {!showN8n && !showGoogleMaps && !isNcOrg ? (
+                                    <div className="rounded-xl px-5 py-4" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}>
+                                        <p className="text-[13px]" style={{ color: 'var(--text-muted)' }}>
+                                            {t('org.integ_none')}
+                                        </p>
                                     </div>
-                                    <div className="px-5 pb-4" style={{ background: 'var(--bg-secondary)' }}>
-                                        <N8nSection />
+                                ) : (
+                                    <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
+                                        {showN8n && (
+                                            <div style={{ borderBottom: showGoogleMaps ? '1px solid var(--border-subtle)' : 'none' }}>
+                                                <div className="flex items-center gap-3 px-5 py-3.5" style={{ background: 'var(--bg-secondary)' }}>
+                                                    <img src="/n8n-color.png" alt="n8n" style={{ width: '20px', height: '20px', objectFit: 'contain', flexShrink: 0 }} />
+                                                    <div className="flex-1">
+                                                        <p className="text-[13px] font-medium" style={{ color: 'var(--text-primary)' }}>n8n</p>
+                                                        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{t('org.integ_n8n_desc')}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="px-5 pb-4" style={{ background: 'var(--bg-secondary)' }}>
+                                                    <N8nSection />
+                                                </div>
+                                            </div>
+                                        )}
+                                        {showGoogleMaps && <GoogleMapsRow />}
                                     </div>
-                                </div>
-                            )}
-                            {showGoogleMaps && <GoogleMapsRow />}
-                        </div>
-                    )}
+                                )}
+                            </div>
+                        )}
+                    />
                 </div>
             )}
 

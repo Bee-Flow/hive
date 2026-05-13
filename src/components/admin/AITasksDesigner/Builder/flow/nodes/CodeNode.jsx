@@ -2,8 +2,8 @@ import React from 'react';
 import { Code2, Lock } from 'lucide-react';
 import StepNodeBase, { NodeChip } from './StepNodeBase';
 
-export default function CodeNode({ data }) {
-    const { step, runStep, issues } = data;
+export default function CodeNode({ id, data }) {
+    const { step, runStep, issues, onAddAfter } = data;
     const code = step.code || '';
     const lineCount = code ? code.split('\n').length : 0;
     const hashShort = (step.codeHash || '').slice(0, 8);
@@ -43,6 +43,8 @@ export default function CodeNode({ data }) {
             hoverDetail={hoverDetail}
             runStep={runStep}
             issues={issues}
+            nodeId={id}
+            onAddAfter={onAddAfter}
         />
     );
 }

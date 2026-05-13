@@ -1,10 +1,15 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
-    AlertTriangle, AlertOctagon, ZapOff, RefreshCcw, XCircle,
+    AlertTriangle, AlertOctagon, ZapOff, RefreshCcw, XCircle, ChevronRight,
     Clock, Filter, Search, Bot, Paperclip, FileWarning, Calendar, RefreshCw,
 } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
+
+// Trigger the Action-required banner when the error fraction climbs above
+// this threshold on a meaningful sample.
+const TERMINATIONS_ERROR_ALERT_PCT = 5;
+const TERMINATIONS_MIN_SAMPLE = 10;
 
 const API = `${API_BASE}/api/terminations/org`;
 
@@ -385,20 +390,81 @@ export default function OrgTerminationsPanel() {
                 </Card>
             ) : (
                 <>
-                    {/* KPI cards */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
-                        <Kpi icon={AlertTriangle} label={t('org.terminations_kpi_total')} value={fmt(total)} color={C.rose} />
-                        <Kpi icon={ZapOff} label={t('org.terminations_kpi_max_tokens')} value={fmt(by.max_tokens || 0)} color={C.amber}
-                            subtitle={total ? `${Math.round(((by.max_tokens || 0) / total) * 100)}% ${t('org.terminations_of_stops')}` : ''} />
-                        <Kpi icon={RefreshCcw} label={t('org.terminations_kpi_max_iterations')} value={fmt(by.max_iterations || 0)} color={C.orange}
-                            subtitle={total ? `${Math.round(((by.max_iterations || 0) / total) * 100)}% ${t('org.terminations_of_stops')}` : ''} />
-                        <Kpi icon={AlertOctagon} label={t('org.terminations_kpi_errors')} value={fmt(by.error || 0)} color={C.rose}
-                            subtitle={total ? `${Math.round(((by.error || 0) / total) * 100)}% ${t('org.terminations_of_stops')}` : ''} />
-                        <Kpi icon={XCircle} label={t('org.terminations_kpi_aborted')} value={fmt(by.aborted || 0)} color={C.cyan}
-                            subtitle={t('org.terminations_kpi_aborted_sub')} />
-                        <Kpi icon={FileWarning} label={t('org.terminations_kpi_large_input')} value={fmt(largeInputCount)} color={C.amber}
-                            subtitle={t('org.terminations_kpi_large_input_sub')} />
-                    </div>
+                    {/* Error-rate alert banner */}
+                    {(() => {
+                        const errCount = by.error || 0;
+                        const errPct = total > 0 ? Math.round((errCount / total) * 100) : 0;
+                        if (total < TERMINATIONS_MIN_SAMPLE || errPct <= TERMINATIONS_ERROR_ALERT_PCT) return null;
+                        const severity = errPct > TERMINATIONS_ERROR_ALERT_PCT * 4 ? 'red' : 'amber';
+                        const bc = severity === 'red' ? '#ef4444' : '#f59e0b';
+                        return (
+                            <div style={{
+                                padding: '12px 16px', borderRadius: 12,
+                                background: `${bc}10`, border: `1px solid ${bc}55`,
+                                display: 'flex', alignItems: 'center', gap: 12,
+                            }}>
+                                <div style={{ width: 32, height: 32, borderRadius: 8, background: `${bc}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                    <AlertOctagon style={{ width: 16, height: 16, color: bc }} />
+                                </div>
+                                <div style={{ flex: 1, minWidth: 0 }}>
+                                    <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: bc }}>Action required</div>
+                                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginTop: 1 }}>
+                                        {errCount} session{errCount === 1 ? '' : 's'} terminated by error ({errPct}% of total) — investigate failing integrations.
+                                    </div>
+                                </div>
+                                <button
+                                    onClick={() => setFilterType('error')}
+                                    style={{
+                                        padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                                        background: bc, color: 'white', fontWeight: 700, fontSize: 12,
+                                        display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
+                                    }}
+                                >
+                                    Review errors <ChevronRight style={{ width: 14, height: 14 }} />
+                                </button>
+                            </div>
+                        );
+                    })()}
+
+                    {/* Error-rate hero — big % on the left, supporting KPIs on the right */}
+                    {(() => {
+                        const errCount = by.error || 0;
+                        const errPct = total > 0 ? Math.round((errCount / total) * 100) : null;
+                        const cleanPct = errPct === null ? null : 100 - errPct;
+                        const c = cleanPct === null ? '#94a3b8' : cleanPct >= 95 ? '#10b981' : cleanPct >= 80 ? '#f59e0b' : '#ef4444';
+                        const label = cleanPct === null ? 'No data' : cleanPct >= 95 ? 'Healthy' : cleanPct >= 80 ? 'Watch' : 'Failing';
+                        return (
+                            <div style={{ borderRadius: 14, padding: 18, background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', overflow: 'hidden', position: 'relative' }}>
+                                <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(ellipse at top left, ${c}12, transparent 60%)`, pointerEvents: 'none' }} />
+                                <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 24, alignItems: 'center' }}>
+                                    <div>
+                                        <div style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 4 }}>Clean completion rate</div>
+                                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6, flexWrap: 'wrap' }}>
+                                            <span style={{ fontSize: 54, fontWeight: 800, color: c, letterSpacing: '-0.04em', lineHeight: 1 }}>{cleanPct === null ? '—' : `${cleanPct}%`}</span>
+                                            <span style={{ padding: '3px 9px', borderRadius: 6, background: `${c}15`, color: c, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{label}</span>
+                                        </div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>
+                                            {total} session{total === 1 ? '' : 's'} terminated · {errCount} error{errCount === 1 ? '' : 's'} ({errPct ?? 0}%)
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                        <Kpi icon={ZapOff} label={t('org.terminations_kpi_max_tokens')} value={fmt(by.max_tokens || 0)} color={C.amber} />
+                                        <Kpi icon={RefreshCcw} label={t('org.terminations_kpi_max_iterations')} value={fmt(by.max_iterations || 0)} color={C.orange} />
+                                        <Kpi icon={AlertOctagon} label={t('org.terminations_kpi_errors')} value={fmt(errCount)} color={C.rose} />
+                                        <Kpi icon={XCircle} label={t('org.terminations_kpi_aborted')} value={fmt(by.aborted || 0)} color={C.cyan} />
+                                    </div>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    {/* Secondary stat — large-input flags */}
+                    {largeInputCount > 0 && (
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 10 }}>
+                            <Kpi icon={FileWarning} label={t('org.terminations_kpi_large_input')} value={fmt(largeInputCount)} color={C.amber}
+                                subtitle={t('org.terminations_kpi_large_input_sub')} />
+                        </div>
+                    )}
 
                     {/* Timeline */}
                     <Card title={t('org.terminations_over_time')} icon={Clock}>

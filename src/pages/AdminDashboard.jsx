@@ -16,13 +16,16 @@ import ProductWebsitePanel from '../components/admin/ProductWebsite/ProductWebsi
 
 const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
     const { t } = useTranslation();
+    const isPlatformAdmin = user?.isAdmin || user?.role === 'admin';
+
     // Permission helper - checks if user has a specific permission
     const hasPermission = (perm) => {
+        if (isPlatformAdmin) return true;
         const perms = user?.permissions || [];
         return perms.includes('all') || perms.includes(perm);
     };
 
-    const isSuperAdmin = user?.isAdmin || user?.role === 'admin' || hasPermission('all');
+    const isSuperAdmin = isPlatformAdmin || hasPermission('all');
 
     // Tab definitions — each tab requires its page-level permission
     // 'agents' tab accepts admin_agents (catch-all) OR any granular admin_agents_* permission
@@ -69,7 +72,7 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
     };
 
     // Check if user has ANY admin permission at all
-    const hasAnyAdminPermission = hasPermission('all') || tabs.some(tab => checkTabAccess(tab));
+    const hasAnyAdminPermission = isSuperAdmin || hasPermission('all') || tabs.some(tab => checkTabAccess(tab));
 
     if (!hasAnyAdminPermission) {
         return (

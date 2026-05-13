@@ -1,9 +1,11 @@
-import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 import { Bot, MessageSquare, BookOpen, Search, Code, LayoutTemplate, Filter, X, Cpu, Users, ChevronDown, Activity, ArrowUpRight, ArrowDownLeft, BarChart3, Zap, DollarSign, TrendingUp, ChevronRight, Shield, AlertTriangle, Eye, Fingerprint, Clock, Globe, Server, ArrowRight, ArrowLeft, Link2, Info, FileText, ScanEye, ShieldCheck, Binary, ThumbsUp } from 'lucide-react';
 import OrgFeedbackPanel from './OrgFeedbackPanel';
 import OrgTerminationsPanel from './OrgTerminationsPanel';
+import { getIntegrationIcon, hasIntegrationIcon } from '../../config/integrationIcons';
+import { rowsToCsv as rowsToCsvShared, downloadCsv as downloadCsvShared, computeHalfPeriodDelta } from '../../utils/usageHelpers';
 
 // ── Formatters ──────────────────────────────────────────────────────────────
 const fNum = (n) => {
@@ -21,20 +23,50 @@ const shortModel = (m) => {
 
 // ── Source details ──────────────────────────────────────────────────────────
 const SOURCE_MAP = {
-    agent: { label: 'Agent Chat', icon: Bot, color: '#6366f1' },
-    chat: { label: 'Agent Chat', icon: Bot, color: '#6366f1' },
+    agent: { label: 'Agent Chat', icon: Bot, color: '#0ea5e9' },
+    chat: { label: 'Agent Chat', icon: Bot, color: '#0ea5e9' },
     direct: { label: 'Direct Chat', icon: MessageSquare, color: '#10b981' },
-    notebook: { label: 'Notebooks', icon: BookOpen, color: '#8b5cf6' },
+    notebook: { label: 'Notebooks', icon: BookOpen, color: '#14b8a6' },
     research: { label: 'Research', icon: Search, color: '#f59e0b' },
     template: { label: 'Templates', icon: LayoutTemplate, color: '#ef4444' },
     designer: { label: 'App Designer', icon: Code, color: '#0ea5e9' },
-    agent_stream: { label: 'Agent Stream', icon: Bot, color: '#6366f1' },
+    agent_stream: { label: 'Agent Stream', icon: Bot, color: '#0ea5e9' },
 };
 const getSourceDetails = (source) => SOURCE_MAP[source] || { label: source || 'Other', icon: Bot, color: '#94a3b8' };
 
+// Score below this triggers the Integrations "Action required" banner. Policy
+// defaults — configurable per-org is intentionally out of scope here.
+const ALERT_SCORE_THRESHOLD = 40;
+// Overview cost threshold (USD per selected range). Soft (amber) at 1×,
+// hard (red) at 2×.
+const OVERVIEW_COST_ALERT = 200;
+// Safety: PII detections inside the selected range.
+const SAFETY_PII_ALERT = 10;
+
+// CSV helpers live in src/utils/usageHelpers.js — bind local names that match
+// the existing call sites in this file.
+const rowsToCsv = rowsToCsvShared;
+const downloadCsv = downloadCsvShared;
+
 // ── Palette ─────────────────────────────────────────────────────────────────
-const PALETTE = ['#6366f1', '#10b981', '#f59e0b', '#ec4899', '#3b82f6', '#ef4444', '#8b5cf6', '#14b8a6', '#f97316', '#64748b'];
+const PALETTE = ['#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#3b82f6', '#ef4444', '#06b6d4', '#14b8a6', '#f97316', '#64748b'];
 const getColor = (i) => PALETTE[i % PALETTE.length];
+
+// Brand-ish operator colors — used to tint cards and egress rows so the eye
+// can group destinations by cloud at a glance. Falls back to slate for
+// "Unknown" so an unattributed IP doesn't hide.
+const OPERATOR_COLORS = {
+    'Google':       '#4285F4',
+    'Microsoft':    '#0078D4',
+    'Cloudflare':   '#F38020',
+    'Amazon AWS':   '#FF9900',
+    'Fastly':       '#FF282D',
+    'Akamai':       '#009BAB',
+    'OpenAI':       '#10A37F',
+    'Anthropic':    '#D97757',
+    'Unknown':      '#94a3b8',
+};
+const operatorColor = (name) => OPERATOR_COLORS[name] || '#64748b';
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  MINI COMPONENTS                                                          */
@@ -61,6 +93,205 @@ const StatCard = ({ icon: Icon, label, value, sub, color }) => (
         <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>{value}</div>
         {sub && <div style={{ marginTop: 2 }}>{sub}</div>}
     </Card>
+);
+
+// Sovereignty-over-time mini chart — stacked columns showing EU/Local on
+// emerald and Non-EU on amber per day, with the EU% printed above each bar.
+// Inline SVG, no chart dep. Renders nothing when there's only one bucket
+// (caller falls back to the MiniStat grid in that case).
+const SovereigntyTrend = ({ timeline }) => {
+    if (!Array.isArray(timeline) || timeline.length < 2) return null;
+    const data = timeline.map(r => ({
+        period: r.period,
+        eu: Number(r.eu_count || 0),
+        local: Number(r.local_count || 0),
+        nonEu: Number(r.non_eu_count || 0),
+        total: Number(r.total || 0),
+    }));
+    const maxTotal = Math.max(...data.map(d => d.total), 1);
+    const H = 90;
+    const PAD_T = 14; // room for EU% labels
+    const PAD_B = 18; // room for date labels
+    const barW = 12;
+    const gap = 6;
+    const W = data.length * (barW + gap) + gap;
+    return (
+        <div style={{ padding: '6px 4px 0 4px', overflowX: 'auto' }}>
+            <svg width={W} height={H + PAD_T + PAD_B} style={{ display: 'block' }}>
+                {data.map((d, i) => {
+                    const x = gap + i * (barW + gap);
+                    const totalH = Math.round((d.total / maxTotal) * H);
+                    const euLocal = d.eu + d.local;
+                    const euLocalH = d.total > 0 ? Math.round((euLocal / d.total) * totalH) : 0;
+                    const nonEuH = totalH - euLocalH;
+                    const yTop = PAD_T + (H - totalH);
+                    const pctEu = d.total > 0 ? Math.round((euLocal / d.total) * 100) : 0;
+                    const pctColor = pctEu >= 80 ? '#10b981' : pctEu >= 40 ? '#f59e0b' : '#ef4444';
+                    const dateLabel = (d.period || '').slice(5); // MM-DD
+                    return (
+                        <g key={i}>
+                            {/* EU% label above the bar */}
+                            {d.total > 0 && (
+                                <text x={x + barW / 2} y={PAD_T - 3} fontSize="8" fontWeight="700" textAnchor="middle" fill={pctColor}>{pctEu}%</text>
+                            )}
+                            {/* Non-EU on top (amber) */}
+                            {nonEuH > 0 && (
+                                <rect x={x} y={yTop} width={barW} height={nonEuH} rx="2" fill="#f59e0b">
+                                    <title>{`${d.period}: ${d.nonEu} non-EU of ${d.total}`}</title>
+                                </rect>
+                            )}
+                            {/* EU+Local on bottom (emerald) */}
+                            {euLocalH > 0 && (
+                                <rect x={x} y={yTop + nonEuH} width={barW} height={euLocalH} rx="2" fill="#10b981">
+                                    <title>{`${d.period}: ${euLocal} EU/local of ${d.total} (${pctEu}%)`}</title>
+                                </rect>
+                            )}
+                            {/* Date label */}
+                            <text x={x + barW / 2} y={PAD_T + H + 12} fontSize="8" textAnchor="middle" fill="var(--text-muted)">{dateLabel}</text>
+                        </g>
+                    );
+                })}
+            </svg>
+            <div style={{ display: 'flex', gap: 10, fontSize: 9, fontWeight: 600, color: 'var(--text-muted)', marginTop: 2 }}>
+                <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#10b981', marginRight: 4 }} />EU+Local</span>
+                <span><span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: 2, background: '#f59e0b', marginRight: 4 }} />Non-EU</span>
+            </div>
+        </div>
+    );
+};
+
+// One row of the Sovereignty breakdown panel. Same shape regardless of axis.
+const SovereigntyRow = ({ row, onClick, avatarFor, topOperatorColorFor }) => {
+    const total = Number(row.total || 0);
+    const eu = Number(row.eu_count || 0);
+    const local = Number(row.local_count || 0);
+    const nonEu = Number(row.non_eu_count || 0);
+    const piiNonEu = Number(row.pii_non_eu_count || 0);
+    // PII-weighted sovereignty score (same formula as the hero) — a PII leak to a
+    // non-EU server counts twice in the denominator. Rows with no data hit 100.
+    const score = total > 0 ? Math.round(((eu + local) / (total + piiNonEu)) * 100) : 100;
+    const euPct = total > 0 ? (eu / total) * 100 : 0;
+    const localPct = total > 0 ? (local / total) * 100 : 0;
+    const nonEuPct = total > 0 ? (nonEu / total) * 100 : 0;
+    const scoreColor = score >= 80 ? '#10b981' : score >= 60 ? '#84cc16' : score >= 40 ? '#f59e0b' : score >= 20 ? '#f97316' : '#ef4444';
+    const opColor = topOperatorColorFor ? topOperatorColorFor(row.top_operator) : '#94a3b8';
+    return (
+        <div
+            onClick={onClick}
+            style={{
+                display: 'grid', gridTemplateColumns: '32px 1fr 70px', alignItems: 'center', gap: 12,
+                padding: '10px 12px',
+                background: 'var(--bg-primary)',
+                borderBottom: '1px solid var(--border-subtle)',
+                cursor: onClick ? 'pointer' : 'default',
+                transition: 'background 0.12s',
+            }}
+            onMouseEnter={e => { if (onClick) e.currentTarget.style.background = 'var(--bg-secondary)'; }}
+            onMouseLeave={e => { if (onClick) e.currentTarget.style.background = 'var(--bg-primary)'; }}
+        >
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {avatarFor ? avatarFor(row) : <div style={{ width: 26, height: 26, borderRadius: '50%', background: opColor, opacity: 0.18 }} />}
+            </div>
+            <div style={{ minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', textTransform: 'capitalize' }} title={row.label}>{(row.label || row.key || '').toString().replace(/_/g, ' ')}</span>
+                    <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{total} call{total === 1 ? '' : 's'}</span>
+                </div>
+                {/* Stacked bar */}
+                <div style={{ display: 'flex', height: 7, borderRadius: 99, overflow: 'hidden', background: 'var(--bg-tertiary)' }}>
+                    {eu > 0 && <div style={{ width: `${euPct}%`, background: '#10b981' }} title={`${eu} EU/EEA`} />}
+                    {local > 0 && <div style={{ width: `${localPct}%`, background: '#14b8a6' }} title={`${local} Local`} />}
+                    {nonEu > 0 && <div style={{ width: `${nonEuPct}%`, background: '#f59e0b' }} title={`${nonEu} Non-EU`} />}
+                </div>
+                <div style={{ display: 'flex', gap: 10, marginTop: 4, fontSize: 9, color: 'var(--text-muted)', flexWrap: 'wrap' }}>
+                    {eu > 0 && <span><span style={{ color: '#10b981', fontWeight: 700 }}>{eu}</span> EU</span>}
+                    {local > 0 && <span><span style={{ color: '#14b8a6', fontWeight: 700 }}>{local}</span> Local</span>}
+                    {nonEu > 0 && <span><span style={{ color: '#f59e0b', fontWeight: 700 }}>{nonEu}</span> Non-EU</span>}
+                    {piiNonEu > 0 && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3, color: '#ef4444', fontWeight: 700 }}>
+                            <Fingerprint style={{ width: 9, height: 9 }} />
+                            −{piiNonEu} PII abroad
+                        </span>
+                    )}
+                    {row.top_operator && (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: opColor }} />
+                            top: <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{row.top_operator}</span>
+                        </span>
+                    )}
+                </div>
+            </div>
+            <div style={{ textAlign: 'right' }}>
+                <div style={{ fontSize: 22, fontWeight: 800, color: scoreColor, letterSpacing: '-0.03em', lineHeight: 1 }}>{score}</div>
+                <div style={{ fontSize: 8, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.06em', marginTop: 2 }}>Score</div>
+            </div>
+        </div>
+    );
+};
+
+// Action-required banner shape, reused across all four monitoring tabs.
+// severity = 'amber' or 'red' — the only two visual states. Hidden by the
+// caller when no alert applies.
+const AlertBanner = ({ severity = 'amber', title = 'Action required', message, ctaLabel, onCta }) => {
+    const c = severity === 'red' ? '#ef4444' : '#f59e0b';
+    return (
+        <div style={{
+            marginBottom: 14, padding: '12px 16px', borderRadius: 12,
+            background: `${c}10`, border: `1px solid ${c}55`,
+            display: 'flex', alignItems: 'center', gap: 12,
+        }}>
+            <div style={{ width: 32, height: 32, borderRadius: 8, background: `${c}20`, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                <AlertTriangle style={{ width: 16, height: 16, color: c }} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: c }}>{title}</div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)', marginTop: 1 }}>{message}</div>
+            </div>
+            {ctaLabel && onCta && (
+                <button
+                    onClick={onCta}
+                    style={{
+                        padding: '7px 14px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                        background: c, color: 'white', fontWeight: 700, fontSize: 12,
+                        display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0,
+                    }}
+                >
+                    {ctaLabel} <ChevronRight style={{ width: 14, height: 14 }} />
+                </button>
+            )}
+        </div>
+    );
+};
+
+// Tiny sparkline for the MiniStat tiles. ~50×16, no chart dep.
+const Sparkline = ({ values, color = '#0ea5e9', width = 60, height = 16 }) => {
+    if (!Array.isArray(values) || values.length < 2) return null;
+    const max = Math.max(...values, 1);
+    const points = values.map((v, i) => {
+        const x = (i / (values.length - 1)) * (width - 2) + 1;
+        const y = height - 1 - ((v / max) * (height - 2));
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+    }).join(' ');
+    return (
+        <svg width={width} height={height} style={{ display: 'block', marginTop: 2 }}>
+            <polyline points={points} fill="none" stroke={color} strokeWidth="1.5" strokeLinejoin="round" strokeLinecap="round" />
+        </svg>
+    );
+};
+
+// Compact stat used in the sovereignty hero — smaller than StatCard so 4
+// fit comfortably alongside the hero headline.
+const MiniStat = ({ icon: Icon, color, label, value, spark }) => (
+    <div style={{ padding: '10px 12px', borderRadius: 10, background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', display: 'flex', alignItems: 'center', gap: 10 }}>
+        <div style={{ width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${color}15`, flexShrink: 0 }}>
+            <Icon style={{ width: 14, height: 14, color }} />
+        </div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)' }}>{label}</div>
+            <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.02em' }}>{value}</div>
+            {Array.isArray(spark) && spark.length > 1 && <Sparkline values={spark} color={color} />}
+        </div>
+    </div>
 );
 
 const InOutBar = ({ input, output, height = 5, style }) => {
@@ -177,6 +408,27 @@ const IconBadge = ({ icon: Icon, color, size = 26 }) => (
     </div>
 );
 
+// Renders the real brand logo for an integration (Gmail's red M, YouTrack's
+// gradient block, etc.). Falls back to a colored IconBadge with a generic
+// fallback icon when the registry has no brand asset for this id.
+const IntegrationLogo = ({ integrationType, size = 26, fallbackColor }) => {
+    const hasBrand = hasIntegrationIcon(integrationType);
+    if (!hasBrand) {
+        return <IconBadge icon={Globe} color={fallbackColor || '#94a3b8'} size={size} />;
+    }
+    const inner = size * 0.7;
+    return (
+        <div style={{
+            width: size, height: size, borderRadius: 7, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            flexShrink: 0, background: 'var(--bg-primary)', border: '1px solid var(--border-subtle)', overflow: 'hidden',
+        }}>
+            <div style={{ width: inner, height: inner, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                {getIntegrationIcon(integrationType)}
+            </div>
+        </div>
+    );
+};
+
 /* Sparkline */
 const TrendChart = ({ timeline, title, avgLabel, noDataLabel }) => {
     if (!timeline?.length) return (
@@ -253,7 +505,7 @@ const FilterPill = ({ label, icon: Icon, value, onChange, options, placeholder }
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /* ── Report Tab component ────────────────────────────────────────────────── */
 const REPORT_TABS = [
-    { id: 'overview', labelKey: 'usage.tab_overview', icon: BarChart3, color: '#6366f1' },
+    { id: 'overview', labelKey: 'usage.tab_overview', icon: BarChart3, color: '#0ea5e9' },
     { id: 'safety', labelKey: 'usage.tab_safety', icon: Shield, color: '#ef4444' },
     { id: 'integrations', labelKey: 'usage.tab_integrations', icon: Globe, color: '#0ea5e9' },
     { id: 'feedback', labelKey: 'usage.tab_feedback', icon: ThumbsUp, color: '#10b981' },
@@ -262,9 +514,8 @@ const REPORT_TABS = [
 
 const ReportTabBar = ({ active, onChange, t: translate }) => (
     <div style={{
-        display: 'flex', gap: 2, padding: 3, borderRadius: 10,
-        background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)',
-        width: 'fit-content',
+        display: 'flex', alignItems: 'center', gap: 4,
+        borderBottom: '1px solid var(--border-default, var(--border-subtle))',
     }}>
         {REPORT_TABS.map(tab => {
             const Icon = tab.icon;
@@ -274,16 +525,17 @@ const ReportTabBar = ({ active, onChange, t: translate }) => (
                     key={tab.id}
                     onClick={() => onChange(tab.id)}
                     style={{
-                        display: 'flex', alignItems: 'center', gap: 6,
-                        padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer',
-                        background: isActive ? 'var(--bg-primary)' : 'transparent',
-                        boxShadow: isActive ? '0 1px 4px rgba(0,0,0,0.08)' : 'none',
-                        color: isActive ? 'var(--text-primary)' : 'var(--text-muted)',
-                        fontWeight: isActive ? 700 : 500,
-                        fontSize: 12, transition: 'all 0.15s ease',
+                        display: 'flex', alignItems: 'center', gap: 8,
+                        padding: '6px 12px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                        background: isActive ? 'var(--bg-secondary)' : 'transparent',
+                        color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)',
+                        fontWeight: isActive ? 500 : 400,
+                        fontSize: 13, transition: 'background 0.15s ease, color 0.15s ease',
                     }}
+                    onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'var(--bg-secondary)'; }}
+                    onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
                 >
-                    <Icon style={{ width: 13, height: 13, color: isActive ? tab.color : 'var(--text-muted)' }} />
+                    <Icon style={{ width: 14, height: 14, color: isActive ? tab.color : 'var(--text-muted)' }} />
                     {translate(tab.labelKey)}
                 </button>
             );
@@ -316,8 +568,21 @@ const UsageSection = () => {
     const [expandedEventId, setExpandedEventId] = useState(null);
     const [safetyShowCount, setSafetyShowCount] = useState(20);
     const [integData, setIntegData] = useState({
-        summary: null, byType: [], byTool: [], piiSummary: [], servers: [], recent: [],
+        summary: null, byType: [], byTool: [], piiSummary: [], servers: [], recent: [], egress: [], operators: [],
+        timeline: [],
+        sovereignty: { user: [], integration: [], agent: [], pii: [] },
     });
+    const [egressEuFilter, setEgressEuFilter] = useState('all'); // 'all' | 'eu' | 'non-eu' | 'local'
+    const [sovereigntyAxis, setSovereigntyAxis] = useState('user'); // 'user' | 'integration' | 'agent' | 'pii'
+    // Click-to-filter drill from any breakdown row. Local to the egress log so
+    // the global aggregates above stay visible. Only one drill active at a time.
+    const [egressDrill, setEgressDrill] = useState(null); // { axis, key, label } | null
+    const egressLogRef = useRef(null);
+    const modelByUserRef = useRef(null);
+    const guardrailEventsRef = useRef(null);
+    // Safety tab drill-down (mirrors egressDrill — clicking a breakdown row
+    // filters the Recent Guardrail Events table and shows a removable chip).
+    const [safetyDrill, setSafetyDrill] = useState(null); // { axis, key, label }
     const [azureServices, setAzureServices] = useState({
         summary: null, byType: [], byUser: [],
     });
@@ -362,8 +627,25 @@ const UsageSection = () => {
                     recent: await sa(gResults[5]),
                 });
                 // Fetch integration monitoring data
-                const iEps = ['integrations/summary', 'integrations/by-type', 'integrations/by-tool', 'integrations/pii-summary', 'integrations/servers', 'integrations/recent'];
-                const iResults = await Promise.all(iEps.map(ep => authFetch(`${API_BASE}/api/usage/${ep}?${qs}`)));
+                const iEps = [
+                    'integrations/summary',
+                    'integrations/by-type',
+                    'integrations/by-tool',
+                    'integrations/pii-summary',
+                    'integrations/servers',
+                    'integrations/recent',
+                    'integrations/egress?limit=200',
+                    'integrations/operator-summary',
+                    'integrations/timeline?interval=day',
+                    'integrations/sovereignty?dimension=user',
+                    'integrations/sovereignty?dimension=integration',
+                    'integrations/sovereignty?dimension=agent',
+                    'integrations/sovereignty?dimension=pii',
+                ];
+                const iResults = await Promise.all(iEps.map(ep => {
+                    const sep = ep.includes('?') ? '&' : '?';
+                    return authFetch(`${API_BASE}/api/usage/${ep}${sep}${qs}`);
+                }));
                 setIntegData({
                     summary: await sj(iResults[0], {}),
                     byType: await sa(iResults[1]),
@@ -371,6 +653,15 @@ const UsageSection = () => {
                     piiSummary: await sa(iResults[3]),
                     servers: await sa(iResults[4]),
                     recent: await sa(iResults[5]),
+                    egress: await sa(iResults[6]),
+                    operators: await sa(iResults[7]),
+                    timeline: await sa(iResults[8]),
+                    sovereignty: {
+                        user: await sa(iResults[9]),
+                        integration: await sa(iResults[10]),
+                        agent: await sa(iResults[11]),
+                        pii: await sa(iResults[12]),
+                    },
                 });
                 // Fetch Azure service cost data
                 const azEps = ['azure-services/summary', 'azure-services/by-type', 'azure-services/by-user'];
@@ -408,6 +699,52 @@ const UsageSection = () => {
 
     const clearFilters = () => { setFilterUser(null); setFilterAgent(null); setFilterModel(null); setFilterSource(null); };
 
+    // PII-weighted sovereignty score — shared by the banner, hero, and trend
+    // arrow. Same formula as before, centralised so all three reflect a single
+    // computation. Trend delta uses the integration timeline split into a
+    // current half vs an earlier half; null if there's not enough history.
+    const sovereigntyStats = useMemo(() => {
+        const eg = integData.egress || [];
+        const total = eg.length;
+        const euCount = eg.filter(r => r.is_eu === true).length;
+        const localCount = eg.filter(r => !!r.is_local).length;
+        const nonEuCount = total - euCount - localCount;
+        const piiNonEuCount = eg.filter(r =>
+            !r.is_eu && !r.is_local
+            && r.pii_categories_detected && r.pii_categories_detected.trim() !== ''
+        ).length;
+        const score = total > 0
+            ? Math.round(((euCount + localCount) / (total + piiNonEuCount)) * 100)
+            : 100;
+
+        // Trend: split the timeline in half and compute the score per half.
+        // The timeline endpoint already carries the same per-period counters.
+        const tl = (integData.timeline || []).map(r => ({
+            eu: Number(r.eu_count || 0),
+            local: Number(r.local_count || 0),
+            nonEu: Number(r.non_eu_count || 0),
+            piiNonEu: Number(r.pii_non_eu_count || 0),
+            total: Number(r.total || 0),
+        }));
+        let trend = null; // { delta, prevScore } — null when no comparable prior
+        if (tl.length >= 2) {
+            const half = Math.floor(tl.length / 2);
+            const sum = (arr) => arr.reduce((s, r) => ({
+                eu: s.eu + r.eu, local: s.local + r.local, nonEu: s.nonEu + r.nonEu,
+                piiNonEu: s.piiNonEu + r.piiNonEu, total: s.total + r.total,
+            }), { eu: 0, local: 0, nonEu: 0, piiNonEu: 0, total: 0 });
+            const prev = sum(tl.slice(0, half));
+            const curr = sum(tl.slice(half));
+            const scoreOf = (b) => b.total > 0 ? Math.round(((b.eu + b.local) / (b.total + b.piiNonEu)) * 100) : null;
+            const prevScore = scoreOf(prev);
+            const currScore = scoreOf(curr);
+            if (prevScore !== null && currScore !== null) {
+                trend = { delta: currScore - prevScore, prevScore };
+            }
+        }
+        return { total, euCount, localCount, nonEuCount, piiNonEuCount, score, trend };
+    }, [integData.egress, integData.timeline]);
+
     const maxUserTokens = Math.max(...data.users.map(u => u.total_tokens || 0), 1);
     const maxModelTokens = Math.max(...data.models.map(m => m.total_tokens || 0), 1);
 
@@ -426,22 +763,29 @@ const UsageSection = () => {
     return (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16, paddingBottom: 24 }}>
 
-            {/* ── Header ── */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div>
-                    <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em' }}>{t('usage.title')}</h2>
-                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2, fontWeight: 400 }}>{t('usage.subtitle')}</p>
+            {/* ── Header — compact single-line, with the range selector emphasised ── */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, minWidth: 0, flex: 1 }}>
+                    <h2 style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.02em', whiteSpace: 'nowrap' }}>{t('usage.title')}</h2>
+                    <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>·</span>
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', margin: 0, fontWeight: 400, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t('usage.subtitle')}</p>
                 </div>
-                <div style={{ display: 'flex', padding: 2, borderRadius: 8, background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}>
-                    {[7, 30, 90].map(d => (
-                        <button key={d} onClick={() => setDays(d)} style={{
-                            padding: '5px 12px', fontSize: 11, fontWeight: 600, borderRadius: 6, border: 'none', cursor: 'pointer',
-                            background: d === days ? 'var(--bg-primary)' : 'transparent',
-                            color: d === days ? 'var(--text-primary)' : 'var(--text-muted)',
-                            boxShadow: d === days ? '0 1px 3px rgba(0,0,0,0.08)' : 'none',
-                            transition: 'all 0.15s',
-                        }}>{d}d</button>
-                    ))}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>Range</span>
+                    <div style={{ display: 'flex', padding: 2, borderRadius: 8, background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}>
+                        {[7, 30, 90].map(d => {
+                            const active = d === days;
+                            return (
+                                <button key={d} onClick={() => setDays(d)} style={{
+                                    padding: '6px 14px', fontSize: 11, fontWeight: 700, borderRadius: 6, border: 'none', cursor: 'pointer',
+                                    background: active ? 'var(--accent-primary, #10b981)' : 'transparent',
+                                    color: active ? 'white' : 'var(--text-muted)',
+                                    boxShadow: active ? '0 1px 4px rgba(16,185,129,0.35)' : 'none',
+                                    transition: 'all 0.15s',
+                                }}>{d}d</button>
+                            );
+                        })}
+                    </div>
                 </div>
             </div>
 
@@ -485,33 +829,70 @@ const UsageSection = () => {
                     {/* OVERVIEW TAB                                                */}
                     {/* ════════════════════════════════════════════════════════════ */}
                     {activeReport === 'overview' && (<>
-                    {/* ── Summary Cards ── */}
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10 }}>
-                        <StatCard icon={Zap} label={t('usage.ai_calls')} color="#6366f1"
-                            value={data.summary?.total_calls?.toLocaleString() || '0'} />
-                        <StatCard icon={BarChart3} label={t('usage.total_tokens')} color="#3b82f6"
-                            value={fNum(data.summary?.total_tokens)}
-                            sub={<InOutLabel input={data.summary?.total_prompt_tokens} output={data.summary?.total_completion_tokens}
-                                showCost inputCost={data.summary?.total_input_cost} outputCost={data.summary?.total_output_cost} />} />
-                        <StatCard icon={DollarSign} label={t('usage.est_cost')} color="#10b981"
-                            value={fCur(data.summary?.combined_total_cost ?? data.summary?.total_estimated_cost)}
-                            sub={
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
-                                    <div style={{ display: 'flex', gap: 10, fontSize: 10 }}>
-                                        <span style={{ color: '#3b82f6', fontWeight: 600 }}>In: {fCur(data.summary?.total_input_cost)}</span>
-                                        <span style={{ color: '#f59e0b', fontWeight: 600 }}>Out: {fCur(data.summary?.total_output_cost)}</span>
-                                    </div>
-                                    {(data.summary?.azure_services_total_cost || 0) > 0 && (
-                                        <div style={{ display: 'flex', gap: 4, fontSize: 9, alignItems: 'center' }}>
-                                            <Server style={{ width: 9, height: 9, color: '#0ea5e9' }} />
-                                            <span style={{ color: '#0ea5e9', fontWeight: 600 }}>Azure: {fCur(data.summary?.azure_services_total_cost)}</span>
+                    {(() => {
+                        const cost = Number(data.summary?.combined_total_cost ?? data.summary?.total_estimated_cost ?? 0);
+                        // Cost-alert banner — amber over 1×, red over 2× the threshold.
+                        const overBudget = cost > OVERVIEW_COST_ALERT;
+                        const critical = cost > OVERVIEW_COST_ALERT * 2;
+                        // Trend: split timeline in half, sum total costs per half.
+                        const costTrend = computeHalfPeriodDelta(data.timeline, r => Number(r.total_cost ?? r.estimated_cost ?? 0));
+                        const tokenSpark = (data.timeline || []).map(r => Number(r.total_tokens ?? r.total ?? 0));
+                        const callSpark = (data.timeline || []).map(r => Number(r.total_calls ?? r.calls ?? 0));
+                        const costSpark = (data.timeline || []).map(r => Number(r.total_cost ?? r.estimated_cost ?? 0));
+                        return (
+                            <>
+                            {overBudget && (
+                                <AlertBanner
+                                    severity={critical ? 'red' : 'amber'}
+                                    title="Spend over budget"
+                                    message={`${fCur(cost)} spent this period — threshold ${fCur(OVERVIEW_COST_ALERT)}.`}
+                                    ctaLabel="Review by model"
+                                    onCta={() => modelByUserRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                                />
+                            )}
+                            {/* Cost-led hero — left: big cost number + trend; right: 2×2 MiniStat */}
+                            <div style={{ marginBottom: 14, borderRadius: 14, padding: 18, background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', overflow: 'hidden', position: 'relative' }}>
+                                <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at top left, rgba(16,185,129,0.06), transparent 60%)', pointerEvents: 'none' }} />
+                                <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 24, alignItems: 'center' }}>
+                                    <div>
+                                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 4 }}>
+                                            <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>Estimated cost</span>
                                         </div>
-                                    )}
+                                        <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6, flexWrap: 'wrap' }}>
+                                            <span style={{ fontSize: 44, fontWeight: 800, color: '#10b981', letterSpacing: '-0.04em', lineHeight: 1 }}>{fCur(cost)}</span>
+                                            {costTrend && Math.abs(costTrend.delta) > 0.005 && (() => {
+                                                const c = costTrend.delta > 0 ? '#ef4444' : '#10b981';
+                                                const arrow = costTrend.delta > 0 ? '↑' : '↓';
+                                                return (
+                                                    <span title={`Previous half: ${fCur(costTrend.prev)}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 5, background: `${c}15`, color: c, fontSize: 11, fontWeight: 800 }}>
+                                                        <span style={{ fontSize: 13 }}>{arrow}</span>{fCur(Math.abs(costTrend.delta))}
+                                                    </span>
+                                                );
+                                            })()}
+                                        </div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 12, fontWeight: 500 }}>
+                                            In: <span style={{ color: '#3b82f6', fontWeight: 700 }}>{fCur(data.summary?.total_input_cost)}</span>
+                                            <span style={{ margin: '0 6px' }}>·</span>
+                                            Out: <span style={{ color: '#f59e0b', fontWeight: 700 }}>{fCur(data.summary?.total_output_cost)}</span>
+                                            {(data.summary?.azure_services_total_cost || 0) > 0 && (
+                                                <>
+                                                    <span style={{ margin: '0 6px' }}>·</span>
+                                                    Azure: <span style={{ color: '#0ea5e9', fontWeight: 700 }}>{fCur(data.summary?.azure_services_total_cost)}</span>
+                                                </>
+                                            )}
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                        <MiniStat icon={Zap} color="#0ea5e9" label="AI calls" value={Number(data.summary?.total_calls || 0).toLocaleString()} spark={callSpark} />
+                                        <MiniStat icon={BarChart3} color="#3b82f6" label="Tokens" value={fNum(data.summary?.total_tokens)} spark={tokenSpark} />
+                                        <MiniStat icon={Users} color="#f59e0b" label="Active users" value={data.summary?.unique_users || data.users.length || 0} />
+                                        <MiniStat icon={DollarSign} color="#10b981" label="Cost / day avg" value={fCur((data.timeline?.length ? cost / data.timeline.length : 0))} spark={costSpark} />
+                                    </div>
                                 </div>
-                            } />
-                        <StatCard icon={Users} label={t('usage.active_users')} color="#f59e0b"
-                            value={data.summary?.unique_users || data.users.length || 0} />
-                    </div>
+                            </div>
+                            </>
+                        );
+                    })()}
 
                     {/* ── Trend ── */}
                     <TrendChart
@@ -676,7 +1057,7 @@ const UsageSection = () => {
 
                     {/* ── Model × User Table ── */}
                     {data.modelsByUser.length > 0 && (
-                        <div>
+                        <div ref={modelByUserRef}>
                             <SectionTitle icon={Users} right={<Legend inputLabel={t('usage.input')} outputLabel={t('usage.output')} />}>{t('usage.model_usage_by_user')}</SectionTitle>
                             <Card>
                                 <div style={{
@@ -745,9 +1126,9 @@ const UsageSection = () => {
                                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 0 }}>
                                     {azureServices.byType.map((svc, i) => {
                                         const svcInfo = {
-                                            doc_intelligence: { label: 'Document Intelligence', icon: FileText, color: '#6366f1', metric: `${fNum(svc.total_pages)} pages` },
+                                            doc_intelligence: { label: 'Document Intelligence', icon: FileText, color: '#0ea5e9', metric: `${fNum(svc.total_pages)} pages` },
                                             content_safety: { label: 'Content Safety', icon: ShieldCheck, color: '#f59e0b', metric: `${fNum(svc.total_chars)} chars` },
-                                            pii_detection: { label: 'PII Detection', icon: ScanEye, color: '#8b5cf6', metric: `${fNum(svc.total_chars)} chars` },
+                                            pii_detection: { label: 'PII Detection', icon: ScanEye, color: '#14b8a6', metric: `${fNum(svc.total_chars)} chars` },
                                             embedding: { label: 'Embeddings', icon: Binary, color: '#0ea5e9', metric: `${fNum(svc.total_tokens)} tokens` },
                                         }[svc.service_type] || { label: svc.service_type, icon: Server, color: '#94a3b8', metric: '' };
                                         const SvcIcon = svcInfo.icon;
@@ -805,12 +1186,25 @@ const UsageSection = () => {
                         const inputCount = Number(guardrails.summary?.input_count) || 0;
                         const outputCount = Number(guardrails.summary?.output_count) || 0;
                         const pctOf = (n) => totalEvents > 0 ? Math.round((n / totalEvents) * 100) : 0;
-                        const typeColorFn = (vt) => vt === 'moderation' ? '#f59e0b' : vt === 'pii' ? '#8b5cf6' : '#3b82f6';
-                        const actionColorFn = (a) => (a === 'hard_block' || a === 'blocked' || a === 'search_blocked') ? '#ef4444' : (a === 'pii_detected' || a === 'tokenized') ? '#8b5cf6' : a === 'redacted' ? '#3b82f6' : '#f59e0b';
+                        const typeColorFn = (vt) => vt === 'moderation' ? '#f59e0b' : vt === 'pii' ? '#14b8a6' : '#3b82f6';
+                        const actionColorFn = (a) => (a === 'hard_block' || a === 'blocked' || a === 'search_blocked') ? '#ef4444' : (a === 'pii_detected' || a === 'tokenized') ? '#14b8a6' : a === 'redacted' ? '#3b82f6' : '#f59e0b';
                         const actionLabel = (a) => (a || 'unknown').replace(/_/g, ' ');
-                        const filteredRecent = safetyTypeFilter ? guardrails.recent.filter(e => e.violation_type === safetyTypeFilter) : guardrails.recent;
+                        const filteredRecent = (() => {
+                            let arr = safetyTypeFilter ? guardrails.recent.filter(e => e.violation_type === safetyTypeFilter) : guardrails.recent;
+                            if (safetyDrill) {
+                                const d = safetyDrill;
+                                if (d.axis === 'category') arr = arr.filter(e => (e.violation_categories || '').split(',').map(s => s.trim()).includes(d.key));
+                                if (d.axis === 'user') arr = arr.filter(e => e.user_id === d.key);
+                                if (d.axis === 'action') arr = arr.filter(e => e.action_taken === d.key);
+                            }
+                            return arr;
+                        })();
                         const filteredByCategory = safetyTypeFilter ? guardrails.byCategory.filter(c => c.violation_type === safetyTypeFilter) : guardrails.byCategory;
                         const filteredByUser = safetyTypeFilter ? guardrails.byUser.filter(u => Number(u[safetyTypeFilter]) > 0) : guardrails.byUser;
+                        const handleSafetyDrill = (axis, key, label) => {
+                            setSafetyDrill({ axis, key, label });
+                            setTimeout(() => guardrailEventsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+                        };
 
                         return (
                         <div>
@@ -830,7 +1224,7 @@ const UsageSection = () => {
                             {[
                                 { id: null, label: t('usage.safety_filter_all'), count: totalEvents, color: '#ef4444' },
                                 { id: 'moderation', label: t('usage.moderation'), count: modCount, color: '#f59e0b' },
-                                { id: 'pii', label: 'PII', count: piiCount, color: '#8b5cf6' },
+                                { id: 'pii', label: 'PII', count: piiCount, color: '#14b8a6' },
                                 { id: 'regex', label: 'Regex', count: regCount, color: '#3b82f6' },
                             ].map(chip => {
                                 const active = safetyTypeFilter === chip.id;
@@ -855,35 +1249,55 @@ const UsageSection = () => {
                             })}
                         </div>
 
-                        {/* ── Summary Cards ── */}
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
-                            <StatCard icon={Shield} label={t('usage.total_violations')} color="#ef4444"
-                                value={totalEvents.toLocaleString()}
-                                sub={<div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
-                                    <span style={{ color: 'var(--text-muted)' }}>{guardrails.summary?.unique_users || 0} {t('usage.users')}</span>
-                                    {totalEvents > 0 && <span style={{ display: 'flex', alignItems: 'center', gap: 2, color: '#3b82f6', fontWeight: 600 }}>
-                                        <ArrowUpRight style={{ width: 9, height: 9 }} />{pctOf(inputCount)}% in
-                                    </span>}
-                                </div>} />
-                            <StatCard icon={AlertTriangle} label={t('usage.moderation')} color="#f59e0b"
-                                value={modCount.toLocaleString()}
-                                sub={<div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
-                                    <span style={{ color: 'var(--text-muted)' }}>{t('usage.content_safety_blocks')}</span>
-                                    {totalEvents > 0 && <span style={{ padding: '0 5px', borderRadius: 4, background: '#f59e0b15', color: '#f59e0b', fontWeight: 700, fontSize: 9 }}>{pctOf(modCount)}%</span>}
-                                </div>} />
-                            <StatCard icon={Fingerprint} label={t('usage.pii_detections')} color="#8b5cf6"
-                                value={piiCount.toLocaleString()}
-                                sub={<div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
-                                    <span style={{ color: 'var(--text-muted)' }}>{t('usage.personal_data_flagged')}</span>
-                                    {totalEvents > 0 && <span style={{ padding: '0 5px', borderRadius: 4, background: '#8b5cf615', color: '#8b5cf6', fontWeight: 700, fontSize: 9 }}>{pctOf(piiCount)}%</span>}
-                                </div>} />
-                            <StatCard icon={Eye} label={t('usage.regex_matches')} color="#3b82f6"
-                                value={regCount.toLocaleString()}
-                                sub={<div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 10 }}>
-                                    <span style={{ color: 'var(--text-muted)' }}>{t('usage.pattern_based_blocks')}</span>
-                                    {totalEvents > 0 && <span style={{ padding: '0 5px', borderRadius: 4, background: '#3b82f615', color: '#3b82f6', fontWeight: 700, fontSize: 9 }}>{pctOf(regCount)}%</span>}
-                                </div>} />
-                        </div>
+                        {/* PII-alert banner — amber over threshold, red at 2×. */}
+                        {piiCount > SAFETY_PII_ALERT && (
+                            <AlertBanner
+                                severity={piiCount > SAFETY_PII_ALERT * 2 ? 'red' : 'amber'}
+                                message={`${piiCount} PII detection${piiCount === 1 ? '' : 's'} this period — review retention and access controls.`}
+                                ctaLabel="Review PII events"
+                                onCta={() => {
+                                    setSafetyTypeFilter('pii');
+                                    setSafetyShowCount(20);
+                                    setTimeout(() => guardrailEventsRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+                                }}
+                            />
+                        )}
+
+                        {/* PII-led hero — big red number on the left, MiniStat grid on the right */}
+                        {(() => {
+                            const piiTrend = computeHalfPeriodDelta(guardrails.timeline, r => Number(r.pii_events ?? r.pii ?? 0));
+                            const piiSpark = (guardrails.timeline || []).map(r => Number(r.pii_events ?? r.pii ?? 0));
+                            const piiPctColor = totalEvents > 0 && pctOf(piiCount) >= 40 ? '#ef4444' : '#14b8a6';
+                            return (
+                                <div style={{ marginBottom: 14, borderRadius: 14, padding: 18, background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', overflow: 'hidden', position: 'relative' }}>
+                                    <div style={{ position: 'absolute', inset: 0, background: `radial-gradient(ellipse at top left, ${piiCount > 0 ? 'rgba(239,68,68,0.06)' : 'rgba(16,185,129,0.05)'}, transparent 60%)`, pointerEvents: 'none' }} />
+                                    <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: 24, alignItems: 'center' }}>
+                                        <div>
+                                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 4 }}>
+                                                <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>PII detections</span>
+                                            </div>
+                                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 6, flexWrap: 'wrap' }}>
+                                                <span style={{ fontSize: 54, fontWeight: 800, color: piiPctColor, letterSpacing: '-0.04em', lineHeight: 1 }}>{piiCount}</span>
+                                                {totalEvents > 0 && <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-muted)' }}>· {pctOf(piiCount)}% of {totalEvents} violation{totalEvents === 1 ? '' : 's'}</span>}
+                                                {piiTrend && piiTrend.delta !== 0 && (() => {
+                                                    const c = piiTrend.delta > 0 ? '#ef4444' : '#10b981';
+                                                    return <span title={`Previous half: ${piiTrend.prev}`} style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 5, background: `${c}15`, color: c, fontSize: 11, fontWeight: 800 }}><span style={{ fontSize: 13 }}>{piiTrend.delta > 0 ? '↑' : '↓'}</span>{Math.abs(piiTrend.delta)}</span>;
+                                                })()}
+                                            </div>
+                                            <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>
+                                                Personal data detected leaving the agent — verify retention and access controls.
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                            <MiniStat icon={Shield} color="#ef4444" label="Total violations" value={totalEvents.toLocaleString()} />
+                                            <MiniStat icon={AlertTriangle} color="#f59e0b" label="Moderation" value={modCount.toLocaleString()} />
+                                            <MiniStat icon={Eye} color="#3b82f6" label="Regex matches" value={regCount.toLocaleString()} />
+                                            <MiniStat icon={Users} color="#0ea5e9" label="Users" value={(guardrails.summary?.unique_users || 0).toLocaleString()} spark={piiSpark} />
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
 
                         {/* ── Direction + Timeline row ── */}
                         <div style={{ display: 'grid', gridTemplateColumns: guardrails.timeline.length > 0 ? '200px 1fr' : '1fr', gap: 10, marginBottom: 14 }}>
@@ -919,7 +1333,7 @@ const UsageSection = () => {
                                         <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-primary)' }}>{t('usage.violation_trend')}</span>
                                         <div style={{ marginLeft: 'auto', display: 'flex', gap: 10, fontSize: 10 }}>
                                             <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><span style={{ width: 7, height: 7, borderRadius: 2, background: '#f59e0b', display: 'inline-block' }} /> {t('usage.moderation')}</span>
-                                            <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><span style={{ width: 7, height: 7, borderRadius: 2, background: '#8b5cf6', display: 'inline-block' }} /> PII</span>
+                                            <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><span style={{ width: 7, height: 7, borderRadius: 2, background: '#14b8a6', display: 'inline-block' }} /> PII</span>
                                             <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}><span style={{ width: 7, height: 7, borderRadius: 2, background: '#3b82f6', display: 'inline-block' }} /> Regex</span>
                                         </div>
                                     </div>
@@ -943,7 +1357,7 @@ const UsageSection = () => {
                                                             <div key={i} style={{ flex: 1, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end', height: '100%', cursor: 'default' }}
                                                                 title={`${d.period}: ${total} events (${mod} mod, ${pii} pii, ${reg} regex)`}>
                                                                 {regH > 0 && <div style={{ height: `${regH}%`, background: '#3b82f6', borderRadius: reg === total ? '3px 3px 0 0' : '0', minHeight: 2, transition: 'height 0.2s' }} />}
-                                                                {piiH > 0 && <div style={{ height: `${piiH}%`, background: '#8b5cf6', minHeight: 2, borderRadius: (reg === 0 && pii > 0) ? '3px 3px 0 0' : '0', transition: 'height 0.2s' }} />}
+                                                                {piiH > 0 && <div style={{ height: `${piiH}%`, background: '#14b8a6', minHeight: 2, borderRadius: (reg === 0 && pii > 0) ? '3px 3px 0 0' : '0', transition: 'height 0.2s' }} />}
                                                                 {modH > 0 && <div style={{ height: `${modH}%`, background: '#f59e0b', borderRadius: total === mod ? '3px 3px 0 0' : '0', minHeight: 2, transition: 'height 0.2s' }} />}
                                                                 {total === 0 && <div style={{ height: 2, background: 'var(--bg-tertiary)', borderRadius: 2 }} />}
                                                             </div>
@@ -978,7 +1392,7 @@ const UsageSection = () => {
                                         const maxCat = Math.max(...filteredByCategory.map(x => Number(x.count) || 0), 1);
                                         const w = Math.max(5, (Number(c.count) / maxCat) * 100);
                                         return (
-                                            <ListRow key={i}>
+                                            <ListRow key={i} onClick={() => handleSafetyDrill('category', c.category, c.category)}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
                                                     <div style={{ width: 24, height: 24, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${tc}12`, flexShrink: 0 }}>
                                                         {c.violation_type === 'moderation' ? <AlertTriangle style={{ width: 11, height: 11, color: tc }} /> :
@@ -1009,14 +1423,14 @@ const UsageSection = () => {
                                         const userTotal = Number(u.total) || 0;
                                         const userPct = totalEvents > 0 ? Math.round((userTotal / totalEvents) * 100) : 0;
                                         return (
-                                            <ListRow key={i}>
+                                            <ListRow key={i} onClick={() => handleSafetyDrill('user', u.user_id, u.display_name || u.user_id)}>
                                                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
                                                     <Avatar user={u} color={getColor(i + 5)} />
                                                     <div style={{ minWidth: 0, flex: 1 }}>
                                                         <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{u.display_name}</div>
                                                         <div style={{ display: 'flex', gap: 6, marginTop: 2, fontSize: 10, alignItems: 'center' }}>
                                                             {Number(u.moderation) > 0 && <span style={{ color: '#f59e0b', fontWeight: 600 }}>{u.moderation} mod</span>}
-                                                            {Number(u.pii) > 0 && <span style={{ color: '#8b5cf6', fontWeight: 600 }}>{u.pii} pii</span>}
+                                                            {Number(u.pii) > 0 && <span style={{ color: '#14b8a6', fontWeight: 600 }}>{u.pii} pii</span>}
                                                             {Number(u.regex) > 0 && <span style={{ color: '#3b82f6', fontWeight: 600 }}>{u.regex} regex</span>}
                                                         </div>
                                                         {/* Progress bar */}
@@ -1060,7 +1474,7 @@ const UsageSection = () => {
                                             const ac = actionColorFn(a.action);
                                             const w = Math.max(8, (a.count / maxAction) * 100);
                                             return (
-                                                <ListRow key={i}>
+                                                <ListRow key={i} onClick={() => handleSafetyDrill('action', a.action, actionLabel(a.action))}>
                                                     <div style={{ flex: 1, minWidth: 0 }}>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 3 }}>
                                                             <span style={{
@@ -1088,8 +1502,26 @@ const UsageSection = () => {
 
                         {/* ── Recent Events Table — Enhanced ── */}
                         {filteredRecent.length > 0 && (
-                            <div>
+                            <div ref={guardrailEventsRef}>
                                 <SectionTitle icon={Clock}>{t('usage.recent_guardrail_events')} ({filteredRecent.length})</SectionTitle>
+                                {safetyDrill && (
+                                    <div style={{ marginBottom: 8 }}>
+                                        <span style={{
+                                            display: 'inline-flex', alignItems: 'center', gap: 8,
+                                            padding: '5px 6px 5px 10px', borderRadius: 99,
+                                            background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.25)',
+                                            fontSize: 11, color: 'var(--text-primary)',
+                                        }}>
+                                            <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#0ea5e9' }}>{safetyDrill.axis}</span>
+                                            <span style={{ fontWeight: 700, textTransform: 'capitalize' }}>{(safetyDrill.label || safetyDrill.key || '').toString().replace(/_/g, ' ')}</span>
+                                            <button onClick={() => setSafetyDrill(null)} style={{
+                                                width: 18, height: 18, borderRadius: '50%', border: 'none', cursor: 'pointer',
+                                                background: 'var(--bg-secondary)', color: 'var(--text-secondary)',
+                                                display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11,
+                                            }} aria-label="Clear drill filter">✕</button>
+                                        </span>
+                                    </div>
+                                )}
                                 <Card>
                                     {/* Header */}
                                     <div style={{ display: 'grid', gridTemplateColumns: '110px 1fr 80px 90px 1fr 55px 90px', padding: '8px 14px', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-subtle)' }}>
@@ -1212,7 +1644,7 @@ const UsageSection = () => {
                     {/* ════════════════════════════════════════════════════════ */}
                     {activeReport === 'integrations' && (<div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                            <div style={{ width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #0ea5e920, #6366f120)' }}>
+                            <div style={{ width: 28, height: 28, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #0ea5e920, #0ea5e920)' }}>
                                 <Globe style={{ width: 15, height: 15, color: '#0ea5e9' }} />
                             </div>
                             <div>
@@ -1229,27 +1661,222 @@ const UsageSection = () => {
                             </Card>
                         ) : (
                             <>
-                                {/* Summary Cards */}
-                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 10, marginBottom: 14 }}>
-                                    <StatCard icon={Zap} label={t('usage.integ_total_calls')} color="#0ea5e9"
-                                        value={Number(integData.summary?.total_calls)?.toLocaleString() || '0'}
-                                        sub={<span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{Number(integData.summary?.sent_count) || 0} {t('usage.integ_data_sent')}, {Number(integData.summary?.received_count) || 0} {t('usage.integ_data_received')}</span>} />
-                                    <StatCard icon={Link2} label={t('usage.integ_integrations')} color="#6366f1"
-                                        value={Number(integData.summary?.unique_integrations)?.toLocaleString() || '0'}
-                                        sub={<span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('usage.integ_unique_integrations')}</span>} />
-                                    <StatCard icon={Server} label={t('usage.integ_servers')} color="#10b981"
-                                        value={Number(integData.summary?.unique_servers)?.toLocaleString() || '0'}
-                                        sub={<span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('usage.integ_unique_servers')}</span>} />
-                                    <StatCard icon={Fingerprint} label={t('usage.integ_pii_events')} color="#ef4444"
-                                        value={Number(integData.summary?.pii_events)?.toLocaleString() || '0'}
-                                        sub={<span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t('usage.integ_pii_detected')}</span>} />
-                                </div>
+                                {/* Action-required banner — fires when the PII-weighted score
+                                    drops below ALERT_SCORE_THRESHOLD. Uses the shared AlertBanner
+                                    primitive so all four tabs share the same shape. */}
+                                {sovereigntyStats.total > 0 && sovereigntyStats.score < ALERT_SCORE_THRESHOLD && (() => {
+                                    const severity = sovereigntyStats.score < 20 ? 'red' : 'amber';
+                                    const reasonBits = [];
+                                    if (sovereigntyStats.piiNonEuCount > 0) reasonBits.push(`${sovereigntyStats.piiNonEuCount} call${sovereigntyStats.piiNonEuCount === 1 ? '' : 's'} leaked PII outside the EU/EEA`);
+                                    else if (sovereigntyStats.nonEuCount > 0) reasonBits.push(`${sovereigntyStats.nonEuCount} of ${sovereigntyStats.total} call${sovereigntyStats.total === 1 ? '' : 's'} left the EU/EEA`);
+                                    const onCta = sovereigntyStats.piiNonEuCount > 0
+                                        ? () => {
+                                            setEgressDrill({ axis: 'pii-non-eu', key: 'pii-non-eu', label: 'PII leaks abroad' });
+                                            setTimeout(() => egressLogRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+                                        } : null;
+                                    return (
+                                        <AlertBanner
+                                            severity={severity}
+                                            message={`Sovereignty score ${sovereigntyStats.score}/100 — ${reasonBits.join(' · ')}`}
+                                            ctaLabel={onCta ? 'Review PII leaks' : null}
+                                            onCta={onCta}
+                                        />
+                                    );
+                                })()}
+
+                                {/* Sovereignty hero — answers "where is my data going?" before
+                                    the user has to scan a table. EU/Non-EU/Local split is computed
+                                    from the egress log so it tracks the same source-of-truth as the
+                                    table below. */}
+                                {(() => {
+                                    const { total, euCount, localCount, nonEuCount, piiNonEuCount, score } = sovereigntyStats;
+                                    const pct = (n) => total > 0 ? Math.round((n / total) * 100) : 0;
+                                    const scoreColor = score >= 80 ? '#10b981' : score >= 60 ? '#84cc16' : score >= 40 ? '#f59e0b' : score >= 20 ? '#f97316' : '#ef4444';
+                                    const scoreLabel = score >= 80 ? 'Excellent' : score >= 60 ? 'Good' : score >= 40 ? 'Watch' : score >= 20 ? 'Risky' : 'Critical';
+                                    const summary = integData.summary || {};
+                                    return (
+                                        <div style={{ marginBottom: 14, borderRadius: 14, padding: 18, background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', overflow: 'hidden', position: 'relative' }}>
+                                            <div style={{ position: 'absolute', inset: 0, background: 'radial-gradient(ellipse at top left, rgba(16,185,129,0.06), transparent 60%)', pointerEvents: 'none' }} />
+                                            <div style={{ position: 'relative', display: 'grid', gridTemplateColumns: '1.4fr 1fr', gap: 24, alignItems: 'center' }}>
+                                                {/* Left: PII-weighted sovereignty score + stacked bar */}
+                                                <div>
+                                                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 10, marginBottom: 4 }}>
+                                                        <span style={{ fontSize: 11, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)' }}>Data sovereignty score</span>
+                                                        <span
+                                                            style={{ fontSize: 9, fontWeight: 600, color: 'var(--text-muted)', opacity: 0.8, cursor: 'help' }}
+                                                            title={`(EU + Local) / (Total + PII-leaks-abroad) × 100. A non-EU call that exposed PII counts twice against the denominator, so the score punishes leaks of personal data more than benign non-EU traffic.`}
+                                                        >ⓘ how is this scored?</span>
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 12, marginBottom: 4, flexWrap: 'wrap' }}>
+                                                        <span style={{ fontSize: 54, fontWeight: 800, color: scoreColor, letterSpacing: '-0.04em', lineHeight: 1 }}>{score}</span>
+                                                        <span style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-muted)', letterSpacing: '-0.02em' }}>/ 100</span>
+                                                        <span style={{ padding: '3px 9px', borderRadius: 6, background: `${scoreColor}15`, color: scoreColor, fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.06em' }}>{scoreLabel}</span>
+                                                        {sovereigntyStats.trend && (() => {
+                                                            const d = sovereigntyStats.trend.delta;
+                                                            const trendColor = d > 0 ? '#10b981' : d < 0 ? '#ef4444' : 'var(--text-muted)';
+                                                            const arrow = d > 0 ? '↑' : d < 0 ? '↓' : '·';
+                                                            return (
+                                                                <span
+                                                                    title={`Previous half-period score: ${sovereigntyStats.trend.prevScore}`}
+                                                                    style={{ display: 'inline-flex', alignItems: 'center', gap: 3, padding: '2px 8px', borderRadius: 5, background: `${trendColor}15`, color: trendColor, fontSize: 11, fontWeight: 800 }}
+                                                                >
+                                                                    <span style={{ fontSize: 13 }}>{arrow}</span>
+                                                                    {d === 0 ? '0' : Math.abs(d)}
+                                                                </span>
+                                                            );
+                                                        })()}
+                                                    </div>
+                                                    {/* B1: always-visible score explainer */}
+                                                    <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 10, fontWeight: 500 }}>
+                                                        Score drops on Non-EU traffic; PII leaks abroad count double.
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14, fontSize: 12, color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+                                                        <span><span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{pct(euCount + localCount)}%</span> raw EU/EEA + local share</span>
+                                                        {piiNonEuCount > 0 && (
+                                                            <button
+                                                                onClick={() => {
+                                                                    setEgressDrill({ axis: 'pii-non-eu', key: 'pii-non-eu', label: 'PII leaks abroad' });
+                                                                    setTimeout(() => egressLogRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 50);
+                                                                }}
+                                                                style={{
+                                                                    display: 'inline-flex', alignItems: 'center', gap: 6,
+                                                                    padding: '4px 10px', borderRadius: 99, cursor: 'pointer',
+                                                                    background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.3)',
+                                                                    color: '#ef4444', fontWeight: 700, fontSize: 11,
+                                                                    transition: 'background 0.12s',
+                                                                }}
+                                                                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.15)'; }}
+                                                                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(239,68,68,0.08)'; }}
+                                                                title="Click to filter the egress log to the PII-leaking calls"
+                                                            >
+                                                                <Fingerprint style={{ width: 12, height: 12 }} />
+                                                                −{piiNonEuCount} PII leak{piiNonEuCount === 1 ? '' : 's'} abroad
+                                                                <ChevronRight style={{ width: 12, height: 12 }} />
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    {/* Stacked bar */}
+                                                    <div style={{ display: 'flex', height: 10, borderRadius: 99, overflow: 'hidden', background: 'var(--bg-tertiary)' }}>
+                                                        {euCount > 0 && <div title={`${euCount} EU/EEA calls`} style={{ width: `${pct(euCount)}%`, background: 'linear-gradient(90deg,#10b981,#34d399)', transition: 'width 0.4s ease' }} />}
+                                                        {localCount > 0 && <div title={`${localCount} local calls`} style={{ width: `${pct(localCount)}%`, background: 'linear-gradient(90deg,#14b8a6,#2dd4bf)', transition: 'width 0.4s ease' }} />}
+                                                        {nonEuCount > 0 && <div title={`${nonEuCount} non-EU calls`} style={{ width: `${pct(nonEuCount)}%`, background: 'linear-gradient(90deg,#f59e0b,#fbbf24)', transition: 'width 0.4s ease' }} />}
+                                                    </div>
+                                                    {/* Legend */}
+                                                    <div style={{ display: 'flex', gap: 16, marginTop: 10, flexWrap: 'wrap' }}>
+                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                                                            <span style={{ width: 8, height: 8, borderRadius: 2, background: '#10b981' }} />
+                                                            <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{euCount}</span>
+                                                            <span style={{ color: 'var(--text-muted)' }}>EU/EEA ({pct(euCount)}%)</span>
+                                                        </span>
+                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                                                            <span style={{ width: 8, height: 8, borderRadius: 2, background: '#14b8a6' }} />
+                                                            <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{localCount}</span>
+                                                            <span style={{ color: 'var(--text-muted)' }}>Local ({pct(localCount)}%)</span>
+                                                        </span>
+                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 11 }}>
+                                                            <span style={{ width: 8, height: 8, borderRadius: 2, background: '#f59e0b' }} />
+                                                            <span style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{nonEuCount}</span>
+                                                            <span style={{ color: 'var(--text-muted)' }}>Non-EU ({pct(nonEuCount)}%)</span>
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                {/* Right: trend chart when there are multiple periods, MiniStat grid otherwise */}
+                                                {(integData.timeline?.length || 0) > 1 ? (
+                                                    <div>
+                                                        <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: 'var(--text-muted)', marginBottom: 4 }}>Sovereignty over time</div>
+                                                        <SovereigntyTrend timeline={integData.timeline} />
+                                                    </div>
+                                                ) : (
+                                                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                                                        <MiniStat icon={Zap} color="#0ea5e9" label="Total calls" value={Number(summary.total_calls || 0).toLocaleString()} />
+                                                        <MiniStat icon={Link2} color="#0ea5e9" label="Integrations" value={Number(summary.unique_integrations || 0).toLocaleString()} />
+                                                        <MiniStat icon={Server} color="#10b981" label="Endpoints" value={Number(summary.unique_servers || 0).toLocaleString()} />
+                                                        <MiniStat icon={Fingerprint} color="#ef4444" label="PII events" value={Number(summary.pii_events || 0).toLocaleString()} />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* Sovereignty breakdown — switchable axis (User / Integration / Agent / PII).
+                                    Click a row to drill the egress log to that bucket. */}
+                                {(() => {
+                                    const axes = [
+                                        { id: 'user', label: 'User', icon: Users },
+                                        { id: 'integration', label: 'Integration', icon: Link2 },
+                                        { id: 'agent', label: 'Agent', icon: Bot },
+                                        { id: 'pii', label: 'PII (when detected)', icon: Fingerprint },
+                                    ];
+                                    const rows = (integData.sovereignty?.[sovereigntyAxis] || []).slice(0, 12);
+                                    const handleDrill = (axis, row) => {
+                                        setEgressDrill({ axis, key: row.key, label: row.label || row.key });
+                                        // Defer scroll so React commits the state update first.
+                                        setTimeout(() => {
+                                            egressLogRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                                        }, 50);
+                                    };
+                                    const avatarFor = (row) => {
+                                        if (sovereigntyAxis === 'user') {
+                                            return <Avatar user={{ ...row, display_name: row.label }} color={getColor(0)} size={26} />;
+                                        }
+                                        if (sovereigntyAxis === 'integration' && hasIntegrationIcon(row.key)) {
+                                            return <IntegrationLogo integrationType={row.key} size={26} />;
+                                        }
+                                        return null;
+                                    };
+                                    return (
+                                        <div style={{ marginBottom: 14 }}>
+                                            <SectionTitle icon={Activity} right={(
+                                                <div style={{ display: 'flex', gap: 4 }}>
+                                                    {axes.map(a => {
+                                                        const on = sovereigntyAxis === a.id;
+                                                        const AxisIcon = a.icon;
+                                                        return (
+                                                            <button key={a.id} onClick={() => setSovereigntyAxis(a.id)} style={{
+                                                                display: 'flex', alignItems: 'center', gap: 5,
+                                                                padding: '4px 10px', borderRadius: 7, border: 'none', cursor: 'pointer',
+                                                                background: on ? 'var(--bg-secondary)' : 'transparent',
+                                                                color: on ? 'var(--text-primary)' : 'var(--text-muted)',
+                                                                fontWeight: on ? 700 : 500, fontSize: 11,
+                                                                transition: 'background 0.12s',
+                                                            }}>
+                                                                <AxisIcon style={{ width: 12, height: 12 }} />
+                                                                {a.label}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            )}>Sovereignty breakdown</SectionTitle>
+                                            <Card>
+                                                {rows.length === 0 ? (
+                                                    <div style={{ padding: 22, textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>
+                                                        {sovereigntyAxis === 'pii' ? 'No PII detected in any tool result.' : 'No data for this dimension.'}
+                                                    </div>
+                                                ) : rows.map((row, i) => (
+                                                    <SovereigntyRow
+                                                        key={i}
+                                                        row={row}
+                                                        onClick={() => handleDrill(sovereigntyAxis, row)}
+                                                        avatarFor={avatarFor}
+                                                        topOperatorColorFor={operatorColor}
+                                                    />
+                                                ))}
+                                            </Card>
+                                        </div>
+                                    );
+                                })()}
 
                                 {/* Two Column: By Type + Server Endpoints */}
                                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 14 }}>
                                     <div>
                                         <SectionTitle icon={Link2}>{t('usage.integ_by_type')}</SectionTitle>
                                         <Card>
+                                            {/* Column headers — make it obvious what each number means */}
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 14px', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-subtle)' }}>
+                                                <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Integration · Direction · PII</span>
+                                                <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Calls · Last used</span>
+                                            </div>
                                             {integData.byType.length === 0 ? (
                                                 <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>{t('usage.integ_no_data')}</div>
                                             ) : integData.byType.slice(0, 10).map((item, i) => {
@@ -1258,7 +1885,7 @@ const UsageSection = () => {
                                                 return (
                                                     <ListRow key={i}>
                                                         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
-                                                            <IconBadge icon={Globe} color={getColor(i)} />
+                                                            <IntegrationLogo integrationType={item.integration_type} fallbackColor={getColor(i)} />
                                                             <div style={{ minWidth: 0, flex: 1 }}>
                                                                 <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', textTransform: 'capitalize' }}>{(item.integration_type || 'unknown').replace(/_/g, ' ')}</div>
                                                                 <div style={{ display: 'flex', gap: 8, marginTop: 2, fontSize: 10 }}>
@@ -1281,6 +1908,10 @@ const UsageSection = () => {
                                     <div>
                                         <SectionTitle icon={Server}>{t('usage.integ_by_server')}</SectionTitle>
                                         <Card>
+                                            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '7px 14px', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-subtle)' }}>
+                                                <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Hostname · Region · IPs</span>
+                                                <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>Calls · Last contact</span>
+                                            </div>
                                             {integData.servers.length === 0 ? (
                                                 <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>{t('usage.integ_no_data')}</div>
                                             ) : integData.servers.slice(0, 10).map((srv, i) => {
@@ -1318,68 +1949,282 @@ const UsageSection = () => {
                                     </div>
                                 </div>
 
-                                {/* PII Categories by Integration */}
+                                {/* PII Categories by Integration — wrapped in a red warning frame
+                                    so this critical signal isn't visually equal to the more benign
+                                    "byType" / "servers" cards next to it. */}
                                 {integData.piiSummary.length > 0 && (
-                                    <div style={{ marginBottom: 14 }}>
-                                        <SectionTitle icon={Fingerprint}>{t('usage.integ_pii_by_category')}</SectionTitle>
-                                        <Card style={{ padding: 16 }}>
-                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-                                                {integData.piiSummary.map((p, i) => (
-                                                    <div key={i} style={{
-                                                        display: 'flex', alignItems: 'center', gap: 6,
-                                                        padding: '6px 12px', borderRadius: 20,
-                                                        background: '#ef444412', border: '1px solid #ef444420',
-                                                    }}>
-                                                        <Fingerprint style={{ width: 11, height: 11, color: '#ef4444' }} />
-                                                        <span style={{ fontSize: 11, fontWeight: 600, color: '#ef4444' }}>{p.pii_category}</span>
-                                                        <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', background: 'var(--bg-tertiary)', padding: '1px 6px', borderRadius: 8 }}>{p.count}</span>
-                                                        <span style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'capitalize' }}>{(p.integration_type || '').replace(/_/g, ' ')}</span>
-                                                    </div>
-                                                ))}
+                                    <div style={{
+                                        marginBottom: 14, padding: 14, borderRadius: 12,
+                                        background: 'rgba(239,68,68,0.04)',
+                                        border: '1px solid rgba(239,68,68,0.35)',
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+                                            <div style={{ width: 26, height: 26, borderRadius: 7, background: 'rgba(239,68,68,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                                                <AlertTriangle style={{ width: 13, height: 13, color: '#ef4444' }} />
                                             </div>
-                                        </Card>
+                                            <div style={{ flex: 1 }}>
+                                                <div style={{ fontSize: 12, fontWeight: 800, color: '#ef4444', letterSpacing: '-0.01em' }}>{t('usage.integ_pii_by_category')}</div>
+                                                <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>Personal data detected leaving the agent — verify these tools have a legitimate reason to handle the categories below.</div>
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+                                            {integData.piiSummary.map((p, i) => (
+                                                <div key={i} style={{
+                                                    display: 'flex', alignItems: 'center', gap: 6,
+                                                    padding: '6px 12px', borderRadius: 20,
+                                                    background: '#fff', border: '1px solid rgba(239,68,68,0.35)',
+                                                }}>
+                                                    <Fingerprint style={{ width: 11, height: 11, color: '#ef4444' }} />
+                                                    <span style={{ fontSize: 11, fontWeight: 700, color: '#ef4444' }}>{p.pii_category}</span>
+                                                    <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--text-muted)', background: 'var(--bg-tertiary)', padding: '1px 6px', borderRadius: 8 }}>{p.count}</span>
+                                                    <span style={{ fontSize: 9, color: 'var(--text-muted)', textTransform: 'capitalize' }}>{(p.integration_type || '').replace(/_/g, ' ')}</span>
+                                                </div>
+                                            ))}
+                                        </div>
                                     </div>
                                 )}
 
-                                {/* Recent Integration Activity Table */}
-                                {integData.recent.length > 0 && (
-                                    <div>
-                                        <SectionTitle icon={Clock}>{t('usage.integ_recent')}</SectionTitle>
-                                        <Card>
-                                            <div style={{ display: 'grid', gridTemplateColumns: '120px 1fr 90px 100px 1fr 60px 70px 60px', padding: '8px 14px', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-subtle)' }}>
-                                                {[t('usage.integ_col_time'), t('usage.integ_col_user'), t('usage.integ_col_tool'), t('usage.integ_col_integration'), t('usage.integ_col_server'), 'Region', t('usage.integ_col_direction'), t('usage.integ_col_pii')].map(h => (
-                                                    <span key={h} style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>{h}</span>
-                                                ))}
-                                            </div>
-                                            {integData.recent.slice(0, 25).map((ev, i) => {
-                                                const dirColor = ev.data_direction === 'sent' ? '#3b82f6' : ev.data_direction === 'received' ? '#10b981' : '#f59e0b';
-                                                const hasPii = ev.pii_categories_detected && ev.pii_categories_detected !== '';
+                                {/* Operator Summary — card grid, one per cloud provider with a
+                                    proportion bar showing its share of total egress. Brand-tinted
+                                    chrome makes the eye group Google/MS/Cloudflare/AWS quickly. */}
+                                {integData.operators.length > 0 && (() => {
+                                    const ops = integData.operators;
+                                    const grand = ops.reduce((s, o) => s + (Number(o.total) || 0), 0) || 1;
+                                    return (
+                                    <div style={{ marginBottom: 14 }}>
+                                        <SectionTitle icon={Server}>Destinations by operator</SectionTitle>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
+                                            {ops.map((op, i) => {
+                                                const total = Number(op.total) || 0;
+                                                const ips = Number(op.unique_ips) || 0;
+                                                const integs = Number(op.unique_integrations) || 0;
+                                                const name = op.operator || 'Unknown';
+                                                const isUnknown = name === 'Unknown';
+                                                const c = operatorColor(name);
+                                                const pct = Math.round((total / grand) * 100);
                                                 return (
                                                     <div key={i} style={{
-                                                        display: 'grid', gridTemplateColumns: '120px 1fr 90px 100px 1fr 60px 70px 60px',
-                                                        padding: '6px 14px', alignItems: 'center',
-                                                        background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-secondary)',
-                                                        borderBottom: '1px solid var(--border-subtle)', fontSize: 11,
+                                                        position: 'relative', padding: 14, borderRadius: 12, overflow: 'hidden',
+                                                        // Unknown operator gets an amber-tinted card — these are the IPs
+                                                        // not attributable to a known cloud, the highest-risk bucket.
+                                                        background: isUnknown ? 'rgba(245,158,11,0.08)' : 'var(--bg-secondary)',
+                                                        border: isUnknown ? '1px solid rgba(245,158,11,0.45)' : '1px solid var(--border-subtle)',
                                                     }}>
-                                                        <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>{new Date(ev.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
-                                                        <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, color: 'var(--text-primary)', minWidth: 0 }}>
-                                                            <Avatar user={ev} color={getColor(i)} size={18} />
-                                                            <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.display_name || ev.user_id || 'Unknown'}</span>
-                                                        </span>
-                                                        <span style={{ fontWeight: 600, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={ev.tool_name}>{ev.tool_name}</span>
-                                                        <span style={{ fontWeight: 600, color: getColor(i), textTransform: 'capitalize' }}>{(ev.integration_type || '').replace(/_/g, ' ')}</span>
-                                                        <span style={{ color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10 }} title={ev.server_endpoint}>{ev.server_endpoint || '—'}</span>
-                                                        <span style={{ fontSize: 10, fontWeight: 600, color: ev.is_eu ? '#10b981' : ev.country_flag ? '#f59e0b' : 'var(--text-muted)' }} title={ev.country_name || ''}>{ev.country_flag ? `${ev.country_flag} ${ev.country_code || ''}` : '—'}</span>
-                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
-                                                            {ev.data_direction === 'sent' && <ArrowRight style={{ width: 10, height: 10, color: dirColor }} />}
-                                                            {ev.data_direction === 'received' && <ArrowLeft style={{ width: 10, height: 10, color: dirColor }} />}
-                                                            {ev.data_direction === 'both' && <><ArrowRight style={{ width: 8, height: 8, color: dirColor }} /><ArrowLeft style={{ width: 8, height: 8, color: dirColor }} /></>}
-                                                            <span style={{ fontWeight: 600, color: dirColor, textTransform: 'capitalize' }}>{ev.data_direction}</span>
-                                                        </span>
-                                                        <span>{hasPii ? <span style={{ fontSize: 9, fontWeight: 700, color: '#ef4444', background: '#ef444415', padding: '2px 6px', borderRadius: 8 }}>⚠ PII</span> : <span style={{ color: 'var(--text-muted)', fontSize: 9 }}>—</span>}</span>
+                                                        <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: isUnknown ? 4 : 3, background: c }} />
+                                                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                                                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                                                <div style={{ width: 30, height: 30, borderRadius: 8, display: 'flex', alignItems: 'center', justifyContent: 'center', background: `${c}18`, color: c, fontSize: 12, fontWeight: 800, letterSpacing: '-0.02em' }}>
+                                                                    {isUnknown ? <AlertTriangle style={{ width: 14, height: 14 }} /> : name[0]}
+                                                                </div>
+                                                                <div style={{ minWidth: 0 }}>
+                                                                    <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)', letterSpacing: '-0.01em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{name}</div>
+                                                                    <div style={{ fontSize: 9, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{ips} IP{ips === 1 ? '' : 's'} · {integs} integration{integs === 1 ? '' : 's'}</div>
+                                                                </div>
+                                                            </div>
+                                                            <div style={{ textAlign: 'right' }}>
+                                                                <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-primary)', letterSpacing: '-0.03em', lineHeight: 1 }}>{total}</div>
+                                                                <div style={{ fontSize: 9, color: 'var(--text-muted)', marginTop: 2 }}>{pct}% of egress</div>
+                                                            </div>
+                                                        </div>
+                                                        {/* Proportion bar */}
+                                                        <div style={{ height: 4, borderRadius: 99, background: 'var(--bg-tertiary)', overflow: 'hidden' }}>
+                                                            <div style={{ height: '100%', width: `${pct}%`, background: c, transition: 'width 0.4s ease' }} />
+                                                        </div>
+                                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 8, fontSize: 9, color: 'var(--text-muted)' }}>
+                                                            {op.any_eu
+                                                                ? <span style={{ padding: '2px 6px', borderRadius: 5, background: '#10b98115', color: '#10b981', fontWeight: 700, letterSpacing: '0.03em' }}>EU/EEA SEEN</span>
+                                                                : <span style={{ padding: '2px 6px', borderRadius: 5, background: '#f59e0b15', color: '#f59e0b', fontWeight: 700, letterSpacing: '0.03em' }}>NON-EU</span>}
+                                                            <span>last {op.last_seen ? new Date(op.last_seen).toLocaleDateString() : '—'}</span>
+                                                        </div>
+                                                        {isUnknown && (
+                                                            <div style={{ marginTop: 8, fontSize: 10, fontWeight: 600, color: '#92400e' }}>
+                                                                Operator not in our registry — verify these IPs are expected.
+                                                            </div>
+                                                        )}
                                                     </div>
                                                 );
                                             })}
+                                        </div>
+                                    </div>
+                                    );
+                                })()}
+
+                                {/* Data Egress Log — per-call record with actual peer IP */}
+                                {integData.egress.length > 0 && (
+                                    <div ref={egressLogRef}>
+                                        <SectionTitle icon={Activity} right={(
+                                            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                                                <div style={{ display: 'flex', gap: 4 }}>
+                                                    {[
+                                                        { id: 'all', label: 'All' },
+                                                        { id: 'eu', label: '🇪🇺 EU only' },
+                                                        { id: 'non-eu', label: 'Non-EU' },
+                                                        { id: 'local', label: 'Local' },
+                                                    ].map(p => {
+                                                        const on = egressEuFilter === p.id;
+                                                        return (
+                                                            <button key={p.id} onClick={() => setEgressEuFilter(p.id)} style={{
+                                                                padding: '3px 9px', borderRadius: 6, border: 'none', cursor: 'pointer',
+                                                                background: on ? 'var(--bg-primary)' : 'var(--bg-tertiary)',
+                                                                color: on ? 'var(--text-primary)' : 'var(--text-muted)',
+                                                                fontWeight: on ? 700 : 500, fontSize: 10,
+                                                            }}>{p.label}</button>
+                                                        );
+                                                    })}
+                                                </div>
+                                                {/* CSV export — respects the currently-applied EU + drill filters */}
+                                                <button
+                                                    onClick={() => {
+                                                        const filtered = integData.egress.filter(ev => {
+                                                            if (egressEuFilter === 'eu' && ev.is_eu !== true) return false;
+                                                            if (egressEuFilter === 'non-eu' && (ev.is_eu !== false || ev.is_local)) return false;
+                                                            if (egressEuFilter === 'local' && !ev.is_local) return false;
+                                                            if (egressDrill) {
+                                                                const d = egressDrill;
+                                                                if (d.axis === 'user' && ev.user_id !== d.key) return false;
+                                                                if (d.axis === 'agent' && (ev.agent_id || 'direct-chat') !== d.key) return false;
+                                                                if (d.axis === 'integration' && ev.integration_type !== d.key) return false;
+                                                                if (d.axis === 'pii') {
+                                                                    const cats = (ev.pii_categories_detected || '').split(',').map(s => s.trim());
+                                                                    if (!cats.includes(d.key)) return false;
+                                                                }
+                                                                if (d.axis === 'pii-non-eu') {
+                                                                    const hasPii = ev.pii_categories_detected && ev.pii_categories_detected.trim() !== '';
+                                                                    if (ev.is_eu || ev.is_local || !hasPii) return false;
+                                                                }
+                                                            }
+                                                            return true;
+                                                        });
+                                                        const headers = ['timestamp', 'user_id', 'display_name', 'agent_id', 'agent_name', 'tool_name', 'integration_type', 'peer_ip', 'peer_ip_source', 'tls_servername', 'server_endpoint', 'operator', 'country_code', 'is_eu', 'is_local', 'data_direction', 'pii_categories_detected'];
+                                                        const csv = rowsToCsv(headers, filtered);
+                                                        const today = new Date().toISOString().slice(0, 10);
+                                                        downloadCsv(`integration-egress-${today}.csv`, csv);
+                                                    }}
+                                                    style={{
+                                                        padding: '3px 9px', borderRadius: 6, border: '1px solid var(--border-default, var(--border-subtle))', cursor: 'pointer',
+                                                        background: 'var(--bg-primary)', color: 'var(--text-secondary)',
+                                                        fontWeight: 600, fontSize: 10, display: 'inline-flex', alignItems: 'center', gap: 4,
+                                                    }}
+                                                    title="Download the egress log (respects active filters)"
+                                                >
+                                                    ↓ CSV
+                                                </button>
+                                            </div>
+                                        )}>Data egress log</SectionTitle>
+                                        {/* Active drill chip */}
+                                        {egressDrill && (
+                                            <div style={{ marginBottom: 8 }}>
+                                                <span style={{
+                                                    display: 'inline-flex', alignItems: 'center', gap: 8,
+                                                    padding: '5px 6px 5px 10px', borderRadius: 99,
+                                                    background: 'rgba(14,165,233,0.08)', border: '1px solid rgba(14,165,233,0.25)',
+                                                    fontSize: 11, color: 'var(--text-primary)',
+                                                }}>
+                                                    <span style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#0ea5e9' }}>{egressDrill.axis}</span>
+                                                    <span style={{ fontWeight: 700, textTransform: 'capitalize' }}>{(egressDrill.label || egressDrill.key || '').toString().replace(/_/g, ' ')}</span>
+                                                    <button onClick={() => setEgressDrill(null)} style={{
+                                                        width: 18, height: 18, borderRadius: '50%', border: 'none', cursor: 'pointer',
+                                                        background: 'var(--bg-secondary)', color: 'var(--text-secondary)',
+                                                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 11,
+                                                    }} aria-label="Clear drill filter">✕</button>
+                                                </span>
+                                            </div>
+                                        )}
+                                        <Card>
+                                            <div style={{ display: 'grid', gridTemplateColumns: '110px 130px 90px 100px 160px 130px 70px 60px', padding: '8px 14px 8px 14px', background: 'var(--bg-tertiary)', borderBottom: '1px solid var(--border-subtle)', borderLeft: '3px solid transparent' }}>
+                                                {['Time', 'User', 'Tool', 'Integration', 'Hostname → Peer IP', 'Operator', 'Region', 'Direction'].map(h => (
+                                                    <span key={h} style={{ fontSize: 9, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--text-muted)' }}>{h}</span>
+                                                ))}
+                                            </div>
+                                            {(() => {
+                                                const filtered = integData.egress.filter(ev => {
+                                                    if (egressEuFilter === 'eu' && ev.is_eu !== true) return false;
+                                                    if (egressEuFilter === 'non-eu' && (ev.is_eu !== false || ev.is_local)) return false;
+                                                    if (egressEuFilter === 'local' && !ev.is_local) return false;
+                                                    if (egressDrill) {
+                                                        const d = egressDrill;
+                                                        if (d.axis === 'user' && ev.user_id !== d.key) return false;
+                                                        if (d.axis === 'agent' && (ev.agent_id || 'direct-chat') !== d.key) return false;
+                                                        if (d.axis === 'integration' && ev.integration_type !== d.key) return false;
+                                                        if (d.axis === 'pii') {
+                                                            const cats = (ev.pii_categories_detected || '').split(',').map(s => s.trim());
+                                                            if (!cats.includes(d.key)) return false;
+                                                        }
+                                                        if (d.axis === 'pii-non-eu') {
+                                                            // Virtual axis used by the Action-required banner CTA
+                                                            // and the hero "PII leaks abroad" button.
+                                                            const hasPii = ev.pii_categories_detected && ev.pii_categories_detected.trim() !== '';
+                                                            if (ev.is_eu || ev.is_local || !hasPii) return false;
+                                                        }
+                                                    }
+                                                    return true;
+                                                });
+                                                if (filtered.length === 0) {
+                                                    return <div style={{ padding: 18, textAlign: 'center', fontSize: 12, color: 'var(--text-muted)' }}>No rows match this filter.</div>;
+                                                }
+                                                return filtered.slice(0, 100).map((ev, i) => {
+                                                    const dirColor = ev.data_direction === 'sent' ? '#3b82f6' : ev.data_direction === 'received' ? '#10b981' : '#f59e0b';
+                                                    const sourceColor = ev.peer_ip_source === 'socket' ? '#10b981' : ev.peer_ip_source === 'dns_pre_call' ? '#0ea5e9' : ev.peer_ip_source === 'local' ? '#64748b' : '#f59e0b';
+                                                    const rowAccent = ev.is_local ? '#14b8a6' : (ev.operator ? operatorColor(ev.operator) : '#94a3b8');
+                                                    return (
+                                                        <div key={ev.id || i} style={{
+                                                            display: 'grid', gridTemplateColumns: '110px 130px 90px 100px 160px 130px 70px 60px',
+                                                            padding: '7px 14px 7px 11px', alignItems: 'center',
+                                                            background: i % 2 === 0 ? 'var(--bg-primary)' : 'var(--bg-secondary)',
+                                                            borderBottom: '1px solid var(--border-subtle)',
+                                                            borderLeft: `3px solid ${rowAccent}`,
+                                                            fontSize: 11,
+                                                        }}>
+                                                            <span style={{ color: 'var(--text-muted)', fontWeight: 500 }}>{new Date(ev.timestamp).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                                                            <span style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600, color: 'var(--text-primary)', minWidth: 0 }}>
+                                                                <Avatar user={ev} color={getColor(i)} size={18} />
+                                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{ev.display_name || ev.user_id || 'Unknown'}</span>
+                                                            </span>
+                                                            <span style={{ fontWeight: 600, color: 'var(--text-secondary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10 }} title={ev.tool_name}>{ev.tool_name}</span>
+                                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontWeight: 600, color: getColor(i), textTransform: 'capitalize', fontSize: 10, minWidth: 0 }}>
+                                                                {hasIntegrationIcon(ev.integration_type) && (
+                                                                    <span style={{ width: 14, height: 14, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{getIntegrationIcon(ev.integration_type)}</span>
+                                                                )}
+                                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{(ev.integration_type || '').replace(/_/g, ' ')}</span>
+                                                            </span>
+                                                            <span style={{ minWidth: 0, overflow: 'hidden' }}>
+                                                                {ev.is_local ? (
+                                                                    <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 6, background: '#10b98115', color: '#10b981' }}>Local</span>
+                                                                ) : (
+                                                                    <>
+                                                                        {(() => {
+                                                                            // Prefer the probe-captured hostname (tls_servername) — that
+                                                                            // is provably where the call went. Fall back to the static
+                                                                            // server_endpoint only when no probe captured a hostname.
+                                                                            const realHost = ev.tls_servername || ev.server_endpoint || '—';
+                                                                            const showAlt = ev.tls_servername && ev.server_endpoint && ev.tls_servername !== ev.server_endpoint;
+                                                                            return (
+                                                                                <>
+                                                                                    <div style={{ fontSize: 10, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={realHost}>{realHost}</div>
+                                                                                    {showAlt && <div style={{ fontSize: 8, color: 'var(--text-muted)', fontStyle: 'italic', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={`Configured: ${ev.server_endpoint}`}>cfg: {ev.server_endpoint}</div>}
+                                                                                </>
+                                                                            );
+                                                                        })()}
+                                                                        <div style={{ fontFamily: 'ui-monospace,SFMono-Regular,Menlo,monospace', fontWeight: 700, color: 'var(--text-primary)', fontSize: 11 }}>{ev.peer_ip || '—'}</div>
+                                                                        {ev.peer_ip_source && <span style={{ fontSize: 8, fontWeight: 700, color: sourceColor, textTransform: 'uppercase', letterSpacing: '0.03em' }}>{ev.peer_ip_source.replace(/_/g, ' ')}</span>}
+                                                                    </>
+                                                                )}
+                                                            </span>
+                                                            <span style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 10, fontWeight: 700, color: ev.operator ? 'var(--text-primary)' : 'var(--text-muted)', overflow: 'hidden', whiteSpace: 'nowrap' }} title={ev.operator || (ev.is_local ? 'Local' : 'Unknown')}>
+                                                                {!ev.is_local && <span style={{ width: 6, height: 6, borderRadius: '50%', background: rowAccent, flexShrink: 0 }} />}
+                                                                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis' }}>{ev.operator || (ev.is_local ? '—' : 'Unknown')}</span>
+                                                            </span>
+                                                            <span style={{ fontSize: 10, fontWeight: 600, color: ev.is_eu ? '#10b981' : ev.country_flag ? '#f59e0b' : 'var(--text-muted)' }} title={ev.country_name || ''}>{ev.is_local ? '—' : ev.country_flag ? `${ev.country_flag} ${ev.country_code || ''}` : '—'}</span>
+                                                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                                                {ev.data_direction === 'sent' && <ArrowRight style={{ width: 10, height: 10, color: dirColor }} />}
+                                                                {ev.data_direction === 'received' && <ArrowLeft style={{ width: 10, height: 10, color: dirColor }} />}
+                                                                {ev.data_direction === 'both' && <><ArrowRight style={{ width: 8, height: 8, color: dirColor }} /><ArrowLeft style={{ width: 8, height: 8, color: dirColor }} /></>}
+                                                                <span style={{ fontWeight: 600, color: dirColor, textTransform: 'capitalize', fontSize: 10 }}>{ev.data_direction}</span>
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                });
+                                            })()}
                                         </Card>
                                     </div>
                                 )}

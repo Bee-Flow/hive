@@ -1,10 +1,12 @@
 import React from 'react';
 import { Repeat } from 'lucide-react';
 import StepNodeBase, { NodeChip } from './StepNodeBase';
+import { humanizeExpression } from '../displayHelpers';
 
-export default function LoopNode({ data }) {
-    const { step, runStep, issues } = data;
+export default function LoopNode({ id, data }) {
+    const { step, runStep, issues, onAddAfter, stepLabelById } = data;
     const overRef = step.overRef || '';
+    const friendlyOver = humanizeExpression(overRef, stepLabelById);
     const itemVar = step.itemVar || 'item';
     const max = step.maxIterations ?? 100;
     const bodyLen = Array.isArray(step.body) ? step.body.length : 0;
@@ -13,8 +15,10 @@ export default function LoopNode({ data }) {
         <div>
             <div className="font-semibold truncate">{step.label || 'Loop'}</div>
             <div className="mt-0.5 text-[var(--text-secondary)]">
-                <div className="truncate">over: <span className="font-mono text-[10px]">{overRef || '—'}</span></div>
-                <div className="truncate">as: <span className="font-mono text-[10px]">loop.{itemVar}</span></div>
+                <div className="truncate" title={overRef}>
+                    over: <span className="text-[10px]">{friendlyOver || '—'}</span>
+                </div>
+                <div className="truncate">as: <span className="text-[10px]">loop.{itemVar}</span></div>
             </div>
         </div>
     );
@@ -52,6 +56,8 @@ export default function LoopNode({ data }) {
             hoverDetail={hoverDetail}
             runStep={runStep}
             issues={issues}
+            nodeId={id}
+            onAddAfter={onAddAfter}
         />
     );
 }

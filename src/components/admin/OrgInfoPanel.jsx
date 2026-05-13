@@ -1056,24 +1056,24 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                 </div>
                             </Field>
                             <Field label={t('org.company_name')}>
-                                <input type="text" value={orgData.name} onChange={e => setOrgData(p => ({ ...p, name: e.target.value }))} className={inputClass} placeholder="Bee Flow B.V." />
+                                <input type="text" value={orgData.name} onChange={e => setOrgData(p => ({ ...p, name: e.target.value }))} className={inputClass} placeholder={t('org.placeholder_company_name')} />
                             </Field>
                             <Field label={t('org.tagline')} hint={t('org.tagline_hint')}>
-                                <input type="text" value={orgData.tagline} onChange={e => setOrgData(p => ({ ...p, tagline: e.target.value }))} className={inputClass} placeholder="Your Processes, Pollinated with Intelligence." />
+                                <input type="text" value={orgData.tagline} onChange={e => setOrgData(p => ({ ...p, tagline: e.target.value }))} className={inputClass} placeholder={t('org.placeholder_tagline')} />
                             </Field>
                             <Field label={t('org.description')}>
-                                <input type="text" value={orgData.description} onChange={e => setOrgData(p => ({ ...p, description: e.target.value }))} className={inputClass} placeholder="Brief description of your organisation" />
+                                <input type="text" value={orgData.description} onChange={e => setOrgData(p => ({ ...p, description: e.target.value }))} className={inputClass} placeholder={t('org.placeholder_description')} />
                             </Field>
                             <div className="grid grid-cols-2 gap-4">
                                 <Field label={t('org.email')}>
-                                    <input type="email" value={orgData.email} onChange={e => setOrgData(p => ({ ...p, email: e.target.value }))} className={inputClass} placeholder="info@company.com" />
+                                    <input type="email" value={orgData.email} onChange={e => setOrgData(p => ({ ...p, email: e.target.value }))} className={inputClass} placeholder={t('org.placeholder_email')} />
                                 </Field>
                                 <Field label={t('org.phone')}>
-                                    <input type="tel" value={orgData.phone} onChange={e => setOrgData(p => ({ ...p, phone: e.target.value }))} className={inputClass} placeholder="+1 555 123 4567" />
+                                    <input type="tel" value={orgData.phone} onChange={e => setOrgData(p => ({ ...p, phone: e.target.value }))} className={inputClass} placeholder={t('org.placeholder_phone')} />
                                 </Field>
                             </div>
                             <Field label={t('org.website')}>
-                                <input type="url" value={orgData.website} onChange={e => setOrgData(p => ({ ...p, website: e.target.value }))} className={inputClass} placeholder="https://beeflow.nl" />
+                                <input type="url" value={orgData.website} onChange={e => setOrgData(p => ({ ...p, website: e.target.value }))} className={inputClass} placeholder={t('org.placeholder_website')} />
                             </Field>
                         </div>
 
@@ -1089,14 +1089,14 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                         <p className="text-sm text-[var(--text-muted)] mt-0.5">{t('org.legal_subtitle')}</p>
                                     </div>
                                     <Field label={t('org.address')}>
-                                        <input type="text" value={orgData.address} onChange={e => setOrgData(p => ({ ...p, address: e.target.value }))} className={inputClass} placeholder="123 Main Street, City, Country" />
+                                        <input type="text" value={orgData.address} onChange={e => setOrgData(p => ({ ...p, address: e.target.value }))} className={inputClass} placeholder={t('org.placeholder_address')} />
                                     </Field>
                                     <div className="grid grid-cols-2 gap-4">
                                         <Field label={t('org.kvk')}>
-                                            <input type="text" value={orgData.kvk} onChange={e => setOrgData(p => ({ ...p, kvk: e.target.value }))} className={inputClass} placeholder="97632430" />
+                                            <input type="text" value={orgData.kvk} onChange={e => setOrgData(p => ({ ...p, kvk: e.target.value }))} className={inputClass} placeholder={t('org.placeholder_kvk')} />
                                         </Field>
                                         <Field label={t('org.vat')}>
-                                            <input type="text" value={orgData.vat} onChange={e => setOrgData(p => ({ ...p, vat: e.target.value }))} className={inputClass} placeholder="NL123456789B01" />
+                                            <input type="text" value={orgData.vat} onChange={e => setOrgData(p => ({ ...p, vat: e.target.value }))} className={inputClass} placeholder={t('org.placeholder_vat')} />
                                         </Field>
                                     </div>
                                 </div>

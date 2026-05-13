@@ -22,7 +22,8 @@ ENV VITE_API_URL=$VITE_API_URL
 ARG VITE_BUILD_SHA=""
 ENV VITE_BUILD_SHA=$VITE_BUILD_SHA
 
-# Build the app
+# Build the app — bump Node heap; default ~2GB OOMs during Rollup chunk render.
+ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN npm run build
 
 # Sourcemaps export stage — CI extracts .map files from here as a build

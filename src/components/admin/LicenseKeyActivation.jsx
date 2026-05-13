@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { Key, ShieldCheck, AlertCircle, Loader2, ExternalLink, RefreshCw, X } from 'lucide-react';
+import { Key, ShieldCheck, AlertCircle, Loader2, ExternalLink, RefreshCw, X, CreditCard } from 'lucide-react';
 import useLicense from '../../hooks/useLicense';
 import { useTranslation } from '../../hooks/useTranslation';
+import { API_BASE, authFetch } from '../../utils/helpers';
 
 const TIER_BADGE = {
     community: { label: 'Community', bg: 'bg-slate-500/15', fg: 'text-slate-400', border: 'border-slate-500/30' },
@@ -32,14 +33,36 @@ function daysUntil(s) {
 
 export default function LicenseKeyActivation() {
     const { t } = useTranslation();
-    const { tier, source, license, loading, error, activate, deactivate, refresh, reload } = useLicense();
+    const { tier, source, license, subscription, loading, error, activate, deactivate, refresh, reload } = useLicense();
     const [tokenInput, setTokenInput] = useState('');
-    const [busy, setBusy] = useState(null); // 'activate' | 'refresh' | 'deactivate'
+    const [busy, setBusy] = useState(null); // 'activate' | 'refresh' | 'deactivate' | 'portal'
     const [actionError, setActionError] = useState(null);
     const [showInput, setShowInput] = useState(false);
 
     const badge = TIER_BADGE[tier] || TIER_BADGE.community;
     const isActivated = source === 'license_key' && license;
+    const isStripeSub = source === 'stripe_subscription' && subscription;
+    const expiresAt = license?.expiresAt || subscription?.trialEndDate || null;
+    const daysLeft = daysUntil(expiresAt);
+    const needsRenewal = daysLeft != null && daysLeft >= 0 && daysLeft <= 30;
+
+    const openStripePortal = async () => {
+        setBusy('portal');
+        setActionError(null);
+        try {
+            const r = await authFetch(`${API_BASE}/api/stripe/portal`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ origin: window.location.origin }),
+            });
+            const data = await r.json().catch(() => ({}));
+            if (!r.ok || !data.url) throw new Error(data.error || `HTTP ${r.status}`);
+            window.location.assign(data.url);
+        } catch (e) {
+            setActionError(e.message || 'Could not open billing portal');
+            setBusy(null);
+        }
+    };
 
     const handleActivate = async () => {
         const token = tokenInput.trim();
@@ -112,10 +135,17 @@ export default function LicenseKeyActivation() {
                                     {REFRESH_BADGE[license.refreshStatus].label}
                                 </span>
                             )}
+                            {isActivated && license?.issuer === 'beeflow.admin.console' && (
+                                <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-sky-500/15 text-sky-400 border border-sky-500/30">
+                                    {t('license.admin_granted', 'Admin-granted')}
+                                </span>
+                            )}
                         </div>
                         <p className="text-xs text-[var(--text-muted)] mt-0.5">
                             {isActivated
-                                ? t('license.activated_subtitle', 'Activated via license key')
+                                ? (license?.issuer === 'beeflow.admin.console'
+                                    ? t('license.admin_granted_subtitle', 'Granted from the admin console — not a paid license')
+                                    : t('license.activated_subtitle', 'Activated via license key'))
                                 : t('license.community_subtitle', 'No license key — running on the free Community tier')}
                         </p>
                     </div>
@@ -174,9 +204,40 @@ export default function LicenseKeyActivation() {
                             <div className="text-[var(--text-primary)] font-mono text-[11px] mt-0.5 truncate" title={license.id}>{license.id}</div>
                         </div>
                     </div>
+                ) : isStripeSub ? (
+                    <div className="grid grid-cols-2 gap-3 text-xs">
+                        <div>
+                            <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{t('license.plan', 'Plan')}</div>
+                            <div className="text-[var(--text-primary)] font-medium mt-0.5">{subscription.planName || subscription.tier}</div>
+                        </div>
+                        <div>
+                            <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{t('license.status', 'Status')}</div>
+                            <div className="text-[var(--text-primary)] font-medium mt-0.5 capitalize">{subscription.status}{subscription.paymentStatus === 'trialing' ? ` (${t('license.trial', 'trial')})` : ''}</div>
+                        </div>
+                        {subscription.trialEndDate && (
+                            <div>
+                                <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{t('license.trial_ends', 'Trial ends')}</div>
+                                <div className="text-[var(--text-primary)] font-medium mt-0.5">{fmtDate(subscription.trialEndDate)}</div>
+                            </div>
+                        )}
+                        <div>
+                            <div className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">{t('license.source', 'Source')}</div>
+                            <div className="text-[var(--text-primary)] font-medium mt-0.5">Stripe</div>
+                        </div>
+                    </div>
                 ) : (
                     <div className="text-xs text-[var(--text-muted)] leading-relaxed">
                         {t('license.community_explainer', 'You can activate Pro, Enterprise, or a custom plan with a license key purchased at beeflow.ai. Activation unlocks features like automations, multi-user, guardrails, and more.')}
+                    </div>
+                )}
+
+                {/* Renewal banner — surfaces when ≤30 days remain on a paid license */}
+                {isActivated && needsRenewal && (
+                    <div className="flex items-start gap-2 p-3 rounded-xl border border-amber-500/30 bg-amber-500/10 text-xs text-amber-400">
+                        <AlertCircle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                            {t('license.renew_soon', 'Your license expires in {n} days. Renew to avoid losing access to paid features.').replace('{n}', daysLeft)}
+                        </div>
                     </div>
                 )}
 
@@ -204,6 +265,16 @@ export default function LicenseKeyActivation() {
                     )}
                     {!showInput && isActivated && (
                         <>
+                            {needsRenewal && (
+                                <button
+                                    onClick={openStripePortal}
+                                    disabled={busy !== null}
+                                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-amber-500 text-white hover:bg-amber-600 disabled:opacity-50"
+                                >
+                                    {busy === 'portal' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CreditCard className="w-3.5 h-3.5" />}
+                                    {t('license.renew', 'Renew via Stripe')}
+                                </button>
+                            )}
                             <button
                                 onClick={() => setShowInput(true)}
                                 className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-[var(--border-subtle)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
@@ -218,6 +289,25 @@ export default function LicenseKeyActivation() {
                             >
                                 {busy === 'deactivate' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
                                 {t('license.deactivate', 'Deactivate')}
+                            </button>
+                        </>
+                    )}
+                    {!showInput && isStripeSub && (
+                        <>
+                            <button
+                                onClick={openStripePortal}
+                                disabled={busy !== null}
+                                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50"
+                            >
+                                {busy === 'portal' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CreditCard className="w-3.5 h-3.5" />}
+                                {t('license.manage_billing', 'Manage billing')}
+                            </button>
+                            <button
+                                onClick={() => setShowInput(true)}
+                                className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-[var(--border-subtle)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
+                            >
+                                <Key className="w-3.5 h-3.5" />
+                                {t('license.enter_key', 'Enter license key')}
                             </button>
                         </>
                     )}

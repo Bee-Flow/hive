@@ -9,7 +9,6 @@ import MemorySection from './settings/MemorySection';
 import IntegrationsSection from './settings/IntegrationsSection';
 import PersonalAccessTokensSection from './settings/PersonalAccessTokensSection';
 import OrganisationSection from './settings/OrganisationSection';
-import HouseStyleSection from './settings/HouseStyleSection';
 import ConsumerLicenseSection from './settings/ConsumerLicenseSection';
 import ConsumerPrivacySection from './settings/ConsumerPrivacySection';
 import { SECTIONS as ORG_SECTIONS } from '../components/admin/OrgInfoPanel';
@@ -34,7 +33,7 @@ const AZURE_SUB_ITEM = { id: 'org_azure', labelKey: 'settings.azure_config', ico
  * friendlier URL names (`users`, `license`) — disambiguated by the parent
  * path segment.
  */
-const TOP_LEVEL_TAB_IDS = ['preferences', 'memory', 'integrations', 'api_tokens', 'house_style'];
+const TOP_LEVEL_TAB_IDS = ['preferences', 'memory', 'integrations', 'api_tokens'];
 const ORG_ID_TO_URL = {
     license: 'license',
     auth: 'auth',
@@ -112,10 +111,6 @@ const NAV_ITEMS = [
     {
         id: 'api_tokens', label: 'API Tokens',
         icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>,
-    },
-    {
-        id: 'house_style', label: 'Kantoorstijl',
-        icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>,
     },
 ];
 
@@ -367,7 +362,6 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
             case 'memory': return <MemorySection memoryStats={memoryStats} onOpenMemory={() => setShowMemoryPanel(true)} user={user} />;
             case 'integrations': return <IntegrationsSection statuses={statuses} onSaved={handleIntegrationSaved} enabledIntegrations={user?.enabledIntegrations} isOrgAdmin={canSeeOrg} user={user} showOrgIntegrations={isConsumerAccount} />;
             case 'api_tokens': return <PersonalAccessTokensSection />;
-            case 'house_style': return <HouseStyleSection user={user} />;
             case 'organisation': return canSeeOrg ? <OrganisationSection user={user} activeSection="license" /> : null;
             default: return null;
         }

@@ -1,56 +1,72 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { Sparkles, Settings, Save, Loader2, Check, AlertTriangle } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
+import { Sparkles, Settings, Loader2, Check, AlertTriangle, Clock, BookOpen, Globe, Zap, Workflow, Brain, SlidersHorizontal } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { INTEGRATION_CATALOG, NEXTCLOUD_INTEGRATION_IDS } from '../../config/integrationCatalog';
+import { getIntegrationIcon } from '../../config/integrationIcons';
 
-/**
- * Org-admin UI for activating beta features and (non-Nextcloud) integrations
- * within the allow-list the super admin has granted to this organisation.
- *
- * Two stacked sub-panels (Beta Features above, Integrations below). Each is
- * a card grid with a switch per item; "Save" persists the selection. The
- * runtime gates intersect this selection with the super-admin allow-list so
- * a stale toggle here cannot grant access to something the super admin has
- * since revoked.
- */
-const OrgFeatureTogglesPanel = ({ user }) => {
-    const orgId = user?.organizationId;
+const SAVE_DEBOUNCE_MS = 400;
+const SAVED_FLASH_MS = 1500;
+
+// Best-guess icon for a beta feature based on its id/name — beta features
+// are dynamic (registry-driven), so no hardcoded map by id. Keyword match
+// keeps new betas auto-iconed without a code change.
+function pickBetaIcon(idOrName) {
+    const s = (idOrName || '').toLowerCase();
+    if (s.includes('skill')) return <Sparkles className="w-4 h-4" />;
+    if (s.includes('routine')) return <Clock className="w-4 h-4" />;
+    if (s.includes('knowledge') || s.includes('kb')) return <BookOpen className="w-4 h-4" />;
+    if (s.includes('webpage') || s.includes('web')) return <Globe className="w-4 h-4" />;
+    if (s.includes('automation')) return <Workflow className="w-4 h-4" />;
+    if (s.includes('memory')) return <Brain className="w-4 h-4" />;
+    if (s.includes('zap') || s.includes('quick')) return <Zap className="w-4 h-4" />;
+    return <Sparkles className="w-4 h-4" />;
+}
+
+const OrgFeatureTogglesPanel = ({ settingsSlot = null }) => {
+    const [tab, setTab] = useState('integrations');
+    const [orgId, setOrgId] = useState(null);
     const [betaAllowed, setBetaAllowed] = useState([]);
     const [betaEnabled, setBetaEnabled] = useState([]);
     const [betaRegistry, setBetaRegistry] = useState([]);
     const [intAllowed, setIntAllowed] = useState([]);
     const [intEnabled, setIntEnabled] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [savingBeta, setSavingBeta] = useState(false);
-    const [savingInt, setSavingInt] = useState(false);
+    const [betaSaveState, setBetaSaveState] = useState('idle'); // idle | saving | saved
+    const [intSaveState, setIntSaveState] = useState('idle');
     const [message, setMessage] = useState(null);
 
+    // Refs hold the last server-confirmed state so a failed save can roll back
+    // without re-fetching. Initialized on load and updated after each
+    // successful PUT.
+    const betaServerRef = useRef([]);
+    const intServerRef = useRef([]);
+    const betaTimerRef = useRef(null);
+    const intTimerRef = useRef(null);
+
     const load = useCallback(async () => {
-        if (!orgId) return;
         try {
-            const [betaRes, intRes] = await Promise.all([
-                authFetch(`${API_BASE}/auth/organizations/${encodeURIComponent(orgId)}/active-beta-features`),
-                authFetch(`${API_BASE}/auth/organizations/${encodeURIComponent(orgId)}/active-integrations`),
-            ]);
-            if (betaRes.ok) {
-                const j = await betaRes.json();
-                setBetaAllowed(Array.isArray(j.allowed) ? j.allowed : []);
-                setBetaEnabled(Array.isArray(j.enabled) ? j.enabled : []);
-                setBetaRegistry(Array.isArray(j.registry) ? j.registry : []);
+            const res = await authFetch(`${API_BASE}/auth/me/active-features`);
+            if (!res.ok) {
+                setMessage({ type: 'error', text: `Failed to load (${res.status})` });
+                return;
             }
-            if (intRes.ok) {
-                const j = await intRes.json();
-                // Backend already strips NC IDs but filter again client-side
-                // so a stale snapshot can't sneak one in.
-                const allowed = (j.allowed || []).filter(id => !NEXTCLOUD_INTEGRATION_IDS.has(id));
-                setIntAllowed(allowed);
-                setIntEnabled((j.enabled || []).filter(id => allowed.includes(id)));
-            }
+            const j = await res.json();
+            setOrgId(j.orgId || null);
+            setBetaAllowed(Array.isArray(j.allowedBetaFeatures) ? j.allowedBetaFeatures : []);
+            const betaServer = Array.isArray(j.enabledBetaFeatures) ? j.enabledBetaFeatures : [];
+            setBetaEnabled(betaServer);
+            betaServerRef.current = betaServer;
+            setBetaRegistry(Array.isArray(j.betaRegistry) ? j.betaRegistry : []);
+            const allowed = (j.allowedIntegrations || []).filter(id => !NEXTCLOUD_INTEGRATION_IDS.has(id));
+            setIntAllowed(allowed);
+            const intServer = (j.enabledIntegrations || []).filter(id => allowed.includes(id));
+            setIntEnabled(intServer);
+            intServerRef.current = intServer;
         } catch (e) {
             console.error('[OrgFeatures] load:', e);
             setMessage({ type: 'error', text: 'Failed to load' });
         } finally { setLoading(false); }
-    }, [orgId]);
+    }, []);
 
     useEffect(() => { load(); }, [load]);
 
@@ -60,55 +76,83 @@ const OrgFeatureTogglesPanel = ({ user }) => {
         return () => clearTimeout(t);
     }, [message]);
 
+    // Clean up any pending save timers on unmount so we don't fire a PUT
+    // after the user has navigated away (would still succeed, but the
+    // state-setter calls would log a warning).
+    useEffect(() => () => {
+        if (betaTimerRef.current) clearTimeout(betaTimerRef.current);
+        if (intTimerRef.current) clearTimeout(intTimerRef.current);
+    }, []);
+
+    const flashSaved = (setter) => {
+        setter('saved');
+        setTimeout(() => setter(prev => prev === 'saved' ? 'idle' : prev), SAVED_FLASH_MS);
+    };
+
+    const queueBetaSave = (nextList) => {
+        if (betaTimerRef.current) clearTimeout(betaTimerRef.current);
+        betaTimerRef.current = setTimeout(async () => {
+            setBetaSaveState('saving');
+            try {
+                const res = await authFetch(`${API_BASE}/auth/me/active-features`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ betaEnabled: nextList }),
+                });
+                if (!res.ok) throw new Error('Save failed');
+                const j = await res.json();
+                const confirmed = Array.isArray(j.enabledBetaFeatures) ? j.enabledBetaFeatures : [];
+                setBetaEnabled(confirmed);
+                betaServerRef.current = confirmed;
+                flashSaved(setBetaSaveState);
+            } catch (e) {
+                setBetaEnabled(betaServerRef.current);
+                setBetaSaveState('idle');
+                setMessage({ type: 'error', text: e.message || 'Save failed' });
+            }
+        }, SAVE_DEBOUNCE_MS);
+    };
+
+    const queueIntSave = (nextList) => {
+        if (intTimerRef.current) clearTimeout(intTimerRef.current);
+        intTimerRef.current = setTimeout(async () => {
+            setIntSaveState('saving');
+            try {
+                const res = await authFetch(`${API_BASE}/auth/me/active-features`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ integrationsEnabled: nextList }),
+                });
+                if (!res.ok) throw new Error('Save failed');
+                const j = await res.json();
+                const confirmed = (j.enabledIntegrations || []).filter(id => intAllowed.includes(id));
+                setIntEnabled(confirmed);
+                intServerRef.current = confirmed;
+                flashSaved(setIntSaveState);
+            } catch (e) {
+                setIntEnabled(intServerRef.current);
+                setIntSaveState('idle');
+                setMessage({ type: 'error', text: e.message || 'Save failed' });
+            }
+        }, SAVE_DEBOUNCE_MS);
+    };
+
     const toggleBeta = (id) => {
-        setBetaEnabled(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+        setBetaEnabled(prev => {
+            const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+            queueBetaSave(next);
+            return next;
+        });
     };
 
     const toggleIntegration = (id) => {
-        setIntEnabled(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+        setIntEnabled(prev => {
+            const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
+            queueIntSave(next);
+            return next;
+        });
     };
 
-    const saveBeta = async () => {
-        setSavingBeta(true);
-        try {
-            const res = await authFetch(
-                `${API_BASE}/auth/organizations/${encodeURIComponent(orgId)}/active-beta-features`,
-                {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ enabled: betaEnabled }),
-                }
-            );
-            if (!res.ok) throw new Error('Save failed');
-            const j = await res.json();
-            setBetaEnabled(Array.isArray(j.enabled) ? j.enabled : []);
-            setMessage({ type: 'ok', text: 'Beta features saved' });
-        } catch (e) {
-            setMessage({ type: 'error', text: e.message });
-        } finally { setSavingBeta(false); }
-    };
-
-    const saveIntegrations = async () => {
-        setSavingInt(true);
-        try {
-            const res = await authFetch(
-                `${API_BASE}/auth/organizations/${encodeURIComponent(orgId)}/active-integrations`,
-                {
-                    method: 'PUT',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ enabled: intEnabled }),
-                }
-            );
-            if (!res.ok) throw new Error('Save failed');
-            const j = await res.json();
-            setIntEnabled(Array.isArray(j.enabled) ? j.enabled : []);
-            setMessage({ type: 'ok', text: 'Integrations saved' });
-        } catch (e) {
-            setMessage({ type: 'error', text: e.message });
-        } finally { setSavingInt(false); }
-    };
-
-    // Group integrations by category for readability.
     const intByCategory = useMemo(() => {
         const groups = new Map();
         for (const id of intAllowed) {
@@ -128,8 +172,6 @@ const OrgFeatureTogglesPanel = ({ user }) => {
         });
     }, [betaAllowed, betaRegistry]);
 
-    if (!orgId) return null;
-
     if (loading) {
         return (
             <div className="p-6">
@@ -138,38 +180,134 @@ const OrgFeatureTogglesPanel = ({ user }) => {
         );
     }
 
-    const Card = ({ id, title, description, checked, onChange }) => (
+    if (!orgId) {
+        return (
+            <div
+                className="rounded-2xl p-5 text-sm"
+                style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)', color: 'var(--text-muted)' }}
+            >
+                Your account is not bound to an organisation. Ask your platform administrator to assign one.
+            </div>
+        );
+    }
+
+    const SaveStatus = ({ state }) => {
+        if (state === 'saving') {
+            return (
+                <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    Saving…
+                </span>
+            );
+        }
+        if (state === 'saved') {
+            return (
+                <span className="inline-flex items-center gap-1.5 text-xs" style={{ color: 'var(--accent-primary, #10b981)' }}>
+                    <Check className="w-3.5 h-3.5" />
+                    Saved
+                </span>
+            );
+        }
+        return null;
+    };
+
+    const IntegrationCard = ({ item, selected, onToggle }) => (
         <div
-            key={id}
-            className="flex items-start gap-3 rounded-xl p-4 cursor-pointer"
+            className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all"
             style={{
-                background: 'var(--bg-primary)',
-                border: `1px solid ${checked ? 'var(--accent-primary, #10b981)' : 'var(--border-subtle)'}`,
-                transition: 'border-color 120ms ease',
+                border: `1px solid ${selected ? 'var(--accent-primary, #10b981)' : 'var(--border-subtle)'}`,
+                background: selected ? 'rgba(16, 185, 129, 0.04)' : 'var(--bg-primary)',
+                opacity: selected ? 1 : 0.85,
             }}
-            onClick={() => onChange(id)}
+            onClick={() => onToggle(item.id)}
             role="button"
             tabIndex={0}
-            onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onChange(id); } }}
+            onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onToggle(item.id); } }}
         >
-            <input
-                type="checkbox"
-                checked={checked}
-                readOnly
-                style={{ marginTop: 4, accentColor: 'var(--accent-primary, #10b981)' }}
-            />
-            <div className="min-w-0">
-                <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{title}</div>
-                {description ? (
-                    <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{description}</div>
+            <div
+                className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{ background: 'var(--bg-secondary)' }}
+            >
+                {getIntegrationIcon(item.id)}
+            </div>
+            <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{item.label}</p>
+                {item.description ? (
+                    <p className="text-[11px] truncate" style={{ color: 'var(--text-muted)' }}>{item.description}</p>
                 ) : null}
             </div>
+            <label className="relative inline-flex items-center cursor-pointer flex-shrink-0" onClick={e => e.stopPropagation()}>
+                <input type="checkbox" checked={selected} onChange={() => onToggle(item.id)} className="sr-only peer" />
+                <div className="w-9 h-5 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500" />
+            </label>
         </div>
     );
 
+    const BetaCard = ({ item, selected, onToggle }) => (
+        <div
+            className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all"
+            style={{
+                border: `1px solid ${selected ? 'var(--accent-primary, #10b981)' : 'var(--border-subtle)'}`,
+                background: selected ? 'rgba(16, 185, 129, 0.04)' : 'var(--bg-primary)',
+                opacity: selected ? 1 : 0.85,
+            }}
+            onClick={() => onToggle(item.id)}
+            role="button"
+            tabIndex={0}
+            onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onToggle(item.id); } }}
+        >
+            <div
+                className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                style={{
+                    background: selected ? 'rgba(16, 185, 129, 0.12)' : 'var(--bg-secondary)',
+                    color: selected ? 'var(--accent-primary, #10b981)' : 'var(--text-secondary)',
+                }}
+            >
+                {pickBetaIcon(item.id || item.name)}
+            </div>
+            <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{item.name}</p>
+                {item.description ? (
+                    <p className="text-[11px] line-clamp-2" style={{ color: 'var(--text-muted)' }}>{item.description}</p>
+                ) : null}
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer flex-shrink-0" onClick={e => e.stopPropagation()}>
+                <input type="checkbox" checked={selected} onChange={() => onToggle(item.id)} className="sr-only peer" />
+                <div className="w-9 h-5 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500" />
+            </label>
+        </div>
+    );
+
+    const tabs = [
+        { id: 'integrations', label: 'Integrations', icon: <Settings size={14} /> },
+        { id: 'beta', label: 'Beta features', icon: <Sparkles size={14} /> },
+        ...(settingsSlot ? [{ id: 'settings', label: 'Integration settings', icon: <SlidersHorizontal size={14} /> }] : []),
+    ];
+
     return (
-        <div className="space-y-6">
-            {/* Status banner */}
+        <div className="space-y-4">
+            {/* Top sub-nav — matches Studio tab style */}
+            <div className="flex items-center gap-1 border-b" style={{ borderColor: 'var(--border-default, var(--border-subtle))' }}>
+                {tabs.map((t) => {
+                    const active = tab === t.id;
+                    return (
+                        <button
+                            key={t.id}
+                            onClick={() => setTab(t.id)}
+                            className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition"
+                            style={{
+                                background: active ? 'var(--bg-secondary)' : 'transparent',
+                                color: active ? 'var(--text-primary)' : 'var(--text-secondary)',
+                                fontWeight: active ? 500 : 400,
+                            }}
+                        >
+                            {t.icon}
+                            {t.label}
+                        </button>
+                    );
+                })}
+            </div>
+
             {message ? (
                 <div
                     className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm"
@@ -185,26 +323,14 @@ const OrgFeatureTogglesPanel = ({ user }) => {
             ) : null}
 
             {/* ── Beta Features ─────────────────────────────────────── */}
+            {tab === 'beta' && (
             <section className="rounded-2xl p-5" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}>
                 <header className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2">
                         <Sparkles className="w-5 h-5" style={{ color: 'var(--accent-primary, #10b981)' }} />
                         <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Beta features</h2>
                     </div>
-                    <button
-                        onClick={saveBeta}
-                        disabled={savingBeta || betaAllowed.length === 0}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium"
-                        style={{
-                            background: 'var(--accent-primary, #10b981)',
-                            color: 'white',
-                            opacity: (savingBeta || betaAllowed.length === 0) ? 0.6 : 1,
-                            cursor: (savingBeta || betaAllowed.length === 0) ? 'not-allowed' : 'pointer',
-                        }}
-                    >
-                        {savingBeta ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                        Save
-                    </button>
+                    <SaveStatus state={betaSaveState} />
                 </header>
                 <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
                     Turn on the beta features your team should have access to. Only features granted by your platform administrator are listed here.
@@ -216,40 +342,27 @@ const OrgFeatureTogglesPanel = ({ user }) => {
                 ) : (
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                         {betaItems.map(f => (
-                            <Card
+                            <BetaCard
                                 key={f.id}
-                                id={f.id}
-                                title={f.name}
-                                description={f.description}
-                                checked={betaEnabled.includes(f.id)}
-                                onChange={toggleBeta}
+                                item={f}
+                                selected={betaEnabled.includes(f.id)}
+                                onToggle={toggleBeta}
                             />
                         ))}
                     </div>
                 )}
             </section>
+            )}
 
             {/* ── Integrations ──────────────────────────────────────── */}
+            {tab === 'integrations' && (
             <section className="rounded-2xl p-5" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}>
                 <header className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2">
                         <Settings className="w-5 h-5" style={{ color: 'var(--text-secondary)' }} />
                         <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Integrations</h2>
                     </div>
-                    <button
-                        onClick={saveIntegrations}
-                        disabled={savingInt || intAllowed.length === 0}
-                        className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium"
-                        style={{
-                            background: 'var(--accent-primary, #10b981)',
-                            color: 'white',
-                            opacity: (savingInt || intAllowed.length === 0) ? 0.6 : 1,
-                            cursor: (savingInt || intAllowed.length === 0) ? 'not-allowed' : 'pointer',
-                        }}
-                    >
-                        {savingInt ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                        Save
-                    </button>
+                    <SaveStatus state={intSaveState} />
                 </header>
                 <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
                     Decide which third-party tools your agents are allowed to use. Nextcloud is configured separately in the panel below.
@@ -265,13 +378,11 @@ const OrgFeatureTogglesPanel = ({ user }) => {
                                 <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>{cat}</div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                                     {items.map(i => (
-                                        <Card
+                                        <IntegrationCard
                                             key={i.id}
-                                            id={i.id}
-                                            title={i.label}
-                                            description={i.description}
-                                            checked={intEnabled.includes(i.id)}
-                                            onChange={toggleIntegration}
+                                            item={i}
+                                            selected={intEnabled.includes(i.id)}
+                                            onToggle={toggleIntegration}
                                         />
                                     ))}
                                 </div>
@@ -280,6 +391,10 @@ const OrgFeatureTogglesPanel = ({ user }) => {
                     </div>
                 )}
             </section>
+            )}
+
+            {/* ── Integration settings (slot) ──────────────────────── */}
+            {tab === 'settings' && settingsSlot}
         </div>
     );
 };

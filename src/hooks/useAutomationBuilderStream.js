@@ -19,6 +19,8 @@ export default function useAutomationBuilderStream(initial = {}) {
         automationId: initial.automationId || null,
         messages: [],          // [{ role, content, toolCalls?, autoSelectedTier? }]
         draft: initial.draft || null,
+        lastServerDraft: initial.draft || null,   // last definition the server confirmed; used to detect local divergence
+        pendingExternalDraft: null,               // SSE draft arrived while user had local edits — surfaced to UI for accept/discard
         summary: '',
         hasSideEffects: false,
         dryRun: null,
@@ -42,14 +44,66 @@ export default function useAutomationBuilderStream(initial = {}) {
      */
     const hydrate = useCallback((snapshot) => {
         if (!snapshot) return;
-        setState(s => ({
-            ...s,
-            messages: Array.isArray(snapshot.conversation) ? snapshot.conversation : s.messages,
-            draft: snapshot.draft || s.draft,
-            summary: snapshot.summary || s.summary,
-            validation: snapshot.lastValidation || s.validation,
-            builderSessionId: snapshot.sessionId || s.builderSessionId,
-        }));
+        setState(s => {
+            const nextDraft = snapshot.draft || s.draft;
+            return {
+                ...s,
+                messages: Array.isArray(snapshot.conversation) ? snapshot.conversation : s.messages,
+                draft: nextDraft,
+                // On hydrate we treat the snapshot as authoritative — local
+                // edits before mount are not yet possible. Seed the baseline
+                // so subsequent SSE `draft` events compare against it.
+                lastServerDraft: nextDraft,
+                summary: snapshot.summary || s.summary,
+                validation: snapshot.lastValidation || s.validation,
+                builderSessionId: snapshot.sessionId || s.builderSessionId,
+                // Allow lazy assignment of the automationId when the builder
+                // creates a draft via the visual editor BEFORE the chat
+                // produces one (n8n-style click-build flow).
+                automationId: snapshot.automationId || s.automationId,
+            };
+        });
+    }, []);
+
+    /**
+     * Replace the local draft definition. Used by the visual editor
+     * (DiagramPane in editable mode) when the user drags / connects /
+     * adds / deletes nodes — keeps the canvas in sync immediately while
+     * the parent persists to the backend out-of-band.
+     */
+    const setDraft = useCallback((nextDef) => {
+        setState(s => ({ ...s, draft: nextDef }));
+    }, []);
+
+    /**
+     * Mark the current draft as server-confirmed (called after a
+     * successful PUT). After this, an incoming SSE `draft` event whose
+     * payload matches `lastServerDraft` won't surface as a conflict —
+     * since the user IS in sync.
+     */
+    const markServerConfirmed = useCallback((nextDef) => {
+        setState(s => ({ ...s, lastServerDraft: nextDef }));
+    }, []);
+
+    /**
+     * Accept a pending external draft (chat-driven change that arrived
+     * while user had local edits). Promotes it to the canonical draft
+     * and clears the conflict banner.
+     */
+    const acceptExternalDraft = useCallback(() => {
+        setState(s => s.pendingExternalDraft
+            ? { ...s, draft: s.pendingExternalDraft, lastServerDraft: s.pendingExternalDraft, pendingExternalDraft: null }
+            : s);
+    }, []);
+
+    /**
+     * Dismiss the pending external draft — user wants to keep their
+     * local edits. The chat-side change is effectively discarded
+     * client-side (server-side it still ran; next save round-trip
+     * will reconcile).
+     */
+    const dismissExternalDraft = useCallback(() => {
+        setState(s => ({ ...s, pendingExternalDraft: null }));
     }, []);
 
     const send = useCallback(async ({ message, modelTier = 'auto', timezone, history, attachments = [], webSearchEnabled = true, disabledMedia = {}, resume = false }) => {
@@ -117,7 +171,7 @@ export default function useAutomationBuilderStream(initial = {}) {
         setState(s => ({ ...s, running: false }));
     }, [state.builderSessionId, state.automationId, state.messages]);
 
-    return { state, send, reset, hydrate };
+    return { state, send, reset, hydrate, setDraft, markServerConfirmed, acceptExternalDraft, dismissExternalDraft };
 }
 
 function handle(setState, event, data) {
@@ -155,7 +209,33 @@ function handle(setState, event, data) {
             });
             break;
         case 'draft':
-            setState(s => ({ ...s, draft: data.definition, automationId: data.automationId || s.automationId }));
+            // Conflict-aware: if the user's local draft is already in
+            // sync with the last server-confirmed draft, accept silently.
+            // Otherwise the user has unsaved local edits — stash the
+            // incoming draft as `pendingExternalDraft` so the UI can
+            // offer Accept / Keep-my-edits, instead of silently clobbering.
+            setState(s => {
+                const incoming = data.definition;
+                const local = s.draft;
+                const baseline = s.lastServerDraft;
+                const localMatchesBaseline = !local || !baseline
+                    ? local === baseline
+                    : shallowDefinitionEqual(local, baseline);
+                if (localMatchesBaseline) {
+                    return {
+                        ...s,
+                        draft: incoming,
+                        lastServerDraft: incoming,
+                        automationId: data.automationId || s.automationId,
+                        pendingExternalDraft: null,
+                    };
+                }
+                return {
+                    ...s,
+                    pendingExternalDraft: incoming,
+                    automationId: data.automationId || s.automationId,
+                };
+            });
             break;
         case 'summary':
             setState(s => ({ ...s, summary: data.summary || '', hasSideEffects: !!data.hasSideEffects }));
@@ -202,4 +282,23 @@ function handle(setState, event, data) {
 
 async function safeText(r) {
     try { const j = await r.json(); return j.error || JSON.stringify(j); } catch { return r.statusText; }
+}
+
+/**
+ * Cheap structural equality for two automation definitions. We compare
+ * via JSON.stringify after normalising key order in the shallow fields
+ * we care about — definitions are small (a few dozen steps) so this is
+ * fine, and it avoids a deepEqual import here.
+ *
+ * Returns true iff the two definitions describe the same DAG; used to
+ * decide whether an SSE `draft` event is a no-op or a real conflict.
+ */
+function shallowDefinitionEqual(a, b) {
+    if (a === b) return true;
+    if (!a || !b) return false;
+    try {
+        return JSON.stringify(a) === JSON.stringify(b);
+    } catch {
+        return false;
+    }
 }

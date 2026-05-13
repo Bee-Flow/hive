@@ -117,7 +117,10 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
     const { t } = useTranslation();
     const [search, setSearch] = useState('');
     const [showFilters, setShowFilters] = useState(false);
-    const [activeCategory, setActiveCategory] = useState('popular');
+    // Default to "All" instead of "Popular": Popular filters on usage metrics
+    // that are empty in low-traffic / fresh-org environments, so users land on
+    // a blank store (BFSF-164). "All" is always populated when agents exist.
+    const [activeCategory, setActiveCategory] = useState('all');
     const [activeJobs, setActiveJobs] = useState([]);
     const [sortBy, setSortBy] = useState('top');
     const [usageByAgent, setUsageByAgent] = useState({});

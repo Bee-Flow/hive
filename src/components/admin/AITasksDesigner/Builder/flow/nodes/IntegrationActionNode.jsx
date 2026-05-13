@@ -1,6 +1,8 @@
 import React from 'react';
 import { Wrench, Zap } from 'lucide-react';
 import StepNodeBase, { NodeChip, renderInputsPreview } from './StepNodeBase';
+import IntegrationLogo from './IntegrationLogo';
+import { humanizeToolName } from '../displayHelpers';
 
 /**
  * Side-effect detection mirrors server/automation/sideEffectMap.js — we
@@ -18,15 +20,18 @@ function looksLikeSideEffect(toolName) {
     return KNOWN_SIDE_EFFECT_PREFIXES.some(suffix => toolName.includes(suffix));
 }
 
-export default function IntegrationActionNode({ data }) {
-    const { step, runStep, issues } = data;
+export default function IntegrationActionNode({ id, data }) {
+    const { step, runStep, issues, onAddAfter } = data;
     const tool = step.tool || 'unknown_tool';
     const sideEffect = step.sideEffect ?? looksLikeSideEffect(tool);
+    const friendlyTool = humanizeToolName(tool);
 
     const body = (
         <div>
-            <div className="font-semibold truncate">{step.label || tool}</div>
-            <div className="mt-0.5 font-mono text-[10px] text-[var(--text-tertiary)] truncate">{tool}</div>
+            <div className="font-semibold truncate">{step.label || friendlyTool}</div>
+            <div className="mt-0.5 text-[10px] text-[var(--text-tertiary)] truncate" title={tool}>
+                {friendlyTool}
+            </div>
         </div>
     );
 
@@ -38,7 +43,7 @@ export default function IntegrationActionNode({ data }) {
 
     const hoverDetail = (
         <div>
-            <div className="font-semibold mb-1">{step.label || tool}</div>
+            <div className="font-semibold mb-1">{step.label || friendlyTool}</div>
             <div className="text-[var(--text-secondary)]">tool: <span className="font-mono">{tool}</span></div>
             {sideEffect && <div className="mt-0.5 text-amber-600 dark:text-amber-400">⚡ Side effect — synthesised in dry-run.</div>}
             {renderInputsPreview(step.inputs)}
@@ -50,13 +55,15 @@ export default function IntegrationActionNode({ data }) {
 
     return (
         <StepNodeBase
-            icon={<Wrench size={14} />}
+            icon={<IntegrationLogo tool={tool} size={16} fallback={<Wrench size={14} />} />}
             typeLabel="Integration"
             body={body}
             badges={badges}
             hoverDetail={hoverDetail}
             runStep={runStep}
             issues={issues}
+            nodeId={id}
+            onAddAfter={onAddAfter}
         />
     );
 }

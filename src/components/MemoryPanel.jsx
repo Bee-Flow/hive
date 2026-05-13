@@ -1,9 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { API_BASE, authFetch } from '../utils/helpers';
+
+const PAGE_SIZE = 50;
 
 const MemoryPanel = ({ onClose, projectId }) => {
     const [memories, setMemories] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [error, setError] = useState(null);
     const [editingId, setEditingId] = useState(null);
     const [editContent, setEditContent] = useState('');
@@ -11,30 +14,65 @@ const MemoryPanel = ({ onClose, projectId }) => {
     const [newMemory, setNewMemory] = useState({ content: '', type: 'fact' });
     const [filterType, setFilterType] = useState('all');
     const [searchTerm, setSearchTerm] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
     const [selectedIds, setSelectedIds] = useState(new Set());
     const [isSelectMode, setIsSelectMode] = useState(false);
+    const [total, setTotal] = useState(0);
+    const [hasMore, setHasMore] = useState(false);
+    // For project-scoped panel we still fetch the full list and filter client-side
+    // (project memory backlogs are small and the API doesn't paginate that path).
+    const isPaginated = !projectId;
 
+    // Debounce the search input so we don't refetch on every keystroke.
     useEffect(() => {
-        fetchMemories();
-    }, []);
+        const t = setTimeout(() => setDebouncedSearch(searchTerm.trim()), 300);
+        return () => clearTimeout(t);
+    }, [searchTerm]);
 
-    const fetchMemories = async () => {
+    const fetchMemories = useCallback(async ({ append = false, offset = 0 } = {}) => {
         try {
-            setLoading(true);
-            const url = projectId 
-                ? `${API_BASE}/agents/memory?projectId=${projectId}`
-                : `${API_BASE}/agents/memory`;
+            if (append) setLoadingMore(true); else setLoading(true);
+            const params = new URLSearchParams();
+            if (projectId) {
+                params.set('projectId', projectId);
+            } else {
+                params.set('limit', String(PAGE_SIZE));
+                params.set('offset', String(offset));
+                if (debouncedSearch) params.set('search', debouncedSearch);
+                if (filterType !== 'all') params.set('type', filterType);
+            }
+            const url = `${API_BASE}/agents/memory?${params.toString()}`;
             const res = await authFetch(url);
             const data = await res.json();
             if (data.memories) {
-                setMemories(data.memories);
+                setMemories(prev => append ? [...prev, ...data.memories] : data.memories);
+                if (isPaginated) {
+                    setTotal(typeof data.total === 'number' ? data.total : data.memories.length);
+                    setHasMore(!!data.hasMore);
+                } else {
+                    setTotal(data.memories.length);
+                    setHasMore(false);
+                }
             }
         } catch (err) {
             setError('Failed to load memories');
             console.error(err);
         } finally {
             setLoading(false);
+            setLoadingMore(false);
         }
+    }, [projectId, debouncedSearch, filterType, isPaginated]);
+
+    // Reload from the top whenever filter/search changes.
+    useEffect(() => {
+        fetchMemories({ append: false, offset: 0 });
+        // Reset selection so it doesn't reference items no longer in view.
+        setSelectedIds(new Set());
+    }, [fetchMemories]);
+
+    const handleLoadMore = () => {
+        if (!hasMore || loadingMore) return;
+        fetchMemories({ append: true, offset: memories.length });
     };
 
     const handleDelete = async (id) => {
@@ -46,6 +84,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
             });
             if (res.ok) {
                 setMemories(prev => prev.filter(m => m.id !== id));
+                setTotal(t => Math.max(0, t - 1));
             }
         } catch (err) {
             console.error('Failed to delete memory:', err);
@@ -63,9 +102,11 @@ const MemoryPanel = ({ onClose, projectId }) => {
                 body: JSON.stringify({ ids: Array.from(selectedIds) })
             });
             if (res.ok) {
+                const deletedCount = selectedIds.size;
                 setMemories(prev => prev.filter(m => !selectedIds.has(m.id)));
                 setSelectedIds(new Set());
                 setIsSelectMode(false);
+                setTotal(t => Math.max(0, t - deletedCount));
             }
         } catch (err) {
             console.error('Failed to bulk delete memories:', err);
@@ -130,6 +171,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                     type: newMemory.type,
                     created_at: new Date().toISOString()
                 }, ...prev]);
+                setTotal(t => t + 1);
                 setNewMemory({ content: '', type: 'fact' });
                 setShowAddForm(false);
             }
@@ -147,6 +189,8 @@ const MemoryPanel = ({ onClose, projectId }) => {
             });
             if (res.ok) {
                 setMemories([]);
+                setTotal(0);
+                setHasMore(false);
             }
         } catch (err) {
             console.error('Failed to clear memories:', err);
@@ -198,12 +242,16 @@ const MemoryPanel = ({ onClose, projectId }) => {
         return d.toLocaleDateString();
     };
 
-    // Filtered memories
-    const filteredMemories = memories.filter(m => {
-        if (filterType !== 'all' && m.type !== filterType) return false;
-        if (searchTerm && !m.content.toLowerCase().includes(searchTerm.toLowerCase())) return false;
-        return true;
-    });
+    // Filtered memories — for the paginated/global view the server has
+    // already applied search + type filters, so we just show what was loaded.
+    // For project-scoped panels we still filter client-side.
+    const filteredMemories = isPaginated
+        ? memories
+        : memories.filter(m => {
+            if (filterType !== 'all' && m.type !== filterType) return false;
+            if (searchTerm && !m.content.toLowerCase().includes(searchTerm.toLowerCase())) return false;
+            return true;
+        });
 
     // Count per type
     const typeCounts = memories.reduce((acc, m) => {
@@ -235,7 +283,9 @@ const MemoryPanel = ({ onClose, projectId }) => {
                         <div>
                             <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>{projectId ? 'Project Memory' : 'Memory'}</h2>
                             <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                                {memories.length} {memories.length === 1 ? 'memory' : 'memories'} stored
+                                {isPaginated && total > memories.length
+                                    ? `${memories.length} of ${total} ${total === 1 ? 'memory' : 'memories'} loaded`
+                                    : `${total || memories.length} ${(total || memories.length) === 1 ? 'memory' : 'memories'} stored`}
                             </p>
                         </div>
                     </div>
@@ -531,6 +581,19 @@ const MemoryPanel = ({ onClose, projectId }) => {
                                     </div>
                                 );
                             })}
+                            {isPaginated && hasMore && (
+                                <div className="flex justify-center pt-4">
+                                    <button
+                                        onClick={handleLoadMore}
+                                        disabled={loadingMore}
+                                        className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50"
+                                        style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)', border: '1px solid var(--border-subtle)' }}
+                                        data-testid="memory-load-more"
+                                    >
+                                        {loadingMore ? 'Loading…' : `Load more (${total - memories.length} remaining)`}
+                                    </button>
+                                </div>
+                            )}
                         </div>
                     )}
                 </div>

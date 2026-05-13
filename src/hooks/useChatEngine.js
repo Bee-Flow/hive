@@ -878,19 +878,37 @@ export default function useChatEngine({
                 const entities = Array.isArray(data?.entities) ? data.entities : [];
                 const categories = [...new Set(entities.map(e => e.label || e.category).filter(Boolean))];
                 const count = data?.tokenCount || entities.length;
-                const info = {
-                    source: 'pii',
-                    action: 'redact',
-                    count,
-                    categories,
-                    provider: null,
-                    automatic: true,
-                };
+                const attachments = Array.isArray(data?.attachments) ? data.attachments : null;
+                // `pii_tokenized` now fires for both message-level PII and
+                // attachment-level (Privacy Shield) detections. Merge with
+                // any prior tokenisationInfo rather than replacing it — the
+                // two paths can both fire on the same turn (user text + PDF).
                 setMessages(prev => prev.map(m => {
                     if (m.id === userMsgId) {
-                        return { ...m, piiTokenizedCount: count, piiCategories: categories };
+                        return { ...m, piiTokenizedCount: (m.piiTokenizedCount || 0) + count, piiCategories: [...new Set([...(m.piiCategories || []), ...categories])] };
                     }
                     if (m.id === assistantMsgId) {
+                        const prevInfo = m.tokenisationInfo || null;
+                        const mergedCats = [...new Set([...(prevInfo?.categories || []), ...categories])];
+                        const mergedCount = (prevInfo?.count || 0) + count;
+                        const info = {
+                            source: data?.source || prevInfo?.source || 'pii',
+                            action: prevInfo?.action || 'redact',
+                            count: mergedCount,
+                            categories: mergedCats,
+                            provider: prevInfo?.provider || null,
+                            automatic: prevInfo ? !!prevInfo.automatic : true,
+                            // Attachments list (per-file detail) — only set when this
+                            // event carries it. Existing per-file entries are
+                            // preserved so a second event doesn't blow them away.
+                            attachments: attachments
+                                ? [...(prevInfo?.attachments || []), ...attachments]
+                                : (prevInfo?.attachments || undefined),
+                            tokenMap: prevInfo?.tokenMap || undefined,
+                            tokenizedPrompt: prevInfo?.tokenizedPrompt || undefined,
+                            rawResponse: prevInfo?.rawResponse || undefined,
+                            rawTruncated: prevInfo?.rawTruncated,
+                        };
                         return { ...m, tokenisationInfo: info };
                     }
                     return m;
@@ -926,14 +944,22 @@ export default function useChatEngine({
             case 'dlp_blocked': {
                 window.dispatchEvent(new CustomEvent('beeflow:dlp_blocked', { detail: data }));
                 const reason = data?.reason || 'policy';
-                const labelKey = reason === 'timeout' ? 'dlp.blocked_timeout'
-                    : reason === 'user_blocked' ? 'dlp.blocked_user'
-                    : 'dlp.blocked_policy';
-                const msg = tRef.current(labelKey, {
-                    timeout: 'Blocked: DLP decision timed out.',
-                    user_blocked: 'Prompt blocked by you.',
-                    policy: 'Prompt blocked by data-loss-prevention policy.',
-                }[reason] || 'Prompt blocked by DLP.');
+                let msg;
+                if (reason === 'attachment_pii') {
+                    const cats = Array.isArray(data?.categories) ? data.categories.join(', ') : '';
+                    const file = data?.filename ? ` in “${data.filename}”` : '';
+                    msg = tRef.current('dlp.blocked_attachment_pii',
+                        `Attachment blocked: sensitive data (${cats || 'PII'}) was detected${file}. Please remove the PII and re-upload.`);
+                } else {
+                    const labelKey = reason === 'timeout' ? 'dlp.blocked_timeout'
+                        : reason === 'user_blocked' ? 'dlp.blocked_user'
+                        : 'dlp.blocked_policy';
+                    msg = tRef.current(labelKey, {
+                        timeout: 'Blocked: DLP decision timed out.',
+                        user_blocked: 'Prompt blocked by you.',
+                        policy: 'Prompt blocked by data-loss-prevention policy.',
+                    }[reason] || 'Prompt blocked by DLP.');
+                }
                 setMessages(prev => prev.map(m =>
                     m.id === assistantMsgId ? { ...m, content: msg, isStreaming: false, isError: true } : m
                 ));
@@ -1070,6 +1096,10 @@ export default function useChatEngine({
                         const v = scopedStorage.getItem('webSearchEnabled');
                         return v === null ? true : v === 'true';
                     })(),
+                    memoryWriteEnabled: (() => {
+                        const v = scopedStorage.getItem('memoryWriteEnabled');
+                        return v === null ? true : v === 'true';
+                    })(),
                     ...(activeProject?.id ? { projectId: activeProject.id } : {}),
                     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
                     ...(typeof directMode.getExtraPayload === 'function' ? directMode.getExtraPayload() : {}),
@@ -1087,6 +1117,10 @@ export default function useChatEngine({
                     attachments,
                     isHidden,
                     stream: true,
+                    memoryWriteEnabled: (() => {
+                        const v = scopedStorage.getItem('memoryWriteEnabled');
+                        return v === null ? true : v === 'true';
+                    })(),
                     ...wsPayload,
                     ...(activeProject?.id ? { projectId: activeProject.id } : {}),
                     ...(overrideTier ? { modelTier: overrideTier } : {}),

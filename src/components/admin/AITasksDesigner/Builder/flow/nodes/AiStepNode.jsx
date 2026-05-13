@@ -2,8 +2,8 @@ import React from 'react';
 import { Sparkles, Hammer } from 'lucide-react';
 import StepNodeBase, { NodeChip, renderInputsPreview } from './StepNodeBase';
 
-export default function AiStepNode({ data }) {
-    const { step, runStep, issues } = data;
+export default function AiStepNode({ id, data }) {
+    const { step, runStep, issues, onAddAfter } = data;
     const tier = step.modelTier || 'auto';
     const allowTools = !!step.allowTools;
     const toolCount = Array.isArray(step.tools) ? step.tools.length : 0;
@@ -55,6 +55,8 @@ export default function AiStepNode({ data }) {
             hoverDetail={hoverDetail}
             runStep={runStep}
             issues={issues}
+            nodeId={id}
+            onAddAfter={onAddAfter}
         />
     );
 }

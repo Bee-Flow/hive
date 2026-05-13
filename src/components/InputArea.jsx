@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Paperclip, X, StopCircle, MessageCircle, FileText, Image, File as FileIcon, FileSpreadsheet, ArrowUp, Sparkles, LayoutGrid, Globe, BookOpen } from 'lucide-react';
+import { Send, Paperclip, X, StopCircle, MessageCircle, FileText, Image, File as FileIcon, FileSpreadsheet, ArrowUp, Sparkles, LayoutGrid, Globe, BookOpen, Brain } from 'lucide-react';
 import ModelTierSelector from './ModelTierSelector';
 import EffortSelector from './EffortSelector';
 import GoogleDrivePicker from './chat/GoogleDrivePicker';
@@ -14,86 +14,44 @@ import SkillsPopover from './skills/SkillsPopover';
 import ActiveSkillChips from './skills/ActiveSkillChips';
 import VoiceCallButton from './chat/Voice/VoiceCallButton';
 import VoiceInlinePanel from './chat/Voice/VoiceInlinePanel';
+import { getIntegrationLogo } from '../utils/integrationLogos';
 
-// App definitions for the apps overlay
+// Tailwind w-N h-N → pixel dimensions for the chat sidebar's iconSvg
+// callers (Tailwind defaults: w-4=16, w-5=20, w-6=24).
+const TW_SIZE_TO_PX = { 'w-4 h-4': 16, 'w-5 h-5': 20, 'w-6 h-6': 24 };
+function renderAppLogo(id, sizeClass = 'w-5 h-5') {
+    const Logo = getIntegrationLogo(id);
+    const px = TW_SIZE_TO_PX[sizeClass] || 20;
+    if (Logo) return <Logo size={px} className={sizeClass} />;
+    // Fallback: a brand-coloured letter mark would also work but the
+    // shared logos cover every catalog id today, so this branch is only
+    // hit if an entry above references an id we haven't authored yet.
+    return <span className={`${sizeClass} flex items-center justify-center text-base`}>•</span>;
+}
+
+// App definitions for the apps overlay. Each entry's iconSvg is a thin
+// wrapper around the shared INTEGRATION_LOGOS map so the chat sidebar
+// and the automation palette always render the same brand mark.
 const APP_DEFS = [
-    {
-        id: 'google-drive', label: 'Google Drive', description: 'Attach files from Drive', requiresGoogle: true,
-        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 87.3 78" xmlns="http://www.w3.org/2000/svg"><path d="m6.6 66.85 3.85 6.65c.8 1.4 1.95 2.5 3.3 3.3l13.75-23.8h-27.5c0 1.55.4 3.1 1.2 4.5z" fill="#0066da" /><path d="m43.65 25-13.75-23.8c-1.35.8-2.5 1.9-3.3 3.3l-20.4 35.3c-.8 1.4-1.2 2.95-1.2 4.5h27.5z" fill="#00ac47" /><path d="m73.55 76.8c1.35-.8 2.5-1.9 3.3-3.3l1.6-2.75 7.65-13.25c.8-1.4 1.2-2.95 1.2-4.5h-27.5l5.85 13.8z" fill="#ea4335" /><path d="m43.65 25 13.75-23.8c-1.35-.8-2.9-1.2-4.5-1.2h-18.5c-1.6 0-3.15.45-4.5 1.2z" fill="#00832d" /><path d="m59.8 53h-32.3l-13.75 23.8c1.35.8 2.9 1.2 4.5 1.2h50.8c1.6 0 3.15-.45 4.5-1.2z" fill="#2684fc" /><path d="m73.4 26.5-10.1-17.5c-.8-1.4-1.95-2.5-3.3-3.3l-13.75 23.8 16.15 23.5h27.45c0-1.55-.4-3.1-1.2-4.5z" fill="#ffba00" /></svg>,
-    },
-    {
-        id: 'gmail', label: 'Gmail', description: 'Attach emails', requiresGoogle: true,
-        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><path d="M45 16.2l-5 2.75-5 4.75V40h7c1.66 0 3-1.34 3-3V16.2z" fill="#4caf50" /><path d="M3 16.2l3.04 1.67L13 24.7V40H6c-1.66 0-3-1.34-3-3V16.2z" fill="#1e88e5" /><path d="M35 11.2l-11 8.5-11-8.5V24.7l11 8.5 11-8.5V11.2z" fill="#e53935" /><path d="M3 12.3V16.2l10 8.5V11.2L7.96 7.57A2.98 2.98 0 003 12.3z" fill="#c62828" /><path d="M45 12.3V16.2l-10 8.5V11.2l5.04-3.63A2.98 2.98 0 0145 12.3z" fill="#fbc02d" /></svg>,
-    },
-    {
-        id: 'google-calendar', label: 'Google Calendar', description: 'Ask about your schedule', requiresGoogle: true,
-        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 200 200" xmlns="http://www.w3.org/2000/svg"><path d="M152.637 200H47.363C21.201 200 0 178.799 0 152.637V47.363C0 21.201 21.201 0 47.363 0h105.273C178.799 0 200 21.201 200 47.363v105.273C200 178.799 178.799 200 152.637 200z" fill="#fff" /><path d="M152.637 200H47.363C21.201 200 0 178.799 0 152.637V47.363C0 21.201 21.201 0 47.363 0h105.273C178.799 0 200 21.201 200 47.363v105.273C200 178.799 178.799 200 152.637 200z" fill="#4285f4" fillOpacity="0.12" /><path d="M148.363 32H51.637C40.799 32 32 40.799 32 51.637v96.726C32 159.201 40.799 168 51.637 168h96.726c10.838 0 19.637-8.799 19.637-19.637V51.637C168 40.799 159.201 32 148.363 32z" fill="#fff" /><path d="M168 68H32V51.637C32 40.799 40.799 32 51.637 32h96.726C159.201 32 168 40.799 168 51.637V68z" fill="#4285f4" /><rect x="60" y="42" width="8" height="20" rx="4" fill="#1a73e8" /><rect x="132" y="42" width="8" height="20" rx="4" fill="#1a73e8" /><text x="67" y="108" fontFamily="Google Sans,Arial,sans-serif" fontSize="28" fontWeight="600" fill="#70757a">27</text><rect x="56" y="120" width="36" height="4" rx="2" fill="#ea4335" /><rect x="56" y="130" width="28" height="4" rx="2" fill="#34a853" /><rect x="108" y="88" width="36" height="4" rx="2" fill="#4285f4" /><rect x="108" y="98" width="28" height="4" rx="2" fill="#fbbc04" /><rect x="108" y="120" width="36" height="4" rx="2" fill="#ea4335" /><rect x="108" y="130" width="20" height="4" rx="2" fill="#34a853" /></svg>,
-    },
-    {
-        id: 'google-slides', label: 'Google Slides', description: 'Ask about presentations', requiresGoogle: true,
-        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><path d="M40 45H8c-1.66 0-3-1.34-3-3V6c0-1.66 1.34-3 3-3h22l13 13v27c0 1.66-1.34 3-3 3z" fill="#FBBC04" /><path d="M30 3l13 13H33c-1.66 0-3-1.34-3-3V3z" fill="#E8A400" /><rect x="13" y="24" width="22" height="14" rx="1.5" fill="#fff" /><rect x="17" y="28" width="14" height="2" rx="1" fill="#FBBC04" /><rect x="17" y="33" width="10" height="2" rx="1" fill="#FBBC04" /></svg>,
-    },
-    {
-        id: 'google-sheets', label: 'Google Sheets', description: 'Create & edit spreadsheets', requiresGoogle: true,
-        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><path d="M40 45H8c-1.66 0-3-1.34-3-3V6c0-1.66 1.34-3 3-3h22l13 13v27c0 1.66-1.34 3-3 3z" fill="#0F9D58" /><path d="M30 3l13 13H33c-1.66 0-3-1.34-3-3V3z" fill="#087B4A" /><rect x="13" y="22" width="22" height="16" rx="1" fill="#fff" /><line x1="13" y1="28" x2="35" y2="28" stroke="#0F9D58" strokeWidth="1" /><line x1="13" y1="33" x2="35" y2="33" stroke="#0F9D58" strokeWidth="1" /><line x1="24" y1="22" x2="24" y2="38" stroke="#0F9D58" strokeWidth="1" /></svg>,
-    },
-    {
-        id: 'google-docs', label: 'Google Docs', description: 'Create & read documents', requiresGoogle: true,
-        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><path d="M40 45H8c-1.66 0-3-1.34-3-3V6c0-1.66 1.34-3 3-3h22l13 13v27c0 1.66-1.34 3-3 3z" fill="#4285F4" /><path d="M30 3l13 13H33c-1.66 0-3-1.34-3-3V3z" fill="#2A67C8" /><rect x="14" y="22" width="16" height="2" rx="1" fill="#fff" /><rect x="14" y="27" width="20" height="2" rx="1" fill="#fff" /><rect x="14" y="32" width="12" height="2" rx="1" fill="#fff" /></svg>,
-    },
-    {
-        id: 'google-contacts', label: 'Google Contacts', description: 'Search, create & update contacts', requiresGoogle: true,
-        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><path d="M40 45H8c-1.66 0-3-1.34-3-3V6c0-1.66 1.34-3 3-3h22l13 13v27c0 1.66-1.34 3-3 3z" fill="#4285F4" /><path d="M30 3l13 13H33c-1.66 0-3-1.34-3-3V3z" fill="#2A67C8" /><circle cx="24" cy="22" r="6" fill="#fff" /><path d="M14 38c0-5.52 4.48-10 10-10s10 4.48 10 10" fill="#fff" /></svg>,
-    },
-    {
-        id: 'google-keep', label: 'Google Keep', description: 'List, create & delete notes', requiresGoogle: true,
-        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><rect x="5" y="3" width="38" height="42" rx="3" fill="#FBBC04" /><rect x="14" y="16" width="20" height="3" rx="1.5" fill="#fff" /><rect x="14" y="23" width="20" height="3" rx="1.5" fill="#fff" /><rect x="14" y="30" width="14" height="3" rx="1.5" fill="#fff" /><circle cx="24" cy="10" r="3" fill="#fff" /></svg>,
-    },
-    {
-        id: 'outlook', label: 'Outlook', description: 'Send & read emails', requiresMicrosoft: true,
-        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="ol_g1" x1="24" y1="2" x2="24" y2="46" gradientUnits="userSpaceOnUse"><stop stopColor="#1490DF"/><stop offset="1" stopColor="#1068BF"/></linearGradient></defs><path d="M44 10.88V37.12A2.88 2.88 0 0 1 41.12 40H22V8h19.12A2.88 2.88 0 0 1 44 10.88z" fill="#1490DF"/><path d="M22 8h11v16H22z" fill="#1068BF" fillOpacity="0.5"/><path d="M33 8h8.12A2.88 2.88 0 0 1 44 10.88V24H33z" fill="#28A8EA"/><path d="M33 24H44v13.12A2.88 2.88 0 0 1 41.12 40H33z" fill="#0078D4"/><path d="M22 24h11v16H22z" fill="#1068BF"/><path d="M26 14L44 14V10.88A2.88 2.88 0 0 0 41.12 8H22l4 6z" fill="#28A8EA" fillOpacity="0.7"/><rect x="2" y="12" width="24" height="24" rx="2.4" fill="url(#ol_g1)"/><text x="14" y="30" textAnchor="middle" fontFamily="Segoe UI,Arial,sans-serif" fontWeight="600" fontSize="16" fill="white">O</text></svg>,
-    },
-    {
-        id: 'ms-calendar', label: 'MS Calendar', description: 'Manage your schedule', requiresMicrosoft: true,
-        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="mc_g1" x1="24" y1="2" x2="24" y2="46" gradientUnits="userSpaceOnUse"><stop stopColor="#1490DF"/><stop offset="1" stopColor="#1068BF"/></linearGradient></defs><path d="M44 10.88V37.12A2.88 2.88 0 0 1 41.12 40H22V8h19.12A2.88 2.88 0 0 1 44 10.88z" fill="#1490DF"/><path d="M22 8h11v16H22z" fill="#1068BF" fillOpacity="0.5"/><path d="M33 8h8.12A2.88 2.88 0 0 1 44 10.88V24H33z" fill="#28A8EA"/><path d="M33 24H44v13.12A2.88 2.88 0 0 1 41.12 40H33z" fill="#0078D4"/><path d="M22 24h11v16H22z" fill="#1068BF"/><rect x="27" y="14" width="3" height="3" rx="0.5" fill="white"/><rect x="32" y="14" width="3" height="3" rx="0.5" fill="white"/><rect x="37" y="14" width="3" height="3" rx="0.5" fill="white"/><rect x="27" y="19" width="3" height="3" rx="0.5" fill="white"/><rect x="32" y="19" width="3" height="3" rx="0.5" fill="white"/><rect x="37" y="19" width="3" height="3" rx="0.5" fill="white"/><rect x="27" y="29" width="3" height="3" rx="0.5" fill="white" fillOpacity="0.7"/><rect x="32" y="29" width="3" height="3" rx="0.5" fill="white" fillOpacity="0.7"/><rect x="27" y="34" width="3" height="3" rx="0.5" fill="white" fillOpacity="0.7"/><rect x="2" y="12" width="24" height="24" rx="2.4" fill="url(#mc_g1)"/><rect x="7" y="19" width="14" height="14" rx="1" fill="white"/><rect x="7" y="17" width="14" height="4" rx="1" fill="#1068BF"/><rect x="10" y="15.5" width="1.5" height="3" rx="0.75" fill="white"/><rect x="16.5" y="15.5" width="1.5" height="3" rx="0.75" fill="white"/><rect x="9" y="24" width="3" height="2" rx="0.5" fill="#1490DF" fillOpacity="0.8"/><rect x="14" y="24" width="3" height="2" rx="0.5" fill="#1490DF" fillOpacity="0.5"/><rect x="9" y="28" width="3" height="2" rx="0.5" fill="#1490DF" fillOpacity="0.5"/></svg>,
-    },
-    {
-        id: 'onedrive', label: 'OneDrive', description: 'Access files & folders', requiresMicrosoft: true,
-        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><path d="M19.55 22.1l8.65-5.3a11.09 11.09 0 0 1 5.7-1.57A11.23 11.23 0 0 1 44 24.9l.08.6A7.54 7.54 0 0 1 39.5 39H14.05a9.05 9.05 0 0 1-3.85-17.25z" fill="#0364B8"/><path d="M19.55 22.1l.15-.25A12.8 12.8 0 0 1 26.35 17a11.09 11.09 0 0 1 1.85-.17l-.4-.03A12.75 12.75 0 0 0 14.95 8.5a12.8 12.8 0 0 0-12.7 10.72 9.55 9.55 0 0 1 7.95 2.53z" fill="#0078D4"/><path d="M10.2 21.75A9.55 9.55 0 0 0 2.25 19.22 9.55 9.55 0 0 0 3.9 38.04l.15.01 10-1.05.01-.01a9.05 9.05 0 0 1-3.86-15.24z" fill="#1490DF"/><path d="M33.9 15.23A11.23 11.23 0 0 0 28.2 16.8l-8.65 5.3a9.05 9.05 0 0 0 3.85 14.95l.65.01H39.5a7.54 7.54 0 0 0 4.58-13.56l-.08-.6a11.23 11.23 0 0 0-10.1-7.67z" fill="#28A8EA"/></svg>,
-    },
-    {
-        id: 'ms-contacts', label: 'MS Contacts', description: 'Search & manage contacts', requiresMicrosoft: true,
-        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="mp_g1" x1="24" y1="2" x2="24" y2="46" gradientUnits="userSpaceOnUse"><stop stopColor="#1490DF"/><stop offset="1" stopColor="#1068BF"/></linearGradient></defs><path d="M44 10.88V37.12A2.88 2.88 0 0 1 41.12 40H22V8h19.12A2.88 2.88 0 0 1 44 10.88z" fill="#1490DF"/><path d="M22 8h11v16H22z" fill="#1068BF" fillOpacity="0.5"/><path d="M33 8h8.12A2.88 2.88 0 0 1 44 10.88V24H33z" fill="#28A8EA"/><path d="M33 24H44v13.12A2.88 2.88 0 0 1 41.12 40H33z" fill="#0078D4"/><path d="M22 24h11v16H22z" fill="#1068BF"/><circle cx="34" cy="17" r="4" fill="white"/><path d="M27.5 31c0-3.59 2.91-6.5 6.5-6.5s6.5 2.91 6.5 6.5" fill="white"/><rect x="2" y="12" width="24" height="24" rx="2.4" fill="url(#mp_g1)"/><circle cx="14" cy="21" r="3.5" fill="white"/><path d="M8 31c0-3.31 2.69-6 6-6s6 2.69 6 6" fill="white"/></svg>,
-    },
-    {
-        id: 'fireflies', label: 'Fireflies.ai', description: 'Meeting transcripts', requiresFireflies: true,
-        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="22 20 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M30.5749 22H24V28.5267H30.5749V22Z" fill="url(#ff_app_g1)" /><path d="M38.3633 29.8789H31.7883V36.4056H38.3633V29.8789Z" fill="url(#ff_app_g2)" /><path d="M38.3633 22H31.7883V28.5267H43.9998V27.594C43.9997 26.1104 43.4058 24.6875 42.3489 23.6384C41.2919 22.5894 39.8585 22 38.3638 22H38.3633Z" fill="url(#ff_app_g3)" /><path d="M24 29.8789V36.4056C24.0002 37.8892 24.594 39.3121 25.6509 40.3612C26.7079 41.4103 28.1413 41.9996 29.636 41.9996H30.5749V29.8789H24Z" fill="url(#ff_app_g4)" /><defs><linearGradient id="ff_app_g1" x1="40.08" y1="38.51" x2="12.44" y2="9.47" gradientUnits="userSpaceOnUse"><stop stopColor="#E82A73" /><stop offset="0.54" stopColor="#9B4AB0" /><stop offset="1" stopColor="#3B73FF" /></linearGradient><linearGradient id="ff_app_g2" x1="40.18" y1="38.42" x2="12.54" y2="9.38" gradientUnits="userSpaceOnUse"><stop stopColor="#FF3C82" /><stop offset="0.49" stopColor="#B251B2" /><stop offset="1" stopColor="#3B73FF" /></linearGradient><linearGradient id="ff_app_g3" x1="44.77" y1="34.05" x2="35.4" y2="0.12" gradientUnits="userSpaceOnUse"><stop stopColor="#E82A73" /><stop offset="0.54" stopColor="#9B4AB0" /><stop offset="1" stopColor="#3B73FF" /></linearGradient><linearGradient id="ff_app_g4" x1="35.55" y1="42.82" x2="2.03" y2="32.61" gradientUnits="userSpaceOnUse"><stop stopColor="#E82A73" /><stop offset="0.54" stopColor="#9B4AB0" /><stop offset="1" stopColor="#3B73FF" /></linearGradient></defs></svg>,
-    },
-    {
-        id: 'youtrack', label: 'YouTrack', description: 'Issues and projects', requiresYouTrack: true,
-        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 70 70" fill="none" xmlns="http://www.w3.org/2000/svg"><defs><linearGradient id="yt_app_g1" x1="12" y1="58" x2="58" y2="12" gradientUnits="userSpaceOnUse"><stop stopColor="#FC3791" /><stop offset="0.52" stopColor="#9B4AB0" /><stop offset="1" stopColor="#6166E8" /></linearGradient></defs><rect width="70" height="70" rx="14" fill="url(#yt_app_g1)" /><path d="M16 18h38v34H16z" fill="white" fillOpacity="0.9" /><path d="M20 25h20v3H20zM20 32h28v3H20zM20 39h14v3H20z" fill="url(#yt_app_g1)" /></svg>,
-    },
-    {
-        id: 'gamma', label: 'Gamma', description: 'AI presentations', requiresGamma: true,
-        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 4h16v16H4z" rx="3" fill="url(#gamma_app_g1)" /><path d="M8 9h8v1.5H8zM8 12.5h6v1.5H8zM8 16h4v1.5H8z" fill="white" fillOpacity="0.9" /><defs><linearGradient id="gamma_app_g1" x1="4" y1="4" x2="20" y2="20" gradientUnits="userSpaceOnUse"><stop stopColor="#6366F1" /><stop offset="1" stopColor="#A855F7" /></linearGradient></defs></svg>,
-    },
-    {
-        id: 'web-search', label: 'Web Search', description: 'Search the web', requiresNone: true,
-        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="11" cy="11" r="7" stroke="#6366F1" strokeWidth="2" fill="none" /><line x1="16.5" y1="16.5" x2="21" y2="21" stroke="#6366F1" strokeWidth="2" strokeLinecap="round" /><circle cx="11" cy="11" r="3" stroke="#6366F1" strokeWidth="1.5" fill="rgba(99,102,241,0.1)" /></svg>,
-    },
-    {
-        id: 'google-maps', label: 'Google Maps', description: 'Directions, routes & places', requiresNone: true,
-        iconSvg: (s = 'w-5 h-5') => <svg className={s} viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7z" fill="#EA4335"/><circle cx="12" cy="9" r="2.5" fill="#fff"/></svg>,
-    },
-
-    {
-        id: 'image-gen', label: 'Image Generation', description: 'AI image creation settings', requiresNone: true,
-        iconSvg: (s = 'w-5 h-5') => <span className={`${s} flex items-center justify-center text-base`}>🍌</span>,
-    },
-    {
-        id: 'elevenlabs', label: 'ElevenLabs', description: 'Music with vocals, TTS & sound effects', requiresNone: true,
-        iconSvg: (s = 'w-5 h-5') => <span className={`${s} flex items-center justify-center text-base`}>🎵</span>,
-    },
+    { id: 'google-drive',    label: 'Google Drive',    description: 'Attach files from Drive',                requiresGoogle: true,    iconSvg: (s = 'w-5 h-5') => renderAppLogo('google-drive', s) },
+    { id: 'gmail',           label: 'Gmail',           description: 'Attach emails',                          requiresGoogle: true,    iconSvg: (s = 'w-5 h-5') => renderAppLogo('gmail', s) },
+    { id: 'google-calendar', label: 'Google Calendar', description: 'Ask about your schedule',                requiresGoogle: true,    iconSvg: (s = 'w-5 h-5') => renderAppLogo('google-calendar', s) },
+    { id: 'google-slides',   label: 'Google Slides',   description: 'Ask about presentations',                requiresGoogle: true,    iconSvg: (s = 'w-5 h-5') => renderAppLogo('google-slides', s) },
+    { id: 'google-sheets',   label: 'Google Sheets',   description: 'Create & edit spreadsheets',             requiresGoogle: true,    iconSvg: (s = 'w-5 h-5') => renderAppLogo('google-sheets', s) },
+    { id: 'google-docs',     label: 'Google Docs',     description: 'Create & read documents',                requiresGoogle: true,    iconSvg: (s = 'w-5 h-5') => renderAppLogo('google-docs', s) },
+    { id: 'google-contacts', label: 'Google Contacts', description: 'Search, create & update contacts',       requiresGoogle: true,    iconSvg: (s = 'w-5 h-5') => renderAppLogo('google-contacts', s) },
+    { id: 'google-keep',     label: 'Google Keep',     description: 'List, create & delete notes',            requiresGoogle: true,    iconSvg: (s = 'w-5 h-5') => renderAppLogo('google-keep', s) },
+    { id: 'outlook',         label: 'Outlook',         description: 'Send & read emails',                     requiresMicrosoft: true, iconSvg: (s = 'w-5 h-5') => renderAppLogo('outlook', s) },
+    { id: 'ms-calendar',     label: 'MS Calendar',     description: 'Manage your schedule',                   requiresMicrosoft: true, iconSvg: (s = 'w-5 h-5') => renderAppLogo('ms-calendar', s) },
+    { id: 'onedrive',        label: 'OneDrive',        description: 'Access files & folders',                 requiresMicrosoft: true, iconSvg: (s = 'w-5 h-5') => renderAppLogo('onedrive', s) },
+    { id: 'ms-contacts',     label: 'MS Contacts',     description: 'Search & manage contacts',               requiresMicrosoft: true, iconSvg: (s = 'w-5 h-5') => renderAppLogo('ms-contacts', s) },
+    { id: 'fireflies',       label: 'Fireflies.ai',    description: 'Meeting transcripts',                    requiresFireflies: true, iconSvg: (s = 'w-5 h-5') => renderAppLogo('fireflies', s) },
+    { id: 'youtrack',        label: 'YouTrack',        description: 'Issues and projects',                    requiresYouTrack: true,  iconSvg: (s = 'w-5 h-5') => renderAppLogo('youtrack', s) },
+    { id: 'gamma',           label: 'Gamma',           description: 'AI presentations',                       requiresGamma: true,     iconSvg: (s = 'w-5 h-5') => renderAppLogo('gamma', s) },
+    { id: 'web-search',      label: 'Web Search',      description: 'Search the web',                         requiresNone: true,      iconSvg: (s = 'w-5 h-5') => renderAppLogo('web-search', s) },
+    { id: 'google-maps',     label: 'Google Maps',     description: 'Directions, routes & places',            requiresNone: true,      iconSvg: (s = 'w-5 h-5') => renderAppLogo('google-maps', s) },
+    { id: 'image-gen',       label: 'Image Generation', description: 'AI image creation settings',            requiresNone: true,      iconSvg: (s = 'w-5 h-5') => renderAppLogo('image-gen', s) },
+    { id: 'elevenlabs',      label: 'ElevenLabs',      description: 'Music with vocals, TTS & sound effects', requiresNone: true,      iconSvg: (s = 'w-5 h-5') => renderAppLogo('elevenlabs', s) },
 ];
 
 const InputArea = ({
@@ -154,6 +112,13 @@ const InputArea = ({
     const [disabledMedia, setDisabledMedia] = useState(() => scopedStorage.getJSON('disabledMedia', {}));
     const [webSearchEnabled, setWebSearchEnabled] = useState(() => {
         const v = scopedStorage.getItem('webSearchEnabled');
+        return v === null ? true : v === 'true';
+    });
+    // Memory write toggle — when off, the server skips memoryExtractor for this
+    // session. The read path (existing memories injected into prompt) still
+    // works so the user keeps context they've already curated.
+    const [memoryWriteEnabled, setMemoryWriteEnabled] = useState(() => {
+        const v = scopedStorage.getItem('memoryWriteEnabled');
         return v === null ? true : v === 'true';
     });
     const [showKBPicker, setShowKBPicker] = useState(false);
@@ -909,6 +874,21 @@ const InputArea = ({
                                     <Globe className="w-5 h-5" />
                                 </button>
                                 )}
+                                {/* Memory Write Toggle — pause saving new memories for this session. */}
+                                <button
+                                    onClick={() => {
+                                        const next = !memoryWriteEnabled;
+                                        setMemoryWriteEnabled(next);
+                                        scopedStorage.setItem('memoryWriteEnabled', String(next));
+                                    }}
+                                    className={`p-2 rounded-lg transition-colors ${memoryWriteEnabled ? 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20' : 'text-[var(--text-tertiary)] opacity-40 hover:opacity-70 hover:bg-[var(--bg-tertiary)]'}`}
+                                    title={memoryWriteEnabled ? 'Memory saving enabled (click to pause)' : 'Memory saving paused (click to resume)'}
+                                    aria-label={memoryWriteEnabled ? 'Memory saving enabled' : 'Memory saving paused'}
+                                    aria-pressed={memoryWriteEnabled}
+                                    data-testid="memory-write-toggle"
+                                >
+                                    <Brain className="w-5 h-5" />
+                                </button>
                                 {/* Knowledge Bases picker — only in direct mode. Lets the user
                                     attach KBs they have access to so the backend grounds answers
                                     on their content via /api/kb search. */}
