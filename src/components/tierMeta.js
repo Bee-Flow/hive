@@ -1,4 +1,4 @@
-import { Sparkles, Zap, Brain, Workflow, Users, PenLine, Lightbulb } from 'lucide-react';
+import { Sparkles, Zap, Brain, Workflow, Users, PenLine, Lightbulb, Shuffle } from 'lucide-react';
 
 // Shared metadata for the user-facing tier keys. Used by ModelTierSelector
 // (the dropdown) and the chat history badge so both stay in sync when keys
@@ -16,7 +16,7 @@ import { Sparkles, Zap, Brain, Workflow, Users, PenLine, Lightbulb } from 'lucid
 // `pro` is a legacy key that resolves server-side to the deep-thinking model;
 // the human label here makes the badge read "Deep Thinking" instead of "Pro".
 export const TIER_META = {
-    auto:          { Icon: Sparkles,  emoji: '🔀',    label: 'Auto',          desc: 'Optimal choice',                       color: 'var(--accent-primary)' },
+    auto:          { Icon: Shuffle,   emoji: '🔀',    label: 'Auto',          desc: 'Optimal choice',                       color: 'var(--accent-primary)' },
     fast:          { Icon: Zap,       emoji: '⚡',    label: 'Fast',          desc: 'Quick answers',                        color: 'var(--accent-primary)' },
     standard:      { Icon: Workflow,  emoji: '🐝',   iconSrc: '/BeeFlow-logo-Icon-2026.svg', label: 'Flow',  desc: 'Multi-stage orchestration',            color: 'var(--accent-primary)' },
     swarm:         { Icon: Users,     emoji: '🐝🐝', iconSrc: '/BeeFlow-logo-Icon-2026.svg', label: 'Swarm', desc: 'Parallel agents, synthesised answer',  color: 'var(--accent-primary)' },
