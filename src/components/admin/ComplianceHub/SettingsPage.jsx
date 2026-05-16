@@ -154,8 +154,8 @@ function normalize(s) {
 function Section({ title, description, children }) {
     return (
         <div style={{
-            background: 'var(--bg-secondary, #1a1a2e)',
-            border: '1px solid var(--border-default, rgba(255,255,255,0.06))',
+            background: 'var(--bg-card, #ffffff)',
+            border: '1px solid var(--border-default, rgba(0,0,0,0.08))',
             borderRadius: 12, padding: 18,
         }}>
             <div style={{ marginBottom: 12 }}>
@@ -179,11 +179,11 @@ function Field({ label, children }) {
 }
 
 const input = {
-    background: 'var(--bg-primary, #0f0f1a)',
-    border: '1px solid var(--border-default, rgba(255,255,255,0.1))',
+    background: 'var(--bg-card, #ffffff)',
+    border: '1px solid var(--border-default, rgba(0,0,0,0.12))',
     borderRadius: 8, padding: '8px 10px',
     fontSize: 13, fontFamily: 'inherit',
-    color: 'var(--text-primary, #fff)', width: '100%',
+    color: 'var(--text-primary, #0f172a)', width: '100%',
     outline: 'none',
 };
 const chip = {

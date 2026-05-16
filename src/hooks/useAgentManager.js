@@ -5,7 +5,7 @@ import { filterVisibleModels, fetchAllowedModelsByAgentType } from '../utils/mod
 /**
  * Custom hook that encapsulates common agent CRUD patterns for manager pages.
  *
- * @param {string} endpoint    - API endpoint path, e.g. '/browser-agents' or '/terminal-agents'
+ * @param {string} endpoint    - API endpoint path for the agent collection
  * @param {string} agentType   - Agent type for model filtering: 'chat'
  * @param {object} defaultAgent - Default values when creating a new agent
  * @returns {object} All state and actions needed by the manager page

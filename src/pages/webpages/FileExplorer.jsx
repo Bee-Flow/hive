@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { ChevronDown, Code, Palette, Cpu, FileText, Folder, FolderOpen, Image as ImageIcon, FileType, Braces, Database } from 'lucide-react';
+import { ChevronDown, Code, Palette, Cpu, FileText, Folder, FolderOpen, Image as ImageIcon, FileType, Braces } from 'lucide-react';
 
 /**
  * File explorer tree view for the Webpages IDE.
@@ -11,7 +11,8 @@ import { ChevronDown, Code, Palette, Cpu, FileText, Folder, FolderOpen, Image as
  *   - { path: 'components/header.html', isText, mimeType, size }  (extra)
  *
  * Folders default to collapsed; the root `src` group is collapsed too so
- * the surface stays minimal until the user wants to dig in.
+ * the surface stays minimal until the user wants to dig in. The SQLite
+ * database lives in its own activity-bar pane, not in this tree.
  */
 
 const PRIMARIES = [
@@ -137,18 +138,11 @@ function FileNode({ node, depth, activePath, onFileSelect }) {
     );
 }
 
-function formatBytes(n) {
-    if (!n || n < 1024) return `${n || 0} B`;
-    if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
-    return `${(n / (1024 * 1024)).toFixed(1)} MB`;
-}
-
 export default function FileExplorer({
     activeFile,         // 'html' | 'css' | 'js' | { path, ... } | null
     onFileSelect,
     dirtyFiles = {},
     extraFiles = [],
-    dbSize = 0,         // bytes; data.db row is always shown — 0 renders as "empty"
 }) {
     // Track expanded folders by their path. The pseudo-root "src" lives at
     // path = '__src__' since the primary slots aren't really nested in a
@@ -167,7 +161,7 @@ export default function FileExplorer({
 
     const srcOpen = expanded.has('__src__');
     const activePath = activeFile && typeof activeFile === 'object'
-        ? (activeFile.kind === 'db' ? 'db' : (activeFile.path ? `extra:${activeFile.path}` : null))
+        ? (activeFile.path ? `extra:${activeFile.path}` : null)
         : (typeof activeFile === 'string' ? activeFile : null);
 
     return (
@@ -220,29 +214,6 @@ export default function FileExplorer({
                     </button>
                 );
             })}
-
-            {srcOpen && (() => {
-                const isActive = activePath === 'db';
-                const isEmpty = !dbSize;
-                return (
-                    <button
-                        onClick={() => onFileSelect({ kind: 'db' })}
-                        title={`SQLite database${isEmpty ? ' (empty — click to create tables)' : ` (${formatBytes(dbSize)})`} — open the DB viewer`}
-                        className="flex items-center gap-1.5 py-0.5 w-full text-left text-[12px] transition-colors"
-                        style={{
-                            paddingLeft: 24,
-                            background: isActive ? 'var(--vsc-file-active-bg)' : 'transparent',
-                            color: isActive ? 'var(--vsc-fg)' : 'var(--vsc-fg-muted)',
-                        }}
-                    >
-                        <Database size={13} />
-                        <span className="flex-1 truncate">data.db</span>
-                        <span className="text-[10px] mr-2 shrink-0" style={{ opacity: 0.7 }}>
-                            {isEmpty ? 'empty' : formatBytes(dbSize)}
-                        </span>
-                    </button>
-                );
-            })()}
 
             {/* Extra files: folder tree */}
             {tree.length > 0 && (

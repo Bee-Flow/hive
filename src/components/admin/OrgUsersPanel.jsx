@@ -91,6 +91,14 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
     // Per-user AI usage (last 30 days)
     const [usageByUser, setUsageByUser] = useState(new Map());
 
+    // Org auto-approve toggle. Only meaningful for orgs whose sign-in method is
+    // an external provider (Google/Microsoft) — for password-login orgs we hide
+    // the toggle entirely because new accounts are admin-created anyway.
+    const [orgAuthMethod, setOrgAuthMethod] = useState(null);
+    const [autoApprove, setAutoApprove] = useState(false);
+    const [savingAutoApprove, setSavingAutoApprove] = useState(false);
+    const [myOrgId, setMyOrgId] = useState(null);
+
     // Group-assign popover (click-to-open replaces the old hover dropdown).
     const [groupAssignOpenFor, setGroupAssignOpenFor] = useState(null);
     const [groupAssignSearch, setGroupAssignSearch] = useState('');
@@ -108,13 +116,24 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
             if (usersRes.ok) setUsers(await usersRes.json());
             if (groupsRes.ok) setGroups(await groupsRes.json());
             if (rolesRes.ok) setRoles(await rolesRes.json());
-            if (orgsRes.ok) setOrganizations(await orgsRes.json());
+            if (orgsRes.ok) {
+                const orgs = await orgsRes.json();
+                setOrganizations(orgs);
+                const myOrg = user?.organizationId
+                    ? orgs.find(o => o.id === user.organizationId)
+                    : orgs[0];
+                if (myOrg) {
+                    setMyOrgId(myOrg.id);
+                    setOrgAuthMethod(myOrg.authMethod || null);
+                    setAutoApprove(!!myOrg.autoApproveSSO);
+                }
+            }
         } catch (err) {
             console.error('Failed to fetch org data:', err);
         } finally {
             setLoading(false);
         }
-    }, []);
+    }, [user?.organizationId]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -309,6 +328,28 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
             if (res.ok) await fetchData();
         } catch (err) {
             console.error('Failed to update user groups:', err);
+        }
+    };
+
+    const handleToggleAutoApprove = async () => {
+        if (!myOrgId) return;
+        const next = !autoApprove;
+        setAutoApprove(next);
+        setSavingAutoApprove(true);
+        try {
+            const res = await authFetch(`${API_BASE}/auth/organizations/${myOrgId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ autoApproveSSO: next }),
+            });
+            if (!res.ok) {
+                setAutoApprove(!next);
+            }
+        } catch (err) {
+            console.error('Failed to update auto-approve:', err);
+            setAutoApprove(!next);
+        } finally {
+            setSavingAutoApprove(false);
         }
     };
 
@@ -513,6 +554,31 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
 
             {/* ═══════════════ USERS SECTION ═══════════════ */}
             {activeSection === 'users' && (
+                <>
+                {/* Auto-approve toggle — only meaningful when the org's sign-in
+                    method is an external provider (Google/Microsoft). */}
+                {orgAuthMethod && orgAuthMethod !== 'password' && (
+                    <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 mb-4">
+                        <div className="flex items-center justify-between gap-4">
+                            <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                    <Users className="w-4 h-4 text-[var(--accent-primary)]" />
+                                    <span className="text-sm font-semibold text-[var(--text-primary)]">{t('org.auto_approve_sso')}</span>
+                                </div>
+                                <p className="text-xs text-[var(--text-muted)] mt-1 ml-6">
+                                    {t('org.auto_approve_desc')}
+                                </p>
+                            </div>
+                            <button
+                                onClick={handleToggleAutoApprove}
+                                disabled={savingAutoApprove}
+                                className={`relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0 ${autoApprove ? 'bg-[var(--accent-primary)]' : 'bg-[var(--border-default)]'} ${savingAutoApprove ? 'opacity-60 cursor-wait' : ''}`}
+                            >
+                                <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${autoApprove ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
+                            </button>
+                        </div>
+                    </div>
+                )}
                 <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)]">
                     <div className="px-5 py-4 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)] rounded-t-xl flex items-center justify-between">
                         <div>
@@ -930,6 +996,7 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
                         </div>
                     )}
                 </div>
+                </>
             )}
 
             {/* ═══════════════ GROUPS SECTION ═══════════════ */}

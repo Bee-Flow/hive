@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { Save, RotateCcw } from 'lucide-react';
+import { NOTIFICATION_DEFAULTS, VALID_LEVELS, LEVEL_LABELS } from './notificationDefaults';
 
 /**
  * Automation-level settings. Per-step settings live in StepInspector;
@@ -19,6 +20,7 @@ export default function SettingsTab({ automation, onSave }) {
         title: automation?.title || '',
         description: automation?.description || '',
         triggerPayload: prettyJson(automation?.definition?.manualTriggerPayload),
+        notificationSettings: mergeNotificationSettings(automation?.definition?.notificationSettings),
     }), [automation]);
 
     const [draft, setDraft] = useState(initial);
@@ -42,6 +44,7 @@ export default function SettingsTab({ automation, onSave }) {
         const nextDef = {
             ...(automation?.definition || {}),
             manualTriggerPayload: payload,
+            notificationSettings: draft.notificationSettings,
         };
         setSaving(true);
         try {
@@ -92,6 +95,29 @@ export default function SettingsTab({ automation, onSave }) {
                             placeholder='{"messageId": "abc", "from": "test@example.com", ...}'
                         />
                     </Row>
+                    <Row label="Notifications" hint="Which run events ping you in the bell, and how loud. Approval and error are loud by default; success is silent so the bell doesn't flood.">
+                        <div className="space-y-1.5">
+                            {[
+                                { event: 'onSuccess',  label: 'On success',  preview: '"🤖 <title>" with run summary' },
+                                { event: 'onError',    label: 'On error',    preview: '"⚠️ Automation failed: <title>"' },
+                                { event: 'onApproval', label: 'On approval', preview: '"🛂 Approval needed: <title>"' },
+                            ].map(({ event, label, preview }) => (
+                                <NotificationRow
+                                    key={event}
+                                    label={label}
+                                    preview={preview}
+                                    value={draft.notificationSettings?.[event] || NOTIFICATION_DEFAULTS[event]}
+                                    onChange={(next) => setDraft(d => ({
+                                        ...d,
+                                        notificationSettings: {
+                                            ...d.notificationSettings,
+                                            [event]: next,
+                                        },
+                                    }))}
+                                />
+                            ))}
+                        </div>
+                    </Row>
                 </div>
             </div>
 
@@ -140,4 +166,61 @@ function textarea() {
 function prettyJson(value) {
     if (!value) return '';
     try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+}
+
+/**
+ * Merge stored notification settings over the shared defaults so older
+ * automations that have never opened the Settings tab still render
+ * with the baseline behaviour ticked. Unknown levels fall back to the
+ * default level — mirrors the runner's allowlist.
+ */
+function mergeNotificationSettings(stored) {
+    const out = {};
+    for (const event of Object.keys(NOTIFICATION_DEFAULTS)) {
+        const baseline = NOTIFICATION_DEFAULTS[event];
+        const v = (stored && stored[event]) || {};
+        out[event] = {
+            enabled: typeof v.enabled === 'boolean' ? v.enabled : baseline.enabled,
+            level:   VALID_LEVELS.includes(v.level)  ? v.level   : baseline.level,
+        };
+    }
+    return out;
+}
+
+function NotificationRow({ label, preview, value, onChange }) {
+    const enabled = !!value.enabled;
+    return (
+        <div className="flex items-center gap-3 py-1.5 px-2 rounded border border-[var(--border-default)] bg-[var(--bg-secondary)]/40">
+            <button
+                type="button"
+                role="switch"
+                aria-checked={enabled}
+                onClick={() => onChange({ ...value, enabled: !enabled })}
+                className={`relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition ${
+                    enabled ? 'bg-[var(--accent)]' : 'bg-[var(--bg-tertiary)]'
+                }`}
+            >
+                <span className={`inline-block h-4 w-4 transform rounded-full bg-white shadow transition ${
+                    enabled ? 'translate-x-4' : 'translate-x-0.5'
+                }`} />
+            </button>
+            <div className="flex-1 min-w-0">
+                <div className="text-sm text-[var(--text-primary)]">{label}</div>
+                <div className="text-[11px] text-[var(--text-tertiary)] truncate">{preview}</div>
+            </div>
+            <label className="flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)]">
+                Severity
+                <select
+                    value={value.level}
+                    disabled={!enabled}
+                    onChange={(e) => onChange({ ...value, level: e.target.value })}
+                    className="bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded px-1.5 py-0.5 text-xs text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] disabled:opacity-40"
+                >
+                    {VALID_LEVELS.map(l => (
+                        <option key={l} value={l}>{LEVEL_LABELS[l] || l}</option>
+                    ))}
+                </select>
+            </label>
+        </div>
+    );
 }

@@ -12,16 +12,19 @@ const MonacoEditor = lazy(() =>
         })
 );
 
-const LANGUAGES = { html: 'html', css: 'css', js: 'javascript' };
-
+/**
+ * Generic Monaco editor for any text file in the webpage project. Caller
+ * resolves the file → value + language; the editor doesn't know about
+ * primary slots vs extras.
+ */
 export default function WebpageEditor({
-    activeFile,
-    html, css, js,
+    value = '',
+    language = 'plaintext',
     onChange,
+    readOnly = false,
     theme = 'light',
     onCursorChange,
 }) {
-    const valuesByFile = { html, css, js };
     const editorRef = useRef(null);
     const [monacoFailed, setMonacoFailed] = useState(false);
 
@@ -54,23 +57,25 @@ export default function WebpageEditor({
                     <textarea
                         className="w-full h-full p-3 text-xs font-mono resize-none outline-none"
                         style={{ background: 'var(--vsc-editor-bg)', color: 'var(--vsc-fg)' }}
-                        value={valuesByFile[activeFile] || ''}
-                        onChange={(e) => onChange(activeFile, e.target.value)}
+                        value={value}
+                        readOnly={readOnly}
+                        onChange={(e) => onChange?.(e.target.value)}
                         spellCheck={false}
                     />
                 ) : (
                     <Suspense fallback={<div className="p-4 text-xs" style={{ color: 'var(--vsc-fg-muted)' }}>Loading editor…</div>}>
                         <MonacoEditor
                             height="100%"
-                            language={LANGUAGES[activeFile] || 'html'}
-                            value={valuesByFile[activeFile] || ''}
-                            onChange={(v) => onChange(activeFile, v ?? '')}
+                            language={language}
+                            value={value}
+                            onChange={(v) => onChange?.(v ?? '')}
                             onMount={(editor, monaco) => {
                                 if (!editor) { setMonacoFailed(true); return; }
                                 handleMount(editor, monaco);
                             }}
                             theme={theme === 'dark' ? 'vs-dark' : 'vs'}
                             options={{
+                                readOnly,
                                 minimap: { enabled: false },
                                 fontSize: 13,
                                 wordWrap: 'on',

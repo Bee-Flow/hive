@@ -1,10 +1,12 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
-import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, PenLine, Sparkles, Mail, Ticket, BookOpen, Globe, LayoutGrid } from 'lucide-react';
+import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, PenLine, Sparkles, Mail, Ticket, BookOpen, LayoutGrid } from 'lucide-react';
+import { useTheme } from './ThemeContext';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar, DEFAULT_AGENT_EMOJI } from '../utils/agentAvatar';
 import NotificationCenter from './NotificationCenter';
 import NavLink from './NavLink';
+import ThemeQuickPicker from './appearance/ThemeQuickPicker';
 
 
 /* ─── Design tokens ─── */
@@ -13,12 +15,12 @@ const ROW_ACTIVE = 'bg-[var(--item-active-bg)]';
 const ROW_IDLE = 'hover:bg-[var(--item-hover-bg)]';
 const ACCENT_BAR = 'absolute left-0 top-1 bottom-1 w-[3px] rounded-r-full bg-[var(--accent-primary)]';
 const SECTION_HDR = 'flex items-center justify-between px-3 h-9 cursor-pointer select-none';
-const SECTION_LBL = 'text-[13px] font-semibold tracking-normal text-black';
+const SECTION_LBL = 'text-[13px] font-semibold tracking-normal text-[var(--text-secondary)]';
 const CONV_ROW = 'w-full flex items-center px-4 py-1 text-left relative cursor-pointer gap-1.5';
 const ICON_ACTIVE = 'text-[var(--accent-primary)]';
 const ICON_IDLE = 'text-[var(--text-tertiary)]';
-const TEXT_ACTIVE = 'font-bold text-black';
-const TEXT_IDLE = 'text-black hover:text-black transition-colors';
+const TEXT_ACTIVE = 'font-bold text-[var(--text-primary)]';
+const TEXT_IDLE = 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors';
 const ACCENT_BAR_CONV = 'absolute left-0 top-0 bottom-0 w-[3px] bg-gray-400 rounded-r-sm';
 
 import scopedStorage from '../utils/scopedStorage';
@@ -100,7 +102,7 @@ const CreateLabelInline = ({ onCreateLabel, t }) => {
                 <button
                     onClick={handleCreate}
                     disabled={!name.trim()}
-                    className="text-[11px] px-2 py-0.5 rounded-md bg-[var(--accent-primary)] text-white font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
+                    className="text-[11px] px-2 py-0.5 rounded-md bg-[var(--accent-primary)] text-[var(--accent-primary-fg,#fff)] font-medium hover:opacity-90 disabled:opacity-40 transition-opacity"
                 >
                     {t ? t('common.add') : 'Add'}
                 </button>
@@ -148,7 +150,7 @@ const EditLabelInline = ({ label, onSave, onCancel, t }) => {
                     }}
                     className="flex-1 text-[12px] bg-[var(--bg-secondary)] border border-[var(--border-subtle)] rounded px-2 py-1 outline-none focus:border-[var(--accent-primary)] text-[var(--text-primary)] min-w-0"
                 />
-                <button onClick={handleSave} className="text-[11px] px-2 py-0.5 rounded-md bg-[var(--accent-primary)] text-white font-medium hover:opacity-90">
+                <button onClick={handleSave} className="text-[11px] px-2 py-0.5 rounded-md bg-[var(--accent-primary)] text-[var(--accent-primary-fg,#fff)] font-medium hover:opacity-90">
                     {t ? t('common.save') : 'Save'}
                 </button>
                 <button onClick={onCancel} className="text-[11px] p-0.5 text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
@@ -216,7 +218,7 @@ const ConvRow = ({
                         if (e.key === 'Enter') handleRename();
                         if (e.key === 'Escape') { setRenameValue(conv.title || ''); setIsRenaming(false); }
                     }}
-                    className="flex-1 text-[13px] bg-white border border-[var(--accent-primary)] rounded px-1.5 py-0.5 outline-none text-black min-w-0"
+                    className="flex-1 text-[13px] bg-[var(--bg-card)] border border-[var(--accent-primary)] rounded px-1.5 py-0.5 outline-none text-[var(--text-primary)] min-w-0"
                     onClick={(e) => e.stopPropagation()}
                 />
             </div>
@@ -238,7 +240,7 @@ const ConvRow = ({
             {agentBadge && (
                 <div className={`w-6 h-6 rounded-md flex-shrink-0 overflow-hidden flex items-center justify-center text-[11px] font-bold ring-1 ${agentBadge.avatarUrl ? 'ring-black/8 bg-[var(--bg-tertiary)]' : 'ring-black/8 bg-gradient-to-br from-[var(--accent-primary)]/10 to-[var(--accent-primary)]/25 text-[var(--accent-primary)]'}`}>
                     {agentBadge.avatarUrl ? (
-                        <img src={agentBadge.avatarUrl} alt="" className="w-full h-full object-cover" />
+                        <img src={agentBadge.avatarUrl} alt="" loading="lazy" className="w-full h-full object-cover" />
                     ) : (
                         <span className="leading-none">{agentBadge.icon}</span>
                     )}
@@ -251,7 +253,7 @@ const ConvRow = ({
             <div className="relative" ref={menuRef}>
                 <button
                     onClick={(e) => { e.stopPropagation(); setShowMenu(v => !v); }}
-                    className="opacity-40 group-hover:opacity-100 p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded transition-opacity flex-shrink-0"
+                    className={`${showMenu ? 'opacity-100' : 'opacity-0'} group-hover:opacity-100 focus:opacity-100 p-1 text-[var(--text-tertiary)] hover:text-[var(--text-primary)] rounded transition-opacity flex-shrink-0`}
                     title="Options"
                     data-testid={`conv-options-${conv.id}`}
                 >
@@ -414,6 +416,7 @@ const Sidebar = ({
     // We'll use the 'isOpen' prop as 'sidebarOpen' (expanded state)
     // and if !isOpen, we'll show the narrow 'Power Bar'
     const [showProfileMenu, setShowProfileMenu] = useState(false);
+    const themeCtx = useTheme();
     const [agentsOpen, setAgentsOpen] = useState(() => readExpanded('agents', true));
     const [chatsOpen, setChatsOpen] = useState(() => readExpanded('chats', false));
     const [projectsOpen, setProjectsOpen] = useState(() => readExpanded('projects', true));
@@ -595,24 +598,28 @@ const Sidebar = ({
     const _betaFeatures = Array.isArray(user?.betaFeatures) ? user.betaFeatures : [];
     const _permissions = user?.permissions || [];
     const _featureFlags = user?.featureFlags || {};
+    // Simple Mode strips the sidebar to: New Chat, Search, Agents, Chat History.
+    // Anything past `agents` in secondaryNav and the admin/appearance items in
+    // the avatar dropdown are hidden until the user turns Simple Mode back off.
+    const _simpleMode = !!user?.simpleMode;
 
     const coreNav = [
         { key: 'new-chat', label: t('sidebar.new_chat') || 'New Chat', icon: PenLine, onClick: onDirectChat, active: directChatMode && !selectedAgent },
-        { key: 'search', label: t('sidebar.search'), icon: Search, onClick: onOpenSearch, active: false, kbd: (typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)) ? '⌘K' : 'Ctrl+K' },
+        { key: 'search', label: t('sidebar.search'), icon: Search, onClick: onOpenSearch, active: false },
     ];
 
     const secondaryNav = [
         { key: 'agents', label: t('sidebar.agents') || 'Agents', icon: Store, onClick: onOpenMarketplace, active: currentPage === 'marketplace' },
-        ...(!isMobile && (_isAdminLike || _permissions.includes('manage_agents') || _permissions.includes('manage_skills') || user?.orgRole === 'admin' || user?.orgRole === 'org_admin')
+        ...(!_simpleMode && !isMobile && (_isAdminLike || _permissions.includes('manage_agents') || _permissions.includes('manage_skills') || user?.orgRole === 'admin' || user?.orgRole === 'org_admin')
             ? [{ key: 'studio', label: t('studio.sidebar_link') || 'Studio', icon: LayoutGrid, onClick: () => onNavigate && onNavigate('studio'), active: currentPage === 'studio' }]
             : []),
-        ...(!isMobile && _featureFlags.meeting_notes !== false && (_isAdminLike || _betaFeatures.includes('meeting_notes'))
-            ? [{ key: 'meeting-notes', label: t('sidebar.meeting_notes') || 'Meeting Notes', icon: Mic, onClick: () => onNavigate && onNavigate('meetingNotes'), active: currentPage === 'meetingNotes', beta: true }]
+        ...(!_simpleMode && _featureFlags.meeting_notes !== false && (_isAdminLike || _betaFeatures.includes('meeting_notes'))
+            ? [{ key: 'meeting-notes', label: t('sidebar.meeting_notes') || 'Meetings', icon: Mic, onClick: () => onNavigate && onNavigate('meetingNotes'), active: currentPage === 'meetingNotes' }]
             : []),
-        ...(!isMobile && (_betaFeatures.includes('itil_ticket_assistant') || _betaFeatures.includes('email_knowledge_base'))
+        ...(!_simpleMode && !isMobile && (_betaFeatures.includes('itil_ticket_assistant') || _betaFeatures.includes('email_knowledge_base'))
             ? [{ key: 'ticket-assistant', label: t('ticket_assistant.sidebar_label') || 'Ticket Assistant', icon: Ticket, onClick: () => onNavigate && onNavigate('ticketAssistant'), active: showTicketAssistant, beta: true }]
             : []),
-        ...(!isMobile && _featureFlags.notebooks !== false && _featureFlags.notebooksMenu !== false && (_permissions.includes('all') || _permissions.includes('use_notebooks'))
+        ...(!_simpleMode && !isMobile && _featureFlags.notebooks !== false && _featureFlags.notebooksMenu !== false && (_permissions.includes('all') || _permissions.includes('use_notebooks'))
             ? [{ key: 'notebooks', label: t('sidebar.notebooks') || 'Notebooks', icon: FileText, onClick: () => onNavigate && onNavigate('notebooks'), active: currentPage === 'notebooks' }]
             : []),
     ];
@@ -623,7 +630,7 @@ const Sidebar = ({
             onClick={onClick}
             className={`group relative flex items-center ${isOpen
                 ? ROW + ' ' + (active ? ROW_ACTIVE : ROW_IDLE)
-                : 'w-10 h-10 rounded-xl justify-center transition-all ' + (active ? 'bg-[var(--accent-primary)] text-white shadow-lg' : primary ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] hover:bg-[var(--accent-primary)] hover:text-white' : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]')}`}
+                : 'w-10 h-10 rounded-xl justify-center transition-all ' + (active ? 'bg-[var(--accent-primary)] text-[var(--accent-primary-fg,#fff)] shadow-lg' : primary ? 'bg-[var(--accent-primary)]/10 text-[var(--accent-primary)] hover:bg-[var(--accent-primary)] hover:text-[var(--accent-primary-fg,#fff)]' : 'text-[var(--text-tertiary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]')}`}
             title={!isOpen ? label : ''}
             aria-label={label}
             aria-current={active ? 'page' : undefined}
@@ -631,17 +638,30 @@ const Sidebar = ({
         >
             {isOpen && active && <div className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-r-full bg-[var(--accent-primary)]" />}
             <Icon className={`${isOpen ? 'w-4 h-4' : 'w-5 h-5'} ${isOpen ? (active ? 'text-[var(--accent-primary)]' : 'text-[var(--text-tertiary)]') : ''}`} strokeWidth={active || primary ? 2.25 : 1.75} />
-            {isOpen && <span className={`text-[13px] ${active ? 'font-semibold text-black' : 'text-black'}`}>{label}</span>}
+            {isOpen && <span className={`text-[13px] ${active ? 'font-semibold' : ''}`} style={{ color: active ? 'var(--text-primary)' : 'var(--text-secondary)' }}>{label}</span>}
             {isOpen && kbd && <kbd className="ml-auto inline-flex items-center px-1.5 py-0.5 rounded-md bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] text-[10px] font-medium text-[var(--text-tertiary)] group-hover:text-[var(--text-secondary)] transition-colors">{kbd}</kbd>}
             {isOpen && typeof badge === 'number' && badge > 0 && (
                 <span
                     className="ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-md tabular-nums"
-                    style={{ background: 'rgba(139,92,246,0.1)', color: '#8b5cf6' }}
+                    style={{
+                        background: 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
+                        color: 'var(--accent-primary)',
+                    }}
                 >
                     {badge}
                 </span>
             )}
-            {isOpen && primary === undefined && beta && <span className="text-[9px] px-1 py-px rounded bg-purple-500/10 text-purple-500 font-medium flex-shrink-0 ml-auto">beta</span>}
+            {isOpen && primary === undefined && beta && (
+                <span
+                    className="text-[9px] px-1 py-px rounded font-medium flex-shrink-0 ml-auto"
+                    style={{
+                        background: 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
+                        color: 'var(--accent-primary)',
+                    }}
+                >
+                    beta
+                </span>
+            )}
         </button>
     );
 
@@ -650,6 +670,8 @@ const Sidebar = ({
         <div
             className={`h-full flex flex-col bg-[var(--bg-secondary)] border-r border-[var(--border-subtle)] flex-shrink-0 transition-all duration-300 ${isOpen ? 'w-72' : 'w-16 cursor-pointer'}`}
             data-testid="sidebar"
+            data-surface="subtle"
+            data-static
             onClick={(e) => {
                 if (!isOpen && !e.target.closest('button')) {
                     toggleSidebar();
@@ -703,7 +725,7 @@ const Sidebar = ({
                         >
                             {selectedAgent?.id === agent.id && <div className={ACCENT_BAR.replace('left-0', '-left-1.5')} />}
                             {isImageAvatar(agent.avatar) ? (
-                                <img src={resolveAvatarSrc(agent.avatar)} alt="" className="w-full h-full object-cover" />
+                                <img src={resolveAvatarSrc(agent.avatar)} alt="" loading="lazy" className="w-full h-full object-cover" />
                             ) : (agent.avatar || agent.name?.[0]?.toUpperCase())}
                         </button>
                     ))}
@@ -743,7 +765,7 @@ const Sidebar = ({
             )}
 
             {/* ── Projects ── */}
-            {isOpen && user?.featureFlags?.projects !== false && projects.length > 0 && (
+            {isOpen && !_simpleMode && user?.featureFlags?.projects !== false && projects.length > 0 && (
                 <div className="mt-1">
                     <div className={SECTION_HDR} onClick={toggleProjects}>
                         <span className={SECTION_LBL}>{t('sidebar.projects')}</span>
@@ -837,10 +859,10 @@ const Sidebar = ({
                                         {/* Avatar */}
                                         <div className={`w-8 h-8 rounded-lg flex-shrink-0 overflow-hidden flex items-center justify-center text-[13px] font-bold ring-1 transition-all duration-150 ${sel ? 'ring-[var(--accent-primary)]/40 shadow-sm shadow-[var(--accent-primary)]/20' : 'ring-black/8 shadow-sm'} ${!hasImageAvatar ? 'bg-gradient-to-br from-[var(--accent-primary)]/15 to-[var(--accent-primary)]/30 text-[var(--accent-primary)]' : 'bg-[var(--bg-tertiary)]'}`}>
                                             {hasImageAvatar ? (
-                                                <img src={resolveAvatarSrc(agent.avatar)} alt="" className="w-full h-full object-contain" />
+                                                <img src={resolveAvatarSrc(agent.avatar)} alt="" loading="lazy" className="w-full h-full object-contain" />
                                             ) : (agent.avatar || initials)}
                                         </div>
-                                        <span className={`text-[13px] truncate flex-1 leading-snug ${sel ? 'font-semibold text-black' : 'text-black'}`} title={agent.name}>
+                                        <span className={`text-[13px] truncate flex-1 leading-snug ${sel ? 'font-semibold' : ''}`} style={{ color: sel ? 'var(--text-primary)' : 'var(--text-secondary)' }} title={agent.name}>
                                             {agent.name}
                                         </span>
                                         <button
@@ -892,13 +914,31 @@ const Sidebar = ({
 
             </div>{/* ── End scrollable middle region ── */}
 
+            {/* ── Quick theme picker (collapsed sidebar) — gated by allowUserOverride
+                 inside the component so admins flipping the org default off
+                 instantly hides it for every member. ── */}
+            {!isOpen && (
+                <div className="flex-shrink-0 flex justify-center pb-1">
+                    <ThemeQuickPicker variant="icon" onNavigate={onNavigate} />
+                </div>
+            )}
+
             {/* ── Account footer ── */}
             <div className={`flex-shrink-0 mt-auto relative ${isOpen ? 'border-t border-[var(--border-subtle)]' : 'flex justify-center flex-shrink-0 border-t border-[var(--border-subtle)]'}`} ref={profileRef}>
                 <div
                     onClick={() => setShowProfileMenu(v => !v)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault();
+                            setShowProfileMenu(v => !v);
+                        }
+                    }}
                     className={`flex items-center transition-colors cursor-pointer ${isOpen ? 'w-full gap-2.5 px-4 h-14 ' + (showProfileMenu ? 'bg-[var(--bg-tertiary)]' : 'hover:bg-[var(--bg-tertiary)]') : 'w-10 h-10 my-3 rounded-full justify-center hover:bg-[var(--bg-tertiary)]'}`}
                     role="button"
                     tabIndex={0}
+                    aria-label="Open profile menu"
+                    aria-haspopup="menu"
+                    aria-expanded={showProfileMenu}
                     data-testid="sidebar-profile"
                 >
                     {user?.avatarType === 'emoji' && user?.avatar ? (
@@ -910,7 +950,7 @@ const Sidebar = ({
                     ) : (
                         <div className={`rounded-full flex items-center justify-center flex-shrink-0 ${isOpen ? 'w-8 h-8' : 'w-10 h-10'}`}
                             style={{ background: 'linear-gradient(135deg, var(--accent-primary), var(--accent-primary-hover))' }}>
-                            <User className={`${isOpen ? 'w-4 h-4' : 'w-5 h-5'} text-white`} />
+                            <User className={`${isOpen ? 'w-4 h-4' : 'w-5 h-5'}`} style={{ color: 'var(--accent-primary-fg, #fff)' }} />
                         </div>
                     )}
                     {isOpen && (
@@ -927,17 +967,22 @@ const Sidebar = ({
 
                 {showProfileMenu && (
                     <div
-                        className={`absolute rounded-xl border shadow-2xl overflow-hidden z-50 ${isOpen ? 'bottom-full left-3 right-3 mb-2' : 'bottom-full left-14 mb-0 w-48'}`}
-                        style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)', animation: 'sidebarMenuIn .15s ease-out' }}
+                        className={`absolute rounded-2xl border overflow-hidden z-50 ${isOpen ? 'bottom-full left-3 right-3 -mb-px' : 'bottom-full left-14 -mb-px w-64'}`}
+                        style={{
+                            borderColor: 'var(--border-default)',
+                            boxShadow: 'var(--shadow-popover, 0 20px 60px rgba(15,23,42,0.18))',
+                            animation: 'sidebarMenuIn .18s cubic-bezier(0.16, 1, 0.3, 1)',
+                        }}
                         data-testid="profile-menu"
+                        data-surface="opaque"
                     >
-                        <div className="p-1">
-                            {!isMobile && (user?.isAdmin || user?.permissions?.includes('all')) && (
+                        <div className="p-1.5">
+                            {!_simpleMode && !isMobile && (user?.isAdmin || user?.permissions?.includes('all')) && (
                                 <NavLink
                                     href="/admin"
                                     onClick={() => setShowProfileMenu(false)}
                                     onNavigate={() => { setShowProfileMenu(false); onNavigate('admin'); }}
-                                    className={`${ROW} ${currentPage === 'admin' ? ROW_ACTIVE : ROW_IDLE}`}
+                                    className={`w-full flex items-center gap-3 px-3 h-10 rounded-lg transition-all duration-150 text-left relative ${currentPage === 'admin' ? 'bg-[var(--item-active-bg)]' : 'hover:bg-[var(--item-hover-bg)]'}`}
                                     style={{ textDecoration: 'none', color: 'inherit' }}
                                     data-testid="profile-menu-admin"
                                 >
@@ -952,7 +997,7 @@ const Sidebar = ({
                                     href="/settings"
                                     onClick={() => setShowProfileMenu(false)}
                                     onNavigate={() => { setShowProfileMenu(false); onNavigate('settings'); }}
-                                    className={`${ROW} ${showSettings ? ROW_ACTIVE : ROW_IDLE}`}
+                                    className={`w-full flex items-center gap-3 px-3 h-10 rounded-lg transition-all duration-150 text-left relative ${showSettings ? 'bg-[var(--item-active-bg)]' : 'hover:bg-[var(--item-hover-bg)]'}`}
                                     style={{ textDecoration: 'none', color: 'inherit' }}
                                     data-testid="profile-menu-settings"
                                 >
@@ -961,26 +1006,21 @@ const Sidebar = ({
                                     <span className={`text-[13px] ${showSettings ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.settings')}</span>
                                 </NavLink>
                             )}
+
                         </div>
-                        {!isMobile && (user?.permissions?.includes('all') || user?.betaFeatures?.includes('webpages')) && (
-                            <div className="border-t border-[var(--border-subtle)] p-1">
-                                <NavLink
-                                    href="/webpages"
-                                    onClick={() => setShowProfileMenu(false)}
-                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('webpages'); }}
-                                    className={`${ROW} ${currentPage === 'webpages' ? ROW_ACTIVE : ROW_IDLE}`}
-                                    style={{ textDecoration: 'none', color: 'inherit' }}
-                                >
-                                    {currentPage === 'webpages' && <div className={ACCENT_BAR} />}
-                                    <Globe className={`w-4 h-4 ${currentPage === 'webpages' ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${currentPage === 'webpages' ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.webpages')}</span>
-                                </NavLink>
-                            </div>
-                        )}
-                        <div className="border-t border-[var(--border-subtle)] p-1">
-                            <button onClick={onLogout} className={`${ROW} ${ROW_IDLE} group/so`} data-testid="sidebar-signout">
-                                <LogOut className="w-4 h-4 text-red-400 group-hover/so:text-red-500 transition-colors" strokeWidth={1.75} />
-                                <span className="text-[13px] text-[var(--text-tertiary)] group-hover/so:text-red-500 transition-colors">{t('sidebar.sign_out')}</span>
+
+                        {/* Danger section — visually distinct so Sign Out is never
+                            mistaken for a routine navigation action. */}
+                        <div className="border-t p-1.5" style={{ borderColor: 'var(--border-subtle)' }}>
+                            <button
+                                onClick={onLogout}
+                                className="w-full flex items-center gap-3 px-3 h-10 rounded-lg transition-all duration-150 text-left group/so hover:bg-red-500/10"
+                                data-testid="sidebar-signout"
+                            >
+                                <LogOut className="w-4 h-4 text-red-500/80 group-hover/so:text-red-500 transition-colors" strokeWidth={1.75} />
+                                <span className="text-[13px] font-medium text-red-500/80 group-hover/so:text-red-500 transition-colors">
+                                    {t('sidebar.sign_out')}
+                                </span>
                             </button>
                         </div>
                     </div>

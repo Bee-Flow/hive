@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Sparkles, Wrench, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Wrench, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../../utils/helpers';
 import scopedStorage from '../../../../utils/scopedStorage';
 import InputArea from '../../../InputArea';
@@ -29,7 +29,7 @@ import useAutomationBuilderStream from '../../../../hooks/useAutomationBuilderSt
  */
 export default function BuilderShell({ automationId, onBack, user, initialChatInput = '' }) {
     const api = useAutomationApi();
-    const { state, send, hydrate, setDraft, markServerConfirmed, acceptExternalDraft, dismissExternalDraft } = useAutomationBuilderStream({ automationId });
+    const { state, send, hydrate, setDraft, markServerConfirmed, acceptExternalDraft, dismissExternalDraft, executeStep, retryFromStep, stopRun, pollRunProgress } = useAutomationBuilderStream({ automationId });
     const [serverAutomation, setServerAutomation] = useState(null);
     const [selectedStepId, setSelectedStepId] = useState(null);
     const [busy, setBusy] = useState(false);
@@ -48,6 +48,37 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
     useEffect(() => {
         scopedStorage.setItem('routinesFocusMode', focusMode ? '1' : '0');
     }, [focusMode]);
+
+    // Resizable chat column — drag the gutter between chat and diagram.
+    // Persisted so the user's chosen width survives reloads. Bounds match
+    // AgentWizard/BuilderSplit's resize handle (240–600px).
+    const [chatWidth, setChatWidth] = useState(() => {
+        const raw = parseInt(scopedStorage.getItem('routinesChatWidth') || '', 10);
+        return Number.isFinite(raw) && raw >= 240 && raw <= 600 ? raw : 460;
+    });
+    useEffect(() => {
+        scopedStorage.setItem('routinesChatWidth', String(chatWidth));
+    }, [chatWidth]);
+    const dragStartX = useRef(0);
+    const dragStartW = useRef(0);
+    const onChatResizeStart = useCallback((e) => {
+        dragStartX.current = e.clientX;
+        dragStartW.current = chatWidth;
+        document.body.style.cursor = 'col-resize';
+        document.body.style.userSelect = 'none';
+        const onMove = (ev) => {
+            const delta = ev.clientX - dragStartX.current;
+            setChatWidth(Math.min(600, Math.max(240, dragStartW.current + delta)));
+        };
+        const onUp = () => {
+            document.body.style.cursor = '';
+            document.body.style.userSelect = '';
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+        };
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+    }, [chatWidth]);
 
     // Inline-rename saving state. Three transitions:
     //   idle → saving → saved → idle (after 1.5s)
@@ -370,7 +401,7 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
     const aidForHistory = state.automationId || automationId;
 
     return (
-        <div className="flex flex-col h-full min-h-0 bg-[var(--bg-primary)]">
+        <div className="flex flex-col h-full min-h-0">
             <BuilderHeader
                 title={title}
                 triggerKind={triggerKind}
@@ -407,6 +438,8 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
                     <BuildTab
                         focusMode={focusMode}
                         setFocusMode={setFocusMode}
+                        chatWidth={chatWidth}
+                        onChatResizeStart={onChatResizeStart}
                         state={state}
                         effectiveDef={effectiveDef}
                         chatInput={chatInput}
@@ -424,6 +457,10 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
                         onCloseInspector={() => setSelectedStepId(null)}
                         onSaveStep={onSaveStep}
                         onVisualEdit={onVisualEdit}
+                        onExecuteStep={executeStep}
+                        onRetryFromStep={retryFromStep}
+                        onStopRun={stopRun}
+                        pollRunProgress={pollRunProgress}
                         fatalError={error || state.error}
                         onDismissFatal={() => setError(null)}
                     />
@@ -435,7 +472,7 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
                     />
                 )}
                 {tab === 'history' && (
-                    <RunHistoryTab automationId={aidForHistory} />
+                    <RunHistoryTab automationId={aidForHistory} automation={serverAutomation} />
                 )}
                 {tab === 'json' && (
                     <JsonTab automation={serverAutomation} />
@@ -457,11 +494,13 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
  */
 function BuildTab({
     focusMode, setFocusMode,
+    chatWidth, onChatResizeStart,
     state, effectiveDef,
     chatInput, setChatInput, modelTiers, selectedTier, setSelectedTier, user,
     onSend, messagesContainerRef, messagesEndRef,
     onNodeClick, selectedStep, selectedRunStep, onCloseInspector, onSaveStep,
     onVisualEdit,
+    onExecuteStep, onRetryFromStep, onStopRun, pollRunProgress,
     fatalError, onDismissFatal,
 }) {
     // Imperative handle to DiagramPane — we need getCenter() for the
@@ -504,6 +543,23 @@ function BuildTab({
         // occupied (both slide in from the right).
         setPalette({ open: true, position, edgeSource: sourceId });
     }, []);
+
+    // Live-run polling. While a dry-run is in flight (status='running'),
+    // hit /runs/:id/steps every 750ms so the diagram's edges animate and
+    // the progress banner updates as each step completes. Stops as soon
+    // as the run is no longer running.
+    const liveRunInFlight = state.dryRun?.status === 'running' || state.dryRun?.status === 'queued';
+    useEffect(() => {
+        if (!liveRunInFlight || !state.dryRun?.id || typeof pollRunProgress !== 'function') return;
+        let alive = true;
+        const tick = async () => {
+            if (!alive) return;
+            await pollRunProgress(state.dryRun.id);
+        };
+        const handle = setInterval(tick, 750);
+        tick();
+        return () => { alive = false; clearInterval(handle); };
+    }, [liveRunInFlight, state.dryRun?.id, pollRunProgress]);
 
     // Triggered by the n8n-style "+" hover button on each node. Opens
     // the palette in step-mode with `edgeSource` set so the next pick
@@ -586,7 +642,11 @@ function BuildTab({
             {/* Chat column — collapses entirely in Focus mode. The expand
                 handle lives at the top of the diagram column when collapsed. */}
             {!focusMode && (
-                <div className="flex flex-col bg-[var(--bg-primary)] border-r border-[var(--border-default)] w-[460px] flex-shrink-0 min-w-0">
+                <div
+                    style={{ width: chatWidth }}
+                    className="flex flex-col bg-[var(--bg-secondary)] border-r border-[var(--border-default)] flex-shrink-0 min-w-[240px] max-w-[600px]"
+                    data-surface="subtle"
+                >
                     <div className="flex items-center justify-between px-3 py-1.5 border-b border-[var(--border-default)]">
                         <div className="text-[10px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)]">
                             Chat
@@ -602,9 +662,6 @@ function BuildTab({
                     <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-4 py-6 custom-scrollbar">
                         {state.messages.length === 0 && (
                             <div className="h-full flex flex-col items-center justify-center text-center px-4">
-                                <div className="w-12 h-12 rounded-full bg-[var(--bg-secondary)] flex items-center justify-center mb-3">
-                                    <Sparkles size={20} className="text-[var(--accent)]" />
-                                </div>
                                 <div className="text-sm font-medium text-[var(--text-primary)] mb-1">Describe what you want</div>
                                 <div className="text-xs text-[var(--text-tertiary)] max-w-xs">
                                     The builder wires the trigger and steps for you.
@@ -637,6 +694,13 @@ function BuildTab({
                         />
                     </div>
                 </div>
+            )}
+
+            {!focusMode && (
+                <div
+                    onMouseDown={onChatResizeStart}
+                    className="w-1 flex-shrink-0 cursor-col-resize hover:bg-[var(--accent)]/40 active:bg-[var(--accent)]/60 transition-colors z-10"
+                />
             )}
 
             {/* Diagram column — fills remaining width and (most of) the height.
@@ -697,8 +761,18 @@ function BuildTab({
                         onRequestAddNode={onRequestAddNodeFromEdge}
                         onRequestOpenPalette={openPaletteFromFab}
                         onRequestAddAfter={onRequestAddAfter}
+                        onExecuteStep={onExecuteStep}
+                        executingStepId={state.executingStepId}
+                        runInFlight={liveRunInFlight}
                     />
                 </div>
+                {liveRunInFlight && (
+                    <RunProgressBanner
+                        run={state.dryRun}
+                        steps={state.steps}
+                        onStop={() => state.dryRun?.id && onStopRun?.(state.dryRun.id)}
+                    />
+                )}
                 <FloatingValidationPill
                     fatalError={fatalError}
                     validation={state.validation}
@@ -724,9 +798,52 @@ function BuildTab({
                         onSaveStep={onSaveStep}
                         validation={state.validation}
                         modelTiers={modelTiers}
+                        onExecuteStep={onExecuteStep}
+                        onRetryFromStep={onRetryFromStep}
+                        runInFlight={liveRunInFlight}
+                        executingStep={state.executingStepId === selectedStep.id}
                     />
                 )}
             </div>
+        </div>
+    );
+}
+
+/**
+ * Sticky banner shown while a run is in flight — n8n's "Workflow is
+ * executing…" pill with live step count and a Stop button. Anchored at
+ * the top of the diagram column.
+ */
+function RunProgressBanner({ run, steps, onStop }) {
+    const total = steps?.length || 0;
+    const done = (steps || []).filter(s => s.status === 'success' || s.status === 'skipped' || s.status === 'pinned').length;
+    const failed = (steps || []).some(s => s.status === 'error');
+    const startedAt = run?.startedAt ? new Date(run.startedAt).getTime() : null;
+    const [elapsed, setElapsed] = useState(startedAt ? Date.now() - startedAt : 0);
+    useEffect(() => {
+        if (!startedAt) return;
+        const h = setInterval(() => setElapsed(Date.now() - startedAt), 250);
+        return () => clearInterval(h);
+    }, [startedAt]);
+    return (
+        <div className="absolute left-1/2 -translate-x-1/2 top-3 z-30 flex items-center gap-3 px-3 py-1.5 rounded-full bg-[var(--bg-card,#fff)] border border-[var(--border-default)] shadow-md text-xs">
+            <span className="relative flex h-2 w-2">
+                <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${failed ? 'bg-red-500' : 'bg-[var(--accent)]'}`} />
+                <span className={`relative inline-flex rounded-full h-2 w-2 ${failed ? 'bg-red-500' : 'bg-[var(--accent)]'}`} />
+            </span>
+            <span className="font-medium text-[var(--text-primary)]">
+                {failed ? 'Run failing' : 'Running'} — {done}/{total || '?'} steps
+            </span>
+            <span className="text-[var(--text-tertiary)] tabular-nums">
+                {Math.floor(elapsed / 1000)}.{Math.floor((elapsed % 1000) / 100)}s
+            </span>
+            <button
+                onClick={onStop}
+                title="Stop this run"
+                className="ml-1 px-2 py-0.5 rounded-full text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-red-600 transition"
+            >
+                Stop
+            </button>
         </div>
     );
 }

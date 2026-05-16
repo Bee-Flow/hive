@@ -2,9 +2,10 @@ import React, { useState, useCallback, useEffect, useRef } from 'react';
 import {
     History, Clock, Save, Trash2, RotateCcw,
     X, Loader2, FileText, ChevronDown,
-    Plus, Minus, Eye, GitCompare, Camera,
+    Plus, Minus, Eye, GitCompare, Camera, AlertCircle,
 } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
+import useTranslation from '../../hooks/useTranslation';
 
 /* ── Diff engine ──────────────────────────────────────────────── */
 
@@ -46,6 +47,7 @@ function timeAgo(dateStr) {
     const d = new Date(dateStr);
     const now = new Date();
     const diff = (now - d) / 1000;
+    if (Number.isNaN(diff)) return dateStr || '';
     if (diff < 60) return 'just now';
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
@@ -83,6 +85,7 @@ export default function NotebookVersions({
     onRestore,
     onClose,
 }) {
+    const { t } = useTranslation();
     const [versions, setVersions] = useState([]);
     const [loading, setLoading] = useState(false);
     const [selectedVersion, setSelectedVersion] = useState(null);
@@ -91,56 +94,90 @@ export default function NotebookVersions({
     const [snapshotName, setSnapshotName] = useState('');
     const [creating, setCreating] = useState(false);
     const [viewMode, setViewMode] = useState('diff'); // 'diff' | 'preview'
+    // Error states — surface failed fetches instead of leaving the modal in
+    // a half-loading state with nothing but a console.error trail.
+    const [fetchError, setFetchError] = useState(null);
+    const [loadError, setLoadError] = useState(null);
+    const [restoreError, setRestoreError] = useState(null);
+    const [restoring, setRestoring] = useState(false);
 
     // Fetch versions
     const fetchVersions = useCallback(async () => {
         if (!notebookId) return;
         setLoading(true);
+        setFetchError(null);
         try {
             const res = await authFetch(`${API_BASE}/api/notebooks/${notebookId}/versions`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
             setVersions(data.versions || []);
-        } catch (e) { console.error('[Versions] Fetch failed:', e); }
-        finally { setLoading(false); }
+        } catch (e) {
+            console.error('[Versions] Fetch failed:', e);
+            setFetchError(e.message || 'Failed to load versions');
+        } finally { setLoading(false); }
     }, [notebookId]);
 
     useEffect(() => { fetchVersions(); }, [fetchVersions]);
 
-    // Load version content
-    const handleSelect = useCallback(async (version) => {
-        if (selectedVersion?.id === version.id) return;
-        setSelectedVersion(version);
+    // Load version content. Extracted helper so the retry button can re-run
+    // a load against the already-selected version without bumping ids.
+    const loadVersionContent = useCallback(async (versionId) => {
         setSelectedContent(null);
+        setLoadError(null);
         setLoadingContent(true);
         try {
-            const res = await authFetch(`${API_BASE}/api/notebooks/${notebookId}/versions/${version.id}`);
+            const res = await authFetch(`${API_BASE}/api/notebooks/${notebookId}/versions/${versionId}`);
+            if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const data = await res.json();
             setSelectedContent(data.version?.content || '');
         } catch (e) {
             console.error('[Versions] Load failed:', e);
             setSelectedContent(null);
+            setLoadError(e.message || 'Failed to load version content');
         } finally { setLoadingContent(false); }
-    }, [notebookId, selectedVersion]);
+    }, [notebookId]);
 
-    // Auto-select first version
+    const handleSelect = useCallback(async (version) => {
+        if (selectedVersion?.id === version.id) return;
+        setSelectedVersion(version);
+        await loadVersionContent(version.id);
+    }, [selectedVersion, loadVersionContent]);
+
+    // Auto-select first version. handleSelect and selectedVersion are in the
+    // deps so React's lint rule passes; the `!selectedVersion` guard prevents
+    // re-selecting an already-loaded version.
     useEffect(() => {
         if (versions.length > 0 && !selectedVersion) {
             handleSelect(versions[0]);
         }
-    }, [versions]);
+    }, [versions, selectedVersion, handleSelect]);
 
-    // Restore
+    // Restore. Awaits the pre-restore snapshot AND the parent's restore call so
+    // we can surface failures instead of silently dismissing the modal.
     const handleRestore = useCallback(async () => {
         if (selectedContent === null) return;
+        setRestoring(true);
+        setRestoreError(null);
         try {
-            await authFetch(`${API_BASE}/api/notebooks/${notebookId}/versions`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ summary: 'Before restore' }),
-            });
-        } catch (_) {}
-        onRestore?.(selectedContent);
-        onClose?.();
+            // Pre-restore snapshot — best-effort; a failure here is logged but
+            // does not block the restore itself.
+            try {
+                await authFetch(`${API_BASE}/api/notebooks/${notebookId}/versions`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ summary: 'Before restore' }),
+                });
+            } catch (snapshotErr) {
+                console.warn('[Versions] Pre-restore snapshot failed:', snapshotErr);
+            }
+            await Promise.resolve(onRestore?.(selectedContent));
+            onClose?.();
+        } catch (e) {
+            console.error('[Versions] Restore failed:', e);
+            setRestoreError(e.message || 'Restore failed');
+        } finally {
+            setRestoring(false);
+        }
     }, [selectedContent, notebookId, onRestore, onClose]);
 
     // Manual snapshot
@@ -162,7 +199,7 @@ export default function NotebookVersions({
     // Delete
     const handleDelete = useCallback(async (versionId, e) => {
         e.stopPropagation();
-        if (!confirm('Delete this version?')) return;
+        if (!confirm(t('notebooks.confirm_delete_version'))) return;
         try {
             await authFetch(`${API_BASE}/api/notebooks/${notebookId}/versions/${versionId}`, { method: 'DELETE' });
             if (selectedVersion?.id === versionId) {
@@ -243,6 +280,7 @@ export default function NotebookVersions({
                             onChange={e => setSnapshotName(e.target.value)}
                             onKeyDown={e => { if (e.key === 'Enter') handleSnapshot(); }}
                             placeholder="Snapshot name..."
+                            maxLength={100}
                             className="px-3 py-1.5 rounded-lg border text-xs bg-[var(--bg-primary)] outline-none w-[180px] focus:border-[var(--accent-primary)] transition-colors"
                             style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                         />
@@ -277,6 +315,20 @@ export default function NotebookVersions({
                             <div className="flex-1 flex items-center justify-center">
                                 <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--text-muted)' }} />
                             </div>
+                        ) : fetchError ? (
+                            <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6 text-center">
+                                <AlertCircle className="w-6 h-6" style={{ color: 'rgb(239,68,68)' }} />
+                                <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                                    {t('notebooks.load_versions_failed')}
+                                </p>
+                                <button
+                                    onClick={fetchVersions}
+                                    className="px-3 py-1.5 rounded-lg text-[11px] font-semibold hover:opacity-90 transition-opacity"
+                                    style={{ background: 'var(--accent-primary)', color: 'white' }}
+                                >
+                                    {t('notebooks.retry')}
+                                </button>
+                            </div>
                         ) : versions.length === 0 ? (
                             <div className="flex-1 flex flex-col items-center justify-center gap-3 px-6">
                                 <div
@@ -310,7 +362,7 @@ export default function NotebookVersions({
                                             {isSelected && (
                                                 <div
                                                     className="absolute left-0 top-2 bottom-2 w-[3px] rounded-r-full"
-                                                    style={{ background: 'rgb(139, 92, 246)' }}
+                                                    style={{ background: 'var(--accent-primary)' }}
                                                 />
                                             )}
 
@@ -377,7 +429,7 @@ export default function NotebookVersions({
                                                 onClick={() => setViewMode(key)}
                                                 className="px-3 py-1.5 text-[11px] font-semibold flex items-center gap-1.5 transition-all"
                                                 style={{
-                                                    background: viewMode === key ? 'rgb(139, 92, 246)' : 'transparent',
+                                                    background: viewMode === key ? 'var(--accent-primary)' : 'transparent',
                                                     color: viewMode === key ? 'white' : 'var(--text-tertiary)',
                                                 }}
                                             >
@@ -411,20 +463,43 @@ export default function NotebookVersions({
                                     {/* Restore */}
                                     <button
                                         onClick={handleRestore}
-                                        disabled={loadingContent}
+                                        disabled={loadingContent || restoring}
                                         className="px-4 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
                                         style={{ background: 'rgb(34, 197, 94)', color: 'white' }}
                                     >
-                                        <RotateCcw className="w-3.5 h-3.5" />
+                                        {restoring ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
                                         Restore this version
                                     </button>
                                 </div>
+                                {restoreError && (
+                                    <div
+                                        className="shrink-0 flex items-center gap-2 px-4 py-2 text-[11px] font-medium border-b"
+                                        style={{ background: 'rgba(239,68,68,0.08)', color: 'rgb(239,68,68)', borderColor: 'var(--border-subtle)' }}
+                                    >
+                                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                        <span className="flex-1">{t('notebooks.restore_failed')}</span>
+                                    </div>
+                                )}
 
                                 {/* Content */}
                                 <div className="flex-1 overflow-auto">
                                     {loadingContent ? (
                                         <div className="flex items-center justify-center h-full">
                                             <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--text-muted)' }} />
+                                        </div>
+                                    ) : loadError ? (
+                                        <div className="flex flex-col items-center justify-center h-full gap-3 px-6 text-center">
+                                            <AlertCircle className="w-6 h-6" style={{ color: 'rgb(239,68,68)' }} />
+                                            <p className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                                                {t('notebooks.load_version_content_failed')}
+                                            </p>
+                                            <button
+                                                onClick={() => selectedVersion && loadVersionContent(selectedVersion.id)}
+                                                className="px-3 py-1.5 rounded-lg text-[11px] font-semibold hover:opacity-90 transition-opacity"
+                                                style={{ background: 'var(--accent-primary)', color: 'white' }}
+                                            >
+                                                {t('notebooks.retry')}
+                                            </button>
                                         </div>
                                     ) : viewMode === 'diff' && diffLines ? (
                                         <div className="font-mono text-[11px] leading-[1.7]">

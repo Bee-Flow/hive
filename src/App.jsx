@@ -1,30 +1,53 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useRef, useCallback } from 'react';
 import AgentHub from './AgentHub';
-import ComponentBuilder from './components/admin/ComponentBuilder';
-import AdminDashboard from './pages/AdminDashboard';
-import OrgSettings from './pages/OrgSettings';
-
-import MeetingNotesPage from './pages/MeetingNotesPage';
-import TemplatesPage from './pages/TemplatesPage';
-// NotebooksPage is imported by AgentHub now — it renders inline in the main content area.
-
-import AgentDesigner from './components/admin/AgentDesigner';
-import AgentWizard from './components/admin/AgentWizard';
-import Studio from './components/admin/Studio';
 import LoginPage from './pages/LoginPage';
 import EncryptionSetup from './pages/EncryptionSetup';
 import EmbedChat from './pages/EmbedChat';
 import DlpPreviewModal from './components/DlpPreviewModal';
-import { LicenseProvider, RequireTier } from './components/LicenseGate';
+import ErrorBoundary from './components/ErrorBoundary';
+import { LicenseProvider } from './components/LicenseContext';
 import NcOnboardingWizard from './components/NcOnboardingWizard';
 import NcOnboardingPending from './components/NcOnboardingPending';
 import NcBindingApprovalModal from './components/NcBindingApprovalModal';
 import ProductWebsite from './marketing/ProductWebsite';
+import LegalPage from './marketing/LegalPage';
+import HomePage from './marketing/HomePage';
+import privacyMd from './marketing/legal/privacy.md?raw';
+import termsMd from './marketing/legal/terms.md?raw';
+
+// Heavy admin / studio routes are loaded on demand so the initial chat
+// bundle stays lean. Each render site is wrapped in <Suspense> + a per-
+// route <ErrorBoundary> so a load failure or runtime crash in one panel
+// can't take down the rest of the app.
+const ComponentBuilder = lazy(() => import('./components/admin/ComponentBuilder'));
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
+const OrgSettings = lazy(() => import('./pages/OrgSettings'));
+const MeetingNotesPage = lazy(() => import('./pages/meeting-notes/MeetingNotesPage'));
+import { RecorderProvider } from './pages/meeting-notes/hooks/RecorderContext';
+import { CaptureProvider } from './pages/meeting-notes/capture/CaptureContext';
+import CaptureModal from './pages/meeting-notes/capture/CaptureModal';
+import MeetingCommandPalette from './components/global/MeetingCommandPalette';
+const TemplatesPage = lazy(() => import('./pages/TemplatesPage'));
+const AgentDesigner = lazy(() => import('./components/admin/AgentDesigner'));
+// NotebooksPage is imported by AgentHub now — it renders inline in the main content area.
+// AgentWizard / Studio are still rendered through AgentHub's slots; keeping
+// them eagerly-imported in AgentHub avoids a double-Suspense flash.
+
+function RouteFallback() {
+    const { t } = useTranslation();
+    return (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', color: 'var(--text-muted)' }}>
+            {t('app.loading', 'Loading…')}
+        </div>
+    );
+}
 
 import { LogOut, User, Shield, Settings, ChevronDown } from 'lucide-react';
 
 import { API_BASE, authFetch, setSessionToken } from './utils/helpers';
 import scopedStorage from './utils/scopedStorage';
+import { logger } from './utils/logger';
+import { useTranslation } from './hooks/useTranslation';
 
 // ── Route mapping ──────────────────────────────────────────────
 const PAGE_ROUTES = {
@@ -183,12 +206,6 @@ function parseNotebookUrl(pathname) {
     return match ? match[1] : null;
 }
 
-// Extract webpage ID from URL: /app/webpages/:id
-function parseWebpageUrl(pathname) {
-    const match = pathname.match(/^\/app\/webpages\/([a-zA-Z0-9_-]+)/);
-    return match ? match[1] : null;
-}
-
 // Top-level paths claimed by the BeeFlow app shell. Any single-segment
 // pathname starting with one of these (e.g. `/app`, `/api`, `/admin`) is
 // handed straight to the app router instead of being treated as a CMS page
@@ -199,6 +216,7 @@ const RESERVED_TOP_LEVEL = new Set([
     'dashboard', 'settings', 'embed', 'oauth', 'callback',
     'chat', 'd', 'a', 'agent',
     'org-settings', 'email-kb', 'ticket-assistant',
+    'privacy', 'terms',
     '__cms_preview__',
 ]);
 
@@ -225,6 +243,14 @@ function AppRoot() {
     // no auth/enabled/redirect coupling.
     if (window.location.pathname === '/__cms_preview__') {
         return <CmsPreviewHost />;
+    }
+    // Static public legal pages. Served from in-repo markdown so they remain
+    // stable URLs for Google's OAuth consent screen regardless of CMS state.
+    if (window.location.pathname === '/privacy') {
+        return <LegalPage title="Privacy Policy" source={privacyMd} />;
+    }
+    if (window.location.pathname === '/terms') {
+        return <LegalPage title="Terms of Service" source={termsMd} />;
     }
     // Path-based marketing-site gate: intercept `/` and any single-segment
     // path (e.g. `/about`, `/contact`) so they render the public product
@@ -284,10 +310,16 @@ function RootPathGate() {
             .then(data => {
                 if (cancelled) return;
                 if (!data?.enabled) {
-                    // No live site → redirect "/" to "/app" so the login
-                    // form lives at a stable URL. replaceState so back
-                    // button doesn't loop.
-                    window.history.replaceState(null, '', '/app');
+                    // No live CMS site. For "/" we render the static public
+                    // HomePage (handled in the render branch below) so that
+                    // beeflow.nl/ stays a no-login URL — required for Google's
+                    // OAuth consent-screen verification. For non-root single-
+                    // segment paths (e.g. /random) we still hand off to the
+                    // app shell, redirecting to /app so the login form lives
+                    // at a stable URL and the back button doesn't loop.
+                    if (window.location.pathname !== '/') {
+                        window.history.replaceState(null, '', '/app');
+                    }
                     setCms(false);
                     return;
                 }
@@ -324,17 +356,23 @@ function RootPathGate() {
         // Brief blank screen while we ask the server. Avoids flashing login.
         return <div style={{ background: '#06090F', minHeight: '100vh' }} />;
     }
-    if (cms === false) return <App />;
+    if (cms === false) {
+        // CMS-managed site is off. At "/" show the static public HomePage so
+        // there's a no-login landing for users (and Google's OAuth verifier).
+        // Anywhere else, fall through to the auth-gated app shell.
+        if (window.location.pathname === '/') return <HomePage />;
+        return <App />;
+    }
     return <ProductWebsite content={cms.content} />;
 }
 
 
 function App() {
+    const { t } = useTranslation();
     const [currentPage, setCurrentPage] = useState(() => pageFromPath(window.location.pathname));
     const [adminPath, setAdminPath] = useState(() => parseAdminPath(window.location.pathname));
     const [orgSettingsPath, setOrgSettingsPath] = useState(() => parseOrgSettingsPath(window.location.pathname));
     const [initialNotebookId, setInitialNotebookId] = useState(() => parseNotebookUrl(window.location.pathname));
-    const [initialWebpageId, setInitialWebpageId] = useState(() => parseWebpageUrl(window.location.pathname));
     const [user, setUser] = useState(null);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
 
@@ -367,7 +405,6 @@ function App() {
     // Hard-refreshes on /app/notebooks and /app/notebooks/:id still land the
     // user on the notebook via `initialNotebookId` parsed by pageFromPath.
     const [showNotebooks, setShowNotebooks] = useState(() => pageFromPath(window.location.pathname) === 'notebooks');
-    const [showWebpages, setShowWebpages] = useState(() => pageFromPath(window.location.pathname) === 'webpages');
     const [encryptionState, setEncryptionState] = useState(null); // null | 'setup' | 'pin' | { recoveryKey: string }
     const [noOrganization, setNoOrganization] = useState(false);
     const [pendingApproval, setPendingApproval] = useState(false);
@@ -385,13 +422,6 @@ function App() {
     // Parse initial agent/conversation from URL
     const initialUrlRef = useRef(parseAgentUrl(window.location.pathname));
     const initialDirectConvRef = useRef(parseDirectChatUrl(window.location.pathname));
-
-    // Close profile menu on click outside
-    useEffect(() => {
-        const handleClickOutside = (e) => {
-            // No longer handled in App.jsx
-        };
-    }, []);
 
     // Check auth status on mount
     useEffect(() => {
@@ -448,7 +478,7 @@ function App() {
                         // wizard, others see "Setup in progress" — until
                         // the admin's POST /auth/admin/.../nc-onboarding/complete
                         // flips the flag.
-                        console.log('[NcOnboarding] /auth/user flags:', {
+                        logger.debug('[NcOnboarding] /auth/user flags:', {
                             needed: data.ncOnboardingNeeded,
                             pending: data.ncOnboardingPending,
                             isOrgAdmin: data.isOrgAdmin,
@@ -466,6 +496,7 @@ function App() {
                         let userOrgs = [];
                         let allowedAgentTypes = [];
                         let betaFeatures = [];
+                        let canUseFeature = {};
                         if (permsRes.ok) {
                             const permsData = await permsRes.json();
                             permissions = permsData.permissions || [];
@@ -473,9 +504,10 @@ function App() {
                             userOrgs = permsData.organizations || [];
                             allowedAgentTypes = permsData.allowedAgentTypes || [];
                             betaFeatures = permsData.betaFeatures || [];
+                            canUseFeature = permsData.canUseFeature || {};
                         }
                         const canManageUsers = permissions.includes('all') || permissions.includes('manage_users');
-                        setUser({ ...data.user, permissions, groups: userGroups, organizations: userOrgs, allowedAgentTypes, betaFeatures, featureFlags: data.featureFlags || {}, enabledIntegrations: data.enabledIntegrations || null, canManageUsers: canManageUsers || data.user.isAdmin, encryptionEnabled: data.encryptionEnabled !== false, isConsumerAccount: !!data.isConsumerAccount, ncOrg: data.ncOrg || null });
+                        setUser({ ...data.user, permissions, groups: userGroups, organizations: userOrgs, allowedAgentTypes, betaFeatures, canUseFeature, featureFlags: data.featureFlags || {}, enabledIntegrations: data.enabledIntegrations || null, canManageUsers: canManageUsers || data.user.isAdmin, encryptionEnabled: data.encryptionEnabled !== false, isConsumerAccount: !!data.isConsumerAccount, ncOrg: data.ncOrg || null });
                         setIsAuthenticated(true);
                     }
                 }
@@ -496,7 +528,6 @@ function App() {
             setAdminPath(parseAdminPath(window.location.pathname));
             setOrgSettingsPath(parseOrgSettingsPath(window.location.pathname));
             setInitialNotebookId(parseNotebookUrl(window.location.pathname));
-            setInitialWebpageId(parseWebpageUrl(window.location.pathname));
             // Sync inline-rendered panels with the URL so back/forward opens or closes them.
             setShowSettings(page === 'settings');
             const isDesigner = page === 'agentDesigner';
@@ -510,7 +541,6 @@ function App() {
             setShowAITasks(isAITasks);
             if (isAITasks) setInitialAITaskId(parseAITasksUrl(window.location.pathname));
             setShowNotebooks(page === 'notebooks');
-            setShowWebpages(page === 'webpages');
         };
         window.addEventListener('popstate', handlePopState);
         return () => window.removeEventListener('popstate', handlePopState);
@@ -523,12 +553,6 @@ function App() {
         if (legacyPage && PAGE_ROUTES[legacyPage] && window.location.pathname === '/') {
             window.history.replaceState({}, '', PAGE_ROUTES[legacyPage]);
         }
-    }, []);
-
-    // Apply permanent light theme
-    useEffect(() => {
-        document.documentElement.setAttribute('data-theme', 'light');
-        localStorage.setItem('theme', 'light');
     }, []);
 
     const navigateToPage = useCallback((page) => {
@@ -573,7 +597,6 @@ function App() {
             setShowSkillsPanel(false);
             setShowAITasks(false);
             setShowNotebooks(false);
-            setShowWebpages(false);
             if (window.location.pathname !== path) {
                 window.history.pushState({ page: 'studio' }, '', path);
             }
@@ -696,7 +719,6 @@ function App() {
             const notebookId = page.startsWith('notebooks/') ? page.slice('notebooks/'.length) : null;
             setInitialNotebookId(notebookId);
             setShowNotebooks(true);
-            setShowWebpages(false);
             setShowSettings(false);
             setShowAgentDesigner(false);
             setShowSkillsPanel(false);
@@ -718,7 +740,6 @@ function App() {
             const webpageId = page.startsWith('webpages/') ? page.slice('webpages/'.length) : null;
             setStudioRoute({ section: 'webpages', id: webpageId });
             setShowStudio(true);
-            setShowWebpages(false);
             setShowNotebooks(false);
             setShowSettings(false);
             setShowAgentDesigner(false);
@@ -749,6 +770,7 @@ function App() {
             let userOrgs = [];
             let allowedAgentTypes = [];
             let betaFeatures = [];
+            let canUseFeature = {};
             if (permsRes.ok) {
                 const permsData = await permsRes.json();
                 permissions = permsData.permissions || [];
@@ -756,9 +778,10 @@ function App() {
                 userOrgs = permsData.organizations || [];
                 allowedAgentTypes = permsData.allowedAgentTypes || [];
                 betaFeatures = permsData.betaFeatures || [];
+                canUseFeature = permsData.canUseFeature || {};
             }
             const canManageUsers = permissions.includes('all') || permissions.includes('manage_users');
-            setUser({ ...userData, permissions, groups: userGroups, organizations: userOrgs, allowedAgentTypes, betaFeatures, canManageUsers: canManageUsers || userData.isAdmin, isConsumerAccount: !!userData.isConsumerAccount });
+            setUser({ ...userData, permissions, groups: userGroups, organizations: userOrgs, allowedAgentTypes, betaFeatures, canUseFeature, canManageUsers: canManageUsers || userData.isAdmin, isConsumerAccount: !!userData.isConsumerAccount });
         } catch (err) {
             console.error('Failed to fetch permissions after login:', err);
             setUser(userData);
@@ -800,10 +823,11 @@ function App() {
         return (
             <div className="h-screen flex items-center justify-center" style={{ background: 'var(--bg-primary)' }}>
                 <div className="flex flex-col items-center gap-4">
-                    <div className="w-16 h-16 rounded-2xl flex items-center justify-center animate-pulse"
-                        style={{ background: 'linear-gradient(135deg, #f59e0b, #d97706)' }}>
-                        <span className="text-3xl">🐝</span>
-                    </div>
+                    <img
+                        src="/BeeFlow-logo-Icon-2026.svg"
+                        alt="Bee Flow"
+                        className="w-16 h-16 rounded-2xl object-contain animate-pulse"
+                    />
                     <p className="text-[var(--text-secondary)] text-sm">Loading...</p>
                 </div>
             </div>
@@ -838,12 +862,15 @@ function App() {
                         height: 1,
                         background: 'linear-gradient(90deg, transparent, var(--border-default), transparent)',
                     }} />
-                    <div style={{
-                        width: 64, height: 64, borderRadius: 18, margin: '0 auto 20px',
-                        background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: 30,
-                    }}>🐝</div>
+                    <img
+                        src="/BeeFlow-logo-Icon-2026.svg"
+                        alt="Bee Flow"
+                        style={{
+                            width: 64, height: 64, borderRadius: 18, margin: '0 auto 20px',
+                            objectFit: 'contain',
+                            display: 'block',
+                        }}
+                    />
                     <div style={{
                         width: 52, height: 52, borderRadius: 14, margin: '0 auto 16px',
                         background: 'rgba(239, 68, 68, 0.1)',
@@ -854,10 +881,10 @@ function App() {
                         </svg>
                     </div>
                     <h2 style={{ margin: '0 0 10px', fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>
-                        Server Unavailable
+                        {t('app.server_unavailable_title', 'Server Unavailable')}
                     </h2>
                     <p style={{ margin: '0 0 28px', fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.65 }}>
-                        Could not connect to the Bee Flow server. Please make sure the server is running and try again.
+                        {t('app.server_unavailable_desc', 'Could not connect to the Bee Flow server. Please make sure the server is running and try again.')}
                     </p>
                     <button
                         onClick={() => window.location.reload()}
@@ -869,7 +896,7 @@ function App() {
                             boxShadow: '0 4px 12px rgba(245,158,11,0.3)',
                         }}
                     >
-                        Retry Connection
+                        {t('app.retry_connection', 'Retry Connection')}
                     </button>
                 </div>
             </div>
@@ -1018,21 +1045,31 @@ function App() {
         );
     }
 
+    // Per-route wrapper — a crash inside one panel surfaces only its own
+    // boundary, leaving the rest of the app usable. Each lazy() chunk is
+    // also wrapped so a network failure during code-split download falls
+    // back to the same UI.
+    const routed = (label, node) => (
+        <ErrorBoundary label={label}>
+            <Suspense fallback={<RouteFallback />}>{node}</Suspense>
+        </ErrorBoundary>
+    );
+
     const renderContent = () => {
         if (currentPage === 'admin') {
-            return <AdminDashboard user={user} onBack={() => navigateToPage('agents')} adminPath={adminPath} onNavigate={navigateToPage} />;
+            return routed('admin', <AdminDashboard user={user} onBack={() => navigateToPage('agents')} adminPath={adminPath} onNavigate={navigateToPage} />);
         }
         if (currentPage === 'orgSettings') {
-            return <OrgSettings user={user} onBack={() => navigateToPage('agents')} orgSettingsPath={orgSettingsPath} onNavigate={navigateToPage} />;
+            return routed('orgSettings', <OrgSettings user={user} onBack={() => navigateToPage('agents')} orgSettingsPath={orgSettingsPath} onNavigate={navigateToPage} />);
         }
 
 
         if (currentPage === 'components') {
-            return <ComponentBuilder onBack={() => navigateToPage('agents')} />;
+            return routed('components', <ComponentBuilder onBack={() => navigateToPage('agents')} />);
         }
 
         if (currentPage === 'agentDesignerAdvanced') {
-            return (
+            return routed('agentDesignerAdvanced',
                 <AgentDesigner
                     onBack={null}
                     initialAgentId={initialDesignerAgentId}
@@ -1050,21 +1087,19 @@ function App() {
 
         if (currentPage === 'meetingNotes') {
             if (user?.featureFlags?.meeting_notes === false) return navigateToPage('agents');
-            return (
-                <RequireTier feature="meeting_notes" tier="pro" onNavigateToLicense={() => navigateToPage('orgSettings')}>
-                    <MeetingNotesPage user={user} onBack={() => navigateToPage('agents')} />
-                </RequireTier>
+            return routed('meetingNotes',
+                <MeetingNotesPage user={user} onBack={() => navigateToPage('agents')} />
             );
         }
         if (currentPage === 'templates') {
             if (user?.featureFlags?.templates === false) return navigateToPage('agents');
-            return <TemplatesPage user={user} onBack={() => navigateToPage('agents')} />;
+            return routed('templates', <TemplatesPage user={user} onBack={() => navigateToPage('agents')} />);
         }
         // Notebooks used to render as a standalone page here, taking over the
         // whole viewport. It now renders inline inside AgentHub below (same
         // slot as Settings / Agent Designer) so the app sidebar stays visible.
 
-        return <AgentHub onNavigate={navigateToPage} user={user} initialAgentId={initialUrlRef.current.agentId} initialConversationId={initialUrlRef.current.conversationId} initialDirectConvId={initialDirectConvRef.current} onLogout={handleLogout} currentPage={currentPage} showSettings={showSettings} onCloseSettings={() => {
+        return <AgentHub onNavigate={navigateToPage} user={user} onUpdateUser={(patch) => setUser(prev => prev ? { ...prev, ...patch } : prev)} initialAgentId={initialUrlRef.current.agentId} initialConversationId={initialUrlRef.current.conversationId} initialDirectConvId={initialDirectConvRef.current} onLogout={handleLogout} currentPage={currentPage} showSettings={showSettings} onCloseSettings={() => {
             setShowSettings(false);
             // Return the URL to the app root when the settings panel closes, so
             // the back button doesn't leave /app/settings stuck in the address bar.
@@ -1112,21 +1147,12 @@ function App() {
                 setCurrentPage('agents');
                 window.history.pushState({ page: 'agents' }, '', '/app');
             }
-        }} showWebpages={showWebpages && (user?.betaFeatures?.includes('webpages') || user?.permissions?.includes('all'))} initialWebpageId={initialWebpageId} onWebpageChange={(id) => {
-            setInitialWebpageId(id);
-            const path = id ? `/app/webpages/${id}` : '/app/webpages';
-            window.history.replaceState({ page: 'webpages', webpageId: id }, '', path);
-        }} onCloseWebpages={() => {
-            setShowWebpages(false);
-            setInitialWebpageId(null);
-            if (window.location.pathname.startsWith('/app/webpages')) {
-                setCurrentPage('agents');
-                window.history.pushState({ page: 'agents' }, '', '/app');
-            }
         }} />;
     };
 
     return (
+        <RecorderProvider>
+        <CaptureProvider>
         <div className="h-screen flex flex-col">
 
             {/* Content */}
@@ -1137,6 +1163,10 @@ function App() {
             {/* Pre-flight DLP preview modal — globally mounted, listens for
                 `beeflow:dlp_preview` window events emitted by useChatEngine. */}
             {isAuthenticated && <DlpPreviewModal />}
+
+            {/* Global Meeting Notes surfaces — mounted once, available from any page. */}
+            {isAuthenticated && <CaptureModal />}
+            {isAuthenticated && <MeetingCommandPalette user={user} onNavigate={navigateToPage} />}
 
             {/* Dropdown animation keyframe */}
             <style>{`
@@ -1163,6 +1193,8 @@ function App() {
 
 
         </div>
+        </CaptureProvider>
+        </RecorderProvider>
     );
 }
 

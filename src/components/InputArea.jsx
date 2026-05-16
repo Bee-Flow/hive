@@ -15,6 +15,7 @@ import ActiveSkillChips from './skills/ActiveSkillChips';
 import VoiceCallButton from './chat/Voice/VoiceCallButton';
 import VoiceInlinePanel from './chat/Voice/VoiceInlinePanel';
 import { getIntegrationLogo } from '../utils/integrationLogos';
+import { resizeImageForUpload, readAsDataUrl } from '../utils/imageResize';
 
 // Tailwind w-N h-N → pixel dimensions for the chat sidebar's iconSvg
 // callers (Tailwind defaults: w-4=16, w-5=20, w-6=24).
@@ -97,6 +98,10 @@ const InputArea = ({
     const handleVoiceTurn = useCallback((turn) => {
         if (onVoiceTurnComplete) onVoiceTurnComplete(turn);
     }, [onVoiceTurnComplete]);
+    // Simple Mode strips the composer toolbar to attachment + web search.
+    // Model tier defaults to 'auto' (server resolves) and the secondary icons
+    // (memory, KB, voice, skills, apps) are hidden until the user turns it off.
+    const _simpleMode = !!user?.simpleMode;
     const [attachments, setAttachments] = useState([]);
     const [isDragOver, setIsDragOver] = useState(false);
     const [drivePickerOpen, setDrivePickerOpen] = useState(false);
@@ -221,12 +226,16 @@ const InputArea = ({
         return () => document.removeEventListener('mousedown', close);
     }, [appsOverlayOpen]);
 
-    // Auto-resize textarea
+    // Auto-resize textarea. We toggle overflow-y inline so the scrollbar
+    // (or its native +/- arrows on some GTK themes) only appears once the
+    // content actually exceeds the 180px cap — otherwise it stays hidden.
     useEffect(() => {
-        if (textareaRef.current) {
-            textareaRef.current.style.height = 'auto';
-            textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 180) + 'px';
-        }
+        const el = textareaRef.current;
+        if (!el) return;
+        el.style.height = 'auto';
+        const needsScroll = el.scrollHeight > 180;
+        el.style.height = Math.min(el.scrollHeight, 180) + 'px';
+        el.style.overflowY = needsScroll ? 'auto' : 'hidden';
     }, [input]);
 
     // Check user settings (Fireflies key, Google SSO status, enabled apps)
@@ -282,17 +291,29 @@ const InputArea = ({
                 continue;
             }
 
-            const reader = new FileReader();
-            const content = await new Promise((resolve) => {
-                reader.onload = (e) => resolve(e.target.result);
-                reader.readAsDataURL(file);
-            });
+            let content;
+            let finalType = file.type || 'application/octet-stream';
+            let finalSize = file.size;
+
+            if (file.type && file.type.startsWith('image/')) {
+                try {
+                    const resized = await resizeImageForUpload(file);
+                    content = resized.dataUrl;
+                    finalType = resized.mimeType;
+                    finalSize = resized.resizedSize;
+                } catch (err) {
+                    console.warn(`Image resize failed for ${file.name}, using original:`, err);
+                    content = await readAsDataUrl(file);
+                }
+            } else {
+                content = await readAsDataUrl(file);
+            }
 
             newAttachments.push({
                 name: file.name,
-                type: file.type || 'application/octet-stream',
-                size: file.size,
-                content: content
+                type: finalType,
+                size: finalSize,
+                content,
             });
         }
 
@@ -711,7 +732,7 @@ const InputArea = ({
                             isMobile={isMobile}
                         />
                     ) : (
-                    <div role="form" aria-label="Chat message input" data-testid="chat-input-form" className={`relative flex flex-col bg-[var(--bg-secondary)] rounded-2xl border border-[var(--border-subtle)] shadow-md transition-all focus-within:border-[var(--accent-primary)] focus-within:shadow-lg focus-within:shadow-[var(--accent-primary)]/10 ${(activeThreadParent || attachments.length > 0 || activeSkillIds.length > 0 || agentAttachedSkillIds.length > 0) ? 'rounded-t-none border-t-0' : ''} ${isDragOver ? 'border-[var(--accent-primary)] shadow-lg' : ''}`}>
+                    <div role="form" aria-label="Chat message input" data-testid="chat-input-form" className={`chat-composer relative flex flex-col rounded-2xl transition-all focus-within:ring-2 focus-within:ring-[var(--accent-primary)]/35 ${(activeThreadParent || attachments.length > 0 || activeSkillIds.length > 0 || agentAttachedSkillIds.length > 0) ? 'rounded-t-none' : ''} ${isDragOver ? 'ring-2 ring-[var(--accent-primary)]' : ''}`}>
 
                         {/* Hidden file input */}
                         <input
@@ -739,7 +760,7 @@ const InputArea = ({
                                 aria-label="Chat message"
                                 data-testid="chat-message-input"
                                 rows={1}
-                                className="w-full max-h-[180px] bg-transparent border-none focus:ring-0 text-[var(--text-primary)] placeholder-[var(--text-tertiary)] resize-none py-2 text-[15px] leading-relaxed overflow-y-auto outline-none"
+                                className="w-full max-h-[180px] bg-transparent border-none focus:ring-0 text-[var(--text-primary)] placeholder-[var(--text-muted)] resize-none py-2 text-[15px] leading-relaxed outline-none"
                             />
                         </div>
 
@@ -875,24 +896,26 @@ const InputArea = ({
                                 </button>
                                 )}
                                 {/* Memory Write Toggle — pause saving new memories for this session. */}
-                                <button
-                                    onClick={() => {
-                                        const next = !memoryWriteEnabled;
-                                        setMemoryWriteEnabled(next);
-                                        scopedStorage.setItem('memoryWriteEnabled', String(next));
-                                    }}
-                                    className={`p-2 rounded-lg transition-colors ${memoryWriteEnabled ? 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20' : 'text-[var(--text-tertiary)] opacity-40 hover:opacity-70 hover:bg-[var(--bg-tertiary)]'}`}
-                                    title={memoryWriteEnabled ? 'Memory saving enabled (click to pause)' : 'Memory saving paused (click to resume)'}
-                                    aria-label={memoryWriteEnabled ? 'Memory saving enabled' : 'Memory saving paused'}
-                                    aria-pressed={memoryWriteEnabled}
-                                    data-testid="memory-write-toggle"
-                                >
-                                    <Brain className="w-5 h-5" />
-                                </button>
+                                {!_simpleMode && (
+                                    <button
+                                        onClick={() => {
+                                            const next = !memoryWriteEnabled;
+                                            setMemoryWriteEnabled(next);
+                                            scopedStorage.setItem('memoryWriteEnabled', String(next));
+                                        }}
+                                        className={`p-2 rounded-lg transition-colors ${memoryWriteEnabled ? 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20' : 'text-[var(--text-tertiary)] opacity-40 hover:opacity-70 hover:bg-[var(--bg-tertiary)]'}`}
+                                        title={memoryWriteEnabled ? 'Memory saving enabled (click to pause)' : 'Memory saving paused (click to resume)'}
+                                        aria-label={memoryWriteEnabled ? 'Memory saving enabled' : 'Memory saving paused'}
+                                        aria-pressed={memoryWriteEnabled}
+                                        data-testid="memory-write-toggle"
+                                    >
+                                        <Brain className="w-5 h-5" />
+                                    </button>
+                                )}
                                 {/* Knowledge Bases picker — only in direct mode. Lets the user
                                     attach KBs they have access to so the backend grounds answers
                                     on their content via /api/kb search. */}
-                                {directMode && typeof onChangeKBIds === 'function' && (user?.isAdmin || (user?.permissions || []).includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('knowledge_bases_beta'))) && (
+                                {!_simpleMode && directMode && typeof onChangeKBIds === 'function' && (user?.isAdmin || (user?.permissions || []).includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('knowledge_bases_beta'))) && (
                                     <div className="relative" ref={kbPickerRef}>
                                         <button
                                             onClick={() => setShowKBPicker(v => !v)}
@@ -1000,14 +1023,16 @@ const InputArea = ({
                                 {/* Voice Chat (Beta) — toggles voiceMode. When active, the
                                     composer is replaced by <VoiceInlinePanel>. Voice turns
                                     flow into the chat as regular messages via onVoiceTurnComplete. */}
-                                <VoiceCallButton
-                                    user={user}
-                                    voiceMode={voiceMode}
-                                    onToggleVoiceMode={setVoiceMode}
-                                />
+                                {!_simpleMode && (
+                                    <VoiceCallButton
+                                        user={user}
+                                        voiceMode={voiceMode}
+                                        onToggleVoiceMode={setVoiceMode}
+                                    />
+                                )}
                                 {/* Skills Popover — gated by the `skills` beta feature.
                                     Matches the pattern used on the sidebar entry. */}
-                                {onToggleSkill && Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('skills') && (
+                                {!_simpleMode && onToggleSkill && Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('skills') && (
                                     <SkillsPopover
                                         user={user}
                                         activeSkillIds={activeSkillIds}
@@ -1020,7 +1045,7 @@ const InputArea = ({
                                     />
                                 )}
                                 {/* Apps Button — hidden if no apps available or agent disableExternalTools */}
-                                {!selectedAgent?.config?.disableExternalTools && (() => {
+                                {!_simpleMode && !selectedAgent?.config?.disableExternalTools && (() => {
                                     const n8nAppDefs = n8nWorkflows.map(wf => ({
                                         id: `n8n_run_${wf.slug}`,
                                         label: wf.name,
@@ -1171,7 +1196,7 @@ const InputArea = ({
 
                             <div className="flex items-center gap-2">
                                 {/* Model Tier Selector (Direct Mode) */}
-                                {directMode && modelTiers && (
+                                {!_simpleMode && directMode && modelTiers && (
                                     <div className="mr-1">
                                         <ModelTierSelector
                                             tiers={modelTiers}
@@ -1186,7 +1211,7 @@ const InputArea = ({
                                     tier resolves to a reasoning-capable model. Mirrors the
                                     `supportsReasoning` regexes used by the backend provider
                                     adapters so server and client agree on availability. */}
-                                {directMode && modelTiers && (() => {
+                                {!_simpleMode && directMode && modelTiers && (() => {
                                     const modelId = modelTiers?.[selectedTier]?.model || '';
                                     const supportsReasoning = /claude-opus-4|claude-sonnet-4|^o\d|gpt-5|gemini-2\.5|gemini-3|magistral/i.test(modelId);
                                     if (!supportsReasoning) return null;
@@ -1212,7 +1237,7 @@ const InputArea = ({
                                     <button
                                         onClick={handleSend}
                                         disabled={!input.trim() && attachments.length === 0}
-                                        className="p-2 bg-[var(--text-primary)] text-[var(--bg-primary)] rounded-full hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-sm active:scale-95 transform duration-100"
+                                        className="p-2 bg-[var(--text-primary)] text-white rounded-full hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-sm active:scale-95 transform duration-100"
                                         title="Send message (Enter)"
                                         aria-label="Send message"
                                         data-testid="send-message-button"

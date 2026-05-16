@@ -48,7 +48,7 @@ export default function NotebookTOC({ items = [], onClose }) {
             <div className="flex-1 overflow-y-auto custom-scrollbar py-2">
                 {items.map((item) => (
                     <button
-                        key={item.id || item.itemIndex}
+                        key={item.id ?? item.itemIndex}
                         onClick={() => scrollTo(item.id)}
                         className="w-full text-left px-3 py-1 text-[11px] transition-colors hover:bg-[var(--bg-tertiary)] flex items-start gap-1 group"
                         style={{

@@ -45,11 +45,21 @@ export function OverviewPage({
                     value={fmt(summary?.total_tokens || 0)}
                     delta={deltas?.tokens} deltaLabel={deltaLabel}
                 />
-                <MetricCard
-                    icon={DollarSign} label="Est. Cost" color={COLORS.amber}
-                    value={fmtCost(summary?.total_estimated_cost || totalCost || 0)}
-                    delta={deltas?.cost} deltaLabel={deltaLabel}
-                />
+                {(() => {
+                    const rawCost = summary?.total_estimated_cost || totalCost || 0;
+                    const billed = Number(summary?.total_billed_cost || 0);
+                    const isPayg = billed > 0;
+                    return (
+                        <MetricCard
+                            icon={DollarSign}
+                            label={isPayg ? 'Billed (PAYG)' : 'Est. Cost'}
+                            color={isPayg ? COLORS.green : COLORS.amber}
+                            value={fmtCost(isPayg ? billed : rawCost)}
+                            subtitle={isPayg ? `raw ${fmtCost(rawCost)} · markup applied` : undefined}
+                            delta={deltas?.cost} deltaLabel={deltaLabel}
+                        />
+                    );
+                })()}
                 <MetricCard
                     icon={Clock} label="Avg Latency" color={COLORS.pink}
                     value={fmtDuration(summary?.avg_duration_ms)}
@@ -84,11 +94,15 @@ export function OverviewPage({
                         formatLabel={d => `${d.period || ''} · ${d.calls || 0} calls`}
                     />
                 </Card>
-                <Card title="Cost Trend" icon={DollarSign}>
+                <Card title={Number(summary?.total_billed_cost || 0) > 0 ? 'Billed Cost Trend (PAYG)' : 'Cost Trend'} icon={DollarSign}>
                     <SvgAreaChart
-                        data={costTimeline} yKey="total_cost" color={COLORS.amber}
+                        data={costTimeline}
+                        yKey={Number(summary?.total_billed_cost || 0) > 0 ? 'total_billed_cost' : 'total_cost'}
+                        color={Number(summary?.total_billed_cost || 0) > 0 ? COLORS.green : COLORS.amber}
                         formatY={fmtCost}
-                        formatLabel={d => `${d.period || ''} · ${fmtCost(d.total_cost || 0)}`}
+                        formatLabel={d => Number(summary?.total_billed_cost || 0) > 0
+                            ? `${d.period || ''} · ${fmtCost(d.total_billed_cost || 0)} billed · ${fmtCost(d.total_cost || 0)} raw`
+                            : `${d.period || ''} · ${fmtCost(d.total_cost || 0)}`}
                     />
                 </Card>
             </div>

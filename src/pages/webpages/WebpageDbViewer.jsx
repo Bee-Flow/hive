@@ -283,7 +283,17 @@ function BrowseTab({ webpageId, schema, onError }) {
 
             const cnt = await api(webpageId, '/db/query', { method: 'POST', body: JSON.stringify({ sql: `SELECT COUNT(*) AS n FROM ${quoteIdent(tableName)}` }) });
             const cdata = await cnt.json();
-            if (cnt.ok) setTotal(cdata.rows?.[0]?.n ?? 0);
+            if (cnt.ok) {
+                setTotal(cdata.rows?.[0]?.n ?? 0);
+            } else {
+                // Pagination math runs against `total`; if the count query
+                // fails, surface it instead of leaving the controls anchored
+                // to a stale value from a previous table. Fall back to the
+                // current page size as a best-effort lower bound.
+                console.warn('[WebpageDbViewer] COUNT(*) failed:', cdata?.error);
+                onError(cdata?.error || 'Row count unavailable — pagination may be incorrect');
+                setTotal((data.rows || []).length);
+            }
         } catch (e) {
             onError(e.message);
         } finally {

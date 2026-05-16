@@ -4,16 +4,19 @@ import { API_BASE, authFetch } from '../utils/helpers';
 import scopedStorage from '../utils/scopedStorage';
 import { formatVersion, formatVersionWithDate } from '../utils/appVersion';
 import { useTranslation } from '../hooks/useTranslation';
-import StartupAgentSection from './settings/StartupAgentSection';
+import PreferencesSection from './settings/PreferencesSection';
 import MemorySection from './settings/MemorySection';
 import IntegrationsSection from './settings/IntegrationsSection';
-import PersonalAccessTokensSection from './settings/PersonalAccessTokensSection';
 import OrganisationSection from './settings/OrganisationSection';
 import ConsumerLicenseSection from './settings/ConsumerLicenseSection';
 import ConsumerPrivacySection from './settings/ConsumerPrivacySection';
+import ConsumerUsageSection from './settings/ConsumerUsageSection';
+import ConsumerIntegrationsSection from './settings/ConsumerIntegrationsSection';
+import ConsumerBetaFeaturesSection from './settings/ConsumerBetaFeaturesSection';
+import AppearanceSection from './settings/AppearanceSection';
 import { SECTIONS as ORG_SECTIONS } from '../components/admin/OrgInfoPanel';
 import OrgAzureConfigPanel from '../components/admin/OrgAzureConfigPanel';
-import { Users, Link2, BarChart2, Cloud, CreditCard, Shield, FolderGit2 } from 'lucide-react';
+import { Users, Link2, BarChart2, Cloud, CreditCard, Shield, FolderGit2, Palette, Sparkles } from 'lucide-react';
 
 /* ── Org sub-items (use labelKey for i18n) ────────────────────────────────── */
 const BASE_ORG_SUB_ITEMS = [
@@ -33,7 +36,23 @@ const AZURE_SUB_ITEM = { id: 'org_azure', labelKey: 'settings.azure_config', ico
  * friendlier URL names (`users`, `license`) — disambiguated by the parent
  * path segment.
  */
-const TOP_LEVEL_TAB_IDS = ['preferences', 'memory', 'integrations', 'api_tokens'];
+const TOP_LEVEL_TAB_IDS = ['preferences', 'appearance', 'memory', 'integrations'];
+const TOP_LEVEL_ID_TO_URL = {};
+const TOP_LEVEL_URL_TO_ID = Object.fromEntries(Object.entries(TOP_LEVEL_ID_TO_URL).map(([id, url]) => [url, id]));
+// Legacy URL: Simple Mode used to live at /app/settings/simple-mode. It now
+// lives inside Preferences as a single toggle — bounce old bookmarks there.
+const LEGACY_URL_REDIRECTS = { 'simple-mode': 'preferences' };
+// Consumer (Account) sub-tabs live under /app/settings/account/{sub}.
+// Parallels the Organisation sub-routing so the URL segments don't collide
+// with the Profile group ('integrations' is already a Profile tab URL).
+const ACCOUNT_ID_TO_URL = {
+    consumer_license: 'license',
+    consumer_privacy: 'privacy',
+    consumer_usage: 'usage',
+    consumer_integrations: 'integrations',
+    consumer_beta: 'beta',
+};
+const ACCOUNT_URL_TO_ID = Object.fromEntries(Object.entries(ACCOUNT_ID_TO_URL).map(([id, url]) => [url, id]));
 const ORG_ID_TO_URL = {
     license: 'license',
     auth: 'auth',
@@ -58,12 +77,23 @@ function readTabFromUrl() {
         const sub = parts[3];
         return ORG_URL_TO_ID[sub] || 'license';
     }
+    if (seg === 'account') {
+        const sub = parts[3];
+        return ACCOUNT_URL_TO_ID[sub] || 'consumer_license';
+    }
+    if (TOP_LEVEL_URL_TO_ID[seg]) return TOP_LEVEL_URL_TO_ID[seg];
+    if (LEGACY_URL_REDIRECTS[seg]) return LEGACY_URL_REDIRECTS[seg];
     if (TOP_LEVEL_TAB_IDS.includes(seg)) return seg;
     return 'preferences';
 }
 
 function urlForTab(tabId) {
-    if (TOP_LEVEL_TAB_IDS.includes(tabId)) return `/app/settings/${tabId}`;
+    if (TOP_LEVEL_TAB_IDS.includes(tabId)) {
+        const urlName = TOP_LEVEL_ID_TO_URL[tabId] || tabId;
+        return `/app/settings/${urlName}`;
+    }
+    const accountUrl = ACCOUNT_ID_TO_URL[tabId];
+    if (accountUrl) return `/app/settings/account/${accountUrl}`;
     const urlName = ORG_ID_TO_URL[tabId];
     if (urlName) return `/app/settings/organisation/${urlName}`;
     return '/app/settings';
@@ -101,16 +131,16 @@ const NAV_ITEMS = [
         icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>,
     },
     {
+        id: 'appearance', labelKey: 'settings.appearance',
+        icon: <Palette width="15" height="15" strokeWidth={1.75} />,
+    },
+    {
         id: 'memory', labelKey: 'settings.memory',
         icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>,
     },
     {
         id: 'integrations', labelKey: 'settings.connections',
         icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>,
-    },
-    {
-        id: 'api_tokens', label: 'API Tokens',
-        icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z" /></svg>,
     },
 ];
 
@@ -181,7 +211,7 @@ const OrgSubItem = ({ section, label, isActive, onClick }) => {
 };
 
 /* ── Main component ──────────────────────────────────────────────────────── */
-const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
+const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, onClose }) => {
     const { t } = useTranslation();
     // activeTab can be a top-level id OR an org sub-item id (e.g. 'license', 'org_users')
     // State is kept in sync with the URL: /app/settings/{section} or
@@ -240,6 +270,16 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
     const ALL_ORG_IDS = [...BASE_ORG_SUB_ITEMS.map(s => s.id), AZURE_SUB_ITEM.id, 'org_github_sync', 'org_nextcloud_sync'];
     const isOrgSubTab = ALL_ORG_IDS.includes(activeTab);
 
+    // Simple Mode collapses the settings sidebar to just Preferences. If the
+    // user arrives on a deep link (or toggles ON while on another section),
+    // bounce them back to Preferences where the toggle now lives.
+    const isSimpleMode = !!user?.simpleMode;
+    useEffect(() => {
+        if (isSimpleMode && activeTab !== 'preferences') {
+            setActiveTab('preferences');
+        }
+    }, [isSimpleMode, activeTab, setActiveTab]);
+
     // orgSubItems is computed below — it depends on `statuses.githubConnected`
     // which is hydrated in fetchSettingsStatuses() and the `statuses` state
     // declared further down. The actual filter lives in the useMemo block
@@ -259,6 +299,10 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
         hasNextcloudAppPassword: false, isNextcloudUser: false,
         githubConnected: false,
     });
+    // Whether this org has already locked in its sign-in method. Once locked,
+    // the "Sign-in Method" sidebar entry is hidden — the panel is a one-time
+    // choice and adds no value after the fact.
+    const [orgAuthLocked, setOrgAuthLocked] = useState(false);
     const orgSubItems = useMemo(() => {
         const items = BASE_ORG_SUB_ITEMS.filter(s => {
             if (s.id === 'org_users') return canManageUsers;
@@ -273,6 +317,11 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
             // providers which are no-ops once identity comes from NC, so
             // hide it for everyone — including super-admins.
             if ((isNcOrg || isNcConnectorUser) && s.id === 'auth') return false;
+            // Sign-in method is a one-time, locked choice. Once the org has
+            // picked one, the panel only shows a "locked" notice with no
+            // editable controls — drop the sidebar entry so admins aren't
+            // pointed at a dead-end page.
+            if (orgAuthLocked && s.id === 'auth') return false;
             // Nextcloud Sync — visible when the user's own org is NC-bound,
             // OR when the user is a super-admin who could be managing NC orgs.
             if (s.id === 'org_nextcloud_sync' && !showNcSync) return false;
@@ -288,13 +337,13 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
             items.push(AZURE_SUB_ITEM);
         }
         return items;
-    }, [canSeeOrg, canManageUsers, isPrivateCloud, hasOrgIntegrations, isNcConnectorUser, isNcOrg, isSuperAdmin, showNcSync, statuses.githubConnected]);
+    }, [canSeeOrg, canManageUsers, isPrivateCloud, hasOrgIntegrations, isNcConnectorUser, isNcOrg, isSuperAdmin, showNcSync, statuses.githubConnected, orgAuthLocked]);
 
     // User-scoped: these are personal "which agent do I start on?" preferences.
     const [defaultAgentMode, setDefaultAgentMode] = useState(() => scopedStorage.getItem('defaultAgentMode') || 'last-used');
     const [defaultAgentId, setDefaultAgentId] = useState(() => scopedStorage.getItem('defaultAgentId') || '');
 
-    useEffect(() => { fetchMemoryStats(); fetchAgents(); fetchSettingsStatuses(); }, []);
+    useEffect(() => { fetchMemoryStats(); fetchAgents(); fetchSettingsStatuses(); fetchOrgAuthLocked(); }, []);
     useEffect(() => { scopedStorage.setItem('defaultAgentMode', defaultAgentMode); }, [defaultAgentMode]);
     useEffect(() => { scopedStorage.setItem('defaultAgentId', defaultAgentId); }, [defaultAgentId]);
 
@@ -309,6 +358,18 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
             const data = await res.json();
             setMemoryStats({ total: data.memories?.length || 0 });
         } catch (err) { console.error('Failed to fetch memory stats:', err); }
+    };
+    const fetchOrgAuthLocked = async () => {
+        if (!canSeeOrg) return;
+        try {
+            const res = await authFetch(`${API_BASE}/auth/organizations`);
+            if (!res.ok) return;
+            const orgs = await res.json();
+            const myOrg = user?.organizationId
+                ? orgs.find(o => o.id === user.organizationId)
+                : orgs[0];
+            setOrgAuthLocked(!!myOrg?.authMethod);
+        } catch (e) { /* non-critical */ }
     };
     const fetchSettingsStatuses = async () => {
         try {
@@ -357,11 +418,14 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
         // Consumer account tabs
         if (activeTab === 'consumer_license' && isConsumerAccount) return <ConsumerLicenseSection user={user} />;
         if (activeTab === 'consumer_privacy' && isConsumerAccount) return <ConsumerPrivacySection user={user} />;
+        if (activeTab === 'consumer_usage' && isConsumerAccount) return <ConsumerUsageSection user={user} />;
+        if (activeTab === 'consumer_integrations' && isConsumerAccount) return <ConsumerIntegrationsSection user={user} />;
+        if (activeTab === 'consumer_beta' && isConsumerAccount) return <ConsumerBetaFeaturesSection user={user} />;
         switch (activeTab) {
-            case 'preferences': return <StartupAgentSection defaultAgentMode={defaultAgentMode} setDefaultAgentMode={setDefaultAgentMode} defaultAgentId={defaultAgentId} setDefaultAgentId={setDefaultAgentId} agents={agents} onLogout={onLogout} user={user} />;
+            case 'preferences': return <PreferencesSection defaultAgentMode={defaultAgentMode} setDefaultAgentMode={setDefaultAgentMode} defaultAgentId={defaultAgentId} setDefaultAgentId={setDefaultAgentId} agents={agents} onLogout={onLogout} user={user} onUpdateUser={onUpdateUser} />;
+            case 'appearance': return <AppearanceSection />;
             case 'memory': return <MemorySection memoryStats={memoryStats} onOpenMemory={() => setShowMemoryPanel(true)} user={user} />;
             case 'integrations': return <IntegrationsSection statuses={statuses} onSaved={handleIntegrationSaved} enabledIntegrations={user?.enabledIntegrations} isOrgAdmin={canSeeOrg} user={user} showOrgIntegrations={isConsumerAccount} />;
-            case 'api_tokens': return <PersonalAccessTokensSection />;
             case 'organisation': return canSeeOrg ? <OrganisationSection user={user} activeSection="license" /> : null;
             default: return null;
         }
@@ -447,28 +511,28 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
                             {t('settings.profile_section')}
                         </p>
 
-                        {NAV_ITEMS.filter(item => {
-                            // Personal Access Tokens is a beta feature — hidden
-                            // unless the user's org has it enabled (or the user
-                            // is a super-admin).
-                            if (item.id === 'api_tokens') {
-                                const isSuperAdminPerm = perms.includes('all') || user?.role === 'admin';
-                                const hasPatBeta = Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('personal_access_tokens');
-                                return isSuperAdminPerm || hasPatBeta;
-                            }
-                            return true;
-                        }).map(item => (
+                        {isSimpleMode ? (
                             <NavItem
-                                key={item.id}
-                                {...item}
-                                label={item.labelKey ? t(item.labelKey) : item.label}
-                                isActive={activeTab === item.id && !isOrgSubTab}
+                                key={NAV_ITEMS[0].id}
+                                {...NAV_ITEMS[0]}
+                                label={t(NAV_ITEMS[0].labelKey)}
+                                isActive={activeTab === NAV_ITEMS[0].id}
                                 onClick={handleNavClick}
                             />
-                        ))}
+                        ) : (
+                            NAV_ITEMS.map(item => (
+                                <NavItem
+                                    key={item.id}
+                                    {...item}
+                                    label={item.labelKey ? t(item.labelKey) : item.label}
+                                    isActive={activeTab === item.id && !isOrgSubTab}
+                                    onClick={handleNavClick}
+                                />
+                            ))
+                        )}
 
                         {/* Organisation accordion — only if permitted */}
-                        {canSeeOrg && (
+                        {!isSimpleMode && canSeeOrg && (
                             <>
                                 <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '6px 8px' }} />
                                 <p className="text-[9px] font-semibold uppercase tracking-widest px-3 pb-1 pt-1" style={{ color: 'var(--text-muted)' }}>
@@ -507,7 +571,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
                         )}
 
                         {/* Consumer Account section — for org-less cloud users */}
-                        {isConsumerAccount && !canSeeOrg && (
+                        {!isSimpleMode && isConsumerAccount && !canSeeOrg && (
                             <>
                                 <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '6px 8px' }} />
                                 <p className="text-[9px] font-semibold uppercase tracking-widest px-3 pb-1 pt-1" style={{ color: 'var(--text-muted)' }}>
@@ -525,6 +589,27 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
                                     label={t('settings.privacy_shield') || 'Privacy Shield'}
                                     icon={<Shield style={{ width: '15px', height: '15px' }} />}
                                     isActive={activeTab === 'consumer_privacy'}
+                                    onClick={handleNavClick}
+                                />
+                                <NavItem
+                                    id="consumer_usage"
+                                    label={t('settings.usage_monitoring') || 'Usage & Monitoring'}
+                                    icon={<BarChart2 style={{ width: '15px', height: '15px' }} />}
+                                    isActive={activeTab === 'consumer_usage'}
+                                    onClick={handleNavClick}
+                                />
+                                <NavItem
+                                    id="consumer_integrations"
+                                    label={t('settings.integrations') || 'Integrations'}
+                                    icon={<Link2 style={{ width: '15px', height: '15px' }} />}
+                                    isActive={activeTab === 'consumer_integrations'}
+                                    onClick={handleNavClick}
+                                />
+                                <NavItem
+                                    id="consumer_beta"
+                                    label={t('settings.beta_features') || 'Beta features'}
+                                    icon={<Sparkles style={{ width: '15px', height: '15px' }} />}
+                                    isActive={activeTab === 'consumer_beta'}
                                     onClick={handleNavClick}
                                 />
                             </>
@@ -545,7 +630,10 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onClose }) => {
 
                 {/* ── Content panel ── */}
                 <div className="flex-1 overflow-auto" style={{ background: 'var(--bg-primary)' }}>
-                    <div className={`mx-auto py-8 ${isOrgSubTab ? 'max-w-5xl px-8' : 'max-w-[640px] px-8'}`} style={activeTab === 'org_usage' ? { maxWidth: '100%', padding: '24px 32px 32px' } : undefined}>
+                    <div
+                        className={`mx-auto py-8 ${(isOrgSubTab || activeTab === 'consumer_usage' || activeTab === 'consumer_integrations') ? 'max-w-5xl px-8' : 'max-w-[640px] px-8'}`}
+                        style={activeTab === 'org_usage' ? { maxWidth: '100%', padding: '24px 32px 32px' } : undefined}
+                    >
                         {renderContent()}
                     </div>
                 </div>

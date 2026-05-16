@@ -1,27 +1,12 @@
-import React, { useState, useRef, useEffect, useCallback } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import {
     Globe, Type, Upload, Trash2, Loader2,
-    AlertCircle, X, Mic, Plus, Search,
-    FileText, File, Table2, Link2, Square, Radio,
+    AlertCircle, X, Mic,
+    FileText, File, Table2, Link2,
     RotateCw, XCircle, ChevronDown, ChevronUp
 } from 'lucide-react';
-import { API_BASE, authFetch } from '../../utils/helpers';
-
-const LANGUAGES = [
-    { code: 'nl', label: '🇳🇱 NL' },
-    { code: 'en', label: '🇬🇧 EN' },
-    { code: 'de', label: '🇩🇪 DE' },
-    { code: 'fr', label: '🇫🇷 FR' },
-    { code: 'es', label: '🇪🇸 ES' },
-    { code: 'it', label: '🇮🇹 IT' },
-    { code: 'pt', label: '🇵🇹 PT' },
-];
-
-function formatTime(secs) {
-    const m = Math.floor(secs / 60);
-    const s = secs % 60;
-    return `${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')}`;
-}
+import MeetingPicker from '../../components/meeting-picker/MeetingPicker';
+import { useCapture } from '../meeting-notes/capture/CaptureContext';
 
 /* ── Source type metadata ─────────────────────────────────────── */
 export const SOURCE_META = {
@@ -108,7 +93,7 @@ function SourceCard({ source, onDelete, onRetry, onCancel }) {
 
                     {/* Status */}
                     {isProcessing && (
-                        <span className="flex items-center gap-0.5 text-[9px] font-medium" style={{ color: '#92400e' }}>
+                        <span className="flex items-center gap-0.5 text-[9px] font-medium" style={{ color: 'var(--warning)' }}>
                             <Loader2 className="w-2.5 h-2.5 animate-spin" />
                             Processing…
                         </span>
@@ -119,7 +104,7 @@ function SourceCard({ source, onDelete, onRetry, onCancel }) {
                         </span>
                     )}
                     {isError && (
-                        <span className="flex items-center gap-0.5 text-[9px] font-medium" style={{ color: '#ef4444' }}>
+                        <span className="flex items-center gap-0.5 text-[9px] font-medium" style={{ color: 'var(--error)' }}>
                             <AlertCircle className="w-2.5 h-2.5" />
                             Failed
                         </span>
@@ -133,7 +118,7 @@ function SourceCard({ source, onDelete, onRetry, onCancel }) {
                         <button
                             onClick={() => setShowDetails(v => !v)}
                             className="flex items-center gap-0.5 text-[9px] font-medium hover:underline"
-                            style={{ color: '#ef4444' }}
+                            style={{ color: 'var(--error)' }}
                         >
                             {showDetails ? <ChevronUp className="w-2.5 h-2.5" /> : <ChevronDown className="w-2.5 h-2.5" />}
                             {showDetails ? 'Hide details' : 'Show details'}
@@ -141,7 +126,7 @@ function SourceCard({ source, onDelete, onRetry, onCancel }) {
                         {showDetails && (
                             <pre
                                 className="mt-1 text-[9px] leading-snug whitespace-pre-wrap break-words p-1.5 rounded"
-                                style={{ color: '#ef4444', background: 'rgba(239,68,68,0.08)', maxHeight: '120px', overflow: 'auto' }}
+                                style={{ color: 'var(--error)', background: 'rgba(239,68,68,0.08)', maxHeight: '120px', overflow: 'auto' }}
                             >
                                 {source.error}
                             </pre>
@@ -198,31 +183,66 @@ function SourceCard({ source, onDelete, onRetry, onCancel }) {
     );
 }
 
-/* ── MeetingItem ─────────────────────────────────────────────── */
-function MeetingItem({ meeting, onSelect }) {
-    const date = meeting.createdAt ? new Date(meeting.createdAt) : null;
-    const dateStr = date ? date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }) : '';
+/* ── MeetingSourcePanel — replaces the old inline picker + recording UI ───
+ * Uses the shared MeetingPicker. Recording is no longer inline — users start
+ * one from the global Record FAB or the Meeting Notes page; the recording
+ * finishes, the picker auto-refreshes, and they pick it from the list. */
+function MeetingSourcePanel({ meetingMode, onChangeMode, onAddMeeting, onClose }) {
+    const { openCapture } = useCapture();
     return (
-        <button
-            onClick={() => onSelect(meeting.id)}
-            className="w-full text-left px-3 py-2 rounded-xl border transition-all hover:shadow-sm hover:border-[var(--accent-primary)] group"
-            style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)' }}
-        >
-            <div className="flex items-center gap-2">
-                <div className="shrink-0 w-6 h-6 rounded-lg flex items-center justify-center" style={{ background: 'rgba(236,72,153,0.1)', color: '#ec4899' }}>
-                    <Mic className="w-3 h-3" />
-                </div>
-                <div className="flex-1 min-w-0">
-                    <div className="text-[11px] font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
-                        {meeting.title || 'Untitled Meeting'}
-                    </div>
-                    {dateStr && (
-                        <div className="text-[9px]" style={{ color: 'var(--text-tertiary)' }}>{dateStr}</div>
-                    )}
-                </div>
-                <Plus className="w-3 h-3 opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: 'var(--accent-primary)' }} />
+        <div className="shrink-0 mx-3 mb-2 rounded-xl border p-3 space-y-3"
+             style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', animation: 'fadeSlideDown 0.18s ease-out' }}>
+            <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: 'var(--accent-primary)' }}>Meeting Notes</span>
+                <button onClick={onClose} className="p-0.5 rounded hover:bg-black/10 transition-colors">
+                    <X className="w-3 h-3" style={{ color: 'var(--text-tertiary)' }} />
+                </button>
             </div>
-        </button>
+
+            <div>
+                <p className="text-[9px] uppercase font-bold tracking-wide mb-1" style={{ color: 'var(--text-tertiary)' }}>
+                    Include as source
+                </p>
+                <div className="grid grid-cols-2 gap-0.5 p-0.5 rounded-lg" style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}>
+                    {[
+                        { key: 'full', label: 'Full transcript' },
+                        { key: 'summary', label: 'Summary only' },
+                    ].map((opt) => {
+                        const active = meetingMode === opt.key;
+                        return (
+                            <button
+                                key={opt.key}
+                                onClick={() => onChangeMode(opt.key)}
+                                className="px-2 py-1 rounded-md text-[10px] font-semibold transition-all"
+                                style={{
+                                    background: active ? 'var(--bg-primary)' : 'transparent',
+                                    color: active ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                                }}
+                            >
+                                {opt.label}
+                            </button>
+                        );
+                    })}
+                </div>
+            </div>
+
+            <MeetingPicker
+                mode="single"
+                onSelect={(m) => onAddMeeting(m.id)}
+                placeholder="Search meeting notes…"
+                emptyAction={(
+                    <button
+                        type="button"
+                        onClick={() => openCapture()}
+                        className="inline-flex items-center gap-1 px-3 py-1.5 rounded-full text-[11px] font-semibold border"
+                        style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                    >
+                        <Mic className="w-3 h-3" />
+                        Capture one now
+                    </button>
+                )}
+            />
+        </div>
     );
 }
 
@@ -237,10 +257,6 @@ export default function NotebookSources({
     const [urlInput,    setUrlInput]    = useState('');
     const [textInput,   setTextInput]   = useState('');
     const [textName,    setTextName]    = useState('');
-    const [meetingSearch, setMeetingSearch] = useState('');
-
-    const [meetings,        setMeetings]        = useState([]);
-    const [loadingMeetings, setLoadingMeetings] = useState(false);
     const fileInputRef = useRef();
 
     // ── Meeting ingestion mode: 'full' transcript or 'summary' only ──
@@ -252,163 +268,6 @@ export default function NotebookSources({
         setMeetingMode(m);
         try { localStorage.setItem('nb_meeting_mode', m); } catch {}
     }, []);
-
-    // ── Recording state ──────────────────────────────
-    const [recLang,      setRecLang]      = useState('nl');
-    const [isRecording,  setIsRecording]  = useState(false);
-    const [recTime,      setRecTime]      = useState(0);
-    const [recStatus,    setRecStatus]    = useState('idle'); // 'idle' | 'recording' | 'uploading' | 'done' | 'error'
-    const [recError,     setRecError]     = useState('');
-    const [recStage,     setRecStage]     = useState('');
-    const mediaRecorderRef = useRef(null);
-    const chunksRef        = useRef([]);
-    const timerRef         = useRef(null);
-    const streamRef        = useRef(null);
-
-    const TRANSCRIPTION_STAGES = [
-        'Uploading audio…',
-        'Converting audio…',
-        'Transcribing speech…',
-        'Identifying speakers…',
-        'Generating summary…',
-        'Finalizing…',
-    ];
-
-    const startRecording = useCallback(async () => {
-        setRecError('');
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            streamRef.current = stream;
-            chunksRef.current = [];
-
-            const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
-                ? 'audio/webm;codecs=opus'
-                : MediaRecorder.isTypeSupported('audio/webm')
-                    ? 'audio/webm'
-                    : 'audio/mp4';
-
-            const recorder = new MediaRecorder(stream, { mimeType });
-            mediaRecorderRef.current = recorder;
-
-            recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-
-            recorder.onstop = async () => {
-                const ext  = mimeType.includes('webm') ? 'webm' : 'mp4';
-                const blob = new Blob(chunksRef.current, { type: mimeType });
-
-                // Upload + transcribe
-                setRecStatus('uploading');
-                let stageIdx = 0;
-                setRecStage(TRANSCRIPTION_STAGES[0]);
-                const stageTimer = setInterval(() => {
-                    stageIdx = Math.min(stageIdx + 1, TRANSCRIPTION_STAGES.length - 1);
-                    setRecStage(TRANSCRIPTION_STAGES[stageIdx]);
-                }, 12000);
-
-                const now  = new Date();
-                const title = `Meeting ${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} ${now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })}`;
-                const formData = new FormData();
-                // Append Blob with filename — avoids the `new File(...)` constructor,
-                // which is unavailable in some browsers (older Safari / some mobile).
-                formData.append('audio', blob, `recording.${ext}`);
-                formData.append('language', recLang);
-                formData.append('title', title);
-
-                try {
-                    const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), 600000);
-                    const res = await authFetch(`${API_BASE}/api/transcriptions`, {
-                        method: 'POST',
-                        body: formData,
-                        signal: controller.signal,
-                    });
-                    clearTimeout(timeout);
-                    clearInterval(stageTimer);
-
-                    if (res.ok) {
-                        const result = await res.json();
-                        setRecStatus('done');
-                        setRecStage('');
-                        onAddMeeting?.(result.id, { mode: meetingMode });
-                        setTimeout(() => { setRecStatus('idle'); setRecTime(0); }, 2500);
-                    } else {
-                        const err = await res.json().catch(() => ({}));
-                        setRecStatus('error');
-                        setRecError(err.error || 'Transcription failed');
-                        clearInterval(stageTimer);
-                    }
-                } catch (err) {
-                    clearInterval(stageTimer);
-                    setRecStatus('error');
-                    setRecError(err.name === 'AbortError' ? 'Timed out after 10 min' : err.message);
-                }
-            };
-
-            recorder.start(1000);
-            setIsRecording(true);
-            setRecStatus('recording');
-            setRecTime(0);
-            timerRef.current = setInterval(() => setRecTime(t => t + 1), 1000);
-        } catch (err) {
-            setRecStatus('error');
-            setRecError('Microphone access denied. Allow mic in browser settings.');
-        }
-    }, [recLang, onAddMeeting, meetingMode]);
-
-    const stopRecording = useCallback(() => {
-        if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-            mediaRecorderRef.current.stop();
-        }
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(t => t.stop());
-            streamRef.current = null;
-        }
-        clearInterval(timerRef.current);
-        setIsRecording(false);
-    }, []);
-
-    // Cleanup on unmount
-    useEffect(() => {
-        return () => {
-            if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-            clearInterval(timerRef.current);
-        };
-    }, []);
-
-    useEffect(() => {
-        if (activePanel === 'meeting' && meetings.length === 0) {
-            setLoadingMeetings(true);
-            authFetch(`${API_BASE}/api/transcriptions`)
-                .then(r => r.json())
-                .then(data => setMeetings(data.transcriptions || []))
-                .catch(err => console.error(err))
-                .finally(() => setLoadingMeetings(false));
-        }
-    }, [activePanel]);
-
-    const togglePanel = (key) => {
-        if (key === 'file') { fileInputRef.current?.click(); return; }
-        setActivePanel(p => (p === key ? null : key));
-    };
-
-    const submitUrl = () => {
-        if (!urlInput.trim()) return;
-        onAddUrl(urlInput.trim());
-        setUrlInput('');
-        setActivePanel(null);
-    };
-
-    const submitText = () => {
-        if (!textInput.trim()) return;
-        onAddText(textInput.trim(), textName.trim() || undefined);
-        setTextInput('');
-        setTextName('');
-        setActivePanel(null);
-    };
-
-    const filteredMeetings = meetings.filter(m =>
-        !meetingSearch || (m.title || '').toLowerCase().includes(meetingSearch.toLowerCase())
-    );
 
     const readyPct = sources.length > 0 ? Math.round((readyCount / sources.length) * 100) : 0;
 
@@ -518,12 +377,18 @@ export default function NotebookSources({
                         value={textInput}
                         onChange={e => setTextInput(e.target.value)}
                         placeholder="Paste your text here…"
+                        maxLength={PASTE_MAX_CHARS}
                         className="w-full px-2.5 py-1.5 rounded-lg text-xs border outline-none resize-none"
-                        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)', height: '80px' }}
+                        style={{ background: 'var(--bg-primary)', borderColor: pasteOverLimit ? 'var(--error)' : 'var(--border-subtle)', color: 'var(--text-primary)', height: '80px' }}
                     />
+                    {pasteOverLimit && (
+                        <p className="text-[9px] font-medium" style={{ color: 'var(--error)' }}>
+                            Too long — max {PASTE_MAX_CHARS.toLocaleString()} characters.
+                        </p>
+                    )}
                     <button
                         onClick={submitText}
-                        disabled={!textInput.trim()}
+                        disabled={!textInput.trim() || pasteOverLimit}
                         className="w-full py-1.5 rounded-lg text-[10px] font-bold transition-opacity disabled:opacity-40"
                         style={{ background: '#10b981', color: 'white' }}
                     >
@@ -532,177 +397,16 @@ export default function NotebookSources({
                 </div>
             )}
 
-            {/* ── Meeting Panel ── */}
+            {/* ── Meeting Panel — uses shared MeetingPicker ── */}
             {activePanel === 'meeting' && (
-                <div className="shrink-0 mx-3 mb-2 rounded-xl border p-3 space-y-2" style={{ background: 'var(--bg-secondary)', borderColor: 'rgba(236,72,153,0.3)', animation: 'fadeSlideDown 0.18s ease-out' }}>
-                    <div className="flex items-center justify-between">
-                        <span className="text-[10px] font-bold uppercase tracking-wide" style={{ color: '#ec4899' }}>Meeting Notes</span>
-                        <button onClick={() => setActivePanel(null)} className="p-0.5 rounded hover:bg-black/10 transition-colors">
-                            <X className="w-3 h-3" style={{ color: 'var(--text-tertiary)' }} />
-                        </button>
-                    </div>
-
-        {/* ── Ingestion mode: full transcript vs summary ── */}
-                    <div className="mb-2">
-                        <p className="text-[9px] uppercase font-bold tracking-wide mb-1" style={{ color: 'var(--text-tertiary)' }}>
-                            Include as source
-                        </p>
-                        <div
-                            className="grid grid-cols-2 gap-0.5 p-0.5 rounded-lg"
-                            style={{ background: 'var(--bg-tertiary)', border: '1px solid var(--border-subtle)' }}
-                        >
-                            {[
-                                { key: 'full',    label: 'Full transcript', hint: 'Everything said, verbatim' },
-                                { key: 'summary', label: 'Summary only',    hint: 'Condensed overview' },
-                            ].map(opt => {
-                                const active = meetingMode === opt.key;
-                                return (
-                                    <button
-                                        key={opt.key}
-                                        onClick={() => updateMeetingMode(opt.key)}
-                                        title={opt.hint}
-                                        className="px-2 py-1 rounded-md text-[10px] font-semibold transition-all"
-                                        style={{
-                                            background: active ? 'var(--surface-1)' : 'transparent',
-                                            color: active ? 'var(--brand-primary)' : 'var(--text-secondary)',
-                                            boxShadow: active ? 'var(--shadow-sm)' : 'none',
-                                        }}
-                                    >
-                                        {opt.label}
-                                    </button>
-                                );
-                            })}
-                        </div>
-                    </div>
-
-        {/* ── NEW: Inline Recording Panel ── */}
-                    <div className="pb-2">
-                        {/* Language + record controls */}
-                        <div className="flex items-center gap-1.5 mb-2">
-                            <select
-                                value={recLang}
-                                onChange={e => setRecLang(e.target.value)}
-                                disabled={isRecording || recStatus === 'uploading'}
-                                className="flex-1 text-[10px] px-2 py-1.5 rounded-lg border outline-none cursor-pointer"
-                                style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
-                            >
-                                {LANGUAGES.map(l => <option key={l.code} value={l.code}>{l.label}</option>)}
-                            </select>
-
-                            {!isRecording && recStatus !== 'uploading' && (
-                                <button
-                                    onClick={startRecording}
-                                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:scale-[1.03] active:scale-95"
-                                    style={{ background: '#ec4899', color: 'white' }}
-                                    title="Start recording"
-                                >
-                                    <Radio className="w-3 h-3" />
-                                    Record
-                                </button>
-                            )}
-
-                            {isRecording && (
-                                <button
-                                    onClick={stopRecording}
-                                    className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:scale-[1.03] active:scale-95"
-                                    style={{ background: '#ef4444', color: 'white' }}
-                                    title="Stop and transcribe"
-                                >
-                                    <Square className="w-3 h-3" />
-                                    Stop
-                                </button>
-                            )}
-                        </div>
-
-                        {/* Recording indicator */}
-                        {isRecording && (
-                            <div className="flex items-center gap-2 px-2.5 py-2 rounded-xl border"
-                                style={{ background: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.25)' }}>
-                                <span className="w-2 h-2 rounded-full shrink-0" style={{ background: '#ef4444', animation: 'pulse 1s infinite' }} />
-                                <span className="text-[11px] font-bold tabular-nums" style={{ color: '#ef4444' }}>{formatTime(recTime)}</span>
-                                <span className="text-[10px] ml-auto" style={{ color: 'var(--text-tertiary)' }}>Recording…</span>
-                            </div>
-                        )}
-
-                        {/* Upload/transcription progress */}
-                        {recStatus === 'uploading' && (
-                            <div className="flex items-center gap-2 px-2.5 py-2 rounded-xl border"
-                                style={{ background: 'rgba(236,72,153,0.06)', borderColor: 'rgba(236,72,153,0.25)' }}>
-                                <Loader2 className="w-3 h-3 animate-spin shrink-0" style={{ color: '#ec4899' }} />
-                                <span className="text-[10px] font-medium" style={{ color: '#ec4899' }}>{recStage}</span>
-                            </div>
-                        )}
-
-                        {/* Done */}
-                        {recStatus === 'done' && (
-                            <div className="flex items-center gap-2 px-2.5 py-2 rounded-xl border"
-                                style={{ background: 'rgba(34,197,94,0.07)', borderColor: 'rgba(34,197,94,0.25)' }}>
-                                <span className="text-sm">✅</span>
-                                <span className="text-[10px] font-medium" style={{ color: '#16a34a' }}>Added to notebook!</span>
-                            </div>
-                        )}
-
-                        {/* Error */}
-                        {recStatus === 'error' && (
-                            <div className="space-y-1.5">
-                                <div className="flex items-start gap-2 px-2.5 py-2 rounded-xl border"
-                                    style={{ background: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.25)' }}>
-                                    <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" style={{ color: '#ef4444' }} />
-                                    <span className="text-[10px] leading-tight" style={{ color: '#ef4444' }}>{recError}</span>
-                                </div>
-                                <button
-                                    onClick={() => { setRecStatus('idle'); setRecError(''); }}
-                                    className="w-full text-[10px] py-1 rounded-lg border transition-colors"
-                                    style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}
-                                >
-                                    Dismiss
-                                </button>
-                            </div>
-                        )}
-                    </div>
-
-                    {/* Divider */}
-                    <div className="border-t mb-2" style={{ borderColor: 'var(--border-subtle)' }} />
-                    <p className="text-[9px] uppercase font-bold tracking-wide mb-1.5" style={{ color: 'var(--text-tertiary)' }}>Existing notes</p>
-
-                    {loadingMeetings ? (
-                        <div className="flex items-center justify-center py-4 gap-1.5" style={{ color: 'var(--text-tertiary)' }}>
-                            <Loader2 className="w-4 h-4 animate-spin" style={{ color: '#ec4899' }} />
-                            <span className="text-[10px]">Loading meetings…</span>
-                        </div>
-                    ) : meetings.length === 0 ? (
-                        <div className="text-center py-3">
-                            <Mic className="w-5 h-5 mx-auto mb-1" style={{ color: 'var(--text-tertiary)' }} />
-                            <p className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>No meeting notes yet</p>
-                        </div>
-                    ) : (
-                        <>
-                            {/* Search */}
-                            <div className="relative">
-                                <Search className="absolute left-2 top-1/2 -translate-y-1/2 w-3 h-3" style={{ color: 'var(--text-tertiary)' }} />
-                                <input
-                                    value={meetingSearch}
-                                    onChange={e => setMeetingSearch(e.target.value)}
-                                    placeholder="Search meetings…"
-                                    className="w-full pl-6 pr-2.5 py-1.5 rounded-lg text-xs border outline-none"
-                                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
-                                />
-                            </div>
-                            <div className="space-y-1 max-h-[160px] overflow-y-auto custom-scrollbar pr-0.5 mt-1">
-                                {filteredMeetings.length === 0 ? (
-                                    <p className="text-center text-[10px] py-2" style={{ color: 'var(--text-tertiary)' }}>No matches</p>
-                                ) : filteredMeetings.map(m => (
-                                    <MeetingItem
-                                        key={m.id}
-                                        meeting={m}
-                                        onSelect={(id) => { onAddMeeting?.(id, { mode: meetingMode }); setActivePanel(null); setMeetingSearch(''); }}
-                                    />
-                                ))}
-                            </div>
-                        </>
-                    )}
-                </div>
+                <MeetingSourcePanel
+                    meetingMode={meetingMode}
+                    onChangeMode={updateMeetingMode}
+                    onAddMeeting={(id) => { onAddMeeting?.(id, { mode: meetingMode }); setActivePanel(null); }}
+                    onClose={() => setActivePanel(null)}
+                />
             )}
+
 
             {/* ── Source list (scrollable, drop zone) ── */}
             <div

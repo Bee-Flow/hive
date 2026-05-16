@@ -1,26 +1,38 @@
+import { Sparkles, Zap, Brain, Workflow, Users, PenLine, Lightbulb } from 'lucide-react';
+
 // Shared metadata for the user-facing tier keys. Used by ModelTierSelector
-// (the dropdown) and MessageItem (the "Auto → X" badge) so both stay in sync
-// when keys are renamed or new tiers are added.
+// (the dropdown) and the chat history badge so both stay in sync when keys
+// are renamed or new tiers are added.
+//
+// Fields:
+//   Icon     lucide component, used for the in-app monochrome icon
+//   emoji    string fallback for any place that still expects a single char
+//   iconSrc  optional image url override (Bee Flow logo for Flow/Swarm)
+//   label    human-readable tier name
+//   desc     short subtitle shown in the dropdown
+//   color    accent var — kept so consumers that draw a tinted dot/ring follow
+//            the admin's chosen accent rather than a hard-coded per-tier hue
 //
 // `pro` is a legacy key that resolves server-side to the deep-thinking model;
 // the human label here makes the badge read "Deep Thinking" instead of "Pro".
 export const TIER_META = {
-    auto: { icon: '🔀', label: 'Auto', desc: 'Optimal choice', color: '#6366f1' },
-    fast: { icon: '⚡', label: 'Fast', desc: 'Quick answers', color: '#10b981' },
-    standard: { icon: '🐝', iconSrc: '/BeeFlow-logo-Icon-2026.svg', label: 'Flow', desc: 'Multi-stage orchestration', color: '#f59e0b' },
-    swarm: { icon: '🐝🐝', iconSrc: '/BeeFlow-logo-Icon-2026.svg', label: 'Swarm', desc: 'Parallel agents, synthesised answer', color: '#10b981' },
-    thinking: { icon: '🧠', label: 'Think', desc: 'Complex problems', color: '#8b5cf6' },
-    writer: { icon: '✍️', label: 'Write', desc: 'Long-form content', color: '#ec4899' },
-    deep_thinking: { icon: '✨', label: 'Deep Thinking', desc: 'Advanced reasoning', color: '#f59e0b' },
-    pro: { icon: '✨', label: 'Deep Thinking', desc: 'Advanced reasoning', color: '#f59e0b' },
+    auto:          { Icon: Sparkles,  emoji: '🔀',    label: 'Auto',          desc: 'Optimal choice',                       color: 'var(--accent-primary)' },
+    fast:          { Icon: Zap,       emoji: '⚡',    label: 'Fast',          desc: 'Quick answers',                        color: 'var(--accent-primary)' },
+    standard:      { Icon: Workflow,  emoji: '🐝',   iconSrc: '/BeeFlow-logo-Icon-2026.svg', label: 'Flow',  desc: 'Multi-stage orchestration',            color: 'var(--accent-primary)' },
+    swarm:         { Icon: Users,     emoji: '🐝🐝', iconSrc: '/BeeFlow-logo-Icon-2026.svg', label: 'Swarm', desc: 'Parallel agents, synthesised answer',  color: 'var(--accent-primary)' },
+    thinking:      { Icon: Brain,     emoji: '🧠',    label: 'Think',         desc: 'Complex problems',                     color: 'var(--accent-primary)' },
+    writer:        { Icon: PenLine,   emoji: '✍️',   label: 'Write',         desc: 'Long-form content',                    color: 'var(--accent-primary)' },
+    deep_thinking: { Icon: Lightbulb, emoji: '✨',   label: 'Deep Thinking', desc: 'Advanced reasoning',                   color: 'var(--accent-primary)' },
+    pro:           { Icon: Lightbulb, emoji: '✨',   label: 'Deep Thinking', desc: 'Advanced reasoning',                   color: 'var(--accent-primary)' },
 };
 
 export function customTierMeta(key, cfg) {
     return {
-        icon: cfg?.icon || '✨',
+        Icon: Sparkles,
+        emoji: cfg?.icon || '✨',
         label: cfg?.label || key.replace(/^custom:/, ''),
         desc: cfg?.description || 'Custom tier',
-        color: '#eab308',
+        color: 'var(--accent-primary)',
     };
 }
 

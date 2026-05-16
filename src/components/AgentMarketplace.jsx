@@ -36,9 +36,16 @@ const getAgentType = (a) => {
     return 'agent';
 };
 
-// Filter to only normal org-created agents (no special types)
+// Filter to only normal org-created agents — hide system/swarm agents and
+// research agents. System agents (owner_id === 'system') power internal
+// pipelines like memory extraction, conversation-starter generation, prompt
+// design etc.; they have no user-facing chat surface and showing them in the
+// marketplace just confuses users (and globally-scoped admins, who would
+// otherwise see them on every install).
 const isNormalAgent = (a) => {
+    if (!a) return false;
     if (a._type === 'research') return false;
+    if (a.owner_id === 'system' || a.owner_id === 'swarm') return false;
     return true;
 };
 
@@ -205,7 +212,11 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
     }, [agents, search, activeCategory, favorites, sortBy, activeJobs, usageByAgent, recents]);
 
 
-    const favoriteAgents = useMemo(() => agents.filter(a => favorites.includes(a.id)), [agents, favorites]);
+    // Eligible-for-marketplace total. Used as the denominator in "X of Y agents"
+    // so the count doesn't claim there are 12 agents when 9 of them are hidden
+    // system/swarm entries that the user can't actually see.
+    const marketplaceAgents = useMemo(() => agents.filter(isNormalAgent), [agents]);
+    const favoriteAgents = useMemo(() => marketplaceAgents.filter(a => favorites.includes(a.id)), [marketplaceAgents, favorites]);
 
     const hasActiveFilters = activeCategory !== 'all' || activeJobs.length > 0;
     const isSearching = search.trim().length > 0;
@@ -235,7 +246,7 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
                 <div className="flex items-center justify-between mb-3">
                     <div>
                         <h1 className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>{t('store.title')}</h1>
-                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{t('store.count', { visible: filtered.length, total: agents.length })}</p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{t('store.count', { visible: filtered.length, total: marketplaceAgents.length })}</p>
                     </div>
                     <div className="flex items-center gap-2">
                         {canManageAgents && onEditAgent && (

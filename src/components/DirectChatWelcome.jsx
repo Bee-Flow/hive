@@ -37,7 +37,8 @@ const DirectChatWelcome = ({ tiers, selectedTier, onTierChange, onPromptClick, c
                     <button
                         key={i}
                         onClick={() => onPromptClick && onPromptClick(t(prompt.i18nKey))}
-                        className="text-left px-3.5 py-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-card)] hover:bg-[var(--bg-secondary)] hover:border-purple-500/30 transition-all flex items-center gap-2 group whitespace-nowrap"
+                        data-surface="subtle"
+                        className="text-left px-3.5 py-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-card)] hover:bg-[var(--bg-secondary)] transition-all flex items-center gap-2 group whitespace-nowrap"
                     >
                         <span className="text-sm group-hover:scale-110 transition-transform">{prompt.icon}</span>
                         <span className="text-[12.5px] font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors">

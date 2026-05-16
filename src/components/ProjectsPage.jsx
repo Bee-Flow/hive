@@ -1,5 +1,8 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowLeft, Plus, Search, Pencil, Trash2, FolderOpen, Users } from 'lucide-react';
+import { ArrowLeft, Plus, Search, Pencil, Trash2, FolderOpen } from 'lucide-react';
+
+// Matches the Studio (Webpages) list-view shell: single-row header, inline
+// create+search toolbar, card grid body with a top visual band per card.
 
 const SORT_OPTIONS = [
     { key: 'recent', label: 'Recently Updated' },
@@ -18,77 +21,94 @@ const roleLabel = (perm) => {
     return 'Viewer';
 };
 
+function timeAgo(dateStr) {
+    if (!dateStr) return '';
+    const d = new Date(dateStr);
+    const diff = (Date.now() - d.getTime()) / 1000;
+    if (diff < 60) return 'just now';
+    if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+    return d.toLocaleDateString();
+}
+
 const ProjectCard = React.memo(({ project, onSelect, onEdit, onDelete }) => {
     const role = project.permission || 'viewer';
     const canEdit = role === 'owner' || role === 'editor';
     const canDelete = role === 'owner';
+    const accent = project.color || '#6366f1';
+    const icon = project.icon || '📁';
+
     return (
         <div
             onClick={onSelect}
-            className="group relative p-4 rounded-xl border cursor-pointer transition-shadow duration-150 hover:shadow-md flex flex-col"
-            style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', minHeight: '140px' }}
+            className="group rounded-xl border hover:shadow-md cursor-pointer transition-all overflow-hidden flex flex-col"
+            style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}
             data-testid={`project-card-${project.id}`}
         >
-            <div className="absolute top-3 right-3 flex items-center gap-1 z-10">
-                {canEdit && (
-                    <button
-                        onClick={(e) => { e.stopPropagation(); onEdit?.(); }}
-                        className="p-1.5 rounded-lg transition-opacity opacity-0 group-hover:opacity-100 hover:brightness-90"
-                        style={{ background: 'var(--bg-tertiary)' }}
-                        title="Edit project"
-                    >
-                        <Pencil className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
-                    </button>
-                )}
-                {canDelete && (
-                    <button
-                        onClick={(e) => { e.stopPropagation(); onDelete?.(); }}
-                        className="p-1.5 rounded-lg transition-opacity opacity-0 group-hover:opacity-100 hover:bg-red-500/10"
-                        style={{ background: 'var(--bg-tertiary)' }}
-                        title="Delete project"
-                    >
-                        <Trash2 className="w-3.5 h-3.5 text-red-500" />
-                    </button>
-                )}
-            </div>
-
-            <div className="flex items-start gap-3">
-                <div
-                    className="w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0"
-                    style={{ background: (project.color || '#6366f1') + '22', fontSize: '1.2rem' }}
-                >
-                    {project.icon || '📁'}
-                </div>
-                <div className="flex-1 min-w-0 pr-16">
-                    <h3 className="font-semibold text-[13px] truncate" style={{ color: 'var(--text-primary)' }} title={project.name}>
-                        {project.name}
-                    </h3>
-                    <p className="text-xs mt-0.5 line-clamp-2 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                        {project.description || 'Group conversations, attach instructions and knowledge bases.'}
-                    </p>
-                </div>
-            </div>
-
-            <div className="mt-auto pt-2 flex items-center gap-1.5">
-                <span
-                    className="text-[10px] font-medium px-1.5 py-0.5 rounded"
-                    style={{
-                        background: role === 'owner' ? 'rgba(99,102,241,0.12)' : 'var(--bg-tertiary)',
-                        color: role === 'owner' ? '#818cf8' : 'var(--text-muted)',
-                    }}
-                >
-                    {roleLabel(role)}
+            {/* Visual band — mirrors WebpagesPage card hero */}
+            <div
+                className="relative w-full h-24 flex items-center justify-center"
+                style={{ background: `${accent}1a` }}
+            >
+                <span className="text-4xl select-none" style={{ filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.08))' }}>
+                    {icon}
                 </span>
-                {(project.knowledgeBaseIds?.length || 0) > 0 && (
-                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>
-                        {project.knowledgeBaseIds.length} KB{project.knowledgeBaseIds.length === 1 ? '' : 's'}
+                <div className="absolute top-1 right-1 opacity-0 group-hover:opacity-100 flex items-center gap-1 transition-opacity">
+                    {canEdit && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onEdit?.(); }}
+                            className="p-1 rounded-md bg-white/80 hover:bg-white shadow-sm"
+                            title="Edit project"
+                        >
+                            <Pencil className="w-3 h-3" style={{ color: 'var(--text-secondary)' }} />
+                        </button>
+                    )}
+                    {canDelete && (
+                        <button
+                            onClick={(e) => { e.stopPropagation(); onDelete?.(); }}
+                            className="p-1 rounded-md bg-white/80 hover:bg-white shadow-sm"
+                            title="Delete project"
+                        >
+                            <Trash2 className="w-3 h-3" style={{ color: '#ef4444' }} />
+                        </button>
+                    )}
+                </div>
+            </div>
+
+            <div className="p-3 flex-1 flex flex-col">
+                <div className="flex items-start gap-2 mb-1">
+                    <span className="text-base shrink-0" aria-hidden>{icon}</span>
+                    <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }} title={project.name}>
+                            {project.name}
+                        </div>
+                        {project.description && (
+                            <div className="text-[11px] mt-0.5 line-clamp-2" style={{ color: 'var(--text-secondary)' }}>
+                                {project.description}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                <div className="flex items-center gap-2 text-[10px] mt-auto pt-2" style={{ color: 'var(--text-tertiary)' }}>
+                    <span
+                        className="font-medium px-1.5 py-0.5 rounded"
+                        style={{
+                            background: role === 'owner' ? 'rgba(99,102,241,0.12)' : 'var(--bg-tertiary)',
+                            color: role === 'owner' ? '#818cf8' : 'var(--text-muted)',
+                        }}
+                    >
+                        {roleLabel(role)}
                     </span>
-                )}
-                {project.extractMemories && (
-                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded" style={{ background: 'rgba(16,185,129,0.12)', color: '#10b981' }}>
-                        Memories
-                    </span>
-                )}
+                    {project.updatedAt && <span>· {timeAgo(project.updatedAt)}</span>}
+                    {(project.knowledgeBaseIds?.length || 0) > 0 && (
+                        <span>· {project.knowledgeBaseIds.length} KB{project.knowledgeBaseIds.length === 1 ? '' : 's'}</span>
+                    )}
+                    {project.extractMemories && (
+                        <span style={{ color: '#10b981' }}>· Memories</span>
+                    )}
+                </div>
             </div>
         </div>
     );
@@ -96,7 +116,7 @@ const ProjectCard = React.memo(({ project, onSelect, onEdit, onDelete }) => {
 
 const ProjectsPage = ({
     projects = [],
-    user,
+    user: _user, // accepted for parent contract; not rendered here
     onSelectProject,
     onCreateProject,
     onDeleteProject,
@@ -126,69 +146,62 @@ const ProjectsPage = ({
     }, [projects, search, filter, sortBy]);
 
     return (
-        <div
-            className="flex-1 flex flex-col overflow-hidden w-full h-full"
-            style={{ background: 'var(--bg-secondary)' }}
-            data-testid="projects-page"
-        >
-            <div className="px-6 pt-5 pb-4 border-b" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)' }}>
-                <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-2">
-                        {onClose && (
-                            <button
-                                onClick={onClose}
-                                className="p-1.5 rounded-lg transition-colors hover:bg-[var(--bg-tertiary)]"
-                                style={{ color: 'var(--text-muted)' }}
-                                title="Back"
-                            >
-                                <ArrowLeft className="w-4 h-4" />
-                            </button>
-                        )}
-                        <div>
-                            <h1 className="text-xl font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                                <FolderOpen className="w-5 h-5" /> Projects
-                            </h1>
-                            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                {filtered.length} of {projects.length} projects
-                            </p>
-                        </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        {onCreateProject && (
-                            <button
-                                onClick={onCreateProject}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border transition-all hover:bg-[var(--bg-tertiary)]"
-                                style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}
-                                data-testid="projects-page-create"
-                            >
-                                <Plus className="w-3.5 h-3.5" />
-                                New Project
-                            </button>
-                        )}
-                    </div>
+        <div className="flex flex-col h-full" style={{ background: 'var(--bg-primary)' }} data-testid="projects-page">
+            {/* Header: matches WebpagesPage single-row pattern */}
+            <div
+                className="shrink-0 px-4 py-3 border-b flex items-center gap-3"
+                style={{ borderColor: 'var(--border-subtle)' }}
+            >
+                {onClose && (
+                    <button onClick={onClose} className="p-1 rounded-md hover:bg-[var(--bg-secondary)]" title="Back">
+                        <ArrowLeft className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+                    </button>
+                )}
+                <div className="flex-1 flex items-center gap-2">
+                    <FolderOpen className="w-5 h-5" style={{ color: 'var(--accent-primary)' }} />
+                    <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Projects</h2>
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        {filtered.length} of {projects.length}
+                    </span>
                 </div>
+            </div>
 
-                <div className="relative mb-3">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+            {/* Toolbar: create + search inline, like Webpages */}
+            <div
+                className="shrink-0 px-4 py-3 border-b flex flex-wrap items-center gap-2"
+                style={{ borderColor: 'var(--border-subtle)' }}
+            >
+                {onCreateProject && (
+                    <button
+                        onClick={onCreateProject}
+                        className="px-3 py-2 rounded-lg text-sm font-medium flex items-center gap-1 text-white"
+                        style={{ background: 'var(--accent-primary)' }}
+                        data-testid="projects-page-create"
+                    >
+                        <Plus className="w-3.5 h-3.5" />
+                        New Project
+                    </button>
+                )}
+                <div className="relative flex-1 min-w-[200px] max-w-sm">
+                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-tertiary)' }} />
                     <input
                         type="text"
-                        placeholder="Search projects..."
+                        placeholder="Search…"
                         value={search}
                         onChange={(e) => setSearch(e.target.value)}
-                        className="w-full pl-9 pr-4 py-2 rounded-lg border text-sm focus:outline-none transition-all"
-                        style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
+                        className="w-full pl-7 pr-2 py-2 text-sm rounded-lg border outline-none"
+                        style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)', color: 'var(--text-primary)' }}
                         data-testid="projects-page-search"
                     />
                 </div>
-
-                <div className="flex items-center gap-1.5 overflow-x-auto py-1" style={{ scrollbarWidth: 'none' }}>
+                <div className="flex items-center gap-1.5 ml-auto">
                     {FILTER_OPTIONS.map(f => {
                         const active = filter === f.key;
                         return (
                             <button
                                 key={f.key}
                                 onClick={() => setFilter(f.key)}
-                                className="px-3 py-1.5 rounded-lg text-xs font-medium transition-all shrink-0 border"
+                                className="px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all shrink-0 border"
                                 style={{
                                     background: active ? 'var(--text-primary)' : 'transparent',
                                     color: active ? 'var(--bg-primary)' : 'var(--text-secondary)',
@@ -200,57 +213,56 @@ const ProjectsPage = ({
                             </button>
                         );
                     })}
-                    <div className="ml-auto flex items-center gap-2">
-                        <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>Sort:</span>
-                        <select
-                            value={sortBy}
-                            onChange={e => setSortBy(e.target.value)}
-                            className="text-xs py-1 px-2 rounded-md border focus:outline-none cursor-pointer"
-                            style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)', borderColor: 'var(--border-subtle)' }}
-                        >
-                            {SORT_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
-                        </select>
-                    </div>
+                    <select
+                        value={sortBy}
+                        onChange={e => setSortBy(e.target.value)}
+                        className="text-xs py-1.5 px-2 rounded-md border focus:outline-none cursor-pointer"
+                        style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)', borderColor: 'var(--border-subtle)' }}
+                        aria-label="Sort projects"
+                    >
+                        {SORT_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+                    </select>
                 </div>
             </div>
 
-            <div className="flex-1 overflow-auto">
-                <div className="px-6 py-5">
-                    {filtered.length === 0 ? (
-                        <div className="py-16 flex flex-col items-center justify-center">
-                            <div className="text-3xl mb-3">📁</div>
-                            <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
-                                {search.trim() ? 'No matching projects' : (filter === 'shared' ? 'Nothing shared with you yet' : 'No projects yet')}
-                            </h3>
-                            <p className="text-xs text-center max-w-xs" style={{ color: 'var(--text-muted)' }}>
-                                {filter === 'shared'
-                                    ? 'When teammates share projects with you, they’ll appear here.'
-                                    : 'Group your conversations and add custom instructions and knowledge bases.'}
-                            </p>
-                            {onCreateProject && filter !== 'shared' && (
-                                <button
-                                    onClick={onCreateProject}
-                                    className="mt-4 px-4 py-1.5 rounded-lg text-white text-xs font-semibold hover:opacity-90"
-                                    style={{ background: 'var(--accent-primary)' }}
-                                >
-                                    New Project
-                                </button>
-                            )}
-                        </div>
-                    ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                            {filtered.map(p => (
-                                <ProjectCard
-                                    key={p.id}
-                                    project={p}
-                                    onSelect={() => onSelectProject?.(p)}
-                                    onEdit={() => onSelectProject?.(p)}
-                                    onDelete={onDeleteProject ? () => onDeleteProject(p) : undefined}
-                                />
-                            ))}
-                        </div>
-                    )}
-                </div>
+            {/* Body — card grid */}
+            <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
+                {filtered.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center text-center py-20">
+                        <FolderOpen className="w-12 h-12 mb-3" style={{ color: 'var(--text-tertiary)' }} />
+                        <h3 className="text-base font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+                            {search.trim() ? 'No matches' : (filter === 'shared' ? 'Nothing shared with you yet' : 'No projects yet')}
+                        </h3>
+                        <p className="text-sm max-w-sm" style={{ color: 'var(--text-secondary)' }}>
+                            {filter === 'shared'
+                                ? 'When teammates share projects with you, they’ll appear here.'
+                                : (search.trim()
+                                    ? 'Try a different search.'
+                                    : 'Group your conversations and add custom instructions and knowledge bases.')}
+                        </p>
+                        {onCreateProject && filter !== 'shared' && !search.trim() && (
+                            <button
+                                onClick={onCreateProject}
+                                className="mt-4 px-4 py-1.5 rounded-lg text-white text-xs font-semibold hover:opacity-90"
+                                style={{ background: 'var(--accent-primary)' }}
+                            >
+                                New Project
+                            </button>
+                        )}
+                    </div>
+                ) : (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                        {filtered.map(p => (
+                            <ProjectCard
+                                key={p.id}
+                                project={p}
+                                onSelect={() => onSelectProject?.(p)}
+                                onEdit={() => onSelectProject?.(p)}
+                                onDelete={onDeleteProject ? () => onDeleteProject(p) : undefined}
+                            />
+                        ))}
+                    </div>
+                )}
             </div>
         </div>
     );

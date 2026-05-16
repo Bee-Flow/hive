@@ -1,11 +1,9 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { createPortal } from 'react-dom';
-import { Send, Plus, Sparkles, Upload, Brain, AppWindow, ArrowLeft, X, Search, ChevronDown, ChevronRight, Image as ImageIcon, Globe, BookOpen, Paperclip, LayoutGrid, ArrowUp, Puzzle as PuzzlePiece, Sliders, Copy, Check, History, Clock, Play, Pause, Trash2 } from 'lucide-react';
+import { Plus, Sparkles, Upload, AppWindow, ArrowLeft, X, ArrowUp, Check, Clock, Settings2, Loader2 } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import { pickAgentAvatar, DEFAULT_AGENT_EMOJI } from '../../../utils/agentAvatar';
 import useTranslation from '../../../hooks/useTranslation';
 import ModelTierSelector from '../../ModelTierSelector';
-import { tierLabel } from '../../tierMeta';
 import MarkdownRenderer from '../../MarkdownRenderer';
 import { INTEGRATION_CATALOG } from '../AgentDesigner/integrations';
 import PlanCard from './PlanCard';
@@ -13,15 +11,13 @@ import { computeRoutineNextRun } from '../../../utils/routineSchedule';
 import { useAgentEditorBootstrap } from './AgentEditorBootstrapContext';
 import { RoutinesPicker, RoutineModal } from './pickers/RoutinePickers';
 import AvatarPicker from './pickers/AvatarPicker';
-import VersionPicker from './pickers/VersionPicker';
 import PublishMenu from './pickers/PublishMenu';
-import BehaviorPicker from './pickers/BehaviorPicker';
 import FilesUploadModal from './pickers/FilesUploadModal';
 import SkillPicker from './pickers/SkillPicker';
 import AppsPicker from './pickers/AppsPicker';
-import { CollapsibleSection, Field, ToggleRow } from './pickers/_primitives';
+import AdvancedDrawer from './pickers/AdvancedDrawer';
 
-export default function BuilderSplit({ agent: initialAgent, plan, history, tier, locale, onBack, onPublished, rightHeaderExtras = null, user = null, initialRefinement = null }) {
+export default function BuilderSplit({ agent: initialAgent, plan, history, tier, locale, onBack, onPublished, onDirtyChange, rightHeaderExtras = null, user = null, initialRefinement = null }) {
     const { t } = useTranslation();
 
     const [agent, setAgent] = useState(initialAgent);
@@ -93,6 +89,10 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
 
     const [savingState, setSavingState] = useState(() => initialAgent?.updated_at ? 'saved' : 'idle');
     const [savedAt, setSavedAt] = useState(() => initialAgent?.updated_at ? new Date(initialAgent.updated_at) : null);
+    // Mirror of dirtyRef as state, so the parent's onDirtyChange callback fires
+    // synchronously when the user edits an unsaved draft (where auto-save is
+    // disabled and dirtyRef wouldn't otherwise propagate up).
+    const [dirty, setDirty] = useState(false);
     // Last save-error message (server response body or fetch error). Surfaced
     // in the save-state pill's title / tooltip so users see what went wrong
     // instead of a silent "Save error" with no context.
@@ -108,14 +108,14 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     const [skillPickerOpen, setSkillPickerOpen] = useState(false);
     const [appsPickerOpen, setAppsPickerOpen] = useState(false);
     const [knowledgeOpen, setKnowledgeOpen] = useState(false);
-    const [behaviorPickerOpen, setBehaviorPickerOpen] = useState(false);
-    const [versionPickerOpen, setVersionPickerOpen] = useState(false);
     const [routinesPickerOpen, setRoutinesPickerOpen] = useState(false);
     const [routineModal, setRoutineModal] = useState(null); // null | { mode: 'create' } | { mode: 'edit', routine }
     const [agentRoutines, setAgentRoutines] = useState([]);
+    const [routineDeleteTarget, setRoutineDeleteTarget] = useState(null);
+    const [routineDeleting, setRoutineDeleting] = useState(false);
     const [publishPickerOpen, setPublishPickerOpen] = useState(false);
     const [detailsOpen, setDetailsOpen] = useState(false);
-    const [overflowMenuOpen, setOverflowMenuOpen] = useState(false);
+    const [advancedOpen, setAdvancedOpen] = useState(false);
     const [skillSearch, setSkillSearch] = useState('');
     const [instructionsEditing, setInstructionsEditing] = useState(false);
     const instructionsTextareaRef = useRef(null);
@@ -123,56 +123,32 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     // Single ref on the action bar — all dropdown pickers are positioned
     // relative to it (top-full left-0), so one outside-click handler covers them all.
     const actionBarRef = useRef(null);
-    // Separate ref just for the ··· overflow pill+popup, which is right-aligned.
-    const overflowMenuRef = useRef(null);
-    // Popover is portalled to document.body, so click-outside needs its own ref —
-    // it's no longer a DOM descendant of overflowMenuRef.
-    const overflowPopoverRef = useRef(null);
-    // Trigger position for the portalled popover (right-aligned to the trigger,
-    // viewport-relative — avoids the action bar's overflow-y:auto ancestor that
-    // otherwise forces overflow-x:auto and clips the dropdown when the right
-    // panel is narrow).
-    const [overflowPopoverPos, setOverflowPopoverPos] = useState(null);
+
+    // Mounted flag so async handlers can skip setState after unmount. Pair with
+    // an AbortController fired on unmount so any new fetch initiated by the
+    // editor (auto-save, draft create, knowledge picker bootstrap) can be wired
+    // through it. Existing call sites that don't pass `signal:` still bail via
+    // the mounted check before calling setState.
+    const mountedRef = useRef(true);
+    const unmountAbortRef = useRef(null);
+    useEffect(() => {
+        mountedRef.current = true;
+        unmountAbortRef.current = new AbortController();
+        return () => {
+            mountedRef.current = false;
+            try { unmountAbortRef.current?.abort(); } catch (_) { /* noop */ }
+        };
+    }, []);
 
     useEffect(() => {
         const onDoc = (e) => {
-            // SkillPicker — close when click is outside the action bar
             if (skillPickerOpen && actionBarRef.current && !actionBarRef.current.contains(e.target)) {
                 setSkillPickerOpen(false);
-            }
-            // Overflow menu — close when click is outside the overflow pill wrapper
-            // OR the portalled popover (which lives outside the wrapper in the DOM).
-            if (overflowMenuOpen
-                && overflowMenuRef.current && !overflowMenuRef.current.contains(e.target)
-                && (!overflowPopoverRef.current || !overflowPopoverRef.current.contains(e.target))) {
-                setOverflowMenuOpen(false);
             }
         };
         document.addEventListener('mousedown', onDoc);
         return () => document.removeEventListener('mousedown', onDoc);
-    }, [skillPickerOpen, overflowMenuOpen]);
-
-    // Track the trigger's bounding rect while the overflow popover is open
-    // so the portalled popover stays anchored to it on resize / scroll.
-    useEffect(() => {
-        if (!overflowMenuOpen) { setOverflowPopoverPos(null); return; }
-        const measure = () => {
-            const el = overflowMenuRef.current;
-            if (!el) return;
-            const rect = el.getBoundingClientRect();
-            setOverflowPopoverPos({
-                top: rect.bottom + 8,
-                right: Math.max(8, window.innerWidth - rect.right),
-            });
-        };
-        measure();
-        window.addEventListener('resize', measure);
-        window.addEventListener('scroll', measure, true);
-        return () => {
-            window.removeEventListener('resize', measure);
-            window.removeEventListener('scroll', measure, true);
-        };
-    }, [overflowMenuOpen]);
+    }, [skillPickerOpen]);
 
     const updateBubbleColor = (v) => { setBubbleColor(v); patchConfig({ bubbleColor: v }); };
     const updateBubblePosition = (v) => { setBubblePosition(v); patchConfig({ bubblePosition: v }); };
@@ -227,8 +203,18 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     const [chatBusy, setChatBusy] = useState(false);
     const chatScrollRef = useRef(null);
 
+    // Stick to the bottom only when the user was already at (or near) the
+    // bottom. If they've scrolled up to read history, don't yank them back —
+    // that's why a user reading a long previous answer would lose their place
+    // every time a new chunk streamed in.
     useEffect(() => {
-        if (chatScrollRef.current) chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+        const el = chatScrollRef.current;
+        if (!el) return;
+        const STICK_THRESHOLD_PX = 80;
+        const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+        if (distanceFromBottom <= STICK_THRESHOLD_PX) {
+            el.scrollTop = el.scrollHeight;
+        }
     }, [chat]);
 
     // Bootstrap data (skills, integration status, categories, org groups,
@@ -365,9 +351,11 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(snapshot),
+                    signal: unmountAbortRef.current?.signal,
                 });
                 if (!res.ok) throw new Error(await res.text());
                 const updated = await res.json();
+                if (!mountedRef.current) return;
                 // Refresh the `agent` shell only (id, timestamps, derived fields).
                 // Do NOT overwrite `stateRef.current` from the server response — by
                 // the time this resolves the user may have typed more, and that
@@ -376,7 +364,9 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 setAgent(updated);
                 setSavingState('saved'); setSavedAt(new Date());
                 setSaveErrorMsg('');
+                if (!dirtyRef.current) setDirty(false);
             } catch (err) {
+                if (err?.name === 'AbortError' || !mountedRef.current) return;
                 console.error('Auto-save failed:', err);
                 setSavingState('error');
                 // Surface the server's reason in the indicator's tooltip so the
@@ -393,8 +383,12 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     }, []);
 
     const queueSave = useCallback((immediate = false) => {
-        if (!agentIdRef.current) return;
         dirtyRef.current = true;
+        setDirty(true);
+        // Without a persisted agent id we're in draft mode — there's no save
+        // target yet. The user must explicitly press "Save" to create it. We
+        // still mark the draft dirty so the unsaved-changes guard fires.
+        if (!agentIdRef.current) return;
         setSavingState('saving');
         if (saveTimer.current) clearTimeout(saveTimer.current);
         if (immediate) {
@@ -407,14 +401,52 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
         }
     }, [flush]);
 
-    // Save before the user navigates away, AND prompt them when there's
-    // unsynced state. The sendBeacon fallback ships any pending edit to the
-    // server in the background; the preventDefault + returnValue triggers the
-    // browser's native "Leave site?" dialog so the user has a chance to wait
-    // for the save to confirm before closing.
+    useEffect(() => { onDirtyChange?.(dirty); }, [dirty, onDirtyChange]);
+
+    // Explicit first-save for drafts. Until this runs, the agent only exists
+    // in memory — POST creates it on the server, then the editor switches to
+    // its normal auto-save behaviour.
+    const saveDraft = useCallback(async () => {
+        if (agentIdRef.current) return;
+        setSavingState('saving');
+        try {
+            const res = await authFetch(`${API_BASE}/agents`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    name: stateRef.current.name,
+                    description: stateRef.current.description,
+                    systemPrompt: stateRef.current.systemPrompt,
+                    model: stateRef.current.model,
+                    categoryId: stateRef.current.categoryId,
+                    embedEnabled: stateRef.current.embedEnabled,
+                    avatar: stateRef.current.avatar,
+                    config: { ...stateRef.current.config },
+                }),
+            });
+            if (!res.ok) throw new Error(await res.text());
+            const created = await res.json();
+            setAgent(created);
+            agentIdRef.current = created.id;
+            dirtyRef.current = false;
+            setDirty(false);
+            setSavingState('saved');
+            setSavedAt(new Date());
+            setSaveErrorMsg('');
+            if (onPublished) onPublished(created);
+        } catch (err) {
+            console.error('Save draft failed:', err);
+            setSavingState('error');
+            setSaveErrorMsg(String(err?.message || err || 'Unknown error').slice(0, 500));
+        }
+    }, [onPublished]);
+
+    // Best-effort flush of any pending auto-save when the tab is being closed.
+    // We deliberately don't preventDefault / set returnValue here — the unsaved
+    // changes UX is handled in-app via the parent's confirmation modal, not
+    // the browser's native "Leave site?" dialog.
     useEffect(() => {
-        const onBeforeUnload = (event) => {
-            const hasUnsynced = dirtyRef.current || inflightRef.current;
+        const onBeforeUnload = () => {
             if (saveTimer.current && agentIdRef.current && dirtyRef.current) {
                 clearTimeout(saveTimer.current);
                 saveTimer.current = null;
@@ -430,14 +462,6 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                         new Blob([JSON.stringify(snapshot)], { type: 'application/json' })
                     );
                 } catch (_) { /* ignore */ }
-            }
-            if (hasUnsynced) {
-                // Modern browsers ignore the message string but still show
-                // their native dialog when returnValue is set / preventDefault
-                // is called.
-                event.preventDefault();
-                event.returnValue = '';
-                return '';
             }
         };
         window.addEventListener('beforeunload', onBeforeUnload);
@@ -792,9 +816,14 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     };
 
     return (
-        <div className="flex h-full bg-[var(--bg-card,#ffffff)]">
-            {/* Left chat panel */}
-            <aside style={{ width: chatWidth }} className="flex-shrink-0 border-r border-[var(--border-default)] flex flex-col min-w-[240px] max-w-[600px] bg-[var(--bg-card,#fff)]">
+        <div className="flex h-full">
+            {/* Left chat panel — glass chrome tier so the wallpaper subtly
+                shows through under the refine-this-agent rail. */}
+            <aside
+                style={{ width: chatWidth }}
+                className="flex-shrink-0 border-r border-[var(--border-default)] flex flex-col min-w-[240px] max-w-[600px] bg-[var(--bg-secondary)]"
+                data-surface="subtle"
+            >
                 <div className="flex items-center px-4 py-3">
                     <button onClick={onBack} className="flex items-center gap-1 text-sm text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
                         <ArrowLeft size={16} /> {t('agent_wizard.back')}
@@ -859,10 +888,6 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     })}
                 </div>
                 <div className="p-3">
-                    {/* Visual parity with direct chat InputArea: textarea on top,
-                        action icon row + tier pill + send on the bottom. The icons
-                        open the same wizard pickers when relevant; placeholder
-                        icons (paperclip / globe) are visual-only for parity. */}
                     <div className="rounded-2xl border border-[var(--border-default)] bg-[var(--bg-secondary)] px-4 pt-3 pb-2">
                         <textarea
                             value={chatInput}
@@ -873,54 +898,23 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                             rows={1}
                             disabled={chatBusy}
                         />
-                        <div className="flex items-center justify-between mt-2">
-                            <div className="flex items-center gap-1 text-[var(--text-tertiary)]">
-                                <button
-                                    onClick={() => setKnowledgeOpen(true)}
-                                    className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-                                    title={t('agent_wizard.builder.upload_files')}
-                                >
-                                    <Paperclip size={16} />
-                                </button>
-                                <button
-                                    onClick={() => setKnowledgeOpen(true)}
-                                    className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors"
-                                    title={t('agent_wizard.builder.upload_files')}
-                                >
-                                    <BookOpen size={16} />
-                                </button>
-                                <button
-                                    onClick={() => setSkillPickerOpen(v => !v)}
-                                    className={`p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors ${skillPickerOpen ? 'text-[var(--accent)]' : ''}`}
-                                    title={t('agent_wizard.builder.add_skill')}
-                                >
-                                    <PuzzlePiece size={16} />
-                                </button>
-                                <button
-                                    onClick={() => setAppsPickerOpen(v => !v)}
-                                    className={`p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)] transition-colors ${appsPickerOpen ? 'text-[var(--accent)]' : ''}`}
-                                    title={t('agent_wizard.builder.browse_apps')}
-                                >
-                                    <LayoutGrid size={16} />
-                                </button>
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <ModelTierSelector
-                                    tiers={tiers || {}}
-                                    value={chatTier}
-                                    onChange={setChatTier}
-                                    dropDirection="up"
-                                    variant="input"
-                                />
-                                <button
-                                    onClick={handleRefine}
-                                    disabled={chatBusy || !chatInput.trim()}
-                                    className="w-8 h-8 rounded-full bg-[var(--text-primary)] text-[var(--bg-primary)] flex items-center justify-center disabled:opacity-30"
-                                    title={t('agent_wizard.builder.send') || 'Send'}
-                                >
-                                    {chatBusy ? <span className="text-xs">…</span> : <ArrowUp size={14} />}
-                                </button>
-                            </div>
+                        <div className="flex items-center justify-end gap-2 mt-2">
+                            <ModelTierSelector
+                                tiers={tiers || {}}
+                                value={chatTier}
+                                onChange={setChatTier}
+                                dropDirection="up"
+                                variant="input"
+                            />
+                            <button
+                                onClick={handleRefine}
+                                disabled={chatBusy || !chatInput.trim()}
+                                className="p-2 bg-[var(--text-primary)] text-white rounded-full hover:opacity-90 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-sm active:scale-95 transform duration-100"
+                                title={t('agent_wizard.builder.send') || 'Send'}
+                                aria-label="Send"
+                            >
+                                {chatBusy ? <Loader2 className="w-5 h-5 animate-spin" /> : <ArrowUp className="w-5 h-5" />}
+                            </button>
                         </div>
                     </div>
                     <div className="text-[11px] text-center text-[var(--text-tertiary)] mt-2">
@@ -938,23 +932,43 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
             {/* Right config panel */}
             <main className="flex-1 overflow-y-auto">
                 <div className="flex items-center justify-end gap-3 px-8 py-3 relative">
-                    <SaveStateIndicator t={t} state={savingState} savedAt={savedAt} errorMsg={saveErrorMsg} onRetry={flush} />
+                    {agent?.id ? (
+                        <SaveStateIndicator t={t} state={savingState} savedAt={savedAt} errorMsg={saveErrorMsg} onRetry={flush} />
+                    ) : (
+                        <>
+                            <span className="text-xs text-[var(--text-tertiary)]">
+                                {t('agent_wizard.builder.draft_label') || 'Draft — not saved yet'}
+                            </span>
+                            <button
+                                type="button"
+                                onClick={saveDraft}
+                                disabled={savingState === 'saving'}
+                                className="px-3 py-1.5 rounded-lg bg-[var(--accent)] text-white text-xs font-medium hover:opacity-90 disabled:opacity-50 transition"
+                            >
+                                {savingState === 'saving'
+                                    ? (t('agent_wizard.builder.saving') || 'Saving…')
+                                    : (t('agent_wizard.builder.save_draft') || 'Save')}
+                            </button>
+                        </>
+                    )}
                     {rightHeaderExtras}
-                    <PublishMenu
-                        t={t}
-                        agent={agent}
-                        open={publishPickerOpen}
-                        onToggle={() => setPublishPickerOpen(v => !v)}
-                        onClose={() => setPublishPickerOpen(false)}
-                        isPublished={isPublished}
-                        onTogglePublished={togglePublishedToOrg}
-                        onSetPersonal={setPublishPersonal}
-                        onSetEntireOrg={setPublishEntireOrg}
-                        embedEnabled={embedEnabled}
-                        orgGroups={orgGroups}
-                        sharedGroups={sharedGroups}
-                        onToggleGroup={togglePublishGroup}
-                    />
+                    {agent?.id && (
+                        <PublishMenu
+                            t={t}
+                            agent={agent}
+                            open={publishPickerOpen}
+                            onToggle={() => setPublishPickerOpen(v => !v)}
+                            onClose={() => setPublishPickerOpen(false)}
+                            isPublished={isPublished}
+                            onTogglePublished={togglePublishedToOrg}
+                            onSetPersonal={setPublishPersonal}
+                            onSetEntireOrg={setPublishEntireOrg}
+                            embedEnabled={embedEnabled}
+                            orgGroups={orgGroups}
+                            sharedGroups={sharedGroups}
+                            onToggleGroup={togglePublishGroup}
+                        />
+                    )}
                 </div>
 
                 <div className="max-w-4xl mx-auto px-10 pt-8 pb-12">
@@ -993,6 +1007,13 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                             count={knowledgeBaseIds.length}
                             onClick={() => setKnowledgeOpen(true)}
                         />
+                        <ActionPill
+                            icon={<Sparkles size={14} />}
+                            label={t('agent_wizard.builder.skills') || 'Skills'}
+                            count={attachedSkillIds.length}
+                            onClick={() => setSkillPickerOpen(v => !v)}
+                            active={skillPickerOpen}
+                        />
                         {agent?.id && routinesAllowed && (
                             <ActionPill
                                 icon={<Clock size={14} />}
@@ -1003,96 +1024,18 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                 popoverTrigger="routines"
                             />
                         )}
-                        <div className="relative" ref={overflowMenuRef}>
-                            <ActionPill
-                                label="···"
-                                onClick={() => setOverflowMenuOpen(v => !v)}
-                                active={overflowMenuOpen || behaviorPickerOpen || versionPickerOpen || skillPickerOpen || !!categoryId || memoryEnabled || attachedSkillIds.length > 0}
-                            />
-                            {overflowMenuOpen && overflowPopoverPos && createPortal(
-                                <div
-                                    ref={overflowPopoverRef}
-                                    style={{
-                                        position: 'fixed',
-                                        top: overflowPopoverPos.top,
-                                        right: overflowPopoverPos.right,
-                                        width: 'min(16rem, calc(100vw - 1rem))',
-                                        zIndex: 1000,
-                                    }}
-                                    className="rounded-xl border border-[var(--border-default)] bg-[var(--bg-card,#fff)] shadow-lg p-3"
-                                >
-                                    <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-2">
-                                        {t('agent_wizard.builder.category_label') || 'Category'}
-                                    </div>
-                                    <CategoryField
-                                        t={t}
-                                        value={categoryId}
-                                        categories={categories}
-                                        onChange={updateCategory}
-                                        onCreate={createCategory}
-                                    />
-                                    <div className="border-t border-[var(--border-default)] my-3" />
-                                    <button
-                                        onClick={() => { setOverflowMenuOpen(false); setSkillPickerOpen(true); }}
-                                        className="w-full flex items-center gap-2 py-2 px-2 rounded-lg hover:bg-[var(--bg-secondary)] text-sm text-[var(--text-primary)] transition"
-                                    >
-                                        <Sparkles size={14} className="text-[var(--text-secondary)]" />
-                                        <span>{t('agent_wizard.builder.add_skill') || 'Skills'}</span>
-                                        {attachedSkillIds.length > 0 && <span className="ml-auto text-[10px] text-[var(--accent)]">{attachedSkillIds.length} active</span>}
-                                    </button>
-                                    <button
-                                        onClick={() => { setOverflowMenuOpen(false); setBehaviorPickerOpen(true); }}
-                                        className="w-full flex items-center gap-2 py-2 px-2 rounded-lg hover:bg-[var(--bg-secondary)] text-sm text-[var(--text-primary)] transition"
-                                    >
-                                        <Sliders size={14} className="text-[var(--text-secondary)]" />
-                                        <span>{t('agent_wizard.builder.behavior') || 'Behavior'}</span>
-                                        {memoryEnabled && <span className="ml-auto text-[10px] text-[var(--accent)]">Memory on</span>}
-                                    </button>
-                                    {agent?.id && (
-                                        <button
-                                            onClick={() => { setOverflowMenuOpen(false); setVersionPickerOpen(true); }}
-                                            className="w-full flex items-center gap-2 py-2 px-2 rounded-lg hover:bg-[var(--bg-secondary)] text-sm text-[var(--text-primary)] transition"
-                                        >
-                                            <History size={14} className="text-[var(--text-secondary)]" />
-                                            <span>{t('agent_wizard.section.versions') || 'Version History'}</span>
-                                        </button>
-                                    )}
-                                </div>,
-                                document.body
-                            )}
-                        </div>
+                        <button
+                            type="button"
+                            onClick={() => setAdvancedOpen(true)}
+                            className={`flex items-center justify-center w-8 h-8 rounded-lg border transition-all ${advancedOpen || memoryEnabled || embedEnabled
+                                ? 'border-[var(--accent)]/40 bg-[var(--accent)]/10 text-[var(--accent)]'
+                                : 'border-[var(--border-default)] bg-[var(--bg-card,#fff)] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)]'}`}
+                            title={t('agent_wizard.builder.advanced_settings') || 'Advanced settings'}
+                            aria-label={t('agent_wizard.builder.advanced_settings') || 'Advanced settings'}
+                        >
+                            <Settings2 size={14} />
+                        </button>
 
-                        {behaviorPickerOpen && (
-                            <BehaviorPicker
-                                t={t}
-                                agent={agent}
-                                onClose={() => setBehaviorPickerOpen(false)}
-                                allowCopy={allowCopy}
-                                onToggleAllowCopy={toggleAllowCopy}
-                                disableExternalTools={disableExternalTools}
-                                onToggleDisableExternalTools={toggleDisableExternalTools}
-                                embedEnabled={embedEnabled}
-                                onToggleEmbedEnabled={toggleEmbedEnabled}
-                                bubbleColor={bubbleColor}
-                                onBubbleColor={updateBubbleColor}
-                                bubblePosition={bubblePosition}
-                                onBubblePosition={updateBubblePosition}
-                                bubbleIcon={bubbleIcon}
-                                onBubbleIcon={updateBubbleIcon}
-                                memoryEnabled={memoryEnabled}
-                                onToggleMemory={toggleMemory}
-                                useGeneralMemory={useGeneralMemory}
-                                onToggleUseGeneralMemory={toggleUseGeneralMemory}
-                            />
-                        )}
-                        {versionPickerOpen && agent?.id && (
-                            <VersionPicker
-                                t={t}
-                                agentId={agent.id}
-                                onClose={() => setVersionPickerOpen(false)}
-                                onRestore={handleVersionRestore}
-                            />
-                        )}
                         {routinesPickerOpen && agent?.id && routinesAllowed && (
                             <RoutinesPicker
                                 t={t}
@@ -1113,12 +1056,12 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                                         await refreshAgentRoutines();
                                     } catch (_) { /* non-fatal */ }
                                 }}
-                                onDelete={async (r) => {
-                                    if (!window.confirm(`${t('routines.delete_title')}: "${r.title}"?`)) return;
-                                    try {
-                                        await authFetch(`${API_BASE}/api/ai-tasks/${r.id}`, { method: 'DELETE' });
-                                        await refreshAgentRoutines();
-                                    } catch (_) { /* non-fatal */ }
+                                onDelete={(r) => {
+                                    // Route through the in-app modal so the
+                                    // styling, focus management and i18n match
+                                    // the rest of the studio. window.confirm
+                                    // can also be disabled by some browsers.
+                                    setRoutineDeleteTarget(r);
                                 }}
                             />
                         )}
@@ -1176,26 +1119,40 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     </div>
                     </div>{/* end header card */}
 
-                    {(detailsOpen || description) ? (
-                        <div className="mb-8">
-                            <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1">
-                                {t('agent_wizard.builder.role_description_label') || 'Role description'}
+                    {(detailsOpen || description || categoryId) ? (
+                        <div className="mb-8 space-y-3">
+                            <div>
+                                <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1">
+                                    {t('agent_wizard.builder.role_description_label') || 'Role description'}
+                                </div>
+                                <div className="relative -mx-4">
+                                    <textarea
+                                        value={description}
+                                        onChange={(e) => {
+                                            updateDescription(e.target.value.slice(0, 300));
+                                            e.target.style.height = 'auto';
+                                            e.target.style.height = e.target.scrollHeight + 'px';
+                                        }}
+                                        onFocus={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
+                                        onBlur={flushNow}
+                                        placeholder={t('agent_wizard.field.role_description_placeholder')}
+                                        rows={2}
+                                        className="w-full bg-transparent border-none outline-none rounded-xl px-4 py-3 pb-6 text-[15px] leading-6 text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]/40 focus:bg-[var(--bg-secondary)]/40 transition resize-none overflow-hidden"
+                                    />
+                                    <span className="absolute bottom-1.5 right-3 text-[10px] text-[var(--text-tertiary)] pointer-events-none">{description.length}/300</span>
+                                </div>
                             </div>
-                            <div className="relative -mx-4">
-                                <textarea
-                                    value={description}
-                                    onChange={(e) => {
-                                        updateDescription(e.target.value.slice(0, 300));
-                                        e.target.style.height = 'auto';
-                                        e.target.style.height = e.target.scrollHeight + 'px';
-                                    }}
-                                    onFocus={(e) => { e.target.style.height = 'auto'; e.target.style.height = e.target.scrollHeight + 'px'; }}
-                                    onBlur={flushNow}
-                                    placeholder={t('agent_wizard.field.role_description_placeholder')}
-                                    rows={2}
-                                    className="w-full bg-transparent border-none outline-none rounded-xl px-4 py-3 pb-6 text-[15px] leading-6 text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]/40 focus:bg-[var(--bg-secondary)]/40 transition resize-none overflow-hidden"
+                            <div>
+                                <div className="text-[13px] font-medium text-[var(--text-secondary)] mb-1">
+                                    {t('agent_wizard.builder.category_label') || 'Category'}
+                                </div>
+                                <CategoryField
+                                    t={t}
+                                    value={categoryId}
+                                    categories={categories}
+                                    onChange={updateCategory}
+                                    onCreate={createCategory}
                                 />
-                                <span className="absolute bottom-1.5 right-3 text-[10px] text-[var(--text-tertiary)] pointer-events-none">{description.length}/300</span>
                             </div>
                         </div>
                     ) : (
@@ -1205,7 +1162,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                             className="mb-8 text-xs text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition flex items-center gap-1"
                         >
                             <Plus size={12} />
-                            {t('agent_wizard.builder.add_details') || 'Add description'}
+                            {t('agent_wizard.builder.add_details') || 'Add description & category'}
                         </button>
                     )}
 
@@ -1279,6 +1236,78 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     onCancel={cancelEnableEmbed}
                 />
             )}
+            {routineDeleteTarget && (
+                <div
+                    className="fixed inset-0 z-[1100] bg-black/50 flex items-center justify-center p-4"
+                    onClick={() => { if (!routineDeleting) setRoutineDeleteTarget(null); }}
+                    role="alertdialog"
+                    aria-modal="true"
+                >
+                    <div
+                        className="bg-[var(--bg-primary)] rounded-xl w-full max-w-md shadow-xl border border-[var(--border-default)]"
+                        onClick={(e) => e.stopPropagation()}
+                    >
+                        <div className="px-5 py-4 border-b border-[var(--border-default)] text-sm font-semibold text-[var(--text-primary)]">
+                            {t('routines.delete_title') || 'Delete routine'}
+                        </div>
+                        <div className="px-5 py-4 text-sm text-[var(--text-secondary)]">
+                            {(t('routines.delete_body') || 'Delete "{title}"?').replace('{title}', routineDeleteTarget.title || '')}
+                        </div>
+                        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-[var(--border-default)]">
+                            <button
+                                onClick={() => setRoutineDeleteTarget(null)}
+                                disabled={routineDeleting}
+                                className="px-4 py-2 rounded-full text-sm text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] disabled:opacity-50"
+                            >
+                                {t('agent_studio.cancel') || 'Cancel'}
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    if (routineDeleting) return;
+                                    setRoutineDeleting(true);
+                                    try {
+                                        await authFetch(`${API_BASE}/api/ai-tasks/${routineDeleteTarget.id}`, { method: 'DELETE' });
+                                        await refreshAgentRoutines();
+                                    } catch (_) { /* non-fatal */ }
+                                    finally {
+                                        if (mountedRef.current) {
+                                            setRoutineDeleting(false);
+                                            setRoutineDeleteTarget(null);
+                                        }
+                                    }
+                                }}
+                                disabled={routineDeleting}
+                                className="px-4 py-2 rounded-full text-sm bg-red-500 text-white hover:bg-red-600 disabled:opacity-50"
+                            >
+                                {routineDeleting ? (t('agent_studio.deleting') || 'Deleting…') : (t('agent_studio.delete') || 'Delete')}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+            <AdvancedDrawer
+                open={advancedOpen}
+                onClose={() => setAdvancedOpen(false)}
+                t={t}
+                agent={agent}
+                onVersionRestore={handleVersionRestore}
+                allowCopy={allowCopy}
+                onToggleAllowCopy={toggleAllowCopy}
+                disableExternalTools={disableExternalTools}
+                onToggleDisableExternalTools={toggleDisableExternalTools}
+                embedEnabled={embedEnabled}
+                onToggleEmbedEnabled={toggleEmbedEnabled}
+                bubbleColor={bubbleColor}
+                onBubbleColor={updateBubbleColor}
+                bubblePosition={bubblePosition}
+                onBubblePosition={updateBubblePosition}
+                bubbleIcon={bubbleIcon}
+                onBubbleIcon={updateBubbleIcon}
+                memoryEnabled={memoryEnabled}
+                onToggleMemory={toggleMemory}
+                useGeneralMemory={useGeneralMemory}
+                onToggleUseGeneralMemory={toggleUseGeneralMemory}
+            />
         </div>
     );
 }
@@ -1301,7 +1330,6 @@ const InstructionsEditor = React.memo(React.forwardRef(function InstructionsEdit
     forwardedRef,
 ) {
     const [value, setValue] = useState(initialValue || '');
-    const debounceRef = useRef(null);
     const onCommitRef = useRef(onCommit);
     useEffect(() => { onCommitRef.current = onCommit; }, [onCommit]);
 
@@ -1317,22 +1345,18 @@ const InstructionsEditor = React.memo(React.forwardRef(function InstructionsEdit
         }
     }, [initialValue]);
 
+    // Single source of debouncing lives in the parent (queueSave 350 ms). A
+    // second debounce here just produced out-of-order saves on rapid typing —
+    // the parent's stale-buffer commit would race the editor's later one.
+    // Forward every keystroke immediately; the parent coalesces.
     const handleChange = (e) => {
         const next = e.target.value;
         setValue(next);
-        if (debounceRef.current) clearTimeout(debounceRef.current);
-        debounceRef.current = setTimeout(() => {
-            onCommitRef.current?.(next);
-            debounceRef.current = null;
-        }, 250);
+        lastInitialRef.current = next;
+        onCommitRef.current?.(next);
     };
 
     const handleBlur = () => {
-        if (debounceRef.current) {
-            clearTimeout(debounceRef.current);
-            debounceRef.current = null;
-            onCommitRef.current?.(value);
-        }
         onBlurEnd?.();
     };
 

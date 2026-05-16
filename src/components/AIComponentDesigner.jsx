@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import MarkdownRenderer from './MarkdownRenderer';
 import {
-    Sparkles, Globe, Bell, RefreshCw, Database, Cloud, FileCode,
+    Globe, Bell, RefreshCw, Database, Cloud, FileCode,
     Send, RotateCcw, X, AlertTriangle,
     Wrench, Code, Settings, Package, Eye, Clock, Bot, User,
     Loader2, CheckCircle2, Search, Cpu, FileText, Zap
@@ -632,10 +632,6 @@ const AIComponentDesigner = ({ onComponentCreated, onClose }) => {
             {/* Header */}
             <div className="flex items-center justify-between px-5 py-3" style={S.header}>
                 <div className="flex items-center gap-3">
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center"
-                        style={{ background: 'linear-gradient(135deg, #8b5cf6, #6366f1)', boxShadow: '0 2px 10px rgba(99, 102, 241, 0.3)' }}>
-                        <Sparkles className="w-4.5 h-4.5 text-white" style={{ width: 18, height: 18 }} />
-                    </div>
                     <div>
                         <h2 className="font-bold text-[14px]" style={{ color: 'var(--text-primary)' }}>AI Component Designer</h2>
                         <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Describe what you need, get production-ready code</p>
@@ -663,10 +659,6 @@ const AIComponentDesigner = ({ onComponentCreated, onClose }) => {
                 {showTemplates && !hasUserMessages && (
                     <div className="max-w-xl mx-auto mb-8" style={{ animation: 'fadeSlideIn 0.4s ease-out' }}>
                         <div className="text-center mb-6">
-                            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl mb-3"
-                                style={{ background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.12), rgba(99, 102, 241, 0.12))', border: '1px solid rgba(99, 102, 241, 0.1)' }}>
-                                <Sparkles className="w-7 h-7" style={{ color: 'var(--accent-primary)' }} />
-                            </div>
                             <h3 className="text-base font-bold mb-1" style={{ color: 'var(--text-primary)' }}>
                                 What would you like to build?
                             </h3>
@@ -839,7 +831,7 @@ const AIComponentDesigner = ({ onComponentCreated, onClose }) => {
                                 className="btn-primary flex-1 text-sm flex items-center justify-center gap-2 py-2.5">
                                 {isCreating
                                     ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating...</>
-                                    : <><Sparkles className="w-4 h-4" /> Create Component</>}
+                                    : <>Create Component</>}
                             </button>
                             {!showChangeInput && (
                                 <button onClick={handleRequestChanges} disabled={isCreating}

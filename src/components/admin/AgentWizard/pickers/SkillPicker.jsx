@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Plus, Search, Sparkles, X } from 'lucide-react';
+import { Plus, Search, X } from 'lucide-react';
 
 export default function SkillPicker({ skills, selectedIds, automations = [], search, onSearch, onClose, onToggle, onCreate, t }) {
     const [creating, setCreating] = useState(false);
@@ -67,8 +67,8 @@ export default function SkillPicker({ skills, selectedIds, automations = [], sea
                                         <div className="text-sm text-[var(--text-primary)] truncate flex items-center gap-1.5">
                                             {s.name}
                                             {s.automationId && (
-                                                <span title={t('agent_wizard.skills.linked_automation') || 'Linked to an automation'} className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--accent)]/10 text-[var(--accent)] flex items-center gap-1">
-                                                    <Sparkles size={10} /> Flow
+                                                <span title={t('agent_wizard.skills.linked_automation') || 'Linked to an automation'} className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--accent)]/10 text-[var(--accent)]">
+                                                    Flow
                                                 </span>
                                             )}
                                         </div>

@@ -9,6 +9,7 @@ import { Plus } from 'lucide-react';
 import { buildLayout, seedPositions } from './flow/layout';
 import { edgeTypes } from './flow/edges';
 import { buildIssuesByStep } from './flow/matchValidationToStep';
+import { NodeRuntimeContext } from './flow/NodeRuntimeContext';
 
 import TriggerNode from './flow/nodes/TriggerNode';
 import IntegrationActionNode from './flow/nodes/IntegrationActionNode';
@@ -95,6 +96,9 @@ const DiagramPane = forwardRef(function DiagramPane({
     onRequestAddNode,   // ({ sourceId, position }) — called when user drags an edge end into empty pane
     onRequestOpenPalette, // () — called by the empty-state CTA on a fresh draft
     onRequestAddAfter,  // (nodeId) — called when user clicks the "+" hover button on a node
+    onExecuteStep,      // (stepId) — n8n-style per-node ▶ button
+    executingStepId = null,
+    runInFlight = false,
 }, ref) {
     return (
         <ReactFlowProvider>
@@ -111,6 +115,9 @@ const DiagramPane = forwardRef(function DiagramPane({
                 onRequestAddNode={onRequestAddNode}
                 onRequestOpenPalette={onRequestOpenPalette}
                 onRequestAddAfter={onRequestAddAfter}
+                onExecuteStep={onExecuteStep}
+                executingStepId={executingStepId}
+                runInFlight={runInFlight}
             />
         </ReactFlowProvider>
     );
@@ -122,6 +129,7 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
     definition, runSteps, onNodeClick, onDefinitionChange,
     validation, readOnly, editable, structuralEditsBlocked,
     onRequestAddNode, onRequestOpenPalette, onRequestAddAfter,
+    onExecuteStep, executingStepId, runInFlight,
 }, ref) {
     const rf = useReactFlow();
     const wrapperRef = useRef(null);
@@ -136,6 +144,40 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
         () => buildIssuesByStep(validation, definition),
         [validation, definition],
     );
+
+    // Derive runtime context: which steps are pinned / disabled / mid-run.
+    // The 17 per-type node components read this via NodeRuntimeContext so
+    // their call-sites stay unchanged.
+    const runtimeContextValue = useMemo(() => {
+        const pinnedById = new Set();
+        const disabledById = new Set();
+        const allSteps = [definition?.trigger, ...(definition?.steps || [])].filter(Boolean);
+        for (const s of allSteps) {
+            if (s.pinnedOutput !== undefined && s.pinnedOutput !== null) pinnedById.add(s.id);
+            if (s.disabled) disabledById.add(s.id);
+        }
+        // Run ordinal — 1-based by finishedAt — so users can see "3/8" on
+        // the currently running node. The node still showing 'running'
+        // gets ordinal = (count of completed) + 1. 'pinned' steps count as
+        // completed for ordering — they're synthetic but the user wants
+        // to see their position in the run.
+        const ordered = (runSteps || []).filter(s => s.stepId && (s.status === 'success' || s.status === 'skipped' || s.status === 'pinned'))
+            .slice().sort((a, b) => String(a.finishedAt || '').localeCompare(String(b.finishedAt || '')));
+        const runIndexById = new Map();
+        ordered.forEach((s, i) => runIndexById.set(s.stepId, i + 1));
+        const runningStep = (runSteps || []).find(s => s.status === 'running');
+        if (runningStep?.stepId) runIndexById.set(runningStep.stepId, ordered.length + 1);
+        const runTotal = allSteps.length - 1; // exclude trigger
+        return {
+            pinnedById,
+            disabledById,
+            onExecuteStep: editable ? onExecuteStep : null,
+            executingStepId,
+            runInFlight,
+            runIndexById,
+            runTotal,
+        };
+    }, [definition, runSteps, onExecuteStep, executingStepId, runInFlight, editable]);
 
     // Quick-add "+" callback only fires in editable mode — there's no
     // point rendering the button on a read-only canvas where structural
@@ -158,7 +200,19 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
     // still only written at drag-end via commitNodePositions, so we
     // don't thrash buildLayout / the debounced save round-trip.
     const [nodes, setNodes] = useState(computedNodes);
+    // Track whether ReactFlow is currently dragging a node. If `definition`
+    // updates mid-drag (e.g. an autosave round-trip rewrites positions),
+    // unconditional sync would snap the dragged node back to the persisted
+    // position. We sync immediately on a non-drag definition change, and
+    // defer the sync to drag-end otherwise.
+    const isDraggingRef = useRef(false);
+    const pendingComputedRef = useRef(null);
     useEffect(() => {
+        if (isDraggingRef.current) {
+            pendingComputedRef.current = computedNodes;
+            return;
+        }
+        pendingComputedRef.current = null;
         setNodes(computedNodes);
     }, [computedNodes]);
 
@@ -208,6 +262,22 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
         // round-trip — ignoring them entirely makes the canvas feel
         // broken in subtle ways (e.g. selection ring not updating).
         setNodes(prev => applyNodeChanges(changes, prev));
+        // Track drag in-flight so the computedNodes sync effect doesn't
+        // snap a dragged node back when the definition reflows mid-drag.
+        for (const c of changes) {
+            if (c.type === 'position') {
+                if (c.dragging === true) isDraggingRef.current = true;
+                else if (c.dragging === false) {
+                    isDraggingRef.current = false;
+                    // Drain any deferred computedNodes sync now.
+                    if (pendingComputedRef.current) {
+                        const pending = pendingComputedRef.current;
+                        pendingComputedRef.current = null;
+                        setNodes(pending);
+                    }
+                }
+            }
+        }
         if (!editable) return;
         // Persist to the definition only when the drag finishes
         // (commitNodePositions filters dragging:false changes).
@@ -301,6 +371,33 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
         onDefinitionChange?.(applyAddNode(definition, payload, point));
     }, [editable, structuralEditsBlocked, definition, onDefinitionChange, rf]);
 
+    // Animate edges whose source has finished but whose target is still
+    // running — gives the n8n-style "data is flowing" feedback during a
+    // live run. Also flash success→success edges briefly so users see
+    // each segment of the DAG light up in turn. Computed BEFORE the
+    // early-return below so the hook order stays stable.
+    const decoratedEdges = useMemo(() => {
+        if (!runInFlight && (runSteps || []).length === 0) return edges;
+        return edges.map((e) => {
+            const src = runByStep.get(e.source);
+            const tgt = runByStep.get(e.target);
+            const srcDone = src?.status === 'success' || src?.status === 'pinned';
+            const tgtDone = tgt?.status === 'success' || tgt?.status === 'pinned';
+            const isInFlight = srcDone && (tgt?.status === 'running' || !tgt);
+            const wasTraversed = srcDone && tgtDone;
+            if (isInFlight) {
+                return { ...e, animated: true, style: { ...(e.style || {}), stroke: 'var(--accent)' } };
+            }
+            if (wasTraversed) {
+                return { ...e, animated: false, style: { ...(e.style || {}), stroke: '#10b981' } };
+            }
+            if (tgt?.status === 'error') {
+                return { ...e, animated: false, style: { ...(e.style || {}), stroke: '#ef4444' } };
+            }
+            return e;
+        });
+    }, [edges, runByStep, runInFlight, runSteps]);
+
     if (!definition || !definition.trigger) {
         return (
             <div className="w-full h-full flex flex-col items-center justify-center text-center px-6">
@@ -324,6 +421,7 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
     const allowConnect = editable && !structuralEditsBlocked;
 
     return (
+        <NodeRuntimeContext.Provider value={runtimeContextValue}>
         <div
             ref={wrapperRef}
             className="w-full h-full relative"
@@ -333,7 +431,7 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
         >
             <ReactFlow
                 nodes={nodes}
-                edges={edges}
+                edges={decoratedEdges}
                 nodeTypes={NODE_TYPES}
                 edgeTypes={edgeTypes}
                 defaultEdgeOptions={DEFAULT_EDGE_OPTIONS}
@@ -363,7 +461,7 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
                     zoomable
                     nodeColor={(n) => {
                         const status = n.data?.runStep?.status;
-                        if (status === 'success') return '#10b981';
+                        if (status === 'success' || status === 'pinned') return '#10b981';
                         if (status === 'error')   return '#ef4444';
                         if (status === 'running') return 'var(--accent)';
                         return 'var(--bg-tertiary, rgba(0,0,0,0.1))';
@@ -377,6 +475,7 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
                 </div>
             )}
         </div>
+        </NodeRuntimeContext.Provider>
     );
 });
 

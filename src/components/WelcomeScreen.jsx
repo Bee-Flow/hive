@@ -1,9 +1,10 @@
 import React from 'react';
-import { MessageSquare, Sparkles } from 'lucide-react';
+import { MessageSquare } from 'lucide-react';
 import { useTranslation } from '../hooks/useTranslation';
 import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar } from '../utils/agentAvatar';
+import RecentMeetingsCard from './dashboard/RecentMeetingsCard';
 
-const WelcomeScreen = ({ agent, onSendMessage, children }) => {
+const WelcomeScreen = ({ agent, onSendMessage, children, user, onNavigate }) => {
     const { t } = useTranslation();
     // Parse starter prompts (handle string or array)
     const starterPrompts = Array.isArray(agent?.starter_prompts)
@@ -44,7 +45,8 @@ const WelcomeScreen = ({ agent, onSendMessage, children }) => {
                         <button
                             key={idx}
                             onClick={() => onSendMessage?.(prompt)}
-                            className="text-left px-3.5 py-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-card)] hover:bg-[var(--bg-secondary)] hover:border-purple-500/30 transition-all flex items-center gap-2 group whitespace-nowrap"
+                            data-surface="subtle"
+                            className="text-left px-3.5 py-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-card)] hover:bg-[var(--bg-secondary)] transition-all flex items-center gap-2 group whitespace-nowrap"
                         >
                             <span className="text-[12.5px] font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors">
                                 {prompt}
@@ -53,6 +55,12 @@ const WelcomeScreen = ({ agent, onSendMessage, children }) => {
                     ))}
                 </div>
             ) : null}
+
+            {user && onNavigate && (
+                <div className="w-full flex justify-center mt-2">
+                    <RecentMeetingsCard user={user} onNavigate={onNavigate} />
+                </div>
+            )}
         </div>
     );
 };

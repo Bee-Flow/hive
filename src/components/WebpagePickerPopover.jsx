@@ -13,7 +13,16 @@ import { API_BASE, authFetch } from '../utils/helpers';
 export default function WebpagePickerPopover({ anchorRef, open, onClose, onSelect }) {
     const popoverRef = useRef(null);
     const [search, setSearch] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
     const [state, setState] = useState({ loading: true, items: [], error: null });
+
+    // Debounce the search term so each keystroke doesn't re-run the filter
+    // (and trigger a fresh useMemo) — irrelevant for small lists, but the
+    // picker can show hundreds of pages once an org racks up webpages.
+    useEffect(() => {
+        const id = setTimeout(() => setDebouncedSearch(search), 120);
+        return () => clearTimeout(id);
+    }, [search]);
 
     useEffect(() => {
         if (!open) return;
@@ -45,10 +54,10 @@ export default function WebpagePickerPopover({ anchorRef, open, onClose, onSelec
     }, [open]);
 
     const filtered = useMemo(() => {
-        const q = search.trim().toLowerCase();
+        const q = debouncedSearch.trim().toLowerCase();
         if (!q) return state.items;
         return state.items.filter(w => (w.name || '').toLowerCase().includes(q));
-    }, [search, state.items]);
+    }, [debouncedSearch, state.items]);
 
     if (!open) return null;
 

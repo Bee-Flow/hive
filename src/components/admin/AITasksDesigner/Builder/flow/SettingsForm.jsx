@@ -6,6 +6,7 @@ import ToolInputForm from '../mapping/ToolInputForm';
 import ConditionBuilder from '../mapping/ConditionBuilder';
 import LoopOverPicker from '../mapping/LoopOverPicker';
 import TemplateField from '../mapping/TemplateField';
+import ScheduleBuilder from './ScheduleBuilder';
 
 /**
  * Per-step-type form-based editor. Each subcomponent owns its own draft
@@ -41,6 +42,13 @@ export default function SettingsForm({
     useEffect(() => { baselineRef.current = baseline; }, [baseline]);
     const [draft, setDraft] = useState(() => extractFormState(step));
 
+    // Latest-state refs so the unmount flusher always sees the current
+    // step+draft. Closures captured at mount would be stale.
+    const onPatchRef = useRef(onPatch);
+    const stepRef = useRef(step);
+    const draftRef = useRef(draft);
+    useEffect(() => { onPatchRef.current = onPatch; stepRef.current = step; draftRef.current = draft; });
+
     const dirty = useMemo(() => !deepEqual(draft, baseline), [draft, baseline]);
 
     // Same-id content sync: when the parent re-renders with new step
@@ -49,24 +57,22 @@ export default function SettingsForm({
     // If the user IS mid-edit, just slide baseline forward so `dirty`
     // stays accurate against the new server state — the user's edits
     // remain in `draft` and the next autosave reconciles.
+    //
+    // We read `draft` via `draftRef.current` rather than including `draft`
+    // in deps: this effect must only react to step-content changes, not
+    // every keystroke. The ref read is intentional (not a dep), so we
+    // declare the dep array explicitly with just `step`.
     useEffect(() => {
         const incoming = extractFormState(step);
         if (deepEqual(incoming, baselineRef.current)) return;
-        const userHasEdits = !deepEqual(draft, baselineRef.current);
+        const userHasEdits = !deepEqual(draftRef.current, baselineRef.current);
         baselineRef.current = incoming;
         setBaseline(incoming);
         if (!userHasEdits) setDraft(incoming);
-    }, [step]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [step]);
 
     const set = (k, v) => setDraft(d => ({ ...d, [k]: v }));
     const setNested = (parent, k, v) => setDraft(d => ({ ...d, [parent]: { ...(d[parent] || {}), [k]: v } }));
-
-    // Latest-state refs so the unmount flusher always sees the current
-    // step+draft. Closures captured at mount would be stale.
-    const onPatchRef = useRef(onPatch);
-    const stepRef = useRef(step);
-    const draftRef = useRef(draft);
-    useEffect(() => { onPatchRef.current = onPatch; stepRef.current = step; draftRef.current = draft; });
 
     const flushNow = () => {
         if (deepEqual(draftRef.current, baselineRef.current)) return false;
@@ -260,25 +266,14 @@ function TriggerFields({ draft, set, setNested }) {
                 </select>
             </FormRow>
             {kind === 'schedule' && (
-                <>
-                    <FormRow label="Cron expression" hint="Five-field cron: min hour dom month dow. Example: 0 9 * * 1 = every Monday at 09:00.">
-                        <input
-                            type="text"
-                            value={draft.scheduleCron || ''}
-                            onChange={(e) => set('scheduleCron', e.target.value)}
-                            placeholder="0 9 * * 1"
-                            className={inputClass() + ' font-mono'}
-                        />
-                    </FormRow>
-                    <FormRow label="Timezone">
-                        <input
-                            type="text"
-                            value={draft.scheduleTz || 'Europe/Amsterdam'}
-                            onChange={(e) => set('scheduleTz', e.target.value)}
-                            className={inputClass() + ' font-mono'}
-                        />
-                    </FormRow>
-                </>
+                <ScheduleBuilder
+                    cron={draft.scheduleCron || ''}
+                    tz={draft.scheduleTz || 'Europe/Amsterdam'}
+                    onChange={({ cron, tz }) => {
+                        set('scheduleCron', cron);
+                        set('scheduleTz', tz);
+                    }}
+                />
             )}
             {kind === 'app_event' && (
                 <AppEventFields draft={draft} set={set} setNested={setNested} />

@@ -17,19 +17,22 @@ const MODES = [
     {
         id: 'ask',
         label: 'Ask before edits',
-        description: 'Claude will ask for approval before making each edit',
+        description: 'The AI proposes a plan listing every file it will touch, then waits for your approval before changing anything.',
+        tooltip: 'Ask mode — propose a plan, wait for approval, then edit. Best when you want to review every change up front.',
         Icon: Hand,
     },
     {
         id: 'auto',
         label: 'Edit automatically',
-        description: 'Claude will edit your selected text or the whole file',
+        description: 'The AI edits files directly, no approval gate. You see each change as a diff card as it happens.',
+        tooltip: 'Auto mode — edits run immediately, with diffs shown live. Fastest for iterating.',
         Icon: CodeXml,
     },
     {
         id: 'plan',
         label: 'Plan mode',
-        description: 'Claude will explore the code and present a plan before editing',
+        description: 'Even for small changes, the AI explores files first and presents a plan. Nothing runs until you approve.',
+        tooltip: 'Plan mode — exploration + approval gate even for tiny edits. Best for high-stakes refactors.',
         Icon: MapIcon,
     },
 ];
@@ -59,7 +62,7 @@ export default function WebpageChatModePicker({ value = 'auto', onChange }) {
                 onClick={() => setOpen(o => !o)}
                 className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] hover:bg-[var(--vsc-hover-bg)] transition-colors"
                 style={{ color: 'var(--vsc-fg-muted)' }}
-                title="Change how the AI applies edits"
+                title={current.tooltip || `${current.label} — click to change`}
             >
                 <CurrentIcon size={11} />
                 <span className="truncate max-w-[80px]">{current.label}</span>
@@ -89,6 +92,7 @@ export default function WebpageChatModePicker({ value = 'auto', onChange }) {
                                 key={m.id}
                                 type="button"
                                 onClick={() => { onChange?.(m.id); setOpen(false); }}
+                                title={m.tooltip}
                                 className="w-full flex items-start gap-2.5 px-3 py-2 text-left transition-colors hover:bg-[var(--bg-secondary)]"
                             >
                                 <Icon size={14} className="mt-0.5 shrink-0" style={{ color: 'var(--text-secondary)' }} />

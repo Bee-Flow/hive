@@ -16,6 +16,7 @@ export default function SideWebpagePanel({
     onFilesLoaded,    // ({ html, css, js, extraFiles }) — content snapshot
     onSelectionAttach, // (selection) — user highlighted text in the preview
     reloadKey = 0,    // bump to force a refetch (e.g. after AI edits)
+    onNavigate,       // (page) — same shape as App.jsx's navigateToPage
 }) {
     const [state, setState] = useState({ loading: true, error: null, data: null });
     // Stash the callbacks in refs so the effect's deps stay limited to
@@ -62,9 +63,14 @@ export default function SideWebpagePanel({
     }, [webpageId, reloadKey]);
 
     const openInEditor = () => {
-        const path = `/app/studio/webpages/${webpageId}`;
-        window.history.pushState({ page: 'studio' }, '', path);
-        window.dispatchEvent(new PopStateEvent('popstate', { state: { page: 'studio' } }));
+        if (typeof onNavigate === 'function') {
+            onNavigate(`studio/webpages/${webpageId}`);
+            return;
+        }
+        // Defensive fallback — route through the app shell rather than a
+        // synthetic popstate. The new URL still triggers App's popstate
+        // listener via the browser navigation it implies.
+        window.location.assign(`/app/studio/webpages/${webpageId}`);
     };
 
     const wp = state.data?.webpage;

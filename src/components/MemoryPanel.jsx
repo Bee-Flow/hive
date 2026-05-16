@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { API_BASE, authFetch } from '../utils/helpers';
+import { formatRelativeTime } from '../utils/dateFormatters';
 
 const PAGE_SIZE = 50;
 
@@ -230,17 +231,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
         ? ['instruction', 'project', 'fact', 'context']
         : ['instruction', 'person', 'preference', 'workflow', 'fact', 'context'];
 
-    const formatDate = (dateStr) => {
-        if (!dateStr) return '';
-        const d = new Date(dateStr);
-        const now = new Date();
-        const diff = now - d;
-        if (diff < 60000) return 'just now';
-        if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-        if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-        if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
-        return d.toLocaleDateString();
-    };
+    const formatDate = formatRelativeTime;
 
     // Filtered memories — for the paginated/global view the server has
     // already applied search + type filters, so we just show what was loaded.

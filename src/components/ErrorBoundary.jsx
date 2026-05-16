@@ -1,5 +1,5 @@
 import React from 'react';
-import { APP_BUILD_SHA } from '../utils/appVersion';
+import { reportClientError } from '../utils/clientErrorReporter';
 
 /**
  * Two boundaries in one file:
@@ -15,44 +15,11 @@ import { APP_BUILD_SHA } from '../utils/appVersion';
  * Both catch render errors and lifecycle throws. They do NOT catch errors in
  * event handlers, async code, or setTimeout — those need their own try/catch.
  *
- * componentDidCatch fires once per caught error. We log to console and,
- * optionally, POST to `/api/client-errors` for server-side aggregation. The
- * POST is fire-and-forget so it never cascades a failure into the UI.
+ * componentDidCatch fires once per caught error. We hand off to
+ * `reportClientError`, which redacts tokens/keys from the payload before
+ * POSTing and queues to IndexedDB if the network is down (drained on next
+ * app mount via `drainErrorQueue`).
  */
-
-function reportError(label, error, info) {
-    try {
-        console.error(`[ErrorBoundary:${label}]`, error, info?.componentStack || '');
-    } catch (_) { /* ignore console failures */ }
-    // Fire-and-forget — we don't want a reporting failure to blow up the UI.
-    try {
-        // Diagnostics populated by AgentHub on mount (role + feature flags) so
-        // we can correlate minified errors to the user's permission/tier state.
-        const diag = (typeof window !== 'undefined' && window.__APP_DIAGNOSTICS__) || {};
-        const payload = {
-            label,
-            message: String(error?.message || error),
-            stack: String(error?.stack || ''),
-            componentStack: String(info?.componentStack || ''),
-            url: typeof window !== 'undefined' ? window.location.href : '',
-            userAgent: typeof navigator !== 'undefined' ? navigator.userAgent : '',
-            at: new Date().toISOString(),
-            buildSha: APP_BUILD_SHA,
-            userRole: diag.userRole || '',
-            featureFlags: diag.featureFlags || {},
-        };
-        if (typeof fetch === 'function') {
-            fetch('/api/client-errors', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-                credentials: 'include',
-                // keepalive lets the browser send the report even during unload.
-                keepalive: true,
-            }).catch(() => { /* ignore */ });
-        }
-    } catch (_) { /* ignore */ }
-}
 
 export class ErrorBoundary extends React.Component {
     constructor(props) {
@@ -66,7 +33,7 @@ export class ErrorBoundary extends React.Component {
 
     componentDidCatch(error, info) {
         this.setState({ info });
-        reportError(this.props.label || 'root', error, info);
+        reportClientError(this.props.label || 'root', error, info);
     }
 
     handleReload = () => {
@@ -167,7 +134,7 @@ export class MessageErrorBoundary extends React.Component {
     }
 
     componentDidCatch(error, info) {
-        reportError('message', error, info);
+        reportClientError('message', error, info);
     }
 
     handleCopy = () => {

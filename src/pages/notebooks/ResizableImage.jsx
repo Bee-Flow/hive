@@ -27,74 +27,14 @@ function ResizableImageView({ node, updateAttributes, selected, editor }) {
         setCurrentWidth(width);
     }, [width]);
 
-    const onResizeStart = useCallback((e, corner) => {
-        e.preventDefault();
-        e.stopPropagation();
-
-        const img = imgRef.current;
-        if (!img) return;
-
-        const rect = img.getBoundingClientRect();
-        const aspectRatio = rect.width / rect.height;
-
-        startDataRef.current = {
-            startX: e.clientX,
-            startY: e.clientY,
-            startWidth: rect.width,
-            aspectRatio,
-            corner,
-        };
-
-        setResizing(true);
-
-        const onMouseMove = (moveE) => {
-            const data = startDataRef.current;
-            if (!data) return;
-
-            let deltaX = moveE.clientX - data.startX;
-
-            // For left-side corners, invert the delta
-            if (data.corner === 'top-left' || data.corner === 'bottom-left') {
-                deltaX = -deltaX;
-            }
-
-            const newWidth = Math.max(50, Math.round(data.startWidth + deltaX));
-
-            // Limit to editor width
-            const editorEl = editor?.view?.dom;
-            const maxWidth = editorEl ? editorEl.clientWidth - 40 : 800;
-            const clampedWidth = Math.min(newWidth, maxWidth);
-
-            setCurrentWidth(clampedWidth);
-        };
-
-        const onMouseUp = () => {
-            document.removeEventListener('mousemove', onMouseMove);
-            document.removeEventListener('mouseup', onMouseUp);
-            setResizing(false);
-
-            // Persist to node attributes
-            const data = startDataRef.current;
-            if (data) {
-                let deltaX = 0; // will use currentWidth from state
-                updateAttributes({ width: currentWidth });
-            }
-            startDataRef.current = null;
-        };
-
-        document.addEventListener('mousemove', onMouseMove);
-        document.addEventListener('mouseup', onMouseUp);
-    }, [editor, updateAttributes, currentWidth]);
-
-    // We need to persist width on mouseUp — but currentWidth in the closure
-    // may be stale. Use a ref to track the latest value.
+    // Track latest width across the resize gesture so onMouseUp persists the
+    // right value even though `currentWidth` in the original closure is stale.
     const latestWidthRef = useRef(currentWidth);
     useEffect(() => {
         latestWidthRef.current = currentWidth;
     }, [currentWidth]);
 
-    // Patched onMouseUp via ref
-    const onResizeStartPatched = useCallback((e, corner) => {
+    const onResizeStart = useCallback((e, corner) => {
         e.preventDefault();
         e.stopPropagation();
 
@@ -171,13 +111,13 @@ function ResizableImageView({ node, updateAttributes, selected, editor }) {
                 {/* Resize handles — visible when selected or hovered */}
                 {(selected || resizing) && (
                     <>
-                        <div className="resize-handle top-left" onMouseDown={(e) => onResizeStartPatched(e, 'top-left')} />
-                        <div className="resize-handle top-right" onMouseDown={(e) => onResizeStartPatched(e, 'top-right')} />
-                        <div className="resize-handle bottom-left" onMouseDown={(e) => onResizeStartPatched(e, 'bottom-left')} />
-                        <div className="resize-handle bottom-right" onMouseDown={(e) => onResizeStartPatched(e, 'bottom-right')} />
+                        <div className="resize-handle top-left" onMouseDown={(e) => onResizeStart(e, 'top-left')} />
+                        <div className="resize-handle top-right" onMouseDown={(e) => onResizeStart(e, 'top-right')} />
+                        <div className="resize-handle bottom-left" onMouseDown={(e) => onResizeStart(e, 'bottom-left')} />
+                        <div className="resize-handle bottom-right" onMouseDown={(e) => onResizeStart(e, 'bottom-right')} />
                         {/* Edge handles for more precise control */}
-                        <div className="resize-handle left-edge" onMouseDown={(e) => onResizeStartPatched(e, 'bottom-left')} />
-                        <div className="resize-handle right-edge" onMouseDown={(e) => onResizeStartPatched(e, 'bottom-right')} />
+                        <div className="resize-handle left-edge" onMouseDown={(e) => onResizeStart(e, 'bottom-left')} />
+                        <div className="resize-handle right-edge" onMouseDown={(e) => onResizeStart(e, 'bottom-right')} />
                     </>
                 )}
 

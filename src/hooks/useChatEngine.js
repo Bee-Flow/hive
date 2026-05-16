@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { API_BASE, generateMessageId, authFetch } from '../utils/helpers';
 import scopedStorage from '../utils/scopedStorage';
+import { logger } from '../utils/logger';
 import useTranslation from './useTranslation';
 
 /**
@@ -41,7 +42,10 @@ export default function useChatEngine({
 }) {
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
-    const [abortController, setAbortController] = useState(null);
+    // Active stream controller. Ref instead of state so rapid double-send
+    // can synchronously read+abort the previous controller in the same tick,
+    // and so changes don't recreate `sendMessage`/`stopGenerating`.
+    const abortControllerRef = useRef(null);
 
     // Keep a ref in sync with messages so `sendMessage` can read the current
     // conversation without listing `messages` in its dep array. With `messages`
@@ -102,15 +106,18 @@ export default function useChatEngine({
         };
     };
 
-    // Cleanup abort controller on unmount
+    // Cleanup abort controller on unmount. Mount-only effect — the ref
+    // always points at the current controller, so we don't need to re-run.
     useEffect(() => {
         return () => {
-            if (abortController) {
-                console.log('[useChatEngine] Unmounting, aborting active stream');
-                abortController.abort();
+            const c = abortControllerRef.current;
+            if (c) {
+                logger.debug('[useChatEngine] Unmounting, aborting active stream');
+                c.abort();
+                abortControllerRef.current = null;
             }
         };
-    }, [abortController]);
+    }, []);
 
     // --- SSE Event Handlers ---
 
@@ -119,7 +126,7 @@ export default function useChatEngine({
 
         // DEBUG: log non-content events to help debug LinkedIn draft issue
         if (event !== 'content' && event !== 'thinking') {
-            console.log('[SSE Event]', event, data);
+            logger.debug('[SSE Event]', event, data);
         }
 
         switch (event) {
@@ -148,7 +155,7 @@ export default function useChatEngine({
                 // single rotating status line above the typing dots so users
                 // see what is happening (KB search, attachment OCR, etc.)
                 // instead of a silent stall before the first token.
-                console.log('[phase]', data.stage, data.status, data.detail || '', '→ msgId', activeIdRef.current);
+                logger.debug('[phase]', data.stage, data.status, data.detail || '', '→ msgId', activeIdRef.current);
                 setMessages(prev => {
                     let updated = false;
                     const next = prev.map(m => {
@@ -574,10 +581,15 @@ export default function useChatEngine({
                 break;
 
             case 'model_selected':
+                // Server emits this on every turn now. `fromAuto` tells us
+                // whether the user was on Auto (so we render "Auto → Fast")
+                // versus a pinned tier (where we just show the model name).
                 setMessages(prev => prev.map(m =>
                     m.id === activeIdRef.current ? {
                         ...m,
-                        autoSelectedTier: data.tier
+                        modelId: data.modelId || m.modelId,
+                        modelTier: data.tier || m.modelTier,
+                        autoSelectedTier: data.fromAuto ? data.tier : m.autoSelectedTier,
                     } : m
                 ));
                 break;
@@ -611,7 +623,7 @@ export default function useChatEngine({
             }
 
             case 'linkedin_draft':
-                console.log('[DEBUG] linkedin_draft event received!', data, 'assistantMsgId:', assistantMsgId);
+                logger.debug('[DEBUG] linkedin_draft event received!', data, 'assistantMsgId:', assistantMsgId);
                 setMessages(prev => {
                     const updated = prev.map(m =>
                         m.id === assistantMsgId ? {
@@ -619,7 +631,7 @@ export default function useChatEngine({
                             linkedInDrafts: [...(m.linkedInDrafts || []), { ...data, status: 'pending' }]
                         } : m
                     );
-                    console.log('[DEBUG] Messages after linkedin_draft update:', updated.map(m => ({ id: m.id, hasLinkedInDrafts: !!m.linkedInDrafts, linkedInDraftsCount: m.linkedInDrafts?.length })));
+                    logger.debug('[DEBUG] Messages after linkedin_draft update:', updated.map(m => ({ id: m.id, hasLinkedInDrafts: !!m.linkedInDrafts, linkedInDraftsCount: m.linkedInDrafts?.length })));
                     return updated;
                 });
                 break;
@@ -1011,9 +1023,12 @@ export default function useChatEngine({
         if (isLoading) return;
         if (!text && attachments.length === 0) return;
 
-        if (abortController) abortController.abort();
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+        }
         const controller = new AbortController();
-        setAbortController(controller);
+        abortControllerRef.current = controller;
         setIsLoading(true);
 
         const msgId = generateMessageId();
@@ -1121,6 +1136,10 @@ export default function useChatEngine({
                         const v = scopedStorage.getItem('memoryWriteEnabled');
                         return v === null ? true : v === 'true';
                     })(),
+                    webSearchEnabled: (() => {
+                        const v = scopedStorage.getItem('webSearchEnabled');
+                        return v === null ? true : v === 'true';
+                    })(),
                     ...wsPayload,
                     ...(activeProject?.id ? { projectId: activeProject.id } : {}),
                     ...(overrideTier ? { modelTier: overrideTier } : {}),
@@ -1198,7 +1217,7 @@ export default function useChatEngine({
                                 contentRef
                             });
                         } catch (e) {
-                            // Ignore parse errors
+                            console.debug('[useChatEngine] SSE event parse skipped', currentEvent, e);
                         }
                     }
                 }
@@ -1217,20 +1236,29 @@ export default function useChatEngine({
                 ));
                 setIsLoading(false);
             }
+        } finally {
+            // Release the controller once the stream is done (success, error, or
+            // abort). Leaving it set means the next send would needlessly call
+            // .abort() on an already-finished controller.
+            if (abortControllerRef.current === controller) {
+                abortControllerRef.current = null;
+            }
         }
         // Deliberately NOT in deps: `messages` (read via messagesRef), `handleSSEEvent`
         // (invoked via handleSSEEventRef). Keeping them here would recreate
         // `sendMessage` on every streamed token and break child memoization.
-    }, [selectedAgent, isLoading, abortController, currentConversation, getNotebookPayload, directMode, onDirectConversationCreated, activeProject, activeSkillIds, onSessionSkillsChanged]);
+    }, [selectedAgent, isLoading, currentConversation, getNotebookPayload, directMode, onDirectConversationCreated, activeProject, activeSkillIds, onSessionSkillsChanged]);
 
     const stopGenerating = useCallback(() => {
-        if (abortController) abortController.abort();
-        setAbortController(null);
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+        }
         setIsLoading(false);
         setMessages(prev => prev.map(m =>
             m.isStreaming ? { ...m, isStreaming: false } : m
         ));
-    }, [abortController]);
+    }, []);
 
     /**
      * Retry: regenerate the AI response at `messageIndex`.

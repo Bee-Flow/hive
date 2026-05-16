@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { API_BASE, authFetch } from '../utils/helpers';
+import { formatRelativeTime } from '../utils/dateFormatters';
 import { Clock, RotateCcw, ChevronDown, ChevronRight, Trash2, Eye } from 'lucide-react';
 
 /**
@@ -73,16 +74,8 @@ export default function VersionHistory({ agentId, onRestore }) {
         }
     };
 
-    const formatDate = (dateStr) => {
-        const d = new Date(dateStr + 'Z');
-        const now = new Date();
-        const diff = now - d;
-        if (diff < 60000) return 'just now';
-        if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-        if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
-        if (diff < 604800000) return `${Math.floor(diff / 86400000)}d ago`;
-        return d.toLocaleDateString();
-    };
+    // The DB stores timestamps without a TZ suffix; assume UTC by appending 'Z'.
+    const formatDate = (dateStr) => formatRelativeTime(dateStr ? `${dateStr}Z` : dateStr);
 
     const renderSnapshotPreview = (snapshot, versionId) => {
         if (!snapshot) return null;

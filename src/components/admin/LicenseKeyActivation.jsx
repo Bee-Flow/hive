@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Key, ShieldCheck, AlertCircle, Loader2, ExternalLink, RefreshCw, X, CreditCard } from 'lucide-react';
-import useLicense from '../../hooks/useLicense';
+import { useLicenseContext } from '../LicenseContext';
 import { useTranslation } from '../../hooks/useTranslation';
 import { API_BASE, authFetch } from '../../utils/helpers';
 
@@ -33,7 +33,7 @@ function daysUntil(s) {
 
 export default function LicenseKeyActivation() {
     const { t } = useTranslation();
-    const { tier, source, license, subscription, loading, error, activate, deactivate, refresh, reload } = useLicense();
+    const { tier, source, license, subscription, loading, error, activate, deactivate, refresh, reload } = useLicenseContext();
     const [tokenInput, setTokenInput] = useState('');
     const [busy, setBusy] = useState(null); // 'activate' | 'refresh' | 'deactivate' | 'portal'
     const [actionError, setActionError] = useState(null);

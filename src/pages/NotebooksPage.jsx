@@ -19,6 +19,7 @@ import GenerationOverlay from './notebooks/GenerationOverlay';
 import SendForSigningModal from './notebooks/SendForSigningModal';
 import { preprocessMermaidContent } from './notebooks/MermaidExtension';
 import { renderMermaidToSVG, svgToPngDataUrl } from './notebooks/MermaidBlock';
+import { embedImagesAsBase64 } from '../utils/imageEmbedding';
 
 /* ── Time helper ──────────────────────────────────────────────── */
 function timeAgo(dateStr) {
@@ -30,59 +31,6 @@ function timeAgo(dateStr) {
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
     return d.toLocaleDateString();
-}
-
-/* ── Embed images as base64 for export (PDF/Word) ────────────── */
-async function embedImagesAsBase64(html) {
-    // Find all <img> tags and extract their src
-    const imgRegex = /<img([^>]*?)src=["']([^"']+)["']([^>]*?)>/gi;
-    const matches = [...html.matchAll(imgRegex)];
-
-    const replacements = await Promise.allSettled(
-        matches.map(async (match) => {
-            const [fullMatch, before, src, after] = match;
-            // Skip already-embedded base64 images
-            if (src.startsWith('data:')) return { fullMatch, newTag: fullMatch };
-
-            try {
-                // Resolve relative URLs
-                const resolvedUrl = src.startsWith('http') ? src : `${window.location.origin}${src}`;
-                const res = await fetch(resolvedUrl, { credentials: 'include' });
-                if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                const blob = await res.blob();
-                const dataUrl = await new Promise((resolve, reject) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result);
-                    reader.onerror = reject;
-                    reader.readAsDataURL(blob);
-                });
-                // Preserve width from data-width attribute or style
-                let widthStyle = '';
-                const widthMatch = (before + after).match(/data-width=["'](\d+)["']/);
-                const styleMatch = (before + after).match(/style=["']([^"']*?width[^"']*?)["']/);
-                if (widthMatch) {
-                    widthStyle = ` style="width:${widthMatch[1]}px;height:auto;max-width:100%"`;
-                } else if (styleMatch) {
-                    widthStyle = ` style="${styleMatch[1]}"`;
-                }
-                return {
-                    fullMatch,
-                    newTag: `<img src="${dataUrl}"${widthStyle} alt="" />`
-                };
-            } catch (err) {
-                console.warn('[Export] Failed to embed image:', src, err.message);
-                return { fullMatch, newTag: fullMatch }; // Keep original on failure
-            }
-        })
-    );
-
-    let result = html;
-    for (const r of replacements) {
-        if (r.status === 'fulfilled') {
-            result = result.replace(r.value.fullMatch, r.value.newTag);
-        }
-    }
-    return result;
 }
 
 /* ── Source type metadata ─────────────────────────────────────── */
@@ -325,7 +273,7 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
         authFetch(`${API_BASE}/ai/config/chat-models`)
             .then(r => r.ok ? r.json() : {})
             .then(data => setModelTiers(data))
-            .catch(() => {});
+            .catch(e => console.warn('[NotebooksPage] load model tiers failed', e));
     }, []);
 
     /* ── Check SignRequest config ────────────────────────────── */
@@ -333,7 +281,7 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
         authFetch(`${API_BASE}/ai/user-settings`)
             .then(r => r.ok ? r.json() : {})
             .then(data => setSignRequestConfigured(!!data.hasSignRequestConfig))
-            .catch(() => {});
+            .catch(e => console.warn('[NotebooksPage] SignRequest config probe failed', e));
     }, []);
 
     /* ── Check Nextcloud config ──────────────────────────────── */
@@ -341,7 +289,7 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
         authFetch(`${API_BASE}/auth/app-password-status`)
             .then(r => r.ok ? r.json() : {})
             .then(data => setNextcloudConfigured(!!data.hasAppPassword))
-            .catch(() => {});
+            .catch(e => console.warn('[NotebooksPage] Nextcloud config probe failed', e));
     }, []);
 
     /* ── Fetch notebooks ─────────────────────────────────────── */

@@ -4,6 +4,7 @@ import AgentDesigner from '../components/admin/AgentDesigner';
 import OrgUsersPanel from '../components/admin/OrgUsersPanel';
 import OrgInfoPanel from '../components/admin/OrgInfoPanel';
 import KnowledgeBasesSection from '../components/admin/AgentDesigner/sections/KnowledgeBasesSection';
+import SystemKnowledgeBasesPanel from '../components/admin/SystemKnowledgeBasesPanel';
 import GitHubSyncPanel from '../components/admin/GitHubSyncPanel';
 import NextcloudSyncPanel from '../components/admin/NextcloudSyncPanel';
 import { AGENT_MANAGEMENT_ROLES, USER_MANAGEMENT_ROLES } from '../config/orgRoles';
@@ -119,7 +120,8 @@ const OrgSettings = ({ user, onBack, orgSettingsPath = {}, onNavigate }) => {
                     </div>
                 ) : activeTab === 'knowledge-bases' ? (
                     <div className="absolute inset-0 overflow-y-auto p-6">
-                        <div className="max-w-5xl mx-auto">
+                        <div className="max-w-5xl mx-auto space-y-6">
+                            <SystemKnowledgeBasesPanel />
                             <KnowledgeBasesSection isReadonly={false} />
                         </div>
                     </div>

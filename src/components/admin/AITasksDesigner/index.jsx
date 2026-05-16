@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { Bot, Plus, Play, Pause, Pencil, Trash2, Clock, Repeat, X, Sparkles, ArrowLeft, Check, ChevronDown, Search } from 'lucide-react';
+import { Bot, Plus, Play, Pause, Pencil, Trash2, Clock, Repeat, X, ArrowLeft, Check, ChevronDown, Search } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar, DEFAULT_AGENT_EMOJI } from '../../../utils/agentAvatar';
 import MarkdownRenderer from '../../MarkdownRenderer';
@@ -11,6 +11,7 @@ import RoutinesEmptyState from '../Studio/RoutinesStudio/EmptyState';
 import QuickSwitcher from '../Studio/RoutinesStudio/QuickSwitcher';
 import RoutineEditor from '../Studio/RoutinesStudio/RoutineEditor';
 import useAutomationApi from '../../../hooks/useAutomationApi';
+import { showToast, ToastHost } from '../guardrails/Toast';
 
 const REPEAT_OPTIONS = [
     { value: '',          label: 'One-time (no repeat)' },
@@ -177,7 +178,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
     const [searchQuery, setSearchQuery] = useState('');
     // Signal upward (Studio → AgentHub) when the BuilderShell is open so the
     // outer chrome can collapse for a fullscreen edit, mirroring AgentStudio.
-    const automationEditing = subTab === 'automations' && (builderAutomationId !== null || openingBuilder);
+    const automationEditing = ((embedded && segment === 'automation') || subTab === 'automations') && (builderAutomationId !== null || openingBuilder);
     // Editor view state — null means list/idle view
     const [editingTaskId, setEditingTaskId] = useState(null); // string = edit, 'new' = create
     const [title, setTitle] = useState('');
@@ -379,12 +380,43 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
         if (builderAutomationId === null && !openingBuilder) fetchAutomations();
     }, [builderAutomationId, openingBuilder, fetchAutomations]);
 
+    // Poll active runs every 5s so the sidebar can show a live ● dot on
+    // any automation currently executing. n8n-style ambient awareness so
+    // the user knows their scheduled flows ran without opening each one.
+    const [activeRunIds, setActiveRunIds] = useState(new Set());
+    useEffect(() => {
+        let alive = true;
+        const tick = async () => {
+            try {
+                const r = await automationApi.getActiveRuns?.();
+                if (!alive || !r) return;
+                setActiveRunIds(new Set((r.active || []).map(x => x.automationId)));
+            } catch (_) { /* silent — non-critical */ }
+        };
+        tick();
+        const handle = setInterval(tick, 5000);
+        return () => { alive = false; clearInterval(handle); };
+    }, [automationApi]);
+
+    // Per-row in-flight dedupe for the active/pause toggle. Without this,
+    // a rapid double-click fires two PATCHes against the same automation
+    // (the second sees the post-first state and immediately reverses it).
+    // The ref-based check survives stale React state and the toast
+    // surfaces failures the user used to only see in console.warn.
+    const togglePendingRef = useRef(new Set());
     const toggleAutomation = useCallback(async (a) => {
+        if (togglePendingRef.current.has(a.id)) return;
+        togglePendingRef.current.add(a.id);
         try {
             if (a.isActive) await automationApi.deactivate(a.id);
             else await automationApi.activate(a.id);
             await fetchAutomations();
-        } catch (err) { console.warn('[AITasksDesigner] toggleAutomation failed:', err.message); }
+        } catch (err) {
+            console.warn('[AITasksDesigner] toggleAutomation failed:', err.message);
+            showToast('error', `Could not ${a.isActive ? 'pause' : 'activate'} “${a.title || a.id}”: ${err.message}`);
+        } finally {
+            togglePendingRef.current.delete(a.id);
+        }
     }, [automationApi, fetchAutomations]);
 
     const requestDeleteAutomation = useCallback((a) => setPendingDeleteAutomation(a), []);
@@ -750,6 +782,7 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
                                     routine={a}
                                     kind="automation"
                                     selected={builderAutomationId === a.id}
+                                    liveRunning={activeRunIds.has(a.id)}
                                     onSelect={() => { setBuilderAutomationId(a.id); }}
                                     onToggleActive={() => toggleAutomation(a)}
                                     onDuplicate={() => duplicateAutomation(a)}
@@ -959,6 +992,9 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
                 {deleteAutomationModal}
                 {resultModalEl}
                 {styles}
+                {/* Surfaces toggle failures and any other transient errors
+                    raised via showToast inside this view. */}
+                <ToastHost />
             </div>
         );
     }
@@ -1403,8 +1439,8 @@ function EditorView({
                         </div>
                     )}
                     <div className="rounded-xl p-4 border bg-[var(--bg-card)]" style={{ borderColor: 'var(--border-subtle, rgba(0,0,0,0.06))' }}>
-                        <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2 inline-flex items-center gap-1.5">
-                            <Sparkles className="w-3 h-3" /> Tips
+                        <div className="text-[10px] font-bold uppercase tracking-wider text-[var(--text-muted)] mb-2">
+                            Tips
                         </div>
                         <ul className="text-[12px] text-[var(--text-secondary)] space-y-2 leading-relaxed list-disc pl-4">
                             <li>Be specific: tell the AI exactly what output format you want.</li>

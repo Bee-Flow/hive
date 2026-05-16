@@ -65,14 +65,87 @@ const SCHEDULE_PRESETS = [
 ];
 
 function presetToCron(preset, timeStr) {
-    const [hh = '9', mm = '0'] = (timeStr || '09:00').split(':');
-    const h = parseInt(hh, 10) || 9;
-    const m = parseInt(mm, 10) || 0;
+    const [hRaw, mRaw] = String(timeStr || '09:00').split(':');
+    const hParsed = parseInt(hRaw, 10);
+    const mParsed = parseInt(mRaw, 10);
+    const h = Number.isFinite(hParsed) && hParsed >= 0 && hParsed <= 23 ? hParsed : 9;
+    const m = Number.isFinite(mParsed) && mParsed >= 0 && mParsed <= 59 ? mParsed : 0;
     if (preset === 'daily')    return `${m} ${h} * * *`;
     if (preset === 'weekdays') return `${m} ${h} * * 1-5`;
     if (preset === 'weekly')   return `${m} ${h} * * 1`;
     if (preset === 'monthly')  return `${m} ${h} 1 * *`;
     return null;
+}
+
+// Crude but useful cron validation — 5 whitespace-separated fields, each
+// allowing digits, named tokens (mon, jan, ...), '*', '/', ',', '-'.
+// Catches typos and missing fields without pulling in a parser library.
+const CRON_TOKEN = /^(?:\d+|\*|[a-zA-Z]{3})(?:[-,/](?:\d+|\*|[a-zA-Z]{3}))*$/;
+function isValidCron(expr) {
+    if (typeof expr !== 'string') return false;
+    const parts = expr.trim().split(/\s+/);
+    if (parts.length !== 5) return false;
+    return parts.every((p) => CRON_TOKEN.test(p));
+}
+
+// Cached IANA tz list; supportedValuesOf is a 2022+ API but works in all
+// browsers we target. The fallback is a small hand-picked set so the
+// datalist still helps users on the rare older runtime.
+let _tzList = null;
+function getTimezoneList() {
+    if (_tzList) return _tzList;
+    try {
+        if (typeof Intl.supportedValuesOf === 'function') {
+            _tzList = Intl.supportedValuesOf('timeZone');
+            return _tzList;
+        }
+    } catch { /* fall through */ }
+    _tzList = ['UTC', 'Europe/Amsterdam', 'Europe/London', 'Europe/Berlin', 'Europe/Paris',
+        'America/New_York', 'America/Los_Angeles', 'America/Chicago',
+        'Asia/Tokyo', 'Asia/Singapore', 'Australia/Sydney'];
+    return _tzList;
+}
+function isValidTimezone(tz) {
+    if (!tz || typeof tz !== 'string') return false;
+    try {
+        // Constructor throws RangeError on invalid zones.
+        new Intl.DateTimeFormat('en-US', { timeZone: tz });
+        return true;
+    } catch {
+        return false;
+    }
+}
+
+// Webpage-context tools need an explicit webpageId input from the user.
+// `webpage_create` (creates a new one) and `webpages_list` (returns the
+// list itself) don't, so they're excluded.
+const TOOLS_WITHOUT_WEBPAGE_INPUT = new Set(['webpage_create', 'webpages_list']);
+function toolNeedsWebpageInput(toolName) {
+    if (typeof toolName !== 'string') return false;
+    if (!toolName.startsWith('webpage_')) return false;
+    return !TOOLS_WITHOUT_WEBPAGE_INPUT.has(toolName);
+}
+
+// The catalog endpoint can return either a flat `tools[]` (newer) or a
+// nested `apps[].actions[]` (older). Normalize to a flat list of
+// `{ name, label }` so the dropdown doesn't have to know which shape it
+// got. Returns [] when the catalog is missing — caller renders an error
+// banner separately when the fetch failed.
+function normalizeToolCatalog(catalog) {
+    if (!catalog) return [];
+    if (Array.isArray(catalog.tools) && catalog.tools.length) {
+        return catalog.tools.map((t) => ({
+            name: t.name || t.id,
+            label: t.label || t.name || t.id,
+        }));
+    }
+    const apps = Array.isArray(catalog.apps) ? catalog.apps : [];
+    return apps
+        .filter((a) => a.available)
+        .flatMap((a) => (a.actions || []).map((act) => ({
+            name: act.name,
+            label: `${a.label}: ${act.label || act.name}`,
+        })));
 }
 
 function cronToPreset(cron) {
@@ -142,6 +215,7 @@ export default function QuickEditForm({
     const { preset: schedulePreset, time: scheduleTime } = cronToPreset(trigger.schedule?.cron);
 
     const [catalog, setCatalog] = useState(null);
+    const [catalogLoadFailed, setCatalogLoadFailed] = useState(false);
     // Webpages the current user can target — owner + org/group-shared. Used
     // by the picker that appears when the selected tool needs a webpageId.
     const [webpages, setWebpages] = useState([]);
@@ -150,12 +224,13 @@ export default function QuickEditForm({
     // dedicated connections endpoint to decide whether to show that
     // provider in the trigger picker.
     const [hasTaConnections, setHasTaConnections] = useState(false);
+    const [taConnectionsLoaded, setTaConnectionsLoaded] = useState(false);
     useEffect(() => {
         let alive = true;
         authFetch(`${API_BASE}/api/automation/catalog`)
-            .then(r => r.ok ? r.json() : null)
-            .then(d => { if (alive) setCatalog(d); })
-            .catch(() => {});
+            .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+            .then(d => { if (alive) { setCatalog(d); setCatalogLoadFailed(false); } })
+            .catch(() => { if (alive) setCatalogLoadFailed(true); });
         // 401 / 403 / 404 / network — silently treat as "no TA". The user
         // sees a provider list without TA, which is the right outcome
         // when they don't have access anyway.
@@ -166,17 +241,23 @@ export default function QuickEditForm({
                 const conns = Array.isArray(d) ? d : (d?.connections || []);
                 setHasTaConnections(conns.length > 0);
             })
-            .catch(() => {});
+            .catch(() => {})
+            .finally(() => { if (alive) setTaConnectionsLoaded(true); });
         authFetch(`${API_BASE}/api/webpages`)
             .then(r => r.ok ? r.json() : null)
             .then(d => {
                 if (!alive) return;
-                const list = Array.isArray(d?.webpages) ? d.webpages : [];
-                setWebpages(list);
+                const list = d?.webpages ?? [];
+                setWebpages(Array.isArray(list) ? list : []);
             })
             .catch(() => {});
         return () => { alive = false; };
     }, []);
+
+    // Inline validation state for fields the server would otherwise only
+    // reject on save (and surface as a generic error far from the field).
+    const [cronError, setCronError] = useState(null);
+    const [tzError, setTzError] = useState(null);
 
     // Decide which app_event providers are visible to this user. The
     // catalog returns one entry per registry app with an `available`
@@ -195,7 +276,10 @@ export default function QuickEditForm({
     // a list the user can't use — picking an unavailable provider would
     // fail at activate-time anyway.
     const enabledProviders = useMemo(() => {
-        if (!catalog) return [];
+        // Until BOTH the catalog and TA-connections probe resolve, return
+        // an empty list — otherwise the dropdown can flicker entries on/off
+        // as the two fetches resolve at different times.
+        if (!catalog || !taConnectionsLoaded) return [];
         const apps = Array.isArray(catalog?.apps) ? catalog.apps : [];
         const isAvailable = (id) => apps.find(a => a.id === id)?.available;
         const anyAvailable = (ids) => ids.some(isAvailable);
@@ -207,7 +291,7 @@ export default function QuickEditForm({
             if (p.value === 'ticket-assistant') return hasTaConnections;
             return isAvailable(p.value);
         });
-    }, [catalog, hasTaConnections]);
+    }, [catalog, hasTaConnections, taConnectionsLoaded]);
 
     const commit = (next) => {
         onChange?.(next);
@@ -286,7 +370,10 @@ export default function QuickEditForm({
                     {TRIGGER_OPTIONS.map((opt) => (
                         <button
                             key={opt.value}
-                            onClick={() => updateTrigger(opt.value === trigger.kind ? {} : { kind: opt.value })}
+                            onClick={() => {
+                                if (opt.value === trigger.kind) return; // already selected — no-op (don't fire a save)
+                                updateTrigger({ kind: opt.value });
+                            }}
                             className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-[13px] text-left transition ${
                                 trigger.kind === opt.value
                                     ? 'border-[var(--accent-primary)] text-[var(--text-primary)] bg-[var(--bg-secondary)]'
@@ -339,11 +426,30 @@ export default function QuickEditForm({
                             <input
                                 type="text"
                                 value={tz}
-                                onChange={(e) => updateTrigger({ schedule: { cron: trigger.schedule?.cron || '0 9 * * *', tz: e.target.value } })}
+                                list="bf-tz-list"
+                                onChange={(e) => {
+                                    const v = e.target.value;
+                                    setTzError(null); // clear while typing
+                                    updateTrigger({ schedule: { cron: trigger.schedule?.cron || '0 9 * * *', tz: v } });
+                                }}
+                                onBlur={(e) => {
+                                    const v = e.target.value;
+                                    if (v && !isValidTimezone(v)) {
+                                        setTzError(`"${v}" is not a known IANA timezone (e.g. Europe/Amsterdam).`);
+                                    } else {
+                                        setTzError(null);
+                                    }
+                                }}
                                 placeholder="Europe/Amsterdam"
                                 className={inputClass()}
                                 style={inputStyle()}
                             />
+                            <datalist id="bf-tz-list">
+                                {getTimezoneList().map((z) => <option key={z} value={z} />)}
+                            </datalist>
+                            {tzError && (
+                                <div className="text-[11px] text-red-600 mt-1">{tzError}</div>
+                            )}
                         </div>
                         {(expert || schedulePreset === 'custom') && (
                             <div className="col-span-2">
@@ -351,11 +457,22 @@ export default function QuickEditForm({
                                 <input
                                     type="text"
                                     value={trigger.schedule?.cron || ''}
-                                    onChange={(e) => updateTrigger({ schedule: { cron: e.target.value, tz } })}
+                                    onChange={(e) => {
+                                        const v = e.target.value;
+                                        if (v.trim() === '' || isValidCron(v)) {
+                                            setCronError(null);
+                                        } else {
+                                            setCronError('Cron must be 5 fields (minute hour day-of-month month day-of-week).');
+                                        }
+                                        updateTrigger({ schedule: { cron: v, tz } });
+                                    }}
                                     placeholder="0 9 * * 1"
                                     className={inputClass()}
                                     style={inputStyle()}
                                 />
+                                {cronError && (
+                                    <div className="text-[11px] text-red-600 mt-1">{cronError}</div>
+                                )}
                             </div>
                         )}
                     </div>
@@ -399,7 +516,22 @@ export default function QuickEditForm({
                                 <label className="block text-[12px] font-medium text-[var(--text-secondary)] mb-1">Event</label>
                                 <select
                                     value={trigger.appEvent?.event || ''}
-                                    onChange={(e) => updateTrigger({ appEvent: { ...(trigger.appEvent || {}), event: e.target.value } })}
+                                    onChange={(e) => {
+                                        const nextEvent = e.target.value;
+                                        // Reset filter when event type changes — different
+                                        // events have different valid filter keys (e.g.
+                                        // Nextcloud file events use `inFolder`, deck events
+                                        // use `boardId`). Carrying keys across event types
+                                        // serializes nonsense into the trigger.
+                                        const sameEvent = nextEvent === trigger.appEvent?.event;
+                                        updateTrigger({
+                                            appEvent: {
+                                                provider: trigger.appEvent?.provider,
+                                                event: nextEvent,
+                                                filter: sameEvent ? (trigger.appEvent?.filter || {}) : {},
+                                            },
+                                        });
+                                    }}
                                     disabled={!trigger.appEvent?.provider}
                                     className={inputClass()}
                                     style={inputStyle()}
@@ -491,6 +623,11 @@ export default function QuickEditForm({
                 {primary?.type === 'integration_action' && (
                     <div className="mt-3 space-y-2">
                         <label className="block text-[12px] font-medium text-[var(--text-secondary)] mb-1">Tool</label>
+                        {catalogLoadFailed && (
+                            <div className="text-[11px] text-red-600 mb-1">
+                                Failed to load the tool catalog. Refresh the page to retry.
+                            </div>
+                        )}
                         <select
                             value={primary?.tool || ''}
                             onChange={(e) => updatePrimary({ tool: e.target.value })}
@@ -498,14 +635,11 @@ export default function QuickEditForm({
                             style={inputStyle()}
                         >
                             <option value="">— pick a tool —</option>
-                            {(Array.isArray(catalog?.tools) && catalog.tools.length
-                                ? catalog.tools
-                                : (Array.isArray(catalog?.apps) ? catalog.apps : []).filter(a => a.available).flatMap(a => (a.actions || []).map(act => ({ name: act.name, label: `${a.label}: ${act.label || act.name}` })))
-                            ).map(t => (
-                                <option key={t.name || t.id} value={t.name || t.id}>{t.label || t.name || t.id}</option>
+                            {normalizeToolCatalog(catalog).map(t => (
+                                <option key={t.name} value={t.name}>{t.label}</option>
                             ))}
                         </select>
-                        {primary?.tool?.startsWith('webpage_') && primary.tool !== 'webpage_create' && primary.tool !== 'webpages_list' && (
+                        {toolNeedsWebpageInput(primary?.tool) && (
                             <div className="mt-2">
                                 <label className="block text-[12px] font-medium text-[var(--text-secondary)] mb-1">Webpage</label>
                                 <select

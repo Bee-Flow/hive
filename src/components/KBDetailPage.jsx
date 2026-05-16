@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, BookOpen, Trash2, FileText, Globe, Paperclip, Settings as SettingsIcon, Loader2, Plus, X, RefreshCcw, Building2, Check, ChevronDown, ChevronRight, Search as SearchIcon, Lock, Users } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { useTranslation } from '../hooks/useTranslation';
+import { formatDate } from '../utils/dateFormatters';
 
 const SOURCE_EMOJI = {
     web: '🌐', url: '🌐', sitemap: '🌐',
@@ -10,10 +11,6 @@ const SOURCE_EMOJI = {
 };
 
 const sourceEmoji = (t) => SOURCE_EMOJI[(t || '').toLowerCase()] || '📄';
-
-const formatDate = (s) => {
-    try { return new Date(s).toLocaleDateString(); } catch { return ''; }
-};
 
 const EMOJI_CATEGORIES = {
     smileys: { label: '😀', title: 'Smileys', emojis: ['😀', '😃', '😄', '😁', '😆', '😅', '🤣', '😂', '🙂', '😊', '🥰', '😍', '🤩', '🤓', '😎', '🥳', '🤖'] },

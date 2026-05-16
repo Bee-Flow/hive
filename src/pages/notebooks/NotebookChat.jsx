@@ -1,5 +1,5 @@
 import React, { useRef, useEffect, useState } from 'react';
-import { FileText, ArrowDown, MessageSquare, Sparkles } from 'lucide-react';
+import { FileText, ArrowDown, MessageSquare } from 'lucide-react';
 import MessageItem from '../../components/chat/MessageItem';
 import InputArea from '../../components/InputArea';
 
@@ -40,7 +40,6 @@ export default function NotebookChat({
             <div ref={containerRef} className="flex-1 overflow-y-auto custom-scrollbar px-3 py-3 space-y-3">
                 {messages.length === 0 && (
                     <div className="flex flex-col items-center justify-center h-full text-center py-8">
-                        <Sparkles size={28} className="mb-3" style={{ color: 'var(--accent-primary)', opacity: 0.5 }} />
                         <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
                             Ask me anything
                         </p>
@@ -50,7 +49,7 @@ export default function NotebookChat({
                     </div>
                 )}
                 {messages.map((msg, idx) => (
-                    <div key={msg.id || idx} className="relative group/msg">
+                    <div key={msg.id ?? `${msg.role || 'm'}-${idx}-${msg.timestamp || msg.createdAt || ''}`} className="relative group/msg">
                         <MessageItem
                             msg={msg}
                             idx={idx}

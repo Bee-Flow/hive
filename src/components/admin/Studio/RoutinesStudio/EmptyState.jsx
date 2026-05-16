@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Sparkles, Plus, Mail, Clock, MessageSquare, CheckCircle2, AlertTriangle, Clock as ClockIcon, Play } from 'lucide-react';
+import { Plus, Mail, Clock, MessageSquare, CheckCircle2, AlertTriangle, Clock as ClockIcon, Play } from 'lucide-react';
 import useAutomationApi from '../../../../hooks/useAutomationApi';
 import TemplateGallery from './TemplateGallery';
 
@@ -41,9 +41,6 @@ export default function RoutinesEmptyState({ segment, onCreateAutomation, onCrea
         <div className="h-full overflow-y-auto">
             <div className="max-w-3xl mx-auto px-6 py-10">
                 <div className="flex flex-col items-center text-center">
-                    <div className="w-14 h-14 rounded-2xl mb-3 flex items-center justify-center bg-[var(--bg-secondary)]">
-                        <Sparkles size={24} className="opacity-60" style={{ color: 'var(--accent-primary, var(--text-primary))' }} />
-                    </div>
                     <div className="text-lg font-semibold text-[var(--text-primary)] mb-1">
                         Build an automation in plain English
                     </div>
@@ -53,10 +50,10 @@ export default function RoutinesEmptyState({ segment, onCreateAutomation, onCrea
                     </div>
                     <button
                         onClick={onCreateAutomation}
-                        className="flex items-center gap-2 px-5 py-2 rounded-full text-sm font-semibold text-white"
+                        className="px-5 py-2 rounded-full text-sm font-semibold text-white"
                         style={{ background: 'var(--accent-primary, var(--text-primary))' }}
                     >
-                        <Sparkles size={15} /> Build with AI
+                        Build with AI
                     </button>
                 </div>
 
@@ -65,12 +62,15 @@ export default function RoutinesEmptyState({ segment, onCreateAutomation, onCrea
                         Or start from an example
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                        {EXAMPLES.map((ex) => {
+                        {EXAMPLES.map((ex, i) => {
                             const Icon = ex.icon;
                             return (
                                 <button
-                                    key={ex.title}
-                                    onClick={() => onUseExample(ex.prompt)}
+                                    key={`example-${i}`}
+                                    onClick={() => {
+                                        try { onUseExample(ex.prompt); }
+                                        catch (err) { console.error('[EmptyState] onUseExample threw:', err); }
+                                    }}
                                     className="text-left rounded-xl border border-[var(--border-default)] bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] hover:border-[var(--text-tertiary)] transition p-4"
                                 >
                                     <Icon size={16} className="text-[var(--text-secondary)] mb-2" />
@@ -124,7 +124,11 @@ function RecentRunsFeed({ onOpenAutomation }) {
             .catch(e => { if (alive) setError(e.message); })
             .finally(() => { if (alive) setLoading(false); });
         return () => { alive = false; };
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+        // useAutomationApi is memoised so `api` is a stable reference —
+        // including it in deps satisfies exhaustive-deps without causing
+        // a re-fetch loop. If auth refreshes and `api` is rebuilt, we
+        // want the recent-runs feed to refresh too.
+    }, [api]);
 
     if (error) {
         return (
@@ -158,7 +162,11 @@ function RecentRunsFeed({ onOpenAutomation }) {
                     {runs.map(r => (
                         <button
                             key={r.id}
-                            onClick={() => r.automationId && onOpenAutomation?.(r.automationId)}
+                            onClick={() => {
+                                if (!r.automationId) return;
+                                try { onOpenAutomation?.(r.automationId); }
+                                catch (err) { console.error('[RecentRunsFeed] onOpenAutomation threw:', err); }
+                            }}
                             className="w-full flex items-center gap-3 px-4 py-2.5 bg-[var(--bg-primary)] hover:bg-[var(--bg-secondary)] text-left transition"
                         >
                             <RunStatusIcon status={r.status} mode={r.mode} />

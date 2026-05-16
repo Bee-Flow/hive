@@ -6,6 +6,15 @@ import OrgFeedbackPanel from './OrgFeedbackPanel';
 import OrgTerminationsPanel from './OrgTerminationsPanel';
 import { getIntegrationIcon, hasIntegrationIcon } from '../../config/integrationIcons';
 import { rowsToCsv as rowsToCsvShared, downloadCsv as downloadCsvShared, computeHalfPeriodDelta } from '../../utils/usageHelpers';
+import {
+    PALETTE,
+    paletteColor,
+    OPERATOR_COLORS,
+    operatorColor,
+    ALERT_SCORE_THRESHOLD,
+    OVERVIEW_COST_ALERT,
+    SAFETY_PII_ALERT,
+} from '../../config/analyticsConfig';
 
 // ── Formatters ──────────────────────────────────────────────────────────────
 const fNum = (n) => {
@@ -34,39 +43,14 @@ const SOURCE_MAP = {
 };
 const getSourceDetails = (source) => SOURCE_MAP[source] || { label: source || 'Other', icon: Bot, color: '#94a3b8' };
 
-// Score below this triggers the Integrations "Action required" banner. Policy
-// defaults — configurable per-org is intentionally out of scope here.
-const ALERT_SCORE_THRESHOLD = 40;
-// Overview cost threshold (USD per selected range). Soft (amber) at 1×,
-// hard (red) at 2×.
-const OVERVIEW_COST_ALERT = 200;
-// Safety: PII detections inside the selected range.
-const SAFETY_PII_ALERT = 10;
-
 // CSV helpers live in src/utils/usageHelpers.js — bind local names that match
 // the existing call sites in this file.
 const rowsToCsv = rowsToCsvShared;
 const downloadCsv = downloadCsvShared;
 
-// ── Palette ─────────────────────────────────────────────────────────────────
-const PALETTE = ['#0ea5e9', '#10b981', '#f59e0b', '#ec4899', '#3b82f6', '#ef4444', '#06b6d4', '#14b8a6', '#f97316', '#64748b'];
-const getColor = (i) => PALETTE[i % PALETTE.length];
-
-// Brand-ish operator colors — used to tint cards and egress rows so the eye
-// can group destinations by cloud at a glance. Falls back to slate for
-// "Unknown" so an unattributed IP doesn't hide.
-const OPERATOR_COLORS = {
-    'Google':       '#4285F4',
-    'Microsoft':    '#0078D4',
-    'Cloudflare':   '#F38020',
-    'Amazon AWS':   '#FF9900',
-    'Fastly':       '#FF282D',
-    'Akamai':       '#009BAB',
-    'OpenAI':       '#10A37F',
-    'Anthropic':    '#D97757',
-    'Unknown':      '#94a3b8',
-};
-const operatorColor = (name) => OPERATOR_COLORS[name] || '#64748b';
+// Colours, palette, and thresholds live in src/config/analyticsConfig.ts.
+// `getColor` is a local alias to keep the existing call sites short.
+const getColor = paletteColor;
 
 /* ═══════════════════════════════════════════════════════════════════════════ */
 /*  MINI COMPONENTS                                                          */

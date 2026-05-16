@@ -8,9 +8,9 @@ import SecurityHub from '../components/admin/SecurityHub';
 import IntegrationsAdminPanel from '../components/admin/IntegrationsAdminPanel';
 import MonitoringPanel from '../components/admin/MonitoringPanel';
 import ComplianceHub from '../components/admin/ComplianceHub';
-import SubscriptionsPanel from '../components/admin/SubscriptionsPanel';
+import SubscriptionsPanel from '../components/admin/subscriptions';
 import LanguagesPanel from '../components/admin/LanguagesPanel';
-import AppearanceAdminPanel from '../components/admin/AppearanceAdminPanel';
+import AppearancePanel from '../components/admin/appearance-studio/AppearancePanel';
 import ProductWebsitePanel from '../components/admin/ProductWebsite/ProductWebsitePanel';
 
 
@@ -125,7 +125,7 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                     </h2>
                 </div>
 
-                <div className="flex gap-2 p-1 rounded-lg" style={{ background: 'var(--bg-tertiary)' }}>
+                <div className="flex gap-2 p-1 rounded-lg" style={{ background: 'var(--bg-tertiary)' }} data-surface="default" data-static>
                     {tabs.map((tab) => {
                         if (!checkTabAccess(tab)) return null;
 
@@ -184,7 +184,7 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                         </div>
                     ) : activeTab === 'appearance' ? (
                         <div className="absolute inset-0">
-                            <AppearanceAdminPanel />
+                            <AppearancePanel />
                         </div>
                     ) : activeTab === 'languages' ? (
                         <div className="absolute inset-0 overflow-hidden">

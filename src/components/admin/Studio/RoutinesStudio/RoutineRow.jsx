@@ -25,6 +25,7 @@ export default function RoutineRow({
     onDelete,
     onToggleActive,
     canManage = true,
+    liveRunning = false,
 }) {
     const [contextPos, setContextPos] = useState(null);
 
@@ -32,21 +33,39 @@ export default function RoutineRow({
     const isActive = !!routine.isActive;
     const isDraft = !!routine.isDraft;
     const lastStatus = routine.lastStatus;
-    const dotColor = !isActive
-        ? 'bg-[var(--text-tertiary)]'
-        : lastStatus === 'error'
-            ? 'bg-red-500'
-            : lastStatus === 'running'
-                ? 'bg-amber-500'
-                : 'bg-emerald-500';
+    // Live-running poll (from getActiveRuns) outranks the persisted
+    // lastStatus so we get an n8n-style "● now executing" indicator
+    // within ~5s of a run kicking off.
+    const dotColor = liveRunning
+        ? 'bg-[var(--accent)] animate-pulse'
+        : !isActive
+            ? 'bg-[var(--text-tertiary)]'
+            : lastStatus === 'error'
+                ? 'bg-red-500'
+                : lastStatus === 'running'
+                    ? 'bg-amber-500'
+                    : 'bg-emerald-500';
 
-    const Icon = isAutomation ? triggerIcon(routine) : Bot;
+    // PascalCase makes it explicit this is a React component, not a DOM tag —
+    // otherwise a lowercase rename would silently emit a literal HTML tag.
+    const TriggerIcon = isAutomation ? triggerIcon(routine) : Bot;
     const title = routine.title || (isAutomation ? 'Untitled automation' : 'Untitled task');
+    // Trimmed description coalesces — empty strings should fall through to the
+    // title instead of being shown as an empty tooltip.
+    const tooltip = (routine.description || '').trim() || title;
 
     const meta = isAutomation ? automationMeta(routine) : taskMeta(routine);
 
+    // Single source of truth for "can the user mutate this routine". Both the
+    // context-menu opener and the hover-delete button honor it so users see
+    // a consistent permission story regardless of how they try to act.
+    const canMutate = canManage && (
+        (isAutomation && !!onToggleActive)
+        || !!onDuplicate || !!onExportJson || !!onCopyId || !!onDelete
+    );
+
     const onContextMenu = (e) => {
-        if (!canManage) return;
+        if (!canMutate) return;
         e.preventDefault();
         setContextPos({ x: e.clientX, y: e.clientY });
     };
@@ -77,10 +96,10 @@ export default function RoutineRow({
                         ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)]'
                         : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'
                 }`}
-                title={routine.description || title}
+                title={tooltip}
             >
                 <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${dotColor}`} />
-                <Icon size={14} className="flex-shrink-0 text-[var(--text-tertiary)]" />
+                <TriggerIcon size={14} className="flex-shrink-0 text-[var(--text-tertiary)]" />
                 <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-1.5">
                         <span className="truncate">{title}</span>
@@ -96,7 +115,7 @@ export default function RoutineRow({
                         </div>
                     )}
                 </div>
-                {canManage && onDelete && (
+                {canMutate && onDelete && (
                     <button
                         onClick={(e) => { e.stopPropagation(); onDelete(); }}
                         title="Delete"
@@ -124,9 +143,23 @@ function triggerIcon(routine) {
     return Bot;
 }
 
+// Shallow cron syntax check — catches obvious typos (wrong field count, bad
+// characters) without pulling in cron-parser. Full semantic validation lives
+// server-side via /api/automation/_schedule/preview.
+function isCronShapeValid(s) {
+    if (!s || typeof s !== 'string') return false;
+    const parts = s.trim().split(/\s+/);
+    if (parts.length !== 5 && parts.length !== 6) return false;
+    const fieldRe = /^[\d*/,\-?LW]+$/i;
+    return parts.every(p => fieldRe.test(p));
+}
+
 function automationMeta(a) {
     const kind = a.triggerType || a.definition?.trigger?.kind || 'manual';
     if (kind === 'schedule' && a.scheduleCron) {
+        if (!isCronShapeValid(a.scheduleCron)) {
+            return `⚠ invalid cron: ${a.scheduleCron}`;
+        }
         return `${a.scheduleCron} · ${a.scheduleTz || 'UTC'}`;
     }
     if (kind === 'app_event') {

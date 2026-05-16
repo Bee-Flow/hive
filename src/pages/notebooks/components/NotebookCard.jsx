@@ -72,9 +72,13 @@ function NotebookCard({ nb, renamingId, renameValue, setRenameValue, setRenaming
                         onClick={e => e.stopPropagation()}
                         onKeyDown={e => {
                             e.stopPropagation();
-                            if (e.key === 'Enter') onRename(nb.id);
+                            if (e.key === 'Enter') {
+                                if (renameValue.trim().length === 0) return;
+                                onRename(nb.id);
+                            }
                             if (e.key === 'Escape') setRenamingId(null);
                         }}
+                        maxLength={100}
                         className="text-sm font-semibold px-2 py-1 rounded border focus:outline-none focus:ring-1 w-full"
                         style={{
                             borderColor: 'var(--border-default)',
@@ -133,7 +137,7 @@ function NotebookCard({ nb, renamingId, renameValue, setRenameValue, setRenaming
                             </>
                         )}
                         <span>·</span>
-                        <span>{timeAgo(nb.updatedAt || nb.createdAt)}</span>
+                        <span>{timeAgo(nb.updatedAt || nb.createdAt || new Date().toISOString())}</span>
                     </div>
                     <span
                         className="text-[11px] font-medium flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity"

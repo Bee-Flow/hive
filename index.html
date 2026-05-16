@@ -17,6 +17,56 @@
 </head>
 
 <body>
+  <script>
+    // Pre-React theme bootstrap — applies the last-resolved theme to <html>
+    // synchronously so paint never flashes the wrong background. The React
+    // ThemeProvider reconciles with the server on mount.
+    //
+    // Preview mode: when the URL has ?themePreview=1 (admin Theme Studio
+    // iframes), we ignore the localStorage cache and decode the `t=` query
+    // param instead. This paints the iframe with the admin's DRAFT theme on
+    // first frame, then the React provider takes over via postMessage.
+    (function () {
+      function applyTheme(t, root) {
+        if (!t || typeof t !== 'object') return;
+        if (t.preset) root.setAttribute('data-theme', t.preset);
+        if (t.accent) root.style.setProperty('--accent-primary', t.accent);
+        if (t.radiusScale) root.style.setProperty('--radius-scale', String(t.radiusScale));
+        if (t.glassIntensity != null) root.style.setProperty('--glass-intensity', String(t.glassIntensity));
+        if (t.wallpaperUrl) root.style.setProperty('--wallpaper-image', 'url("' + t.wallpaperUrl + '")');
+        if (t.wallpaperOverlay != null) root.style.setProperty('--wallpaper-overlay', 'rgba(255,255,255,' + t.wallpaperOverlay + ')');
+        // Glass v2 data-attrs — picked up by the CSS selectors in index.css.
+        if (t.wallpaperPreset) root.setAttribute('data-wallpaper', t.wallpaperPreset);
+        if (t.glassTint)       root.setAttribute('data-glass-tint', t.glassTint);
+        if (t.glassLens)       root.setAttribute('data-lens', t.glassLens);
+        if (t.glassAnimation)  root.setAttribute('data-anim', t.glassAnimation);
+        if (t.glassGrain)      root.setAttribute('data-glass-grain', t.glassGrain);
+        if (t.glassBorder)     root.setAttribute('data-glass-border', t.glassBorder);
+      }
+      try {
+        var root = document.documentElement;
+        var params = new URLSearchParams(window.location.search);
+        if (params.get('themePreview') === '1') {
+          root.setAttribute('data-preview', '1');
+          var raw = params.get('t');
+          if (raw) {
+            // URL-safe base64 → standard base64.
+            var b64 = raw.replace(/-/g, '+').replace(/_/g, '/');
+            while (b64.length % 4) b64 += '=';
+            var payload = JSON.parse(atob(b64));
+            applyTheme(payload, root);
+            console.log('[Theme] preview bootstrap applied:', payload);
+          }
+          return;
+        }
+        var cached = localStorage.getItem('beeflow:theme:bootstrap');
+        if (!cached) { console.log('[Theme] bootstrap: no localStorage cache'); return; }
+        var t = JSON.parse(cached);
+        applyTheme(t, root);
+        console.log('[Theme] bootstrap applied:', t);
+      } catch (e) { console.warn('[Theme] bootstrap failed', e); }
+    })();
+  </script>
   <div id="root"></div>
   <script type="module" src="/src/main.jsx"></script>
 </body>

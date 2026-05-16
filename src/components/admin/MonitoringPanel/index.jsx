@@ -156,7 +156,7 @@ export default function MonitoringPanel({ activeSection = '', onNavigate }) {
                 fetchJson(`${API}/by-conversation${q}`),
             ]);
 
-            setSummary(s || { total_calls: 0, total_tokens: 0, total_estimated_cost: 0, avg_duration_ms: 0 });
+            setSummary(s || { total_calls: 0, total_tokens: 0, total_estimated_cost: 0, total_billed_cost: 0, avg_duration_ms: 0 });
             setByModel(Array.isArray(m) ? m : []);
             setByAgent(Array.isArray(a) ? a : []);
             setByUser(Array.isArray(u) ? u : []);

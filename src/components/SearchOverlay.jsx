@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { Search, X, MessageSquare, Calendar, Bot, Clock } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { isImageAvatar, resolveAvatarSrc } from '../utils/agentAvatar';
+import { formatRelativeDate } from '../utils/dateFormatters';
 
 const RECENT_KEY = 'beeflow.search.recent';
 const MAX_RECENT = 5;
@@ -30,16 +31,9 @@ const highlightSnippet = (snippet, query) => {
     return escaped.replace(regex, '<mark style="background:color-mix(in srgb, var(--accent-primary) 25%, transparent);color:var(--text-primary);border-radius:3px;padding:0 2px;font-weight:600">$1</mark>');
 };
 
-const formatDate = (dateStr) => {
-    const d = new Date(dateStr);
-    const now = new Date();
-    const diffMs = now - d;
-    const diffDays = Math.floor(diffMs / 86400000);
-    if (diffDays === 0) return 'Today';
-    if (diffDays === 1) return 'Yesterday';
-    if (diffDays < 7) return `${diffDays}d ago`;
-    return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
-};
+const formatDate = (dateStr) => formatRelativeDate(dateStr, {
+    fallbackOptions: { year: 'numeric', month: 'short', day: 'numeric' },
+});
 
 const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
     const [query, setQuery] = useState('');
@@ -212,27 +206,36 @@ const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
 
     return (
         <div
-            className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[max(2rem,8vh)] pb-8 bg-black/60 backdrop-blur-sm animate-fade-in"
+            className="fixed inset-0 z-50 flex items-start justify-center px-4 pt-[max(2rem,8vh)] pb-8 animate-fade-in"
+            style={{
+                // Themed backdrop — softer than bg-black/60 so it doesn't fight
+                // glass surfaces, and the heavy blur lifts the modal forward
+                // without making the rest of the app look "cut off".
+                background: 'color-mix(in srgb, var(--bg-primary, #0f172a) 55%, rgba(15, 23, 42, 0.45))',
+                backdropFilter: 'blur(8px)',
+                WebkitBackdropFilter: 'blur(8px)',
+            }}
             onClick={onClose}
             role="dialog"
             aria-label="Search conversations"
             aria-modal="true"
         >
             <div
-                className="bg-[var(--bg-primary)] w-[640px] max-w-[95vw] max-h-full flex flex-col rounded-2xl shadow-2xl border border-[var(--border-subtle)] overflow-hidden"
+                className="w-[720px] max-w-[95vw] max-h-full flex flex-col rounded-2xl shadow-2xl overflow-hidden"
+                data-surface="opaque"
                 onClick={e => e.stopPropagation()}
                 data-testid="search-overlay"
             >
-                {/* Header: icon + input + kbd + close */}
-                <div className="flex-shrink-0 flex items-center gap-3 px-4 h-14 border-b border-[var(--border-subtle)]">
-                    <Search className="w-4 h-4 text-[var(--text-tertiary)] flex-shrink-0" />
+                {/* Header: icon + input + clear + close */}
+                <div className="flex-shrink-0 flex items-center gap-3 px-5 h-16 border-b border-[var(--border-subtle)]">
+                    <Search className="w-[18px] h-[18px] text-[var(--text-tertiary)] flex-shrink-0" />
                     <input
                         ref={inputRef}
                         type="text"
                         value={query}
                         onChange={handleInput}
                         placeholder="Search conversations and messages…"
-                        className="flex-1 bg-transparent border-none text-[15px] text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:ring-0 focus:outline-none"
+                        className="flex-1 bg-transparent border-none text-[16px] text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:ring-0 focus:outline-none"
                         data-testid="search-input"
                         aria-label="Search query"
                         aria-controls="search-results"
@@ -241,25 +244,24 @@ const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
                     {query && (
                         <button
                             onClick={() => { setQuery(''); setResults([]); inputRef.current?.focus(); }}
-                            className="p-1 rounded-md hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] transition-colors"
+                            className="p-1.5 rounded-md hover:bg-[var(--bg-tertiary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
                             aria-label="Clear search"
                         >
-                            <X className="w-3.5 h-3.5" />
+                            <X className="w-4 h-4" />
                         </button>
                     )}
                     <button
                         onClick={onClose}
-                        className="p-1.5 rounded-md hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)] transition-colors"
+                        className="p-1.5 rounded-md hover:bg-[var(--bg-tertiary)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] transition-colors"
                         aria-label="Close search"
                     >
                         <X className="w-4 h-4" />
                     </button>
                 </div>
 
-                {/* Filter bar */}
+                {/* Filter bar — all chips share the same pill chrome so it reads as one row */}
                 <div
-                    className="flex-shrink-0 flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border-subtle)] bg-[var(--bg-secondary)]/40 overflow-x-auto hide-scrollbar"
-                    style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
+                    className="flex-shrink-0 flex items-center flex-wrap gap-2 px-5 py-3 border-b border-[var(--border-subtle)]"
                 >
                     <PillGroup
                         value={source}
@@ -271,8 +273,7 @@ const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
                         ]}
                         ariaLabel="Source filter"
                     />
-                    <Divider />
-                    <FilterSelect
+                    <FilterPill
                         icon={Bot}
                         value={selectedAgent}
                         onChange={setSelectedAgent}
@@ -282,7 +283,7 @@ const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
                             ...(Array.isArray(agents) ? agents.map(a => ({ value: a.id, label: a.name })) : []),
                         ]}
                     />
-                    <FilterSelect
+                    <FilterPill
                         icon={Clock}
                         value={dateRange}
                         onChange={setDateRange}
@@ -332,9 +333,12 @@ const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
                             action={hasFilters ? { label: 'Reset filters', onClick: resetFilters } : null}
                         />
                     ) : showRecent ? (
-                        <div className="p-3">
-                            <div className="text-[11px] font-medium text-[var(--text-muted)] px-2 mb-2">Recent searches</div>
-                            <div className="flex flex-wrap gap-1.5 px-2">
+                        <div className="px-5 py-5">
+                            <div className="flex items-center gap-2 mb-3">
+                                <Clock className="w-3.5 h-3.5 text-[var(--text-muted)]" />
+                                <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--text-muted)]">Recent searches</span>
+                            </div>
+                            <div className="flex flex-wrap gap-2">
                                 {recent.map(term => (
                                     <button
                                         key={term}
@@ -343,8 +347,9 @@ const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
                                             handleSearch(term);
                                             inputRef.current?.focus();
                                         }}
-                                        className="px-2.5 py-1 rounded-full bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] text-xs text-[var(--text-secondary)] transition-colors"
+                                        className="inline-flex items-center gap-1.5 px-3 h-7 rounded-full bg-[var(--bg-tertiary)]/70 hover:bg-[var(--bg-tertiary)] border border-[var(--border-subtle)] text-[12px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition-colors"
                                     >
+                                        <Search className="w-3 h-3 text-[var(--text-tertiary)]" />
                                         {term}
                                     </button>
                                 ))}
@@ -372,16 +377,16 @@ const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
 // ── Sub-components ──────────────────────────────────────────────────────────
 
 const PillGroup = ({ value, onChange, options, ariaLabel }) => (
-    <div role="radiogroup" aria-label={ariaLabel} className="inline-flex bg-[var(--bg-tertiary)] rounded-lg p-0.5 border border-[var(--border-subtle)]">
+    <div role="radiogroup" aria-label={ariaLabel} className="inline-flex h-8 bg-[var(--bg-tertiary)]/60 rounded-full p-0.5 border border-[var(--border-subtle)]">
         {options.map(opt => (
             <button
                 key={opt.value}
                 role="radio"
                 aria-checked={value === opt.value}
                 onClick={() => onChange(opt.value)}
-                className={`px-2.5 py-1 text-xs font-medium rounded-md transition-all ${
+                className={`px-3 text-[12px] font-medium rounded-full transition-all ${
                     value === opt.value
-                        ? 'bg-[var(--bg-primary)] text-[var(--text-primary)] shadow-sm'
+                        ? 'bg-[var(--bg-card)] text-[var(--text-primary)] shadow-sm'
                         : 'text-[var(--text-tertiary)] hover:text-[var(--text-secondary)]'
                 }`}
             >
@@ -391,21 +396,37 @@ const PillGroup = ({ value, onChange, options, ariaLabel }) => (
     </div>
 );
 
-const Divider = () => <div className="w-px h-5 bg-[var(--border-subtle)]" />;
-
-const FilterSelect = ({ icon: Icon, value, onChange, options, disabled }) => (
-    <div className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md border border-transparent hover:border-[var(--border-subtle)] transition-colors ${disabled ? 'opacity-40 pointer-events-none' : ''}`}>
-        <Icon className="w-3.5 h-3.5 text-[var(--text-tertiary)]" />
-        <select
-            value={value}
-            onChange={e => onChange(e.target.value)}
-            disabled={disabled}
-            className="bg-transparent border-none text-xs text-[var(--text-secondary)] focus:ring-0 focus:outline-none cursor-pointer py-0 pl-0 pr-4 appearance-none"
+/* Pill-shaped filter dropdown — matches the chrome of PillGroup so the whole
+   filter row reads as one consistent set of chips. The native <select> sits
+   transparently over the pill so the label updates without a custom popup. */
+const FilterPill = ({ icon: Icon, value, onChange, options, disabled }) => {
+    const active = value !== 'all' && value !== undefined && value !== null;
+    return (
+        <div
+            className={`relative inline-flex items-center h-8 px-3 rounded-full border transition-colors ${
+                disabled
+                    ? 'opacity-40 pointer-events-none border-[var(--border-subtle)] bg-[var(--bg-tertiary)]/30'
+                    : active
+                        ? 'border-[var(--accent-primary)]/40 bg-[var(--accent-primary)]/10 text-[var(--accent-primary)]'
+                        : 'border-[var(--border-subtle)] bg-[var(--bg-tertiary)]/60 hover:bg-[var(--bg-tertiary)] text-[var(--text-secondary)]'
+            }`}
         >
-            {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-        </select>
-    </div>
-);
+            <Icon className={`w-3.5 h-3.5 mr-1.5 flex-shrink-0 ${active ? 'text-[var(--accent-primary)]' : 'text-[var(--text-tertiary)]'}`} />
+            <select
+                value={value}
+                onChange={e => onChange(e.target.value)}
+                disabled={disabled}
+                className="bg-transparent border-none text-[12px] font-medium focus:ring-0 focus:outline-none cursor-pointer pr-4 appearance-none"
+                style={{ color: 'inherit' }}
+            >
+                {options.map(o => <option key={o.value} value={o.value} style={{ color: 'var(--text-primary)', background: 'var(--bg-card)' }}>{o.label}</option>)}
+            </select>
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" className="absolute right-2.5 pointer-events-none opacity-60">
+                <path d="M2 4L5 7L8 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+        </div>
+    );
+};
 
 const ResultRow = ({ result, query, idx, selected, onSelect, onHover }) => {
     const isDirect = result.kind === 'direct';

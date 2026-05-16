@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { AlertCircle, AlertTriangle, Plus } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Plus, Play, Pin, Loader2 } from 'lucide-react';
+import { useNodeRuntime } from '../NodeRuntimeContext';
 
 /**
  * Shared chrome for every step-type node. Per-type files supply
@@ -25,15 +26,31 @@ export default function StepNodeBase({
 }) {
     const [hover, setHover] = useState(false);
 
+    // Runtime context — provided by DiagramPane. Per-step flags are
+    // looked up from sets so we don't change the call-site of any of the
+    // 17 existing per-type node components.
+    const rt = useNodeRuntime();
+    const pinned = nodeId ? rt.pinnedById?.has?.(nodeId) : false;
+    const disabled = nodeId ? rt.disabledById?.has?.(nodeId) : false;
+    const onExecuteStep = rt.onExecuteStep;
+    const executingThis = nodeId && rt.executingStepId === nodeId;
+    const runInFlight = !!rt.runInFlight;
+    const runIndex = nodeId ? rt.runIndexById?.get?.(nodeId) : null;
+    const runTotal = rt.runTotal ?? null;
+
     const status = runStep?.status || 'idle';
     const errCount = issues?.errors?.length || 0;
     const warnCount = issues?.warnings?.length || 0;
 
     // Only render the left status bar when there's a real run status —
-    // the idle grey was visual noise on every node.
+    // the idle grey was visual noise on every node. Cyan flags a pinned
+    // node; amber-dashed is "disabled". They have lower priority than
+    // an active run status (the user wants to see the *live* state).
     const barTone = status === 'success' ? 'bg-emerald-500'
+        : status === 'pinned' ? 'bg-cyan-500'
         : status === 'error' ? 'bg-red-500'
         : status === 'running' ? 'bg-[var(--accent)] animate-[pulse_1.2s_ease-in-out_infinite]'
+        : pinned ? 'bg-cyan-500'
         : null;
 
     // n8n-style handles: 12px circles, invisible at rest, fade in on
@@ -48,12 +65,30 @@ export default function StepNodeBase({
 
     return (
         <div
-            className={`group relative w-[240px] rounded-lg border bg-[var(--bg-secondary)] border-[var(--border-default)] shadow-sm hover:shadow-md transition-shadow duration-150 cursor-pointer ${dim ? 'opacity-60' : ''}`}
+            className={`group relative w-[240px] rounded-lg border bg-[var(--bg-secondary)] shadow-sm hover:shadow-md transition-shadow duration-150 cursor-pointer ${dim || disabled ? 'opacity-60' : ''} ${disabled ? 'border-dashed border-amber-500/60' : 'border-[var(--border-default)]'}`}
             onMouseEnter={() => setHover(true)}
             onMouseLeave={() => setHover(false)}
         >
             <Handle type="target" position={Position.Left} className={handleClass} style={{ left: -6 }} />
             <Handle type="source" position={Position.Right} className={handleClass} style={{ right: -6 }} />
+
+            {/* Per-node "Execute Step" button — n8n's classic ▶. Hovers
+                just above the node. Only shown in editable mode (when
+                an onExecuteStep callback is wired). Disabled during a
+                full run so we don't fire conflicting partial executions. */}
+            {onExecuteStep && nodeId && (
+                <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); onExecuteStep(nodeId); }}
+                    onMouseDown={(e) => e.stopPropagation()}
+                    disabled={runInFlight || executingThis}
+                    title={runInFlight ? 'Run in progress' : 'Execute this step only'}
+                    className="absolute -top-3 left-1/2 -translate-x-1/2 h-6 w-6 rounded-full bg-[var(--bg-primary)] border border-[var(--border-default)] flex items-center justify-center text-[var(--text-secondary)] opacity-0 group-hover:opacity-100 transition-opacity duration-150 hover:border-[var(--accent)] hover:text-[var(--accent)] shadow disabled:opacity-30 disabled:cursor-not-allowed"
+                    aria-label="Execute step"
+                >
+                    {executingThis ? <Loader2 size={12} className="animate-spin" /> : <Play size={11} fill="currentColor" />}
+                </button>
+            )}
 
             {/* Quick-add "+" button — sits past the right handle so the
                 user can click instead of dragging. Only rendered when
@@ -85,7 +120,19 @@ export default function StepNodeBase({
                             {typeLabel}
                         </span>
                     </div>
-                    {badges && <div className="flex items-center gap-1 flex-shrink-0">{badges}</div>}
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                        {pinned && (
+                            <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded-full bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30" title="Output is pinned">
+                                <Pin size={9} />
+                            </span>
+                        )}
+                        {runIndex != null && runTotal != null && status === 'running' && (
+                            <span className="text-[10px] font-mono text-[var(--accent)] tabular-nums" title="Run progress">
+                                {runIndex}/{runTotal}
+                            </span>
+                        )}
+                        {badges}
+                    </div>
                 </div>
                 {/* Body slot */}
                 <div className="text-xs text-[var(--text-primary)] leading-snug">

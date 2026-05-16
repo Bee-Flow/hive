@@ -10,17 +10,17 @@ import { Search, Sparkles, Bot } from 'lucide-react';
  */
 export default function QuickSwitcher({ open, items, onPick, onClose }) {
     const [query, setQuery] = useState('');
-    const [highlight, setHighlight] = useState(0);
     const inputRef = useRef(null);
+    const selectedRef = useRef(null);
 
     useEffect(() => {
-        if (open) {
-            setQuery('');
-            setHighlight(0);
-            // Focus the search input on open. Defer one tick so the
-            // overlay paint completes before we steal focus.
-            setTimeout(() => inputRef.current?.focus(), 0);
-        }
+        if (!open) return undefined;
+        setQuery('');
+        // Focus the search input on open. Defer one tick so the
+        // overlay paint completes before we steal focus, and clear the
+        // pending timer if the switcher is closed before it fires.
+        const id = setTimeout(() => inputRef.current?.focus(), 0);
+        return () => clearTimeout(id);
     }, [open]);
 
     const filtered = useMemo(() => {
@@ -32,18 +32,29 @@ export default function QuickSwitcher({ open, items, onPick, onClose }) {
         );
     }, [items, query]);
 
+    // Derive the highlight from query state instead of holding a separate
+    // useState that can lag behind by one paint. setQueryAndReset bundles
+    // the "user typed" intent with the highlight reset so we never paint a
+    // stale highlight against a freshly-filtered list.
+    const [hoverIdx, setHoverIdx] = useState(null);
+    const setQueryAndReset = (q) => { setQuery(q); setHoverIdx(null); };
+    const highlight = hoverIdx == null
+        ? 0
+        : Math.min(hoverIdx, Math.max(0, filtered.length - 1));
+
     useEffect(() => {
-        if (highlight >= filtered.length) setHighlight(0);
-    }, [filtered.length, highlight]);
+        // Keep the highlighted row in view when navigating by keyboard.
+        selectedRef.current?.scrollIntoView({ block: 'nearest' });
+    }, [highlight]);
 
     const onKeyDown = (e) => {
         if (e.key === 'Escape') { e.preventDefault(); onClose(); return; }
         if (e.key === 'ArrowDown') {
             e.preventDefault();
-            setHighlight(h => Math.min(h + 1, filtered.length - 1));
+            setHoverIdx((h) => Math.min((h ?? -1) + 1, filtered.length - 1));
         } else if (e.key === 'ArrowUp') {
             e.preventDefault();
-            setHighlight(h => Math.max(h - 1, 0));
+            setHoverIdx((h) => Math.max((h ?? 0) - 1, 0));
         } else if (e.key === 'Enter') {
             e.preventDefault();
             const pick = filtered[highlight];
@@ -67,7 +78,7 @@ export default function QuickSwitcher({ open, items, onPick, onClose }) {
                     <input
                         ref={inputRef}
                         value={query}
-                        onChange={(e) => setQuery(e.target.value)}
+                        onChange={(e) => setQueryAndReset(e.target.value)}
                         onKeyDown={onKeyDown}
                         placeholder="Jump to a routine…"
                         className="flex-1 bg-transparent outline-none text-sm text-[var(--text-primary)] placeholder:text-[var(--text-tertiary)]"
@@ -84,13 +95,15 @@ export default function QuickSwitcher({ open, items, onPick, onClose }) {
                     )}
                     {filtered.map((it, i) => {
                         const isAuto = it.kind === 'automation';
+                        const isSelected = i === highlight;
                         return (
                             <button
-                                key={`${it.kind}:${it.id}`}
+                                key={`${it.kind}:${it.id || ''}:${i}`}
+                                ref={isSelected ? selectedRef : undefined}
                                 onClick={() => onPick(it)}
-                                onMouseEnter={() => setHighlight(i)}
+                                onMouseEnter={() => setHoverIdx(i)}
                                 className={`w-full flex items-center gap-3 px-4 py-2 text-left transition ${
-                                    i === highlight
+                                    isSelected
                                         ? 'bg-[var(--bg-secondary)] text-[var(--text-primary)]'
                                         : 'text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'
                                 }`}

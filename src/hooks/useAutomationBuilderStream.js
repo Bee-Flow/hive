@@ -27,6 +27,7 @@ export default function useAutomationBuilderStream(initial = {}) {
         steps: [],
         finalizedId: null,
         running: false,
+        executingStepId: null, // id of step currently mid partial-execute (n8n-style ▶)
         error: null,
         validation: null,      // { errors: [...], warnings: [...] } — structured records
         aborted: null,         // { reason, iterations, lastValidation } when builder ran out of iterations
@@ -171,7 +172,84 @@ export default function useAutomationBuilderStream(initial = {}) {
         setState(s => ({ ...s, running: false }));
     }, [state.builderSessionId, state.automationId, state.messages]);
 
-    return { state, send, reset, hydrate, setDraft, markServerConfirmed, acceptExternalDraft, dismissExternalDraft };
+    /**
+     * n8n-style "Execute step" — run a single step and merge the resulting
+     * step record into `state.steps`. Sets `executingStepId` so the node UI
+     * can show a spinner; clears it on completion. Does NOT touch
+     * `state.running` (that flag is reserved for the chat builder stream).
+     */
+    const executeStep = useCallback(async (stepId, { mode = 'only' } = {}) => {
+        if (!state.automationId || !stepId) return null;
+        setState(s => ({ ...s, executingStepId: stepId, error: null }));
+        try {
+            const r = await authFetch(`${API_BASE}/api/automation/${state.automationId}/steps/${encodeURIComponent(stepId)}/run`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mode }),
+            });
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) {
+                setState(s => ({ ...s, executingStepId: null, error: j?.error || `HTTP ${r.status}` }));
+                return null;
+            }
+            // Merge the returned steps into existing state.steps. The
+            // partial-run only records ONE step (or, for mode='from', the
+            // step + its downstream) so we keep the prior step rows for
+            // every node we didn't touch.
+            setState(s => {
+                const byId = new Map(s.steps.map(st => [st.stepId, st]));
+                for (const ns of (j.steps || [])) byId.set(ns.stepId, ns);
+                return {
+                    ...s,
+                    executingStepId: null,
+                    dryRun: j.run || s.dryRun,
+                    steps: Array.from(byId.values()),
+                };
+            });
+            return j;
+        } catch (e) {
+            setState(s => ({ ...s, executingStepId: null, error: e.message || 'Execute step failed' }));
+            return null;
+        }
+    }, [state.automationId]);
+
+    const retryFromStep = useCallback((stepId) => executeStep(stepId, { mode: 'from' }), [executeStep]);
+
+    /**
+     * Cancel an in-flight run. Latency is bounded by step duration since
+     * the runner checks the abort signal between steps. Acknowledges
+     * immediately; the caller's progress poll surfaces the final status.
+     */
+    const stopRun = useCallback(async (runId) => {
+        if (!runId) return false;
+        try {
+            const r = await authFetch(`${API_BASE}/api/automation/runs/${encodeURIComponent(runId)}/cancel`, { method: 'POST' });
+            return r.ok;
+        } catch {
+            return false;
+        }
+    }, []);
+
+    /**
+     * Snapshot of an in-progress run's step rows. Drives the live progress
+     * banner + animated edges while a dry-run is executing. Callers should
+     * poll every ~750ms; cheap query, capped at one row per step.
+     */
+    const pollRunProgress = useCallback(async (runId) => {
+        if (!runId) return null;
+        try {
+            const r = await authFetch(`${API_BASE}/api/automation/runs/${encodeURIComponent(runId)}/steps`);
+            const j = await r.json().catch(() => ({}));
+            if (!r.ok) return null;
+            const steps = Array.isArray(j.steps) ? j.steps : [];
+            setState(s => ({ ...s, steps }));
+            return steps;
+        } catch {
+            return null;
+        }
+    }, []);
+
+    return { state, send, reset, hydrate, setDraft, markServerConfirmed, acceptExternalDraft, dismissExternalDraft, executeStep, retryFromStep, stopRun, pollRunProgress };
 }
 
 function handle(setState, event, data) {

@@ -29,44 +29,66 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
 
     return (
         <div ref={ref} style={{ position: 'relative', display: 'inline-block' }} data-testid="model-tier-selector">
-            {/* Compact pill trigger */}
+            {/* Compact pill trigger. Borderless on hover/open — looks like an
+                interactive pill rather than a form control. */}
             <button
                 onClick={() => setOpen(!open)}
+                className="model-tier-trigger"
+                data-open={open ? '1' : '0'}
                 style={{
-                    display: 'flex', alignItems: 'center', gap: '6px',
-                    padding: '6px 12px', borderRadius: '8px',
-                    background: variant === 'input' ? 'var(--bg-secondary)' : 'var(--bg-card, #fff)', border: '1px solid var(--border-default)',
+                    display: 'inline-flex', alignItems: 'center', gap: '7px',
+                    padding: '6px 10px 6px 12px', borderRadius: '9999px',
+                    background: variant === 'input' ? 'var(--bg-secondary)' : 'var(--bg-card, #fff)',
+                    border: '1px solid var(--border-subtle)',
                     color: 'var(--text-primary)', cursor: 'pointer',
-                    fontSize: '12px', fontWeight: 500, transition: 'all 0.15s',
+                    fontSize: '12px', fontWeight: 500,
+                    transition: 'background 0.15s, border-color 0.15s, box-shadow 0.15s',
                     whiteSpace: 'nowrap',
-                    height: 'auto'
+                    boxShadow: open ? 'var(--shadow-sm)' : 'none',
                 }}
                 title="Select model tier"
                 data-testid="model-tier-trigger"
             >
-                {currentMeta.iconSrc
-                    ? <img src={currentMeta.iconSrc} alt="" className="w-4 h-4 object-contain" />
-                    : <AppEmoji id={tierCatalogId(value)} default={currentMeta.icon} />}
+                {currentMeta.iconSrc ? (
+                    <img src={currentMeta.iconSrc} alt="" className="w-4 h-4 object-contain" />
+                ) : currentMeta.Icon ? (
+                    <currentMeta.Icon className="w-3.5 h-3.5" style={{ color: 'var(--accent-primary)' }} />
+                ) : (
+                    <AppEmoji id={tierCatalogId(value)} default={currentMeta.emoji} />
+                )}
                 <span>{currentMeta.label}</span>
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none" style={{ opacity: 0.5 }}>
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"
+                    style={{
+                        opacity: 0.55,
+                        transform: open ? 'rotate(180deg)' : 'rotate(0deg)',
+                        transition: 'transform 0.18s ease',
+                    }}>
                     <path d="M2 4L5 7L8 4" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
             </button>
 
-            {/* Dropdown panel */}
+            {/* Dropdown panel — inner padding so the rounded hover bg paints
+                fully inside the panel's rounded corners, and a single,
+                quietly-strong selected state (no double-indicator). */}
             {open && (
-                <div style={{
-                    position: 'absolute',
-                    ...(dropDirection === 'down'
-                        ? { top: '100%', marginTop: '6px' }
-                        : { bottom: '100%', marginBottom: '6px' }),
-                    right: 0, left: 0, minWidth: '220px',
-                    background: 'var(--bg-secondary)', border: '1px solid var(--border-default)',
-                    borderRadius: '12px', boxShadow: '0 8px 32px rgba(0,0,0,0.3)',
-                    overflow: 'hidden', zIndex: 100
-                }}>
-
-
+                <div
+                    className="model-tier-panel absolute"
+                    data-surface="opaque"
+                    role="listbox"
+                    style={{
+                        ...(dropDirection === 'down'
+                            ? { top: 'calc(100% + 6px)' }
+                            : { bottom: 'calc(100% + 6px)' }),
+                        right: 0, minWidth: '240px',
+                        border: '1px solid var(--border-default)',
+                        borderRadius: '14px',
+                        padding: '6px',
+                        boxShadow: 'var(--shadow-popover, 0 12px 36px rgba(15,23,42,0.18))',
+                        overflow: 'hidden', zIndex: 100,
+                        animation: 'modelTierPanelIn 140ms cubic-bezier(0.22, 1, 0.36, 1) both',
+                        transformOrigin: dropDirection === 'down' ? 'top right' : 'bottom right',
+                    }}
+                >
                     {tierKeys.map(key => {
                         const tierConfig = tiers[key] || {};
                         const meta = TIER_META[key] || (key.startsWith('custom:') ? customTierMeta(key, tierConfig) : null);
@@ -84,31 +106,70 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
                                 key={key}
                                 onClick={() => { onChange?.(key); setOpen(false); }}
                                 data-testid={`model-tier-${key}`}
+                                role="option"
+                                aria-selected={isSelected}
                                 style={{
                                     display: 'flex', alignItems: 'center', gap: '10px',
-                                    width: '100%', padding: '10px 12px',
-                                    background: isSelected ? 'rgba(59, 130, 246, 0.1)' : 'transparent',
+                                    width: '100%', padding: '8px 10px',
+                                    background: isSelected ? 'var(--bg-tertiary)' : 'transparent',
+                                    borderRadius: '9px',
                                     border: 'none', cursor: 'pointer',
                                     color: 'var(--text-primary)',
-                                    textAlign: 'left', transition: 'background 0.1s',
+                                    textAlign: 'left',
+                                    transition: 'background 0.12s ease',
                                 }}
-                                onMouseEnter={e => { if (!isSelected) e.target.style.background = 'var(--bg-tertiary)'; }}
-                                onMouseLeave={e => { if (!isSelected) e.target.style.background = 'transparent'; }}
+                                onMouseEnter={e => { if (!isSelected) e.currentTarget.style.background = 'var(--bg-tertiary)'; }}
+                                onMouseLeave={e => { if (!isSelected) e.currentTarget.style.background = 'transparent'; }}
                             >
-                                <span style={{ fontSize: '18px', width: '24px', textAlign: 'center', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
-                                    {meta.iconSrc
-                                        ? <img src={meta.iconSrc} alt="" style={{ width: '20px', height: '20px', objectFit: 'contain' }} />
-                                        : <AppEmoji id={tierCatalogId(key)} default={meta.icon} />}
+                                {/* Icon in a soft tinted square — gives the popover a tactile,
+                                    iOS-style rhythm and lets the accent show through on the
+                                    selected row without painting a hard border. */}
+                                <span
+                                    aria-hidden="true"
+                                    style={{
+                                        width: '28px', height: '28px',
+                                        borderRadius: '7px',
+                                        display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                                        background: isSelected
+                                            ? 'color-mix(in srgb, var(--accent-primary) 16%, transparent)'
+                                            : 'var(--bg-secondary)',
+                                        flexShrink: 0,
+                                        transition: 'background 0.12s ease',
+                                    }}
+                                >
+                                    {meta.iconSrc ? (
+                                        <img src={meta.iconSrc} alt="" style={{ width: '16px', height: '16px', objectFit: 'contain' }} />
+                                    ) : meta.Icon ? (
+                                        <meta.Icon
+                                            className="w-4 h-4"
+                                            style={{ color: isSelected ? 'var(--accent-primary)' : 'var(--text-secondary)' }}
+                                        />
+                                    ) : (
+                                        <AppEmoji id={tierCatalogId(key)} default={meta.emoji} />
+                                    )}
                                 </span>
                                 <div style={{ flex: 1, minWidth: 0 }}>
-                                    <div style={{ fontSize: '13px', fontWeight: 600 }}>{meta.label}</div>
-                                    <div style={{ fontSize: '11px', color: 'var(--text-muted)' }}>
+                                    <div style={{
+                                        fontSize: '13px', fontWeight: 600,
+                                        color: 'var(--text-primary)',
+                                        lineHeight: 1.25,
+                                    }}>{meta.label}</div>
+                                    <div style={{
+                                        fontSize: '11.5px',
+                                        color: 'var(--text-muted)',
+                                        lineHeight: 1.3,
+                                        marginTop: '1px',
+                                    }}>
                                         {meta.desc}
                                     </div>
                                 </div>
                                 {isSelected && (
-                                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                                        <path d="M4 8L7 11L12 5" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                                    <svg
+                                        width="16" height="16" viewBox="0 0 16 16" fill="none"
+                                        style={{ flexShrink: 0, color: 'var(--accent-primary)' }}
+                                        aria-hidden="true"
+                                    >
+                                        <path d="M4 8L7 11L12 5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
                                     </svg>
                                 )}
                             </button>

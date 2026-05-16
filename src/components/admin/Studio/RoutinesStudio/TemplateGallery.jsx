@@ -2,6 +2,20 @@ import React, { useEffect, useMemo, useState } from 'react';
 import * as Lucide from 'lucide-react';
 import useAutomationApi from '../../../../hooks/useAutomationApi';
 
+// Cache of icon names we've already warned about so an unknown name doesn't
+// fire a warning on every render of the same template.
+const _warnedIconNames = new Set();
+function pickIcon(name) {
+    if (!name) return Lucide.Sparkles;
+    const found = Lucide[name];
+    if (found) return found;
+    if (typeof console !== 'undefined' && !_warnedIconNames.has(name)) {
+        _warnedIconNames.add(name);
+        console.warn(`[TemplateGallery] Unknown lucide icon "${name}" — falling back to Sparkles. Fix the template's icon field.`);
+    }
+    return Lucide.Sparkles;
+}
+
 /**
  * Curated automation gallery shown in the empty state. Lists templates
  * the server returned at /api/automation/templates with category chips
@@ -31,9 +45,9 @@ export default function TemplateGallery({ onPick }) {
                 setCategories(d?.categories || []);
             })
             .catch(e => { if (alive) setErrorMsg(e.message); })
-            .finally(() => alive && setLoading(false));
+            .finally(() => { if (alive) setLoading(false); });
         return () => { alive = false; };
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [api]);
 
     const visible = useMemo(
         () => activeCategory ? templates.filter(t => t.category === activeCategory) : templates,
@@ -64,7 +78,10 @@ export default function TemplateGallery({ onPick }) {
                 {categories.map((c) => (
                     <button
                         key={c}
-                        onClick={() => setActiveCategory(c === activeCategory ? null : c)}
+                        // Pick the category; users clear with "All", which is symmetric
+                        // with how the "All" chip behaves (clicking it while active is
+                        // a no-op, not a toggle to undefined).
+                        onClick={() => { if (c !== activeCategory) setActiveCategory(c); }}
                         className={`text-[11px] px-2.5 py-1 rounded-full border transition ${
                             activeCategory === c
                                 ? 'bg-[var(--accent-primary)] text-white border-transparent'
@@ -77,7 +94,7 @@ export default function TemplateGallery({ onPick }) {
             </div>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                 {visible.map((tmpl) => {
-                    const Icon = (tmpl.icon && Lucide[tmpl.icon]) || Lucide.Sparkles;
+                    const Icon = pickIcon(tmpl.icon);
                     return (
                         <button
                             key={tmpl.id}

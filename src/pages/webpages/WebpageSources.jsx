@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
     Globe, Type, Upload, Trash2, Loader2, AlertCircle,
     FileText, File, Table2, Link2, RotateCw, XCircle, Plus, X,
@@ -10,7 +10,7 @@ const SOURCE_META = {
     docx: { color: '#3b82f6', bg: 'rgba(59,130,246,0.1)', label: 'Word', Icon: FileText },
     xlsx: { color: '#22c55e', bg: 'rgba(34,197,94,0.1)', label: 'Excel', Icon: Table2 },
     csv: { color: '#22c55e', bg: 'rgba(34,197,94,0.1)', label: 'CSV', Icon: Table2 },
-    text: { color: '#8b5cf6', bg: 'rgba(139,92,246,0.1)', label: 'Text', Icon: FileText },
+    text: { color: '#0ea5e9', bg: 'rgba(14,165,233,0.1)', label: 'Text', Icon: FileText },
     url: { color: '#f59e0b', bg: 'rgba(245,158,11,0.1)', label: 'URL', Icon: Link2 },
     file: { color: '#6b7280', bg: 'rgba(107,114,128,0.1)', label: 'File', Icon: File },
 };
@@ -57,7 +57,7 @@ function SourceCard({ source, onDelete, onRetry, onCancel }) {
                             <Loader2 className="w-2.5 h-2.5 animate-spin" /> Processing…
                         </span>
                     )}
-                    {isReady && source.wordCount > 0 && (
+                    {isReady && source.wordCount != null && (
                         <span className="text-[9px]" style={{ color: 'var(--text-tertiary)' }}>
                             {source.wordCount.toLocaleString()} words
                         </span>
@@ -94,8 +94,9 @@ function SourceCard({ source, onDelete, onRetry, onCancel }) {
 }
 
 /**
- * Sources panel for a single webpage. Mirrors NotebookSources but only the
- * three source types webpage flows actually use: file upload, URL, pasted text.
+ * Knowledge panel for a single webpage. Imported files, URLs, and pasted text
+ * the AI can draw on as reference material. Backend table is still
+ * `webpage_sources` — this is purely the user-facing rename.
  */
 export default function WebpageSources({ webpageId, sources, onSourcesChange }) {
     const [adding, setAdding] = useState(null); // 'url' | 'text' | null
@@ -106,14 +107,40 @@ export default function WebpageSources({ webpageId, sources, onSourcesChange }) 
     const [error, setError] = useState(null);
     const fileInputRef = useRef(null);
 
-    const refreshSources = async () => {
+    const refreshSources = useCallback(async () => {
         try {
             const res = await api(`/${webpageId}/sources`);
             if (!res.ok) return;
             const { sources: fresh } = await res.json();
             onSourcesChange(fresh || []);
         } catch (_) {}
-    };
+    }, [webpageId, onSourcesChange]);
+
+    // Adaptive polling: when any source is still processing (or has no terminal
+    // status yet), re-fetch with exponential backoff. Stops as soon as every
+    // source is in a terminal state ('ready'/'error') or the webpage changes.
+    // Replaces the previous fixed setTimeout(refreshSources, 2000) which would
+    // miss updates when ingestion took longer than 2s.
+    useEffect(() => {
+        const isTerminal = (s) => s?.status === 'ready' || s?.status === 'error';
+        const pending = (sources || []).some(s => !isTerminal(s));
+        if (!pending) return;
+        let cancelled = false;
+        let delay = 1000;
+        const maxDelay = 16000;
+        let timer = null;
+        const tick = async () => {
+            if (cancelled) return;
+            await refreshSources();
+            if (cancelled) return;
+            // The next render will re-evaluate `pending` from the updated
+            // sources prop; if anything is still processing it re-arms here.
+            timer = setTimeout(tick, delay);
+            delay = Math.min(delay * 2, maxDelay);
+        };
+        timer = setTimeout(tick, delay);
+        return () => { cancelled = true; if (timer) clearTimeout(timer); };
+    }, [sources, refreshSources]);
 
     const handleFileUpload = async (e) => {
         const file = e.target.files?.[0];
@@ -134,7 +161,6 @@ export default function WebpageSources({ webpageId, sources, onSourcesChange }) 
             const { source } = await res.json();
             onSourcesChange([...sources, source]);
             // Background processing — poll once shortly to refresh.
-            setTimeout(refreshSources, 2000);
         } catch (err) {
             setError(err.message);
         } finally {
@@ -158,7 +184,6 @@ export default function WebpageSources({ webpageId, sources, onSourcesChange }) 
             onSourcesChange([...sources, source]);
             setUrlInput('');
             setAdding(null);
-            setTimeout(refreshSources, 2000);
         } catch (err) {
             setError(err.message);
         } finally {
@@ -184,7 +209,6 @@ export default function WebpageSources({ webpageId, sources, onSourcesChange }) 
             setTextInput('');
             setTextName('');
             setAdding(null);
-            setTimeout(refreshSources, 2000);
         } catch (err) {
             setError(err.message);
         } finally {
@@ -193,7 +217,7 @@ export default function WebpageSources({ webpageId, sources, onSourcesChange }) 
     };
 
     const handleDelete = async (sid) => {
-        if (!confirm('Delete this source?')) return;
+        if (!confirm('Remove this knowledge item?')) return;
         try {
             await api(`/${webpageId}/sources/${sid}`, { method: 'DELETE' });
             onSourcesChange(sources.filter(s => s.id !== sid));
@@ -206,7 +230,6 @@ export default function WebpageSources({ webpageId, sources, onSourcesChange }) 
         try {
             await api(`/${webpageId}/sources/${sid}/retry`, { method: 'POST' });
             onSourcesChange(sources.map(s => s.id === sid ? { ...s, status: 'processing', error: null } : s));
-            setTimeout(refreshSources, 2000);
         } catch (err) {
             setError(err.message);
         }
@@ -225,7 +248,7 @@ export default function WebpageSources({ webpageId, sources, onSourcesChange }) 
         <div className="flex flex-col h-full">
             <div className="shrink-0 px-3 py-2 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
                 <div className="flex items-center justify-between gap-2">
-                    <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>📎 Sources</span>
+                    <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>📚 Knowledge</span>
                     <span className="text-[10px]" style={{ color: 'var(--text-tertiary)' }}>{sources.length}</span>
                 </div>
                 <div className="flex items-center gap-1 mt-2">
@@ -279,7 +302,7 @@ export default function WebpageSources({ webpageId, sources, onSourcesChange }) 
                     <div className="mt-2 space-y-1">
                         <input
                             type="text"
-                            placeholder="Source name"
+                            placeholder="Name (e.g. 'Brand guidelines')"
                             value={textName}
                             onChange={(e) => setTextName(e.target.value)}
                             className="w-full px-2 py-1 text-[11px] rounded border outline-none"
@@ -296,7 +319,7 @@ export default function WebpageSources({ webpageId, sources, onSourcesChange }) 
                         <button onClick={handleAddText} disabled={submitting || !textInput.trim()}
                                 className="w-full px-2 py-1 rounded-md text-[10px] font-medium disabled:opacity-50"
                                 style={{ background: 'var(--accent-primary)', color: 'white' }}>
-                            Add source
+                            Add to knowledge
                         </button>
                     </div>
                 )}
@@ -312,10 +335,10 @@ export default function WebpageSources({ webpageId, sources, onSourcesChange }) 
                 {sources.length === 0 ? (
                     <div className="flex flex-col items-center justify-center text-center py-8">
                         <div className="text-[11px] font-medium" style={{ color: 'var(--text-secondary)' }}>
-                            No sources yet
+                            No knowledge yet
                         </div>
                         <div className="text-[10px] mt-1 max-w-[200px]" style={{ color: 'var(--text-tertiary)' }}>
-                            Add a file, URL, or paste text — Claude can use it as inspiration.
+                            Add a file, URL, or paste text — the AI can use it as reference and inspiration.
                         </div>
                     </div>
                 ) : (

@@ -42,6 +42,8 @@ export default function useAutomationApi() {
         diagnoseTrigger: (id) => send('POST', `/${id}/diagnose-trigger`),
         listRuns: (id) => get(`/${id}/runs`),
         listRecentRuns: (limit = 50) => get(`/_runs/recent?limit=${encodeURIComponent(limit)}`),
+        getActiveRuns: () => get('/_runs/active'),
+        previewSchedule: (cron, tz, count = 3) => send('POST', '/_schedule/preview', { cron, tz, count }),
         // Cross-route helper: read the user's Ticket Assistant connections
         // so the trigger settings form can render a connection picker.
         // Bypasses the /api/automation prefix because the TA route lives

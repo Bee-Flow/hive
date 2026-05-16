@@ -275,10 +275,18 @@ export default function MermaidBlock({ code, onCodeChange, editable = true }) {
 
         const id = idRef.current;
 
+        let cancelled = false;
         const renderDiagram = async () => {
             try {
                 const renderId = `${id}-${Date.now()}`;
-                const { svg } = await mermaid.render(renderId, code.trim());
+                // Race mermaid.render against a 5 s timeout — pathological inputs
+                // can hang the editor's main thread otherwise.
+                const result = await Promise.race([
+                    mermaid.render(renderId, code.trim()),
+                    new Promise((_, reject) => setTimeout(() => reject(new Error('Mermaid render timed out after 5 s')), 5000)),
+                ]);
+                if (cancelled) return;
+                const { svg } = result;
                 if (containerRef.current) {
                     containerRef.current.innerHTML = svg;
                     const svgEl = containerRef.current.querySelector('svg');
@@ -288,6 +296,7 @@ export default function MermaidBlock({ code, onCodeChange, editable = true }) {
                     setReady(true);
                 }
             } catch (err) {
+                if (cancelled) return;
                 console.error('[MermaidBlock] Render error:', err);
                 setError(err.message || 'Failed to render diagram');
                 const errorEl = document.getElementById('d' + id);
@@ -298,6 +307,7 @@ export default function MermaidBlock({ code, onCodeChange, editable = true }) {
         renderDiagram();
 
         return () => {
+            cancelled = true;
             if (containerRef.current) {
                 containerRef.current.innerHTML = '';
             }
@@ -460,8 +470,8 @@ export default function MermaidBlock({ code, onCodeChange, editable = true }) {
                                 {/* Loading skeleton */}
                                 {!ready && (
                                     <div className="mermaid-skeleton">
-                                        <Loader2 size={20} className="mermaid-skeleton-spinner" style={{ animation: 'spin 1s linear infinite', color: '#93c5fd' }} />
-                                        <span style={{ fontSize: '12px', color: '#94a3b8', marginTop: '8px' }}>Rendering diagram…</span>
+                                        <Loader2 size={20} className="mermaid-skeleton-spinner" style={{ animation: 'spin 1s linear infinite', color: 'var(--accent-primary)' }} />
+                                        <span style={{ fontSize: '12px', color: 'var(--text-muted)', marginTop: '8px' }}>Rendering diagram…</span>
                                     </div>
                                 )}
                                 <div

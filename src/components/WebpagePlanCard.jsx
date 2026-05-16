@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CheckCircle2, X, Loader2, ChevronRight, FileCode2, Palette, Cpu, Sparkles } from 'lucide-react';
+import { CheckCircle2, X, Loader2, ChevronRight, FileCode2, Palette, Cpu } from 'lucide-react';
 
 const FILE_ICON = { html: FileCode2, css: Palette, js: Cpu };
 const FILE_LABEL = { html: 'index.html', css: 'style.css', js: 'script.js' };
@@ -54,7 +54,6 @@ export default function WebpagePlanCard({ plan, status = 'pending', planId, onAp
                 onClick={() => setExpanded(e => !e)}
                 className="w-full flex items-center gap-2 px-3 py-2 text-left"
             >
-                <Sparkles size={14} style={{ color: 'var(--accent-primary)' }} />
                 <div className="flex-1 min-w-0">
                     <div className="text-[12px] font-semibold truncate" style={{ color: 'var(--text-primary)' }}>
                         {plan.title || 'Plan'}

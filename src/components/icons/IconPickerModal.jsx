@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import EmojiPicker from 'emoji-picker-react';
-import { Camera, Upload, X, Loader2, Sparkles, Image as ImageIcon, Smile } from 'lucide-react';
+import { Camera, Upload, X, Loader2, Image as ImageIcon, Smile } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 
 export function IconPickerModal({ isOpen, onClose, iconKey, iconLabel, defaultEmoji, currentCustom, onApply, nanoBananaSettings }) {
@@ -105,7 +105,7 @@ export function IconPickerModal({ isOpen, onClose, iconKey, iconLabel, defaultEm
                         <span className="flex items-center justify-center gap-2"><Upload className="w-4 h-4"/> Upload</span>
                     </button>
                     <button onClick={() => setTab('nano')} className={`flex-1 py-3 text-sm font-medium transition-colors border-b-2`} style={{ borderColor: tab === 'nano' ? '#f59e0b' : 'transparent', color: tab === 'nano' ? '#f59e0b' : 'var(--text-secondary)' }}>
-                        <span className="flex items-center justify-center gap-2"><Sparkles className="w-4 h-4"/> AI Gen</span>
+                        <span className="flex items-center justify-center gap-2">AI Gen</span>
                     </button>
                 </div>
 
@@ -149,7 +149,7 @@ export function IconPickerModal({ isOpen, onClose, iconKey, iconLabel, defaultEm
                                     disabled={generating || !prompt.trim()}
                                     className="px-6 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-lg font-medium shadow-md shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 transition-all"
                                 >
-                                    {generating ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
+                                    {generating && <Loader2 className="w-4 h-4 animate-spin" />}
                                     Generate Icon
                                 </button>
                             </div>

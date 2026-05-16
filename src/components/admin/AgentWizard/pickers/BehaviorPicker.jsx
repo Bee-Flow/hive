@@ -30,8 +30,11 @@ function CopyField({ value, t }) {
     );
 }
 
-export default function BehaviorPicker({
-    t, agent, onClose,
+// Behavior body — toggles + embed config. Rendered standalone (popover mode)
+// from a kebab/pill trigger, or composed inside the new AdvancedDrawer via the
+// `inline` prop.
+function BehaviorBody({
+    t, agent,
     allowCopy, onToggleAllowCopy,
     disableExternalTools, onToggleDisableExternalTools,
     embedEnabled, onToggleEmbedEnabled,
@@ -40,23 +43,161 @@ export default function BehaviorPicker({
     bubbleIcon, onBubbleIcon,
     memoryEnabled, onToggleMemory,
     useGeneralMemory, onToggleUseGeneralMemory,
+    showEmbedSection = true,
+    showBehaviorToggles = true,
 }) {
-    const popoverRef = useRef(null);
-    useEffect(() => {
-        const onDoc = (e) => {
-            if (popoverRef.current?.contains(e.target)) return;
-            if (e.target.closest?.('[data-popover-trigger="behavior"]')) return;
-            onClose();
-        };
-        document.addEventListener('mousedown', onDoc);
-        return () => document.removeEventListener('mousedown', onDoc);
-    }, [onClose]);
-
     const publicUrl = agent?.id ? `${window.location.origin}/chat/${agent.id}` : '';
     const iframeSnippet = agent?.id
         ? `<iframe src="${publicUrl}" width="400" height="600" style="border:none;border-radius:12px;"></iframe>`
         : '';
     const ICONS = ['💬', '🐝', '🤖', '❓', '👋', '✨'];
+
+    return (
+        <div className="space-y-4">
+            {showBehaviorToggles && (
+                <>
+                    <ToggleRow
+                        label={t('agent_wizard.builder.memory') || 'Memory'}
+                        help={t('agent_wizard.builder.memory_explainer')}
+                        checked={memoryEnabled}
+                        onChange={() => onToggleMemory()}
+                    />
+                    {memoryEnabled && (
+                        <div className="pl-7 -mt-1">
+                            <ToggleRow
+                                label={t('agent_wizard.builder.memory_use_general_label')}
+                                help={t('agent_wizard.builder.memory_use_general_help')}
+                                checked={useGeneralMemory}
+                                onChange={() => onToggleUseGeneralMemory()}
+                            />
+                        </div>
+                    )}
+                    <ToggleRow
+                        label={t('agent_wizard.behavior.allow_copy_label')}
+                        help={t('agent_wizard.behavior.allow_copy_help')}
+                        checked={allowCopy}
+                        onChange={() => onToggleAllowCopy()}
+                    />
+                    <ToggleRow
+                        label={t('agent_wizard.behavior.disable_external_label')}
+                        help={t('agent_wizard.behavior.disable_external_help')}
+                        checked={disableExternalTools}
+                        onChange={() => onToggleDisableExternalTools()}
+                    />
+                </>
+            )}
+            {showEmbedSection && (
+                <>
+                    <ToggleRow
+                        label={t('agent_wizard.behavior.embed_label')}
+                        help={t('agent_wizard.behavior.embed_help')}
+                        checked={embedEnabled}
+                        onChange={() => onToggleEmbedEnabled()}
+                    />
+                    {embedEnabled && (
+                        <div className="space-y-3 pt-2">
+                            {agent?.id ? (
+                                <>
+                                    <div>
+                                        <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                                            {t('agent_wizard.embed.public_url') || 'Public URL'}
+                                        </div>
+                                        <CopyField value={publicUrl} t={t} />
+                                    </div>
+                                    <div>
+                                        <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                                            {t('agent_wizard.embed.iframe') || 'Iframe snippet'}
+                                        </div>
+                                        <CopyField value={iframeSnippet} t={t} />
+                                    </div>
+                                </>
+                            ) : (
+                                <div className="text-xs text-[var(--text-tertiary)] italic">
+                                    {t('agent_wizard.embed.save_first') || 'Save the agent first to get the embed URL.'}
+                                </div>
+                            )}
+                            <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                    <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                                        {t('agent_wizard.embed.bubble_color') || 'Bubble color'}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <input
+                                            type="color"
+                                            value={bubbleColor}
+                                            onChange={(e) => onBubbleColor(e.target.value)}
+                                            className="w-8 h-8 rounded-lg border-0 cursor-pointer p-0"
+                                        />
+                                        <input
+                                            type="text"
+                                            value={bubbleColor}
+                                            onChange={(e) => onBubbleColor(e.target.value)}
+                                            className="flex-1 min-w-0 text-xs font-mono px-2 py-1.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-default)] outline-none text-[var(--text-secondary)]"
+                                        />
+                                    </div>
+                                </div>
+                                <div>
+                                    <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                                        {t('agent_wizard.embed.position') || 'Position'}
+                                    </div>
+                                    <div className="flex gap-1">
+                                        {['left', 'right'].map(pos => (
+                                            <button
+                                                key={pos}
+                                                type="button"
+                                                onClick={() => onBubblePosition(pos)}
+                                                className={`flex-1 px-2 py-1.5 text-xs rounded-lg transition ${bubblePosition === pos
+                                                    ? 'bg-[var(--accent)]/10 text-[var(--accent)] font-medium'
+                                                    : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}
+                                            >
+                                                {pos === 'left' ? '◀ Left' : 'Right ▶'}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            </div>
+                            <div>
+                                <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
+                                    {t('agent_wizard.embed.icon') || 'Icon'}
+                                </div>
+                                <div className="flex gap-1">
+                                    {ICONS.map(icon => (
+                                        <button
+                                            key={icon}
+                                            type="button"
+                                            onClick={() => onBubbleIcon(icon)}
+                                            className={`w-9 h-9 rounded-lg text-base flex items-center justify-center transition ${bubbleIcon === icon
+                                                ? 'ring-2 ring-[var(--accent)] bg-[var(--bg-secondary)]'
+                                                : 'bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)]'}`}
+                                        >
+                                            {icon}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </>
+            )}
+        </div>
+    );
+}
+
+export default function BehaviorPicker(props) {
+    const { t, onClose, inline = false } = props;
+    const popoverRef = useRef(null);
+    useEffect(() => {
+        if (inline) return;
+        const onDoc = (e) => {
+            if (popoverRef.current?.contains(e.target)) return;
+            if (e.target.closest?.('[data-popover-trigger="behavior"]')) return;
+            onClose?.();
+        };
+        document.addEventListener('mousedown', onDoc);
+        return () => document.removeEventListener('mousedown', onDoc);
+    }, [onClose, inline]);
+
+    if (inline) return <BehaviorBody {...props} />;
 
     return (
         <div
@@ -67,126 +208,11 @@ export default function BehaviorPicker({
                 <span className="text-sm font-medium text-[var(--text-primary)]">{t('agent_wizard.section.behavior') || 'Behavior'}</span>
                 <button onClick={onClose} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"><X size={14} /></button>
             </div>
-            <div className="p-4 space-y-4">
-                <ToggleRow
-                    label={t('agent_wizard.builder.memory') || 'Memory'}
-                    help={t('agent_wizard.builder.memory_explainer')}
-                    checked={memoryEnabled}
-                    onChange={() => onToggleMemory()}
-                />
-                {memoryEnabled && (
-                    <div className="pl-7 -mt-1">
-                        <ToggleRow
-                            label={t('agent_wizard.builder.memory_use_general_label')}
-                            help={t('agent_wizard.builder.memory_use_general_help')}
-                            checked={useGeneralMemory}
-                            onChange={() => onToggleUseGeneralMemory()}
-                        />
-                    </div>
-                )}
-                <div className="border-t border-[var(--border-default)] -mx-4" />
-                <ToggleRow
-                    label={t('agent_wizard.behavior.allow_copy_label')}
-                    help={t('agent_wizard.behavior.allow_copy_help')}
-                    checked={allowCopy}
-                    onChange={() => onToggleAllowCopy()}
-                />
-                <ToggleRow
-                    label={t('agent_wizard.behavior.disable_external_label')}
-                    help={t('agent_wizard.behavior.disable_external_help')}
-                    checked={disableExternalTools}
-                    onChange={() => onToggleDisableExternalTools()}
-                />
-                <ToggleRow
-                    label={t('agent_wizard.behavior.embed_label')}
-                    help={t('agent_wizard.behavior.embed_help')}
-                    checked={embedEnabled}
-                    onChange={() => onToggleEmbedEnabled()}
-                />
-                {embedEnabled && (
-                    <div className="space-y-3 border-t border-[var(--border-default)] -mx-4 px-4 pt-4">
-                        {agent?.id ? (
-                            <>
-                                <div>
-                                    <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                        {t('agent_wizard.embed.public_url') || 'Public URL'}
-                                    </div>
-                                    <CopyField value={publicUrl} t={t} />
-                                </div>
-                                <div>
-                                    <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                        {t('agent_wizard.embed.iframe') || 'Iframe snippet'}
-                                    </div>
-                                    <CopyField value={iframeSnippet} t={t} />
-                                </div>
-                            </>
-                        ) : (
-                            <div className="text-xs text-[var(--text-tertiary)] italic">
-                                {t('agent_wizard.embed.save_first') || 'Save the agent first to get the embed URL.'}
-                            </div>
-                        )}
-                        <div className="grid grid-cols-2 gap-3">
-                            <div>
-                                <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                    {t('agent_wizard.embed.bubble_color') || 'Bubble color'}
-                                </div>
-                                <div className="flex items-center gap-2">
-                                    <input
-                                        type="color"
-                                        value={bubbleColor}
-                                        onChange={(e) => onBubbleColor(e.target.value)}
-                                        className="w-8 h-8 rounded-lg border-0 cursor-pointer p-0"
-                                    />
-                                    <input
-                                        type="text"
-                                        value={bubbleColor}
-                                        onChange={(e) => onBubbleColor(e.target.value)}
-                                        className="flex-1 min-w-0 text-xs font-mono px-2 py-1.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-default)] outline-none text-[var(--text-secondary)]"
-                                    />
-                                </div>
-                            </div>
-                            <div>
-                                <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                    {t('agent_wizard.embed.position') || 'Position'}
-                                </div>
-                                <div className="flex gap-1">
-                                    {['left', 'right'].map(pos => (
-                                        <button
-                                            key={pos}
-                                            type="button"
-                                            onClick={() => onBubblePosition(pos)}
-                                            className={`flex-1 px-2 py-1.5 text-xs rounded-lg transition ${bubblePosition === pos
-                                                ? 'bg-[var(--accent)]/10 text-[var(--accent)] font-medium'
-                                                : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'}`}
-                                        >
-                                            {pos === 'left' ? '◀ Left' : 'Right ▶'}
-                                        </button>
-                                    ))}
-                                </div>
-                            </div>
-                        </div>
-                        <div>
-                            <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)] mb-1.5">
-                                {t('agent_wizard.embed.icon') || 'Icon'}
-                            </div>
-                            <div className="flex gap-1">
-                                {ICONS.map(icon => (
-                                    <button
-                                        key={icon}
-                                        type="button"
-                                        onClick={() => onBubbleIcon(icon)}
-                                        className={`w-9 h-9 rounded-lg text-base flex items-center justify-center transition ${bubbleIcon === icon
-                                            ? 'ring-2 ring-[var(--accent)] bg-[var(--bg-secondary)]'
-                                            : 'bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)]'}`}
-                                    >
-                                        {icon}
-                                    </button>
-                                ))}
-                            </div>
-                        </div>
-                    </div>
-                )}
+            <div className="p-4">
+                <BehaviorBody {...props} />
             </div>
         </div>
     );
 }
+
+export { BehaviorBody };

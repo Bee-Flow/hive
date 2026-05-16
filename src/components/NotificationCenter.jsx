@@ -280,7 +280,7 @@ export default function NotificationCenter({ variant = 'row' } = {}) {
 
             {/* Dropdown panel */}
             {open && (
-                <div style={{
+                <div data-surface="opaque" style={{
                     position: 'absolute',
                     ...(isIcon
                         ? { top: '100%', left: 0, marginTop: 8 }

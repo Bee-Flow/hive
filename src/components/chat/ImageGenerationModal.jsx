@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { X, Sparkles, Image, Loader2, Download } from 'lucide-react';
+import { X, Image, Loader2, Download } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 
 const ASPECT_RATIOS = [
@@ -95,9 +95,6 @@ const ImageGenerationModal = ({ isOpen, onClose, onImageGenerated }) => {
                 {/* Header */}
                 <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
                     <div className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #4285f4, #ea4335, #fbbc04, #34a853)' }}>
-                            <Sparkles className="w-4 h-4 text-white" />
-                        </div>
                         <div>
                             <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>AI Image Generation</h3>
                             <p className="text-[11px]" style={{ color: 'var(--text-tertiary)' }}>Powered by Google Gemini</p>
@@ -227,7 +224,6 @@ const ImageGenerationModal = ({ isOpen, onClose, onImageGenerated }) => {
                             </>
                         ) : (
                             <>
-                                <Sparkles className="w-4 h-4" />
                                 {result ? 'Regenerate' : 'Generate'}
                             </>
                         )}

@@ -36,7 +36,7 @@ export default function Studio({
         onEditingChange?.(next || agentEditing);
     };
 
-    const canSeeWebpages = !!(user?.permissions?.includes('all') || user?.betaFeatures?.includes('webpages'));
+    const canSeeWebpages = !!(user?.canUseFeature?.webpages ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('webpages')));
     const tabs = [
         { id: 'agents',    label: t('studio.tab.agents'),    icon: <Bot size={14} /> },
         { id: 'skills',    label: t('studio.tab.skills'),    icon: <Sparkles size={14} /> },

@@ -5,6 +5,7 @@ import InputArea from '../components/InputArea';
 import { Sun, Moon } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar } from '../utils/agentAvatar';
+import { readableForeground } from '../components/theme/applyTheme';
 
 const getInitialTheme = () => {
     // 1. Check URL param (?theme=light or ?theme=dark) — allows iframe embedder to control
@@ -28,31 +29,6 @@ const EmbedChat = ({ agentId }) => {
     const messagesEndRef = useRef(null);
     const messagesContainerRef = useRef(null);
     const shouldForceScrollRef = useRef(false);
-
-    // ── Gmail extension bridge ──────────────────────────────────────────────
-    // When hosted in the Chrome extension's side-panel iframe
-    // (?source=gmail-extension), accept email-thread context from the parent
-    // and emit the agent's final response back so the extension can auto-draft.
-    const isGmailEmbed = new URLSearchParams(window.location.search).get('source') === 'gmail-extension';
-    const [gmailContext, setGmailContext] = useState(null);
-    const gmailContextRef = useRef(null);
-    useEffect(() => { gmailContextRef.current = gmailContext; }, [gmailContext]);
-
-    useEffect(() => {
-        if (!isGmailEmbed) return;
-        const onMessage = (event) => {
-            if (!event.origin.startsWith('chrome-extension://')) return;
-            const msg = event.data;
-            if (!msg || typeof msg !== 'object' || !msg.type?.startsWith?.('beeflow:')) return;
-            if (msg.type === 'beeflow:gmail_context' && msg.thread) {
-                setGmailContext(msg.thread);
-            }
-        };
-        window.addEventListener('message', onMessage);
-        // Announce readiness so the extension re-sends the latest thread.
-        try { window.parent.postMessage({ type: 'beeflow:ready' }, '*'); } catch {}
-        return () => window.removeEventListener('message', onMessage);
-    }, [isGmailEmbed]);
 
     // Apply theme to document
     useEffect(() => {
@@ -95,9 +71,12 @@ const EmbedChat = ({ agentId }) => {
             rules.push(`body, .markdown-content, .markdown-content p, .markdown-content li, .markdown-content span, textarea, input { ${textOverrides.join('; ')}; }`);
         }
 
-        // Bubble colors — override CSS variables used by MessageItem
+        // Bubble colors — override CSS variables used by MessageItem. Derive
+        // an AA-readable foreground at the same time so dark-accent embeds keep
+        // their bubble text legible.
         if (userColor) {
-            rules.push(`:root { --accent-primary: ${userColor} !important; --accent-primary-hover: ${userColor} !important; }`);
+            const fg = readableForeground(userColor);
+            rules.push(`:root { --accent-primary: ${userColor} !important; --accent-primary-hover: ${userColor} !important; --accent-primary-fg: ${fg} !important; --user-bubble-bg: ${userColor} !important; --user-bubble-fg: ${fg} !important; }`);
         }
         if (assistantColor) {
             rules.push(`:root { --bg-secondary: ${assistantColor} !important; }`);
@@ -178,63 +157,7 @@ const EmbedChat = ({ agentId }) => {
 
         const userDisplayText = text.trim();
 
-        // If hosted in the Gmail extension and a thread has been posted from
-        // the parent, prepend context to the agent-facing message. The UI
-        // still shows only the user's original text.
-        //
-        // Strategy: we give the agent enough info to find & read the full
-        // thread via its Gmail API tools (gmail_search / gmail_read). The
-        // body snippets we scrape from the DOM are only a hint — they may
-        // be truncated, clipped, or missing entirely for hidden messages.
-        let agentMessage = userDisplayText;
-        const gCtx = gmailContextRef.current;
-        if (isGmailEmbed && gCtx) {
-            const msgs = gCtx.messages || [];
-            const anyClipped = msgs.some(m => m.clipped);
-            const knownMessageIds = msgs.map(m => m.messageId).filter(Boolean);
-
-            const threadBlock = msgs.map((m, i, arr) => {
-                const header = `--- Message ${i + 1} of ${arr.length} ---`;
-                const meta = `From: ${m.from || 'unknown'}  Date: ${m.date || 'unknown'}` +
-                    (m.messageId ? `  messageId: ${m.messageId}` : '') +
-                    (m.clipped ? '  [CLIPPED — fetch full content via gmail_read]' : '');
-                return `${header}\n${meta}\n${m.body || '(body not available from DOM — use gmail_read)'}`;
-            }).join('\n\n');
-
-            const lastMessageId = [...msgs].reverse().find(m => m.messageId)?.messageId || null;
-            const lastSender = [...msgs].reverse().find(m => m.from)?.from || '';
-            const subjectEscaped = (gCtx.subject || '').replace(/"/g, '\\"');
-
-            const instructions = [
-                `You are helping the user with a Gmail thread currently open in their browser. Reply in the same language as the thread.`,
-                ``,
-                `IMPORTANT — Use your Gmail tools to get the full conversation:`,
-                `  • The body snippets below come from scraping the Gmail DOM and may be partial, clipped, or missing for hidden messages.`,
-                `  • You have gmail_search and gmail_read available. When a message is marked [CLIPPED] or looks truncated, call gmail_read with its messageId to fetch the full content.`,
-                `  • If no messageId is available, use gmail_search with query like: subject:"${subjectEscaped}" to find the thread, then gmail_read on each message.`,
-                ``,
-                `DRAFTING replies / new emails:`,
-                `  • When the user asks you to write, draft, reply to, or forward an email, DO NOT write the reply as prose in the chat. Call gmail_compose so the user gets a real Gmail draft card with Send / Save-as-Draft buttons.`,
-                `  • For a reply: set replyToMessageId to the messageId of the message you are replying to (usually the last one in the thread) and prefix subject with "Re: ".`,
-                `  • For a forward: prefix subject with "Fwd: " and include the original body.`,
-                `  • Use the sender address and subject from the thread metadata below — don't invent contacts.`,
-                ``,
-                `Thread metadata:`,
-                `  Subject: ${gCtx.subject || '(no subject)'}`,
-                `  Participants: ${(gCtx.participants || []).join(', ')}`,
-                `  Message count: ${msgs.length}`,
-                lastSender ? `  Last sender (likely reply target): ${lastSender}` : null,
-                lastMessageId ? `  Suggested replyToMessageId: ${lastMessageId}` : null,
-                gCtx.threadId ? `  Gmail URL thread id (UI id, not API id): ${gCtx.threadId}` : null,
-                knownMessageIds.length ? `  Known API message IDs: ${knownMessageIds.join(', ')}` : null,
-                anyClipped ? `  ⚠ One or more messages are CLIPPED — you MUST call gmail_read to get the full text.` : null,
-            ].filter(Boolean).join('\n');
-
-            agentMessage =
-                `${instructions}\n\n` +
-                `Thread (oldest → newest, DOM-scraped hint only):\n${threadBlock}\n\n` +
-                `---\nUser request: ${userDisplayText}`;
-        }
+        const agentMessage = userDisplayText;
 
         const userMessage = { id: msgId, role: 'user', content: userDisplayText, attachments };
         const assistantMessage = { id: assistantMsgId, role: 'assistant', content: '', isStreaming: true };
@@ -255,10 +178,7 @@ const EmbedChat = ({ agentId }) => {
                         { role: 'user', content: agentMessage }
                     ],
                     attachments,
-                    // Normal public embed conversations are ephemeral (not persisted).
-                    // In the Gmail extension the user is session-authed via
-                    // X-Session-Token, so we can persist like the direct chat does.
-                    ...(isGmailEmbed ? {} : { ephemeral: true })
+                    ephemeral: true
                 })
             });
 
@@ -269,10 +189,6 @@ const EmbedChat = ({ agentId }) => {
             let assistantContent = '';
             let buffer = '';
             let currentEvent = '';
-            // Set when the agent fires an email_draft event during this turn —
-            // used to suppress the prose DOM-fallback on `done`, otherwise we'd
-            // double-insert into Gmail compose.
-            let emailDraftEmittedThisTurn = false;
 
             while (true) {
                 const { done, value } = await reader.read();
@@ -378,19 +294,6 @@ const EmbedChat = ({ agentId }) => {
                                     if (existing.some(d => JSON.stringify({ to: d.to, subject: d.subject, body: d.body }) === draftKey)) return m;
                                     return { ...m, emailDrafts: [...existing, { ...data, status: 'pending' }] };
                                 }));
-                                // Gmail-extension-only: also open the draft directly in Gmail's
-                                // compose window via the content script. The user gets both the
-                                // side-panel card (API-backed Send/Save) and the inline Gmail
-                                // draft they can edit.
-                                if (isGmailEmbed && data.body) {
-                                    emailDraftEmittedThisTurn = true;
-                                    try {
-                                        window.parent.postMessage(
-                                            { type: 'beeflow:email_draft', draft: data },
-                                            '*'
-                                        );
-                                    } catch { /* parent closed */ }
-                                }
                             } else if (currentEvent === 'calendar_draft') {
                                 const draftKey = JSON.stringify({ summary: data.summary, start: data.start, end: data.end });
                                 setMessages(prev => prev.map(m => {
@@ -455,19 +358,6 @@ const EmbedChat = ({ agentId }) => {
                                 setMessages(prev => prev.map(m =>
                                     m.id === assistantMsgId ? { ...m, content: data.error, isStreaming: false, isError: true } : m
                                 ));
-                            } else if (currentEvent === 'done') {
-                                // Prose-fallback: if the agent didn't call gmail_compose,
-                                // push its final text into Gmail's compose via the
-                                // content script. Skip if an email_draft already fired —
-                                // that was handled by the email_draft branch above.
-                                if (isGmailEmbed && !emailDraftEmittedThisTurn && assistantContent.trim()) {
-                                    try {
-                                        window.parent.postMessage(
-                                            { type: 'beeflow:agent_response', text: assistantContent },
-                                            '*'
-                                        );
-                                    } catch {}
-                                }
                             }
                         } catch { }
                     }
@@ -584,13 +474,6 @@ const EmbedChat = ({ agentId }) => {
                     </div>
                 )}
             </div>
-
-            {isGmailEmbed && gmailContext && (
-                <div className="px-3 pt-2 text-xs text-[var(--text-muted)] flex items-center gap-1">
-                    <span>📧</span>
-                    <span>Email thread attached ({(gmailContext.messages || []).length} message{(gmailContext.messages || []).length === 1 ? '' : 's'})</span>
-                </div>
-            )}
 
             {/* Input Area - same as main app */}
             <InputArea

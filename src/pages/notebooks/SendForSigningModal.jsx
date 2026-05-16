@@ -1,8 +1,18 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { X, Plus, Trash2, PenTool, Loader2, CheckCircle, AlertCircle } from 'lucide-react';
 
+// Stable id for signer rows so React can track focus/IME state across reorders.
+// crypto.randomUUID is supported in all modern browsers; the fallback handles
+// stale Safari builds.
+const makeSignerId = () =>
+    (typeof crypto !== 'undefined' && crypto.randomUUID)
+        ? crypto.randomUUID()
+        : `s-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+
+const blankSigner = () => ({ _uid: makeSignerId(), email: '', first_name: '', last_name: '' });
+
 export default function SendForSigningModal({ open, onClose, onSend, sending, notebookTitle }) {
-    const [signers, setSigners] = useState([{ email: '', first_name: '', last_name: '' }]);
+    const [signers, setSigners] = useState(() => [blankSigner()]);
     const [subject, setSubject] = useState('');
     const [message, setMessage] = useState('');
     const [result, setResult] = useState(null);
@@ -11,7 +21,7 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
     // Reset state when opened
     useEffect(() => {
         if (open) {
-            setSigners([{ email: '', first_name: '', last_name: '' }]);
+            setSigners([blankSigner()]);
             setSubject(notebookTitle ? `Signature requested: ${notebookTitle}` : '');
             setMessage('');
             setResult(null);
@@ -21,24 +31,24 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
     if (!open) return null;
 
     const addSigner = () => {
-        setSigners(prev => [...prev, { email: '', first_name: '', last_name: '' }]);
+        setSigners(prev => [...prev, blankSigner()]);
     };
 
-    const removeSigner = (i) => {
-        if (signers.length <= 1) return;
-        setSigners(prev => prev.filter((_, idx) => idx !== i));
+    const removeSigner = (uid) => {
+        setSigners(prev => prev.length <= 1 ? prev : prev.filter(s => s._uid !== uid));
     };
 
-    const updateSigner = (i, field, value) => {
-        setSigners(prev => prev.map((s, idx) => idx === i ? { ...s, [field]: value } : s));
+    const updateSigner = (uid, field, value) => {
+        setSigners(prev => prev.map(s => s._uid === uid ? { ...s, [field]: value } : s));
     };
 
     const validSigners = signers.filter(s => s.email.trim());
     const canSend = validSigners.length > 0 && !sending && !result;
 
     const handleSend = async () => {
+        // Strip internal _uid before sending to API — the server doesn't need it.
         const res = await onSend({
-            signers: validSigners,
+            signers: validSigners.map(({ _uid, ...s }) => s),
             subject: subject.trim(),
             message: message.trim(),
         });
@@ -118,14 +128,14 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
                                     Signers
                                 </label>
                                 <div className="space-y-2 mt-2">
-                                    {signers.map((signer, i) => (
-                                        <div key={i} className="flex gap-2 items-start">
+                                    {signers.map((signer) => (
+                                        <div key={signer._uid} className="flex gap-2 items-start">
                                             <div className="flex-1 grid grid-cols-3 gap-2">
                                                 <input
                                                     type="email"
                                                     placeholder="Email *"
                                                     value={signer.email}
-                                                    onChange={e => updateSigner(i, 'email', e.target.value)}
+                                                    onChange={e => updateSigner(signer._uid, 'email', e.target.value)}
                                                     className="col-span-3 sm:col-span-1 px-3 py-2 rounded-lg border outline-none text-[13px] focus:border-[var(--accent-primary)] transition-colors"
                                                     style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                                                 />
@@ -133,7 +143,7 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
                                                     type="text"
                                                     placeholder="First name"
                                                     value={signer.first_name}
-                                                    onChange={e => updateSigner(i, 'first_name', e.target.value)}
+                                                    onChange={e => updateSigner(signer._uid, 'first_name', e.target.value)}
                                                     className="px-3 py-2 rounded-lg border outline-none text-[13px] focus:border-[var(--accent-primary)] transition-colors"
                                                     style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                                                 />
@@ -141,15 +151,17 @@ export default function SendForSigningModal({ open, onClose, onSend, sending, no
                                                     type="text"
                                                     placeholder="Last name"
                                                     value={signer.last_name}
-                                                    onChange={e => updateSigner(i, 'last_name', e.target.value)}
+                                                    onChange={e => updateSigner(signer._uid, 'last_name', e.target.value)}
                                                     className="px-3 py-2 rounded-lg border outline-none text-[13px] focus:border-[var(--accent-primary)] transition-colors"
                                                     style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                                                 />
                                             </div>
                                             {signers.length > 1 && (
                                                 <button
-                                                    onClick={() => removeSigner(i)}
-                                                    className="p-2 rounded-lg hover:bg-red-50 text-red-400 hover:text-red-600 transition-colors mt-0.5"
+                                                    onClick={() => removeSigner(signer._uid)}
+                                                    className="p-2 rounded-lg hover:bg-[rgba(239,68,68,0.1)] transition-colors mt-0.5"
+                                                    style={{ color: 'var(--error)' }}
+                                                    title="Remove signer"
                                                 >
                                                     <Trash2 className="w-3.5 h-3.5" />
                                                 </button>

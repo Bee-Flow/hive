@@ -1,6 +1,24 @@
 @import "tailwindcss";
 
+/* Bind the Tailwind `dark:` variant to our theme system (`data-theme`) instead
+   of `prefers-color-scheme`. Without this override the scattered `dark:` classes
+   across the codebase would apply on a dark-mode OS even when the admin picked
+   the Light preset — breaking every page's contrast. Now `dark:bg-white/5`
+   activates exactly when `data-theme` is `dark` or `glass-dark`. */
+@custom-variant dark (&:where([data-theme="dark"] *, [data-theme="glass-dark"] *, [data-theme="obsidian"] *, [data-theme="dark"], [data-theme="glass-dark"], [data-theme="obsidian"]));
 
+/* User chat bubble — the prose inside the user message keeps black text by
+   default because the bubble has a fixed light gray background. The token is
+   overridable so embedders (EmbedChat) can pass a `userColor` URL param and
+   have both the bubble and its prose flip in lockstep. */
+.bubble-user-prose,
+.bubble-user-prose :where(h1, h2, h3, h4, h5, h6, p, a, strong, code, li, blockquote) {
+    color: var(--user-bubble-fg, #000) !important;
+}
+
+.bubble-user-prose a {
+    text-decoration: underline;
+}
 
 :root {
     /* Color Palette - Dark Professional Theme */
@@ -22,6 +40,12 @@
     --text-primary: #f8fafc;
     --text-secondary: #94a3b8;
     --text-muted: #64748b;
+    /* Legacy alias — several pre-existing components reach for --text-tertiary
+       (e.g. SearchOverlay, profile menu, chat input placeholder). It was never
+       formally defined, so it resolved to nothing and rendered as inherited
+       white/currentColor. Aliasing it to --text-muted fixes the readability
+       gap globally without having to swap each call site. */
+    --text-tertiary: var(--text-muted);
 
     --border-subtle: rgba(255, 255, 255, 0.06);
     --border-default: rgba(255, 255, 255, 0.1);
@@ -46,11 +70,31 @@
     --surface-2: var(--bg-secondary);
     --surface-3: var(--bg-tertiary);
 
-    /* Radii */
-    --radius-sm: 8px;
-    --radius-md: 12px;
-    --radius-lg: 16px;
-    --radius-xl: 20px;
+    /* Radii — multiplied by --radius-scale (defaults to 1) so admins can dial
+       roundness globally without touching every component. */
+    --radius-scale: 1;
+    --radius-sm: calc(8px * var(--radius-scale, 1));
+    --radius-md: calc(12px * var(--radius-scale, 1));
+    --radius-lg: calc(16px * var(--radius-scale, 1));
+    --radius-xl: calc(20px * var(--radius-scale, 1));
+
+    /* Typography — switchable via ThemeProvider (admin font dropdown). */
+    --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+
+    /* Glass / liquid-glass theme tokens (also consumed by [data-surface] in
+       non-glass themes when admins want a frosted card on a flat backdrop). */
+    --glass-blur: 24px;
+    --glass-saturate: 180%;
+    --glass-tint: rgba(255, 255, 255, 0.55);
+    --glass-tint-strong: rgba(255, 255, 255, 0.78);
+    --glass-border: rgba(255, 255, 255, 0.40);
+    --glass-highlight: linear-gradient(135deg, rgba(255, 255, 255, 0.55), rgba(255, 255, 255, 0.05));
+    --glass-shadow: 0 8px 32px rgba(15, 23, 42, 0.18);
+
+    /* Wallpaper layer — set to a url(...) by ThemeProvider when an admin
+       uploads one; falls back to the animated gradient defined below. */
+    --wallpaper-image: none;
+    --wallpaper-overlay: rgba(255, 255, 255, 0.10);
 }
 
 /* Light Theme */
@@ -96,6 +140,952 @@
     --surface-3: var(--bg-tertiary);
 }
 
+/* Glass Theme — iOS 26 "Liquid Glass" inspired. Surfaces become translucent
+   over a chromatic wallpaper, frosted via backdrop-filter, edged with bright
+   specular highlights. Three tiers (subtle / default / opaque) cover sidebar
+   chrome, cards, and modals respectively. Admin's intensity knob drives blur
+   + saturation + brightness via --glass-intensity (0 / 1 / 2). */
+[data-theme="glass"] {
+    /* Scale-factor written by ThemeProvider from admin's intensity slider.
+       0 = subtle, 1 = medium, 2 = strong. Defaults to medium if unset. */
+    --glass-intensity: 1;
+    --glass-blur:       calc(8px + var(--glass-intensity) * 20px);
+    --glass-saturate:   calc(140% + var(--glass-intensity) * 15%);
+    --glass-brightness: calc(0.98 + var(--glass-intensity) * 0.07);
+
+    /* Tier tints — gradients (not flat alpha) so a light catches each surface.
+       Tier 2 picks up a hint of the admin's accent at the corners via color-mix
+       so the brand colour threads through every glass panel. */
+    --glass-tint-tier-1: linear-gradient(135deg,
+        rgba(255, 255, 255, 0.32) 0%,
+        rgba(255, 255, 255, 0.18) 60%,
+        rgba(255, 255, 255, 0.28) 100%);
+    --glass-tint-tier-2: linear-gradient(135deg,
+        color-mix(in srgb, var(--accent-primary) 3%, rgba(255, 255, 255, 0.55)) 0%,
+        rgba(255, 255, 255, 0.40) 60%,
+        color-mix(in srgb, var(--accent-primary) 2%, rgba(255, 255, 255, 0.52)) 100%);
+    --glass-tint-tier-3: linear-gradient(135deg,
+        rgba(255, 255, 255, 0.88) 0%,
+        rgba(255, 255, 255, 0.82) 60%,
+        rgba(255, 255, 255, 0.86) 100%);
+
+    --bg-primary: transparent;
+    --bg-secondary: rgba(255, 255, 255, 0.06);
+    --bg-tertiary: rgba(255, 255, 255, 0.10);
+    --bg-card: rgba(255, 255, 255, 0.55);            /* fallback for inline style consumers */
+    --bg-card-hover: rgba(255, 255, 255, 0.68);
+
+    --accent-primary: #6b7280;
+    --accent-secondary: #9ca3af;
+    --accent-primary-hover: #4b5563;
+    --accent-glow: rgba(107, 114, 128, 0.22);
+
+    --text-primary: #0f172a;
+    --text-secondary: #1e293b;
+    --text-muted: #475569;
+
+    --success: #059669;
+    --warning: #d97706;
+    --error: #dc2626;
+
+    --border-subtle: rgba(255, 255, 255, 0.40);
+    --border-default: rgba(255, 255, 255, 0.55);
+
+    --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.08);
+    --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.10);
+    --shadow-lg: 0 8px 24px rgba(15, 23, 42, 0.14);
+    --shadow-card: 0 8px 32px rgba(15, 23, 42, 0.14);
+    --shadow-card-hover: 0 12px 40px rgba(15, 23, 42, 0.22);
+    --shadow-popover: 0 20px 60px rgba(15, 23, 42, 0.26);
+    --shadow-glow: 0 0 20px var(--accent-glow);
+
+    --brand-primary: var(--accent-primary);
+    --brand-primary-hover: var(--accent-primary-hover);
+    --brand-secondary: var(--accent-secondary);
+    --brand-gradient: linear-gradient(135deg, var(--accent-primary), var(--accent-primary-hover));
+    --brand-gradient-soft: linear-gradient(135deg, rgba(255, 255, 255, 0.45), rgba(255, 255, 255, 0.10));
+
+    --surface-1: transparent;
+    --surface-2: var(--bg-secondary);
+    --surface-3: var(--bg-tertiary);
+}
+
+/* Glass Dark — mirror of the light Glass theme but on a dark backdrop. Same
+   blob wallpaper + lensing pipeline, but tier tints are dark/translucent and
+   text flips to light. The wallpaper-layer's base swaps to near-black via
+   the [data-theme="glass-dark"] override in the wallpaper section above. */
+[data-theme="glass-dark"] {
+    --glass-intensity: 1;
+    --glass-blur:       calc(8px + var(--glass-intensity) * 20px);
+    --glass-saturate:   calc(140% + var(--glass-intensity) * 15%);
+    --glass-brightness: calc(0.98 + var(--glass-intensity) * 0.07);
+
+    --glass-tint-tier-1: linear-gradient(135deg,
+        rgba(15, 23, 42, 0.45) 0%,
+        rgba(15, 23, 42, 0.25) 60%,
+        rgba(15, 23, 42, 0.40) 100%);
+    --glass-tint-tier-2: linear-gradient(135deg,
+        color-mix(in srgb, var(--accent-primary) 8%, rgba(15, 23, 42, 0.55)) 0%,
+        rgba(15, 23, 42, 0.42) 60%,
+        color-mix(in srgb, var(--accent-primary) 6%, rgba(15, 23, 42, 0.52)) 100%);
+    --glass-tint-tier-3: linear-gradient(135deg,
+        rgba(15, 23, 42, 0.78) 0%,
+        rgba(15, 23, 42, 0.68) 60%,
+        rgba(15, 23, 42, 0.76) 100%);
+
+    --bg-primary: transparent;
+    --bg-secondary: rgba(15, 23, 42, 0.30);
+    --bg-tertiary: rgba(15, 23, 42, 0.40);
+    --bg-card: rgba(15, 23, 42, 0.55);
+    --bg-card-hover: rgba(15, 23, 42, 0.68);
+
+    --accent-primary: #9ca3af;
+    --accent-secondary: #cbd5e1;
+    --accent-primary-hover: #d1d5db;
+    --accent-glow: rgba(156, 163, 175, 0.30);
+
+    --text-primary: #f8fafc;
+    --text-secondary: #cbd5e1;
+    --text-muted: #94a3b8;
+
+    --success: #34d399;
+    --warning: #fbbf24;
+    --error: #f87171;
+
+    --border-subtle: rgba(255, 255, 255, 0.10);
+    --border-default: rgba(255, 255, 255, 0.20);
+
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.40);
+    --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.50);
+    --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.60);
+    --shadow-card: 0 8px 32px rgba(0, 0, 0, 0.45);
+    --shadow-card-hover: 0 12px 40px rgba(0, 0, 0, 0.60);
+    --shadow-popover: 0 20px 60px rgba(0, 0, 0, 0.70);
+    --shadow-glow: 0 0 20px var(--accent-glow);
+
+    --brand-primary: var(--accent-primary);
+    --brand-primary-hover: var(--accent-primary-hover);
+    --brand-secondary: var(--accent-secondary);
+    --brand-gradient: linear-gradient(135deg, var(--accent-primary), var(--accent-primary-hover));
+    --brand-gradient-soft: linear-gradient(135deg, rgba(15, 23, 42, 0.45), rgba(15, 23, 42, 0.10));
+
+    --surface-1: transparent;
+    --surface-2: var(--bg-secondary);
+    --surface-3: var(--bg-tertiary);
+}
+
+/* High-Contrast Theme — WCAG AAA color pairs, for accessibility. */
+[data-theme="high-contrast"] {
+    --bg-primary: #000000;
+    --bg-secondary: #0a0a0a;
+    --bg-tertiary: #141414;
+    --bg-card: #000000;
+    --bg-card-hover: #1a1a1a;
+
+    --accent-primary: #ffd400;
+    --accent-secondary: #ffeb70;
+    --accent-primary-hover: #fff080;
+    --accent-glow: rgba(255, 212, 0, 0.35);
+
+    --text-primary: #ffffff;
+    --text-secondary: #e5e5e5;
+    --text-muted: #b0b0b0;
+
+    --success: #00ff66;
+    --warning: #ffaa00;
+    --error: #ff5252;
+
+    --border-subtle: rgba(255, 255, 255, 0.35);
+    --border-default: rgba(255, 255, 255, 0.65);
+
+    --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.3);
+    --shadow-md: 0 0 0 2px rgba(255, 255, 255, 0.3);
+    --shadow-lg: 0 0 0 2px rgba(255, 255, 255, 0.5);
+    --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.5);
+    --shadow-card-hover: 0 0 0 2px var(--accent-primary);
+    --shadow-popover: 0 0 0 2px rgba(255, 255, 255, 0.7);
+    --shadow-glow: 0 0 0 3px var(--accent-primary);
+
+    --brand-primary: var(--accent-primary);
+    --brand-primary-hover: var(--accent-primary-hover);
+    --brand-secondary: var(--accent-secondary);
+    --brand-gradient: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+    --brand-gradient-soft: linear-gradient(135deg, rgba(255, 212, 0, 0.20), rgba(255, 235, 112, 0.10));
+
+    --surface-1: var(--bg-primary);
+    --surface-2: var(--bg-secondary);
+    --surface-3: var(--bg-tertiary);
+}
+
+/* Paper — warm editorial light. The neutral Light theme reads as clinical
+   true-white; Paper sits a shade off, on warm cream, with espresso text and a
+   muted clay accent. Cards stay pure white to lift off the warm background. */
+[data-theme="paper"] {
+    --bg-primary: #fdfcf8;
+    --bg-secondary: #f7f4ed;
+    --bg-tertiary: #f0ebe0;
+    --bg-card: #ffffff;
+    --bg-card-hover: #fbfaf6;
+
+    --accent-primary: #b45309;             /* amber-700, muted clay */
+    --accent-secondary: #d97706;
+    --accent-primary-hover: #92400e;
+    --accent-glow: rgba(180, 83, 9, 0.18);
+
+    --text-primary: #1c1917;               /* stone-900, espresso */
+    --text-secondary: #292524;
+    --text-muted: #57534e;
+
+    --success: #15803d;
+    --warning: #b45309;
+    --error: #b91c1c;
+
+    --border-subtle: rgba(120, 53, 15, 0.08);
+    --border-default: rgba(120, 53, 15, 0.18);
+
+    --shadow-sm: 0 1px 2px rgba(28, 25, 23, 0.05);
+    --shadow-md: 0 4px 12px rgba(28, 25, 23, 0.07);
+    --shadow-lg: 0 8px 24px rgba(28, 25, 23, 0.10);
+    --shadow-card: 0 1px 3px rgba(28, 25, 23, 0.06), 0 1px 2px rgba(28, 25, 23, 0.04);
+    --shadow-card-hover: 0 4px 12px rgba(28, 25, 23, 0.08), 0 2px 4px rgba(28, 25, 23, 0.04);
+    --shadow-popover: 0 12px 32px rgba(28, 25, 23, 0.12);
+    --shadow-glow: 0 0 0 3px var(--accent-glow);
+
+    --brand-primary: var(--accent-primary);
+    --brand-primary-hover: var(--accent-primary-hover);
+    --brand-secondary: var(--accent-secondary);
+    --brand-gradient: linear-gradient(135deg, var(--accent-primary), var(--accent-primary-hover));
+    --brand-gradient-soft: linear-gradient(135deg, rgba(180, 83, 9, 0.14), rgba(180, 83, 9, 0.04));
+
+    --surface-1: var(--bg-primary);
+    --surface-2: var(--bg-secondary);
+    --surface-3: var(--bg-tertiary);
+}
+
+/* Obsidian — monochrome dark. The default Dark theme has a faint blue
+   undertone; Obsidian goes pure neutral carbon with a warm-pearl accent and
+   hairline 1px borders instead of soft drop shadows. */
+[data-theme="obsidian"] {
+    --bg-primary: #0a0a0c;
+    --bg-secondary: #131316;
+    --bg-tertiary: #1c1c20;
+    --bg-card: #131316;
+    --bg-card-hover: #1c1c20;
+
+    --accent-primary: #e7e5e4;             /* stone-200, warm pearl */
+    --accent-secondary: #f5f5f4;
+    --accent-primary-hover: #d6d3d1;
+    --accent-glow: rgba(231, 229, 228, 0.15);
+
+    --text-primary: #fafaf9;               /* stone-50 */
+    --text-secondary: #d6d3d1;
+    --text-muted: #a8a29e;
+
+    --success: #4ade80;
+    --warning: #fbbf24;
+    --error: #f87171;
+
+    --border-subtle: rgba(255, 255, 255, 0.06);
+    --border-default: rgba(255, 255, 255, 0.12);
+
+    /* Shadows here are mostly hairline outlines — cards lift via the lightest
+       possible 1px ring catching the page light, not a soft drop shadow. */
+    --shadow-sm: 0 0 0 1px rgba(255, 255, 255, 0.04);
+    --shadow-md: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 2px 4px rgba(0, 0, 0, 0.30);
+    --shadow-lg: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 4px 12px rgba(0, 0, 0, 0.40);
+    --shadow-card: 0 0 0 1px rgba(255, 255, 255, 0.06), 0 1px 2px rgba(0, 0, 0, 0.30);
+    --shadow-card-hover: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 4px 12px rgba(0, 0, 0, 0.45);
+    --shadow-popover: 0 0 0 1px rgba(255, 255, 255, 0.10), 0 16px 48px rgba(0, 0, 0, 0.60);
+    --shadow-glow: 0 0 0 3px rgba(231, 229, 228, 0.20);
+
+    --brand-primary: var(--accent-primary);
+    --brand-primary-hover: var(--accent-primary-hover);
+    --brand-secondary: var(--accent-secondary);
+    --brand-gradient: linear-gradient(135deg, var(--accent-primary), var(--accent-primary-hover));
+    --brand-gradient-soft: linear-gradient(135deg, rgba(231, 229, 228, 0.10), rgba(231, 229, 228, 0.02));
+
+    --surface-1: var(--bg-primary);
+    --surface-2: var(--bg-secondary);
+    --surface-3: var(--bg-tertiary);
+}
+
+/* Sepia — warm mid-tone reading. Tan paper background, deep-brown ink text,
+   terracotta accent. The first non-binary-bright theme; best for long reading
+   or focus sessions. */
+[data-theme="sepia"] {
+    --bg-primary: #f4ede0;
+    --bg-secondary: #ebe2d2;
+    --bg-tertiary: #ddd2bd;
+    --bg-card: #fbf6ec;                    /* the "page" — brighter than bg */
+    --bg-card-hover: #f4ede0;
+
+    --accent-primary: #c2410c;             /* orange-700, terracotta */
+    --accent-secondary: #ea580c;
+    --accent-primary-hover: #9a3412;
+    --accent-glow: rgba(194, 65, 12, 0.18);
+
+    --text-primary: #44322c;               /* deep fountain-pen brown */
+    --text-secondary: #5c443a;
+    --text-muted: #8a6f5e;
+
+    --success: #166534;
+    --warning: #a16207;
+    --error: #991b1b;
+
+    --border-subtle: rgba(68, 50, 44, 0.10);
+    --border-default: rgba(68, 50, 44, 0.22);
+
+    --shadow-sm: 0 1px 2px rgba(68, 50, 44, 0.08);
+    --shadow-md: 0 4px 12px rgba(68, 50, 44, 0.10);
+    --shadow-lg: 0 8px 24px rgba(68, 50, 44, 0.14);
+    --shadow-card: 0 1px 3px rgba(68, 50, 44, 0.08);
+    --shadow-card-hover: 0 4px 12px rgba(68, 50, 44, 0.12);
+    --shadow-popover: 0 12px 32px rgba(68, 50, 44, 0.18);
+    --shadow-glow: 0 0 0 3px var(--accent-glow);
+
+    --brand-primary: var(--accent-primary);
+    --brand-primary-hover: var(--accent-primary-hover);
+    --brand-secondary: var(--accent-secondary);
+    --brand-gradient: linear-gradient(135deg, var(--accent-primary), var(--accent-primary-hover));
+    --brand-gradient-soft: linear-gradient(135deg, rgba(194, 65, 12, 0.14), rgba(194, 65, 12, 0.04));
+
+    --surface-1: var(--bg-primary);
+    --surface-2: var(--bg-secondary);
+    --surface-3: var(--bg-tertiary);
+}
+
+/* ── Preview mode (Admin Theme Studio) ──────────────────────────────
+   When the admin's appearance Theme Studio mounts a same-origin iframe
+   with ?themePreview=1, ThemeProvider sets html[data-preview="1"]. Any
+   element tagged [data-preview-hide] is omitted from that view so the
+   preview reflects the chrome the END user sees, without admin-only
+   notifications, install prompts, or upgrade nudges getting in the way.
+   Keep this list short — the goal is a faithful preview, not a stripped one.
+*/
+html[data-preview="1"] [data-preview-hide] {
+    display: none !important;
+}
+
+/* Glass surface treatment — the shared material. Applied via .glass utility
+   class or any element with a [data-surface] attribute under either Glass
+   theme. Selectors use [data-theme^="glass"] so the rules apply to both
+   "glass" (light) and "glass-dark" automatically. */
+[data-theme^="glass"] [data-surface],
+[data-theme^="glass"] .glass {
+    position: relative;
+    isolation: isolate;                              /* contains the ::before/::after */
+}
+
+/* Respect Tailwind positioning utility classes on glass surfaces. Without
+   this, the (0,2,0) selector above silently overrides `.absolute`/`.fixed`
+   (0,1,0), which silently re-flows popovers (e.g. the sidebar profile menu)
+   back into normal flow in glass mode — pushing their anchor button up
+   by the popover's own height. */
+[data-theme^="glass"] [data-surface].absolute { position: absolute; }
+[data-theme^="glass"] [data-surface].fixed { position: fixed; }
+[data-theme^="glass"] [data-surface].sticky { position: sticky; }
+
+[data-theme^="glass"] [data-surface],
+[data-theme^="glass"] .glass {
+    background: var(--glass-tint-tier-2);
+    backdrop-filter:
+        blur(var(--glass-blur))
+        saturate(var(--glass-saturate))
+        brightness(var(--glass-brightness));
+    -webkit-backdrop-filter:
+        blur(var(--glass-blur))
+        saturate(var(--glass-saturate))
+        brightness(var(--glass-brightness));
+    border: 1px solid transparent;
+    box-shadow:
+        /* Top-left specular highlight — the unmistakable glass edge.
+           Toned down (from 0.75/0.45 to 0.40/0.25) so panels read as frosted
+           rather than glossy; admins can still push intensity per tier. */
+        inset 0 1px 0 0 rgba(255, 255, 255, 0.40),
+        inset 1px 0 0 0 rgba(255, 255, 255, 0.25),
+        /* Bottom-right depth shadow */
+        inset 0 -1px 0 0 rgba(15, 23, 42, 0.06),
+        inset -1px 0 0 0 rgba(15, 23, 42, 0.04),
+        /* Outer drop shadow + contact shadow for elevation */
+        0 1px 2px rgba(15, 23, 42, 0.06),
+        0 8px 32px rgba(15, 23, 42, 0.12);
+    contain: layout style;                            /* reduce reflow scope */
+}
+
+/* Tall chrome surfaces (sidebar, top tab bar) are flex containers that need
+   to fill 100% of their flex parent via h-full + flex-1 + mt-auto children.
+   CSS layout containment + flex column + percentage heights can interact in
+   ways that collapse the container to its content height, leaving a gap at
+   the bottom. Containment is a paint-perf optimisation, not load-bearing —
+   drop it on [data-static] elements where the layout is the priority. */
+[data-theme^="glass"] [data-surface][data-static] {
+    contain: none;
+}
+
+/* Chromatic edge stroke — picks up the wallpaper colours and creates the
+   iridescent thin ring you see on real liquid-glass surfaces. */
+[data-theme^="glass"] [data-surface]::before,
+[data-theme^="glass"] .glass::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    background: linear-gradient(135deg,
+        rgba(255, 255, 255, 0.35) 0%,
+        rgba(255, 255, 255, 0.00) 30%,
+        rgba(255, 255, 255, 0.00) 70%,
+        rgba(255, 255, 255, 0.20) 100%);
+    -webkit-mask:
+        linear-gradient(#000 0 0) content-box,
+        linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+            mask-composite: exclude;
+    pointer-events: none;
+    z-index: 1;
+}
+
+/* Subtle frosted-glass grain. Tiny SVG noise, ultra-low opacity. */
+[data-theme^="glass"] [data-surface]::after,
+[data-theme^="glass"] .glass::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/></svg>");
+    mix-blend-mode: overlay;
+    opacity: 0.07;
+    pointer-events: none;
+    z-index: 2;
+}
+
+/* Tier-specific tints. Tier 2 is the default (the base rule above); tier 1
+   (subtle) is for sidebar/chrome; tier 3 (opaque) is the MODAL tier — now a
+   true frosted-glass material with strong blur, not opaque white. */
+[data-theme^="glass"] [data-surface="subtle"] {
+    background: var(--glass-tint-tier-1);
+    backdrop-filter:
+        blur(calc(var(--glass-blur) * 0.7))
+        saturate(var(--glass-saturate))
+        brightness(var(--glass-brightness));
+    -webkit-backdrop-filter:
+        blur(calc(var(--glass-blur) * 0.7))
+        saturate(var(--glass-saturate))
+        brightness(var(--glass-brightness));
+}
+
+[data-theme^="glass"] [data-surface="opaque"] {
+    background: var(--glass-tint-tier-3);
+    backdrop-filter: blur(60px) saturate(220%) brightness(1.05);
+    -webkit-backdrop-filter: blur(60px) saturate(220%) brightness(1.05);
+}
+
+/* Modal-solid escape hatch — for content that genuinely needs opacity (PDF
+   viewer, image preview). Falls back to original opaque white/dark fill. */
+[data-theme="glass"] [data-surface="modal-solid"] {
+    background: rgba(255, 255, 255, 0.96);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+[data-theme="glass-dark"] [data-surface="modal-solid"] {
+    background: rgba(15, 23, 42, 0.96);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+/* Non-glass fallback for [data-surface] elements. Mirrors the glass tier
+   semantics so sidebars/chrome read one shade darker than cards:
+     subtle  → chrome tier   → --bg-secondary
+     default → card tier     → --bg-card
+     opaque  → modal tier    → --bg-card
+   Without splitting "subtle" out, every chrome surface (Sidebar, WelcomeScreen,
+   BuilderSplit, BuilderShell, DirectChatWelcome) paints --bg-card and creates
+   a visible bright-on-page seam under warm-toned flat themes like Paper.
+   :where() keeps specificity at (0,1,0) so callers can override trivially. */
+:where(html:not([data-theme^="glass"])) [data-surface="subtle"] {
+    background: var(--bg-secondary);
+}
+:where(html:not([data-theme^="glass"])) [data-surface="default"],
+:where(html:not([data-theme^="glass"])) [data-surface="opaque"] {
+    background: var(--bg-card);
+}
+
+/* ── Chat composer ─────────────────────────────────────────────────────────
+   The composer needs to feel like it belongs to the page, not float on top
+   as a tinted rectangle. Standard data-surface tiers add a 30–55 % white
+   wash that desaturates the wallpaper underneath, making the form read as
+   a separate card — especially obvious on the saturated Bee Flow amber.
+
+   Solution: heavy blur + slight saturation bump + a barely-there fill, so
+   the wallpaper colours pass through but the form still has clear bounds. */
+.chat-composer {
+    background: var(--bg-card);
+    box-shadow: 0 6px 24px rgba(15, 23, 42, 0.06);
+}
+
+/* Glass-mode composer: the BOX gets a subtle glass tile look (frosted tint
+   + soft drop shadow). The TEXTAREA inside stays fully transparent so the
+   typing area itself doesn't read as a second nested card. */
+[data-theme^="glass"] .chat-composer {
+    background: var(--glass-tint-tier-1);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.50),
+        0 4px 18px rgba(15, 23, 42, 0.06);
+}
+
+[data-theme="glass-dark"] .chat-composer {
+    background: linear-gradient(135deg,
+        rgba(255, 255, 255, 0.08) 0%,
+        rgba(255, 255, 255, 0.04) 100%);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.15),
+        0 4px 18px rgba(0, 0, 0, 0.25);
+}
+
+[data-theme^="glass"] .chat-composer:focus-within {
+    box-shadow:
+        inset 0 0 0 1px var(--accent-primary),
+        inset 0 1px 0 rgba(255, 255, 255, 0.50),
+        0 6px 22px rgba(15, 23, 42, 0.08);
+}
+
+/* Force the textarea inside the composer to be fully transparent in glass
+   mode — the global `[data-theme^="glass"] textarea` rule (specificity
+   0,1,1) otherwise paints it with a 55 % white tile that sits as a second
+   inner card. This rule's higher specificity (0,2,1) wins cleanly. */
+[data-theme^="glass"] .chat-composer textarea,
+[data-theme^="glass"] .chat-composer textarea:focus {
+    background: transparent;
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    border: none;
+    box-shadow: none;
+}
+
+/* Profile menu popover — keeps the glass aesthetic (the tier-3 tint
+   gradient + the chromatic ::before edge inherited from [data-surface])
+   so it matches every other glass surface. The trick to legibility is the
+   HEAVY backdrop blur (80px): at that radius the sidebar text behind is
+   smeared into pure colour wash, even on the vivid wallpaper presets
+   (Aurora, Ocean) where lower blur let silhouettes through.
+   Saturate is dropped to a mild 110% so the wallpaper colour passes
+   through but doesn't get amplified to the point of redrawing the text
+   in a more readable hue. Grain ::after is suppressed — texture on top
+   of menu rows hurts text legibility. */
+[data-theme="glass"] [data-testid="profile-menu"] {
+    background: var(--glass-tint-tier-3);
+    backdrop-filter: blur(80px) saturate(110%);
+    -webkit-backdrop-filter: blur(80px) saturate(110%);
+}
+
+[data-theme="glass-dark"] [data-testid="profile-menu"] {
+    background:
+        linear-gradient(135deg, rgba(15, 23, 42, 0.86), rgba(15, 23, 42, 0.80), rgba(15, 23, 42, 0.84));
+    backdrop-filter: blur(80px) saturate(110%);
+    -webkit-backdrop-filter: blur(80px) saturate(110%);
+}
+
+[data-theme^="glass"] [data-testid="profile-menu"]::after {
+    display: none !important;
+}
+
+/* Interactive states — surfaces brighten + blur more on hover, depress on
+   active. Limited to surfaces that look like controls (buttons, cards with
+   role=button). Static surfaces (sidebar chrome) skip this via :not([data-static]). */
+[data-theme^="glass"] [data-surface]:hover:not([data-static]),
+[data-theme^="glass"] .glass:hover:not([data-static]) {
+    backdrop-filter:
+        blur(calc(var(--glass-blur) + 4px))
+        saturate(calc(var(--glass-saturate) + 20%))
+        brightness(calc(var(--glass-brightness) + 0.03));
+    box-shadow:
+        inset 0 1px 0 0 rgba(255, 255, 255, 0.45),
+        0 12px 36px rgba(15, 23, 42, 0.16);
+}
+
+[data-theme^="glass"] [data-surface]:active:not([data-static]),
+[data-theme^="glass"] .glass:active:not([data-static]) {
+    transform: translateY(0.5px);
+    box-shadow:
+        inset 0 1px 0 0 rgba(255, 255, 255, 0.55),
+        0 4px 14px rgba(15, 23, 42, 0.10);
+}
+
+/* Form controls — translucent by default, focus brings them to readable
+   contrast with an accent-coloured glow ring. Applies to both Glass themes. */
+[data-theme^="glass"] input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]),
+[data-theme^="glass"] textarea,
+[data-theme^="glass"] select {
+    background: rgba(255, 255, 255, 0.55);
+    backdrop-filter: blur(12px) saturate(160%);
+    -webkit-backdrop-filter: blur(12px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.55);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.6);
+    color: var(--text-primary);
+}
+
+/* Dark Glass — inputs read as translucent dark panels so they're legible
+   over the dark wallpaper without becoming bright white blobs. */
+[data-theme="glass-dark"] input:not([type="checkbox"]):not([type="radio"]):not([type="color"]):not([type="range"]):not([type="file"]),
+[data-theme="glass-dark"] textarea,
+[data-theme="glass-dark"] select {
+    background: rgba(15, 23, 42, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.10);
+}
+
+[data-theme^="glass"] input:focus,
+[data-theme^="glass"] textarea:focus,
+[data-theme^="glass"] select:focus {
+    background: rgba(255, 255, 255, 0.55);
+    border-color: var(--accent-primary);
+    box-shadow:
+        inset 0 1px 0 rgba(255, 255, 255, 0.8),
+        0 0 0 3px color-mix(in srgb, var(--accent-primary) 25%, transparent);
+    outline: none;
+}
+
+[data-theme="glass-dark"] input:focus,
+[data-theme="glass-dark"] textarea:focus,
+[data-theme="glass-dark"] select:focus {
+    background: rgba(15, 23, 42, 0.82);
+}
+
+[data-theme^="glass"] button[data-surface="solid"] { backdrop-filter: none; }
+
+/* Placeholder readability in glass — the default ::placeholder color often
+   inherits from currentColor or browser defaults (white-ish). Force it to
+   the muted-text token so it reads cleanly on every wallpaper. */
+[data-theme^="glass"] input::placeholder,
+[data-theme^="glass"] textarea::placeholder {
+    color: var(--text-muted);
+    opacity: 0.85;
+}
+
+/* When a [data-surface] element also carries a hardcoded Tailwind background
+   utility (`bg-[var(--bg-card)]`, `bg-[var(--bg-secondary)]`), we want the
+   glass tier tint to win — zero out the conflicting bg-color so the gradient
+   from the main glass rule paints unobstructed. Borders are left to the
+   element's own rules so :focus-within accent rings still work. */
+[data-theme^="glass"] [data-surface] {
+    background-color: transparent;
+}
+
+[data-theme^="glass"] {
+    --text-primary-shadow: 0 1px 1px rgba(255, 255, 255, 0.4);
+}
+[data-theme="glass-dark"] {
+    --text-primary-shadow: 0 1px 1px rgba(0, 0, 0, 0.4);
+}
+
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+    [data-theme^="glass"] [data-surface],
+    [data-theme^="glass"] .glass {
+        background: rgba(255, 255, 255, 0.86);
+    }
+    [data-theme="glass-dark"] [data-surface],
+    [data-theme="glass-dark"] .glass {
+        background: rgba(15, 23, 42, 0.86);
+    }
+}
+
+@media (prefers-reduced-transparency: reduce) {
+    [data-theme^="glass"] [data-surface],
+    [data-theme^="glass"] .glass {
+        background: var(--glass-tint-tier-3) !important;
+        backdrop-filter: none !important;
+        -webkit-backdrop-filter: none !important;
+    }
+}
+
+/* Override the white html background that browsers default to. */
+[data-theme^="glass"] html,
+[data-theme^="glass"] body,
+html[data-theme^="glass"],
+html[data-theme^="glass"] body {
+    background: transparent !important;
+}
+
+/* ── Dark Glass edge override ────────────────────────────────────────────
+   White edge highlights are too bright on the dark backdrop — soften them. */
+[data-theme="glass-dark"] [data-surface],
+[data-theme="glass-dark"] .glass {
+    box-shadow:
+        inset 0 1px 0 0 rgba(255, 255, 255, 0.22),
+        inset 1px 0 0 0 rgba(255, 255, 255, 0.10),
+        inset 0 -1px 0 0 rgba(0, 0, 0, 0.30),
+        inset -1px 0 0 0 rgba(0, 0, 0, 0.20),
+        0 1px 2px rgba(0, 0, 0, 0.40),
+        0 8px 32px rgba(0, 0, 0, 0.55);
+}
+[data-theme="glass-dark"] [data-surface]::before,
+[data-theme="glass-dark"] .glass::before {
+    background: linear-gradient(135deg,
+        rgba(255, 255, 255, 0.32) 0%,
+        rgba(255, 255, 255, 0.00) 30%,
+        rgba(255, 255, 255, 0.00) 70%,
+        rgba(255, 255, 255, 0.18) 100%);
+}
+
+/* ── Border style modes via [data-glass-border] ──────────────────────────
+   none / subtle (default) / bright / iridescent */
+[data-glass-border="none"] [data-surface]::before,
+[data-glass-border="none"] .glass::before { display: none; }
+
+[data-glass-border="bright"] [data-surface]::before,
+[data-glass-border="bright"] .glass::before {
+    padding: 1.5px;
+    background: linear-gradient(135deg,
+        rgba(255, 255, 255, 0.60) 0%,
+        rgba(255, 255, 255, 0.15) 35%,
+        rgba(255, 255, 255, 0.15) 65%,
+        rgba(255, 255, 255, 0.50) 100%);
+}
+
+[data-glass-border="iridescent"] [data-surface]::before,
+[data-glass-border="iridescent"] .glass::before {
+    padding: 1.5px;
+    background: conic-gradient(
+        from 90deg at 50% 50%,
+        rgba(244, 114, 182, 0.50),
+        rgba(251, 191, 36, 0.50),
+        rgba(16, 185, 129, 0.50),
+        rgba(6, 182, 212, 0.50),
+        rgba(244, 114, 182, 0.50));
+}
+
+/* ── Grain density modes via [data-glass-grain] ─────────────────────────── */
+[data-glass-grain="off"] [data-surface]::after,
+[data-glass-grain="off"] .glass::after { display: none; }
+
+[data-glass-grain="frosted"] [data-surface]::after,
+[data-glass-grain="frosted"] .glass::after { opacity: 0.18; }
+
+/* ── Animated specular sheen via [data-anim="lively"] ─────────────────────
+   Stacked into the grain ::after so we don't need a third pseudo-element. */
+[data-anim="lively"][data-theme^="glass"] [data-surface]::after,
+[data-anim="lively"][data-theme^="glass"] .glass::after {
+    background-image:
+        url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 200 200'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='1.6' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%25' height='100%25' filter='url(%23n)' opacity='0.55'/></svg>"),
+        linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.22) 50%, transparent 65%);
+    background-size: auto, 220% 100%;
+    background-repeat: repeat, no-repeat;
+    animation: glassSheen 12s linear infinite;
+}
+
+@keyframes glassSheen {
+    0%   { background-position: 0 0, -50% 0; }
+    100% { background-position: 0 0,  150% 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    [data-anim="lively"][data-theme^="glass"] [data-surface]::after,
+    [data-anim="lively"][data-theme^="glass"] .glass::after { animation: none; }
+}
+
+/* ── Tint hue via [data-glass-tint] — warm / neutral / cool ───────────────
+   Adds a translucent colour wash on top of the tier-2 tint. */
+[data-glass-tint="warm"][data-theme^="glass"] [data-surface],
+[data-glass-tint="warm"][data-theme^="glass"] .glass {
+    background-image: linear-gradient(rgba(251, 191, 36, 0.07), rgba(251, 191, 36, 0.07)), var(--glass-tint-tier-2);
+}
+[data-glass-tint="cool"][data-theme^="glass"] [data-surface],
+[data-glass-tint="cool"][data-theme^="glass"] .glass {
+    background-image: linear-gradient(rgba(6, 182, 212, 0.07), rgba(6, 182, 212, 0.07)), var(--glass-tint-tier-2);
+}
+
+/* ── SVG lensing via [data-lens="on"] ─────────────────────────────────────
+   Stacks an SVG displacement filter into the backdrop-filter so the wallpaper
+   visibly refracts through the glass — the iOS Liquid Glass signature. The
+   #glass-lens filter is mounted once by <WallpaperLayer />. */
+@supports (backdrop-filter: url(#glass-lens)) {
+    [data-lens="on"][data-theme^="glass"] [data-surface],
+    [data-lens="on"][data-theme^="glass"] .glass {
+        backdrop-filter:
+            url(#glass-lens)
+            blur(var(--glass-blur))
+            saturate(var(--glass-saturate))
+            brightness(var(--glass-brightness));
+        -webkit-backdrop-filter:
+            url(#glass-lens)
+            blur(var(--glass-blur))
+            saturate(var(--glass-saturate))
+            brightness(var(--glass-brightness));
+    }
+}
+
+/* ── Wallpaper layer + preset library ──────────────────────────────────────
+   Six curated presets switched via [data-wallpaper] on <html>. Each preset
+   overrides the base colour (--wp-base) and four vibrant radial-blob colour
+   stops (--wp-c1..--wp-c4). Glass surfaces refract these colours through
+   their backdrop-filter, giving each preset a distinct mood. */
+.wallpaper-layer {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-color: var(--wp-base, #fafafa);
+    background-image: var(--wallpaper-image, none);
+    background-size: cover;
+    background-position: center center;
+    background-repeat: no-repeat;
+}
+
+/* Show the layer for Glass (chromatic blob + image) and whenever an admin
+   has uploaded an image — flat themes now show the photo too. The blob layer
+   itself is suppressed under non-Glass themes (see ::before override below)
+   so the image acts as a plain backdrop. */
+[data-theme="glass"] .wallpaper-layer,
+[data-theme="glass-dark"] .wallpaper-layer,
+html[data-wallpaper-on="image"] .wallpaper-layer {
+    display: block;
+}
+
+html:not([data-theme="glass"]):not([data-theme="glass-dark"]) .wallpaper-layer::before {
+    display: none;
+}
+
+/* Dark Glass uses a near-black base so blobs read as glowing embers. */
+[data-theme="glass-dark"] .wallpaper-layer {
+    background-color: #0a0e1a;
+}
+
+/* Chromatic blobs — four drifting radial gradients painted in ::before so an
+   uploaded image still appears as .wallpaper-layer's background-image. Blob
+   colours are CSS vars set by [data-wallpaper] presets below. Alpha bumped
+   to 0.80-0.90 (was 0.45-0.65) so colour actually shows through tier-2 glass. */
+.wallpaper-layer::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background-image:
+        radial-gradient(60% 50% at 18% 22%, var(--wp-c1, rgba(148, 163, 184, 0.55)), transparent 62%),
+        radial-gradient(55% 45% at 82% 18%, var(--wp-c2, rgba(100, 116, 139, 0.45)), transparent 62%),
+        radial-gradient(60% 55% at 25% 82%, var(--wp-c3, rgba(6, 182, 212, 0.18)), transparent 65%),
+        radial-gradient(50% 50% at 85% 78%, var(--wp-c4, rgba(148, 163, 184, 0.35)), transparent 62%);
+    background-size: 140% 140%, 130% 130%, 150% 150%, 120% 120%;
+    animation: wallpaperDrift 45s ease-in-out infinite;
+    pointer-events: none;
+    opacity: var(--wallpaper-blob-opacity, 0.8);
+}
+
+.wallpaper-layer.has-image::before { opacity: 0.20; }
+
+.wallpaper-layer::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: var(--wallpaper-overlay, transparent);
+    pointer-events: none;
+}
+
+.wallpaper-layer.fallback {
+    background-image: linear-gradient(180deg, var(--wp-base, #fafafa) 0%, var(--wp-base-2, #f3f4f6) 100%);
+}
+
+/* ── Curated wallpaper presets ─────────────────────────────────────────────
+   All presets share a minimalist neutral aesthetic — near-white bases with
+   low-saturation blob tints (alpha 0.18-0.55). The hue distinguishes them
+   without breaking the calm look that the rest of the Glass theme aims for. */
+
+/* Mono — neutral grays with a faint cool tint. Default preset. */
+[data-wallpaper="mono"] {
+    --wp-base:   #fafafa;
+    --wp-base-2: #f3f4f6;
+    --wp-c1: rgba(148, 163, 184, 0.55);  /* slate */
+    --wp-c2: rgba(100, 116, 139, 0.45);  /* deeper slate */
+    --wp-c3: rgba(6, 182, 212, 0.18);    /* faint cyan tint */
+    --wp-c4: rgba(148, 163, 184, 0.35);
+}
+
+/* Slate — cool blue-gray neutrals. */
+[data-wallpaper="slate"] {
+    --wp-base:   #f8fafc;                /* slate-50 */
+    --wp-base-2: #e2e8f0;                /* slate-200 */
+    --wp-c1: rgba(148, 163, 184, 0.55);  /* slate-400 */
+    --wp-c2: rgba(100, 116, 139, 0.42);  /* slate-500 */
+    --wp-c3: rgba(59, 130, 246, 0.18);   /* faint blue tint */
+    --wp-c4: rgba(148, 163, 184, 0.32);
+}
+
+/* Sand — warm beige neutrals. */
+[data-wallpaper="sand"] {
+    --wp-base:   #fafaf9;                /* stone-50 */
+    --wp-base-2: #f5f5f4;                /* stone-100 */
+    --wp-c1: rgba(168, 162, 158, 0.55);  /* stone-400 */
+    --wp-c2: rgba(120, 113, 108, 0.42);  /* stone-500 */
+    --wp-c3: rgba(245, 158, 11, 0.18);   /* faint amber tint */
+    --wp-c4: rgba(168, 162, 158, 0.32);
+}
+
+/* Frost — cool seafoam neutrals. */
+[data-wallpaper="frost"] {
+    --wp-base:   #f0fdfa;                /* teal-50 */
+    --wp-base-2: #f1f5f9;                /* slate-100 */
+    --wp-c1: rgba(148, 163, 184, 0.55);  /* slate-400 */
+    --wp-c2: rgba(94, 234, 212, 0.40);   /* teal-300 */
+    --wp-c3: rgba(20, 184, 166, 0.18);   /* faint teal tint */
+    --wp-c4: rgba(148, 163, 184, 0.32);
+}
+
+/* Sage — muted green-gray neutrals. */
+[data-wallpaper="sage"] {
+    --wp-base:   #f7faf7;
+    --wp-base-2: #f0f4f0;
+    --wp-c1: rgba(156, 163, 175, 0.55);  /* gray-400 */
+    --wp-c2: rgba(132, 169, 140, 0.42);  /* desaturated sage */
+    --wp-c3: rgba(16, 185, 129, 0.18);   /* faint emerald tint */
+    --wp-c4: rgba(156, 163, 175, 0.32);
+}
+
+/* Ash — darker neutral, for admins who want more contrast against glass. */
+[data-wallpaper="ash"] {
+    --wp-base:   #e5e7eb;                /* gray-200 */
+    --wp-base-2: #d1d5db;                /* gray-300 */
+    --wp-c1: rgba(107, 114, 128, 0.55);  /* gray-500 */
+    --wp-c2: rgba(75, 85, 99, 0.42);     /* gray-600 */
+    --wp-c3: rgba(100, 116, 139, 0.18);  /* faint slate tint */
+    --wp-c4: rgba(107, 114, 128, 0.32);
+}
+
+/* Dark Glass overrides — keep blob hues but deepen the base. */
+[data-theme="glass-dark"] {
+    --wp-base:   #0a0e1a;
+    --wp-base-2: #0f172a;
+}
+
+@keyframes wallpaperDrift {
+    0%   { background-position: 0% 0%, 100% 0%, 0% 100%, 100% 100%; }
+    25%  { background-position: 20% 30%, 70% 20%, 30% 70%, 80% 90%; }
+    50%  { background-position: 40% 50%, 50% 40%, 60% 50%, 50% 60%; }
+    75%  { background-position: 20% 70%, 70% 60%, 30% 30%, 80% 50%; }
+    100% { background-position: 0% 0%, 100% 0%, 0% 100%, 100% 100%; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .wallpaper-layer::before { animation: none; }
+}
+
+/* Animation level — [data-anim="off"] stops the drift; "lively" enables the
+   specular sheen sweep across glass surfaces (defined further down). */
+[data-anim="off"] .wallpaper-layer::before { animation: none; }
+
+/* Var-backed utility classes — drop-in replacements for `bg-gray-800` etc.
+   Components migrating off hardcoded Tailwind colors should reach for these. */
+.bg-surface { background-color: var(--bg-primary); }
+.bg-surface-2 { background-color: var(--bg-secondary); }
+.bg-surface-3 { background-color: var(--bg-tertiary); }
+.bg-surface-card { background-color: var(--bg-card); }
+.text-surface { color: var(--text-primary); }
+.text-surface-muted { color: var(--text-muted); }
+.border-surface { border-color: var(--border-default); }
+.border-surface-subtle { border-color: var(--border-subtle); }
+
 * {
     box-sizing: border-box;
 }
@@ -106,7 +1096,7 @@ body,
     height: 100%;
     height: 100dvh;
     margin: 0;
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    font-family: var(--font-sans);
     background: var(--bg-primary);
     color: var(--text-primary);
     /* Safe area for mobile devices with notch/gesture bar */
@@ -538,6 +1528,24 @@ pre.hljs {
 
 .sidebar-slide-in {
     animation: sidebarSlideIn 0.25s ease-out;
+}
+
+/* ModelTierSelector popover entrance — slight slide + fade so it feels
+   anchored to the trigger rather than blinking in. */
+@keyframes modelTierPanelIn {
+    from { opacity: 0; transform: translateY(4px) scale(0.98); }
+    to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+    .model-tier-panel { animation: none !important; }
+}
+
+/* Hover lift on the tier trigger so it reads as interactive without painting
+   an extra border. Skip the lift while the panel is open — the open state
+   already has its own shadow. */
+.model-tier-trigger[data-open="0"]:hover {
+    background: var(--bg-card-hover, var(--bg-tertiary)) !important;
+    border-color: var(--border-default) !important;
 }
 
 /* ── Mobile Responsive ─────────────────────────────── */

@@ -2,13 +2,14 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { API_BASE, authFetch } from '../utils/helpers';
 import {
     ArrowLeft, Upload, FileText, Trash2, Pencil, Check, X,
-    Loader2, Search, Download, Bot, Sparkles, ChevronDown, File, Plus, Settings, BookOpen, ChevronRight,
+    Loader2, Search, Download, Bot, ChevronDown, File, Plus, Settings, BookOpen, ChevronRight,
     MessageSquare
 } from 'lucide-react';
 import useChatEngine from '../hooks/useChatEngine';
 import MessageItem from '../components/chat/MessageItem';
 import InputArea from '../components/InputArea';
 import KnowledgePanel from '../components/KnowledgePanel';
+import MeetingPicker from '../components/meeting-picker/MeetingPicker';
 
 function timeAgo(dateStr) {
     const d = new Date(dateStr);
@@ -38,6 +39,14 @@ export default function TemplatesPage({ user, onBack }) {
     const [dragOver, setDragOver] = useState(false);
     const fileInputRef = useRef(null);
 
+    // Active polling intervals — cleared on unmount so navigating away mid-
+    // upload or mid-template-detect doesn't leak repeating fetches.
+    const pollersRef = useRef(new Set());
+    useEffect(() => () => {
+        pollersRef.current.forEach(clearInterval);
+        pollersRef.current.clear();
+    }, []);
+
     // Rename state
     const [renamingId, setRenamingId] = useState(null);
     const [renameValue, setRenameValue] = useState('');
@@ -47,9 +56,7 @@ export default function TemplatesPage({ user, onBack }) {
 
     // AI Fill view state
     const [fillTemplate, setFillTemplate] = useState(null); // template being filled
-    const [meetingNotes, setMeetingNotes] = useState([]);
     const [selectedNoteIds, setSelectedNoteIds] = useState([]);
-    const [showNotesPicker, setShowNotesPicker] = useState(false);
     const [generating, setGenerating] = useState(false);
     const [parameterizing, setParameterizing] = useState(false);
     const [skipAiDetection, setSkipAiDetection] = useState(false);
@@ -107,15 +114,7 @@ export default function TemplatesPage({ user, onBack }) {
         authFetch(`${API_BASE}/ai/config/chat-models`)
             .then(r => r.ok ? r.json() : {})
             .then(data => setModelTiers(data))
-            .catch(() => {});
-    }, []);
-
-    // Load meeting notes for context picker
-    useEffect(() => {
-        authFetch(`${API_BASE}/ai/chat/template/meeting-notes`)
-            .then(r => r.ok ? r.json() : { notes: [] })
-            .then(data => setMeetingNotes(data.notes || []))
-            .catch(() => {});
+            .catch(e => console.warn('[TemplatesPage] load model tiers failed', e));
     }, []);
 
     // Reset chat when changing template + detect if still processing
@@ -133,9 +132,10 @@ export default function TemplatesPage({ user, onBack }) {
                 setParameterizing(true);
                 const templateId = fillTemplate.id;
                 let polls = 0;
+                const pollers = pollersRef.current;
                 const processingPoller = setInterval(async () => {
                     polls++;
-                    if (polls > 30) { clearInterval(processingPoller); setParameterizing(false); return; }
+                    if (polls > 30) { clearInterval(processingPoller); pollers.delete(processingPoller); setParameterizing(false); return; }
                     try {
                         const r = await authFetch(`${API_BASE}/api/templates/${templateId}`);
                         if (r.ok) {
@@ -147,12 +147,16 @@ export default function TemplatesPage({ user, onBack }) {
                                 await loadTemplates();
                                 if (updated.parameters?.length > 0 && updated.description && updated.instructions) {
                                     clearInterval(processingPoller);
+                                    pollers.delete(processingPoller);
                                 }
                             }
                         }
-                    } catch {}
+                    } catch (e) {
+                        console.warn('[TemplatesPage] processing poll failed', e);
+                    }
                 }, 3000);
-                return () => clearInterval(processingPoller);
+                pollers.add(processingPoller);
+                return () => { clearInterval(processingPoller); pollers.delete(processingPoller); };
             } else {
                 setParameterizing(false);
             }
@@ -206,13 +210,18 @@ export default function TemplatesPage({ user, onBack }) {
                             if (dlRes.ok) {
                                 const blob = await dlRes.blob();
                                 const blobUrl = URL.createObjectURL(blob);
-                                const a = document.createElement('a');
-                                a.href = blobUrl;
-                                a.download = fileName;
-                                document.body.appendChild(a);
-                                a.click();
-                                document.body.removeChild(a);
-                                setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+                                try {
+                                    const a = document.createElement('a');
+                                    a.href = blobUrl;
+                                    a.download = fileName;
+                                    document.body.appendChild(a);
+                                    a.click();
+                                    document.body.removeChild(a);
+                                } finally {
+                                    // Revoke after click handlers have fired; if anything between
+                                    // createObjectURL and click threw, this still runs.
+                                    setTimeout(() => URL.revokeObjectURL(blobUrl), 5000);
+                                }
                             }
                         } catch (dlErr) {
                             console.warn('Auto-download failed:', dlErr);
@@ -238,8 +247,11 @@ export default function TemplatesPage({ user, onBack }) {
                     } : m));
                 }
             })();
-        } catch {
-            // Not valid JSON, ignore
+        } catch (e) {
+            // JSON.parse threw — the assistant emitted a code block that
+            // wasn't valid JSON. Safe to ignore at the user level, but log
+            // for telemetry so a regression in the model prompt is visible.
+            console.debug('[TemplatesPage] JSON parameter block parse skipped', e);
         }
     }, [chatMessages, chatLoading, fillTemplate?.id]);
 
@@ -310,9 +322,10 @@ export default function TemplatesPage({ user, onBack }) {
                     const origParamCount = data.template.parameters?.length || 0;
                     if (origParamCount === 0) setParameterizing(true);
                     let polls = 0;
+                    const pollers = pollersRef.current;
                     const poller = setInterval(async () => {
                         polls++;
-                        if (polls > 20) { clearInterval(poller); setParameterizing(false); return; } // max 60s (parameterization takes longer)
+                        if (polls > 20) { clearInterval(poller); pollers.delete(poller); setParameterizing(false); return; } // max 60s (parameterization takes longer)
                         try {
                             const r = await authFetch(`${API_BASE}/api/templates/${templateId}`);
                             if (r.ok) {
@@ -326,13 +339,16 @@ export default function TemplatesPage({ user, onBack }) {
                                     if (updated.parameters?.length > origParamCount) setParameterizing(false);
                                     await loadTemplates();
                                     // Stop when all background tasks completed
-                                    const allDone = updated.description && updated.instructions && 
+                                    const allDone = updated.description && updated.instructions &&
                                         (updated.parameters?.length > origParamCount);
-                                    if (allDone) clearInterval(poller);
+                                    if (allDone) { clearInterval(poller); pollers.delete(poller); }
                                 }
                             }
-                        } catch {}
+                        } catch (e) {
+                            console.warn('[TemplatesPage] upload context poll failed', e);
+                        }
                     }, 3000);
+                    pollers.add(poller);
                 }
             } else {
                 const err = await res.json();
@@ -537,63 +553,22 @@ export default function TemplatesPage({ user, onBack }) {
                             </div>
                         </div>
 
-                        {/* Meeting Notes Picker */}
+                        {/* Meeting Notes Context — shared MeetingPicker */}
                         <div>
-                            <h3 className="text-xs font-semibold uppercase tracking-wider mb-2" style={{ color: 'var(--text-muted)' }}>Meeting Notes Context</h3>
-                            <div className="relative">
-                                <button
-                                    onClick={() => setShowNotesPicker(!showNotesPicker)}
-                                    className="w-full flex items-center justify-between px-3 py-2 rounded-lg border text-xs transition-colors hover:border-[var(--accent-primary)]"
-                                    style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)', background: 'var(--bg-primary)' }}
-                                >
-                                    <span>{selectedNoteIds.length > 0 ? `${selectedNoteIds.length} note${selectedNoteIds.length > 1 ? 's' : ''} selected` : 'Select meeting notes...'}</span>
-                                    <ChevronDown className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
-                                </button>
-                                {showNotesPicker && (
-                                    <div className="absolute left-0 right-0 top-full mt-1 rounded-lg border shadow-xl overflow-auto max-h-48 z-10" style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)' }}>
-                                        {meetingNotes.length === 0 ? (
-                                            <p className="text-xs p-3 text-center" style={{ color: 'var(--text-muted)' }}>No meeting notes available</p>
-                                        ) : (
-                                            meetingNotes.map(note => (
-                                                <button
-                                                    key={note.id}
-                                                    onClick={() => {
-                                                        setSelectedNoteIds(prev =>
-                                                            prev.includes(note.id)
-                                                                ? prev.filter(id => id !== note.id)
-                                                                : [...prev, note.id]
-                                                        );
-                                                    }}
-                                                    className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-[var(--bg-tertiary)] transition-colors"
-                                                >
-                                                    <div className={`w-4 h-4 rounded border flex items-center justify-center shrink-0 ${selectedNoteIds.includes(note.id) ? 'bg-[var(--accent-primary)] border-[var(--accent-primary)]' : 'border-[var(--border-default)]'}`}>
-                                                        {selectedNoteIds.includes(note.id) && <Check className="w-3 h-3 text-white" />}
-                                                    </div>
-                                                    <div className="flex-1 min-w-0">
-                                                        <p className="text-xs font-medium truncate" style={{ color: 'var(--text-primary)' }}>{note.title}</p>
-                                                        <p className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{timeAgo(note.createdAt)}</p>
-                                                    </div>
-                                                </button>
-                                            ))
-                                        )}
-                                    </div>
+                            <div className="flex items-center justify-between mb-2">
+                                <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>Meeting Notes Context</h3>
+                                {selectedNoteIds.length > 0 && (
+                                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full" style={{ background: 'color-mix(in srgb, var(--accent-primary) 14%, transparent)', color: 'var(--accent-primary)' }}>
+                                        {selectedNoteIds.length} selected
+                                    </span>
                                 )}
                             </div>
-                            {selectedNoteIds.length > 0 && (
-                                <div className="mt-2 flex flex-wrap gap-1">
-                                    {selectedNoteIds.map(id => {
-                                        const note = meetingNotes.find(n => n.id === id);
-                                        return note ? (
-                                            <span key={id} className="text-[10px] px-2 py-0.5 rounded-full flex items-center gap-1" style={{ background: 'rgba(99, 102, 241, 0.1)', color: 'var(--accent-primary)' }}>
-                                                {note.title.length > 20 ? note.title.slice(0, 20) + '...' : note.title}
-                                                <button onClick={() => setSelectedNoteIds(prev => prev.filter(i => i !== id))}>
-                                                    <X className="w-2.5 h-2.5" />
-                                                </button>
-                                            </span>
-                                        ) : null;
-                                    })}
-                                </div>
-                            )}
+                            <MeetingPicker
+                                mode="multi"
+                                value={selectedNoteIds}
+                                onChange={setSelectedNoteIds}
+                                placeholder="Search meeting notes…"
+                            />
                         </div>
 
                         {fillTemplate.description && (
@@ -869,7 +844,6 @@ export default function TemplatesPage({ user, onBack }) {
                                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-white transition-all hover:scale-[1.02]"
                                             style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)' }}
                                         >
-                                            <Sparkles className="w-3.5 h-3.5" />
                                             Fill with AI
                                         </button>
                                         <button

@@ -1,6 +1,6 @@
 {
     "name": "@beeflow/frontend",
-    "version": "1.0.0",
+    "version": "1.2.0",
     "type": "module",
     "description": "Bee Flow — frontend SPA. The React + Vite client for every Bee Flow deployment (SaaS, self-hosted, Nextcloud ExApp).",
     "license": "SEE LICENSE IN LICENSE.md",
@@ -26,11 +26,21 @@
         "LICENSE.md",
         "README.md"
     ],
+    "engines": {
+        "node": ">=22.0.0 <23.0.0"
+    },
+    "packageManager": "npm@10.9.0",
     "scripts": {
         "dev": "vite",
+        "dev:clean": "rm -rf node_modules/.vite && vite",
         "build": "vite build",
+        "build:analyze": "VITE_BUNDLE_ANALYZE=1 vite build",
         "lint": "eslint .",
         "preview": "vite preview",
+        "test": "vitest",
+        "test:run": "vitest run",
+        "test:coverage": "vitest run --coverage",
+        "typecheck": "tsc --noEmit",
         "prepublishOnly": "npm run build"
     },
     "dependencies": {
@@ -79,7 +89,6 @@
         "react-dom": "^19.2.0",
         "react-grid-layout": "^2.2.2",
         "react-markdown": "^10.1.0",
-        "react-router-dom": "^7.13.0",
         "recharts": "^3.7.0",
         "rehype-katex": "^7.0.1",
         "remark-gfm": "^4.0.1",
@@ -88,21 +97,32 @@
         "uuid": "^13.0.0",
         "vega": "^6.2.0",
         "vega-embed": "^7.1.0",
-        "vega-lite": "^6.4.2"
+        "vega-lite": "^6.4.2",
+        "web-vitals": "^5.2.0"
     },
     "devDependencies": {
         "@eslint/js": "^9.39.1",
         "@tailwindcss/postcss": "^4.1.18",
+        "@testing-library/jest-dom": "^6.9.1",
+        "@testing-library/react": "^16.3.2",
+        "@testing-library/user-event": "^14.6.1",
         "@types/react": "^19.2.5",
         "@types/react-dom": "^19.2.3",
         "@vitejs/plugin-react": "^5.1.1",
+        "@vitest/coverage-v8": "^4.1.6",
         "autoprefixer": "^10.4.22",
         "eslint": "^9.39.1",
+        "eslint-plugin-import": "^2.32.0",
         "eslint-plugin-react-hooks": "^7.0.1",
         "eslint-plugin-react-refresh": "^0.4.24",
         "globals": "^16.5.0",
+        "jsdom": "^28.1.0",
+        "msw": "^2.14.6",
         "postcss": "^8.5.6",
+        "rollup-plugin-visualizer": "^7.0.1",
         "tailwindcss": "^4.1.18",
-        "vite": "^7.2.4"
+        "typescript": "^6.0.3",
+        "vite": "^7.2.4",
+        "vitest": "^4.1.6"
     }
 }

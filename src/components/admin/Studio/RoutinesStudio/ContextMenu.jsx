@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
 
 /**
  * Lightweight click-outside-to-close popover anchored at an absolute
@@ -13,41 +13,66 @@ import React, { useEffect, useRef } from 'react';
  */
 export default function ContextMenu({ position, items, onClose }) {
     const ref = useRef(null);
+    // Stable handle for the onClose callback. Caller doesn't have to
+    // useCallback — we read through the ref so changing identity doesn't
+    // re-install the document listeners on every parent render.
+    const onCloseRef = useRef(onClose);
+    useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+
+    // Adjust position based on the menu's real rendered size so long labels
+    // (translated strings, long routine names) don't overflow the viewport.
+    const [shift, setShift] = useState({ x: 0, y: 0 });
 
     useEffect(() => {
         if (!position) return;
         const onDoc = (e) => {
-            if (ref.current && !ref.current.contains(e.target)) onClose();
+            if (ref.current && !ref.current.contains(e.target)) onCloseRef.current?.();
         };
-        const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+        const onKey = (e) => { if (e.key === 'Escape') onCloseRef.current?.(); };
         document.addEventListener('mousedown', onDoc);
         document.addEventListener('keydown', onKey);
         return () => {
             document.removeEventListener('mousedown', onDoc);
             document.removeEventListener('keydown', onKey);
         };
-    }, [position, onClose]);
+    }, [position]);
+
+    useLayoutEffect(() => {
+        if (!position || !ref.current) {
+            setShift({ x: 0, y: 0 });
+            return;
+        }
+        const rect = ref.current.getBoundingClientRect();
+        const margin = 8;
+        const overflowX = position.x + rect.width + margin - window.innerWidth;
+        const overflowY = position.y + rect.height + margin - window.innerHeight;
+        setShift({
+            x: overflowX > 0 ? -overflowX : 0,
+            y: overflowY > 0 ? -overflowY : 0,
+        });
+    }, [position, items]);
 
     if (!position) return null;
-
-    // Avoid spilling off the right/bottom edges of the viewport.
-    const x = Math.min(position.x, window.innerWidth - 220);
-    const y = Math.min(position.y, window.innerHeight - 220);
 
     return (
         <div
             ref={ref}
-            className="fixed z-[2000] min-w-[200px] rounded-lg border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-xl py-1 text-sm"
-            style={{ left: x, top: y }}
+            className="fixed z-[2000] min-w-[200px] max-w-[320px] rounded-lg border border-[var(--border-default)] bg-[var(--bg-primary)] shadow-xl py-1 text-sm"
+            style={{ left: position.x + shift.x, top: position.y + shift.y }}
         >
             {items.map((item, i) => {
                 if (item.separator) {
                     return <div key={`sep-${i}`} className="my-1 border-t border-[var(--border-default)]" />;
                 }
+                const key = item.label ? `item-${item.label}` : `idx-${i}`;
                 return (
                     <button
-                        key={i}
-                        onClick={() => { item.onClick?.(); onClose(); }}
+                        key={key}
+                        onClick={() => {
+                            try { item.onClick?.(); }
+                            catch (err) { console.error('[ContextMenu] item onClick error:', err); }
+                            onClose?.();
+                        }}
                         className={`w-full flex items-center gap-2 px-3 py-1.5 text-left transition ${
                             item.danger
                                 ? 'text-red-500 hover:bg-red-500/10'

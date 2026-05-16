@@ -1,43 +1,61 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import AgentDesignerPanel from './components/AgentDesignerPanel';
-import AgentMarketplace from './components/AgentMarketplace';
-import KBMarketplace from './components/KBMarketplace';
-import KBDetailPage from './components/KBDetailPage';
-import SearchOverlay from './components/SearchOverlay';
- 
+
+// ── Chat-critical (eager) ────────────────────────────────────────────
+// These components are on the main chat path; deferring them costs more
+// in flicker than they save in bundle size.
 import Sidebar from './components/Sidebar';
 import InputArea from './components/InputArea';
 import WelcomeScreen from './components/WelcomeScreen';
 import MessageItem from './components/chat/MessageItem';
-import MemoryPanel from './components/MemoryPanel';
-import WorkspaceNotebook from './components/WorkspaceNotebook';
-import GammaPreviewPanel from './components/GammaPreviewPanel';
-import SideWebpagePanel from './components/SideWebpagePanel';
-import WebpagePickerPopover from './components/WebpagePickerPopover';
 import DirectChatWelcome from './components/DirectChatWelcome';
-import ProjectsPage from './components/ProjectsPage';
-import ProjectDetailPage from './components/ProjectDetailPage';
-import AdvancedSettings from './pages/AdvancedSettings';
-import AgentDesigner from './components/admin/AgentDesigner';
-import AgentStudio from './components/admin/AgentStudio';
-import Studio from './components/admin/Studio';
-import AITasksDesigner from './components/admin/AITasksDesigner';
-import SkillsPanel from './components/SkillsPanel';
-import EmailKBSettings from './components/EmailKBSettings';
-import NotebooksPage from './pages/NotebooksPage';
-import WebpagesPage from './pages/WebpagesPage';
+import SearchOverlay from './components/SearchOverlay';
+
+// ── Lazy: admin / studio / notebooks / marketplaces ──────────────────
+// Each of these is opened from a modal slot or a separate route. Lazy
+// loading saves ~1.2 MB off the initial bundle.
+const AgentDesignerPanel = lazy(() => import('./components/AgentDesignerPanel'));
+const AgentMarketplace = lazy(() => import('./components/AgentMarketplace'));
+const KBMarketplace = lazy(() => import('./components/KBMarketplace'));
+const KBDetailPage = lazy(() => import('./components/KBDetailPage'));
+const MemoryPanel = lazy(() => import('./components/MemoryPanel'));
+const WorkspaceNotebook = lazy(() => import('./components/WorkspaceNotebook'));
+const GammaPreviewPanel = lazy(() => import('./components/GammaPreviewPanel'));
+const SideWebpagePanel = lazy(() => import('./components/SideWebpagePanel'));
+const WebpagePickerPopover = lazy(() => import('./components/WebpagePickerPopover'));
+const ProjectsPage = lazy(() => import('./components/ProjectsPage'));
+const ProjectDetailPage = lazy(() => import('./components/ProjectDetailPage'));
+const AdvancedSettings = lazy(() => import('./pages/AdvancedSettings'));
+const AgentDesigner = lazy(() => import('./components/admin/AgentDesigner'));
+const AgentStudio = lazy(() => import('./components/admin/AgentStudio'));
+const Studio = lazy(() => import('./components/admin/Studio'));
+const AITasksDesigner = lazy(() => import('./components/admin/AITasksDesigner'));
+const SkillsPanel = lazy(() => import('./components/SkillsPanel'));
+const EmailKBSettings = lazy(() => import('./components/EmailKBSettings'));
+const NotebooksPage = lazy(() => import('./pages/NotebooksPage'));
+
 import useChatEngine from './hooks/useChatEngine';
 import { useViewport } from './hooks/useViewport';
+
+// Shared Suspense fallback — keeps lazy slots from flashing layout shifts.
+// Each modal slot already renders inside its own animated container so a
+// plain spinner is sufficient.
+function LazyFallback() {
+    return (
+        <div className="flex items-center justify-center w-full h-full">
+            <div className="w-6 h-6 rounded-full border-2 border-[var(--border-default)] border-t-[var(--accent-primary)] animate-spin" />
+        </div>
+    );
+}
 
 import { API_BASE, generateMessageId, authFetch } from './utils/helpers';
 import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar, DEFAULT_AGENT_EMOJI } from './utils/agentAvatar';
 import scopedStorage from './utils/scopedStorage';
 import { normalizeLoadedMessages } from './utils/messageShape';
-import { X, Sparkles, PenLine, Heart, MoreVertical, Menu, EyeOff, Pencil } from 'lucide-react';
+import { X, PenLine, Heart, MoreVertical, Menu, EyeOff, Pencil } from 'lucide-react';
 
 const AgentHub = ({
-    onNavigate, user, onLogout, currentPage,
+    onNavigate, user, onUpdateUser, onLogout, currentPage,
     initialAgentId = null, initialConversationId = null, initialDirectConvId = null,
     showSettings = false, onCloseSettings,
     showAgentDesigner = false, onCloseAgentDesigner, initialDesignerAgentId = null,
@@ -48,8 +66,6 @@ const AgentHub = ({
     showEmailKB = false, onCloseEmailKB,
     // Notebooks rendered inline (previously a standalone page at App level).
     showNotebooks = false, onCloseNotebooks, initialNotebookId = null, onNotebookChange,
-    // Webpages — same inline pattern as notebooks.
-    showWebpages = false, onCloseWebpages, initialWebpageId = null, onWebpageChange,
 }) => {
     // Permission helper - checks if user has a specific permission
     const hasPermission = (perm) => {
@@ -71,15 +87,19 @@ const AgentHub = ({
     //   isDesktop >=1280  — full split-pane layout
     const { isMobile, isCompact } = useViewport();
 
-    // Notebook layout: split-pane on desktop, slide-over drawer on 13" laptops.
-    // The drawer floats above the chat (fixed position) so the chat keeps its
-    // full width; a scrim lets the user dismiss by tapping outside.
+    // Notebook layout: split-pane sibling column at every breakpoint above
+    // mobile. On compact (13" laptops) it takes a fixed ~420 px width so the
+    // chat keeps usable room; on desktop it splits 50/50 with the chat. No
+    // floating drawer or scrim — the notebook simply sits to the right of
+    // the chat, the way users expect a split workspace.
     const notebookWrapperClass = isCompact
-        ? "fixed right-0 top-0 bottom-0 z-30 w-[420px] max-w-[90vw] flex flex-col h-full bg-[var(--bg-primary)] border-l border-[var(--border-subtle)] shadow-2xl animate-in slide-in-from-right duration-300"
-        : "w-1/2 min-w-[400px] flex flex-col h-full animate-in slide-in-from-right duration-300";
+        ? "w-[420px] flex-shrink-0 flex flex-col h-full border-l border-[var(--border-subtle)] animate-in slide-in-from-right duration-300"
+        : "w-1/2 min-w-[400px] flex flex-col h-full border-l border-[var(--border-subtle)] animate-in slide-in-from-right duration-300";
 
     // Feature flags
-    const notebooksEnabled = user?.featureFlags?.notebooks !== false;
+    // Simple Mode also forces notebooks off — the toggle in /settings/simple-mode
+    // hides the panel + buttons until the user turns Simple Mode back off.
+    const notebooksEnabled = !user?.simpleMode && user?.featureFlags?.notebooks !== false;
     const projectsEnabled = user?.featureFlags?.projects !== false;
 
     // Core State
@@ -140,7 +160,7 @@ const AgentHub = ({
     const [webpagePickerOpen, setWebpagePickerOpen] = useState(false);
     const webpageButtonRef = useRef(null);
     const webpageButtonRefDirect = useRef(null);
-    const canUseWebpagesSide = !!(user?.permissions?.includes('all') || user?.betaFeatures?.includes('webpages'));
+    const canUseWebpagesSide = !user?.simpleMode && !!(user?.canUseFeature?.webpages ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('webpages')));
 
     const toggleNotebookPanel = useCallback(() => {
         setShowNotebook(prev => {
@@ -196,6 +216,28 @@ const AgentHub = ({
         return () => window.removeEventListener('beeflow:open-webpage-side', onOpenSide);
     }, [openWebpageInSidePanel]);
 
+    // When Simple Mode is turned ON, force-close any open side panels — the
+    // panel buttons disappear in the same frame so we'd otherwise leave the
+    // panel orphaned on screen with no way to close it. Also force the model
+    // tier back to 'auto' since the selector is hidden.
+    useEffect(() => {
+        const on = !!user?.simpleMode;
+        // Broadcast so deep descendants (e.g. MessageItem) can hide
+        // surface-level features like the "How I got this answer" panel
+        // without prop-drilling. Mirrors the chatHistoryMode pattern.
+        if (typeof window !== 'undefined') {
+            window.__beeflowSimpleMode = on;
+            window.dispatchEvent(new CustomEvent('beeflow:simpleModeChanged', { detail: on }));
+        }
+        if (on) {
+            setShowNotebook(false);
+            setShowGammaPreview(false);
+            setSidePanelWebpageId(null);
+            setSidePanelWebpage(null);
+            setSelectedTier('auto');
+        }
+    }, [user?.simpleMode]);
+
     // Direct Chat State
     const [directChatMode, setDirectChatMode] = useState(() => window.innerWidth < 768);
     const [selectedTier, setSelectedTier] = useState('auto');
@@ -234,6 +276,16 @@ const AgentHub = ({
     const [directCompletedSessionSkillIds, setDirectCompletedSessionSkillIds] = useState([]);
 
     // Hydrate user-scoped preferences once the user id is known.
+    //
+    // The original implementation chained the favorites fetch and the
+    // legacy-favorites migration sequentially, gating first paint on both.
+    // We now:
+    //   1. Read local prefs synchronously (fast).
+    //   2. Start the favorites GET — set state as soon as it lands so the
+    //      sidebar can render its primary list.
+    //   3. If a legacy migration is needed, run it in the background after
+    //      the GET resolves — it must NOT block first paint, and a missing
+    //      migration result silently falls back to the server response.
     useEffect(() => {
         if (!user?.id) return;
         // React fires child effects before parent effects on mount, so App.jsx's
@@ -245,30 +297,43 @@ const AgentHub = ({
         const storedSkills = scopedStorage.getJSON('activeSkillIds', null);
         if (Array.isArray(storedSkills)) setActiveSkillIds(storedSkills);
 
-        // Agent favorites: load from server, with one-time migration of any
-        // legacy localStorage favorites that haven't made it to the DB yet.
         let cancelled = false;
         (async () => {
             try {
                 const res = await authFetch(`${API_BASE}/agents/favorites`);
                 if (!res.ok) return;
                 const serverFavs = await res.json();
+                if (cancelled) return;
                 const legacy = scopedStorage.getJSON('agentFavorites', null);
-                if (Array.isArray(legacy) && legacy.length && Array.isArray(serverFavs) && serverFavs.length === 0) {
-                    const bulkRes = await authFetch(`${API_BASE}/agents/favorites/bulk`, {
+                const needsMigration =
+                    Array.isArray(legacy) && legacy.length &&
+                    Array.isArray(serverFavs) && serverFavs.length === 0;
+
+                // Set whatever the server returned right away so the sidebar
+                // can render. Migration (if needed) replaces this value later.
+                setFavorites(Array.isArray(serverFavs) ? serverFavs : []);
+                if (Array.isArray(legacy) && !needsMigration) {
+                    scopedStorage.removeItem('agentFavorites');
+                }
+
+                if (needsMigration) {
+                    // Background: replace the list with the merged result once
+                    // the bulk upload comes back. Errors don't roll the UI back
+                    // — the server state we just rendered is still correct.
+                    authFetch(`${API_BASE}/agents/favorites/bulk`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ agentIds: legacy }),
-                    });
-                    if (bulkRes.ok) {
+                    }).then(async (bulkRes) => {
+                        if (cancelled || !bulkRes.ok) return;
                         const merged = await bulkRes.json();
-                        if (!cancelled) setFavorites(Array.isArray(merged) ? merged : []);
+                        if (cancelled) return;
+                        setFavorites(Array.isArray(merged) ? merged : []);
                         scopedStorage.removeItem('agentFavorites');
-                        return;
-                    }
+                    }).catch((e) => {
+                        if (!cancelled) console.warn('[AgentHub] favorites migration failed:', e);
+                    });
                 }
-                if (!cancelled) setFavorites(Array.isArray(serverFavs) ? serverFavs : []);
-                if (Array.isArray(legacy)) scopedStorage.removeItem('agentFavorites');
             } catch (e) {
                 console.warn('[AgentHub] Failed to load agent favorites from server:', e);
             }
@@ -460,6 +525,19 @@ const AgentHub = ({
         return true; // legacy rows without the column → include by default
     }), [kbs]);
     const [showSearch, setShowSearch] = useState(false);
+
+    // Admin Theme Studio preview: when the iframe URL contains
+    // ?themePreview=1, honour the optional hints — `overlay=search` auto-opens
+    // the search overlay, `sidebar=collapsed` folds the conversation rail so
+    // a Settings/Studio preview reads cleaner without the chat list dominating.
+    useEffect(() => {
+        try {
+            const params = new URLSearchParams(window.location.search);
+            if (params.get('themePreview') !== '1') return;
+            if (params.get('overlay') === 'search') setShowSearch(true);
+            if (params.get('sidebar') === 'collapsed') setSidebarOpen(false);
+        } catch (_) { /* search params unavailable */ }
+    }, []);
 
     const [showMemoryPanel, setShowMemoryPanel] = useState(false);
     const [showAgentMenu, setShowAgentMenu] = useState(false);
@@ -1278,7 +1356,6 @@ const AgentHub = ({
         if (onCloseSkillsPanel) onCloseSkillsPanel();
         if (onCloseEmailKB) onCloseEmailKB();
         if (onCloseNotebooks) onCloseNotebooks();
-        if (onCloseWebpages) onCloseWebpages();
         setShowMarketplace(false);
         setShowKBStore(false);
         setActiveKBId(null);
@@ -1299,6 +1376,7 @@ const AgentHub = ({
         setNotebookSelection('');
         setShowNotebook(false);
         setNotebookLinkedId(null);
+        setSelectedTier('auto');
         setShowMarketplace(false);
         setShowKBStore(false);
         setActiveKBId(null);
@@ -1562,26 +1640,29 @@ const AgentHub = ({
 
     if (designMode) {
         return (
-            <AgentDesignerPanel
-                agent={selectedAgent}
-                user={user}
-                onClose={() => setDesignMode(false)}
-                onSave={(newAgent) => {
-                    if (newAgent && newAgent.id) {
-                        setSelectedAgent(newAgent);
+            <Suspense fallback={<LazyFallback />}>
+                <AgentDesignerPanel
+                    agent={selectedAgent}
+                    user={user}
+                    onClose={() => setDesignMode(false)}
+                    onSave={(newAgent) => {
+                        if (newAgent && newAgent.id) {
+                            setSelectedAgent(newAgent);
+                            refreshAgents();
+                        }
+                    }}
+                    onDelete={() => {
+                        setSelectedAgent(null);
+                        setDesignMode(false);
                         refreshAgents();
-                    }
-                }}
-                onDelete={() => {
-                    setSelectedAgent(null);
-                    setDesignMode(false);
-                    refreshAgents();
-                }}
-            />
+                    }}
+                />
+            </Suspense>
         );
     }
 
     return (
+        <Suspense fallback={<LazyFallback />}>
         <div className="flex h-full bg-[var(--bg-primary)] overflow-hidden">
             {/* Sidebar */}
             <Sidebar
@@ -1728,17 +1809,9 @@ const AgentHub = ({
                         initialNotebookId={initialNotebookId}
                         onNotebookChange={onNotebookChange}
                     />
-                ) : showWebpages ? (
-                    /* Webpages — same inline-render pattern as notebooks. */
-                    <WebpagesPage
-                        user={user}
-                        onBack={onCloseWebpages}
-                        initialWebpageId={initialWebpageId}
-                        onWebpageChange={onWebpageChange}
-                    />
                 ) : showSettings ? (
                     /* Settings rendered inline in conversation area — Open WebUI style */
-                    <AdvancedSettings onBack={null} onNavigate={onNavigate} onLogout={onLogout} user={user} onClose={onCloseSettings} />
+                    <AdvancedSettings onBack={null} onNavigate={onNavigate} onLogout={onLogout} user={user} onUpdateUser={onUpdateUser} onClose={onCloseSettings} />
                 ) : showStudio ? (
                     /* Unified Studio: Agents / Skills / AI Tasks under one shell. */
                     <Studio
@@ -1990,6 +2063,8 @@ const AgentHub = ({
                                             <WelcomeScreen
                                                 agent={selectedAgent}
                                                 onSendMessage={(text) => { setChatInput(text); }}
+                                                user={user}
+                                                onNavigate={onNavigate}
                                             >
                                                 <InputArea
                                                     onSendMessage={(text, attachments, parentId) => {
@@ -2061,10 +2136,8 @@ const AgentHub = ({
                                 )}
                             </div>
 
-                            {/* Notebook Pane — split on desktop, drawer on compact */}
-                            {!isMobile && (showNotebook || showGammaPreview || sidePanelWebpageId) && isCompact && (
-                                <div className="fixed inset-0 bg-black/30 z-20 animate-in fade-in duration-200" onClick={closeSidePreview} aria-hidden="true" />
-                            )}
+                            {/* Notebook Pane — sibling split column at all viewport sizes
+                                (mobile uses a separate full-screen layout, not handled here). */}
                             {!isMobile && notebooksEnabled && showNotebook && !showGammaPreview && (
                                 <div className={notebookWrapperClass}>
                                     <WorkspaceNotebook
@@ -2110,6 +2183,7 @@ const AgentHub = ({
                                         }}
                                         onSelectionAttach={(sel) => { if (sel?.text) setAttachedWebpageSelection(sel); }}
                                         reloadKey={sidePanelReloadKey}
+                                        onNavigate={onNavigate}
                                     />
                                 </div>
                             )}
@@ -2284,10 +2358,8 @@ const AgentHub = ({
                                 )}
                             </div>
 
-                            {/* Notebook Pane — split on desktop, drawer on compact */}
-                            {!isMobile && (showNotebook || showGammaPreview || sidePanelWebpageId) && isCompact && (
-                                <div className="fixed inset-0 bg-black/30 z-20 animate-in fade-in duration-200" onClick={closeSidePreview} aria-hidden="true" />
-                            )}
+                            {/* Notebook Pane — sibling split column at all viewport sizes
+                                (mobile uses a separate full-screen layout, not handled here). */}
                             {!isMobile && notebooksEnabled && showNotebook && !showGammaPreview && (
                                 <div className={notebookWrapperClass}>
                                     <WorkspaceNotebook
@@ -2333,6 +2405,7 @@ const AgentHub = ({
                                         }}
                                         onSelectionAttach={(sel) => { if (sel?.text) setAttachedWebpageSelection(sel); }}
                                         reloadKey={sidePanelReloadKey}
+                                        onNavigate={onNavigate}
                                     />
                                 </div>
                             )}
@@ -2352,7 +2425,6 @@ const AgentHub = ({
                             onClick={() => { if (onCloseSettings) onCloseSettings(); if (onCloseAgentDesigner) onCloseAgentDesigner(); if (onCloseAITasks) onCloseAITasks(); setShowMarketplace(true); }}
                             className="flex items-center gap-2 px-6 py-3 bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-white rounded-xl font-medium shadow-lg transition-all hover:scale-105"
                         >
-                            <Sparkles className="w-5 h-5" />
                             Browse Agents
                         </button>
                     </div>
@@ -2384,6 +2456,7 @@ const AgentHub = ({
                 )
             }
         </div >
+        </Suspense>
     );
 };
 

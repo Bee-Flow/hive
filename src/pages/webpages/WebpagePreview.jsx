@@ -1,4 +1,4 @@
-import React, { useMemo, useState, useEffect } from 'react';
+import React, { useMemo, useState, useEffect, useRef } from 'react';
 import { RefreshCw, ExternalLink } from 'lucide-react';
 import composeWebpageDocument from '../../utils/composeWebpageDocument';
 import { API_BASE, authFetch } from '../../utils/helpers';
@@ -6,11 +6,18 @@ import { API_BASE, authFetch } from '../../utils/helpers';
 /**
  * Sandboxed live preview of a webpage's three slots.
  *
- * Critical: the iframe uses sandbox="allow-scripts" only — NO allow-same-origin.
- * This is the same approach Claude Artifacts / v0 / bolt use. It guarantees
+ * Critical: the iframe uses sandbox="allow-scripts allow-forms" — NO
+ * allow-same-origin. This is the same approach Claude Artifacts / v0 / bolt
+ * use. It guarantees:
  *  • the previewed page's CSS / JS can never reach into the host app
  *  • the host app's CSS / JS can never reach into the preview
  *  • parent.location, document.cookie, fetch() to the host app all fail
+ *
+ * `allow-forms` is required because AI-generated pages routinely use
+ * `<form>` elements; without it the browser blocks the submit event and
+ * any JS preventDefault never runs. Forms still cannot navigate cross-
+ * origin against the host (the target origin is `null`), so they're safe
+ * — the form action is effectively inert and the JS submit handler runs.
  *
  * Database access from the iframe goes through a separate cross-origin
  * channel: the editor fetches a short-lived bearer token below, bakes it
@@ -37,29 +44,41 @@ export default function WebpagePreview({ webpageId, html, css, js, extraFiles = 
         return '';
     }, []);
 
-    // Fetch / refresh the preview token when the webpage changes or the
-    // user reloads the iframe. Tokens are good for ~4h; we refresh ahead of
-    // expiry so a long editing session doesn't break mid-query.
+    // Fetch a fresh preview token whenever the webpage changes or the user
+    // reloads the iframe. We deliberately do NOT cache by remaining TTL: the
+    // signing secret can rotate (server restart in dev, key rotation in prod)
+    // mid-session, and the only way to recover is to mint a new token. Token
+    // fetches are cheap (single HMAC), so always doing it on these triggers
+    // is the safe default.
     useEffect(() => {
+        if (!webpageId) { setDbToken(null); setDbTokenExpiresAt(0); return; }
+        const controller = new AbortController();
         let cancelled = false;
-        if (!webpageId) { setDbToken(null); return; }
-        // Reuse if there's still > 60 s left.
-        if (dbToken && dbTokenExpiresAt - Date.now() > 60_000) return;
         (async () => {
             try {
-                const res = await authFetch(`${API_BASE}/api/webpages/${webpageId}/preview-token`, { method: 'POST' });
+                const res = await authFetch(`${API_BASE}/api/webpages/${webpageId}/preview-token`, {
+                    method: 'POST',
+                    signal: controller.signal,
+                });
                 if (!res.ok) throw new Error(`token fetch ${res.status}`);
                 const data = await res.json();
                 if (cancelled) return;
                 setDbToken(data.token);
                 setDbTokenExpiresAt(data.expiresAt || 0);
             } catch (err) {
+                if (err?.name === 'AbortError') return;
                 console.warn('[WebpagePreview] preview-token fetch failed:', err.message);
                 if (!cancelled) { setDbToken(null); setDbTokenExpiresAt(0); }
             }
         })();
-        return () => { cancelled = true; };
-    }, [webpageId, refreshKey]); // eslint-disable-line react-hooks/exhaustive-deps
+        return () => { cancelled = true; controller.abort(); };
+    }, [webpageId, refreshKey]);
+
+    // M1: keep the latest webpageId in a ref so the token-refresh postMessage
+    // handler always mints a token for the *currently* selected webpage even if
+    // the user has swapped pages between request and reply.
+    const webpageIdRef = useRef(webpageId);
+    useEffect(() => { webpageIdRef.current = webpageId; }, [webpageId]);
 
     // Merge metadata + content into a single shape composeWebpageDocument expects.
     const extras = useMemo(() => extraFiles.map(f => {
@@ -101,14 +120,52 @@ export default function WebpagePreview({ webpageId, html, css, js, extraFiles = 
         return () => window.removeEventListener('message', handler);
     }, [bridgeOn, onSelectionAttach]);
 
+    // Token refresh bridge — the sandboxed iframe asks for a fresh token
+    // whenever it sees a 401 from /api/webpages-preview/*. We mint one from
+    // the session-authenticated /preview-token endpoint and postMessage it
+    // back. The iframe swaps it into its TOKEN constant and retries the
+    // original call without the user noticing. Keeps chat widgets / DB
+    // calls working across dev-server restarts and key rotation.
+    useEffect(() => {
+        const handler = async (event) => {
+            const data = event?.data;
+            if (!data || data.__beeflowTokenRefresh !== true) return;
+            const currentId = webpageIdRef.current;
+            if (!currentId) return;
+            const reqId = data.requestId;
+            const respond = (body) => {
+                try {
+                    event.source?.postMessage({ __beeflowTokenResponse: true, requestId: reqId, ...body }, event.origin || '*');
+                } catch (_) { /* ignore */ }
+            };
+            try {
+                const res = await authFetch(`${API_BASE}/api/webpages/${currentId}/preview-token`, { method: 'POST' });
+                if (!res.ok) throw new Error(`token fetch ${res.status}`);
+                const body = await res.json();
+                // Only update state if the page hasn't been swapped during the fetch.
+                if (webpageIdRef.current === currentId) {
+                    setDbToken(body.token);
+                    setDbTokenExpiresAt(body.expiresAt || 0);
+                }
+                respond({ token: body.token, expiresAt: body.expiresAt || 0 });
+            } catch (err) {
+                respond({ error: err.message || 'token refresh failed' });
+            }
+        };
+        window.addEventListener('message', handler);
+        return () => window.removeEventListener('message', handler);
+    }, []);
+
     const openInNewTab = () => {
         // A blob: URL with a unique opaque origin — gives the user a full-window
         // view without ever sharing an origin with the host app.
         const blob = new Blob([srcDoc], { type: 'text/html' });
         const url = URL.createObjectURL(blob);
         window.open(url, '_blank', 'noopener,noreferrer');
-        // Revoke after a beat so the new tab has time to load.
-        setTimeout(() => URL.revokeObjectURL(url), 60_000);
+        // Revoke after a long beat so even high-latency networks finish loading
+        // the document before the URL is invalidated. Browsers will GC the blob
+        // when the page is gone; this is best-effort cleanup.
+        setTimeout(() => URL.revokeObjectURL(url), 120_000);
     };
 
     return (
@@ -151,7 +208,7 @@ export default function WebpagePreview({ webpageId, html, css, js, extraFiles = 
                     key={refreshKey}
                     title="Webpage preview"
                     srcDoc={srcDoc}
-                    sandbox="allow-scripts"
+                    sandbox="allow-scripts allow-forms"
                     referrerPolicy="no-referrer"
                     style={{ width: '100%', height: '100%', border: 0, background: '#fff' }}
                 />

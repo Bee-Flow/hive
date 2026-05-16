@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Building2, Save, Upload, Palette, FileText, Check, Lock, KeyRound, AlertTriangle, CreditCard, BarChart3, Zap, MessageSquare, DollarSign, Users, Bot, Database, Shield, Info, Globe, X, Plus, ExternalLink, Loader2, ArrowRight } from 'lucide-react';
+import { Building2, Save, Upload, Palette, FileText, Check, Lock, KeyRound, AlertTriangle, CreditCard, BarChart3, Zap, MessageSquare, DollarSign, Users, Bot, Database, Shield, Info, Globe, X, Plus, ExternalLink, Loader2, ArrowRight, Sparkles } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 import GuardrailsPanel from './GuardrailsPanel';
 import LicenseKeyActivation from './LicenseKeyActivation';
-import { useLicenseContext } from '../LicenseGate';
+import { useLicenseContext } from '../LicenseContext';
+import { getCostVisibility } from './subscriptions/ui/costVisibility';
 
 // Skeleton loader
 const Skeleton = () => (
@@ -239,7 +240,7 @@ const OrgDefaultLanguage = () => {
                 if (data.defaultLocale) setDefaultLocale(data.defaultLocale);
                 if (Array.isArray(data.locales)) setLocales(data.locales);
             })
-            .catch(() => {})
+            .catch(e => console.warn('[OrgInfoPanel] load locales failed', e))
             .finally(() => setLoading(false));
     }, []);
 
@@ -638,6 +639,17 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
     const limits = sub?.effective_limits || {};
     const usage = sub?.current_usage || {};
 
+    // Hide internal € costs from member-facing org views when on a flat plan.
+    // PAYG orgs still see costs because that is literally their Stripe bill.
+    const { showCost: showOrgCost } = getCostVisibility(sub?.billing_model);
+    const orgMsgPct = limits.max_messages_per_month
+        ? Math.min(100, Math.round(((usage.messages || 0) / limits.max_messages_per_month) * 100))
+        : 0;
+    const orgTokPct = limits.max_tokens_per_month
+        ? Math.min(100, Math.round(((usage.tokens || 0) / limits.max_tokens_per_month) * 100))
+        : 0;
+    const showOrgUpgradeCta = !showOrgCost && Math.max(orgMsgPct, orgTokPct) >= 80;
+
     return (
         <div className="flex-1 overflow-y-auto p-6">
 
@@ -763,7 +775,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                                 {t('org.manage_billing', 'Manage Billing')}
                                             </button>
                                         )}
-                                        {limits.max_cost_per_month != null && limits.max_cost_per_month !== -1 && (
+                                        {showOrgCost && limits.max_cost_per_month != null && limits.max_cost_per_month !== -1 && (
                                             <div className="text-right">
                                                 <div className="text-xl font-bold text-[var(--text-primary)]">€{Number(limits.max_cost_per_month).toFixed(2)}</div>
                                                 <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">{t('org.cost_cap_month')}</div>
@@ -784,11 +796,39 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                             <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">{t('org.tokens')}</div>
                                         </div>
                                         <div className="p-4 text-center">
-                                            <div className="text-lg font-bold text-[var(--text-primary)]">€{Number(usage.cost || 0).toFixed(2)}</div>
-                                            <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">{t('org.cost')}</div>
+                                            {showOrgCost ? (
+                                                <>
+                                                    <div className="text-lg font-bold text-[var(--text-primary)]">€{Number(usage.cost || 0).toFixed(2)}</div>
+                                                    <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">{t('org.cost')}</div>
+                                                </>
+                                            ) : (
+                                                <>
+                                                    <div className="text-lg font-bold text-[var(--text-primary)]">{orgMsgPct}%</div>
+                                                    <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">Plan used</div>
+                                                </>
+                                            )}
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* Upgrade CTA — surfaces when a flat-plan org nears its quota */}
+                                {showOrgUpgradeCta && (
+                                    <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex items-center gap-3">
+                                        <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-[13px] font-semibold text-[var(--text-primary)]">
+                                                You've used {Math.max(orgMsgPct, orgTokPct)}% of your plan this period.
+                                            </p>
+                                            <p className="text-[11.5px] text-[var(--text-muted)]">Upgrade to unlock more messages and higher model tiers.</p>
+                                        </div>
+                                        <a
+                                            href="/app/admin/subscriptions"
+                                            className="shrink-0 px-3 py-1.5 rounded-lg text-[12px] font-semibold bg-blue-600 hover:bg-blue-500 text-white transition-colors"
+                                        >
+                                            Upgrade plan
+                                        </a>
+                                    </div>
+                                )}
 
                                 {/* Usage Bars */}
                                 <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5 space-y-4">
@@ -804,20 +844,26 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                         limit={limits.max_messages_per_month}
                                         color="#3b82f6"
                                     />
-                                    <UsageBar
-                                        label={t('org.cost')}
-                                        icon={DollarSign}
-                                        used={usage.cost || 0}
-                                        limit={limits.max_cost_per_month}
-                                        unit="€"
-                                        color="#10b981"
-                                    />
+                                    {showOrgCost ? (
+                                        <UsageBar
+                                            label={t('org.cost')}
+                                            icon={DollarSign}
+                                            used={usage.cost || 0}
+                                            limit={limits.max_cost_per_month}
+                                            unit="€"
+                                            color="#10b981"
+                                        />
+                                    ) : (
+                                        <p className="text-[11.5px] text-[var(--text-muted)] leading-relaxed pl-1">
+                                            Your plan includes a flat-rate price — there are no per-message charges to track.
+                                        </p>
+                                    )}
                                     <UsageBar
                                         label={t('org.tokens')}
                                         icon={Zap}
                                         used={usage.tokens || 0}
                                         limit={limits.max_tokens_per_month}
-                                        color="#8b5cf6"
+                                        color="#3b82f6"
                                     />
                                 </div>
 
@@ -947,29 +993,6 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                 <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                                     <strong style={{ color: 'var(--text-primary)' }}>{t('org.choose_carefully')}</strong> {t('org.choose_carefully_desc')}
                                 </p>
-                            </div>
-                        )}
-
-                        {/* Auto-approve SSO toggle */}
-                        {orgData.authMethod && orgData.authMethod !== 'password' && (
-                            <div className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4">
-                                <div className="flex items-center justify-between">
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <Users className="w-4 h-4 text-[var(--accent-primary)]" />
-                                            <span className="text-sm font-semibold text-[var(--text-primary)]">{t('org.auto_approve_sso')}</span>
-                                        </div>
-                                        <p className="text-xs text-[var(--text-muted)] mt-1 ml-6">
-                                            {t('org.auto_approve_desc')}
-                                        </p>
-                                    </div>
-                                    <button
-                                        onClick={() => setOrgData(p => ({ ...p, autoApproveSSO: !p.autoApproveSSO }))}
-                                        className={`relative w-11 h-6 rounded-full transition-colors duration-200 shrink-0 ml-4 ${orgData.autoApproveSSO ? 'bg-[var(--accent-primary)]' : 'bg-[var(--border-default)]'}`}
-                                    >
-                                        <div className={`absolute top-0.5 w-5 h-5 rounded-full bg-white shadow-sm transition-transform duration-200 ${orgData.autoApproveSSO ? 'translate-x-[22px]' : 'translate-x-0.5'}`} />
-                                    </button>
-                                </div>
                             </div>
                         )}
 

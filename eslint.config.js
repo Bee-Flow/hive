@@ -1,5 +1,6 @@
 import js from '@eslint/js';
 import globals from 'globals';
+import importPlugin from 'eslint-plugin-import';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 
@@ -29,6 +30,12 @@ export default [
         plugins: {
             'react-hooks': reactHooks,
             'react-refresh': reactRefresh,
+            'import': importPlugin,
+        },
+        settings: {
+            'import/resolver': {
+                node: { extensions: ['.js', '.jsx', '.ts', '.tsx'] },
+            },
         },
         rules: {
             ...js.configs.recommended.rules,
@@ -76,6 +83,44 @@ export default [
                 { varsIgnorePattern: '^[A-Z_]', argsIgnorePattern: '^_' },
             ],
             'no-empty': ['warn', { allowEmptyCatch: true }],
+
+            // Import ordering — warn-only so existing files don't break CI.
+            // Newly written or refactored files naturally pick up the
+            // convention via editor auto-fix. The order keeps node builtins
+            // / externals / parent / sibling / index groups separated and
+            // alphabetizes within each group.
+            'import/order': [
+                'warn',
+                {
+                    groups: [
+                        'builtin',
+                        'external',
+                        'internal',
+                        ['parent', 'sibling', 'index'],
+                    ],
+                    pathGroups: [
+                        { pattern: '@/**', group: 'internal', position: 'before' },
+                    ],
+                    'newlines-between': 'ignore',
+                    alphabetize: { order: 'asc', caseInsensitive: true },
+                },
+            ],
+
+            // Forbid raw fetch() in src/components and src/pages — those
+            // should go through apiClient (or a dedicated React Query
+            // hook). Demoted to 'warn' for now so the existing call sites
+            // surface as todo markers; promote to 'error' once the
+            // Phase 5 splits migrate them.
+            'no-restricted-globals': ['warn', {
+                name: 'fetch',
+                message: 'Use apiClient (api/client) or a React Query hook instead of raw fetch().',
+            }],
         },
     },
+    // NOTE: scoping 'react-hooks/exhaustive-deps' to error inside src/hooks/
+    // was attempted, but useChatEngine has intentional dep omissions
+    // (documented inline) that the rule flags. Promote per-file once the
+    // Phase 5.B7 split of useChatEngine into hooks/chat/ lands and the
+    // contract becomes verifiable. Until then, the warn-level rule from the
+    // base config keeps new code on the right side.
 ];

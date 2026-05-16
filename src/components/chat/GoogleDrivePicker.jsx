@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, Search, RefreshCw, Check, ExternalLink } from 'lucide-react';
+import { formatRelativeDate } from '../../utils/dateFormatters';
 
 // Official Google Drive triangle logo
 const GoogleDriveIcon = ({ className = "w-6 h-6" }) => (
@@ -179,17 +180,7 @@ const GoogleDrivePicker = ({ isOpen, onClose, onFilesSelected, apiBase = '' }) =
 
     if (!isOpen) return null;
 
-    const formatDate = (dateStr) => {
-        if (!dateStr) return '';
-        const d = new Date(dateStr);
-        const now = new Date();
-        const diffMs = now - d;
-        const diffDays = Math.floor(diffMs / 86400000);
-        if (diffDays === 0) return 'Today';
-        if (diffDays === 1) return 'Yesterday';
-        if (diffDays < 7) return `${diffDays}d ago`;
-        return d.toLocaleDateString();
-    };
+    const formatDate = formatRelativeDate;
 
     const FileIcon = ({ type }) => {
         const IconComponent = FILE_TYPE_ICONS[type];

@@ -15,7 +15,7 @@ import useTranslation from '../hooks/useTranslation';
 
 // Deterministic accent fallback when the AI hasn't set one yet — keeps every
 // card distinguishable from neighbours without saving anything to the DB.
-const ACCENT_FALLBACKS = ['#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ef4444', '#06b6d4', '#ec4899', '#84cc16'];
+const ACCENT_FALLBACKS = ['#f59e0b', '#10b981', '#3b82f6', '#ef4444', '#06b6d4', '#ec4899', '#84cc16', '#f97316'];
 function fallbackAccent(id) {
     if (!id) return ACCENT_FALLBACKS[0];
     let hash = 0;
@@ -48,7 +48,13 @@ async function api(path, opts = {}) {
 }
 
 export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpageChange, embedded = false }) {
-    const canUseWebpages = !!(user?.permissions?.includes('all') || user?.betaFeatures?.includes('webpages'));
+    // Drive UI gating from the same `(license + beta)` resolution the server uses
+    // (see /auth/my-permissions). Falls back to the legacy beta/permission check
+    // for sessions established before the field was wired up.
+    const canUseWebpages = !!(
+        user?.canUseFeature?.webpages
+        ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('webpages'))
+    );
     const { t } = useTranslation();
     const [orgGroups, setOrgGroups] = useState([]);
     const [publishMenuOpen, setPublishMenuOpen] = useState(false);
@@ -107,6 +113,15 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
     const saveTimerRef = useRef(null);
     const lastSavedSnapshotRef = useRef({ html: '', css: '', js: '' });
     const skipNextSaveRef = useRef(false); // set when we load a webpage so we don't fire a phantom save
+    // Dirty extras — paths whose user-typed content hasn't been persisted yet.
+    // persist() walks this set and PUTs each one alongside the primary slots.
+    const dirtyExtrasRef = useRef(new Set());
+    // Per-tab dirty markers for the EditorTabs dot indicator. Keys: 'html' | 'css'
+    // | 'js' | 'extra:<path>'. Mirrors dirtyExtrasRef + primary-snapshot diff but
+    // lives in state so the tabs re-render when it changes.
+    const [dirtyFiles, setDirtyFiles] = useState({});
+    const extraContentsRef = useRef({});
+    useEffect(() => { extraContentsRef.current = extraContents; }, [extraContents]);
     // Chat-history dirty tracking — the JSON-stringified version of the last
     // chat we know is in the DB. Compared in the debounced chat-save effect
     // so we only PUT when something actually changed.
@@ -168,7 +183,7 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
         authFetch(`${API_BASE}/ai/config/chat-models`)
             .then(r => r.ok ? r.json() : {})
             .then(data => setModelTiers(data))
-            .catch(() => {});
+            .catch(e => console.warn('[WebpagesPage] load model tiers failed', e));
     }, []);
 
     /* ── Chat engine wiring ──────────────────────────────────── */
@@ -402,6 +417,10 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
             lastSavedChatRef.current = JSON.stringify(Array.isArray(persistedChat) ? persistedChat : []);
             lastSavedSnapshotRef.current = { html: fHtml, css: fCss, js: fJs };
             skipNextSaveRef.current = true;
+            // Reset dirty tracking for the newly loaded webpage so stale dots
+            // from the previous selection don't carry over.
+            dirtyExtrasRef.current = new Set();
+            setDirtyFiles({});
             onWebpageChange?.(id);
 
             // Hydrate extra files: metadata first, then fetch each file's
@@ -446,23 +465,79 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
     /* ── Save (debounced) ────────────────────────────────────── */
     const persist = useCallback(async () => {
         if (!selected) return;
+        // Capture the webpage we're saving against. If the user switches
+        // webpages mid-save, the response landing on the new selection's state
+        // would mark someone else's files clean — bail before applying.
+        const targetWebpageId = selected.id;
         // Read current values from refs so persist() is stable (no html/css/js deps)
         const snapshot = { html: htmlRef.current, css: cssRef.current, js: jsRef.current };
         const last = lastSavedSnapshotRef.current;
-        if (snapshot.html === last.html && snapshot.css === last.css && snapshot.js === last.js) return;
+        const primaryDirty = snapshot.html !== last.html || snapshot.css !== last.css || snapshot.js !== last.js;
+        // Snapshot the extras and clear the queue. Edits arriving DURING the
+        // PUTs add themselves to the now-empty set and get caught next tick.
+        const extraPaths = Array.from(dirtyExtrasRef.current);
+        dirtyExtrasRef.current = new Set();
+        if (!primaryDirty && extraPaths.length === 0) return;
         setSaveState('saving');
+        let primarySucceeded = !primaryDirty;
+        const failedExtras = [];
+        const savedExtras = [];
         try {
-            await api(`/${selected.id}`, {
-                method: 'PUT',
-                body: JSON.stringify(snapshot),
+            if (primaryDirty) {
+                await api(`/${targetWebpageId}`, {
+                    method: 'PUT',
+                    body: JSON.stringify(snapshot),
+                });
+                lastSavedSnapshotRef.current = snapshot;
+                primarySucceeded = true;
+            }
+        } catch (err) {
+            console.error('[Webpages] Primary save failed:', err);
+            setSaveState('error');
+            // Fall through to attempt extras — they may still succeed.
+        }
+        for (const path of extraPaths) {
+            const entry = extraContentsRef.current[path];
+            if (!entry || !entry.isText) {
+                // Nothing to save for this path right now — drop the dirty flag.
+                savedExtras.push(path);
+                continue;
+            }
+            try {
+                await api(`/${targetWebpageId}/files`, {
+                    method: 'PUT',
+                    body: JSON.stringify({ path, content: entry.content || '' }),
+                });
+                savedExtras.push(path);
+            } catch (err) {
+                console.error('[Webpages] Extra save failed for', path, err);
+                failedExtras.push(path);
+            }
+        }
+        // Re-queue any failed extras so the next debounce retries them.
+        if (failedExtras.length > 0) {
+            for (const p of failedExtras) dirtyExtrasRef.current.add(p);
+        }
+        // If the selection changed during the save, don't mutate the new
+        // webpage's UI state. Dirty-marker bookkeeping is per-webpage in spirit
+        // — we only loaded this state because the OLD selection was active.
+        if (selected && selected.id !== targetWebpageId) return;
+        // Clear dirty markers for everything that successfully saved.
+        if (primarySucceeded || savedExtras.length > 0) {
+            setDirtyFiles(prev => {
+                const next = { ...prev };
+                if (primarySucceeded && primaryDirty) {
+                    delete next.html; delete next.css; delete next.js;
+                }
+                for (const p of savedExtras) delete next[`extra:${p}`];
+                return next;
             });
-            lastSavedSnapshotRef.current = snapshot;
+        }
+        if (failedExtras.length === 0 && primarySucceeded) {
             setSaveState('saved');
             setLastSavedAt(new Date());
-            // Refresh metadata sizes/timestamps for the list view.
-            setWebpages(prev => prev.map(w => w.id === selected.id ? { ...w, updatedAt: new Date().toISOString() } : w));
-        } catch (err) {
-            console.error('[Webpages] Save failed:', err);
+            setWebpages(prev => prev.map(w => w.id === targetWebpageId ? { ...w, updatedAt: new Date().toISOString() } : w));
+        } else if (failedExtras.length > 0) {
             setSaveState('error');
         }
     }, [selected]); // stable — html/css/js read via refs at call time
@@ -474,18 +549,71 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
             return;
         }
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-        saveTimerRef.current = setTimeout(() => persist(), 1500);
+        // Capture the selected id at scheduling time. If the user switches
+        // webpages before the timer fires, the latest selected.id won't match
+        // and we skip — the new selection's own effect will queue its own save.
+        const scheduledId = selected.id;
+        saveTimerRef.current = setTimeout(() => {
+            if (selected?.id !== scheduledId) return;
+            persist();
+        }, 1500);
         return () => saveTimerRef.current && clearTimeout(saveTimerRef.current);
-    }, [html, css, js, selected]); // persist excluded — intentionally stable
+    }, [html, css, js, selected, persist]);
 
-    // Cmd/Ctrl+S → flush
+    // Mark a primary slot dirty when the user types into Monaco. SSE-driven
+    // updates (AI edits via setHtml/setCss/setJs called from loadWebpage / chat
+    // events) bypass this handler so they don't mistakenly mark already-saved
+    // content as dirty.
+    const handleHtmlEdit = useCallback((v) => {
+        setHtml(v);
+        setDirtyFiles(prev => prev.html ? prev : { ...prev, html: true });
+    }, []);
+    const handleCssEdit = useCallback((v) => {
+        setCss(v);
+        setDirtyFiles(prev => prev.css ? prev : { ...prev, css: true });
+    }, []);
+    const handleJsEdit = useCallback((v) => {
+        setJs(v);
+        setDirtyFiles(prev => prev.js ? prev : { ...prev, js: true });
+    }, []);
+
+    // User-initiated edit of an extra text file. Updates local state for the
+    // preview to re-compose, marks the path dirty, and schedules a save.
+    // SSE-driven updates from the AI hit setExtraContents directly and do NOT
+    // call this — they're already persisted server-side.
+    const handleExtraChange = useCallback((path, newContent) => {
+        setExtraContents(prev => {
+            const existing = prev[path];
+            if (!existing || !existing.isText) return prev;
+            if (existing.content === newContent) return prev;
+            return { ...prev, [path]: { ...existing, content: newContent } };
+        });
+        dirtyExtrasRef.current.add(path);
+        const key = `extra:${path}`;
+        setDirtyFiles(prev => prev[key] ? prev : { ...prev, [key]: true });
+        if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+        const scheduledId = selected?.id;
+        saveTimerRef.current = setTimeout(() => {
+            if (selected?.id !== scheduledId) return;
+            persist();
+        }, 1500);
+    }, [persist, selected?.id]);
+
+    // Cmd/Ctrl+S → flush. Only intercept the browser's native save when the
+    // user is actually inside the IDE pane (Monaco editor, chat input, etc.).
+    // Outside the IDE the keypress falls through to the browser so the user
+    // gets the expected "Save page as…" dialog.
+    const idePaneRef = useRef(null);
     useEffect(() => {
         const handler = (e) => {
-            if ((e.metaKey || e.ctrlKey) && e.key === 's' && selected) {
-                e.preventDefault();
-                if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-                persist();
-            }
+            if (!((e.metaKey || e.ctrlKey) && e.key === 's' && selected)) return;
+            const pane = idePaneRef.current;
+            if (!pane) return;
+            const active = document.activeElement;
+            if (!active || !pane.contains(active)) return;
+            e.preventDefault();
+            if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+            persist();
         };
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
@@ -659,7 +787,7 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
         if (!selected) return;
         // Flush any pending edits before zipping so the zip matches what's saved.
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-        await persist().catch(() => {});
+        await persist().catch(e => console.warn('[WebpagesPage] pre-zip persist failed', e));
         await downloadWebpageZip({
             name: selected.name,
             html, css, js,
@@ -671,7 +799,7 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
     const handleClose = () => {
         if (saveTimerRef.current) {
             clearTimeout(saveTimerRef.current);
-            persist().catch(() => {});
+            persist().catch(e => console.warn('[WebpagesPage] close-flush persist failed', e));
         }
         setSelected(null);
         setHtml(''); setCss(''); setJs('');
@@ -693,7 +821,7 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                     <Globe className="w-10 h-10 mx-auto mb-3" style={{ color: 'var(--text-tertiary)' }} />
                     <h3 className="text-base font-semibold mb-2" style={{ color: 'var(--text-primary)' }}>Webpages disabled</h3>
                     <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        You don't have permission to use Webpages. Ask an admin to grant the <code>use_webpages</code> permission.
+                        Webpages isn't enabled for your account. Ask an admin to enable the Webpages beta feature for your organization, and verify your plan includes it.
                     </p>
                 </div>
             </div>
@@ -783,7 +911,7 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                                 // without long-lived stale data. Falls back to the emoji tile
                                 // when the page has no rendered thumbnail yet.
                                 const thumbnailUrl = w.thumbnailSha
-                                    ? `${API_BASE}/api/webpages/${w.id}/thumbnail?v=${w.thumbnailSha.slice(0, 8)}`
+                                    ? `${API_BASE}/api/webpages/${w.id}/thumbnail?v=${w.thumbnailSha}`
                                     : null;
                                 return (
                                 <div key={w.id}
@@ -926,14 +1054,17 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                         extraContents={extraContents}
                     />
                 ) : (
+                <div ref={idePaneRef} className="h-full">
                 <WebpageIDE
                     selected={selected}
                     html={html} css={css} js={js}
-                    onHtmlChange={setHtml}
-                    onCssChange={setCss}
-                    onJsChange={setJs}
+                    onHtmlChange={handleHtmlEdit}
+                    onCssChange={handleCssEdit}
+                    onJsChange={handleJsEdit}
+                    dirtyFiles={dirtyFiles}
                     extraFiles={extraFiles}
                     extraContents={extraContents}
+                    onExtraChange={handleExtraChange}
                     sources={sources}
                     onSourcesChange={setSources}
                     chatMessages={chatMessages}
@@ -965,6 +1096,7 @@ export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpage
                     onDownload={handleDownloadZip}
                     user={user}
                 />
+                </div>
                 )}
             </div>
 

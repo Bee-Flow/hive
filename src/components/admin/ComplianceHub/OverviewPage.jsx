@@ -1,5 +1,5 @@
 import React from 'react';
-import { AlertTriangle, CheckCircle2, Clock, RefreshCw, ArrowRight, ShieldCheck, Sparkles } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, RefreshCw, ArrowRight, ShieldCheck } from 'lucide-react';
 import { useTranslation } from '../../../hooks/useTranslation';
 import ScoreRing from './shared/ScoreRing';
 import { OverviewSkeleton, CheckCardSkeleton } from './shared/Skeleton';
@@ -51,7 +51,7 @@ export default function OverviewPage({ overview, checks, running, loading, onRun
                         {t('compliance.hero_onboard_desc')}
                     </p>
                     <button onClick={onStartWizard} style={primaryBtn}>
-                        <Sparkles size={14} /> {t('compliance.hero_onboard_cta')}
+                        {t('compliance.hero_onboard_cta')}
                     </button>
                 </div>
             </div>
@@ -129,9 +129,7 @@ export default function OverviewPage({ overview, checks, running, loading, onRun
                                 border: '1px solid #10b98133',
                             }}>
                                 <div style={{ display: 'flex', gap: 4 }}>
-                                    <Sparkles size={18} />
                                     <ShieldCheck size={32} />
-                                    <Sparkles size={18} />
                                 </div>
                                 <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-primary, #fff)' }}>{t('compliance.all_clear_title')}</div>
                                 <div style={{ fontSize: 12, color: 'var(--text-muted, #aaa)' }}>{t('compliance.all_clear_subtitle')}</div>

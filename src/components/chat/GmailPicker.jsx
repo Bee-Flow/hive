@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { X, Search, RefreshCw, Check, Mail, Inbox, Star } from 'lucide-react';
+import { formatRelativeDate } from '../../utils/dateFormatters';
 
 // Gmail icon
 const GmailIcon = ({ className = "w-6 h-6" }) => (
@@ -151,23 +152,7 @@ const GmailPicker = ({ isOpen, onClose, onFilesSelected, apiBase = '' }) => {
 
     if (!isOpen) return null;
 
-    const formatDate = (dateStr) => {
-        if (!dateStr) return '';
-        try {
-            const d = new Date(dateStr);
-            const now = new Date();
-            const diffMs = now - d;
-            const diffDays = Math.floor(diffMs / 86400000);
-            if (diffDays === 0) {
-                return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-            }
-            if (diffDays === 1) return 'Yesterday';
-            if (diffDays < 7) return `${diffDays}d ago`;
-            return d.toLocaleDateString();
-        } catch {
-            return dateStr;
-        }
-    };
+    const formatDate = (dateStr) => formatRelativeDate(dateStr, { todayShowsTime: true });
 
     const formatFrom = (from) => {
         if (!from) return '';

@@ -1,8 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Sparkles, X, Users, Lock, Zap } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
+import { SKILL_EMOJI_ICONS } from '../../constants/icons';
 
-export const ICONS = ['⚡', '🎯', '📝', '📧', '📊', '🔍', '💡', '🚀', '🎨', '🤝', '📋', '🏆', '🔧', '⚙️', '🌟', '💬', '📞', '🖊️', '🗂️', '🔑'];
+// Re-export for callers that already import ICONS from this module.
+export const ICONS = SKILL_EMOJI_ICONS;
 export const INSTRUCTION_LIMIT = 4000;
 
 const emptyForm = () => ({

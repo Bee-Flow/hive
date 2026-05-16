@@ -45,9 +45,17 @@ export default function GenerationOverlay({ generation, history, onClose, onSele
     const handleExportPdf = () => {
         const printWindow = window.open('', '_blank', 'width=800,height=600');
         if (!printWindow) return;
+        // Escape any user-influenced values that go into the print template.
+        // meta.label falls back to generation.type when the type is unknown —
+        // and generation.type can be server-supplied, so it is not trusted.
+        const esc = (s) => String(s ?? '')
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+        const safeLabel = esc(meta.label);
+        const safeTimestamp = esc(new Date(generation.timestamp).toLocaleString());
         printWindow.document.write(`<!DOCTYPE html>
 <html><head>
-    <title>${meta.label}</title>
+    <title>${safeLabel}</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
         body { background: white; color: #1a1a1a; padding: 48px 40px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.75; font-size: 15px; max-width: 800px; margin: 0 auto; }
@@ -67,15 +75,15 @@ export default function GenerationOverlay({ generation, history, onClose, onSele
         @media print { body { padding: 20px; } }
     </style>
 </head><body>
-    <h1>${meta.label}</h1>
+    <h1>${safeLabel}</h1>
     <div id="content"></div>
     <div style="text-align:right;color:#9ca3af;font-size:11px;margin-top:40px;border-top:1px solid #e5e7eb;padding-top:10px;">
-        Generated on ${new Date(generation.timestamp).toLocaleString()}
+        Generated on ${safeTimestamp}
     </div>
 </body></html>`);
         // Inject raw markdown text as preformatted — the printWindow doesn't have React
         const contentEl = printWindow.document.getElementById('content');
-        contentEl.innerHTML = generation.content
+        contentEl.innerHTML = String(generation.content ?? '')
             .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
             .replace(/\n/g, '<br>');
         printWindow.document.close();
@@ -179,7 +187,7 @@ export default function GenerationOverlay({ generation, history, onClose, onSele
                             <FileDown className="w-3.5 h-3.5" />
                             PDF
                         </button>
-                        {onInsertToDocument && !['flashcards', 'studyGuide', 'quiz'].includes(generation.type) && (
+                        {onInsertToDocument && (
                             <button
                                 onClick={() => { onInsertToDocument(generation.content); onClose(); }}
                                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-white transition-all hover:brightness-110"

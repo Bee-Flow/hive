@@ -59,7 +59,7 @@ export default function OnboardingWizard({ initialSettings, onFinish, onSkip }) 
 
     return (
         <div style={overlay}>
-            <div style={modal}>
+            <div style={modal} data-surface="opaque">
 
                 {/* Header */}
                 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
@@ -236,17 +236,20 @@ const overlay = {
     padding: 20,
 };
 const modal = {
-    background: 'var(--bg-primary, #0f0f1a)',
-    border: '1px solid var(--border-default, rgba(255,255,255,0.1))',
+    // Background falls back to a clean white if no theme variable is set; in
+    // glass mode the data-surface="opaque" rule overrides this with the
+    // tier-3 frosted-glass material so the modal blends with the wallpaper.
+    background: 'var(--bg-card, #ffffff)',
+    border: '1px solid var(--border-default, rgba(0,0,0,0.12))',
     borderRadius: 16, padding: 28, width: 520, maxWidth: '100%',
     maxHeight: '90vh', overflow: 'auto',
-    boxShadow: '0 24px 80px rgba(0,0,0,0.6)',
+    boxShadow: 'var(--shadow-popover, 0 24px 80px rgba(0,0,0,0.2))',
 };
 const input = {
-    background: 'var(--bg-secondary, #1a1a2e)',
-    border: '1px solid var(--border-default, rgba(255,255,255,0.1))',
+    background: 'var(--bg-card, #ffffff)',
+    border: '1px solid var(--border-default, rgba(0,0,0,0.12))',
     borderRadius: 8, padding: '9px 12px', fontSize: 13,
-    color: 'var(--text-primary, #fff)', width: '100%',
+    color: 'var(--text-primary, #0f172a)', width: '100%',
     outline: 'none', fontFamily: 'inherit',
 };
 const chip = {

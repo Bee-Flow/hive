@@ -6,12 +6,44 @@ import {
 import { API_BASE, authFetch } from '../utils/helpers';
 import MemoryPanel from './MemoryPanel';
 
+// Pairs of (hex, screen-reader name) so the colour picker announces a real
+// colour instead of the literal hex digits.
 const COLORS = [
-    '#6366f1', '#8b5cf6', '#ec4899', '#f43f5e', '#f97316',
-    '#eab308', '#22c55e', '#14b8a6', '#06b6d4', '#3b82f6',
+    { hex: '#6366f1', label: 'Indigo' },
+    { hex: '#8b5cf6', label: 'Violet' },
+    { hex: '#ec4899', label: 'Pink' },
+    { hex: '#f43f5e', label: 'Rose' },
+    { hex: '#f97316', label: 'Orange' },
+    { hex: '#eab308', label: 'Amber' },
+    { hex: '#22c55e', label: 'Green' },
+    { hex: '#14b8a6', label: 'Teal' },
+    { hex: '#06b6d4', label: 'Cyan' },
+    { hex: '#3b82f6', label: 'Blue' },
 ];
 
-const ICONS = ['📁', '🚀', '💡', '🎯', '📊', '🔬', '🎨', '📝', '🏗️', '⚡', '🌟', '🔧'];
+const ICONS = [
+    { emoji: '📁', label: 'Folder' },
+    { emoji: '🚀', label: 'Rocket' },
+    { emoji: '💡', label: 'Lightbulb' },
+    { emoji: '🎯', label: 'Target' },
+    { emoji: '📊', label: 'Chart' },
+    { emoji: '🔬', label: 'Microscope' },
+    { emoji: '🎨', label: 'Palette' },
+    { emoji: '📝', label: 'Notepad' },
+    { emoji: '🏗️', label: 'Construction' },
+    { emoji: '⚡', label: 'Bolt' },
+    { emoji: '🌟', label: 'Star' },
+    { emoji: '🔧', label: 'Wrench' },
+];
+
+// Mirror of the backend caps in server/routes/projects.js so the UI gives
+// immediate feedback rather than waiting for a 400.
+const MAX_NAME = 120;
+const MAX_DESCRIPTION = 1000;
+const MAX_INSTRUCTIONS = 8000;
+const ACTIVITY_PAGE_SIZE = 50;
+// Accept both UUID v1-5 and the more permissive crypto.randomUUID v4 format.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const TABS = [
     { id: 'general', label: 'General', icon: FolderOpen },
@@ -70,6 +102,9 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
     const [inviteType, setInviteType] = useState('user');
     const [inviteId, setInviteId] = useState('');
     const [invitePermission, setInvitePermission] = useState('viewer');
+    // Surface API failures to the user instead of swallowing them into console.
+    const [memberError, setMemberError] = useState('');
+    const [inviting, setInviting] = useState(false);
 
     // ── KBs ───────────────────────────────────────────────────
     const [availableKBs, setAvailableKBs] = useState([]);
@@ -88,6 +123,8 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
 
     // ── activity ──────────────────────────────────────────────
     const [activity, setActivity] = useState([]);
+    const [activityHasMore, setActivityHasMore] = useState(false);
+    const [activityLoadingMore, setActivityLoadingMore] = useState(false);
 
     const [saving, setSaving] = useState(false);
     const [saveError, setSaveError] = useState('');
@@ -154,18 +191,22 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
     }, []);
 
     // ── load users & groups for invite dropdowns (best-effort) ─
+    const loadUsersAndGroups = async () => {
+        try {
+            const [uRes, gRes] = await Promise.all([
+                authFetch(`${API_BASE}/auth/users`),
+                authFetch(`${API_BASE}/auth/groups`),
+            ]);
+            if (uRes.ok) setAllUsers(await uRes.json());
+            if (gRes.ok) setAllGroups(await gRes.json());
+        } catch (e) { /* non-admin users may not have access — fall back to ID input */ }
+    };
+    useEffect(() => { loadUsersAndGroups(); }, []);
+    // Re-fetch when entering the Members tab so admin changes made elsewhere
+    // (a freshly created user, a renamed group) show up without a page reload.
     useEffect(() => {
-        (async () => {
-            try {
-                const [uRes, gRes] = await Promise.all([
-                    authFetch(`${API_BASE}/auth/users`),
-                    authFetch(`${API_BASE}/auth/groups`),
-                ]);
-                if (uRes.ok) setAllUsers(await uRes.json());
-                if (gRes.ok) setAllGroups(await gRes.json());
-            } catch (e) { /* non-admin users may not have access — fall back to ID input */ }
-        })();
-    }, []);
+        if (tab === 'members' && !isCreate) loadUsersAndGroups();
+    }, [tab, isCreate]);
 
     // ── load members ──────────────────────────────────────────
     const refreshMembers = async () => {
@@ -187,14 +228,41 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
         const fetchActivity = async () => {
             if (document.visibilityState !== 'visible') return;
             try {
-                const res = await authFetch(`${API_BASE}/api/projects/${projectId}/activity?limit=50`);
-                if (res.ok && !cancelled) setActivity(await res.json());
+                const res = await authFetch(`${API_BASE}/api/projects/${projectId}/activity?limit=${ACTIVITY_PAGE_SIZE}&offset=0`);
+                if (res.ok && !cancelled) {
+                    const data = await res.json();
+                    // Backend returns { items, hasMore } now, but tolerate older
+                    // deployments that still return a bare array.
+                    if (Array.isArray(data)) {
+                        setActivity(data);
+                        setActivityHasMore(data.length >= ACTIVITY_PAGE_SIZE);
+                    } else {
+                        setActivity(data.items || []);
+                        setActivityHasMore(!!data.hasMore);
+                    }
+                }
             } catch (e) { /* ignore */ }
         };
         fetchActivity();
         const id = setInterval(fetchActivity, 15000);
         return () => { cancelled = true; clearInterval(id); };
     }, [tab, projectId, isCreate]);
+
+    const loadMoreActivity = async () => {
+        if (activityLoadingMore || !activityHasMore) return;
+        setActivityLoadingMore(true);
+        try {
+            const res = await authFetch(`${API_BASE}/api/projects/${projectId}/activity?limit=${ACTIVITY_PAGE_SIZE}&offset=${activity.length}`);
+            if (res.ok) {
+                const data = await res.json();
+                const items = Array.isArray(data) ? data : (data.items || []);
+                const hasMore = Array.isArray(data) ? items.length >= ACTIVITY_PAGE_SIZE : !!data.hasMore;
+                setActivity(prev => [...prev, ...items]);
+                setActivityHasMore(hasMore);
+            }
+        } catch (e) { /* ignore */ }
+        finally { setActivityLoadingMore(false); }
+    };
 
     // ── KB doc fetch when expanding ──────────────────────────
     useEffect(() => {
@@ -287,37 +355,65 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
 
     // ── members ──────────────────────────────────────────────
     const inviteMember = async () => {
-        if (!inviteId) return;
+        if (!inviteId || inviting) return;
+        // When the admin lists aren't available the field becomes a free-text
+        // input — reject obvious typos client-side so we don't waste a 400.
+        const idIsKnown = (inviteType === 'user' ? allUsers : allGroups).some(x => x.id === inviteId);
+        if (!idIsKnown && !UUID_RE.test(inviteId.trim())) {
+            setMemberError('Invalid ID. Expected a UUID.');
+            return;
+        }
+        setMemberError('');
+        setInviting(true);
         try {
             const res = await authFetch(`${API_BASE}/api/projects/${projectId}/share`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ sharedWithType: inviteType, sharedWithId: inviteId, permission: invitePermission }),
+                body: JSON.stringify({ sharedWithType: inviteType, sharedWithId: inviteId.trim(), permission: invitePermission }),
             });
             if (res.ok) {
                 const data = await res.json();
                 setMembers(data.shares || []);
                 setInviteId('');
+            } else {
+                const err = await res.json().catch(() => ({}));
+                setMemberError(err.error || 'Invite failed');
             }
-        } catch (e) { console.error('Invite failed:', e); }
+        } catch (e) {
+            setMemberError(e.message || 'Invite failed');
+        } finally {
+            setInviting(false);
+        }
     };
 
     const changeMemberRole = async (memberId, newRole) => {
+        setMemberError('');
         try {
             const res = await authFetch(`${API_BASE}/api/projects/${projectId}/members/${memberId}`, {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ role: newRole }),
             });
-            if (res.ok) refreshMembers();
-        } catch (e) { console.error('Role change failed:', e); }
+            if (res.ok) {
+                refreshMembers();
+            } else {
+                const err = await res.json().catch(() => ({}));
+                setMemberError(err.error || 'Role change failed');
+            }
+        } catch (e) { setMemberError(e.message || 'Role change failed'); }
     };
 
     const removeMember = async (memberId) => {
+        setMemberError('');
         try {
             const res = await authFetch(`${API_BASE}/api/projects/${projectId}/members/${memberId}`, { method: 'DELETE' });
-            if (res.ok) refreshMembers();
-        } catch (e) { console.error('Remove failed:', e); }
+            if (res.ok) {
+                refreshMembers();
+            } else {
+                const err = await res.json().catch(() => ({}));
+                setMemberError(err.error || 'Remove failed');
+            }
+        } catch (e) { setMemberError(e.message || 'Remove failed'); }
     };
 
     const resolveSubject = (m) => {
@@ -329,7 +425,7 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
         return g ? g.name : m.sharedWithId;
     };
 
-    // ── KB helpers (lifted from ProjectModal) ────────────────
+    // ── KB helpers ───────────────────────────────────────────
     const toggleKBLink = (kbId) => {
         setKnowledgeBaseIds(prev =>
             prev.includes(kbId) ? prev.filter(id => id !== kbId) : [...prev, kbId]
@@ -529,6 +625,7 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
                             onKeyDown={e => { if (e.key === 'Enter') setEditingName(false); }}
                             autoFocus
                             placeholder="Project name"
+                            maxLength={MAX_NAME}
                             className="text-base font-semibold bg-transparent border-b outline-none px-1 min-w-[200px]"
                             style={{ color: 'var(--text-primary)', borderColor: 'var(--border-default)' }}
                         />
@@ -551,7 +648,11 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
                     </span>
                 </div>
                 <div className="flex items-center gap-2">
-                    {saveError && <span className="text-xs text-red-400">{saveError}</span>}
+                    {saveError && (
+                        <span className="text-xs text-red-400" role="alert" aria-live="polite">
+                            {saveError}
+                        </span>
+                    )}
                     {isDirty && !saving && canEdit && (
                         <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Unsaved changes</span>
                     )}
@@ -608,6 +709,7 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
                                 onChange={e => setDescription(e.target.value)}
                                 placeholder="Brief description..."
                                 disabled={!canEdit}
+                                maxLength={MAX_DESCRIPTION}
                                 className="w-full px-3 py-2.5 rounded-xl text-sm border transition-colors outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/30 disabled:opacity-60"
                                 style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
                             />
@@ -621,6 +723,7 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
                                 placeholder="Instructions applied to every chat in this project..."
                                 rows={4}
                                 disabled={!canEdit}
+                                maxLength={MAX_INSTRUCTIONS}
                                 className="w-full px-3 py-2.5 rounded-xl text-sm border transition-colors outline-none resize-none focus:ring-2 focus:ring-[var(--accent-primary)]/30 disabled:opacity-60"
                                 style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
                             />
@@ -650,31 +753,40 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Color</label>
-                                <div className="flex gap-1.5 flex-wrap">
+                                <label id="project-color-label" className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Color</label>
+                                <div className="flex gap-1.5 flex-wrap" role="radiogroup" aria-labelledby="project-color-label">
                                     {COLORS.map(c => (
                                         <button
-                                            key={c}
-                                            onClick={() => canEdit && setColor(c)}
+                                            key={c.hex}
+                                            type="button"
+                                            role="radio"
+                                            aria-checked={color === c.hex}
+                                            onClick={() => canEdit && setColor(c.hex)}
                                             disabled={!canEdit}
-                                            className={`w-7 h-7 rounded-lg transition-all ${color === c ? 'ring-2 ring-offset-2 scale-110' : 'hover:scale-105'} disabled:opacity-50`}
-                                            style={{ background: c }}
-                                            aria-label={c}
+                                            className={`w-7 h-7 rounded-lg transition-all ${color === c.hex ? 'ring-2 ring-offset-2 scale-110' : 'hover:scale-105'} disabled:opacity-50`}
+                                            style={{ background: c.hex }}
+                                            aria-label={c.label}
+                                            title={c.label}
                                         />
                                     ))}
                                 </div>
                             </div>
                             <div>
-                                <label className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Icon</label>
-                                <div className="flex gap-1 flex-wrap">
+                                <label id="project-icon-label" className="block text-xs font-semibold mb-1.5" style={{ color: 'var(--text-secondary)' }}>Icon</label>
+                                <div className="flex gap-1 flex-wrap" role="radiogroup" aria-labelledby="project-icon-label">
                                     {ICONS.map(i => (
                                         <button
-                                            key={i}
-                                            onClick={() => canEdit && setIcon(i)}
+                                            key={i.emoji}
+                                            type="button"
+                                            role="radio"
+                                            aria-checked={icon === i.emoji}
+                                            aria-label={i.label}
+                                            title={i.label}
+                                            onClick={() => canEdit && setIcon(i.emoji)}
                                             disabled={!canEdit}
-                                            className={`w-8 h-8 rounded-lg text-base flex items-center justify-center transition-all ${icon === i ? 'bg-[var(--accent-primary)]/10 ring-2 ring-[var(--accent-primary)]/30 scale-110' : 'hover:bg-[var(--bg-tertiary)]'} disabled:opacity-50`}
+                                            className={`w-8 h-8 rounded-lg text-base flex items-center justify-center transition-all ${icon === i.emoji ? 'bg-[var(--accent-primary)]/10 ring-2 ring-[var(--accent-primary)]/30 scale-110' : 'hover:bg-[var(--bg-tertiary)]'} disabled:opacity-50`}
                                         >
-                                            {i}
+                                            {i.emoji}
                                         </button>
                                     ))}
                                 </div>
@@ -794,7 +906,14 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
 
                                                     <div className="flex gap-2 justify-end items-center">
                                                         {kbIngestStatus && (
-                                                            <span className="text-[11px]" style={{ color: 'var(--accent-primary)' }}>{kbIngestStatus}</span>
+                                                            <span
+                                                                className="text-[11px]"
+                                                                style={{ color: 'var(--accent-primary)' }}
+                                                                role="status"
+                                                                aria-live="polite"
+                                                            >
+                                                                {kbIngestStatus}
+                                                            </span>
                                                         )}
                                                         <label className="cursor-pointer px-2.5 py-1 rounded-lg text-[11px] font-medium border flex items-center gap-1"
                                                             style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}>
@@ -892,15 +1011,28 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
                                         <option value="viewer">Viewer</option>
                                         <option value="editor">Editor</option>
                                     </select>
-                                    <button onClick={inviteMember} disabled={!inviteId}
+                                    <button
+                                        onClick={inviteMember}
+                                        disabled={!inviteId || inviting}
+                                        aria-busy={inviting}
                                         className="px-4 py-2 rounded-lg text-sm font-medium text-white disabled:opacity-50 flex items-center gap-1.5"
                                         style={{ background: 'var(--accent-primary)' }}>
-                                        <UserPlus className="w-4 h-4" /> Invite
+                                        <UserPlus className="w-4 h-4" />
+                                        {inviting ? 'Inviting…' : 'Invite'}
                                     </button>
                                 </div>
                                 <p className="text-[11px] mt-2" style={{ color: 'var(--text-muted)' }}>
                                     Editors can update project settings and KBs. Viewers can read and chat in the project.
                                 </p>
+                                {memberError && (
+                                    <p
+                                        className="text-[11px] mt-2 text-red-400"
+                                        role="alert"
+                                        aria-live="polite"
+                                    >
+                                        {memberError}
+                                    </p>
+                                )}
                             </div>
                         )}
 
@@ -924,6 +1056,15 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
                             <h3 className="text-xs font-semibold mb-2" style={{ color: 'var(--text-secondary)' }}>
                                 Members ({members.length})
                             </h3>
+                            {memberError && !isOwner && (
+                                <p
+                                    className="text-[11px] mb-2 text-red-400"
+                                    role="alert"
+                                    aria-live="polite"
+                                >
+                                    {memberError}
+                                </p>
+                            )}
                             {members.length === 0 ? (
                                 <p className="text-sm py-4 text-center rounded-lg border border-dashed" style={{ color: 'var(--text-muted)', borderColor: 'var(--border-subtle)' }}>
                                     No members yet. {isOwner && 'Invite people to collaborate.'}
@@ -978,20 +1119,34 @@ export default function ProjectDetailPage({ projectId, user, onClose, onSaved, o
                                 No activity yet.
                             </p>
                         ) : (
-                            <ul className="space-y-2">
-                                {activity.map(item => (
-                                    <li key={item.id} className="flex items-start gap-3 px-3 py-2 rounded-lg" style={{ background: 'var(--bg-primary)' }}>
-                                        <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
-                                            style={{ background: 'var(--bg-tertiary)' }}>
-                                            <Activity className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
-                                        </div>
-                                        <div className="flex-1 min-w-0">
-                                            <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{formatActivity(item)}</p>
-                                            <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{formatRelative(item.createdAt)}</p>
-                                        </div>
-                                    </li>
-                                ))}
-                            </ul>
+                            <>
+                                <ul className="space-y-2">
+                                    {activity.map(item => (
+                                        <li key={item.id} className="flex items-start gap-3 px-3 py-2 rounded-lg" style={{ background: 'var(--bg-primary)' }}>
+                                            <div className="w-7 h-7 rounded-full flex items-center justify-center flex-shrink-0"
+                                                style={{ background: 'var(--bg-tertiary)' }}>
+                                                <Activity className="w-3.5 h-3.5" style={{ color: 'var(--text-muted)' }} />
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <p className="text-sm" style={{ color: 'var(--text-primary)' }}>{formatActivity(item)}</p>
+                                                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>{formatRelative(item.createdAt)}</p>
+                                            </div>
+                                        </li>
+                                    ))}
+                                </ul>
+                                {activityHasMore && (
+                                    <div className="mt-3 text-center">
+                                        <button
+                                            onClick={loadMoreActivity}
+                                            disabled={activityLoadingMore}
+                                            className="px-4 py-1.5 rounded-lg text-xs font-medium border disabled:opacity-50"
+                                            style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
+                                        >
+                                            {activityLoadingMore ? 'Loading…' : 'Load more'}
+                                        </button>
+                                    </div>
+                                )}
+                            </>
                         )}
                     </div>
                 )}

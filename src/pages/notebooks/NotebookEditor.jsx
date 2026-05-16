@@ -10,6 +10,7 @@ import Link from '@tiptap/extension-link';
 import { Table, TableRow, TableHeader, TableCell } from '@tiptap/extension-table';
 import { Markdown } from 'tiptap-markdown';
 import MermaidExtension, { preprocessMermaidContent } from './MermaidExtension';
+import { linkifyLegalCitations } from '../../utils/legalCitations';
 import Mathematics from '@tiptap/extension-mathematics';
 import { TableOfContents } from '@tiptap/extension-table-of-contents';
 import { DragHandle } from '@tiptap/extension-drag-handle-react';
@@ -414,6 +415,11 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
     ref
 ) {
     const saveTimerRef = useRef(null);
+    // Serialize in-flight saves so a slow 2 s-debounced save can't be passed
+    // by the next one — last-finishing wins is a data-corruption bug.
+    const saveInFlightRef = useRef(false);
+    const pendingSaveRef = useRef(null);
+    const flushSaveRef = useRef(null);
     const [wordCount, setWordCount] = useState(0);
     const [showAskInput, setShowAskInput] = useState(false);
     const [askQuery, setAskQuery] = useState('');
@@ -428,6 +434,30 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
     useEffect(() => { notebookIdRef.current = notebookId; }, [notebookId]);
 
     const { t } = useTranslation();
+
+    // Reassigned every render so the closure always sees the latest `onSave`.
+    // The recursive tail uses flushSaveRef.current so a queued payload kicked
+    // off mid-render still resolves against the freshest function.
+    flushSaveRef.current = async function flushSave(html) {
+        if (saveInFlightRef.current) {
+            pendingSaveRef.current = html;
+            return;
+        }
+        saveInFlightRef.current = true;
+        try {
+            await Promise.resolve(onSave?.(html));
+        } catch (e) {
+            console.error('[NotebookEditor] Save failed:', e);
+        } finally {
+            saveInFlightRef.current = false;
+            if (pendingSaveRef.current !== null) {
+                const next = pendingSaveRef.current;
+                pendingSaveRef.current = null;
+                flushSaveRef.current?.(next);
+            }
+        }
+    };
+
     const editor = useEditor({
         extensions: [
             StarterKit.configure({
@@ -489,7 +519,7 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
             const text = editor.getText();
             setWordCount(text.trim() ? text.trim().split(/\s+/).length : 0);
             if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
-            saveTimerRef.current = setTimeout(() => onSave?.(html), 2000);
+            saveTimerRef.current = setTimeout(() => flushSaveRef.current?.(html), 2000);
         },
     });
 
@@ -510,7 +540,7 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
         const currentHTML = editor.getHTML();
         if (content !== currentHTML && content !== undefined) {
             const resolved = resolveContentUrls(content) || '';
-            const processed = preprocessMermaidContent(resolved);
+            const processed = linkifyLegalCitations(preprocessMermaidContent(resolved));
             editor.commands.setContent(processed, false);
         }
     }, [content, editor, resolveContentUrls]);
@@ -578,6 +608,12 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
                 // - Production (nginx): API_BASE='', stays relative → goes through proxy
                 // - Dev deployment: API_BASE='https://server.dev.beeflow.ai' → hits backend directly
                 const imgSrc = `${API_BASE}${data.url}`;
+                // Defense-in-depth: only accept http(s) or root-relative URLs.
+                // Rejects javascript:, data:, vbscript:, file: if the backend is ever compromised.
+                const isValidScheme = imgSrc.startsWith('/') || /^https?:\/\//i.test(imgSrc);
+                if (!isValidScheme) {
+                    throw new Error('Refusing image with unsupported URL scheme');
+                }
                 editor.chain().focus().setImage({ src: imgSrc, alt: file.name }).run();
             } else {
                 throw new Error(data.error || 'No URL returned');
@@ -587,10 +623,15 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
         }
     }, [editor]);
 
-    // Handle image paste from clipboard
+    // Handle image paste from clipboard.
+    //
+    // The TipTap `useEditor` hook can return an editor instance whose `view`
+    // hasn't been mounted yet (StrictMode double-mount in dev, HMR), and
+    // `editor.view` is a throwing getter when the view is unavailable —
+    // reading it crashes the component. Guard the access and, when the view
+    // isn't ready, defer attachment until the editor fires `create`.
     useEffect(() => {
         if (!editor) return;
-        const el = editor.view.dom;
 
         const handlePaste = (e) => {
             const items = Array.from(e.clipboardData?.items || []);
@@ -609,11 +650,26 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
             imageFiles.forEach(f => handleImageUpload(f));
         };
 
-        el.addEventListener('paste', handlePaste);
-        el.addEventListener('drop', handleDrop);
+        let attached = null;
+        const attach = () => {
+            if (attached) return;
+            let el;
+            try { el = editor.view?.dom; } catch { return; }
+            if (!el) return;
+            attached = el;
+            el.addEventListener('paste', handlePaste);
+            el.addEventListener('drop', handleDrop);
+        };
+
+        attach();
+        if (!attached) editor.on('create', attach);
+
         return () => {
-            el.removeEventListener('paste', handlePaste);
-            el.removeEventListener('drop', handleDrop);
+            editor.off('create', attach);
+            if (attached) {
+                attached.removeEventListener('paste', handlePaste);
+                attached.removeEventListener('drop', handleDrop);
+            }
         };
     }, [editor, handleImageUpload]);
 
@@ -645,10 +701,12 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
 
     // Expose imperative methods
     useImperativeHandle(ref, () => ({
-        insertContent: (text) => editor?.chain().focus().insertContent(text).run(),
-        setContent: (html) => editor?.commands.setContent(preprocessMermaidContent(html) || '', false),
-        insertMarkdown: (md) => editor?.chain().focus().insertContent(md).run(),
-        setMarkdownContent: (md) => editor?.commands.setContent(preprocessMermaidContent(md) || '', false),
+        insertContent: (text) => editor?.chain().focus().insertContent(
+            typeof text === 'string' ? linkifyLegalCitations(text) : text
+        ).run(),
+        setContent: (html) => editor?.commands.setContent(linkifyLegalCitations(preprocessMermaidContent(html) || ''), false),
+        insertMarkdown: (md) => editor?.chain().focus().insertContent(linkifyLegalCitations(md || '')).run(),
+        setMarkdownContent: (md) => editor?.commands.setContent(linkifyLegalCitations(preprocessMermaidContent(md) || ''), false),
         getEditor: () => editor,
     }), [editor]);
 
@@ -1044,8 +1102,8 @@ function MathHint() {
 
     useEffect(() => {
         if (!dismissed) {
-            const t = setTimeout(() => setVisible(true), 800);
-            return () => clearTimeout(t);
+            const hintTimer = setTimeout(() => setVisible(true), 800);
+            return () => clearTimeout(hintTimer);
         }
     }, [dismissed]);
 

@@ -21,6 +21,9 @@ function getTzParts(date, tz) {
         hour12: false, weekday: 'short',
     });
     const parts = Object.fromEntries(fmt.formatToParts(date).map(p => [p.type, p.value]));
+    // Node ≤16 / older ICU builds occasionally returned hour='24' at midnight
+    // when hourCycle wasn't pinned. We pin hour12:false above, so modern
+    // runtimes return 00-23, but the normalization is cheap insurance.
     return {
         year: parseInt(parts.year, 10),
         month: parseInt(parts.month, 10),
@@ -42,27 +45,64 @@ function wallClockToUtc(year, month, day, hour, minute, tz) {
     return new Date(utcGuess - offsetMs);
 }
 
+// Parse 'HH:MM' into [hour, minute] clamped to valid ranges. Falls back to
+// the supplied default when the input is missing or malformed (e.g. '9',
+// 'noon', '25:99'). Default for daily/weekly/monthly is 08:00; hourly
+// callers pass minute defaults explicitly.
+function parseTimeOfDay(value, defaultHour, defaultMinute) {
+    const [hStr, mStr] = String(value || '').split(':');
+    const h = parseInt(hStr, 10);
+    const m = parseInt(mStr, 10);
+    const hour = Number.isFinite(h) && h >= 0 && h <= 23 ? h : defaultHour;
+    const minute = Number.isFinite(m) && m >= 0 && m <= 59 ? m : defaultMinute;
+    return [hour, minute];
+}
+
+// Build a wall-clock target for a given month, retrying the next month if
+// the requested day doesn't exist (e.g. day 31 in Feb → skip to Mar 31).
+// Caps at 12 forward steps so a corrupt input can never infinite-loop.
+function targetForMonth(year, month, requestedDay, hh, mm, tz) {
+    for (let i = 0; i < 12; i += 1) {
+        const target = wallClockToUtc(year, month, requestedDay, hh, mm, tz);
+        // If the requested day was rolled over by Date normalization (e.g.
+        // Feb 30 → Mar 2), getTzParts(target).day !== requestedDay — try
+        // the next month.
+        const reflected = getTzParts(target, tz);
+        if (reflected.day === requestedDay && reflected.month === month && reflected.year === year) {
+            return target;
+        }
+        if (month === 12) { month = 1; year += 1; } else { month += 1; }
+    }
+    // Defensive: fall back to whatever month-1 wall clock produces.
+    return wallClockToUtc(year, month, Math.min(requestedDay, 28), hh, mm, tz);
+}
+
 export function computeRoutineNextRun(routine, tz) {
     const now = new Date();
     const TZ = tz || routine?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC';
 
     if (routine?.repeatInterval === 'hourly') {
-        // Hourly cadence is TZ-independent — just the next round hour from now.
+        // Hourly cadence honors timeOfDay's MINUTES (the offset within the
+        // hour), but ignores HOURS — the next fire is always the next time
+        // the clock hits :MM. timeOfDay='09:30' fires at HH:30 every hour.
+        const [, minute] = parseTimeOfDay(routine?.timeOfDay, 0, 0);
         const next = new Date(now);
-        next.setHours(next.getHours() + 1, 0, 0, 0);
+        next.setSeconds(0, 0);
+        next.setMinutes(minute);
+        if (next <= now) next.setHours(next.getHours() + 1);
         return next.toISOString();
     }
 
-    const [hh, mm] = String(routine?.timeOfDay || '08:00').split(':').map(n => parseInt(n, 10) || 0);
+    const [hh, mm] = parseTimeOfDay(routine?.timeOfDay, 8, 0);
 
     if (routine?.repeatInterval === 'monthly') {
         const parts = getTzParts(now, TZ);
-        const dayOfMonth = Math.max(1, Math.min(28, Number(routine?.dayOfMonth) || parts.day));
-        let target = wallClockToUtc(parts.year, parts.month, dayOfMonth, hh, mm, TZ);
+        const requestedDay = Math.max(1, Math.min(31, Number(routine?.dayOfMonth) || parts.day));
+        let target = targetForMonth(parts.year, parts.month, requestedDay, hh, mm, TZ);
         if (target <= now) {
             const nextMonth = parts.month === 12 ? 1 : parts.month + 1;
             const nextYear = parts.month === 12 ? parts.year + 1 : parts.year;
-            target = wallClockToUtc(nextYear, nextMonth, dayOfMonth, hh, mm, TZ);
+            target = targetForMonth(nextYear, nextMonth, requestedDay, hh, mm, TZ);
         }
         return target.toISOString();
     }
@@ -86,11 +126,16 @@ export function computeRoutineNextRun(routine, tz) {
         const tParts = getTzParts(tomorrow, TZ);
         target = wallClockToUtc(tParts.year, tParts.month, tParts.day, hh, mm, TZ);
     }
-    if (allowedDays) {
+    if (allowedDays && allowedDays.size > 0) {
+        let matched = false;
         for (let i = 0; i < 7; i += 1) {
             const tParts = getTzParts(target, TZ);
-            if (allowedDays.has(tParts.weekday)) break;
+            if (allowedDays.has(tParts.weekday)) { matched = true; break; }
             target = new Date(target.getTime() + 24 * 60 * 60 * 1000);
+        }
+        if (!matched && typeof console !== 'undefined') {
+            // Corrupt daysOfWeek (e.g. ['xyz']) — log so it surfaces during dev.
+            console.warn('[routineSchedule] No matching weekday found within 7 days', { allowedDays: [...allowedDays] });
         }
     }
     return target.toISOString();

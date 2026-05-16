@@ -195,22 +195,23 @@ export function DetailDrawer({
             </div>
           </div>
           <div style={statBoxStyle}>
-            <div
-              style={{ fontSize: "22px", fontWeight: 800, color: COLORS.amber }}
-            >
-              {type === "model" && costPerModel[data.model]
-                ? fmtCost(costPerModel[data.model])
-                : fmtCost(data.estimated_cost || 0)}
-            </div>
-            <div
-              style={{
-                fontSize: "10px",
-                color: "var(--text-muted, #888)",
-                marginTop: "2px",
-              }}
-            >
-              Est. Cost
-            </div>
+            {(() => {
+              const billed = Number(data.billed_cost || 0);
+              const raw = type === "model" && costPerModel[data.model]
+                ? costPerModel[data.model]
+                : (data.estimated_cost || 0);
+              const isPayg = billed > 0;
+              return (
+                <>
+                  <div style={{ fontSize: "22px", fontWeight: 800, color: isPayg ? COLORS.green : COLORS.amber }}>
+                    {fmtCost(isPayg ? billed : raw)}
+                  </div>
+                  <div style={{ fontSize: "10px", color: "var(--text-muted, #888)", marginTop: "2px" }}>
+                    {isPayg ? `Billed (raw ${fmtCost(raw)})` : "Est. Cost"}
+                  </div>
+                </>
+              );
+            })()}
           </div>
         </div>
 

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { X, Save, RotateCcw, PanelRightClose, PanelRightOpen, Loader2, Check, AlertCircle } from 'lucide-react';
+import { X, Save, RotateCcw, PanelRightClose, PanelRightOpen, Loader2, Check, AlertCircle, Play, Pin, PinOff, RotateCw, Power } from 'lucide-react';
 import { matchValidationToStep } from './flow/matchValidationToStep';
 import SettingsForm from './flow/SettingsForm';
 import VariableTree from './mapping/VariableTree';
@@ -21,7 +21,7 @@ import scopedStorage from '../../../../utils/scopedStorage';
  * fall back to a plain textarea when the editor fails to load (offline,
  * extension blocking, etc.).
  */
-export default function StepInspector({ step, runStep, onClose, definition, onSaveStep, validation, modelTiers = {} }) {
+export default function StepInspector({ step, runStep, onClose, definition, onSaveStep, validation, modelTiers = {}, onExecuteStep, onRetryFromStep, runInFlight = false, executingStep = false }) {
     // Settings-first by default — most edits are tweaking the prompt or
     // model tier. The Definition (JSON) tab stays one click away for power
     // users who need to touch fields the form doesn't expose.
@@ -33,18 +33,32 @@ export default function StepInspector({ step, runStep, onClose, definition, onSa
     // Toast-style status: 'idle' | 'saving' | 'saved' | 'error'. Drives the
     // small chip in the inspector header so the user always knows whether
     // their last edit landed. Auto-fades from 'saved' back to 'idle'.
+    //
+    // We track the *previous* saving flag in a ref instead of reading
+    // `saveStatus` inside the effect — that read was the reason the
+    // exhaustive-deps lint was disabled, and a parent re-render between
+    // two `saving=true` ticks could swallow the saved transition.
     const [saveStatus, setSaveStatus] = useState('idle');
     const savedFadeRef = useRef(null);
+    const wasSavingRef = useRef(false);
     useEffect(() => {
-        if (saving) { setSaveStatus('saving'); return; }
-        if (saveError) { setSaveStatus('error'); return; }
-        // Saving just transitioned false → success.
-        if (saveStatus === 'saving') {
+        if (saving) {
+            wasSavingRef.current = true;
+            setSaveStatus('saving');
+            return;
+        }
+        if (saveError) {
+            wasSavingRef.current = false;
+            setSaveStatus('error');
+            return;
+        }
+        if (wasSavingRef.current) {
+            wasSavingRef.current = false;
             setSaveStatus('saved');
             if (savedFadeRef.current) clearTimeout(savedFadeRef.current);
             savedFadeRef.current = setTimeout(() => setSaveStatus('idle'), 1500);
         }
-    }, [saving, saveError]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [saving, saveError]);
     useEffect(() => () => { if (savedFadeRef.current) clearTimeout(savedFadeRef.current); }, []);
     const [Monaco, setMonaco] = useState(null);
     const [monacoFailed, setMonacoFailed] = useState(false);
@@ -75,6 +89,14 @@ export default function StepInspector({ step, runStep, onClose, definition, onSa
         const handle = activeFieldRef.current;
         if (handle?.insert) handle.insert(path);
     };
+    // The active field handle lives on a Settings-tab input. When the user
+    // switches tabs that input unmounts, but the ref keeps pointing at the
+    // stale handle — a click in the VariableTree would then "insert" into
+    // a detached field. Reset whenever the tab changes.
+    useEffect(() => {
+        activeFieldRef.current = null;
+        setActiveLabel(null);
+    }, [tab]);
 
     // VariableTree can be collapsed for users who prefer pure JSON work.
     // Preference persists via scopedStorage.
@@ -123,6 +145,14 @@ export default function StepInspector({ step, runStep, onClose, definition, onSa
      */
     const saveInflightRef = useRef(null);
     const saveQueuedRef = useRef(null);
+    // Latest-state refs so the unmount flusher can still issue the queued
+    // patch with the current definition/step/save-fn. Without these the
+    // closure captured at mount would refer to stale references after a
+    // step switch or definition refresh.
+    const definitionRef = useRef(definition);
+    const stepRef = useRef(step);
+    const onSaveStepRef = useRef(onSaveStep);
+    useEffect(() => { definitionRef.current = definition; stepRef.current = step; onSaveStepRef.current = onSaveStep; });
     const persistStepPatch = useCallback(async (patch) => {
         if (!definition || typeof onSaveStep !== 'function' || !step) return;
         if (saveInflightRef.current) {
@@ -162,6 +192,28 @@ export default function StepInspector({ step, runStep, onClose, definition, onSa
         })();
         return saveInflightRef.current;
     }, [definition, step, onSaveStep]);
+
+    // On unmount, drain any patch that was queued behind an in-flight save.
+    // Without this, switching steps (or closing the inspector) within the
+    // debounce window silently dropped the most recent edit. We fire it
+    // detached because the component is going away — the caller's onSaveStep
+    // is responsible for surfacing failures through its own toast/logger.
+    useEffect(() => () => {
+        const queued = saveQueuedRef.current;
+        if (!queued) return;
+        saveQueuedRef.current = null;
+        const def = definitionRef.current;
+        const stp = stepRef.current;
+        const save = onSaveStepRef.current;
+        if (!def || !stp || typeof save !== 'function') return;
+        const next = { ...def };
+        const merged = { ...stp, ...queued, id: stp.id };
+        if (def.trigger?.id === stp.id) next.trigger = merged;
+        else next.steps = (def.steps || []).map(s => s.id === stp.id ? merged : s);
+        Promise.resolve(save(next)).catch(err => {
+            console.warn('[StepInspector] queued patch flush on unmount failed:', err?.message || err);
+        });
+    }, []);
 
     if (!step) return null;
 
@@ -224,7 +276,10 @@ export default function StepInspector({ step, runStep, onClose, definition, onSa
         // pill (z-20 — pill should still be reachable when inspector is
         // open but to the right of it). Width is 720px when the variable
         // tree is open (split: 420 form + 300 tree), 420px when collapsed.
-        <div className={`absolute top-0 right-0 h-full ${inspectorWidth} z-[15] flex flex-col bg-[var(--bg-primary)] border-l border-[var(--border-default)] shadow-[-6px_0_16px_rgba(0,0,0,0.08)] overflow-hidden transition-[width] duration-150`}>
+        <div
+            data-surface="default"
+            className={`absolute top-0 right-0 h-full ${inspectorWidth} z-[15] flex flex-col border-l border-[var(--border-default)] shadow-[-6px_0_16px_rgba(0,0,0,0.08)] overflow-hidden transition-[width] duration-150`}
+        >
             <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border-default)]">
                 <div className="min-w-0 flex-1 flex items-center gap-2">
                     <div className="min-w-0">
@@ -251,6 +306,65 @@ export default function StepInspector({ step, runStep, onClose, definition, onSa
                     </button>
                 </div>
             </div>
+            {/* n8n-style action bar: Execute · Pin · Disable · Retry.
+                Pin/Disable persist into the step definition; Execute and
+                Retry call back into the parent to hit the partial-run API. */}
+            {step?.id && definition?.trigger?.id !== step.id && (
+                <div className="flex items-center gap-1 px-2 py-1.5 border-b border-[var(--border-default)] bg-[var(--bg-secondary)]/40">
+                    {typeof onExecuteStep === 'function' && (
+                        <button
+                            onClick={() => onExecuteStep(step.id)}
+                            disabled={runInFlight || executingStep}
+                            title="Execute this step only (uses upstream replay / pinned data)"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md bg-[var(--accent)] text-white hover:opacity-90 disabled:opacity-40 transition"
+                        >
+                            {executingStep ? <Loader2 size={11} className="animate-spin" /> : <Play size={11} fill="currentColor" />}
+                            Execute
+                        </button>
+                    )}
+                    <button
+                        onClick={async () => {
+                            if (step.pinnedOutput !== undefined && step.pinnedOutput !== null) {
+                                await persistStepPatch({ pinnedOutput: null, pinnedAt: null });
+                            } else if (runStep?.output != null) {
+                                await persistStepPatch({ pinnedOutput: runStep.output, pinnedAt: new Date().toISOString() });
+                            }
+                        }}
+                        disabled={!runStep?.output && !(step.pinnedOutput !== undefined && step.pinnedOutput !== null)}
+                        title={step.pinnedOutput != null ? 'Unpin output (re-enable live execution)' : 'Pin this output (skip live execution; use the latest output verbatim)'}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md transition disabled:opacity-30 ${
+                            step.pinnedOutput != null
+                                ? 'bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border border-cyan-500/40'
+                                : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'
+                        }`}
+                    >
+                        {step.pinnedOutput != null ? <PinOff size={11} /> : <Pin size={11} />}
+                        {step.pinnedOutput != null ? 'Pinned' : 'Pin'}
+                    </button>
+                    <button
+                        onClick={() => persistStepPatch({ disabled: !step.disabled })}
+                        title={step.disabled ? 'Re-enable this node' : 'Disable this node (skipped during execution)'}
+                        className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md transition ${
+                            step.disabled
+                                ? 'bg-amber-500/15 text-amber-700 dark:text-amber-300 border border-amber-500/40'
+                                : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'
+                        }`}
+                    >
+                        <Power size={11} />
+                        {step.disabled ? 'Disabled' : 'Disable'}
+                    </button>
+                    {typeof onRetryFromStep === 'function' && runStep?.status === 'error' && (
+                        <button
+                            onClick={() => onRetryFromStep(step.id)}
+                            disabled={runInFlight}
+                            title="Retry this step and continue downstream from here"
+                            className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md text-amber-700 dark:text-amber-300 bg-amber-500/10 hover:bg-amber-500/20 disabled:opacity-40 transition border border-amber-500/30"
+                        >
+                            <RotateCw size={11} /> Retry from here
+                        </button>
+                    )}
+                </div>
+            )}
             <div className="flex border-b border-[var(--border-default)] text-xs">
                 <TabBtn active={tab === 'settings'} onClick={() => setTab('settings')}>Settings</TabBtn>
                 <TabBtn active={tab === 'definition'} onClick={() => setTab('definition')}>JSON</TabBtn>
@@ -261,9 +375,9 @@ export default function StepInspector({ step, runStep, onClose, definition, onSa
 
             <div className="flex-1 min-h-0 flex">
                 <div className="flex-1 min-w-0 min-h-0 flex flex-col">
-                {tab === 'settings' && (
+                {tab === 'settings' && step?.id && (
                     <SettingsForm
-                        key={step?.id}
+                        key={step.id}
                         step={step}
                         modelTiers={modelTiers}
                         stepIssues={stepIssues}

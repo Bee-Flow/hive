@@ -6,6 +6,13 @@ import WebpageDiffCard from '../../components/WebpageDiffCard';
 import WebpagePlanCard from '../../components/WebpagePlanCard';
 import WebpageChatModePicker from '../../components/WebpageChatModePicker';
 
+const QUICK_STARTS = [
+    'Landing page for a bakery — hero, menu grid, contact form.',
+    'Personal portfolio site with project gallery and about section.',
+    'Form that saves user signups to a database, with a thank-you screen.',
+    'Dashboard with a few stat cards and a simple chart.',
+];
+
 /**
  * AI chat panel scoped to a single webpage. Mirrors NotebookChat — receives
  * messages from useChatEngine and forwards them to MessageItem; the parent
@@ -22,17 +29,40 @@ export default function WebpageChat({
 }) {
     const endRef = useRef(null);
     const containerRef = useRef(null);
-    const [copied, setCopied] = useState(false);
+    const [copyToast, setCopyToast] = useState(null); // 'copied' | 'failed' | null
     const [chatInput, setChatInput] = useState('');
+    // Track whether the user is "pinned" to the bottom so streamed tokens
+    // don't yank them upwards mid-read. Updated on each scroll; if they're
+    // within ~80px of the bottom we treat them as pinned.
+    const pinnedToBottomRef = useRef(true);
 
     useEffect(() => {
+        const el = containerRef.current;
+        if (!el) return;
+        const onScroll = () => {
+            const slack = 80;
+            pinnedToBottomRef.current = (el.scrollTop + el.clientHeight + slack) >= el.scrollHeight;
+        };
+        el.addEventListener('scroll', onScroll, { passive: true });
+        return () => el.removeEventListener('scroll', onScroll);
+    }, []);
+
+    useEffect(() => {
+        if (!pinnedToBottomRef.current) return;
         endRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [messages]);
 
     const handleCopy = (content) => {
-        navigator.clipboard.writeText(content).catch(() => {});
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
+        navigator.clipboard.writeText(content)
+            .then(() => {
+                setCopyToast('copied');
+                setTimeout(() => setCopyToast(null), 2000);
+            })
+            .catch((err) => {
+                console.warn('[WebpageChat] clipboard write failed:', err?.message);
+                setCopyToast('failed');
+                setTimeout(() => setCopyToast(null), 2500);
+            });
     };
 
     return (
@@ -41,6 +71,19 @@ export default function WebpageChat({
                 <span className="text-[11px] font-semibold uppercase tracking-wider" style={{ color: 'var(--vsc-fg-muted)', letterSpacing: '0.06em' }}>
                     AI Chat
                 </span>
+                {copyToast && (
+                    <span
+                        role="status"
+                        aria-live="polite"
+                        className="text-[10px] font-medium px-1.5 py-0.5 rounded"
+                        style={{
+                            color: copyToast === 'copied' ? 'var(--accent-primary)' : 'var(--text-error, #ef4444)',
+                            background: 'color-mix(in srgb, currentColor 10%, transparent)',
+                        }}
+                    >
+                        {copyToast === 'copied' ? 'Copied' : 'Copy failed'}
+                    </span>
+                )}
                 <span className="flex-1" />
                 {onChatModeChange && (
                     <WebpageChatModePicker value={chatMode} onChange={onChatModeChange} />
@@ -70,7 +113,7 @@ export default function WebpageChat({
 
             <div ref={containerRef} className="flex-1 overflow-y-auto custom-scrollbar px-3 py-3 space-y-3">
                 {messages.length === 0 && (
-                    <div className="flex flex-col items-center justify-center h-full text-center py-8">
+                    <div className="flex flex-col items-center justify-start h-full text-center py-8 px-2">
                         <div className="w-10 h-10 rounded-xl flex items-center justify-center mb-3"
                              style={{ background: 'var(--brand-gradient)' }}>
                             <span className="text-lg">🌐</span>
@@ -78,9 +121,27 @@ export default function WebpageChat({
                         <p className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
                             Describe a page, get a webpage
                         </p>
-                        <p className="text-[10px] mt-1 max-w-[220px]" style={{ color: 'var(--text-tertiary)' }}>
-                            "Make a landing page for a bakery — hero, menu grid, contact form."
+                        <p className="text-[10px] mt-1 mb-4 max-w-[240px]" style={{ color: 'var(--text-tertiary)' }}>
+                            Tell me what you want. I'll scaffold the files, wire them up, and keep iterating with you.
                         </p>
+                        <div className="flex flex-col gap-1.5 w-full max-w-[260px]">
+                            {QUICK_STARTS.map((text) => (
+                                <button
+                                    key={text}
+                                    type="button"
+                                    onClick={() => onSend(text, [])}
+                                    disabled={isLoading}
+                                    className="flex items-start gap-2 px-2.5 py-1.5 rounded-md text-[11px] text-left border transition-colors hover:bg-[var(--vsc-hover-bg)] disabled:opacity-50"
+                                    style={{
+                                        borderColor: 'var(--vsc-border)',
+                                        color: 'var(--text-secondary)',
+                                        background: 'var(--vsc-editor-bg)',
+                                    }}
+                                >
+                                    <span>{text}</span>
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 )}
                 {messages.map((msg, idx) => (
@@ -127,8 +188,8 @@ export default function WebpageChat({
                     <div
                         className="mb-1.5 flex items-start gap-1.5 px-2 py-1 rounded-md text-[11px]"
                         style={{
-                            background: 'rgba(99,102,241,0.10)',
-                            border: '1px solid rgba(99,102,241,0.35)',
+                            background: 'color-mix(in srgb, var(--accent-primary) 10%, transparent)',
+                            border: '1px solid color-mix(in srgb, var(--accent-primary) 35%, transparent)',
                             color: 'var(--text-primary)',
                         }}
                         title="This selection will be sent with your next message so the AI knows what you mean by 'this'."

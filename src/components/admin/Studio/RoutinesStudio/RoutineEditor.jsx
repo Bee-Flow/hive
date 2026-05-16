@@ -1,5 +1,5 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, Sparkles, ListChecks, Code2, Play, Save, Power, PowerOff, Settings2 } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, ListChecks, Code2, Play, Save, Power, PowerOff, Settings2 } from 'lucide-react';
 import scopedStorage from '../../../../utils/scopedStorage';
 import useAutomationApi from '../../../../hooks/useAutomationApi';
 import BuilderShell from '../../AITasksDesigner/Builder/BuilderShell';
@@ -40,6 +40,7 @@ export default function RoutineEditor({
     const [savingState, setSavingState] = useState('idle'); // 'idle' | 'saving' | 'saved' | 'error'
     const [saveError, setSaveError] = useState(null);
     const [activateError, setActivateError] = useState(null);
+    const [dryRunError, setDryRunError] = useState(null);
     const [tab, setTab] = useState('build'); // 'build' | 'history'
 
     const [mode, setMode] = useState(() => {
@@ -56,6 +57,18 @@ export default function RoutineEditor({
     const [localDef, setLocalDef] = useState(null);
     const dirtyRef = useRef(false);
     const debounceRef = useRef(null);
+    const savedFlashRef = useRef(null);
+
+    // Clear pending timers on unmount or when switching to a different
+    // automation — otherwise a debounced save fires against a row that is
+    // no longer mounted, and the "saved → idle" flash flips state after
+    // the component is gone.
+    useEffect(() => {
+        return () => {
+            if (debounceRef.current) clearTimeout(debounceRef.current);
+            if (savedFlashRef.current) clearTimeout(savedFlashRef.current);
+        };
+    }, [automationId]);
 
     // Load automation row.
     useEffect(() => {
@@ -80,6 +93,15 @@ export default function RoutineEditor({
         return () => { alive = false; };
     }, [automationId]); // eslint-disable-line react-hooks/exhaustive-deps
 
+    const flashSaved = () => {
+        if (savedFlashRef.current) clearTimeout(savedFlashRef.current);
+        setSavingState('saved');
+        savedFlashRef.current = setTimeout(() => {
+            setSavingState((s) => (s === 'saved' ? 'idle' : s));
+            savedFlashRef.current = null;
+        }, 1200);
+    };
+
     // Debounced PUT when the user mutates the draft in Quick mode.
     const onDraftChange = (next) => {
         setLocalDef(next);
@@ -92,8 +114,7 @@ export default function RoutineEditor({
                 const r = await api.updateAutomation(automationId, { definition: next });
                 if (r?.automation) setAutomation(r.automation);
                 dirtyRef.current = false;
-                setSavingState('saved');
-                setTimeout(() => setSavingState((s) => (s === 'saved' ? 'idle' : s)), 1200);
+                flashSaved();
             } catch (e) {
                 setSavingState('error');
                 setSaveError(e.message || 'Save failed');
@@ -103,15 +124,31 @@ export default function RoutineEditor({
 
     const onTitleChange = async (next) => {
         if (!automation) return;
+        const prevTitle = automation.title;
         setAutomation({ ...automation, title: next });
         if (isNew) return;
         try {
             await api.updateAutomation(automationId, { title: next });
-        } catch (_) { /* surfaced on next save */ }
+        } catch (e) {
+            // Revert local state so what the user sees matches what's on the
+            // server, and surface the error in the same place save failures show up.
+            setAutomation((a) => (a ? { ...a, title: prevTitle } : a));
+            setSavingState('error');
+            setSaveError(`Title save failed: ${e.message || 'unknown error'}`);
+        }
     };
 
+    // Per-row in-flight guard for the activate/deactivate toggle. The
+    // ref-backed check survives the brief window between click and
+    // useState flushing so a double-click can't fire two PATCHes.
+    const activateInflightRef = useRef(false);
+    const [activating, setActivating] = useState(false);
     const onActivate = async () => {
         if (!automation) return;
+        if (activateInflightRef.current) return;
+        if (savingState === 'saving') return;
+        activateInflightRef.current = true;
+        setActivating(true);
         setActivateError(null);
         try {
             const r = automation.isActive
@@ -120,17 +157,21 @@ export default function RoutineEditor({
             if (r?.automation) setAutomation(r.automation);
         } catch (e) {
             setActivateError(e.message || 'Toggle failed');
+        } finally {
+            activateInflightRef.current = false;
+            setActivating(false);
         }
     };
 
     const onDryRun = async () => {
         if (!automation) return;
+        setDryRunError(null);
         try {
             await api.dryRun(automation.id, {});
             // Result lives in run history; flick to the History tab to surface it.
             setTab('history');
         } catch (e) {
-            window.alert(`Dry run failed: ${e.message}`);
+            setDryRunError(`Dry run failed: ${e.message || 'unknown error'}`);
         }
     };
 
@@ -142,8 +183,7 @@ export default function RoutineEditor({
             const r = await api.updateAutomation(automation.id, { definition: localDef });
             if (r?.automation) setAutomation(r.automation);
             dirtyRef.current = false;
-            setSavingState('saved');
-            setTimeout(() => setSavingState((s) => (s === 'saved' ? 'idle' : s)), 1200);
+            flashSaved();
         } catch (e) {
             setSavingState('error');
             setSaveError(e.message || 'Save failed');
@@ -224,7 +264,7 @@ export default function RoutineEditor({
                 {/* Mode pills */}
                 <div className="flex items-center bg-[var(--bg-secondary)] rounded-lg p-0.5">
                     <ModeButton value="quick" label="Quick" icon={<ListChecks size={12} />} />
-                    <ModeButton value="ai" label="Build with AI" icon={<Sparkles size={12} />} />
+                    <ModeButton value="ai" label="Build with AI" />
                     {expertMode && <ModeButton value="expert" label="Expert" icon={<Code2 size={12} />} />}
                 </div>
                 <button
@@ -330,12 +370,12 @@ export default function RoutineEditor({
             {/* Sticky footer (hidden in AI mode — BuilderShell has its own controls) */}
             {mode !== 'ai' && (
                 <div className="border-t border-[var(--border-default)] bg-[var(--bg-card)] px-4 py-2.5 flex items-center gap-2 flex-shrink-0">
-                    {(saveError || activateError) && (
+                    {(saveError || activateError || dryRunError) && (
                         <div className="text-[12px] text-red-600 mr-auto truncate">
-                            {saveError || activateError}
+                            {saveError || activateError || dryRunError}
                         </div>
                     )}
-                    {!saveError && !activateError && <div className="flex-1" />}
+                    {!saveError && !activateError && !dryRunError && <div className="flex-1" />}
                     <button
                         onClick={onDryRun}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[13px] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]"
@@ -351,9 +391,8 @@ export default function RoutineEditor({
                     </button>
                     <button
                         onClick={onActivate}
-                        className={`flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[13px] font-semibold text-white transition ${
-                            automation?.isActive ? '' : ''
-                        }`}
+                        disabled={activating || savingState === 'saving'}
+                        className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-[13px] font-semibold text-white transition disabled:opacity-60 disabled:cursor-not-allowed"
                         style={{ background: automation?.isActive ? '#f59e0b' : 'var(--accent-primary)' }}
                     >
                         {automation?.isActive ? <PowerOff size={14} /> : <Power size={14} />}

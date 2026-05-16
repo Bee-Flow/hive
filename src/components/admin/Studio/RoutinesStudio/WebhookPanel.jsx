@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Webhook, Copy, RefreshCw, Trash2, Plus, Check } from 'lucide-react';
+import { Webhook, Copy, RefreshCw, Trash2, Plus, Check, Terminal } from 'lucide-react';
 import useAutomationApi from '../../../../hooks/useAutomationApi';
 import { API_BASE } from '../../../../utils/helpers';
 
@@ -12,8 +12,11 @@ import { API_BASE } from '../../../../utils/helpers';
  *   - Listing comes back with metadata only (the secret is never re-read
  *     once it's been issued). That means the secret box is only filled
  *     immediately after Create or Rotate; it goes blank after refresh.
- *   - Copy puts the FULL signed URL on the clipboard so the user can paste
- *     it directly into the upstream system.
+ *   - Requests must be HMAC-signed: callers compute
+ *     `sha256=hex(HMAC-SHA256(secret, JSON-body))` and send it as
+ *     `X-BeeFlow-Signature`, plus a unique `X-BeeFlow-Nonce`. Copy URL
+ *     puts the bare endpoint on the clipboard; Copy as cURL emits a
+ *     complete signed-request template so the user can paste-and-run.
  *   - Rotate is destructive: any caller still using the old secret starts
  *     getting 401s the moment the new secret hits the DB.
  */
@@ -31,7 +34,19 @@ export default function WebhookPanel({ automation }) {
         setLoading(true);
         try {
             const r = await api.listWebhooks(automation.id);
-            setWebhooks(r.webhooks || []);
+            const list = r.webhooks || [];
+            setWebhooks(list);
+            // Prune revealed secrets for webhooks that no longer exist server-side
+            // (e.g. deleted in another tab). Secrets for IDs in the fresh list are
+            // kept so a user who just created/rotated doesn't lose them on refresh.
+            setRevealedSecrets((prev) => {
+                const aliveIds = new Set(list.map((w) => w.id));
+                const next = {};
+                for (const [id, secret] of Object.entries(prev)) {
+                    if (aliveIds.has(id)) next[id] = secret;
+                }
+                return next;
+            });
         } catch (e) {
             setErrorMsg(e.message);
         } finally {
@@ -40,6 +55,9 @@ export default function WebhookPanel({ automation }) {
     }, [api, automation?.id]);
 
     useEffect(() => { reload(); }, [reload]);
+
+    // Clear revealed secrets if the user navigates between automations.
+    useEffect(() => { setRevealedSecrets({}); }, [automation?.id]);
 
     const onCreate = async () => {
         setCreating(true);
@@ -66,6 +84,7 @@ export default function WebhookPanel({ automation }) {
             if (r?.webhook?.secret) {
                 setRevealedSecrets((prev) => ({ ...prev, [wh.id]: r.webhook.secret }));
             }
+            await reload();
         } catch (e) {
             setErrorMsg(e.message);
         }
@@ -82,21 +101,52 @@ export default function WebhookPanel({ automation }) {
         }
     };
 
-    const onCopyUrl = async (wh) => {
-        const url = `${API_BASE}/api/automation/webhook/${wh.id}`;
+    const copyToClipboard = async (text, copyKey) => {
         try {
-            await navigator.clipboard.writeText(url);
-            setCopied(wh.id);
-            setTimeout(() => setCopied(null), 1500);
-        } catch (_) { /* silent */ }
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text);
+            } else {
+                // Fallback for non-HTTPS / older browsers
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.select();
+                const ok = document.execCommand('copy');
+                document.body.removeChild(ta);
+                if (!ok) throw new Error('execCommand copy returned false');
+            }
+            setCopied(copyKey);
+            setTimeout(() => setCopied((c) => (c === copyKey ? null : c)), 1500);
+            setErrorMsg(null);
+        } catch (e) {
+            setErrorMsg(`Copy failed: ${e.message || 'clipboard access denied'}. Select the text manually to copy.`);
+        }
     };
 
-    const onCopySecret = async (id, secret) => {
-        try {
-            await navigator.clipboard.writeText(secret);
-            setCopied(`secret-${id}`);
-            setTimeout(() => setCopied(null), 1500);
-        } catch (_) { /* silent */ }
+    const onCopyUrl = (wh) => copyToClipboard(`${API_BASE}/api/automation/webhook/${wh.id}`, wh.id);
+    const onCopySecret = (id, secret) => copyToClipboard(secret, `secret-${id}`);
+    const onCopyCurl = (wh) => {
+        const secret = revealedSecrets[wh.id];
+        if (!secret) {
+            setErrorMsg('Secret is only available right after Create or Rotate. Rotate the webhook first to reveal a fresh secret.');
+            return;
+        }
+        const url = `${API_BASE}/api/automation/webhook/${wh.id}`;
+        // POSIX shell template: signs an empty JSON body. Users replace BODY
+        // and re-run the signature line.
+        const curl = [
+            `BODY='{}'`,
+            `NONCE=$(openssl rand -hex 16)`,
+            `SIG="sha256=$(printf %s "$BODY" | openssl dgst -sha256 -hmac '${secret}' -hex | awk '{print $2}')"`,
+            `curl -X POST '${url}' \\`,
+            `  -H 'Content-Type: application/json' \\`,
+            `  -H "X-BeeFlow-Signature: $SIG" \\`,
+            `  -H "X-BeeFlow-Nonce: $NONCE" \\`,
+            `  --data "$BODY"`,
+        ].join('\n');
+        copyToClipboard(curl, `curl-${wh.id}`);
     };
 
     if (!automation?.id) return null;
@@ -118,6 +168,9 @@ export default function WebhookPanel({ automation }) {
                     <Plus size={12} /> {creating ? 'Creating…' : 'New webhook'}
                 </button>
             </div>
+            <div className="text-[11px] text-[var(--text-tertiary)] mb-2">
+                Requests must be HMAC-signed. Use “Copy as cURL” immediately after Create/Rotate to grab a complete signed-request template.
+            </div>
             {errorMsg && (
                 <div className="text-[12px] text-red-600 mb-2">{errorMsg}</div>
             )}
@@ -130,6 +183,7 @@ export default function WebhookPanel({ automation }) {
                     {webhooks.map((wh) => {
                         const url = `${API_BASE}/api/automation/webhook/${wh.id}`;
                         const secret = revealedSecrets[wh.id];
+                        const hasSecret = !!secret;
                         return (
                             <li key={wh.id} className="border border-[var(--border-default)] rounded-lg p-2">
                                 <div className="flex items-center gap-2">
@@ -142,6 +196,14 @@ export default function WebhookPanel({ automation }) {
                                         className="p-1 rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-tertiary)]"
                                     >
                                         {copied === wh.id ? <Check size={14} /> : <Copy size={14} />}
+                                    </button>
+                                    <button
+                                        onClick={() => onCopyCurl(wh)}
+                                        title={hasSecret ? 'Copy as signed cURL' : 'Rotate to reveal secret first'}
+                                        disabled={!hasSecret}
+                                        className="p-1 rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-tertiary)] disabled:opacity-40 disabled:cursor-not-allowed"
+                                    >
+                                        {copied === `curl-${wh.id}` ? <Check size={14} /> : <Terminal size={14} />}
                                     </button>
                                     <button
                                         onClick={() => onRotate(wh)}

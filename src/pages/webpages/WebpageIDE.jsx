@@ -1,5 +1,6 @@
-import React, { useState, useRef, useCallback, useEffect } from 'react';
+import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import './vscode-theme.css';
+import { FileImage, AlertCircle } from 'lucide-react';
 import ActivityBar from './ActivityBar';
 import FileExplorer from './FileExplorer';
 import EditorTabs from './EditorTabs';
@@ -16,6 +17,25 @@ const SIDEBAR_MAX = 400;
 const CHAT_MIN = 240;
 const CHAT_MAX = 520;
 const PREVIEW_MIN = 100;
+
+const PRIMARY_LANG = { html: 'html', css: 'css', js: 'javascript' };
+
+// Map common file extensions to Monaco language ids. Anything unrecognised
+// renders as plain text — still editable, just no syntax highlighting.
+function pickLanguage(path) {
+    const ext = (path.split('.').pop() || '').toLowerCase();
+    switch (ext) {
+        case 'html': case 'htm': return 'html';
+        case 'css': return 'css';
+        case 'js': case 'mjs': return 'javascript';
+        case 'json': return 'json';
+        case 'md': case 'markdown': return 'markdown';
+        case 'svg': case 'xml': return 'xml';
+        case 'ts': case 'tsx': return 'typescript';
+        case 'yml': case 'yaml': return 'yaml';
+        default: return 'plaintext';
+    }
+}
 
 function useDragResize(initialSize, min, max) {
     const [size, setSize] = useState(initialSize);
@@ -90,12 +110,46 @@ function useRowDragResize(initialPct, min, containerRef) {
     return [pct, onMouseDown];
 }
 
+/**
+ * Binary-file placeholder shown in place of Monaco when a non-text extra is
+ * opened. Images render inline from their data URL; everything else gets
+ * a generic file card with the size + mime type.
+ */
+function BinaryPreview({ path, mimeType, dataUrl, size }) {
+    const isImage = mimeType?.startsWith('image/');
+    const fmtSize = (n) => {
+        if (!n || n < 1024) return `${n || 0} B`;
+        if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+        return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+    };
+    return (
+        <div className="flex flex-col items-center justify-center h-full w-full p-6" style={{ background: 'var(--vsc-editor-bg)', color: 'var(--vsc-fg-muted)' }}>
+            {isImage && dataUrl ? (
+                <img
+                    src={dataUrl}
+                    alt={path}
+                    style={{ maxWidth: '100%', maxHeight: '70%', objectFit: 'contain', border: '1px solid var(--vsc-border)' }}
+                />
+            ) : (
+                <FileImage size={48} style={{ opacity: 0.5 }} />
+            )}
+            <div className="text-[12px] mt-3 font-mono">{path}</div>
+            <div className="text-[11px] mt-1">{mimeType || 'application/octet-stream'} · {fmtSize(size)}</div>
+            <div className="text-[11px] mt-3 max-w-md text-center" style={{ opacity: 0.7 }}>
+                Binary files aren't editable in the text editor. Ask the AI to replace this asset, or delete and re-upload.
+            </div>
+        </div>
+    );
+}
+
 export default function WebpageIDE({
     // Webpage data
     selected,
     html, css, js,
     onHtmlChange, onCssChange, onJsChange,
+    dirtyFiles: dirtyFilesProp = {},
     extraFiles = [], extraContents = {},
+    onExtraChange,     // (path, newContent) => void  — text-only extras
     sources, onSourcesChange,
     // Chat
     chatMessages, chatLoading,
@@ -135,13 +189,25 @@ export default function WebpageIDE({
     };
     const sidebarOpen = sidebarPane !== null;
 
-    // Active editor file. null = editor hidden (preview takes the full center
-    // column). Clicking a file in the explorer or a tab opens the editor.
-    const [activeFile, setActiveFile] = useState(null);
-    const editorOpen = activeFile !== null;
+    // Open editor tabs (keys: 'html'|'css'|'js'|'extra:<path>') + active key.
+    const [openFiles, setOpenFiles] = useState([]);
+    const [activeKey, setActiveKey] = useState(null);
+    const editorOpen = activeKey !== null;
 
-    const openFile = (file) => setActiveFile(file);
-    const closeEditor = () => setActiveFile(null);
+    const openFile = useCallback((key) => {
+        setOpenFiles(prev => prev.includes(key) ? prev : [...prev, key]);
+        setActiveKey(key);
+    }, []);
+
+    const closeFile = useCallback((key) => {
+        setOpenFiles(prev => {
+            const next = prev.filter(k => k !== key);
+            if (activeKey === key) {
+                setActiveKey(next.length > 0 ? next[next.length - 1] : null);
+            }
+            return next;
+        });
+    }, [activeKey]);
 
     // Cursor position (from Monaco)
     const [cursor, setCursor] = useState({ line: 1, col: 1 });
@@ -154,17 +220,82 @@ export default function WebpageIDE({
     const centerRef = useRef(null);
     const [editorPct, onEditorPreviewDrag] = useRowDragResize(60, PREVIEW_MIN, centerRef);
 
-    // Dirty tracking (files that changed since last save)
-    const dirtyFiles = {};
-    // (simplified — we don't track per-file dirty here, parent tracks overall saveState)
+    // Per-tab dirty dots — supplied by the parent (WebpagesPage tracks per-key
+    // dirty state alongside its save queue). Object keyed by tab id
+    // ('html' | 'css' | 'js' | 'extra:<path>') with truthy values for unsaved.
+    const dirtyFiles = dirtyFilesProp || {};
 
-    const isDbView = !!activeFile && typeof activeFile === 'object' && activeFile.kind === 'db';
-    const fileSize = isDbView ? 0 : new Blob([{ html, css, js }[activeFile] || '']).size;
+    // Resolve activeKey → what the editor pane should render.
+    const activeView = useMemo(() => {
+        if (!activeKey) return null;
+        if (activeKey === 'html' || activeKey === 'css' || activeKey === 'js') {
+            const value = { html, css, js }[activeKey] || '';
+            return {
+                kind: 'text',
+                value,
+                language: PRIMARY_LANG[activeKey],
+                onChange: (v) => {
+                    if (activeKey === 'html') onHtmlChange(v);
+                    else if (activeKey === 'css') onCssChange(v);
+                    else onJsChange(v);
+                },
+            };
+        }
+        if (activeKey.startsWith('extra:')) {
+            const path = activeKey.slice(6);
+            const meta = extraFiles.find(f => f.path === path);
+            const content = extraContents[path];
+            if (!content) {
+                return { kind: 'missing', path };
+            }
+            if (content.isText) {
+                return {
+                    kind: 'text',
+                    value: content.content || '',
+                    language: pickLanguage(path),
+                    onChange: (v) => onExtraChange?.(path, v),
+                };
+            }
+            return {
+                kind: 'binary',
+                path,
+                mimeType: meta?.mimeType || content.mimeType,
+                dataUrl: content.dataUrl,
+                size: meta?.size || 0,
+            };
+        }
+        return null;
+    }, [activeKey, html, css, js, extraFiles, extraContents, onHtmlChange, onCssChange, onJsChange, onExtraChange]);
 
-    const handleFileChange = (file, value) => {
-        if (file === 'html') onHtmlChange(value);
-        else if (file === 'css') onCssChange(value);
-        else if (file === 'js') onJsChange(value);
+    // Status-bar file size for the active text file. Binary/db are 0.
+    const fileSize = activeView?.kind === 'text'
+        ? new Blob([activeView.value]).size
+        : 0;
+
+    // Status-bar activeFile token — kept compatible with the existing StatusBar
+    // contract that distinguishes primary slots (string) from db ({kind:'db'}).
+    const statusActiveFile = (() => {
+        if (!activeKey) return null;
+        if (activeKey === 'html' || activeKey === 'css' || activeKey === 'js') return activeKey;
+        if (activeKey.startsWith('extra:')) return { kind: 'extra', path: activeKey.slice(6) };
+        return null;
+    })();
+
+    // FileExplorer's activeFile prop is in the old shape ('html'|'css'|'js' or
+    // {path}). Translate from our activeKey.
+    const explorerActiveFile = (() => {
+        if (!activeKey) return null;
+        if (activeKey === 'html' || activeKey === 'css' || activeKey === 'js') return activeKey;
+        if (activeKey.startsWith('extra:')) return { path: activeKey.slice(6) };
+        return null;
+    })();
+
+    const handleExplorerSelect = (file) => {
+        if (typeof file === 'string') {
+            openFile(file);
+        } else if (file && file.path) {
+            openFile(`extra:${file.path}`);
+        }
     };
 
     return (
@@ -189,20 +320,16 @@ export default function WebpageIDE({
                         >
                             {sidebarPane === 'files' && (
                                 <FileExplorer
-                                    activeFile={activeFile}
-                                    onFileSelect={(file) => {
-                                        // Primary slot: 'html' | 'css' | 'js'  — opens Monaco.
-                                        // { kind: 'db' } — opens the DB viewer in the editor pane.
-                                        // Other extra-file objects: not yet wired (AI manages them).
-                                        if (typeof file === 'string') openFile(file);
-                                        else if (file?.kind === 'db') openFile({ kind: 'db' });
-                                    }}
+                                    activeFile={explorerActiveFile}
+                                    onFileSelect={handleExplorerSelect}
                                     dirtyFiles={dirtyFiles}
                                     extraFiles={extraFiles}
-                                    dbSize={selected?.dbSize || 0}
                                 />
                             )}
-                            {sidebarPane === 'sources' && (
+                            {sidebarPane === 'database' && (
+                                <WebpageDbViewer webpageId={selected?.id} theme={theme} />
+                            )}
+                            {sidebarPane === 'knowledge' && (
                                 <WebpageSources
                                     webpageId={selected.id}
                                     sources={sources}
@@ -236,33 +363,41 @@ export default function WebpageIDE({
 
                 {/* Center: editor + preview stacked */}
                 <div className="flex flex-col flex-1 min-w-0 min-h-0" ref={centerRef}>
-                    {/* Tabs only render when an editor is open. Closing the
-                        last tab returns to preview-only. */}
+                    {/* Tabs only render when at least one tab is open. */}
                     {editorOpen && (
                         <EditorTabs
-                            activeFile={activeFile}
-                            onSelect={openFile}
-                            onClose={closeEditor}
+                            openFiles={openFiles}
+                            activeKey={activeKey}
+                            onSelect={setActiveKey}
+                            onClose={closeFile}
                             dirtyFiles={dirtyFiles}
                         />
                     )}
 
-                    {editorOpen && (
+                    {editorOpen && activeView && (
                         <>
-                            {/* Editor pane — Monaco for html/css/js, DB viewer for the db file. */}
                             <div style={{ flex: `0 0 ${editorPct}%`, minHeight: 0, overflow: 'hidden' }}>
-                                {isDbView ? (
-                                    <WebpageDbViewer webpageId={selected?.id} theme={theme} />
-                                ) : (
+                                {activeView.kind === 'text' ? (
                                     <WebpageEditor
-                                        activeFile={activeFile}
-                                        html={html}
-                                        css={css}
-                                        js={js}
-                                        onChange={handleFileChange}
+                                        value={activeView.value}
+                                        language={activeView.language}
+                                        onChange={activeView.onChange}
                                         theme={theme}
                                         onCursorChange={setCursor}
                                     />
+                                ) : activeView.kind === 'binary' ? (
+                                    <BinaryPreview
+                                        path={activeView.path}
+                                        mimeType={activeView.mimeType}
+                                        dataUrl={activeView.dataUrl}
+                                        size={activeView.size}
+                                    />
+                                ) : (
+                                    <div className="flex flex-col items-center justify-center h-full p-6 text-[12px]" style={{ color: 'var(--vsc-fg-muted)' }}>
+                                        <AlertCircle size={32} style={{ opacity: 0.5 }} />
+                                        <div className="mt-3 font-mono">{activeView.path}</div>
+                                        <div className="mt-1">File content not loaded yet.</div>
+                                    </div>
                                 )}
                             </div>
 
@@ -324,7 +459,7 @@ export default function WebpageIDE({
             <StatusBar
                 theme={theme}
                 onThemeToggle={toggleTheme}
-                activeFile={activeFile}
+                activeFile={statusActiveFile}
                 cursor={cursor}
                 fileSize={fileSize}
                 saveState={saveState}

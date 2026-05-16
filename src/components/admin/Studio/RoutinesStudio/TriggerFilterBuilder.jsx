@@ -19,6 +19,17 @@ function inputStyle() {
     return { borderColor: 'var(--border-subtle, rgba(0,0,0,0.08))' };
 }
 
+// Single source of truth for the "clear empty values" rule used by every
+// filter subcomponent. Storing '' / undefined / null all create distinct
+// JSON shapes; we collapse to "key absent" so server-side matchers see a
+// consistent payload regardless of which provider's UI produced it.
+function makeSetter(filter, onChange) {
+    return (key, v) => {
+        const cleaned = v === '' || v === undefined || v === null ? undefined : v;
+        onChange({ ...filter, [key]: cleaned });
+    };
+}
+
 function Field({ label, hint, children }) {
     return (
         <div className="mb-3">
@@ -50,7 +61,7 @@ function CSVInput({ value, onChange, placeholder }) {
 }
 
 function GmailFilter({ filter, onChange, expert }) {
-    const set = (key, v) => onChange({ ...filter, [key]: v === '' || v === undefined || v === null ? undefined : v });
+    const set = makeSetter(filter, onChange);
     return (
         <>
             <Field label="From contains">
@@ -127,7 +138,7 @@ function GmailFilter({ filter, onChange, expert }) {
 }
 
 function GoogleCalendarFilter({ filter, onChange }) {
-    const set = (key, v) => onChange({ ...filter, [key]: v === '' ? undefined : v });
+    const set = makeSetter(filter, onChange);
     return (
         <>
             <Field label="Calendar id" hint="Default 'primary' if blank.">
@@ -165,7 +176,7 @@ function GoogleCalendarFilter({ filter, onChange }) {
 }
 
 function MsGraphMailFilter({ filter, onChange }) {
-    const set = (key, v) => onChange({ ...filter, [key]: v === '' ? undefined : v });
+    const set = makeSetter(filter, onChange);
     return (
         <>
             <Field label="From contains">
@@ -206,7 +217,7 @@ function MsGraphMailFilter({ filter, onChange }) {
 }
 
 function NextcloudFilter({ filter, onChange, eventType }) {
-    const set = (key, v) => onChange({ ...filter, [key]: v === '' || v === undefined ? undefined : v });
+    const set = makeSetter(filter, onChange);
 
     // Per-event-type structured fields. We branch on the event so the user
     // sees the right shape (file vs share vs deck vs talk vs calendar).
@@ -335,7 +346,7 @@ function NextcloudFilter({ filter, onChange, eventType }) {
  * exactly what the runtime evaluates.
  */
 function DslExtras({ filter, onChange }) {
-    const set = (key, v) => onChange({ ...filter, [key]: v === '' || v === undefined || v === null ? undefined : v });
+    const set = makeSetter(filter, onChange);
     const setAge = (key, v) => onChange({
         ...filter,
         age: { ...(filter.age || {}), [key]: v === '' || v === undefined ? undefined : Number(v) },
@@ -380,8 +391,16 @@ function RawFilterEditor({ filter, onChange }) {
 
     const tryCommit = (next) => {
         setText(next);
+        // Empty input means "clear the filter" — surface that intent
+        // explicitly instead of silently parsing as `{}` (which the user
+        // would only learn from server save behavior).
+        if (next.trim() === '') {
+            setError(null);
+            onChange({});
+            return;
+        }
         try {
-            const parsed = JSON.parse(next || '{}');
+            const parsed = JSON.parse(next);
             setError(null);
             onChange(parsed);
         } catch (e) {
@@ -389,8 +408,15 @@ function RawFilterEditor({ filter, onChange }) {
         }
     };
 
+    const isEmpty = text.trim() === '';
+
     return (
-        <Field label="Raw filter JSON" hint="Used when the structured fields don't cover your case.">
+        <Field
+            label="Raw filter JSON"
+            hint={isEmpty
+                ? 'Empty input clears the filter (every event matches).'
+                : "Used when the structured fields don't cover your case."}
+        >
             <textarea
                 value={text}
                 onChange={(e) => tryCommit(e.target.value)}

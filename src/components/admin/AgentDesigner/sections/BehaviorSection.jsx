@@ -1,5 +1,7 @@
 import React from 'react';
 import ModelSelector from '../../../ModelSelector';
+import Toggle from '../../../shared/Toggle';
+import useCopyToClipboard from '../../../../hooks/useCopyToClipboard';
 
 export const BehaviorSection = ({
   selectedAgent, name, setName, description, setDescription,
@@ -24,60 +26,33 @@ export const BehaviorSection = ({
   assistantBubbleColor, setAssistantBubbleColor, warningText, setWarningText,
   setPromptDesignerMessages, setPromptDesignerInput, setShowPromptDesigner
 }) => {
+  const { copy } = useCopyToClipboard();
   return (
                                                 <div className="space-y-6 animate-fadeIn">
                                                     <h2 className="text-base font-semibold mb-4 text-primary">Behavior Settings</h2>
 
                                                     <div className="space-y-4">
-                                                        <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-transparent hover:border-[var(--border-subtle)] transition-colors">
-                                                            <div>
-                                                                <h4 className="text-sm font-medium text-primary">Allow Copying</h4>
-                                                                <p className="text-xs text-muted mt-0.5">Users can copy message content to clipboard</p>
-                                                            </div>
-                                                            <label className="relative inline-flex items-center cursor-pointer">
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={allowCopy}
-                                                                    onChange={(e) => setAllowCopy(e.target.checked)}
-                                                                    className="sr-only peer"
-                                                                />
-                                                                <div className="w-11 h-6 bg-[var(--bg-tertiary)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                                                            </label>
-                                                        </div>
+                                                        <Toggle
+                                                            checked={allowCopy}
+                                                            onChange={setAllowCopy}
+                                                            label="Allow Copying"
+                                                            description="Users can copy message content to clipboard"
+                                                        />
 
-                                                        {/* Disable External Tools Toggle */}
-                                                        <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-transparent hover:border-[var(--border-subtle)] transition-colors">
-                                                            <div>
-                                                                <h4 className="text-sm font-medium text-primary">Disable Integrations & Web Search</h4>
-                                                                <p className="text-xs text-muted mt-0.5">Block all integration tools and web search for this agent</p>
-                                                            </div>
-                                                            <label className="relative inline-flex items-center cursor-pointer">
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={disableExternalTools}
-                                                                    onChange={(e) => setDisableExternalTools(e.target.checked)}
-                                                                    className="sr-only peer"
-                                                                />
-                                                                <div className="w-11 h-6 bg-[var(--bg-tertiary)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
-                                                            </label>
-                                                        </div>
+                                                        <Toggle
+                                                            checked={disableExternalTools}
+                                                            onChange={setDisableExternalTools}
+                                                            label="Disable Integrations & Web Search"
+                                                            description="Block all integration tools and web search for this agent"
+                                                            color="amber"
+                                                        />
 
-                                                        {/* Web Embed Toggle */}
-                                                        <div className="flex items-center justify-between p-4 rounded-xl bg-white/5 border border-transparent hover:border-[var(--border-subtle)] transition-colors">
-                                                            <div>
-                                                                <h4 className="text-sm font-medium text-primary">Web Embed</h4>
-                                                                <p className="text-xs text-muted mt-0.5">Public standalone chat page for embedding</p>
-                                                            </div>
-                                                            <label className="relative inline-flex items-center cursor-pointer">
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={embedEnabled}
-                                                                    onChange={(e) => setEmbedEnabled(e.target.checked)}
-                                                                    className="sr-only peer"
-                                                                />
-                                                                <div className="w-11 h-6 bg-[var(--bg-tertiary)] peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                                                            </label>
-                                                        </div>
+                                                        <Toggle
+                                                            checked={embedEnabled}
+                                                            onChange={setEmbedEnabled}
+                                                            label="Web Embed"
+                                                            description="Public standalone chat page for embedding"
+                                                        />
 
                                                         {/* Embed URL Info Card */}
                                                         {embedEnabled && selectedAgent && (
@@ -96,7 +71,7 @@ export const BehaviorSection = ({
                                                                             style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}
                                                                         />
                                                                         <button
-                                                                            onClick={() => navigator.clipboard.writeText(`${window.location.origin}/chat/${selectedAgent.id}`)}
+                                                                            onClick={() => copy(`${window.location.origin}/chat/${selectedAgent.id}`)}
                                                                             className="px-3 py-2 text-xs rounded-lg text-white hover:opacity-90 transition-opacity"
                                                                             style={{ background: 'var(--accent-primary)' }}
                                                                         >
@@ -114,7 +89,7 @@ export const BehaviorSection = ({
                                                                             style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}
                                                                         />
                                                                         <button
-                                                                            onClick={() => navigator.clipboard.writeText(`<iframe src="${window.location.origin}/chat/${selectedAgent.id}" width="400" height="600" style="border:none;border-radius:12px;"></iframe>`)}
+                                                                            onClick={() => copy(`<iframe src="${window.location.origin}/chat/${selectedAgent.id}" width="400" height="600" style="border:none;border-radius:12px;"></iframe>`)}
                                                                             className="px-3 py-2 text-xs rounded-lg text-white hover:opacity-90 transition-opacity"
                                                                             style={{ background: 'var(--accent-primary)' }}
                                                                         >
@@ -391,7 +366,7 @@ export const BehaviorSection = ({
                                                                                     const paramStr = fontParams.length ? (selectedAgent.id.includes('?') ? '&' : '?') + fontParams.join('&') : '';
                                                                                     const chatUrl = `${window.location.origin}/chat/${selectedAgent.id}${paramStr}`;
                                                                                     const code = `<!-- Bee Flow Chat Widget -->\n<script>\n(function(){\n  var d=document,s=d.createElement('style'),b=d.createElement('div');\n  s.textContent='#bf-bubble{position:fixed;bottom:24px;${pos};width:${bubbleSize}px;height:${bubbleSize}px;border-radius:50%;background:linear-gradient(135deg,${bubbleColor},${bubbleColor}dd);border:none;cursor:pointer;box-shadow:0 4px 20px ${bubbleColor}66;display:flex;align-items:center;justify-content:center;font-size:${Math.round(bubbleSize * 0.45)}px;transition:transform .3s,box-shadow .3s;z-index:10001}#bf-bubble:hover{transform:scale(1.1)}#bf-bubble.open{background:linear-gradient(135deg,#e74c3c,#c0392b);box-shadow:0 4px 20px rgba(231,76,60,.4)}#bf-window{position:fixed;bottom:${bubbleSize + 40}px;${pos};width:${windowWidth}px;height:${windowHeight}px;border-radius:16px;overflow:hidden;box-shadow:0 12px 48px rgba(0,0,0,.15);opacity:0;transform:translateY(20px) scale(.95);pointer-events:none;transition:opacity .3s,transform .3s;z-index:10000}#bf-window.open{opacity:1;transform:translateY(0) scale(1);pointer-events:auto}#bf-window iframe{width:100%;height:100%;border:none}';\n  d.head.appendChild(s);\n  b.innerHTML='<div id="bf-window"><iframe src="${chatUrl}"><\\/iframe><\\/div><button id="bf-bubble">${bubbleIcon}<\\/button>';\n  d.body.appendChild(b);\n  d.getElementById('bf-bubble').onclick=function(){var w=d.getElementById('bf-window'),t=this;t.classList.toggle('open');w.classList.toggle('open');t.textContent=t.classList.contains('open')?'\\u2715':'${bubbleIcon}'};\n})();\n</script>`;
-                                                                                    navigator.clipboard.writeText(code);
+                                                                                    copy(code);
                                                                                 }}
                                                                                 className="px-3 py-2 text-xs rounded-lg text-white hover:opacity-90 transition-opacity self-start"
                                                                                 style={{ background: 'var(--accent-primary)' }}

@@ -16,6 +16,34 @@ const TranslationContext = createContext(null);
 
 const STORAGE_KEY = 'beeflow_locale';
 const CACHE_PREFIX = 'beeflow_i18n_';
+const LOCALES_CACHE_KEY = 'beeflow_i18n_available_locales';
+const LOCALES_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
+
+// Resolve which locales the server actually has configured. Without this gate
+// the boot path fires a 404 in DevTools every time the browser is set to a
+// language the org hasn't added (e.g. `nl` against an English-only seed).
+// Cached for 24h in localStorage so we don't pay the round-trip on every load.
+async function fetchAvailableLocaleCodes(apiBase) {
+    try {
+        const cached = localStorage.getItem(LOCALES_CACHE_KEY);
+        if (cached) {
+            const parsed = JSON.parse(cached);
+            if (parsed && Array.isArray(parsed.codes) && Date.now() - (parsed.at || 0) < LOCALES_CACHE_TTL_MS) {
+                return parsed.codes;
+            }
+        }
+    } catch { /* fall through */ }
+    try {
+        const res = await fetch(`${apiBase}/api/languages/public/locales`);
+        if (!res.ok) return null;
+        const list = await res.json();
+        const codes = Array.isArray(list) ? list.map(l => l.code).filter(Boolean) : [];
+        try { localStorage.setItem(LOCALES_CACHE_KEY, JSON.stringify({ codes, at: Date.now() })); } catch { /* quota */ }
+        return codes;
+    } catch {
+        return null;
+    }
+}
 
 /**
  * TranslationProvider — wrap your app with this to enable translations
@@ -46,6 +74,15 @@ export function TranslationProvider({ children }) {
             } catch { }
         }
 
+        // Skip the server round-trip if the org doesn't have this locale —
+        // avoids a console-noisy 404 for stored locales that were dropped on
+        // the server side (or were never added in this deployment).
+        const available = await fetchAvailableLocaleCodes(API_BASE);
+        if (available && !available.includes(loc)) {
+            loadedLocaleRef.current = loc;
+            return;
+        }
+
         // Fetch from server
         setIsLoading(true);
         try {
@@ -67,9 +104,18 @@ export function TranslationProvider({ children }) {
         setIsLoading(false);
     }, []);
 
-    // Load strings via public endpoint for pre-auth (login page) when locale is non-English
+    // Load strings via public endpoint for pre-auth (login page) when locale is non-English.
+    // Probes /public/locales first so we don't fire a console-noisy 404 when the browser
+    // is set to a language the org hasn't configured.
     const loadPublicStrings = useCallback(async (loc) => {
         if (loc === 'en' || loadedLocaleRef.current === loc) return;
+        const available = await fetchAvailableLocaleCodes(API_BASE);
+        if (available && !available.includes(loc)) {
+            // Server doesn't have this locale; stay on EN defaults and mark loaded
+            // so the useEffect below doesn't keep re-triggering loadStrings().
+            loadedLocaleRef.current = loc;
+            return;
+        }
         try {
             const res = await fetch(`${API_BASE}/api/languages/public/strings/${loc}`);
             if (res.ok) {
@@ -80,7 +126,7 @@ export function TranslationProvider({ children }) {
                 return;
             }
         } catch { }
-        // Fall back to authenticated endpoint (will work post-login)
+        // Network error (not a 404) — try authenticated endpoint after login resolves.
         loadStrings(loc);
     }, [loadStrings]);
 
@@ -107,7 +153,7 @@ export function TranslationProvider({ children }) {
                         }
                     }
                 })
-                .catch(() => {});
+                .catch(e => console.warn('[useTranslation] org-default locale probe failed', e));
         }
     }, []);
 

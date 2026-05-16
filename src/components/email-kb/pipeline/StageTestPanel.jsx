@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Play, Loader2, Sparkles, Check, X, RotateCcw, ChevronDown, AlertTriangle } from 'lucide-react';
+import { Play, Loader2, Check, X, RotateCcw, ChevronDown, AlertTriangle } from 'lucide-react';
 import { api } from '../utils';
 
 const TIER_OPTIONS = ['fast', 'thinking', 'writer', 'deep_thinking'];
@@ -160,7 +160,6 @@ const StageTestPanel = ({ connectionId, stageKey, currentPrompt, currentModelTie
                             onClick={() => setAssistOpen(true)}
                             className="flex items-center gap-1.5 text-[12px] font-medium text-[var(--accent-primary)] hover:underline"
                         >
-                            <Sparkles className="w-3.5 h-3.5" />
                             {t('ticket_assistant.ask_ai_to_fix')}
                         </button>
                     ) : (
@@ -306,7 +305,6 @@ const AssistPanel = ({ t, feedback, setFeedback, tier, setTier, loading, result,
     <div className="space-y-2">
         <div className="flex items-center justify-between">
             <div className="flex items-center gap-1.5 text-[12px] font-semibold text-[var(--text-primary)]">
-                <Sparkles className="w-3.5 h-3.5 text-[var(--accent-primary)]" />
                 {t('ticket_assistant.ai_assist_title')}
             </div>
             <button onClick={onCancel} className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]">
@@ -343,7 +341,7 @@ const AssistPanel = ({ t, feedback, setFeedback, tier, setTier, loading, result,
                         disabled={loading || feedback.trim().length < 3}
                         className="flex items-center gap-1.5 px-3 py-1.5 rounded text-[11px] font-semibold bg-[var(--accent-primary)] text-white hover:opacity-90 disabled:opacity-50"
                     >
-                        {loading ? <Loader2 className="w-3 h-3 animate-spin" /> : <Sparkles className="w-3 h-3" />}
+                        {loading && <Loader2 className="w-3 h-3 animate-spin" />}
                         {loading ? t('ticket_assistant.ai_assist_running') : t('ticket_assistant.ai_assist_run')}
                     </button>
                 </div>

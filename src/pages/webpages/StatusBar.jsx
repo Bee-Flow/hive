@@ -3,6 +3,27 @@ import { Sun, Moon, Download, History, AlertCircle, Loader2, Check } from 'lucid
 
 const LANG_LABELS = { html: 'HTML', css: 'CSS', js: 'JavaScript' };
 
+const EXT_LANG_LABEL = {
+    html: 'HTML', htm: 'HTML',
+    css: 'CSS',
+    js: 'JavaScript', mjs: 'JavaScript',
+    json: 'JSON',
+    md: 'Markdown', markdown: 'Markdown',
+    svg: 'SVG', xml: 'XML',
+    ts: 'TypeScript', tsx: 'TypeScript',
+    yml: 'YAML', yaml: 'YAML',
+};
+
+function labelForActiveFile(activeFile) {
+    if (!activeFile) return null;
+    if (typeof activeFile === 'string') return LANG_LABELS[activeFile] ?? 'Text';
+    if (activeFile.kind === 'extra' && activeFile.path) {
+        const ext = (activeFile.path.split('.').pop() || '').toLowerCase();
+        return EXT_LANG_LABEL[ext] || 'Text';
+    }
+    return 'Text';
+}
+
 function fmtSize(bytes) {
     if (bytes === 0) return '0 B';
     if (bytes < 1024) return `${bytes} B`;
@@ -45,7 +66,7 @@ export default function StatusBar({
             {activeFile ? (
                 <>
                     <span>Ln {cursor?.line ?? 1}, Col {cursor?.col ?? 1}</span>
-                    <span>{LANG_LABELS[activeFile] ?? 'HTML'}</span>
+                    <span>{labelForActiveFile(activeFile)}</span>
                     <span>{fmtSize(fileSize ?? 0)}</span>
                 </>
             ) : (

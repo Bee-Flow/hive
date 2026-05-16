@@ -1,10 +1,9 @@
 import React, { useEffect, useState, useCallback, useRef } from 'react';
-import { Plus, Trash2, X, Sparkles, Users, Lock } from 'lucide-react';
+import { Plus, Trash2, X, Users, Lock } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../../utils/helpers';
 import useTranslation from '../../../../hooks/useTranslation';
+import { SKILL_EMOJI_ICONS as ICONS } from '../../../../constants/icons';
 
-// Same icons as SkillFormModal for consistency
-const ICONS = ['⚡', '🎯', '📝', '📧', '📊', '🔍', '💡', '🚀', '🎨', '🤝', '📋', '🏆', '🔧', '⚙️', '🌟', '💬', '📞', '🖊️', '🗂️', '🔑'];
 const INSTRUCTION_LIMIT = 4000;
 
 const TABS = [
@@ -227,7 +226,6 @@ export default function SkillsStudio({ user, initialSkillId = null, onNavigate, 
 function EmptyState({ t, onCreate }) {
     return (
         <div className="h-full flex flex-col items-center justify-center px-6 py-12">
-            <Sparkles size={32} className="mb-4" style={{ color: 'var(--accent-primary)', opacity: 0.5 }} />
             <div className="text-lg font-semibold text-[var(--text-primary)] mb-2">{t('skills_studio.empty_title')}</div>
             <div className="text-sm text-[var(--text-tertiary)] mb-6 max-w-md text-center leading-relaxed">{t('skills_studio.empty_help')}</div>
             <button

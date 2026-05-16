@@ -1,10 +1,11 @@
 import React from 'react';
-import { Files, Database, History } from 'lucide-react';
+import { Files, Database, BookOpen, History } from 'lucide-react';
 
 const ITEMS = [
-    { id: 'files',   Icon: Files,    title: 'Files' },
-    { id: 'sources', Icon: Database, title: 'Sources' },
-    { id: 'history', Icon: History,  title: 'Version history' },
+    { id: 'files',     Icon: Files,    title: 'Files' },
+    { id: 'database',  Icon: Database, title: 'Database' },
+    { id: 'knowledge', Icon: BookOpen, title: 'Knowledge' },
+    { id: 'history',   Icon: History,  title: 'Version history' },
 ];
 
 export default function ActivityBar({ active, onSelect }) {

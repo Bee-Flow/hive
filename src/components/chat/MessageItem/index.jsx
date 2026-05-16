@@ -17,7 +17,7 @@ import SwarmTimeline from './SwarmTimeline';
 import PhaseIndicator from './PhaseIndicator';
 
 import TerminalProgress from './TerminalProgress';
-import { tierLabel } from '../../tierMeta';
+import { tierLabel, TIER_META } from '../../tierMeta';
 import TokenisedBadge from '../TokenisedBadge';
 import EmailDraftCard from './EmailDraftCard';
 import CalendarDraftCard from './CalendarDraftCard';
@@ -46,6 +46,16 @@ const MessageItem = ({
 }) => {
     const { t } = useTranslation();
     const [expandedBrainEntries, setExpandedBrainEntries] = useState({});
+    // Simple Mode hides the "How I got this answer" panel. AgentHub keeps
+    // window.__beeflowSimpleMode + dispatches `beeflow:simpleModeChanged` when
+    // the user toggles the preference; we subscribe here so the panel
+    // disappears without prop-drilling through every MessageItem caller.
+    const [simpleMode, setSimpleMode] = useState(() => typeof window !== 'undefined' && !!window.__beeflowSimpleMode);
+    useEffect(() => {
+        const handler = (e) => setSimpleMode(!!e?.detail);
+        window.addEventListener('beeflow:simpleModeChanged', handler);
+        return () => window.removeEventListener('beeflow:simpleModeChanged', handler);
+    }, []);
     const isUser = msg.role === 'user';
     const isTool = msg.role === 'tool';
     const [copied, setCopied] = useState(false);
@@ -433,7 +443,7 @@ const MessageItem = ({
                 }}
                 className={`relative rounded-2xl p-4 transition-all duration-200 overflow-hidden
                     ${isUser
-                        ? 'max-w-[85%] bg-[#e8e8eb] text-black rounded-br-none'
+                        ? 'max-w-[85%] bg-[var(--user-bubble-bg,#e8e8eb)] text-[var(--user-bubble-fg,#000)] rounded-br-none'
                         : isTool
                             ? 'bg-[var(--bg-tertiary)] text-[var(--text-primary)] border border-[var(--border-subtle)] rounded-xl w-full max-w-full'
                             : `max-w-3xl text-[var(--text-primary)] rounded-bl-none`
@@ -522,7 +532,10 @@ const MessageItem = ({
                 {!isUser && !isTool && renderToolCall()}
 
                 {/* Content */}
-                <div ref={contentRef} className={`prose prose-sm dark:prose-invert max-w-none break-words ${!isUser ? '' : 'text-black prose-headings:text-black prose-a:text-black prose-strong:text-black prose-code:text-black/90 [&_a]:!text-black [&_a]:underline'}`}>
+                <div
+                    ref={contentRef}
+                    className={`prose prose-sm dark:prose-invert max-w-none break-words ${!isUser ? '' : 'bubble-user-prose'}`}
+                >
 
                     {!isUser && msg.terminalActivity && (
                         <TerminalProgress msg={msg} allMessages={allMessages} />
@@ -712,8 +725,8 @@ const MessageItem = ({
                 </div>
 
                 {/* How I got this answer — comprehensive collapsed section */}
-                {!isUser && !isTool && !msg.isStreaming && msg.content && (
-                    (msg.thinking || msg.toolHistory?.length > 0 || msg.autoSelectedTier || msg.kbSources?.length > 0 || msg.tokenisationInfo?.count > 0 || (msg.tokenisationInfo?.attachments || []).some(a => a?.timeout)) && (() => {
+                {!simpleMode && !isUser && !isTool && !msg.isStreaming && msg.content && (
+                    (msg.thinking || msg.toolHistory?.length > 0 || msg.autoSelectedTier || msg.modelId || msg.kbSources?.length > 0 || msg.tokenisationInfo?.count > 0 || (msg.tokenisationInfo?.attachments || []).some(a => a?.timeout)) && (() => {
                         const visibleTools = msg.toolHistory?.filter(t => t.name !== 'sequentialthinking') || [];
                         const totalMs = visibleTools.reduce((acc, t) => acc + (t.endTime && t.startTime ? t.endTime - t.startTime : 0), 0);
                         const totalSec = totalMs > 0 ? (totalMs / 1000).toFixed(1) : null;
@@ -735,11 +748,15 @@ const MessageItem = ({
                                                 {msg.kbSources.length} source{msg.kbSources.length !== 1 ? 's' : ''}
                                             </span>
                                         )}
-                                        {msg.autoSelectedTier && (
-                                            <span className="px-1.5 py-0.5 rounded-full" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
+                                        {msg.autoSelectedTier ? (
+                                            <span className="px-1.5 py-0.5 rounded-full" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }} title={msg.modelId || ''}>
                                                 Auto → {tierLabel(msg.autoSelectedTier)}
                                             </span>
-                                        )}
+                                        ) : msg.modelTier ? (
+                                            <span className="px-1.5 py-0.5 rounded-full" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }} title={msg.modelId || ''}>
+                                                {tierLabel(msg.modelTier)}
+                                            </span>
+                                        ) : null}
                                         {msg.tokenisationInfo?.count > 0 && (
                                             <span
                                                 className="px-1.5 py-0.5 rounded-full font-medium inline-flex items-center gap-1"
@@ -1190,13 +1207,12 @@ const MessageItem = ({
                                         </button>
                                     </div>
                                     {showRetryMenu && (() => {
-                                        const RETRY_TIERS = {
-                                            auto: { icon: '🔀', label: 'Auto', desc: 'Optimal choice' },
-                                            fast: { icon: '⚡', label: 'Fast', desc: 'Quick answers' },
-                                            thinking: { icon: '🧠', label: 'Think', desc: 'Complex problems' },
-                                            writer: { icon: '✍️', label: 'Write', desc: 'Long-form content' },
-                                            pro: { icon: '✨', label: 'Deep Thinking', desc: 'Advanced reasoning' }
-                                        };
+                                        // Reuse TIER_META so the retry menu picks up the same
+                                        // lucide icons and labels as the composer's tier picker.
+                                        const RETRY_KEYS = ['auto', 'fast', 'thinking', 'writer', 'pro'];
+                                        const RETRY_TIERS = Object.fromEntries(
+                                            RETRY_KEYS.map(k => [k, TIER_META[k]]).filter(([, m]) => m)
+                                        );
                                         return ReactDOM.createPortal(
                                             <div
                                                 ref={retryMenuRef}
@@ -1224,7 +1240,15 @@ const MessageItem = ({
                                                             onClick={() => { onRetry(idx, key); setShowRetryMenu(false); }}
                                                             className="w-full text-left px-3 py-2.5 transition-colors flex items-center gap-2.5 hover:bg-[var(--bg-tertiary)]"
                                                         >
-                                                            <span className="text-lg w-6 text-center flex-shrink-0">{meta.icon}</span>
+                                                            <span className="w-6 flex items-center justify-center flex-shrink-0">
+                                                                {meta.iconSrc ? (
+                                                                    <img src={meta.iconSrc} alt="" className="w-4 h-4 object-contain" />
+                                                                ) : meta.Icon ? (
+                                                                    <meta.Icon className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
+                                                                ) : (
+                                                                    <span className="text-lg">{meta.emoji}</span>
+                                                                )}
+                                                            </span>
                                                             <div className="flex-1 min-w-0">
                                                                 <div className="text-[13px] font-semibold text-[var(--text-primary)]">{meta.label}</div>
                                                                 <div className="text-[11px] text-[var(--text-tertiary)]">

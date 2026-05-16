@@ -182,8 +182,11 @@ export function preprocessMermaidContent(markdown) {
             .replace(/&quot;/g, '"')
             .replace(/&#39;/g, "'");
         const startsWithKeyword = mermaidKeywords.some(kw => decoded.startsWith(kw));
-        const hasMermaidSyntax = !startsWithKeyword && mermaidSyntaxPatterns.filter(p => p.test(decoded)).length >= 2;
-        
+        // Require keyword-start, OR ≥3 syntax-pattern matches. Bumped from 2
+        // because a generic `word -- word` + an arrow could trip the heuristic
+        // on non-mermaid code samples (e.g. CLI usage examples).
+        const hasMermaidSyntax = !startsWithKeyword && mermaidSyntaxPatterns.filter(p => p.test(decoded)).length >= 3;
+
         if (!startsWithKeyword && !hasMermaidSyntax) return match;
         const encoded = encodeForAttr(decoded);
         return `<div data-type="mermaid-diagram" data-code="${encoded}"></div>`;
