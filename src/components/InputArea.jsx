@@ -886,7 +886,13 @@ const InputArea = ({
                                         setWebSearchEnabled(next);
                                         scopedStorage.setItem('webSearchEnabled', String(next));
                                     }}
-                                    className={`p-2 rounded-lg transition-colors ${orgDisableSearchOnUpload && attachments.length > 0 ? 'text-orange-400/60 opacity-50 cursor-not-allowed bg-orange-500/5' : webSearchEnabled ? 'text-blue-400 bg-blue-500/10 hover:bg-blue-500/20' : 'text-[var(--text-tertiary)] opacity-40 hover:opacity-70 hover:bg-[var(--bg-tertiary)]'}`}
+                                    className={`p-2 rounded-lg transition-colors ${
+                                        orgDisableSearchOnUpload && attachments.length > 0
+                                            ? 'composer-toggle-warn opacity-60 cursor-not-allowed'
+                                            : webSearchEnabled
+                                                ? 'composer-toggle-on'
+                                                : 'text-[var(--text-tertiary)] opacity-40 hover:opacity-70 hover:bg-[var(--bg-tertiary)]'
+                                    }`}
                                     title={orgDisableSearchOnUpload && attachments.length > 0 ? 'Web search disabled by organisation policy (files attached)' : webSearchEnabled ? 'Web search enabled (click to disable)' : 'Web search disabled (click to enable)'}
                                     aria-label={webSearchEnabled ? 'Web search enabled' : 'Web search disabled'}
                                     aria-pressed={webSearchEnabled}
@@ -903,7 +909,7 @@ const InputArea = ({
                                             setMemoryWriteEnabled(next);
                                             scopedStorage.setItem('memoryWriteEnabled', String(next));
                                         }}
-                                        className={`p-2 rounded-lg transition-colors ${memoryWriteEnabled ? 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/20' : 'text-[var(--text-tertiary)] opacity-40 hover:opacity-70 hover:bg-[var(--bg-tertiary)]'}`}
+                                        className={`p-2 rounded-lg transition-colors ${memoryWriteEnabled ? 'composer-toggle-on' : 'text-[var(--text-tertiary)] opacity-40 hover:opacity-70 hover:bg-[var(--bg-tertiary)]'}`}
                                         title={memoryWriteEnabled ? 'Memory saving enabled (click to pause)' : 'Memory saving paused (click to resume)'}
                                         aria-label={memoryWriteEnabled ? 'Memory saving enabled' : 'Memory saving paused'}
                                         aria-pressed={memoryWriteEnabled}
@@ -919,7 +925,7 @@ const InputArea = ({
                                     <div className="relative" ref={kbPickerRef}>
                                         <button
                                             onClick={() => setShowKBPicker(v => !v)}
-                                            className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${selectedKBIds.length > 0 ? 'text-emerald-500 bg-emerald-500/10 hover:bg-emerald-500/20' : 'text-[var(--text-tertiary)] opacity-60 hover:opacity-90 hover:bg-[var(--bg-tertiary)]'}`}
+                                            className={`p-2 rounded-lg transition-colors flex items-center gap-1 ${selectedKBIds.length > 0 ? 'composer-toggle-on' : 'text-[var(--text-tertiary)] opacity-60 hover:opacity-90 hover:bg-[var(--bg-tertiary)]'}`}
                                             title={selectedKBIds.length > 0 ? `${selectedKBIds.length} knowledge base${selectedKBIds.length > 1 ? 's' : ''} attached` : 'Attach knowledge bases'}
                                             aria-label="Attach knowledge bases"
                                             aria-pressed={selectedKBIds.length > 0}
@@ -928,7 +934,10 @@ const InputArea = ({
                                         >
                                             <BookOpen className="w-5 h-5" />
                                             {selectedKBIds.length > 0 && (
-                                                <span className="text-[10px] font-bold leading-none px-1 rounded bg-emerald-500 text-white">{selectedKBIds.length}</span>
+                                                <span
+                                                    className="text-[10px] font-bold leading-none px-1 rounded"
+                                                    style={{ background: 'var(--accent-primary)', color: 'var(--accent-primary-fg, #fff)' }}
+                                                >{selectedKBIds.length}</span>
                                             )}
                                         </button>
 

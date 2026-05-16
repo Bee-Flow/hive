@@ -20,6 +20,21 @@
     text-decoration: underline;
 }
 
+/* Per-theme user-bubble colour. Without these, every theme falls back to the
+   universal `#e8e8eb` cool gray in MessageItem.jsx — which clashes with warm
+   themes (Paper, Sepia) and reads as a flat slab on dark themes. Glass
+   variants use a translucent tile so they sit on the wallpaper naturally
+   instead of breaking the liquid-glass aesthetic. EmbedChat's `userColor`
+   URL param still wins because it writes to :root with !important. */
+:root                          { --user-bubble-bg: #2a2a36;                 --user-bubble-fg: #f8fafc; }
+[data-theme="light"]           { --user-bubble-bg: #e8e8ee;                 --user-bubble-fg: #0f172a; }
+[data-theme="glass"]           { --user-bubble-bg: rgba(255,255,255,0.55);  --user-bubble-fg: #0f172a; }
+[data-theme="glass-dark"]      { --user-bubble-bg: rgba(15,23,42,0.55);     --user-bubble-fg: #f8fafc; }
+[data-theme="high-contrast"]   { --user-bubble-bg: #ffffff;                 --user-bubble-fg: #000000; }
+[data-theme="paper"]           { --user-bubble-bg: #f0ebe0;                 --user-bubble-fg: #1c1917; }
+[data-theme="obsidian"]        { --user-bubble-bg: #1c1c20;                 --user-bubble-fg: #fafaf9; }
+[data-theme="sepia"]           { --user-bubble-bg: #e8dcc4;                 --user-bubble-fg: #44322c; }
+
 :root {
     /* Color Palette - Dark Professional Theme */
     --bg-primary: #0f0f13;
@@ -319,13 +334,15 @@
 
 /* Paper — warm editorial light. The neutral Light theme reads as clinical
    true-white; Paper sits a shade off, on warm cream, with espresso text and a
-   muted clay accent. Cards stay pure white to lift off the warm background. */
+   muted clay accent. Cards lift off the page by being a brighter warm-white,
+   not pure #fff — pure white next to warm cream reads as a tonal clash, not
+   as elevation. */
 [data-theme="paper"] {
     --bg-primary: #fdfcf8;
     --bg-secondary: #f7f4ed;
     --bg-tertiary: #f0ebe0;
-    --bg-card: #ffffff;
-    --bg-card-hover: #fbfaf6;
+    --bg-card: #fffdf7;
+    --bg-card-hover: #fff9ed;
 
     --accent-primary: #b45309;             /* amber-700, muted clay */
     --accent-secondary: #d97706;
@@ -621,6 +638,25 @@ html[data-preview="1"] [data-preview-hide] {
 .chat-composer {
     background: var(--bg-card);
     box-shadow: 0 6px 24px rgba(15, 23, 42, 0.06);
+}
+
+/* Composer toolbar toggles (web search, memory-write, KB picker).
+   Active state uses --accent-primary so the toggles harmonise with the org
+   accent under every theme instead of locking to blue/emerald.
+   color-mix is already used elsewhere in this file — safe to rely on. */
+.composer-toggle-on {
+    color: var(--accent-primary);
+    background: color-mix(in srgb, var(--accent-primary) 12%, transparent);
+}
+.composer-toggle-on:hover {
+    background: color-mix(in srgb, var(--accent-primary) 20%, transparent);
+}
+
+/* Composer "blocked by policy" state — uses --warning so warm and cool
+   themes both render a sensible cautionary hue. */
+.composer-toggle-warn {
+    color: var(--warning);
+    background: color-mix(in srgb, var(--warning) 8%, transparent);
 }
 
 /* Glass-mode composer: the BOX gets a subtle glass tile look (frosted tint

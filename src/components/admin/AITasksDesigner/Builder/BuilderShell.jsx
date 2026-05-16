@@ -865,7 +865,7 @@ function MessageBubble({ msg }) {
         <div className={`flex flex-col w-full ${isUser ? 'items-end' : 'items-start'}`}>
             <div
                 className={`relative rounded-2xl p-4 transition-all duration-200 overflow-hidden text-sm ${isUser
-                    ? 'max-w-[85%] bg-[#e8e8eb] text-black rounded-br-none whitespace-pre-wrap'
+                    ? 'max-w-[85%] bg-[var(--user-bubble-bg,#e8e8eb)] text-[var(--user-bubble-fg,#000)] rounded-br-none whitespace-pre-wrap'
                     : 'max-w-3xl text-[var(--text-primary)] rounded-bl-none'}`}
             >
                 {isUser ? msg.content : <MarkdownRenderer content={msg.content || ''} />}

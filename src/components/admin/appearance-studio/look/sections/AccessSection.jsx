@@ -5,8 +5,8 @@ import { SECTION_IDS } from '../useLookForm';
 
 /**
  * AccessSection — per-user override toggle. When off, every user sees the
- * organisation theme exactly as set; the sidebar ThemeQuickPicker and the
- * Settings → Appearance section hide themselves.
+ * organisation theme exactly as set and the Settings → Appearance section
+ * hides itself.
  */
 export default function AccessSection({ form, setForm, saving }) {
     const allow = !!form.allowUserOverride;

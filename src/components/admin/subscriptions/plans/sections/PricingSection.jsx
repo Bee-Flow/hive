@@ -1,13 +1,16 @@
 import React from 'react';
-import { Euro, TrendingUp, Info } from 'lucide-react';
+import { Euro, TrendingUp, Info, Users } from 'lucide-react';
 import { Field, Input, Select, NumberInput } from '../../ui/Input';
 import { ChoiceCards } from '../../ui/Choice';
 import { Banner } from '../../ui/Banner';
+import { Toggle } from '../../ui/Toggle';
 import { CURRENCY_SYMBOL } from '../../constants';
 
 export function PricingSection({ form, update }) {
     const sym = CURRENCY_SYMBOL[form.currency] || '€';
     const metered = form.billing_model === 'metered';
+    const isOrg = (form.plan_type || 'organization') === 'organization';
+    const perSeat = isOrg && !metered && !!form.per_seat;
 
     return (
         <div className="space-y-5">
@@ -19,7 +22,10 @@ export function PricingSection({ form, update }) {
             <Field label="Billing model">
                 <ChoiceCards
                     value={form.billing_model}
-                    onChange={v => update('billing_model', v)}
+                    onChange={v => {
+                        update('billing_model', v);
+                        if (v === 'metered') update('per_seat', false);
+                    }}
                     options={[
                         { value: 'fixed',   label: 'Fixed monthly',  description: 'Flat recurring price',         icon: Euro,        accent: 'blue' },
                         { value: 'metered', label: 'Pay-as-you-go',  description: 'Per-call usage + markup %',    icon: TrendingUp,  accent: 'emerald' },
@@ -27,9 +33,19 @@ export function PricingSection({ form, update }) {
                 />
             </Field>
 
+            {isOrg && !metered && (
+                <Toggle
+                    checked={!!form.per_seat}
+                    onChange={v => update('per_seat', v)}
+                    label="Bill per seat"
+                    description="When enabled, the price above is per active user per month. Stripe is invoiced with quantity = seat count, and the org-wide message cap is computed as per-seat cap × seat count."
+                    icon={Users}
+                />
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
                 {!metered && (
-                    <Field label="Price">
+                    <Field label={perSeat ? `Price per seat (${sym})` : 'Price'} hint={perSeat ? 'Billed monthly × active seat count' : null}>
                         <NumberInput
                             value={form.price}
                             onChange={v => update('price', v)}

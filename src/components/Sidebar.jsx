@@ -6,7 +6,6 @@ import { API_BASE, authFetch } from '../utils/helpers';
 import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar, DEFAULT_AGENT_EMOJI } from '../utils/agentAvatar';
 import NotificationCenter from './NotificationCenter';
 import NavLink from './NavLink';
-import ThemeQuickPicker from './appearance/ThemeQuickPicker';
 
 
 /* ─── Design tokens ─── */
@@ -913,15 +912,6 @@ const Sidebar = ({
             </div>
 
             </div>{/* ── End scrollable middle region ── */}
-
-            {/* ── Quick theme picker (collapsed sidebar) — gated by allowUserOverride
-                 inside the component so admins flipping the org default off
-                 instantly hides it for every member. ── */}
-            {!isOpen && (
-                <div className="flex-shrink-0 flex justify-center pb-1">
-                    <ThemeQuickPicker variant="icon" onNavigate={onNavigate} />
-                </div>
-            )}
 
             {/* ── Account footer ── */}
             <div className={`flex-shrink-0 mt-auto relative ${isOpen ? 'border-t border-[var(--border-subtle)]' : 'flex justify-center flex-shrink-0 border-t border-[var(--border-subtle)]'}`} ref={profileRef}>

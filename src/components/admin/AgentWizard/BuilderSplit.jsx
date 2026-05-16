@@ -861,7 +861,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                         if (m.role === 'user') {
                             return (
                                 <div key={i} className="flex justify-end">
-                                    <div className="max-w-[80%] rounded-2xl bg-[var(--bg-secondary)] px-4 py-2 text-[15px] text-[var(--text-primary)]">{m.content}</div>
+                                    <div className="max-w-[80%] rounded-2xl bg-[var(--user-bubble-bg,#e8e8eb)] px-4 py-2 text-[15px] text-[var(--user-bubble-fg,#000)]">{m.content}</div>
                                 </div>
                             );
                         }

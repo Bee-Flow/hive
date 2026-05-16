@@ -393,12 +393,12 @@ export function useTheme() {
 
 export const THEME_PRESETS = [
     { id: 'light', label: 'Light' },
-    { id: 'dark', label: 'Dark' },
+    { id: 'paper', label: 'Paper' },
+    { id: 'sepia', label: 'Sepia' },
     { id: 'glass', label: 'Glass' },
     { id: 'glass-dark', label: 'Glass Dark' },
-    { id: 'paper', label: 'Paper' },
+    { id: 'dark', label: 'Dark' },
     { id: 'obsidian', label: 'Obsidian' },
-    { id: 'sepia', label: 'Sepia' },
     { id: 'high-contrast', label: 'High Contrast' },
     { id: 'custom', label: 'Custom' },
 ];

@@ -11,6 +11,7 @@ export function PlanCard({ plan, onEdit, onDelete, onSyncStripe, syncing }) {
     const isConsumer = plan.plan_type === 'consumer';
     const sym = CURRENCY_SYMBOL[plan.currency] || '€';
     const metered = plan.billing_model === 'metered';
+    const perSeat = !!plan.per_seat && !metered && !isConsumer;
     const isPaid = metered || (plan.price != null && plan.price > 0);
 
     return (
@@ -22,6 +23,9 @@ export function PlanCard({ plan, onEdit, onDelete, onSyncStripe, syncing }) {
                         <Badge tone={isConsumer ? 'success' : 'sky'} icon={isConsumer ? Users : Building2} size="sm">
                             {isConsumer ? 'Consumer' : 'Org'}
                         </Badge>
+                        {perSeat && (
+                            <Badge tone="teal" icon={Users} size="sm">Per seat</Badge>
+                        )}
                         {plan.is_default && (
                             <Badge tone="warning" icon={Star} size="sm">Default</Badge>
                         )}
@@ -47,7 +51,7 @@ export function PlanCard({ plan, onEdit, onDelete, onSyncStripe, syncing }) {
                 ) : plan.price != null ? (
                     <div className="flex items-baseline gap-2">
                         <span className="text-[26px] font-extrabold text-[var(--text-primary)] leading-none">{sym}{plan.price.toFixed(2)}</span>
-                        <span className="text-[12px] text-[var(--text-muted)]">/ {plan.billing_interval || 'month'}</span>
+                        <span className="text-[12px] text-[var(--text-muted)]">/ {perSeat ? 'seat / month' : (plan.billing_interval || 'month')}</span>
                         {plan.trial_days > 0 && (
                             <Badge tone="success" size="sm" className="ml-auto">{plan.trial_days}d trial</Badge>
                         )}
@@ -64,7 +68,11 @@ export function PlanCard({ plan, onEdit, onDelete, onSyncStripe, syncing }) {
 
             {/* Key limits — 4 most useful */}
             <StatGrid className="mb-4">
-                <StatRow label="Messages"  value={plan.max_messages_per_month} />
+                {perSeat ? (
+                    <StatRow label="Msgs / seat" value={plan.max_messages_per_seat} />
+                ) : (
+                    <StatRow label="Messages" value={plan.max_messages_per_month} />
+                )}
                 <StatRow label="Cost cap"  value={plan.max_cost_per_month} unit="€" />
                 <StatRow label="Users"     value={plan.max_users} />
                 <StatRow label="Agents"    value={plan.max_agents} />

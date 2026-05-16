@@ -64,10 +64,10 @@ const S = {
         boxShadow: 'var(--shadow-sm)',
     },
     userBubble: {
-        background: 'linear-gradient(135deg, var(--accent-primary), #818cf8)',
-        color: '#fff',
+        background: 'var(--user-bubble-bg, #e8e8eb)',
+        color: 'var(--user-bubble-fg, #000)',
         border: 'none',
-        boxShadow: '0 2px 8px rgba(99, 102, 241, 0.25)',
+        boxShadow: 'var(--shadow-sm)',
     },
     header: {
         background: 'var(--bg-secondary)',
@@ -448,14 +448,15 @@ const AIComponentDesigner = ({ onComponentCreated, onClose }) => {
                 {/* Avatar */}
                 <div className="w-7 h-7 rounded-lg flex items-center justify-center shrink-0"
                     style={isUser ? {
-                        background: 'linear-gradient(135deg, var(--accent-primary), #818cf8)',
-                        boxShadow: '0 2px 6px rgba(99, 102, 241, 0.25)',
+                        background: 'var(--accent-primary)',
+                        color: 'var(--accent-primary-fg, #fff)',
+                        boxShadow: '0 0 0 1px var(--border-subtle), 0 2px 6px var(--accent-glow)',
                     } : {
                         background: 'var(--bg-tertiary)',
                         border: '1px solid var(--border-default)',
                     }}>
                     {isUser
-                        ? <User className="w-3.5 h-3.5 text-white" />
+                        ? <User className="w-3.5 h-3.5" style={{ color: 'var(--accent-primary-fg, #fff)' }} />
                         : <Bot className="w-3.5 h-3.5" style={{ color: 'var(--accent-primary)' }} />}
                 </div>
                 {/* Bubble */}
@@ -468,7 +469,7 @@ const AIComponentDesigner = ({ onComponentCreated, onClose }) => {
                         borderRadius: '14px 14px 14px 4px',
                     }}>
                     <div className="text-[12.5px] leading-[1.5] markdown-content compact-chat"
-                        style={{ color: isUser ? '#fff' : 'var(--text-primary)' }}>
+                        style={{ color: isUser ? 'var(--user-bubble-fg, #000)' : 'var(--text-primary)' }}>
                         <MarkdownRenderer content={msg.content} />
                     </div>
                     {/* Output Selector */}

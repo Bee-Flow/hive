@@ -1,16 +1,14 @@
 import React, { useState } from 'react';
-import { Sun, Moon, Sparkles, Eye, Lock, RotateCcw, Type, FileText, Gem, BookOpen } from 'lucide-react';
-import { useTheme, THEME_PRESETS, FONT_OPTIONS } from '../../components/ThemeContext';
+import { Sun, Moon, Sparkles, Eye, Lock, FileText, Gem, BookOpen } from 'lucide-react';
+import { useTheme, THEME_PRESETS } from '../../components/ThemeContext';
 import PresetCard from '../../components/admin/appearance-studio/shared/PresetCard';
 import WallpaperPresets from '../../components/appearance/WallpaperPresets';
-import ColorPicker from '../../components/shared/ColorPicker';
-import { ACCENT_PRESETS } from '../../components/admin/appearance-studio/look/sections/AccentSection';
 import { toast } from '../../components/shared/Toast';
 
 /**
- * AppearanceSection — user-facing theme overrides. Mirrors a subset of the
- * admin Look editor: preset cards (all five non-custom), accent swatches (no
- * custom hex — admins only), wallpaper mood (under glass), font choice.
+ * AppearanceSection — user-facing theme overrides. End users pick a theme
+ * preset (plus the wallpaper mood under glass themes); accent colour and
+ * typography stay admin-controlled so the org's brand remains coherent.
  *
  *   - Hides everything when the admin disabled `allowUserOverride`.
  *   - "Reset to organisation default" sits at the top so it's the first thing
@@ -21,12 +19,12 @@ import { toast } from '../../components/shared/Toast';
 
 const USER_PRESETS = [
     { id: 'light',          Icon: Sun,        hint: 'Clean, bright surfaces.' },
-    { id: 'dark',           Icon: Moon,       hint: 'Low-glare dark surfaces.' },
+    { id: 'paper',          Icon: FileText,   hint: 'Warm editorial light.' },
+    { id: 'sepia',          Icon: BookOpen,   hint: 'Warm tan paper, focus reading.' },
     { id: 'glass',          Icon: Sparkles,   hint: 'Translucent Liquid Glass panels.' },
     { id: 'glass-dark',     Icon: Sparkles,   hint: 'Dark Liquid Glass.' },
-    { id: 'paper',          Icon: FileText,   hint: 'Warm editorial light.' },
+    { id: 'dark',           Icon: Moon,       hint: 'Low-glare dark surfaces.' },
     { id: 'obsidian',       Icon: Gem,        hint: 'Monochrome carbon dark.' },
-    { id: 'sepia',          Icon: BookOpen,   hint: 'Warm tan paper, focus reading.' },
     { id: 'high-contrast',  Icon: Eye,        hint: 'WCAG AAA contrast — accessibility.' },
 ];
 
@@ -55,7 +53,6 @@ export default function AppearanceSection() {
         );
     }
 
-    const isOverridden = theme.source === 'user';
     const isGlassPreset = theme.preset === 'glass' || theme.preset === 'glass-dark';
 
     const apply = async (patch, message) => {
@@ -70,42 +67,16 @@ export default function AppearanceSection() {
         }
     };
 
-    const reset = async () => {
-        setBusy(true);
-        try {
-            await theme.clearUserOverride();
-            toast.success('Reverted to organisation default');
-        } catch (e) {
-            toast.error(e?.message || 'Could not reset');
-        } finally {
-            setBusy(false);
-        }
-    };
-
     return (
         <div className="h-full overflow-y-auto" style={{ background: 'var(--bg-primary)' }}>
             <div className="max-w-3xl mx-auto px-6 py-6 space-y-8">
-                <header className="flex items-start justify-between gap-3 flex-wrap">
-                    <div>
-                        <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
-                            Appearance
-                        </h2>
-                        <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
-                            Customise how Bee Flow looks on this device. Only you see your choice.
-                        </p>
-                    </div>
-                    {isOverridden && (
-                        <button
-                            type="button"
-                            onClick={reset}
-                            disabled={busy}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border hover:bg-[var(--bg-tertiary)] disabled:opacity-50"
-                            style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
-                        >
-                            <RotateCcw className="w-3.5 h-3.5" />
-                            Reset to organisation default
-                        </button>
-                    )}
+                <header>
+                    <h2 className="text-xl font-semibold" style={{ color: 'var(--text-primary)' }}>
+                        Appearance
+                    </h2>
+                    <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
+                        Customise how Bee Flow looks on this device. Only you see your choice.
+                    </p>
                 </header>
 
                 <section>
@@ -129,18 +100,6 @@ export default function AppearanceSection() {
                     </div>
                 </section>
 
-                <section>
-                    <SectionLabel>Accent colour</SectionLabel>
-                    <ColorPicker
-                        value={theme.accent || ACCENT_PRESETS[0]}
-                        onChange={(hex) => apply({ accent: hex }, `Accent ${hex}`)}
-                        presets={ACCENT_PRESETS}
-                        allowCustom={false}
-                        disabled={busy}
-                        ariaLabel="Accent colour"
-                    />
-                </section>
-
                 {isGlassPreset && (
                     <section>
                         <SectionLabel>Mood</SectionLabel>
@@ -154,42 +113,6 @@ export default function AppearanceSection() {
                         />
                     </section>
                 )}
-
-                <section>
-                    <SectionLabel>Typography</SectionLabel>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                        {FONT_OPTIONS.map((font) => {
-                            const active = theme.font === font.id;
-                            return (
-                                <button
-                                    key={font.id}
-                                    type="button"
-                                    disabled={busy}
-                                    onClick={() => apply({ font: font.id }, font.label)}
-                                    aria-pressed={active}
-                                    className="text-left px-3 py-2.5 rounded-xl border transition-all inline-flex items-center gap-2"
-                                    style={{
-                                        borderColor: active ? 'var(--accent-primary)' : 'var(--border-default)',
-                                        background: active ? 'var(--bg-card-hover)' : 'var(--bg-card)',
-                                        cursor: busy ? 'wait' : 'pointer',
-                                    }}
-                                >
-                                    <Type
-                                        className="w-3.5 h-3.5"
-                                        style={{ color: active ? 'var(--accent-primary)' : 'var(--text-muted)' }}
-                                    />
-                                    <span className="text-sm" style={{ color: 'var(--text-primary)' }}>
-                                        {font.label}
-                                    </span>
-                                </button>
-                            );
-                        })}
-                    </div>
-                </section>
-
-                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                    Your organisation's current default is <strong style={{ color: 'var(--text-secondary)' }}>{labelForPreset(theme.preset)}</strong>{isOverridden && ' — overridden by your preference above'}.
-                </p>
             </div>
         </div>
     );

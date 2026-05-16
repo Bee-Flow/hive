@@ -29,6 +29,8 @@ export function initPlanForm(plan) {
         nc_recommended:         plan?.nc_recommended         || false,
         tagline:                plan?.tagline                || '',
         tier:                   plan?.tier                   || '',
+        per_seat:               plan?.per_seat               || false,
+        max_messages_per_seat:  plan?.max_messages_per_seat  ?? null,
     };
 }
 

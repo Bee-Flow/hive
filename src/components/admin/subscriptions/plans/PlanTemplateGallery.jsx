@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react';
-import { Building2, Users, Check, TrendingUp, Star } from 'lucide-react';
+import { Building2, Users, Check, TrendingUp, Star, Info } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { Tabs } from '../ui/Tabs';
 import { Badge } from '../ui/Badge';
+import { Banner } from '../ui/Banner';
 import { PLAN_TEMPLATES } from './planTemplates';
 
 const AUDIENCE_FILTERS = [
@@ -49,6 +50,10 @@ export function PlanTemplateGallery({ open, onClose, onPick }) {
                 </span>
             </div>
 
+            <Banner tone="info" icon={Info} className="mb-4">
+                Org tiers (Team / Business / Enterprise) bill <strong>per active seat</strong>. The org-wide message cap scales with seat count. White-label branding is <strong>not available on cloud plans</strong> — it's a self-hosted-only feature gated by an Enterprise license key.
+            </Banner>
+
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">
                 {visible.map(t => (
                     <TemplateCard key={t.id} template={t} onPick={() => onPick(t)} />
@@ -74,6 +79,7 @@ function TemplateCard({ template, onPick }) {
                     <Badge tone={isConsumer ? 'success' : 'sky'} icon={isConsumer ? Users : Building2} size="sm">
                         {isConsumer ? 'Consumer' : 'Org'}
                     </Badge>
+                    {plan.per_seat && <Badge tone="teal" icon={Users} size="sm">Per seat</Badge>}
                     {display.badge === 'FREE' && <Badge tone="teal" size="sm">Free</Badge>}
                     {display.badge === 'PAYG' && <Badge tone="warning" icon={TrendingUp} size="sm">PAYG</Badge>}
                     {plan.is_default && <Badge tone="warning" icon={Star} size="sm">Default</Badge>}
