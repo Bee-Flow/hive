@@ -12,6 +12,7 @@ import computeWebpageDiff from '../utils/computeWebpageDiff';
 import scopedStorage from '../utils/scopedStorage';
 import PublishMenu from '../components/admin/AgentWizard/pickers/PublishMenu';
 import useTranslation from '../hooks/useTranslation';
+import { RequireTier } from '../components/LicenseContext';
 
 // Deterministic accent fallback when the AI hasn't set one yet — keeps every
 // card distinguishable from neighbours without saving anything to the DB.
@@ -47,7 +48,7 @@ async function api(path, opts = {}) {
     return res.json();
 }
 
-export default function WebpagesPage({ user, onBack, initialWebpageId, onWebpageChange, embedded = false }) {
+function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, embedded = false }) {
     // Drive UI gating from the same `(license + beta)` resolution the server uses
     // (see /auth/my-permissions). Falls back to the legacy beta/permission check
     // for sessions established before the field was wired up.
@@ -1165,4 +1166,15 @@ function SaveIndicator({ state, lastSavedAt }) {
         );
     }
     return null;
+}
+
+// Licence-gated wrapper. Community-tier sessions see the upgrade panel
+// instead of an unauthenticated WebpagesPage that would 403 on every
+// /api/webpages request.
+export default function WebpagesPage(props) {
+    return (
+        <RequireTier feature="webpages">
+            <WebpagesPageInner {...props} />
+        </RequireTier>
+    );
 }

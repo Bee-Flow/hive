@@ -1,24 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Shield, Globe, Search, Save, Check, ScanEye } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 import PiiCategoryGrid from '../../components/privacy/PiiCategoryGrid';
 import PiiActionPicker from '../../components/privacy/PiiActionPicker';
-
-// The 8 categories the in-process Privacy Filter actually labels. Consumer
-// accounts don't get Azure AI Language (which would unlock the full 18),
-// so showing the extra categories would just let users toggle knobs that
-// never fire. See server/core/localPiiDetection.js LABEL_TO_CATEGORY.
-const CONSUMER_PII_CATEGORIES = [
-    { id: 'Person',                  label: 'Person Names',     group: 'Personal',  icon: '👤' },
-    { id: 'DateOfBirth',             label: 'Date of Birth',    group: 'Personal',  icon: '📅' },
-    { id: 'PhoneNumber',             label: 'Phone Numbers',    group: 'Contact',   icon: '📱' },
-    { id: 'Email',                   label: 'Email Addresses',  group: 'Contact',   icon: '📧' },
-    { id: 'Address',                 label: 'Physical Addresses', group: 'Contact', icon: '🏠' },
-    { id: 'BankAccountNumber',       label: 'Bank Accounts',    group: 'Financial', icon: '🏦' },
-    { id: 'URL',                     label: 'URLs',             group: 'Digital',   icon: '🔗' },
-    { id: 'AzureStorageAccountKey',  label: 'API Keys / Secrets', group: 'Digital', icon: '🔑' },
-];
+import { piiCategoriesLocalized } from '../../config/piiCategories';
 
 /**
  * Consumer Privacy Shield section.
@@ -31,6 +17,15 @@ const CONSUMER_PII_CATEGORIES = [
  */
 const ConsumerPrivacySection = () => {
     const { t } = useTranslation();
+    // Full canonical category list, localised. We surface every category
+    // here regardless of which detector is active server-side:
+    //   - Azure AI Language covers all of them when configured
+    //   - the GLiNER guard-service covers ~16 of them
+    //   - the in-process Transformers.js filter covers 8
+    // Unchecked categories are filtered server-side, so listing all of
+    // them is safe — at worst a checked-but-unsupported category yields
+    // zero hits with whichever detector is active.
+    const PII_CATEGORIES = useMemo(() => piiCategoriesLocalized(t), [t]);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [saved, setSaved] = useState(false);
@@ -288,7 +283,7 @@ const ConsumerPrivacySection = () => {
                     <PiiCategoryGrid
                         value={config.piiDetectionCategories}
                         onChange={v => update('piiDetectionCategories', v)}
-                        categories={CONSUMER_PII_CATEGORIES}
+                        categories={PII_CATEGORIES}
                     />
                 </div>
             )}

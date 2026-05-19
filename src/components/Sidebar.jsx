@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
 import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, PenLine, Sparkles, Mail, Ticket, BookOpen, LayoutGrid } from 'lucide-react';
 import { useTheme } from './ThemeContext';
+import { useLicenseContext } from './LicenseContext';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar, DEFAULT_AGENT_EMOJI } from '../utils/agentAvatar';
 import NotificationCenter from './NotificationCenter';
@@ -416,6 +417,7 @@ const Sidebar = ({
     // and if !isOpen, we'll show the narrow 'Power Bar'
     const [showProfileMenu, setShowProfileMenu] = useState(false);
     const themeCtx = useTheme();
+    const { hasFeature: hasLicenseFeature } = useLicenseContext();
     const [agentsOpen, setAgentsOpen] = useState(() => readExpanded('agents', true));
     const [chatsOpen, setChatsOpen] = useState(() => readExpanded('chats', false));
     const [projectsOpen, setProjectsOpen] = useState(() => readExpanded('projects', true));
@@ -612,13 +614,16 @@ const Sidebar = ({
         ...(!_simpleMode && !isMobile && (_isAdminLike || _permissions.includes('manage_agents') || _permissions.includes('manage_skills') || user?.orgRole === 'admin' || user?.orgRole === 'org_admin')
             ? [{ key: 'studio', label: t('studio.sidebar_link') || 'Studio', icon: LayoutGrid, onClick: () => onNavigate && onNavigate('studio'), active: currentPage === 'studio' }]
             : []),
-        ...(!_simpleMode && _featureFlags.meeting_notes !== false && (_isAdminLike || _betaFeatures.includes('meeting_notes'))
+        // hasLicenseFeature short-circuits each entry on community-tier
+        // installs — the licence gate is the source of truth; the beta
+        // opt-in and permissions remain as additional org-level controls.
+        ...(!_simpleMode && hasLicenseFeature('meeting_notes') && _featureFlags.meeting_notes !== false && (_isAdminLike || _betaFeatures.includes('meeting_notes'))
             ? [{ key: 'meeting-notes', label: t('sidebar.meeting_notes') || 'Meetings', icon: Mic, onClick: () => onNavigate && onNavigate('meetingNotes'), active: currentPage === 'meetingNotes' }]
             : []),
-        ...(!_simpleMode && !isMobile && (_betaFeatures.includes('itil_ticket_assistant') || _betaFeatures.includes('email_knowledge_base'))
+        ...(!_simpleMode && !isMobile && hasLicenseFeature('ticket_assistant') && (_betaFeatures.includes('itil_ticket_assistant') || _betaFeatures.includes('email_knowledge_base'))
             ? [{ key: 'ticket-assistant', label: t('ticket_assistant.sidebar_label') || 'Ticket Assistant', icon: Ticket, onClick: () => onNavigate && onNavigate('ticketAssistant'), active: showTicketAssistant, beta: true }]
             : []),
-        ...(!_simpleMode && !isMobile && _featureFlags.notebooks !== false && _featureFlags.notebooksMenu !== false && (_permissions.includes('all') || _permissions.includes('use_notebooks'))
+        ...(!_simpleMode && !isMobile && hasLicenseFeature('notebooks') && _featureFlags.notebooks !== false && _featureFlags.notebooksMenu !== false && (_permissions.includes('all') || _permissions.includes('use_notebooks'))
             ? [{ key: 'notebooks', label: t('sidebar.notebooks') || 'Notebooks', icon: FileText, onClick: () => onNavigate && onNavigate('notebooks'), active: currentPage === 'notebooks' }]
             : []),
     ];

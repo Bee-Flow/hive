@@ -3,6 +3,7 @@ import { Sparkles } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 import { pickBetaIcon } from '../../utils/betaFeatureIcon';
+import { useLicenseContext } from '../../components/LicenseContext';
 
 /**
  * Consumer Beta features section.
@@ -13,6 +14,7 @@ import { pickBetaIcon } from '../../utils/betaFeatureIcon';
  */
 const ConsumerBetaFeaturesSection = () => {
     const { t } = useTranslation();
+    const { hasTier, upgradeUrl, loading: licenseLoading } = useLicenseContext();
     const [loading, setLoading] = useState(true);
     const [allowed, setAllowed] = useState([]);
     const [registry, setRegistry] = useState([]);
@@ -34,11 +36,49 @@ const ConsumerBetaFeaturesSection = () => {
         })();
     }, []);
 
-    if (loading) {
+    if (loading || licenseLoading) {
         return (
             <div className="space-y-4 animate-pulse">
                 <div className="h-6 w-48 bg-[var(--bg-tertiary)] rounded-lg" />
                 <div className="h-32 bg-[var(--bg-tertiary)] rounded-2xl" />
+            </div>
+        );
+    }
+
+    // Beta features require Enterprise — match the server-side short-circuit
+    // in core/betaFeatures.js so we don't render toggles that would 403.
+    if (!hasTier('enterprise')) {
+        return (
+            <div className="space-y-5 animate-fadeIn">
+                <div>
+                    <h2 className="text-lg font-bold text-[var(--text-primary)]">
+                        {t('settings.beta_features') || 'Beta features'}
+                    </h2>
+                    <p className="text-sm text-[var(--text-muted)] mt-1">
+                        {t('settings.beta_features_intro') || 'Experimental features available on your account'}
+                    </p>
+                </div>
+                <div className="rounded-2xl border border-blue-500/30 bg-blue-500/5 p-6">
+                    <div className="flex items-start gap-3">
+                        <Sparkles className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                        <div className="flex-1">
+                            <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-1">
+                                {t('settings.beta_requires_enterprise') || 'Beta features require Enterprise'}
+                            </h3>
+                            <p className="text-xs text-[var(--text-muted)] mb-3">
+                                {t('settings.beta_upgrade_blurb') || 'Beta capabilities — voice chat, webpages, automations, meeting notes, ticket assistant — ship with the Enterprise tier.'}
+                            </p>
+                            <a
+                                href={upgradeUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-semibold bg-blue-500 text-white hover:bg-blue-600"
+                            >
+                                {t('license.upgrade_at_beeflow') || 'Upgrade at beeflow.ai'}
+                            </a>
+                        </div>
+                    </div>
+                </div>
             </div>
         );
     }

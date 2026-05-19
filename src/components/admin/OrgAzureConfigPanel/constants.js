@@ -6,7 +6,6 @@ export const SUB_SECTIONS = [
     { id: 'chatModels', labelKey: 'azure.chat_tiers_label', icon: Layers, color: '#5B5FC7', descKey: 'azure.chat_tiers_desc' },
     { id: 'docProcessing', labelKey: 'azure.doc_processing_label', icon: FileText, color: '#0078D4', descKey: 'azure.doc_processing_desc' },
     { id: 'sso', labelKey: 'azure.sso_label', icon: Shield, color: '#00a4ef', descKey: 'azure.sso_desc' },
-    { id: 'contentSafety', labelKey: 'azure.content_safety_label', icon: Shield, color: '#e74c3c', descKey: 'azure.content_safety_desc' },
 ];
 
 /* ── Chat Model Tier definitions ─────────────────────────────────────── */
@@ -83,48 +82,3 @@ export const isClaudeReasoning = (modelId) => {
     return /^claude-(opus|sonnet|haiku)-4/.test(modelId);
 };
 
-/* ── PII categories (aligned with backend azurePiiDetection.js) ───────── */
-export const PII_CATEGORIES = [
-    // Personal
-    { id: 'Person', labelKey: 'azure.pii_person_name' },
-    { id: 'PersonType', labelKey: 'azure.pii_person_type' },
-    { id: 'Age', labelKey: 'azure.pii_age' },
-    { id: 'DateOfBirth', labelKey: 'azure.pii_dob' },
-
-    // Contact
-    { id: 'PhoneNumber', labelKey: 'azure.pii_phone' },
-    { id: 'Email', labelKey: 'azure.pii_email' },
-    { id: 'Address', labelKey: 'azure.pii_address' },
-
-    // Financial
-    { id: 'CreditCardNumber', labelKey: 'azure.pii_credit_card' },
-    { id: 'BankAccountNumber', labelKey: 'azure.pii_bank_account' },
-    { id: 'InternationalBankingAccountNumber', labelKey: 'azure.pii_iban' },
-    { id: 'ABARoutingNumber', labelKey: 'azure.pii_aba_routing' },
-    { id: 'SWIFTCode', labelKey: 'azure.pii_swift' },
-
-    // Identity / Government
-    { id: 'USSocialSecurityNumber', labelKey: 'azure.pii_ssn' },
-    { id: 'PassportNumber', labelKey: 'azure.pii_passport' },
-    { id: 'DriversLicenseNumber', labelKey: 'azure.pii_drivers_license' },
-
-    // Digital / Secrets
-    { id: 'IPAddress', labelKey: 'azure.pii_ip' },
-    { id: 'URL', labelKey: 'azure.pii_url' },
-    { id: 'AzureDocumentDBAuthKey', labelKey: 'azure.pii_azure_cosmosdb_key' },
-    { id: 'AzureStorageAccountKey', labelKey: 'azure.pii_azure_storage_key' },
-
-    // Organization
-    { id: 'Organization', labelKey: 'azure.pii_organization' },
-
-    // Netherlands
-    { id: 'EUNationalIdentificationNumber', labelKey: 'azure.pii_eu_national_id' },
-];
-
-/* ── Content Safety categories ───────────────────────────────────────── */
-export const SAFETY_CATEGORIES = [
-    { id: 'Hate', labelKey: 'azure.safety_hate', color: '#ef4444' },
-    { id: 'SelfHarm', labelKey: 'azure.safety_selfharm', color: '#f97316' },
-    { id: 'Sexual', labelKey: 'azure.safety_sexual', color: '#ec4899' },
-    { id: 'Violence', labelKey: 'azure.safety_violence', color: '#dc2626' },
-];

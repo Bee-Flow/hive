@@ -3,6 +3,7 @@ import { Sparkles, Settings, Loader2, Check, AlertTriangle, Clock, BookOpen, Glo
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { INTEGRATION_CATALOG, NEXTCLOUD_INTEGRATION_IDS } from '../../config/integrationCatalog';
 import { getIntegrationIcon } from '../../config/integrationIcons';
+import { useLicenseContext } from '../LicenseContext';
 
 const SAVE_DEBOUNCE_MS = 400;
 const SAVED_FLASH_MS = 1500;
@@ -23,6 +24,8 @@ function pickBetaIcon(idOrName) {
 }
 
 const OrgFeatureTogglesPanel = ({ settingsSlot = null }) => {
+    const { hasTier, upgradeUrl } = useLicenseContext();
+    const betaTierLocked = !hasTier('enterprise');
     const [tab, setTab] = useState('integrations');
     const [orgId, setOrgId] = useState(null);
     const [betaAllowed, setBetaAllowed] = useState([]);
@@ -330,8 +333,32 @@ const OrgFeatureTogglesPanel = ({ settingsSlot = null }) => {
                         <Sparkles className="w-5 h-5" style={{ color: 'var(--accent-primary, #10b981)' }} />
                         <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Beta features</h2>
                     </div>
-                    <SaveStatus state={betaSaveState} />
+                    {!betaTierLocked && <SaveStatus state={betaSaveState} />}
                 </header>
+                {betaTierLocked ? (
+                    <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-5 mt-3">
+                        <div className="flex items-start gap-3">
+                            <Sparkles className="w-5 h-5 text-blue-500 mt-0.5 flex-shrink-0" />
+                            <div className="flex-1">
+                                <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+                                    Beta features require Enterprise
+                                </h3>
+                                <p className="text-xs mb-3" style={{ color: 'var(--text-muted)' }}>
+                                    Beta capabilities — voice chat, webpages, automations, meeting notes, ticket assistant — ship with the Enterprise tier. Enable a licence key to expose them to your organisation.
+                                </p>
+                                <a
+                                    href={upgradeUrl}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-semibold bg-blue-500 text-white hover:bg-blue-600"
+                                >
+                                    Upgrade at beeflow.ai
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                ) : (
+                <>
                 <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
                     Turn on the beta features your team should have access to. Only features granted by your platform administrator are listed here.
                 </p>
@@ -350,6 +377,8 @@ const OrgFeatureTogglesPanel = ({ settingsSlot = null }) => {
                             />
                         ))}
                     </div>
+                )}
+                </>
                 )}
             </section>
             )}

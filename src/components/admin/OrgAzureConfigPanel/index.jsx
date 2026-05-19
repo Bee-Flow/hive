@@ -3,11 +3,10 @@ import { AlertTriangle, ChevronRight, Loader2 } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import { useTranslation } from '../../../hooks/useTranslation';
 import { StatusBadge } from './components';
-import { SUB_SECTIONS, TIERS, PII_CATEGORIES, SAFETY_CATEGORIES } from './constants';
+import { SUB_SECTIONS, TIERS } from './constants';
 import OpenAISection from './OpenAISection';
 import ChatModelsSection from './ChatModelsSection';
 import SSOSection from './SSOSection';
-import ContentSafetySection from './ContentSafetySection';
 import DocProcessingSection from './DocProcessingSection';
 
 
@@ -46,21 +45,6 @@ export default function OrgAzureConfigPanel({ user }) {
     });
     const [allModels, setAllModels] = useState([]);
 
-    // ── Content Safety ──
-    const [contentSafetyEndpoint, setContentSafetyEndpoint] = useState('');
-    const [contentSafetyKey, setContentSafetyKey] = useState('');
-    const [hasContentSafetyKey, setHasContentSafetyKey] = useState(false);
-    const [contentSafetySeverityThreshold, setContentSafetySeverityThreshold] = useState(2);
-    const [contentSafetyCategories, setContentSafetyCategories] = useState(SAFETY_CATEGORIES.map(c => c.id));
-    const [moderationProvider, setModerationProvider] = useState('llamaguard');
-
-    // ── PII Detection ──
-    const [piiDetectionEnabled, setPiiDetectionEnabled] = useState(false);
-    const [piiDetectionCategories, setPiiDetectionCategories] = useState(PII_CATEGORIES.map(c => c.id));
-    const [piiDetectionConfidenceThreshold, setPiiDetectionConfidenceThreshold] = useState(0.7);
-    const [piiDetectionScope, setPiiDetectionScope] = useState({ userInput: true, agentOutput: false });
-    const [piiDetectionAction, setPiiDetectionAction] = useState('block');
-
     // ── Azure Document Processing ──
     const [useAzureDocProcessing, setUseAzureDocProcessing] = useState(false);
     const [azureDocEndpoint, setAzureDocEndpoint] = useState('');
@@ -87,16 +71,6 @@ export default function OrgAzureConfigPanel({ user }) {
                 setAzureApiVersion(d.azureApiVersion || '2024-04-01-preview');
                 setAzureModels(d.azureModels || '');
                 if (d.chatModelTiers) setChatModelTiers(d.chatModelTiers);
-                setContentSafetyEndpoint(d.contentSafetyEndpoint || '');
-                setHasContentSafetyKey(d.hasContentSafetyKey || false);
-                setContentSafetySeverityThreshold(d.contentSafetySeverityThreshold ?? 2);
-                if (d.contentSafetyCategories) setContentSafetyCategories(d.contentSafetyCategories);
-                setModerationProvider(d.moderationProvider || 'llamaguard');
-                setPiiDetectionEnabled(d.piiDetectionEnabled || false);
-                if (d.piiDetectionCategories) setPiiDetectionCategories(d.piiDetectionCategories);
-                setPiiDetectionConfidenceThreshold(d.piiDetectionConfidenceThreshold ?? 0.7);
-                if (d.piiDetectionScope) setPiiDetectionScope(d.piiDetectionScope);
-                setPiiDetectionAction(d.piiDetectionAction || 'block');
                 setSsoClientId(d.ssoClientId || '');
                 setHasSsoClientSecret(d.hasSsoClientSecret || false);
                 setSsoTenantId(d.ssoTenantId || 'common');
@@ -212,17 +186,6 @@ export default function OrgAzureConfigPanel({ user }) {
                 {...sharedSaveProps}
             />
         ),
-        contentSafety: (
-            <ContentSafetySection
-                contentSafetyEndpoint={contentSafetyEndpoint} setContentSafetyEndpoint={setContentSafetyEndpoint}
-                contentSafetyKey={contentSafetyKey} setContentSafetyKey={setContentSafetyKey}
-                hasContentSafetyKey={hasContentSafetyKey}
-                contentSafetySeverityThreshold={contentSafetySeverityThreshold} setContentSafetySeverityThreshold={setContentSafetySeverityThreshold}
-                contentSafetyCategories={contentSafetyCategories} setContentSafetyCategories={setContentSafetyCategories}
-                moderationProvider={moderationProvider} setModerationProvider={setModerationProvider}
-                {...sharedSaveProps}
-            />
-        ),
         docProcessing: (
             <DocProcessingSection
                 useAzureDocProcessing={useAzureDocProcessing} setUseAzureDocProcessing={setUseAzureDocProcessing}
@@ -292,7 +255,6 @@ export default function OrgAzureConfigPanel({ user }) {
                                 return configured > 0 ? <StatusBadge configured={true} label={`${configured}/${TIERS.length} ${t('azure.tiers')}`} /> : null;
                             })()}
                             {section.id === 'sso' && <StatusBadge configured={ssoConfigured} />}
-                            {section.id === 'contentSafety' && hasContentSafetyKey && <StatusBadge configured={true} />}
                             {section.id === 'docProcessing' && (hasAzureDocEndpoint && hasAzureDocKey) && <StatusBadge configured={true} />}
                             <ChevronRight size={14} style={{ color: 'var(--text-muted)', flexShrink: 0, transform: isActive ? 'rotate(90deg)' : 'none', transition: 'transform 150ms' }} />
                         </button>

@@ -1,9 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
 import { API_BASE, authFetch } from '../../utils/helpers';
-import { LLAMA_GUARD_CATEGORIES, AZURE_CONTENT_SAFETY_CATEGORIES, guardrailCatalogIdFor } from '../../utils/guardrailCategories';
+import { guardrailCatalogIdFor } from '../../utils/guardrailCategories';
 import AppEmoji from '../AppEmoji';
 import { ToastHost, showToast } from './guardrails/Toast';
+import PiiGuardInstallCard from './guardrails/PiiGuardInstallCard';
+import { piiCategoriesLocalized } from '../../config/piiCategories';
 
 // Guardrails Configuration Panel (Regex Rules)
 const GuardrailsPanel = ({ orgShieldOnly = false }) => {
@@ -43,24 +45,14 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     const [orgShieldSaving, setOrgShieldSaving] = useState(false);
     const [orgShieldMessage, setOrgShieldMessage] = useState(null);
     const [orgShieldLoading, setOrgShieldLoading] = useState(false);
-    const [orgShieldModeration, setOrgShieldModeration] = useState(false);
-    const [orgShieldCategories, setOrgShieldCategories] = useState([]);
     const [euModeEnabled, setEuModeEnabled] = useState(false);
     const [orgWebSearchGuard, setOrgWebSearchGuard] = useState(false);
     const [orgDisableSearchOnUpload, setOrgDisableSearchOnUpload] = useState(false);
     const [orgMonitorIntegrations, setOrgMonitorIntegrations] = useState(false);
     const [webSearchGuardPiiCategories, setWebSearchGuardPiiCategories] = useState([]);
-    const [orgAzurePiiEnabled, setOrgAzurePiiEnabled] = useState(false);
-    // In-process Transformers.js fallback (Apache-2.0 OpenAI Privacy Filter).
-    // Default true so a fresh org without Azure creds still gets PII protection.
-    const [orgLocalPiiEnabled, setOrgLocalPiiEnabled] = useState(true);
-    const [activeModerationProvider, setActiveModerationProvider] = useState('llamaguard');
-    const [hasAzureEndpoint, setHasAzureEndpoint] = useState(false);
     const [hasEuModelsConfigured, setHasEuModelsConfigured] = useState(false);
     const [hasWebSearchEnabled, setHasWebSearchEnabled] = useState(false);
-    // Org-level Content Safety + PII settings
-    const [orgSeverityThreshold, setOrgSeverityThreshold] = useState(2);
-    const [orgAzureCategories, setOrgAzureCategories] = useState(['Hate', 'Violence', 'Sexual', 'SelfHarm']);
+    // Org-level PII settings
     const [orgPiiCategories, setOrgPiiCategories] = useState([]);
     const [orgPiiConfidenceThreshold, setOrgPiiConfidenceThreshold] = useState(0.7);
     const [orgPiiAction, setOrgPiiAction] = useState('block');
@@ -82,75 +74,17 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     const [piiSaving, setPiiSaving] = useState(false);
     const [piiMessage, setPiiMessage] = useState(null);
 
-    const ALL_PII_CATEGORIES = [
-        // Personal
-        { id: 'Person',                           label: t('pii.person_name'),      group: 'Personal',   icon: '👤' },
-        { id: 'PersonType',                       label: t('pii.person_type'),      group: 'Personal',   icon: '👥' },
-        { id: 'Age',                              label: t('pii.age'),             group: 'Personal',   icon: '🎂' },
-        { id: 'DateOfBirth',                      label: t('pii.date_of_birth'),   group: 'Personal',   icon: '📅' },
-        // Contact
-        { id: 'PhoneNumber',                      label: t('pii.phone_number'),     group: 'Contact',    icon: '📱' },
-        { id: 'Email',                            label: t('pii.email_address'),    group: 'Contact',    icon: '📧' },
-        { id: 'Address',                          label: t('pii.physical_address'), group: 'Contact',    icon: '🏠' },
-        // Financial
-        { id: 'CreditCardNumber',                 label: t('pii.credit_card'),      group: 'Financial',  icon: '💳' },
-        { id: 'BankAccountNumber',                label: t('pii.bank_account'),     group: 'Financial',  icon: '🏦' },
-        { id: 'InternationalBankingAccountNumber',label: t('pii.iban'),             group: 'Financial',  icon: '🌐' },
-        { id: 'ABARoutingNumber',                 label: t('pii.aba_routing'),     group: 'Financial',  icon: '🔢' },
-        { id: 'SWIFTCode',                        label: t('pii.swift_code'),      group: 'Financial',  icon: '🏧' },
-        // Identity / Government
-        { id: 'USSocialSecurityNumber',           label: t('pii.ssn'),             group: 'Identity',   icon: '🆔' },
-        { id: 'PassportNumber',                   label: t('pii.passport'),        group: 'Identity',   icon: '🛂' },
-        { id: 'DriversLicenseNumber',             label: t('pii.drivers_license'), group: 'Identity',   icon: '🪪' },
-        // Digital / Secrets
-        { id: 'IPAddress',                        label: t('pii.ip_address'),      group: 'Digital',    icon: '🌐' },
-        { id: 'URL',                              label: t('pii.url'),             group: 'Digital',    icon: '🔗' },
-        { id: 'AzureDocumentDBAuthKey',           label: t('pii.azure_cosmosdb_key'), group: 'Digital', icon: '☁️' },
-        { id: 'AzureStorageAccountKey',           label: t('pii.azure_storage_key'), group: 'Digital',  icon: '☁️' },
-        // Organization
-        { id: 'Organization',                     label: t('pii.organization'),    group: 'Organization', icon: '🏢' },
-        // EU / Netherlands
-        { id: 'EUNationalIdentificationNumber',   label: t('pii.eu_national_id'),  group: 'EU',         icon: '🇪🇺' },
-    ];
+    // Single canonical list — see agent-hub/src/config/piiCategories.ts.
+    // Detector coverage varies (in-process Transformers.js covers 8;
+    // GLiNER guard-service covers 16) but the picker always shows the
+    // full 20: the server filters unsupported categories silently, so
+    // checking one the active detector doesn't emit is a no-op.
+    const PII_CATEGORIES_LIST = useMemo(() => piiCategoriesLocalized(t), [t]);
 
-    // The on-server PII model (OpenAI Privacy Filter) labels exactly these
-    // 8 categories — see server/core/localPiiDetection.js LABEL_TO_CATEGORY.
-    // Showing the other 13 when only the local detector is active would let
-    // admins toggle categories that silently never fire. Azure AI Language
-    // (when configured) supports the full set.
-    const LOCAL_PII_CATEGORIES = new Set([
-        'Person', 'Email', 'PhoneNumber', 'Address', 'URL',
-        'DateOfBirth', 'BankAccountNumber', 'AzureStorageAccountKey',
-    ]);
-    // The Privacy Filter's `secret` token is generic (any password/API key/
-    // credential) — relabel for the local-only case so admins aren't told
-    // it's Azure-specific.
-    const LOCAL_OVERRIDE_LABELS = {
-        AzureStorageAccountKey: { label: t('pii.api_key_or_secret', 'API key / secret'), icon: '🔑', group: 'Digital' },
-    };
-    const showFullSet = orgAzurePiiEnabled || hasAzureEndpoint;
-    const PII_CATEGORIES_LIST = showFullSet
-        ? ALL_PII_CATEGORIES
-        : ALL_PII_CATEGORIES
-            .filter(c => LOCAL_PII_CATEGORIES.has(c.id))
-            .map(c => LOCAL_OVERRIDE_LABELS[c.id] ? { ...c, ...LOCAL_OVERRIDE_LABELS[c.id] } : c);
-
-    // Moved to a shared util so the admin UI and the end-user violation toast
-    // use the same human-friendly labels. See agent-hub/src/utils/guardrailCategories.js.
-    const MODERATION_CATEGORIES = LLAMA_GUARD_CATEGORIES;
-
-    // Azure Content Safety's four categories. Labels come from the shared util
-    // so the admin UI and violation toast read the same strings. Overridden
-    // here when a translation key exists.
-    const AZURE_TRANSLATION_KEYS = { Hate: 'safety.hate', Violence: 'safety.violence', Sexual: 'safety.sexual', SelfHarm: 'safety.self_harm' };
-    const AZURE_MODERATION_CATEGORIES = AZURE_CONTENT_SAFETY_CATEGORIES.map(c => {
-        const key = AZURE_TRANSLATION_KEYS[c.id];
-        const translated = key ? t(key) : '';
-        return { ...c, label: (translated && translated !== key) ? translated : c.label };
-    });
-
-    // Navigation State (default to AI Moderation, or orgshield if orgShieldOnly)
-    const [activeTab, setActiveTab] = useState(orgShieldOnly ? 'orgshield' : 'moderation');
+    // Navigation State — Org Privacy Shield is the entry point for both
+    // the embedded (orgShieldOnly) and full admin views now that the
+    // dedicated AI Moderation tab is gone.
+    const [activeTab, setActiveTab] = useState('orgshield');
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -171,8 +105,6 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                     setDcEnabled(dc.enabled === true);
                     setDcCollections(dc.collectionIds || []);
                 }
-                setActiveModerationProvider(data.moderationProvider || 'llamaguard');
-                setHasAzureEndpoint(data.hasAzureContentSafetyEndpoint || false);
                 setHasWebSearchEnabled(data.searchProvider && data.searchProvider !== 'disabled');
                 // PII Detection
                 setPiiEnabled(data.piiDetectionEnabled || false);
@@ -219,17 +151,11 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 const data = await res.json();
                 setOrgShieldEnabled(data.enabled || false);
                 setOrgShieldCollections(data.collectionIds || []);
-                setOrgShieldModeration(data.moderationEnabled || false);
-                setOrgShieldCategories(data.moderationCategories?.length > 0 ? data.moderationCategories : MODERATION_CATEGORIES.map(c => c.id));
                 setEuModeEnabled(data.euModeEnabled || false);
                 setOrgWebSearchGuard(data.webSearchGuardEnabled || false);
                 setOrgDisableSearchOnUpload(data.disableSearchOnUpload || false);
                 setOrgMonitorIntegrations(data.monitorIntegrations || false);
                 setWebSearchGuardPiiCategories(data.webSearchGuardPiiCategories || []);
-                setOrgAzurePiiEnabled(data.azurePiiEnabled || false);
-                setOrgLocalPiiEnabled(data.localPiiEnabled !== false);
-                setOrgSeverityThreshold(data.azureSeverityThreshold ?? 2);
-                setOrgAzureCategories(data.azureEnabledCategories?.length > 0 ? data.azureEnabledCategories : ['Hate', 'Violence', 'Sexual', 'SelfHarm']);
                 const validIds = new Set(PII_CATEGORIES_LIST.map(c => c.id));
                 const loaded = (data.piiDetectionCategories || []).filter(id => validIds.has(id));
                 setOrgPiiCategories(loaded);
@@ -266,21 +192,11 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                     // action selected under "Action on Detection" (PII).
                     scope: { userInput: true, agentOutput: true },
                     action: 'delete',
-                    // Moderation is only exposed when Azure AI Content Safety
-                    // is configured. Without Azure we force-disable so the
-                    // setting can't accidentally stay on after credentials
-                    // are removed.
-                    moderationEnabled: hasAzureEndpoint ? orgShieldModeration : false,
-                    moderationCategories: orgShieldCategories,
                     euModeEnabled: euModeEnabled,
                     webSearchGuardEnabled: orgWebSearchGuard,
                     disableSearchOnUpload: orgDisableSearchOnUpload,
                     monitorIntegrations: orgMonitorIntegrations,
                     webSearchGuardPiiCategories: webSearchGuardPiiCategories,
-                    azurePiiEnabled: orgAzurePiiEnabled,
-                    localPiiEnabled: orgLocalPiiEnabled,
-                    azureSeverityThreshold: orgSeverityThreshold,
-                    azureEnabledCategories: orgAzureCategories,
                     piiDetectionCategories: orgPiiCategories,
                     piiDetectionConfidenceThreshold: orgPiiConfidenceThreshold,
                     piiDetectionAction: orgPiiAction,
@@ -452,16 +368,6 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                     </div>
                     <div className="space-y-1">
                         <button
-                            onClick={() => setActiveTab('moderation')}
-                            className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all text-left ${activeTab === 'moderation'
-                                ? 'bg-[var(--accent-primary)] text-white shadow-md'
-                                : 'text-[var(--text-secondary)] hover:bg-white/5 hover:text-[var(--text-primary)]'
-                                }`}
-                        >
-                            <span className="text-lg">🛡️</span>
-                            {t('admin.guard_tab_mod')}
-                        </button>
-                        <button
                             onClick={() => setActiveTab('regex')}
                             className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-all text-left ${activeTab === 'regex'
                                 ? 'bg-[var(--accent-primary)] text-white shadow-md'
@@ -497,9 +403,6 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
 
             {/* Content Area */}
             <div className="flex-1 overflow-y-auto p-8 bg-[var(--bg-primary)]">
-                {activeTab === 'moderation' && (
-                    <AIModerationConfig />
-                )}
 
                 {activeTab === 'regex' && (
                     <div className="max-w-full space-y-6 animate-fadeIn h-full flex flex-col">
@@ -770,6 +673,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
 
                 {activeTab === 'orgshield' && (
                     <div className="max-w-3xl mx-auto space-y-8 animate-fadeIn">
+                        <PiiGuardInstallCard />
                         <div>
                             <h2 className="text-xl font-bold mb-1 text-primary">{t('admin.guard_org_title')}</h2>
                             <p className="text-sm text-muted">{t('admin.guard_org_desc')}</p>
@@ -817,119 +721,27 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
 
                                         {orgShieldEnabled && (
                                             <div className="space-y-8 animate-fadeIn">
-                                                {/* AI Content Moderation — only shown when Azure AI Content
-                                                    Safety is configured. Hiding the section keeps responsibility
-                                                    explicit when no provider credentials are present. */}
-                                                {hasAzureEndpoint && (
-                                                <>
-                                                <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
+                                                {/* PII detection — the "Enable Privacy Shield" master switch
+                                                    above is the only PII enable. Configuration
+                                                    (confidence, action, categories) renders unconditionally
+                                                    inside the enabled-shield section. Detection routes
+                                                    automatically between the in-process Transformers.js
+                                                    detector and the optional GLiNER guard service. */}
+                                                <div className="flex items-start gap-3 p-4 rounded-xl border bg-white/5 border-white/10">
+                                                    <span className="text-base shrink-0">🛡️</span>
                                                     <div>
-                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">{t('admin.shield_moderation')}</span>
-                                                        <span className="text-xs text-muted">{t('admin.shield_moderation_desc')}</span>
-                                                    </div>
-                                                    <label className="relative inline-flex items-center cursor-pointer">
-                                                        <input type="checkbox" checked={orgShieldModeration} onChange={e => setOrgShieldModeration(e.target.checked)} className="sr-only peer" />
-                                                        <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                                                    </label>
-                                                </div>
-
-                                                {orgShieldModeration && (
-                                                    <div className="space-y-4 animate-fadeIn">
-                                                        {/* Severity Threshold */}
-                                                        {activeModerationProvider === 'azure' && (
-                                                        <div className="p-4 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
-                                                            <div className="flex items-center justify-between mb-2">
-                                                                <label className="text-xs font-medium text-muted">{t('admin.shield_severity')}</label>
-                                                                <span className="text-xs font-mono px-2 py-0.5 rounded" style={{ background: 'var(--bg-primary)', color: 'var(--accent-primary)' }}>≥ {orgSeverityThreshold}</span>
-                                                            </div>
-                                                            <input
-                                                                type="range" min="0" max="6" step="1"
-                                                                value={orgSeverityThreshold}
-                                                                onChange={e => setOrgSeverityThreshold(parseInt(e.target.value))}
-                                                                className="w-full accent-[var(--accent-primary)]"
-                                                            />
-                                                            <div className="flex justify-between text-xs text-muted mt-1">
-                                                                <span>{t('admin.shield_severity_min')}</span>
-                                                                <span>{t('admin.shield_severity_max')}</span>
-                                                            </div>
-                                                            <p className="text-xs text-muted mt-1">{t('admin.shield_severity_help')}</p>
-                                                        </div>
-                                                        )}
-
-                                                        {/* Enabled Categories */}
-                                                        <div>
-                                                            <label className="text-xs font-medium text-muted mb-3 block">
-                                                                {activeModerationProvider === 'azure' ? t('admin.shield_categories_azure') : t('admin.shield_categories_llama')}
-                                                            </label>
-                                                            <div className="grid grid-cols-2 gap-2 p-4 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
-                                                                {(activeModerationProvider === 'azure' ? AZURE_MODERATION_CATEGORIES : MODERATION_CATEGORIES).map(cat => (
-                                                                    <label key={cat.id} className="flex items-center gap-2 text-sm text-[var(--text-secondary)] cursor-pointer p-2 rounded hover:bg-white/5 transition-colors">
-                                                                        <input
-                                                                            type="checkbox"
-                                                                            checked={orgShieldCategories.includes(cat.id)}
-                                                                            onChange={(e) => {
-                                                                                if (e.target.checked) {
-                                                                                    setOrgShieldCategories([...orgShieldCategories, cat.id]);
-                                                                                } else {
-                                                                                    setOrgShieldCategories(orgShieldCategories.filter(id => id !== cat.id));
-                                                                                }
-                                                                            }}
-                                                                            className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0"
-                                                                        />
-                                                                        <AppEmoji id={guardrailCatalogIdFor(cat.id)} default={cat.icon} />
-                                                                        <span>{cat.label}</span>
-                                                                    </label>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                )}
-                                                </>
-                                                )}
-
-                                                {/* PII detection master toggle — controls the on-server detector
-                                                    that always ships with Bee Flow (8 categories: Person, Email,
-                                                    Phone, Address, URL, Date of Birth, Bank Account, Secret).
-                                                    Azure AI Language adds the broader 21-category set when its
-                                                    endpoint + key are also configured below. */}
-                                                <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
-                                                    <div className="pr-4">
-                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">🛡️ {t('admin.shield_pii_master_title', 'PII detection')}</span>
+                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">{t('admin.shield_pii_master_title', 'PII detection')}</span>
                                                         <span className="text-xs text-muted block mt-0.5 leading-relaxed">
-                                                            {t('admin.shield_pii_master_desc', 'Scan messages for personal data — names, emails, phone numbers, addresses, dates of birth, bank accounts and secrets — and block or replace it with placeholders before it reaches the AI. Runs on-server by default; Azure AI Language extends coverage when configured.')}
+                                                            {t('admin.shield_pii_master_desc', 'Scan messages for personal data — names, emails, phone numbers, addresses, dates of birth, bank accounts, IBANs, BSN / national IDs, tax IDs, medical conditions, medications, and more — and replace each with a placeholder before it reaches the AI. Runs locally on your own server via the PII Guard service (install required, see card above). No chat content leaves your infrastructure.')}
                                                         </span>
                                                     </div>
-                                                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                                                        <input type="checkbox" checked={orgLocalPiiEnabled} onChange={e => setOrgLocalPiiEnabled(e.target.checked)} className="sr-only peer" />
-                                                        <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                                                    </label>
                                                 </div>
 
-                                                {/* Azure AI Language extension — only shown when Azure is
-                                                    configured. Promotes detection from the on-server 8
-                                                    categories to Azure's full 21-category taxonomy (BSN,
-                                                    SSN, IBAN, passport, driver's licence, etc.) */}
-                                                {hasAzureEndpoint && (
-                                                <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
-                                                    <div className="pr-4">
-                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">☁️ {t('admin.shield_pii_azure_title', 'Azure AI Language extension')}</span>
-                                                        <span className="text-xs text-muted block mt-0.5 leading-relaxed">{t('admin.shield_pii_azure_desc', "Send detections to Azure for the full 21-category taxonomy (BSN, SSN, IBAN, passport, driver's licence, ABA, SWIFT). On-server detection still runs first.")}</span>
-                                                    </div>
-                                                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
-                                                        <input type="checkbox" checked={orgAzurePiiEnabled} onChange={e => setOrgAzurePiiEnabled(e.target.checked)} className="sr-only peer" />
-                                                        <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                                                    </label>
-                                                </div>
-                                                )}
-
-                                                {(orgAzurePiiEnabled || orgLocalPiiEnabled) && (
+                                                {(
                                                     <div className="space-y-4 animate-fadeIn">
                                                         {/* PII Confidence Threshold + Action + Categories.
-                                                            Both Azure and Local detectors honour the same
-                                                            shield fields (piiDetectionConfidenceThreshold,
-                                                            piiDetectionAction, piiDetectionCategories), so
-                                                            we surface this single config block whenever
-                                                            EITHER detector is on. */}
+                                                            All three fields apply to the single PII Guard
+                                                            detector. */}
                                                         <div className="p-4 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
                                                             <div className="flex items-center justify-between mb-2">
                                                                 <label className="text-xs font-medium text-muted">{t('admin.shield_pii_confidence')}</label>
@@ -946,13 +758,14 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                                 <span>{t('admin.shield_pii_detect_less')}</span>
                                                             </div>
                                                             {/* Guidance — too-high threshold is the #1 reason PII silently stops
-                                                                firing. Azure returns 0.70–0.85 confidence on short prompts, so
-                                                                anything above ~0.85 will miss almost every real email / phone. */}
+                                                                firing. The PII Guard returns 0.60–0.85 confidence on short
+                                                                prompts, so anything above ~0.85 will miss most fuzzy spans
+                                                                (names, organisations) while the regex tier remains 0.99. */}
                                                             {orgPiiConfidenceThreshold >= 0.85 && (
                                                                 <div className="mt-3 flex items-start gap-2 text-[11px] px-3 py-2 rounded-lg" style={{ background: 'rgba(234, 179, 8, 0.10)', color: '#92400e', border: '1px solid rgba(234, 179, 8, 0.30)' }}>
                                                                     <span>⚠️</span>
                                                                     <span className="leading-relaxed">
-                                                                        {t('admin.shield_pii_confidence_too_high', 'At this threshold most detections will be filtered out. Azure typically returns 0.70–0.85 confidence on short messages, so emails, phone numbers and IBANs may silently slip through. Recommended: 0.70.')}
+                                                                        {t('admin.shield_pii_confidence_too_high', 'At this threshold most NER detections will be filtered out. The PII Guard typically returns 0.60–0.85 confidence on short messages, so names, organisations and addresses may silently slip through. Recommended: 0.70.')}
                                                                     </span>
                                                                 </div>
                                                             )}
@@ -968,7 +781,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
 
                                                         {/* PII Action — three clear choices with end-user impact explainers. */}
                                                         <div className="p-4 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
-                                                            <label className="text-xs font-medium text-muted block mb-2">{t('azure.pii_action_on_detection')}</label>
+                                                            <label className="text-xs font-medium text-muted block mb-2">{t('admin.pii_action_on_detection', 'Action when PII is detected')}</label>
                                                             <div className="flex gap-2 flex-wrap">
                                                                 {[
                                                                     {
@@ -1190,436 +1003,5 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     );
 };
 
-// ----------------------------------------------------------------------
-// AI Moderation Config Component — Azure Content Safety
-// ----------------------------------------------------------------------
-const AIModerationConfig = () => {
-    const { t } = useTranslation();
-    const [config, setConfig] = useState({ enabled: false, threshold: 0.7 });
-    const [moderationProvider, setModerationProvider] = useState('azure');
-    const [azureEndpoint, setAzureEndpoint] = useState('');
-    const [azureKey, setAzureKey] = useState('');
-    const [hasAzureEndpoint, setHasAzureEndpoint] = useState(false);
-    const [hasAzureKey, setHasAzureKey] = useState(false);
-    const [severityThreshold, setSeverityThreshold] = useState(2);
-    const [azureEnabledCategories, setAzureEnabledCategories] = useState(['Hate', 'Violence', 'Sexual', 'SelfHarm']);
-    const [piiEnabled, setPiiEnabled] = useState(false);
-    const [piiCategories, setPiiCategories] = useState([]);
-    const [piiConfidenceThreshold, setPiiConfidenceThreshold] = useState(0.7);
-    const [saving, setSaving] = useState(false);
-    const [msg, setMsg] = useState(null);
-    const [guardHealth, setGuardHealth] = useState(null);
-
-    const PII_CATEGORY_GROUPS = [
-        { name: 'Personal', icon: '👤', categories: [
-            { id: 'Person', label: 'Person Name' }, { id: 'PersonType', label: 'Person Type' },
-            { id: 'Age', label: 'Age' }, { id: 'DateOfBirth', label: 'Date of Birth' },
-        ]},
-        { name: 'Contact', icon: '📱', categories: [
-            { id: 'PhoneNumber', label: 'Phone Number' }, { id: 'Email', label: 'Email Address' },
-            { id: 'Address', label: 'Physical Address' },
-        ]},
-        { name: 'Financial', icon: '💳', categories: [
-            { id: 'CreditCardNumber', label: 'Credit Card' }, { id: 'BankAccountNumber', label: 'Bank Account' },
-            { id: 'InternationalBankingAccountNumber', label: 'IBAN' }, { id: 'ABARoutingNumber', label: 'ABA Routing' },
-            { id: 'SWIFTCode', label: 'SWIFT Code' },
-        ]},
-        { name: 'Identity', icon: '🆔', categories: [
-            { id: 'USSocialSecurityNumber', label: 'SSN (US)' },
-            { id: 'PassportNumber', label: 'Passport Number' }, { id: 'DriversLicenseNumber', label: "Driver's License" },
-        ]},
-        { name: 'Digital / Secrets', icon: '🔑', categories: [
-            { id: 'IPAddress', label: 'IP Address' }, { id: 'URL', label: 'URL' },
-            { id: 'AzureDocumentDBAuthKey', label: 'Azure CosmosDB Key' }, { id: 'AzureStorageAccountKey', label: 'Azure Storage Key' },
-        ]},
-        { name: 'Organization', icon: '🏢', categories: [
-            { id: 'Organization', label: 'Organization' },
-        ]},
-        { name: '🇳🇱 Netherlands', icon: '🇳🇱', categories: [
-            { id: 'EUNationalIdentificationNumber', label: 'BSN / National ID (EU)' },
-        ]},
-    ];
-    const ALL_PII_IDS = PII_CATEGORY_GROUPS.flatMap(g => g.categories.map(c => c.id));
-
-    useEffect(() => {
-        fetchData();
-        checkGuardHealth();
-    }, []);
-
-    const fetchData = async () => {
-        try {
-            const res = await authFetch(`${API_BASE}/ai/config`);
-            if (res.ok) {
-                const data = await res.json();
-                if (data.llamaGuardConfig) {
-                    setConfig({
-                        enabled: data.llamaGuardConfig.enabled || false,
-                        threshold: data.llamaGuardConfig.threshold || 0.7
-                    });
-                }
-                // Llama Guard provider has been removed; always use Azure Content Safety.
-                setModerationProvider('azure');
-                setHasAzureEndpoint(data.hasAzureContentSafetyEndpoint || false);
-                setHasAzureKey(data.hasAzureContentSafetyKey || false);
-                setSeverityThreshold(data.azureContentSafetySeverityThreshold ?? 2);
-                setAzureEnabledCategories(data.azureContentSafetyCategories || ['Hate', 'Violence', 'Sexual', 'SelfHarm']);
-                setPiiEnabled(data.piiDetectionEnabled || false);
-                setPiiCategories(data.piiDetectionCategories || ALL_PII_IDS);
-                setPiiConfidenceThreshold(data.piiDetectionConfidenceThreshold ?? 0.7);
-            }
-        } catch (e) {
-            console.error(e);
-        }
-    };
-
-    const checkGuardHealth = async () => {
-        try {
-            const res = await authFetch(`${API_BASE}/api/guard/health`);
-            if (res.ok) {
-                setGuardHealth(await res.json());
-            } else {
-                setGuardHealth({ status: 'unavailable' });
-            }
-        } catch (e) {
-            setGuardHealth({ status: 'unavailable' });
-        }
-    };
-
-    const handleSave = async () => {
-        setSaving(true);
-        setMsg(null);
-        try {
-            const body = {
-                llamaGuardConfig: config,
-                moderationProvider,
-                azureContentSafetySeverityThreshold: severityThreshold,
-                azureContentSafetyCategories: azureEnabledCategories,
-                piiDetectionEnabled: piiEnabled,
-                piiDetectionCategories: piiCategories,
-                piiDetectionConfidenceThreshold: piiConfidenceThreshold,
-            };
-            if (azureEndpoint) body.azureContentSafetyEndpoint = azureEndpoint;
-            if (azureKey) body.azureContentSafetyKey = azureKey;
-
-            const res = await authFetch(`${API_BASE}/ai/config`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
-            if (res.ok) {
-                setMsg({ type: 'success', text: t('admin.guard_saved') });
-                if (azureEndpoint) setHasAzureEndpoint(true);
-                if (azureKey) setHasAzureKey(true);
-                setAzureEndpoint('');
-                setAzureKey('');
-            } else {
-                setMsg({ type: 'error', text: 'Failed to save.' });
-            }
-        } catch (e) {
-            setMsg({ type: 'error', text: 'Error saving.' });
-        } finally {
-            setSaving(false);
-        }
-    };
-
-    // Shared category metadata — one source of truth per util.
-    const llamaCategories = LLAMA_GUARD_CATEGORIES;
-    // Azure categories here include extra `desc` copy shown under each row.
-    const AZURE_DESCRIPTIONS = {
-        Hate: 'Discrimination, slurs, identity attacks',
-        Violence: 'Physical harm, weapons, extremism',
-        Sexual: 'Sexual content, nudity, exploitation',
-        SelfHarm: 'Self-injury, suicide, eating disorders',
-    };
-    const azureCategories = AZURE_CONTENT_SAFETY_CATEGORIES.map(c => ({ ...c, desc: AZURE_DESCRIPTIONS[c.id] || '' }));
-
-    const guardOnline = guardHealth?.status === 'ok';
-    const guardFastOk = guardHealth?.guard_fast === 'ok';
-    const isAzure = moderationProvider === 'azure';
-
-    return (
-        <div className="max-w-2xl mx-auto space-y-6 animate-fadeIn">
-            <div>
-                <h2 className="text-xl font-bold mb-2 text-primary">{t('admin.guard_mod_title')}</h2>
-                <p className="text-sm text-muted">{t('admin.guard_mod_desc')}</p>
-            </div>
-
-            {/* Provider info */}
-            <div className="p-6 rounded-xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
-                <label className="block text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>Moderation Provider</label>
-                <div className="p-4 rounded-xl border-2 border-[var(--accent-primary)] bg-[var(--accent-primary)]/5 shadow-md text-left">
-                    <div className="flex items-center gap-3 mb-2">
-                        <span className="text-xl">🔷</span>
-                        <span className="font-semibold text-sm" style={{ color: 'var(--text-primary)' }}>Azure AI Content Safety</span>
-                    </div>
-                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Cloud-based • Microsoft Azure • 4 categories with severity levels</p>
-                </div>
-            </div>
-
-            {/* Provider-Specific Config */}
-            <div className="p-6 rounded-xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
-
-                {/* Header — Azure Content Safety */}
-                {(
-                    <div className="flex items-center gap-4 mb-6">
-                        <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl" style={{ background: 'rgba(59, 130, 246, 0.15)' }}>🔷</div>
-                        <div className="flex-1">
-                            <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>Azure AI Content Safety</h3>
-                            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                                Cloud-based content moderation via <code className="px-1.5 py-0.5 rounded text-xs" style={{ background: 'var(--bg-tertiary)' }}>@azure-rest/ai-content-safety</code>
-                            </p>
-                        </div>
-                        {hasAzureEndpoint && hasAzureKey && (
-                            <div className="flex items-center gap-2 px-3 py-1.5 rounded-full text-xs font-medium bg-emerald-500/15 text-emerald-400">
-                                <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
-                                Configured
-                            </div>
-                        )}
-                    </div>
-                )}
-
-                <div className="space-y-5">
-                    {/* Enabled Toggle (shared) */}
-                    <div className="flex items-center justify-between p-3 rounded-lg border bg-white/5 border-white/10">
-                        <span className="text-sm font-medium text-[var(--text-primary)]">Enable AI Moderation</span>
-                        <label className="relative inline-flex items-center cursor-pointer">
-                            <input type="checkbox" checked={config.enabled} onChange={e => setConfig({ ...config, enabled: e.target.checked })} className="sr-only peer" />
-                            <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
-                        </label>
-                    </div>
-
-                    {/* Azure-specific: Endpoint + API Key */}
-                    {isAzure && (
-                        <div className="space-y-4 animate-fadeIn">
-                            <div>
-                                <label className="text-sm font-medium mb-1.5 block" style={{ color: 'var(--text-primary)' }}>Content Safety Endpoint</label>
-                                <input
-                                    type="text"
-                                    value={azureEndpoint}
-                                    onChange={e => setAzureEndpoint(e.target.value)}
-                                    placeholder={hasAzureEndpoint ? '••• endpoint configured •••' : 'https://your-resource.cognitiveservices.azure.com/'}
-                                    className="w-full px-4 py-2.5 rounded-lg border text-sm"
-                                    style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)', background: 'var(--bg-tertiary)' }}
-                                />
-                                <p className="text-xs text-muted mt-1">The endpoint of your Azure AI Content Safety resource.</p>
-                            </div>
-                            <div>
-                                <label className="text-sm font-medium mb-1.5 block" style={{ color: 'var(--text-primary)' }}>API Key</label>
-                                <input
-                                    type="password"
-                                    value={azureKey}
-                                    onChange={e => setAzureKey(e.target.value)}
-                                    placeholder={hasAzureKey ? '••• key configured •••' : 'Enter API key'}
-                                    className="w-full px-4 py-2.5 rounded-lg border text-sm"
-                                    style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)', background: 'var(--bg-tertiary)' }}
-                                />
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Threshold: different per provider */}
-                    {isAzure ? (
-                        <div>
-                            <div className="flex items-center justify-between mb-2">
-                                <label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Severity Threshold</label>
-                                <span className="text-sm font-mono px-2 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--accent-primary)' }}>≥ {severityThreshold}</span>
-                            </div>
-                            <input
-                                type="range"
-                                min="0"
-                                max="7"
-                                step="1"
-                                value={severityThreshold}
-                                onChange={e => setSeverityThreshold(parseInt(e.target.value))}
-                                className="w-full accent-[var(--accent-primary)]"
-                            />
-                            <div className="flex justify-between text-xs text-muted mt-1">
-                                <span>Block more (0)</span>
-                                <span>Block less (7)</span>
-                            </div>
-                            <p className="text-xs text-muted mt-1">Content with severity at or above this value will be blocked. Scale: 0 (safe) to 7 (most severe).</p>
-                        </div>
-                    ) : (
-                        <div>
-                            <div className="flex items-center justify-between mb-2">
-                                <label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>Confidence Threshold</label>
-                                <span className="text-sm font-mono px-2 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--accent-primary)' }}>{config.threshold}</span>
-                            </div>
-                            <input
-                                type="range"
-                                min="0.1"
-                                max="1.0"
-                                step="0.05"
-                                value={config.threshold}
-                                onChange={e => setConfig({ ...config, threshold: parseFloat(e.target.value) })}
-                                className="w-full accent-[var(--accent-primary)]"
-                            />
-                            <div className="flex justify-between text-xs text-muted mt-1">
-                                <span>Block more (0.1)</span>
-                                <span>Block less (1.0)</span>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Categories */}
-                    <div>
-                        <label className="block text-sm font-medium mb-3" style={{ color: 'var(--text-primary)' }}>
-                            {isAzure ? 'Enforced Categories' : 'Detected Categories'}
-                        </label>
-                        {isAzure ? (
-                            <div className="grid grid-cols-2 gap-2 p-3 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
-                                {azureCategories.map(cat => (
-                                    <label key={cat.id} className="flex items-center gap-3 p-2.5 rounded-lg cursor-pointer hover:bg-white/5 transition-colors">
-                                        <input
-                                            type="checkbox"
-                                            checked={azureEnabledCategories.includes(cat.id)}
-                                            onChange={(e) => {
-                                                if (e.target.checked) {
-                                                    setAzureEnabledCategories([...azureEnabledCategories, cat.id]);
-                                                } else {
-                                                    setAzureEnabledCategories(azureEnabledCategories.filter(id => id !== cat.id));
-                                                }
-                                            }}
-                                            className="w-4 h-4 rounded border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0"
-                                        />
-                                        <AppEmoji id={guardrailCatalogIdFor(cat.id)} default={cat.icon} className="text-base" />
-                                        <div>
-                                            <span className="text-sm block" style={{ color: 'var(--text-secondary)' }}>{cat.label}</span>
-                                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{cat.desc}</span>
-                                        </div>
-                                    </label>
-                                ))}
-                            </div>
-                        ) : (
-                            <div className="grid grid-cols-3 gap-2">
-                                {llamaCategories.map(cat => (
-                                    <div key={cat.id} className="flex items-center gap-2 p-2.5 rounded-lg" style={{ background: 'var(--bg-tertiary)' }}>
-                                        <AppEmoji id={guardrailCatalogIdFor(cat.id)} default={cat.icon} className="text-base" />
-                                        <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>{cat.label}</span>
-                                    </div>
-                                ))}
-                            </div>
-                        )}
-                        <p className="text-xs text-muted mt-2">
-                            {isAzure
-                                ? 'Only checked categories will be analyzed. Unchecked categories are ignored by Azure.'
-                                : 'All categories are checked automatically. Content with confidence above the threshold will be blocked.'}
-                        </p>
-                    </div>
-
-                    {/* PII Detection (only shown for Azure — shared endpoint) */}
-                    {isAzure && (
-                        <div className="mt-6 pt-6 border-t border-white/10">
-                            <div className="flex items-center gap-3 mb-4">
-                                <div className="w-10 h-10 rounded-lg flex items-center justify-center text-xl" style={{ background: 'rgba(139, 92, 246, 0.15)' }}>🔒</div>
-                                <div className="flex-1">
-                                    <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>PII Detection</h3>
-                                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Detect personal data like credit cards, SSNs, emails, phone numbers</p>
-                                </div>
-                                <label className="relative inline-flex items-center cursor-pointer">
-                                    <input type="checkbox" checked={piiEnabled} onChange={e => setPiiEnabled(e.target.checked)} className="sr-only peer" />
-                                    <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-violet-500"></div>
-                                </label>
-                            </div>
-
-                            {piiEnabled && (
-                                <div className="space-y-4 animate-fadeIn">
-                                    {/* PII Confidence Threshold */}
-                                    <div>
-                                        <div className="flex items-center justify-between mb-2">
-                                            <label className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>PII Confidence Threshold</label>
-                                            <span className="text-xs px-2 py-1 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
-                                                ≥ {piiConfidenceThreshold.toFixed(2)}
-                                            </span>
-                                        </div>
-                                        <input
-                                            type="range" min="0.1" max="1.0" step="0.05"
-                                            value={piiConfidenceThreshold}
-                                            onChange={e => setPiiConfidenceThreshold(parseFloat(e.target.value))}
-                                            className="w-full accent-violet-500"
-                                        />
-                                        <div className="flex justify-between text-xs text-muted mt-1">
-                                            <span>Detect more (0.1)</span><span>Detect less (1.0)</span>
-                                        </div>
-                                    </div>
-
-                                    {/* PII Categories by Group */}
-                                    <div>
-                                        <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Enforced PII Categories</label>
-                                        <div className="space-y-2">
-                                            {PII_CATEGORY_GROUPS.map(group => {
-                                                const gIds = group.categories.map(c => c.id);
-                                                const selCount = gIds.filter(id => piiCategories.includes(id)).length;
-                                                const allSel = selCount === gIds.length;
-                                                return (
-                                                    <div key={group.name} className="rounded-lg border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
-                                                        <div
-                                                            className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-white/5 rounded-t-lg transition-colors"
-                                                            onClick={() => {
-                                                                if (allSel) setPiiCategories(prev => prev.filter(id => !gIds.includes(id)));
-                                                                else setPiiCategories(prev => [...new Set([...prev, ...gIds])]);
-                                                            }}
-                                                        >
-                                                            <input type="checkbox" checked={allSel} readOnly className="w-3.5 h-3.5 rounded border-gray-600 bg-gray-700 text-violet-500 focus:ring-0" />
-                                                            <span className="text-sm">{group.icon}</span>
-                                                            <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>{group.name}</span>
-                                                            <span className="text-xs text-muted ml-auto">{selCount}/{gIds.length}</span>
-                                                        </div>
-                                                        <div className="grid grid-cols-2 gap-0.5 px-3 pb-2">
-                                                            {group.categories.map(cat => (
-                                                                <label key={cat.id} className="flex items-center gap-1.5 text-xs text-[var(--text-secondary)] cursor-pointer p-1.5 rounded hover:bg-white/5 transition-colors">
-                                                                    <input
-                                                                        type="checkbox"
-                                                                        checked={piiCategories.includes(cat.id)}
-                                                                        onChange={() => setPiiCategories(prev => prev.includes(cat.id) ? prev.filter(c => c !== cat.id) : [...prev, cat.id])}
-                                                                        className="w-3 h-3 rounded border-gray-600 bg-gray-700 text-violet-500 focus:ring-0"
-                                                                    />
-                                                                    {cat.label}
-                                                                </label>
-                                                            ))}
-                                                        </div>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                        <p className="text-xs text-muted mt-2">Only checked PII categories will be scanned. Uses the same Azure endpoint as Content Safety.</p>
-                                    </div>
-                                </div>
-                            )}
-                        </div>
-                    )}
-
-                    <div className="flex items-center justify-end gap-3 pt-4 border-t border-white/5">
-                        {msg && <span className={`text-sm ${msg.type === 'success' ? 'text-green-500' : 'text-red-500'}`}>{msg.text}</span>}
-                        <button
-                            onClick={handleSave}
-                            disabled={saving}
-                            className="px-6 py-2.5 rounded-lg text-sm font-medium disabled:opacity-50 shadow-lg transition-all hover:opacity-90"
-                            style={{ background: 'var(--accent-primary)', color: 'white' }}
-                        >
-                            {saving ? t('admin.guard_saving') : t('admin.guard_save_all')}
-                        </button>
-                    </div>
-
-                </div>
-            </div>
-
-            <div className="p-4 rounded-lg flex gap-3" style={{ background: isAzure ? 'rgba(59, 130, 246, 0.08)' : 'rgba(16, 185, 129, 0.08)', border: `1px solid ${isAzure ? 'rgba(59, 130, 246, 0.15)' : 'rgba(16, 185, 129, 0.15)'}` }}>
-                <div className="shrink-0">{isAzure ? '🔷' : '✅'}</div>
-                <p className="text-sm leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                    {isAzure ? (
-                        <>
-                            <strong style={{ color: 'var(--text-primary)' }}>Cloud-based:</strong> Azure AI Content Safety analyzes content using Microsoft's AI models. Data is sent to Azure for analysis. Works at global, organization, and agent level.
-                        </>
-                    ) : (
-                        <>
-                            <strong style={{ color: 'var(--text-primary)' }}>Cloud-based:</strong> AI Moderation runs on Azure Content Safety. Configure Azure credentials to enable.
-                        </>
-                    )}
-                </p>
-            </div>
-        </div>
-    );
-};
 
 export default GuardrailsPanel;

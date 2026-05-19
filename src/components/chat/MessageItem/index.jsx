@@ -757,15 +757,24 @@ const MessageItem = ({
                                                 {tierLabel(msg.modelTier)}
                                             </span>
                                         ) : null}
-                                        {msg.tokenisationInfo?.count > 0 && (
-                                            <span
-                                                className="px-1.5 py-0.5 rounded-full font-medium inline-flex items-center gap-1"
-                                                style={{ background: 'rgba(59, 130, 246, 0.10)', color: 'rgb(29, 78, 216)' }}
-                                                title="Sensitive data was tokenised on the outbound prompt and restored on the response"
-                                            >
-                                                🔒 {msg.tokenisationInfo.count} redacted
-                                            </span>
-                                        )}
+                                        {msg.tokenisationInfo?.count > 0 && (() => {
+                                            const _act = msg.tokenisationInfo.action;
+                                            const _noun = _act === 'restore' ? 'restored' : _act === 'protected' ? 'protected' : 'redacted';
+                                            const _title = _act === 'restore'
+                                                ? 'Tokens from earlier turns appeared in this reply and were restored to real values before display'
+                                                : _act === 'protected'
+                                                    ? 'Privacy is active for this conversation — tokens from earlier turns are protected in the vault'
+                                                    : 'Sensitive data was tokenised on the outbound prompt and restored on the response';
+                                            return (
+                                                <span
+                                                    className="px-1.5 py-0.5 rounded-full font-medium inline-flex items-center gap-1"
+                                                    style={{ background: 'rgba(59, 130, 246, 0.10)', color: 'rgb(29, 78, 216)' }}
+                                                    title={_title}
+                                                >
+                                                    🔒 {msg.tokenisationInfo.count} {_noun}
+                                                </span>
+                                            );
+                                        })()}
                                     </span>
                                     <svg className="w-3 h-3 transition-transform group-open/reasoning:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                                 </summary>
@@ -777,14 +786,20 @@ const MessageItem = ({
                                         const counts = new Map();
                                         for (const c of (info.categories || [])) counts.set(c, (counts.get(c) || 0) + 1);
                                         const categoryList = [...counts.entries()].map(([label, n]) => `${label}${n > 1 ? ` ×${n}` : ''}`).join(', ');
-                                        const actionLabel = info.action === 'block' ? 'Blocked' : info.source === 'dlp' ? 'Tokenised (DLP)' : 'Tokenised';
+                                        const actionLabel = info.action === 'block'
+                                            ? 'Blocked'
+                                            : info.action === 'restore'
+                                                ? 'Restored from vault'
+                                                : info.action === 'protected'
+                                                    ? 'Privacy active'
+                                                    : info.source === 'dlp' ? 'Tokenised (DLP)' : 'Tokenised';
                                         return (
                                             <details className="group/privacy">
                                                 <summary className="flex items-center gap-2 cursor-pointer text-[11px] px-2 py-1.5 rounded-lg select-none list-none [&::-webkit-details-marker]:hidden transition-colors hover:bg-[var(--bg-tertiary)]" style={{ color: 'var(--text-secondary)' }}>
                                                     <span className="text-xs">🔒</span>
                                                     <span className="font-medium">Privacy protection</span>
                                                     <span className="text-[10px] px-1.5 py-0.5 rounded-full font-medium" style={{ background: 'rgba(59, 130, 246, 0.10)', color: 'rgb(29, 78, 216)' }}>
-                                                        {info.count} item{info.count === 1 ? '' : 's'} redacted
+                                                        {info.count} item{info.count === 1 ? '' : 's'} {info.action === 'restore' ? 'restored' : info.action === 'protected' ? 'protected' : 'redacted'}
                                                     </span>
                                                     <svg className="w-2.5 h-2.5 transition-transform group-open/privacy:rotate-90 ml-auto opacity-40" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" /></svg>
                                                 </summary>
@@ -913,13 +928,28 @@ const MessageItem = ({
                                                                 </div>
                                                             );
                                                         };
+                                                        // Show what the AI actually returned (tokens intact), not the
+                                                        // post-restored display text. Prefer info.rawResponse when the
+                                                        // org captured it; otherwise reconstruct by reverse-applying the
+                                                        // token map to the displayed content (longest values first so
+                                                        // substrings don't shadow longer matches).
+                                                        const aiReturnedText = info.rawResponse || (() => {
+                                                            if (!info.tokenMap || !shownResponse) return shownResponse || '';
+                                                            const entries = Object.entries(info.tokenMap).sort((a, b) => (b[1]?.length || 0) - (a[1]?.length || 0));
+                                                            let out = shownResponse;
+                                                            for (const [token, value] of entries) {
+                                                                if (!value) continue;
+                                                                const escaped = value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                                                out = out.replace(new RegExp(escaped, 'g'), token);
+                                                            }
+                                                            return out;
+                                                        })();
                                                         return (
                                                             <div className="mt-3 pt-2 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
                                                                 <Row label="Original message" text={originalUserMsg} hint="stays on your device" revealable />
                                                                 <Row label="Sent to AI" text={info.tokenizedPrompt} hint={info.provider ? `via ${info.provider}` : undefined} />
                                                                 <TokenMapRow tokenMap={info.tokenMap} />
-                                                                <Row label="AI's raw response" text={info.rawResponse} hint={info.rawTruncated ? 'truncated' : undefined} />
-                                                                <Row label="What you saw" text={shownResponse} hint="tokens restored" />
+                                                                <Row label="What the AI returned" text={aiReturnedText} hint={info.rawTruncated ? 'truncated · tokens intact' : 'tokens intact'} />
                                                             </div>
                                                         );
                                                     })()}

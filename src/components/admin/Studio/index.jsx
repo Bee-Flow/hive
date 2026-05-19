@@ -6,6 +6,7 @@ import AITasksDesigner from '../AITasksDesigner';
 import SkillsStudio from './SkillsStudio';
 import KBsStudio from './KBsStudio';
 import WebpagesPage from '../../../pages/WebpagesPage';
+import { useLicenseContext } from '../../LicenseContext';
 
 // Unified Studio: a single shell hosting Agents, Skills, Knowledge Bases, and AI Tasks.
 // All sections share a sidebar-list + editor-right split layout.
@@ -24,6 +25,7 @@ export default function Studio({
     onEditingChange,
 }) {
     const { t } = useTranslation();
+    const { hasFeature: hasLicenseFeature } = useLicenseContext();
     const [agentEditing, setAgentEditing] = useState(false);
     const [automationEditing, setAutomationEditing] = useState(false);
     const editing = agentEditing || automationEditing;
@@ -36,7 +38,12 @@ export default function Studio({
         onEditingChange?.(next || agentEditing);
     };
 
-    const canSeeWebpages = !!(user?.canUseFeature?.webpages ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('webpages')));
+    // Webpages tab: licence feature is authoritative. canUseFeature is the
+    // server-derived intersection of licence × beta and includes webpages
+    // automatically when the tier matches, but we re-check the licence
+    // explicitly so a stale session can't keep the tab visible after a
+    // downgrade.
+    const canSeeWebpages = hasLicenseFeature('webpages') && !!(user?.canUseFeature?.webpages ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('webpages')));
     const tabs = [
         { id: 'agents',    label: t('studio.tab.agents'),    icon: <Bot size={14} /> },
         { id: 'skills',    label: t('studio.tab.skills'),    icon: <Sparkles size={14} /> },

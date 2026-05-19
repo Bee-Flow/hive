@@ -953,6 +953,18 @@ export default function useChatEngine({
                     : m));
                 break;
             }
+            case 'tokenisation_info': {
+                // Server-synthesised tokenisation info for actions that don't
+                // fire `dlp_resolved` (restore: AI echoed tokens this turn;
+                // protected: conv vault non-empty even when no token activity
+                // this turn). Carries count/action/categories/tokenMap so the
+                // pill and Privacy panel render live, not only after refresh.
+                if (!data || typeof data !== 'object') break;
+                setMessages(prev => prev.map(m => m.id === assistantMsgId
+                    ? { ...m, tokenisationInfo: { ...(m.tokenisationInfo || {}), ...data, tokenMap: { ...(m.tokenisationInfo?.tokenMap || {}), ...(data.tokenMap || {}) } } }
+                    : m));
+                break;
+            }
             case 'dlp_blocked': {
                 window.dispatchEvent(new CustomEvent('beeflow:dlp_blocked', { detail: data }));
                 const reason = data?.reason || 'policy';

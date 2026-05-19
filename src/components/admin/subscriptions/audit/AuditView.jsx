@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { ScrollText, ChevronDown, ChevronRight } from 'lucide-react';
+import { ScrollText, ChevronDown, ChevronRight, AlertTriangle, RefreshCw } from 'lucide-react';
 import { SectionHeader } from '../ui/SectionHeader';
 import { SearchInput } from '../ui/SearchInput';
 import { FilterPills } from '../ui/Tabs';
@@ -7,7 +7,7 @@ import { Card } from '../ui/Card';
 import { Spinner } from '../ui/Spinner';
 import { EmptyState } from '../ui/EmptyState';
 import { Dot } from '../ui/Badge';
-import { useResource } from '../hooks/useApi';
+import { useResource, apiJson } from '../hooks/useApi';
 
 const ACTION_TONE = {
     create_plan: 'success',
@@ -16,6 +16,8 @@ const ACTION_TONE = {
     assign_subscription: 'teal',
     update_subscription: 'info',
     remove_subscription: 'danger',
+    license_issuance_failed: 'danger',
+    license_issuance_succeeded: 'success',
 };
 
 const ENTITY_TYPES = [
@@ -23,12 +25,31 @@ const ENTITY_TYPES = [
     { value: 'subscription', label: 'Subscriptions' },
 ];
 
-function LogRow({ log }) {
+function LogRow({ log, unresolvedFailureIds, onRetryDone }) {
     const [open, setOpen] = useState(false);
+    const [retrying, setRetrying] = useState(false);
+    const [retryError, setRetryError] = useState(null);
     const hasDetails = log.new_values && typeof log.new_values === 'object';
     const summary = hasDetails
         ? Object.entries(log.new_values).slice(0, 3).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(', ')
         : '';
+    const showRetry = log.action === 'license_issuance_failed' && unresolvedFailureIds?.has(log.id);
+
+    const handleRetry = async (e) => {
+        e.stopPropagation();
+        if (retrying) return;
+        setRetrying(true);
+        setRetryError(null);
+        try {
+            const scope = log.target_type === 'organization' ? 'orgs' : 'consumer';
+            await apiJson(`/api/subscriptions/${scope}/${log.target_id}/reissue-license`, { method: 'POST' });
+            if (onRetryDone) await onRetryDone();
+        } catch (err) {
+            setRetryError(err.message || 'Retry failed');
+        } finally {
+            setRetrying(false);
+        }
+    };
 
     return (
         <Card className="!p-3.5" hover>
@@ -54,7 +75,21 @@ function LogRow({ log }) {
                     {!open && summary && (
                         <div className="mt-1 text-[11px] text-[var(--text-muted)] truncate max-w-full">{summary}</div>
                     )}
+                    {retryError && (
+                        <div className="mt-1 text-[11px] text-rose-400">Retry failed: {retryError}</div>
+                    )}
                 </div>
+                {showRetry && (
+                    <button
+                        type="button"
+                        onClick={handleRetry}
+                        disabled={retrying}
+                        className="shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-semibold bg-rose-500/10 text-rose-300 border border-rose-500/30 hover:bg-rose-500/20 disabled:opacity-50"
+                    >
+                        <RefreshCw className={`w-3.5 h-3.5 ${retrying ? 'animate-spin' : ''}`} />
+                        {retrying ? 'Retrying…' : 'Retry'}
+                    </button>
+                )}
                 {hasDetails && (
                     open ? <ChevronDown className="w-4 h-4 text-[var(--text-muted)] shrink-0 mt-1" />
                          : <ChevronRight className="w-4 h-4 text-[var(--text-muted)] shrink-0 mt-1" />
@@ -71,9 +106,19 @@ function LogRow({ log }) {
 }
 
 export function AuditView() {
-    const { data: logs = [], loading } = useResource('/api/subscriptions/audit?limit=100', { initial: [] });
+    const { data: logs = [], loading, reload: reloadLogs } = useResource('/api/subscriptions/audit?limit=100', { initial: [] });
+    const { data: failures = [], reload: reloadFailures } = useResource('/api/subscriptions/license-issuance-failures?limit=200', { initial: [] });
     const [query, setQuery]       = useState('');
     const [entity, setEntity]     = useState(null);
+
+    const unresolvedFailureIds = useMemo(
+        () => new Set((Array.isArray(failures) ? failures : []).map(f => f.id)),
+        [failures]
+    );
+
+    const handleRetryDone = async () => {
+        await Promise.all([reloadLogs(), reloadFailures()]);
+    };
 
     const visible = useMemo(() => {
         let list = Array.isArray(logs) ? logs : [];
@@ -97,6 +142,22 @@ export function AuditView() {
                 action={<SearchInput value={query} onChange={setQuery} placeholder="Filter by action, target, user…" className="w-72" />}
             />
 
+            {unresolvedFailureIds.size > 0 && (
+                <Card className="!p-3.5 mb-4 border-rose-500/40 bg-rose-500/5">
+                    <div className="flex items-start gap-3">
+                        <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                            <div className="text-[13px] font-semibold text-[var(--text-primary)]">
+                                {unresolvedFailureIds.size} unresolved license-issuance failure{unresolvedFailureIds.size === 1 ? '' : 's'}
+                            </div>
+                            <div className="mt-0.5 text-[11.5px] text-[var(--text-muted)]">
+                                Customers paid but didn&apos;t receive a license JWT. Use the Retry button on a failure row to re-attempt issuance.
+                            </div>
+                        </div>
+                    </div>
+                </Card>
+            )}
+
             <FilterPills
                 value={entity}
                 onChange={setEntity}
@@ -114,7 +175,14 @@ export function AuditView() {
                 />
             ) : (
                 <div className="flex flex-col gap-2">
-                    {visible.map(log => <LogRow key={log.id} log={log} />)}
+                    {visible.map(log => (
+                        <LogRow
+                            key={log.id}
+                            log={log}
+                            unresolvedFailureIds={unresolvedFailureIds}
+                            onRetryDone={handleRetryDone}
+                        />
+                    ))}
                 </div>
             )}
         </div>

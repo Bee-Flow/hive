@@ -36,11 +36,22 @@ function normalizeTier(tier) {
 const LicenseContext = createContext({
     tier: 'community',
     source: 'default',
+    scope: null,
     license: null,
     subscription: null,
     features: [],
     limits: {},
+    // serverOverride: true when a super-admin has applied a server-wide
+    // licence. Per-org activation UI uses this to switch into a read-only
+    // banner ("Tier is managed server-wide"). See server/license/index.js
+    // → getLicenseStatus.
+    serverOverride: false,
     upgradeUrl: 'https://beeflow.ai/pricing',
+    // 'cloud' (Bee Flow SaaS) or 'self-hosted' (customer-run install). Drives
+    // which paid-access mechanism is shown: subscriptions on cloud, license
+    // keys on self-hosted. Sourced from /auth/setup-status (server env
+    // DEPLOYMENT_MODE). Defaults to 'cloud' until setup-status resolves.
+    deploymentMode: 'cloud',
     loading: true,
     error: null,
     hasFeature: () => false,
@@ -55,13 +66,16 @@ export function LicenseProvider({ children }) {
     const [state, setState] = useState({
         tier: 'community',
         source: 'default',
+        scope: null,
         license: null,
         subscription: null,
         features: [],
         limits: {},
+        serverOverride: false,
         loading: true,
         error: null,
         upgradeUrl: 'https://beeflow.ai/pricing',
+        deploymentMode: 'cloud',
     });
     // Must SET the ref to true on every mount, not just rely on useRef's
     // initial value. React StrictMode's mount → cleanup → remount cycle
@@ -149,9 +163,12 @@ export function LicenseProvider({ children }) {
                 if (!r.ok) return;
                 const data = await r.json();
                 if (ac.signal.aborted) return;
-                if (data?.licenseUpgradeUrl) {
-                    setState(s => ({ ...s, upgradeUrl: data.licenseUpgradeUrl }));
+                const patch = {};
+                if (data?.licenseUpgradeUrl) patch.upgradeUrl = data.licenseUpgradeUrl;
+                if (data?.deploymentMode === 'cloud' || data?.deploymentMode === 'self-hosted') {
+                    patch.deploymentMode = data.deploymentMode;
                 }
+                if (Object.keys(patch).length > 0) setState(s => ({ ...s, ...patch }));
             } catch (e) {
                 if (e.name === 'AbortError') return;
                 console.warn('[LicenseProvider] setup-status fetch failed', e);

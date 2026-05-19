@@ -33,14 +33,18 @@ function daysUntil(s) {
 
 export default function LicenseKeyActivation() {
     const { t } = useTranslation();
-    const { tier, source, license, subscription, loading, error, activate, deactivate, refresh, reload } = useLicenseContext();
+    const { tier, source, license, subscription, loading, error, activate, deactivate, refresh, reload, serverOverride } = useLicenseContext();
     const [tokenInput, setTokenInput] = useState('');
     const [busy, setBusy] = useState(null); // 'activate' | 'refresh' | 'deactivate' | 'portal'
     const [actionError, setActionError] = useState(null);
     const [showInput, setShowInput] = useState(false);
 
     const badge = TIER_BADGE[tier] || TIER_BADGE.community;
-    const isActivated = source === 'license_key' && license;
+    // serverOverride: a super-admin has applied a server-wide licence that
+    // governs every org. Org-level activation is disabled — the tier shown
+    // here is informational only. The platform admin manages it from
+    // /admin → Server licence.
+    const isActivated = source === 'license_key' && license && !serverOverride;
     const isStripeSub = source === 'stripe_subscription' && subscription;
     const expiresAt = license?.expiresAt || subscription?.trialEndDate || null;
     const daysLeft = daysUntil(expiresAt);
@@ -119,6 +123,23 @@ export default function LicenseKeyActivation() {
 
     return (
         <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden">
+            {/* Server-wide licence override banner. When a super-admin has
+                applied a server-wide licence, org-level activation is
+                disabled — the tier shown is informational only. */}
+            {serverOverride && (
+                <div className="px-5 py-3 border-b border-[var(--border-subtle)] flex items-start gap-3" style={{ background: 'rgba(59,130,246,0.08)' }}>
+                    <ShieldCheck className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: 'rgb(59,130,246)' }} />
+                    <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                        <div className="font-semibold mb-0.5" style={{ color: 'var(--text-primary)' }}>
+                            {t('license.server_override_title', 'Tier is managed server-wide')}
+                        </div>
+                        <div>
+                            {t('license.server_override_desc',
+                               'The platform admin has applied a server-wide licence on this install. Per-organisation activation is disabled while it is in effect; your tier reflects the server-wide grant.')}
+                        </div>
+                    </div>
+                </div>
+            )}
             {/* Header — current tier */}
             <div className="p-5 flex items-center justify-between gap-4 border-b border-[var(--border-subtle)]">
                 <div className="flex items-center gap-3 min-w-0">
@@ -241,7 +262,11 @@ export default function LicenseKeyActivation() {
                     </div>
                 )}
 
-                {/* Actions */}
+                {/* Actions + token input — hidden entirely when a
+                    server-wide licence is in effect. Org admins can still
+                    see their tier but cannot mutate licence state from
+                    the org view. */}
+                {!serverOverride && (<>
                 <div className="flex flex-wrap items-center gap-2 pt-2">
                     {!showInput && !isActivated && (
                         <>
@@ -344,6 +369,7 @@ export default function LicenseKeyActivation() {
                         </div>
                     </div>
                 )}
+                </>)}
             </div>
         </div>
     );

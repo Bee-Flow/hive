@@ -5,7 +5,7 @@ import { Toggle } from '../../ui/Toggle';
 import { Banner } from '../../ui/Banner';
 import { Card } from '../../ui/Card';
 import { StatGrid, StatRow } from '../../ui/StatRow';
-import { LIMIT_FIELDS } from '../../constants';
+import { LIMIT_FIELDS, CURRENCY_SYMBOL } from '../../constants';
 
 export function TrialSection({ form, update }) {
     const trialEnabled = (form.trial_days || 0) > 0;
@@ -59,7 +59,7 @@ export function TrialSection({ form, update }) {
                                     key={f.key}
                                     label={f.label}
                                     value={form[f.key]}
-                                    unit={f.type === 'currency' ? '€' : ''}
+                                    unit={f.type === 'currency' ? (CURRENCY_SYMBOL[form.currency] || '€') : ''}
                                 />
                             ))}
                         </StatGrid>

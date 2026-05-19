@@ -51,7 +51,7 @@ export function PlanTemplateGallery({ open, onClose, onPick }) {
             </div>
 
             <Banner tone="info" icon={Info} className="mb-4">
-                Org tiers (Team / Business / Enterprise) bill <strong>per active seat</strong>. The org-wide message cap scales with seat count. White-label branding is <strong>not available on cloud plans</strong> — it's a self-hosted-only feature gated by an Enterprise license key.
+                Subscriptions are for <strong>Bee Flow Cloud</strong> customers. Self-hosted installs use <strong>Community / Pro / Enterprise license keys</strong> instead (managed in Settings → License &amp; Usage on the customer's server). Org tiers (Team / Business / Enterprise) bill <strong>per active seat</strong>; the org-wide message cap scales with seat count. White-label branding is a self-hosted Full-tier license-key feature and is never included on cloud plans.
             </Banner>
 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3">

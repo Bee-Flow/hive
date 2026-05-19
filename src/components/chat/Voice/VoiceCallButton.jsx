@@ -14,6 +14,7 @@
 import React, { useEffect, useState } from 'react';
 import { Phone } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
+import { useLicenseContext } from '../../LicenseContext';
 
 export default function VoiceCallButton({
     user,
@@ -22,12 +23,16 @@ export default function VoiceCallButton({
     className = '',
 }) {
     const [ready, setReady] = useState(null);
+    const { hasFeature: hasLicenseFeature } = useLicenseContext();
 
+    // Defence-in-depth: even if a stale session still carries the
+    // `voice_chat` beta flag, the button must not render on a community
+    // tier — every /ai/voice request would 403 anyway.
     const hasBetaFlag = !!(
         user?.isAdmin ||
         user?.permissions?.includes('all') ||
         (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('voice_chat'))
-    );
+    ) && hasLicenseFeature('voice_chat');
 
     useEffect(() => {
         let cancelled = false;

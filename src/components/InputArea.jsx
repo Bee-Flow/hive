@@ -180,6 +180,9 @@ const InputArea = ({
     const [appsOverlayOpen, setAppsOverlayOpen] = useState(false);
     const [appSearch, setAppSearch] = useState('');
 
+    const isTouchDevice = typeof window !== 'undefined'
+        && window.matchMedia('(hover: none) and (pointer: coarse)').matches;
+
     // Close media menu on click outside
     useEffect(() => {
         if (!mediaMenuOpen) return;
@@ -613,9 +616,9 @@ const InputArea = ({
     };
 
     const handleKeyDown = (e) => {
-        // On mobile, Enter creates a new line (send via button only)
-        // On desktop, Enter sends, Shift+Enter creates new line
-        if (e.key === 'Enter' && !e.shiftKey && !isMobile) {
+        // Enter sends on desktop (incl. narrow windows). On true touch
+        // devices Enter inserts a newline — send via the button.
+        if (e.key === 'Enter' && !e.shiftKey && !isTouchDevice) {
             e.preventDefault();
             handleSend();
         }
@@ -943,24 +946,30 @@ const InputArea = ({
 
                                         {showKBPicker && (
                                             <div
-                                                className="absolute bottom-full left-0 mb-2 w-80 rounded-xl shadow-2xl z-50 overflow-hidden"
-                                                style={{ background: 'var(--bg-primary)', border: '1px solid var(--border-default)' }}
+                                                className="absolute bottom-full left-0 mb-2 w-[22rem] rounded-2xl z-50 overflow-hidden"
+                                                style={{
+                                                    background: 'var(--bg-card)',
+                                                    border: '1px solid var(--border-default)',
+                                                    boxShadow: 'var(--shadow-popover, 0 12px 36px rgba(15,23,42,0.18))',
+                                                    animation: 'modelTierPanelIn 140ms cubic-bezier(0.22, 1, 0.36, 1) both',
+                                                    transformOrigin: 'bottom left',
+                                                }}
                                             >
-                                                <div className="p-3 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+                                                <div className="px-3.5 pt-3 pb-2">
                                                     <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Knowledge Bases</p>
                                                     <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Pick one or more to ground this chat.</p>
                                                 </div>
-                                                <div className="px-3 py-2 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+                                                <div className="px-3 pb-2">
                                                     <input
                                                         type="text"
                                                         value={kbPickerSearch}
                                                         onChange={e => setKbPickerSearch(e.target.value)}
                                                         placeholder="Search…"
-                                                        className="w-full px-2.5 py-1.5 rounded-md border text-xs outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/30"
+                                                        className="w-full px-3 py-1.5 rounded-lg border text-xs outline-none focus:ring-2 focus:ring-[var(--accent-primary)]/25"
                                                         style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
                                                     />
                                                 </div>
-                                                <div className="max-h-64 overflow-auto">
+                                                <div className="max-h-72 overflow-auto px-1.5 pb-1.5">
                                                     {filteredKBs.length === 0 ? (
                                                         <div className="px-3 py-6 text-center text-xs" style={{ color: 'var(--text-muted)' }}>
                                                             {availableKBs.length === 0
@@ -970,6 +979,7 @@ const InputArea = ({
                                                     ) : (
                                                         filteredKBs.map(kb => {
                                                             const checked = selectedKBIds.includes(kb.id);
+                                                            const isEmpty = !(kb.document_count || 0);
                                                             // Visibility badge — derive from the actual publish state
                                                             // rather than just `organization_id`, which is also set on
                                                             // personal KBs the user created inside an org. Three modes
@@ -981,15 +991,22 @@ const InputArea = ({
                                                                 }
                                                                 return [];
                                                             })();
+                                                            // Theme-aware visibility tags. Personal → neutral chrome;
+                                                            // Org → accent (the org's brand colour); Groups → warning hue.
                                                             const visibility = !kb.is_published
-                                                                ? { label: 'Personal', cls: 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)]' }
+                                                                ? { label: 'Personal', bg: 'var(--bg-tertiary)', fg: 'var(--text-secondary)' }
                                                                 : groups.length > 0
-                                                                    ? { label: `${groups.length} group${groups.length > 1 ? 's' : ''}`, cls: 'bg-amber-500/10 text-amber-600' }
-                                                                    : { label: 'Org', cls: 'bg-blue-500/10 text-blue-500' };
+                                                                    ? { label: `${groups.length} group${groups.length > 1 ? 's' : ''}`, bg: 'color-mix(in srgb, var(--warning) 12%, transparent)', fg: 'var(--warning)' }
+                                                                    : { label: 'Org', bg: 'color-mix(in srgb, var(--accent-primary) 12%, transparent)', fg: 'var(--accent-primary)' };
                                                             return (
                                                                 <label
                                                                     key={kb.id}
-                                                                    className="flex items-center gap-3 px-3 py-2 hover:bg-[var(--bg-tertiary)] cursor-pointer transition-colors"
+                                                                    className="flex items-center gap-3 px-2.5 py-2 rounded-lg cursor-pointer transition-colors"
+                                                                    style={{
+                                                                        background: checked ? 'color-mix(in srgb, var(--accent-primary) 8%, transparent)' : 'transparent',
+                                                                    }}
+                                                                    onMouseEnter={e => { if (!checked) e.currentTarget.style.background = 'var(--bg-tertiary)'; }}
+                                                                    onMouseLeave={e => { if (!checked) e.currentTarget.style.background = 'transparent'; }}
                                                                 >
                                                                     <input
                                                                         type="checkbox"
@@ -997,14 +1014,24 @@ const InputArea = ({
                                                                         onChange={() => toggleKBId(kb.id)}
                                                                         className="accent-[var(--accent-primary)] w-4 h-4 flex-shrink-0"
                                                                     />
-                                                                    <span className="text-base flex-shrink-0">{kb.icon && (kb.icon.startsWith('data:') || kb.icon.startsWith('http')) ? (
-                                                                        <img src={kb.icon} alt="" className="w-5 h-5 rounded object-cover inline-block align-middle" />
+                                                                    <span
+                                                                        className="flex-shrink-0 w-7 h-7 rounded-md inline-flex items-center justify-center text-[15px]"
+                                                                        style={{ background: 'var(--bg-secondary)' }}
+                                                                    >{kb.icon && (kb.icon.startsWith('data:') || kb.icon.startsWith('http')) ? (
+                                                                        <img src={kb.icon} alt="" className="w-5 h-5 rounded object-cover" />
                                                                     ) : (kb.icon || '📚')}</span>
                                                                     <div className="flex-1 min-w-0">
-                                                                        <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{kb.name}</p>
-                                                                        <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
-                                                                            {(kb.document_count || 0)} docs · {(kb.total_chunks || 0)} chunks
-                                                                            <span className={`ml-1.5 px-1 py-0.5 rounded font-medium text-[9px] ${visibility.cls}`}>{visibility.label}</span>
+                                                                        <div className="flex items-center gap-1.5">
+                                                                            <p className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{kb.name}</p>
+                                                                            <span
+                                                                                className="px-1.5 py-0.5 rounded font-medium text-[9px] flex-shrink-0 uppercase tracking-wide"
+                                                                                style={{ background: visibility.bg, color: visibility.fg }}
+                                                                            >{visibility.label}</span>
+                                                                        </div>
+                                                                        <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                                                                            {isEmpty
+                                                                                ? 'Empty'
+                                                                                : `${(kb.document_count || 0)} doc${kb.document_count === 1 ? '' : 's'} · ${(kb.total_chunks || 0)} chunks`}
                                                                         </p>
                                                                     </div>
                                                                 </label>
@@ -1012,7 +1039,7 @@ const InputArea = ({
                                                         })
                                                     )}
                                                 </div>
-                                                <div className="p-2 border-t flex items-center justify-between" style={{ borderColor: 'var(--border-subtle)' }}>
+                                                <div className="px-3 py-2 border-t flex items-center justify-between" style={{ borderColor: 'var(--border-subtle)' }}>
                                                     <button
                                                         onClick={() => onChangeKBIds([])}
                                                         disabled={selectedKBIds.length === 0}
@@ -1021,8 +1048,8 @@ const InputArea = ({
                                                     >Clear</button>
                                                     <button
                                                         onClick={() => setShowKBPicker(false)}
-                                                        className="px-3 py-1 rounded-md text-[11px] font-medium hover:bg-[var(--bg-tertiary)]"
-                                                        style={{ color: 'var(--text-secondary)' }}
+                                                        className="px-3 py-1.5 rounded-md text-[11px] font-semibold"
+                                                        style={{ background: 'var(--accent-primary)', color: 'var(--accent-primary-fg, #fff)' }}
                                                     >Done</button>
                                                 </div>
                                             </div>
@@ -1263,7 +1290,7 @@ const InputArea = ({
                     <div className="text-center mt-1.5 mb-0.5 select-none">
                         <p className="text-[10px] text-[var(--text-tertiary)]">
                             {warningText || 'AI can make mistakes. Please verify important information.'}
-                            {!isMobile && (
+                            {!isTouchDevice && (
                                 <>
                                     <span className="mx-1.5">·</span>
                                     <span>Shift+Enter for new line</span>

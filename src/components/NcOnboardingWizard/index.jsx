@@ -29,7 +29,7 @@ const PII_CATEGORIES = [
     { id: 'DateOfBirth', label: 'Date of birth', icon: '📅' },
     { id: 'BankAccountNumber', label: 'Bank account numbers', icon: '🏦' },
     { id: 'URL', label: 'URLs', icon: '🔗' },
-    { id: 'AzureStorageAccountKey', label: 'Storage / API secrets', icon: '🔑' },
+    { id: 'ApiKeyOrSecret', label: 'API keys / secrets', icon: '🔑' },
 ];
 
 const DEFAULT_PII = ['Person', 'Email', 'PhoneNumber', 'Address', 'BankAccountNumber'];
@@ -95,12 +95,24 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
 
     useEffect(() => {
         let cancelled = false;
+        // The public /pricing page links here as `/app?plan=<id>`. If that
+        // id matches a real offered plan, jump straight to it — the visitor
+        // told us which one they want and pretending otherwise just makes
+        // them click twice. If the id doesn't match (plan unpublished
+        // between page-view and signup, typo'd URL, etc.) we fall through
+        // to the existing default-selection logic below.
+        const requestedPlanId = (new URLSearchParams(window.location.search).get('plan') || '').trim();
         authFetch(`${API_BASE}/api/billing/offered-plans`).then(r => r.ok ? r.json() : { plans: [] }).then(j => {
             if (cancelled) return;
             const list = j.plans || [];
             setPlans(list);
-            // Default selection: Community (null). Admin opts in to a paid plan
-            // by clicking a card — no pre-selection so they can't pay by accident.
+            if (requestedPlanId) {
+                const match = list.find(p => p.id === requestedPlanId);
+                if (match) setSelectedPlanId(match.id);
+            }
+            // Default selection (when no `?plan=` match): Community (null).
+            // Admin opts in to a paid plan by clicking a card — no pre-
+            // selection so they can't pay by accident.
             setPlansLoading(false);
         }).catch(() => { if (!cancelled) setPlansLoading(false); });
         return () => { cancelled = true; };
@@ -182,7 +194,6 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
                     newUserDefaultStatus,
                     privacyShield: {
                         enabled: shieldEnabled,
-                        localPiiEnabled: true,
                         piiDetectionAction: shieldAction,
                         piiDetectionCategories: shieldCategories,
                     },

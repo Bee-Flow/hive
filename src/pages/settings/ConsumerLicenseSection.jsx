@@ -3,6 +3,7 @@ import { CreditCard, MessageSquare, Zap, DollarSign, Bot, Database, BarChart3, A
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 import { getCostVisibility } from '../../components/admin/subscriptions/ui/costVisibility';
+import { useDeploymentMode } from '../../hooks/useDeploymentMode';
 
 /* ── Usage bar (matches OrgInfoPanel style) ─────────────────────────────── */
 const UsageBar = ({ label, icon: Icon, used, limit, unit, color = '#8b5cf6' }) => {
@@ -71,6 +72,7 @@ const currencySymbol = (c) => ({ EUR: '€', USD: '$', GBP: '£' }[c?.toUpperCas
 /* ── Main Component ───────────────────────────────────────────────────── */
 const ConsumerLicenseSection = ({ user }) => {
     const { t } = useTranslation();
+    const { isSelfHosted } = useDeploymentMode();
     const [data, setData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -168,6 +170,11 @@ const ConsumerLicenseSection = ({ user }) => {
         }
     };
 
+    // Consumer Stripe checkout is a Bee Flow Cloud feature. On self-hosted
+    // installs there are no consumer accounts (loginRoutes.js disables them)
+    // and license keys are the paid-access mechanism, so the whole panel is
+    // irrelevant — bail before fetching.
+    if (isSelfHosted) return null;
     if (loading) return <Skeleton />;
     if (error) return (
         <div className="text-center py-12">

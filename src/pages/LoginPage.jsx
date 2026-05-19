@@ -102,48 +102,63 @@ const LoginPage = ({ onLogin }) => {
         checkSetup();
     }, []);
 
-    // Detect and validate invite token
+    // Detect and validate invite token. Two paths:
+    //   1. Legacy `?invite=TOKEN` query param (kept for backwards-compat).
+    //   2. New flow: token lives in the server session after the user clicked
+    //      the email link, which 302-redirected through /api/auth/redeem-invite/<token>.
+    //      Pull it via /auth/pending-invite. No token ever appears in the URL bar.
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
-        const token = params.get('invite');
-        if (!token) return;
+        const queryToken = params.get('invite');
+        if (queryToken) {
+            // Strip the token from the URL immediately so a copy/paste of the
+            // address bar can't leak it.
+            window.history.replaceState({}, '', window.location.pathname);
+        }
 
-        setInviteToken(token);
-        // Clean up URL but keep invite context
-        window.history.replaceState({}, '', window.location.pathname);
+        const applyInvite = (token, data) => {
+            setInviteToken(token);
+            setInviteInfo(data);
+            setSignupData(prev => ({
+                ...prev,
+                signupType: 'existing',
+                organizationId: data.organizationId,
+                email: data.email || prev.email,
+            }));
+            setSignupStep(4);
+            setSignupMode(true);
+        };
 
-        const validateInvite = async () => {
+        const run = async () => {
             try {
-                const res = await authFetch(`${API_BASE}/auth/invite/${token}`);
+                // Prefer the server-side session entry (new flow).
+                const pendingRes = await authFetch(`${API_BASE}/auth/pending-invite`);
+                if (pendingRes.ok) {
+                    const data = await pendingRes.json();
+                    if (data.valid && data.token) {
+                        applyInvite(data.token, data);
+                        return;
+                    }
+                }
+                // Fallback to the legacy query-param flow.
+                if (!queryToken) return;
+                const res = await authFetch(`${API_BASE}/auth/invite/${queryToken}`);
                 if (res.ok) {
                     const data = await res.json();
                     if (data.valid) {
-                        setInviteInfo(data);
-                        // Auto-fill signup data
-                        setSignupData(prev => ({
-                            ...prev,
-                            signupType: 'existing',
-                            organizationId: data.organizationId,
-                            email: data.email || prev.email,
-                        }));
-                        // Skip org selection, go straight to account step
-                        setSignupStep(4);
-                        setSignupMode(true);
-                    } else {
-                        setError('This invitation link has expired or is no longer valid.');
-                        setInviteToken(null);
+                        applyInvite(queryToken, data);
+                        return;
                     }
-                } else {
-                    setError('This invitation link has expired or is no longer valid.');
-                    setInviteToken(null);
                 }
+                setError('This invitation link has expired or is no longer valid.');
+                setInviteToken(null);
             } catch (err) {
                 console.error('Failed to validate invite:', err);
                 setError('Failed to validate invitation. Please try again.');
                 setInviteToken(null);
             }
         };
-        validateInvite();
+        run();
     }, []);
 
     const handleSubmit = async (e) => {

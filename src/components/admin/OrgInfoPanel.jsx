@@ -6,6 +6,7 @@ import GuardrailsPanel from './GuardrailsPanel';
 import LicenseKeyActivation from './LicenseKeyActivation';
 import { useLicenseContext } from '../LicenseContext';
 import { getCostVisibility } from './subscriptions/ui/costVisibility';
+import { useDeploymentMode } from '../../hooks/useDeploymentMode';
 
 // Skeleton loader
 const Skeleton = () => (
@@ -323,6 +324,11 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
     const { t } = useTranslation();
     const licenseCtx = useLicenseContext();
     const hasActiveLicenseKey = licenseCtx?.source === 'license_key';
+    const { isCloud, isSelfHosted } = useDeploymentMode();
+    // Hide license-key activation on cloud unless the org already has an
+    // active Full-tier license (internal/operator orgs that need to manage
+    // their key). Always show it on self-hosted.
+    const showLicenseActivation = isSelfHosted || (isCloud && hasActiveLicenseKey && licenseCtx?.tier === 'full');
     const deploymentMode = user?.featureFlags?.deploymentMode || 'cloud';
     const isPrivateCloud = deploymentMode === 'private-cloud';
     const ncOrg = user?.ncOrg || null;
@@ -661,8 +667,8 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                             <p className="text-sm text-[var(--text-muted)] mt-0.5">{t('org.license_subtitle')}</p>
                         </div>
 
-                        {/* License key activation (Community → Pro/Enterprise/Full via signed JWT) */}
-                        <LicenseKeyActivation />
+                        {/* License key activation (self-hosted; or cloud Full-tier internal orgs) */}
+                        {showLicenseActivation && <LicenseKeyActivation />}
 
                         {subLoading ? (
                             <div className="space-y-4 animate-pulse">
@@ -682,8 +688,8 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                     <p className="text-xs text-[var(--text-muted)] mt-1">{t('org.no_license_desc')}</p>
                                 </div>
 
-                                {/* Available plans from Stripe */}
-                                {stripeEnabled && availablePlans.length > 0 && (
+                                {/* Available plans from Stripe — cloud only; self-hosted uses license keys */}
+                                {isCloud && stripeEnabled && availablePlans.length > 0 && (
                                     <div>
                                         <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3 flex items-center gap-2">
                                             <Zap className="w-4 h-4" style={{ color: '#8b5cf6' }} />

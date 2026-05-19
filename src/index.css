@@ -73,6 +73,12 @@
     --shadow-popover: 0 12px 32px rgba(0, 0, 0, 0.55);
     --shadow-glow: 0 0 20px var(--accent-glow);
 
+    /* Short alias — many builder components use the shorthand `--accent`.
+       Define it once here so it inherits the per-theme `--accent-primary`
+       automatically; no per-theme override needed. */
+    --accent: var(--accent-primary);
+    --accent-hover: var(--accent-primary-hover);
+
     /* Brand (semantic aliases, monochrome to match app-wide accent) */
     --brand-primary: var(--accent-primary);
     --brand-primary-hover: var(--accent-primary-hover);

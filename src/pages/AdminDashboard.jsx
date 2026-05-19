@@ -12,10 +12,13 @@ import SubscriptionsPanel from '../components/admin/subscriptions';
 import LanguagesPanel from '../components/admin/LanguagesPanel';
 import AppearancePanel from '../components/admin/appearance-studio/AppearancePanel';
 import ProductWebsitePanel from '../components/admin/ProductWebsite/ProductWebsitePanel';
+import ServerLicensePanel from '../components/admin/ServerLicensePanel';
+import { useDeploymentMode } from '../hooks/useDeploymentMode';
 
 
 const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
     const { t } = useTranslation();
+    const { isCloud, isSelfHosted } = useDeploymentMode();
     const isPlatformAdmin = user?.isAdmin || user?.role === 'admin';
 
     // Permission helper - checks if user has a specific permission
@@ -36,7 +39,12 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
         { id: 'integrations', label: t('admin.tab_integrations'), perm: ['admin_security'], superAdminOnly: true },
         { id: 'monitoring', label: t('admin.tab_monitoring'), perm: ['admin_monitoring'], superAdminOnly: false },
         { id: 'compliance', label: t('admin.tab_compliance'), perm: ['admin_compliance'], superAdminOnly: false },
-        { id: 'subscriptions', label: t('admin.tab_subscriptions'), perm: ['admin_subscriptions'], superAdminOnly: true },
+        // Subscriptions are a Bee Flow Cloud feature. Self-hosted installs
+        // manage paid access via license keys (Settings → License & Usage).
+        { id: 'subscriptions', label: t('admin.tab_subscriptions'), perm: ['admin_subscriptions'], superAdminOnly: true, cloudOnly: true },
+        // Server-wide licence governs every org/user on this install.
+        // Self-hosted only — cloud has its own multi-tenant billing.
+        { id: 'licenses', label: t('admin.tab_server_license') || 'Server licence', perm: ['all'], superAdminOnly: true, selfHostedOnly: true },
         { id: 'appearance', label: t('admin.tab_appearance'), perm: ['admin_ai_config'], superAdminOnly: true },
         { id: 'languages', label: t('admin.tab_languages'), perm: ['admin_ai_config'], superAdminOnly: true },
         { id: 'product-website', label: t('admin.tab_product_website'), perm: ['admin_ai_config'], superAdminOnly: true },
@@ -45,6 +53,8 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
     // If current tab isn't allowed, fall back to the first tab the user has access to
     const checkTabAccess = (tab) => {
         if (!tab) return true;
+        if (tab.cloudOnly && !isCloud) return false;
+        if (tab.selfHostedOnly && !isSelfHosted) return false;
         if (tab.superAdminOnly && !isSuperAdmin) return false;
         return tab.perm.some(p => hasPermission(p));
     };
@@ -181,6 +191,12 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                     ) : activeTab === 'subscriptions' ? (
                         <div className="absolute inset-0 overflow-hidden">
                             <SubscriptionsPanel />
+                        </div>
+                    ) : activeTab === 'licenses' ? (
+                        <div className="absolute inset-0 overflow-auto p-6">
+                            <div className="mx-auto max-w-3xl">
+                                <ServerLicensePanel />
+                            </div>
                         </div>
                     ) : activeTab === 'appearance' ? (
                         <div className="absolute inset-0">

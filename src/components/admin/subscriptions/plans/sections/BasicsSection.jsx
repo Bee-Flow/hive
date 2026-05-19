@@ -50,11 +50,11 @@ export function BasicsSection({ form, update }) {
 
             <Field
                 label="Tier"
-                hint="drives feature gating; required for Stripe-paid plans"
+                hint="Cloud subscription tier. 'community' / 'full' are reserved for self-hosted license keys."
             >
                 <Select value={form.tier} onChange={e => update('tier', e.target.value)}>
-                    <option value="">— Unset (community fallback) —</option>
-                    <option value="community">Community (free)</option>
+                    <option value="">— Unset (Free; community floor applies) —</option>
+                    <option value="pro">Pro</option>
                     <option value="enterprise">Enterprise</option>
                 </Select>
             </Field>

@@ -5,13 +5,14 @@ import EncryptionSetup from './pages/EncryptionSetup';
 import EmbedChat from './pages/EmbedChat';
 import DlpPreviewModal from './components/DlpPreviewModal';
 import ErrorBoundary from './components/ErrorBoundary';
-import { LicenseProvider } from './components/LicenseContext';
+import { LicenseProvider, RequireTier } from './components/LicenseContext';
 import NcOnboardingWizard from './components/NcOnboardingWizard';
 import NcOnboardingPending from './components/NcOnboardingPending';
 import NcBindingApprovalModal from './components/NcBindingApprovalModal';
 import ProductWebsite from './marketing/ProductWebsite';
 import LegalPage from './marketing/LegalPage';
 import HomePage from './marketing/HomePage';
+import PricingPage from './marketing/PricingPage';
 import privacyMd from './marketing/legal/privacy.md?raw';
 import termsMd from './marketing/legal/terms.md?raw';
 
@@ -216,7 +217,7 @@ const RESERVED_TOP_LEVEL = new Set([
     'dashboard', 'settings', 'embed', 'oauth', 'callback',
     'chat', 'd', 'a', 'agent',
     'org-settings', 'email-kb', 'ticket-assistant',
-    'privacy', 'terms',
+    'privacy', 'terms', 'pricing',
     '__cms_preview__',
 ]);
 
@@ -251,6 +252,9 @@ function AppRoot() {
     }
     if (window.location.pathname === '/terms') {
         return <LegalPage title="Terms of Service" source={termsMd} />;
+    }
+    if (window.location.pathname === '/pricing') {
+        return <PricingPage />;
     }
     // Path-based marketing-site gate: intercept `/` and any single-segment
     // path (e.g. `/about`, `/contact`) so they render the public product
@@ -1065,7 +1069,11 @@ function App() {
 
 
         if (currentPage === 'components') {
-            return routed('components', <ComponentBuilder onBack={() => navigateToPage('agents')} />);
+            return routed('components',
+                <RequireTier feature="component_designer" onNavigateToLicense={() => navigateToPage('settings')}>
+                    <ComponentBuilder onBack={() => navigateToPage('agents')} />
+                </RequireTier>
+            );
         }
 
         if (currentPage === 'agentDesignerAdvanced') {
@@ -1088,7 +1096,9 @@ function App() {
         if (currentPage === 'meetingNotes') {
             if (user?.featureFlags?.meeting_notes === false) return navigateToPage('agents');
             return routed('meetingNotes',
-                <MeetingNotesPage user={user} onBack={() => navigateToPage('agents')} />
+                <RequireTier feature="meeting_notes" onNavigateToLicense={() => navigateToPage('settings')}>
+                    <MeetingNotesPage user={user} onBack={() => navigateToPage('agents')} />
+                </RequireTier>
             );
         }
         if (currentPage === 'templates') {

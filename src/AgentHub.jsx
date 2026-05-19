@@ -5,6 +5,7 @@ import { v4 as uuidv4 } from 'uuid';
 // These components are on the main chat path; deferring them costs more
 // in flicker than they save in bundle size.
 import Sidebar from './components/Sidebar';
+import { RequireTier } from './components/LicenseContext';
 import InputArea from './components/InputArea';
 import WelcomeScreen from './components/WelcomeScreen';
 import MessageItem from './components/chat/MessageItem';
@@ -1802,13 +1803,17 @@ const AgentHub = ({
             <div className="flex-1 flex flex-col min-w-0 relative">
                 {showNotebooks ? (
                     /* Notebooks rendered inline in conversation area (same slot as
-                       Settings / Agent Designer) so the app sidebar stays visible. */
-                    <NotebooksPage
-                        user={user}
-                        onBack={onCloseNotebooks}
-                        initialNotebookId={initialNotebookId}
-                        onNotebookChange={onNotebookChange}
-                    />
+                       Settings / Agent Designer) so the app sidebar stays visible.
+                       Wrapped in RequireTier so community installs see the upgrade
+                       panel instead of a runtime 403 from /api/notebooks. */
+                    <RequireTier feature="notebooks">
+                        <NotebooksPage
+                            user={user}
+                            onBack={onCloseNotebooks}
+                            initialNotebookId={initialNotebookId}
+                            onNotebookChange={onNotebookChange}
+                        />
+                    </RequireTier>
                 ) : showSettings ? (
                     /* Settings rendered inline in conversation area — Open WebUI style */
                     <AdvancedSettings onBack={null} onNavigate={onNavigate} onLogout={onLogout} user={user} onUpdateUser={onUpdateUser} onClose={onCloseSettings} />
@@ -1872,11 +1877,16 @@ const AgentHub = ({
                         agents={agents}
                     />
                 ) : showEmailKB ? (
-                    /* Email Knowledge Base settings rendered inline */
-                    <EmailKBSettings
-                        user={user}
-                        onNavigateBack={onCloseEmailKB}
-                    />
+                    /* Email Knowledge Base settings rendered inline.
+                       Wrapped in RequireTier so community installs see the
+                       upgrade panel rather than an empty page when the
+                       backend gates `/api/ticket-assistant` at the router. */
+                    <RequireTier feature="ticket_assistant">
+                        <EmailKBSettings
+                            user={user}
+                            onNavigateBack={onCloseEmailKB}
+                        />
+                    </RequireTier>
                 ) : showMarketplace ? (
                     /* Agent Marketplace rendered inline in conversation area */
                     <AgentMarketplace
