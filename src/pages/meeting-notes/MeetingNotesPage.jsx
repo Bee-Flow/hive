@@ -20,19 +20,48 @@ function MeetingNotesInner({ user, onBack }) {
         return null;
     });
     const { openCapture } = useCapture();
-    const { version, consumeLastResult } = useRecorder();
+    const { version, consumeLastResult, lastResultId } = useRecorder();
     const isMobile = useMediaQuery('(max-width: 767px)');
 
     // When a capture finishes anywhere in the app, refresh the list and
-    // auto-select the new transcription if one is pending.
+    // auto-select the new transcription if one is pending. If the upload
+    // was transparently re-routed to a cloud provider (e.g. because the
+    // local CPU model couldn't handle the recording length), surface a
+    // soft notice so the user understands why.
+    const [fallbackNotice, setFallbackNotice] = useState(null);
+
+    // Handle results that completed while the page was *not* mounted: the
+    // upload finished from another route (e.g. the capture modal closed),
+    // and the user lands here with a pending id we still need to claim.
+    useEffect(() => {
+        if (!lastResultId) return;
+        reload().then(() => {
+            const { id, meta } = consumeLastResult();
+            if (id) setSelectedId(id);
+            if (meta?.providerFallback) setFallbackNotice(meta.providerFallback);
+        });
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [lastResultId]);
+
+    // Bump-driven refresh: catches subsequent uploads that finish while
+    // this page is open even if the consumer above already claimed an id.
     useEffect(() => {
         if (version === 0) return;
         reload().then(() => {
-            const id = consumeLastResult();
+            const { id, meta } = consumeLastResult();
             if (id) setSelectedId(id);
+            if (meta?.providerFallback) setFallbackNotice(meta.providerFallback);
         });
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [version]);
+
+    // Auto-dismiss the soft provider-fallback notice — it's informational,
+    // not actionable, so it shouldn't linger.
+    useEffect(() => {
+        if (!fallbackNotice) return undefined;
+        const t = setTimeout(() => setFallbackNotice(null), 10000);
+        return () => clearTimeout(t);
+    }, [fallbackNotice]);
 
     const onDeleted = (id) => {
         removeLocal(id);
@@ -48,12 +77,27 @@ function MeetingNotesInner({ user, onBack }) {
 
     return (
         <div className="h-full flex flex-col" style={{ background: 'var(--bg-primary)' }}>
+            {fallbackNotice && (
+                <div
+                    className="flex items-center justify-between gap-3 px-4 sm:px-6 py-2 text-xs border-b"
+                    style={{ background: 'color-mix(in srgb, var(--accent-primary) 8%, var(--bg-secondary))', borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}
+                >
+                    <span>
+                        Your recording was too long for the on-device model — transcribed via <strong>{fallbackNotice.to}</strong> instead.
+                    </span>
+                    <button
+                        type="button"
+                        onClick={() => setFallbackNotice(null)}
+                        className="text-xs underline opacity-80 hover:opacity-100"
+                    >Dismiss</button>
+                </div>
+            )}
             <div className="flex items-center gap-3 px-4 sm:px-6 py-3 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
-                <IconButton ariaLabel="Back" onClick={onBack} size="md"><ArrowLeft /></IconButton>
+                {onBack && <IconButton ariaLabel="Back" onClick={onBack} size="md"><ArrowLeft /></IconButton>}
                 <div className="flex-1 min-w-0">
                     <h1 className="text-lg sm:text-xl font-bold truncate" style={{ color: 'var(--text-primary)' }}>Meeting Notes</h1>
                     <p className="text-[11px] hidden sm:block" style={{ color: 'var(--text-muted)' }}>
-                        Record, upload, or send a bot to your meetings — get a transcript, summary and action items.
+                        Record or upload audio — get a transcript, summary and action items.
                     </p>
                 </div>
                 <button

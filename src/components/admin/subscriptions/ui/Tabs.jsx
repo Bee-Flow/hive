@@ -52,7 +52,7 @@ export function FilterPills({ value, onChange, options, multi = false, className
                         onClick={() => toggle(opt.value)}
                         className={`px-2.5 py-1 rounded-full text-[11px] font-semibold border transition-colors ${
                             active
-                                ? 'bg-blue-500/15 border-blue-500/40 text-blue-300'
+                                ? 'bg-blue-500/15 border-blue-500/40 text-blue-700 dark:text-blue-300'
                                 : 'bg-[var(--bg-tertiary)] border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
                         }`}
                     >

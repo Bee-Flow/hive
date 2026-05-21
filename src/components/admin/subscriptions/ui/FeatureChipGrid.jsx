@@ -33,7 +33,7 @@ export function FeatureChipGrid({ selected = [], onChange }) {
                         onClick={() => toggle(f.id)}
                         className={`flex items-center gap-2 px-2.5 py-2 rounded-lg text-[12.5px] font-medium border transition-colors ${
                             on
-                                ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-200'
+                                ? 'bg-emerald-500/10 border-emerald-500/40 text-emerald-700 dark:text-emerald-200'
                                 : 'bg-[var(--bg-tertiary)] border-[var(--border-default)] text-[var(--text-muted)] hover:text-[var(--text-primary)]'
                         }`}
                     >

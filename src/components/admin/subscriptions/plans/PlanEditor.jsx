@@ -1,11 +1,10 @@
 import React, { useMemo, useState } from 'react';
-import { ArrowLeft, ArrowRight, Save, Trash2, Settings, Shield, Sparkles, Euro, CalendarPlus, Eye } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Save, Trash2, Settings, Sparkles, Euro, CalendarPlus, Eye } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { IconButton } from '../ui/IconButton';
 import { Dot } from '../ui/Badge';
 import { usePlanForm } from './usePlanForm';
 import { BasicsSection }     from './sections/BasicsSection';
-import { LimitsSection }     from './sections/LimitsSection';
 import { FeaturesSection }   from './sections/FeaturesSection';
 import { PricingSection }    from './sections/PricingSection';
 import { TrialSection }      from './sections/TrialSection';
@@ -13,7 +12,6 @@ import { VisibilitySection } from './sections/VisibilitySection';
 
 const SECTIONS = [
     { id: 'basics',     label: 'Basics',     icon: Settings,     accent: 'sky' },
-    { id: 'limits',     label: 'Limits',     icon: Shield,       accent: 'teal' },
     { id: 'features',   label: 'Features',   icon: Sparkles,     accent: 'emerald' },
     { id: 'pricing',    label: 'Pricing',    icon: Euro,         accent: 'blue' },
     { id: 'trial',      label: 'Trial',      icon: CalendarPlus, accent: 'amber' },
@@ -22,7 +20,6 @@ const SECTIONS = [
 
 const SECTION_COMPONENTS = {
     basics:     BasicsSection,
-    limits:     LimitsSection,
     features:   FeaturesSection,
     pricing:    PricingSection,
     trial:      TrialSection,
@@ -31,7 +28,6 @@ const SECTION_COMPONENTS = {
 
 const ACCENT_ICON = {
     sky: 'text-sky-400',
-    teal: 'text-teal-400',
     emerald: 'text-emerald-400',
     blue: 'text-blue-400',
     amber: 'text-amber-400',

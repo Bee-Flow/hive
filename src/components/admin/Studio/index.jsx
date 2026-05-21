@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
-import { Bot, Sparkles, ListChecks, BookOpen, Globe } from 'lucide-react';
+import { Bot, Sparkles, ListChecks, BookOpen, Globe, Bug, Mic } from 'lucide-react';
 import useTranslation from '../../../hooks/useTranslation';
 import AgentStudio from '../AgentStudio';
 import AITasksDesigner from '../AITasksDesigner';
 import SkillsStudio from './SkillsStudio';
 import KBsStudio from './KBsStudio';
 import WebpagesPage from '../../../pages/WebpagesPage';
+import TestsStudio from './TestsStudio';
+import MeetingNotesPage from '../../../pages/meeting-notes/MeetingNotesPage';
 import { useLicenseContext } from '../../LicenseContext';
 
 // Unified Studio: a single shell hosting Agents, Skills, Knowledge Bases, and AI Tasks.
@@ -44,17 +46,29 @@ export default function Studio({
     // explicitly so a stale session can't keep the tab visible after a
     // downgrade.
     const canSeeWebpages = hasLicenseFeature('webpages') && !!(user?.canUseFeature?.webpages ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('webpages')));
+    // Mirrors the canSeeWebpages pattern — playwright_tests is enterprise-tier
+    // + beta-opt-in. canUseFeature already does the AND on the server side.
+    const canSeeTests = hasLicenseFeature('playwright_tests') && !!(user?.canUseFeature?.playwright_tests ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('playwright_tests')));
+    // Meeting Notes is enterprise + beta opt-in (mirrors webpages/tests). We
+    // intentionally rely on canUseFeature (server-resolved license × beta)
+    // rather than spot-checking betaFeatures so super-admin grants flow
+    // correctly down to ordinary org members.
+    const canSeeMeetingNotes = hasLicenseFeature('meeting_notes') && !!(user?.canUseFeature?.meeting_notes ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('meeting_notes')));
     const tabs = [
         { id: 'agents',    label: t('studio.tab.agents'),    icon: <Bot size={14} /> },
         { id: 'skills',    label: t('studio.tab.skills'),    icon: <Sparkles size={14} /> },
         { id: 'knowledge', label: t('studio.tab.knowledge'), icon: <BookOpen size={14} /> },
         { id: 'aiTasks',   label: t('studio.tab.ai_tasks'),  icon: <ListChecks size={14} /> },
         ...(canSeeWebpages ? [{ id: 'webpages', label: t('studio.tab.webpages') || 'Webpages', icon: <Globe size={14} /> }] : []),
+        ...(canSeeTests ? [{ id: 'tests', label: t('studio.tab.tests') || 'Tests', icon: <Bug size={14} /> }] : []),
+        ...(canSeeMeetingNotes ? [{ id: 'meetingNotes', label: t('studio.tab.meeting_notes') || 'Meeting Notes', icon: <Mic size={14} /> }] : []),
     ];
 
     const switchTo = (id) => {
         if (!onNavigate) return;
-        const seg = id === 'aiTasks' ? 'routines' : id;
+        const seg = id === 'aiTasks' ? 'routines'
+            : id === 'meetingNotes' ? 'meeting-notes'
+            : id;
         onNavigate(`studio/${seg}`);
     };
 
@@ -127,6 +141,20 @@ export default function Studio({
                         embedded={true}
                         user={user}
                         onEditingChange={handleAutomationEditing}
+                    />
+                )}
+                {section === 'tests' && (
+                    <TestsStudio
+                        user={user}
+                        onNavigate={onNavigate}
+                        hasPermission={hasPermission}
+                    />
+                )}
+                {section === 'meetingNotes' && (
+                    <MeetingNotesPage
+                        user={user}
+                        embedded
+                        onBack={null}
                     />
                 )}
             </div>

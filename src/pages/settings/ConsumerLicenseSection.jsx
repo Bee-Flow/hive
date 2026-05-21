@@ -1,12 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { CreditCard, MessageSquare, Zap, DollarSign, Bot, Database, BarChart3, ArrowUpRight, Check, Crown, Loader2, ExternalLink, Sparkles } from 'lucide-react';
+import { CreditCard, Zap, DollarSign, Bot, Database, BarChart3, ArrowUpRight, Check, Crown, Loader2, ExternalLink, Sparkles } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
-import { getCostVisibility } from '../../components/admin/subscriptions/ui/costVisibility';
 import { useDeploymentMode } from '../../hooks/useDeploymentMode';
 
 /* ── Usage bar (matches OrgInfoPanel style) ─────────────────────────────── */
-const UsageBar = ({ label, icon: Icon, used, limit, unit, color = '#8b5cf6' }) => {
+const UsageBar = ({ label, icon: Icon, used, limit, unit, color = '#3b82f6' }) => {
     const isUnlimited = limit === null || limit === undefined || limit === -1;
     const pct = isUnlimited ? 0 : limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
     const isWarning = pct >= 80 && pct < 95;
@@ -188,16 +187,12 @@ const ConsumerLicenseSection = ({ user }) => {
     const hasActiveSub = subscription && ['active', 'trialing'].includes(subscription.status);
     const hasBilling = subscription?.stripe_customer_id;
 
-    // Flat-rate consumers don't see internal € amounts — only % of quota.
-    // PAYG consumers do, because that's literally their Stripe bill.
-    const { showCost } = getCostVisibility(data?.billing_model);
-    const msgPct = limits?.max_messages_per_month
-        ? Math.min(100, Math.round(((usage?.total_calls || 0) / limits.max_messages_per_month) * 100))
-        : 0;
-    const tokPct = limits?.max_tokens_per_month
-        ? Math.min(100, Math.round(((usage?.total_tokens || 0) / limits.max_tokens_per_month) * 100))
-        : 0;
-    const showUpgradeCta = !showCost && Math.max(msgPct, tokPct) >= 80 && stripeEnabled && plans.length > 0;
+    // Customer-facing: marked-up AI usage cost is the only AI figure shown.
+    // Backend already applies markup_percent on `total_billed_cost`.
+    const billedCost = Number(usage?.total_billed_cost) || 0;
+    const costCap = (limits?.max_cost_per_month && limits.max_cost_per_month !== -1) ? limits.max_cost_per_month : null;
+    const costPct = costCap ? Math.min(100, Math.round((billedCost / costCap) * 100)) : 0;
+    const showUpgradeCta = costPct >= 80 && stripeEnabled && plans.length > 0;
     const scrollToPlans = () => {
         const el = document.getElementById('consumer-plan-picker');
         if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -246,7 +241,7 @@ const ConsumerLicenseSection = ({ user }) => {
                     <div className="flex items-center justify-between mb-4">
                         <div className="flex items-center gap-3">
                             <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{
-                                background: hasActiveSub ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #3b82f6, #8b5cf6)'
+                                background: hasActiveSub ? '#10b981' : '#3b82f6'
                             }}>
                                 {hasActiveSub ? <Crown className="w-5 h-5 text-white" /> : <CreditCard className="w-5 h-5 text-white" />}
                             </div>
@@ -281,45 +276,24 @@ const ConsumerLicenseSection = ({ user }) => {
                     </div>
                 </div>
 
-                {/* Quick Stats */}
-                <div className="grid grid-cols-3 divide-x divide-[var(--border-subtle)] border-t border-[var(--border-subtle)]">
+                {/* Quick Stats — AI usage cost only */}
+                <div className="border-t border-[var(--border-subtle)]">
                     <div className="p-4 text-center">
-                        <div className="text-lg font-bold text-[var(--text-primary)]">{(usage?.total_calls || 0).toLocaleString()}</div>
-                        <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">Messages</div>
-                    </div>
-                    <div className="p-4 text-center">
-                        <div className="text-lg font-bold text-[var(--text-primary)]">
-                            {(usage?.total_tokens || 0) >= 1_000_000 ? `${((usage?.total_tokens || 0) / 1_000_000).toFixed(1)}M` :
-                             (usage?.total_tokens || 0) >= 1_000 ? `${((usage?.total_tokens || 0) / 1_000).toFixed(1)}K` :
-                             (usage?.total_tokens || 0).toLocaleString()}
-                        </div>
-                        <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">Tokens</div>
-                    </div>
-                    <div className="p-4 text-center">
-                        {showCost ? (
-                            <>
-                                <div className="text-lg font-bold text-[var(--text-primary)]">€{Number(usage?.total_estimated_cost || 0).toFixed(2)}</div>
-                                <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">Cost</div>
-                            </>
-                        ) : (
-                            <>
-                                <div className="text-lg font-bold text-[var(--text-primary)]">{msgPct}%</div>
-                                <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">Plan used</div>
-                            </>
-                        )}
+                        <div className="text-2xl font-bold text-[var(--text-primary)]">€{billedCost.toFixed(2)}</div>
+                        <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">AI usage this period</div>
                     </div>
                 </div>
             </div>
 
-            {/* Upgrade CTA — surfaces when a flat-plan consumer nears their quota */}
+            {/* Upgrade CTA — surfaces when AI usage cost approaches the plan cap */}
             {showUpgradeCta && (
                 <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex items-center gap-3">
                     <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
                     <div className="flex-1 min-w-0">
                         <p className="text-[13px] font-semibold text-[var(--text-primary)]">
-                            You've used {Math.max(msgPct, tokPct)}% of your plan this period.
+                            You've used {costPct}% of your AI usage budget this period.
                         </p>
-                        <p className="text-[11.5px] text-[var(--text-muted)]">Upgrade for more messages and the higher model tiers.</p>
+                        <p className="text-[11.5px] text-[var(--text-muted)]">Upgrade to a higher plan for more AI usage.</p>
                     </div>
                     <button
                         onClick={scrollToPlans}
@@ -330,22 +304,14 @@ const ConsumerLicenseSection = ({ user }) => {
                 </div>
             )}
 
-            {/* Usage Bars */}
+            {/* Usage Bars — AI usage cost only */}
             <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5 space-y-4">
                 <div className="flex items-center gap-2 mb-1">
                     <BarChart3 className="w-4 h-4 text-[var(--text-muted)]" />
                     <h3 className="text-sm font-semibold text-[var(--text-primary)]">Usage This Period</h3>
                 </div>
 
-                <UsageBar label="Messages" icon={MessageSquare} used={usage?.total_calls || 0} limit={limits?.max_messages_per_month} color="#3b82f6" />
-                {showCost ? (
-                    <UsageBar label="Cost" icon={DollarSign} used={usage?.total_estimated_cost || 0} limit={limits?.max_cost_per_month} unit="€" color="#10b981" />
-                ) : (
-                    <p className="text-[11.5px] text-[var(--text-muted)] leading-relaxed pl-1">
-                        Your plan includes a flat-rate price — there are no per-message charges to track.
-                    </p>
-                )}
-                <UsageBar label="Tokens" icon={Zap} used={usage?.total_tokens || 0} limit={limits?.max_tokens_per_month} color="#3b82f6" />
+                <UsageBar label="Cost" icon={DollarSign} used={billedCost} limit={limits?.max_cost_per_month} unit="€" color="#10b981" />
             </div>
 
             {/* Plan Limits Grid */}
@@ -355,8 +321,6 @@ const ConsumerLicenseSection = ({ user }) => {
                     {[
                         { label: 'Agents', icon: Bot, val: limits?.max_agents, color: '#f59e0b' },
                         { label: 'Knowledge Sources', icon: Database, val: limits?.max_knowledge_sources, color: '#10b981' },
-                        { label: 'Messages / Month', icon: MessageSquare, val: limits?.max_messages_per_month, color: '#3b82f6' },
-                        showCost ? { label: 'Cost / Month', icon: DollarSign, val: limits?.max_cost_per_month, color: '#10b981', prefix: '€' } : null,
                     ].filter(Boolean).map(item => {
                         const Icon = item.icon;
                         const isUnlimited = item.val === null || item.val === undefined || item.val === -1;
@@ -430,18 +394,6 @@ const ConsumerLicenseSection = ({ user }) => {
 
                                         {/* Feature highlights */}
                                         <div className="space-y-1.5 mb-4">
-                                            {plan.max_messages_per_month && (
-                                                <div className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
-                                                    <Check className="w-3 h-3 text-emerald-500 shrink-0" />
-                                                    {plan.max_messages_per_month.toLocaleString()} messages/mo
-                                                </div>
-                                            )}
-                                            {plan.max_cost_per_month && (
-                                                <div className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
-                                                    <Check className="w-3 h-3 text-emerald-500 shrink-0" />
-                                                    {sym}{plan.max_cost_per_month} cost budget
-                                                </div>
-                                            )}
                                             {plan.max_agents && (
                                                 <div className="flex items-center gap-2 text-[11px] text-[var(--text-secondary)]">
                                                     <Check className="w-3 h-3 text-emerald-500 shrink-0" />
@@ -475,7 +427,7 @@ const ConsumerLicenseSection = ({ user }) => {
                                                 disabled={!!checkoutLoading}
                                                 className="w-full py-2.5 rounded-lg text-xs font-bold text-white transition-all duration-200 flex items-center justify-center gap-1.5"
                                                 style={{
-                                                    background: checkoutLoading === plan.id ? '#6366f1' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                                                    background: '#3b82f6',
                                                     opacity: checkoutLoading && checkoutLoading !== plan.id ? 0.5 : 1,
                                                     cursor: checkoutLoading ? 'wait' : 'pointer',
                                                 }}

@@ -1,4 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import {
+    Bookmark, User, Folder, Settings as SettingsIcon, Workflow, FileText, Building2,
+    Lightbulb, CheckSquare, Plus, X, Search, Edit2, Trash2, Download, ChevronLeft,
+} from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { formatRelativeTime } from '../utils/dateFormatters';
 
@@ -215,13 +219,13 @@ const MemoryPanel = ({ onClose, projectId }) => {
     };
 
     const typeConfig = {
-        instruction: { icon: '📌', label: 'Instruction', color: '#fb923c', bg: 'rgba(249, 115, 22, 0.1)', border: 'rgba(249, 115, 22, 0.25)' },
-        person: { icon: '👤', label: 'Person', color: '#f472b6', bg: 'rgba(236, 72, 153, 0.1)', border: 'rgba(236, 72, 153, 0.25)' },
-        project: { icon: '📁', label: 'Project', color: '#38bdf8', bg: 'rgba(14, 165, 233, 0.1)', border: 'rgba(14, 165, 233, 0.25)' },
-        preference: { icon: '⚙️', label: 'Preference', color: '#c084fc', bg: 'rgba(168, 85, 247, 0.1)', border: 'rgba(168, 85, 247, 0.25)' },
-        workflow: { icon: '🔄', label: 'Workflow', color: '#fbbf24', bg: 'rgba(245, 158, 11, 0.1)', border: 'rgba(245, 158, 11, 0.25)' },
-        fact: { icon: '📋', label: 'Fact', color: '#60a5fa', bg: 'rgba(59, 130, 246, 0.1)', border: 'rgba(59, 130, 246, 0.25)' },
-        context: { icon: '🏢', label: 'Context', color: '#4ade80', bg: 'rgba(34, 197, 94, 0.1)', border: 'rgba(34, 197, 94, 0.25)' },
+        instruction: { Icon: Bookmark,    label: 'Instruction', color: '#d97706', bg: 'rgba(245, 158, 11, 0.1)', border: 'rgba(245, 158, 11, 0.25)' },
+        person:      { Icon: User,        label: 'Person',      color: '#0d9488', bg: 'rgba(13, 148, 136, 0.1)', border: 'rgba(13, 148, 136, 0.25)' },
+        project:     { Icon: Folder,      label: 'Project',     color: '#2563eb', bg: 'rgba(37, 99, 235, 0.1)',  border: 'rgba(37, 99, 235, 0.25)' },
+        preference:  { Icon: SettingsIcon,label: 'Preference',  color: '#475569', bg: 'rgba(71, 85, 105, 0.1)',  border: 'rgba(71, 85, 105, 0.25)' },
+        workflow:    { Icon: Workflow,    label: 'Workflow',    color: '#16a34a', bg: 'rgba(22, 163, 74, 0.1)',  border: 'rgba(22, 163, 74, 0.25)' },
+        fact:        { Icon: FileText,    label: 'Fact',        color: '#525252', bg: 'rgba(82, 82, 82, 0.1)',   border: 'rgba(82, 82, 82, 0.25)' },
+        context:     { Icon: Building2,   label: 'Context',     color: '#0891b2', bg: 'rgba(8, 145, 178, 0.1)',  border: 'rgba(8, 145, 178, 0.25)' },
     };
 
     // Types available when adding a memory manually, scoped by context:
@@ -259,17 +263,11 @@ const MemoryPanel = ({ onClose, projectId }) => {
                         {onClose && (
                             <button onClick={onClose} className="p-1.5 -ml-1 rounded-lg transition-colors hover:bg-black/5"
                                 style={{ color: 'var(--text-muted)' }} title="Back to Settings">
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-                                </svg>
+                                <ChevronLeft className="w-5 h-5" />
                             </button>
                         )}
-                        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{
-                            background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.2), rgba(99, 102, 241, 0.2))',
-                        }}>
-                            <svg className="w-5 h-5" style={{ color: '#c084fc' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                            </svg>
+                        <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'rgba(245, 158, 11, 0.15)' }}>
+                            <Lightbulb className="w-5 h-5" style={{ color: '#d97706' }} />
                         </div>
                         <div>
                             <h2 className="font-semibold" style={{ color: 'var(--text-primary)' }}>{projectId ? 'Project Memory' : 'Memory'}</h2>
@@ -285,16 +283,14 @@ const MemoryPanel = ({ onClose, projectId }) => {
                             onClick={() => { setIsSelectMode(!isSelectMode); setSelectedIds(new Set()); }}
                             className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all"
                             style={{
-                                background: isSelectMode ? 'rgba(99, 102, 241, 0.15)' : 'transparent',
-                                color: isSelectMode ? '#818cf8' : 'var(--text-muted)',
-                                border: `1px solid ${isSelectMode ? 'rgba(99, 102, 241, 0.3)' : 'var(--border-subtle)'}`,
+                                background: isSelectMode ? 'rgba(245, 158, 11, 0.1)' : 'transparent',
+                                color: isSelectMode ? 'var(--text-primary)' : 'var(--text-muted)',
+                                border: `1px solid ${isSelectMode ? 'rgba(245, 158, 11, 0.3)' : 'var(--border-subtle)'}`,
                             }}
                             title={isSelectMode ? 'Exit select mode' : 'Select multiple'}
                             data-testid="memory-select-toggle"
                         >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                            </svg>
+                            <CheckSquare className="w-4 h-4" />
                             {isSelectMode ? 'Cancel' : 'Select'}
                         </button>
                         <button
@@ -305,9 +301,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                                 color: showAddForm ? 'var(--text-muted)' : 'white',
                             }}
                         >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={showAddForm ? "M6 18L18 6M6 6l12 12" : "M12 4v16m8-8H4"} />
-                            </svg>
+                            {showAddForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
                             {showAddForm ? 'Cancel' : 'Add Memory'}
                         </button>
                     </div>
@@ -316,9 +310,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                 {/* Search + Filter */}
                 <div className="flex gap-2 items-center">
                     <div className="relative flex-1">
-                        <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--text-muted)' }}>
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
+                        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4" style={{ color: 'var(--text-muted)' }} />
                         <input
                             type="text"
                             value={searchTerm}
@@ -353,7 +345,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                                     }}
                                     data-testid={`memory-filter-${key}`}
                                 >
-                                    <span style={{ fontSize: '11px' }}>{cfg.icon}</span>
+                                    <cfg.Icon className="w-3 h-3" />
                                     {typeCounts[key]}
                                 </button>
                             )
@@ -378,7 +370,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                                         border: `1px solid ${newMemory.type === key ? cfg.border : 'var(--border-subtle)'}`,
                                     }}
                                 >
-                                    <span>{cfg.icon}</span>
+                                    <cfg.Icon className="w-3.5 h-3.5" />
                                     {cfg.label}
                                 </button>
                             ))}
@@ -414,12 +406,10 @@ const MemoryPanel = ({ onClose, projectId }) => {
                         <div className="text-center py-16">
                             <div style={{
                                 width: '64px', height: '64px', borderRadius: '16px', margin: '0 auto 16px',
-                                background: 'linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(99, 102, 241, 0.15))',
+                                background: 'rgba(245, 158, 11, 0.12)',
                                 display: 'flex', alignItems: 'center', justifyContent: 'center',
                             }}>
-                                <svg className="w-7 h-7" style={{ color: '#c084fc' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
-                                </svg>
+                                <Lightbulb className="w-7 h-7" style={{ color: '#d97706' }} />
                             </div>
                             {memories.length === 0 ? (
                                 <>
@@ -440,7 +430,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                                     <div className="flex items-center gap-3">
                                         <button onClick={selectedIds.size === filteredMemories.length ? deselectAll : selectAll}
                                             className="text-xs font-medium px-2.5 py-1 rounded-md transition-all"
-                                            style={{ color: 'var(--accent-primary)', background: 'rgba(99, 102, 241, 0.1)' }}
+                                            style={{ color: 'var(--accent-primary)', background: 'rgba(245, 158, 11, 0.1)' }}
                                             data-testid="memory-select-all-btn">
                                             {selectedIds.size === filteredMemories.length ? 'Deselect All' : 'Select All'}
                                         </button>
@@ -453,9 +443,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                                             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all hover:bg-red-500/20"
                                             style={{ color: '#f87171' }}
                                             data-testid="memory-bulk-delete-btn">
-                                            <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                            </svg>
+                                            <Trash2 className="w-3.5 h-3.5" />
                                             Delete {selectedIds.size}
                                         </button>
                                     )}
@@ -468,8 +456,8 @@ const MemoryPanel = ({ onClose, projectId }) => {
                                         key={memory.id}
                                         className={`rounded-xl p-4 transition-all group ${isSelectMode ? 'cursor-pointer' : ''}`}
                                         style={{
-                                            background: selectedIds.has(memory.id) ? 'rgba(99, 102, 241, 0.08)' : 'var(--bg-secondary)',
-                                            border: selectedIds.has(memory.id) ? '1px solid rgba(99, 102, 241, 0.3)' : '1px solid var(--border-subtle)',
+                                            background: selectedIds.has(memory.id) ? 'rgba(245, 158, 11, 0.08)' : 'var(--bg-secondary)',
+                                            border: selectedIds.has(memory.id) ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid var(--border-subtle)',
                                             borderLeft: `3px solid ${cfg.color}`,
                                         }}
                                         onClick={isSelectMode ? () => toggleSelect(memory.id) : undefined}
@@ -491,9 +479,9 @@ const MemoryPanel = ({ onClose, projectId }) => {
                                             )}
                                             <div
                                                 className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5"
-                                                style={{ background: cfg.bg, fontSize: '14px' }}
+                                                style={{ background: cfg.bg }}
                                             >
-                                                {cfg.icon}
+                                                <cfg.Icon className="w-4 h-4" style={{ color: cfg.color }} />
                                             </div>
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center gap-2 mb-1">
@@ -551,9 +539,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                                                         title="Edit"
                                                         data-testid={`memory-edit-${memory.id}`}
                                                     >
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                                                        </svg>
+                                                        <Edit2 className="w-4 h-4" />
                                                     </button>
                                                     <button
                                                         onClick={() => handleDelete(memory.id)}
@@ -562,9 +548,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                                                         title="Delete"
                                                         data-testid={`memory-delete-${memory.id}`}
                                                     >
-                                                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                                                        </svg>
+                                                        <Trash2 className="w-4 h-4" />
                                                     </button>
                                                 </div>
                                             )}
@@ -599,9 +583,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                         style={{ color: '#f87171' }}
                         data-testid="memory-clear-all"
                     >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
-                        </svg>
+                        <Trash2 className="w-3.5 h-3.5" />
                         Clear All
                     </button>
                     <button
@@ -610,9 +592,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                         style={{ color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}
                         data-testid="memory-export"
                     >
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                        </svg>
+                        <Download className="w-3.5 h-3.5" />
                         Export JSON
                     </button>
                 </div>

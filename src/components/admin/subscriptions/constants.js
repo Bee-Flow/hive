@@ -21,16 +21,10 @@ export const FEATURE_OPTIONS = [
 ];
 
 export const LIMIT_FIELDS = [
-    { key: 'max_messages_per_month',  label: 'Total Messages / Month', type: 'number' },
-    { key: 'max_tokens_per_month',    label: 'Tokens / Month',         type: 'number' },
-    { key: 'max_cost_per_month',      label: 'Cost Cap / Month (€)',   type: 'currency' },
-    { key: 'max_users',               label: 'Max Users',              type: 'number' },
-    { key: 'max_agents',              label: 'Max Agents',             type: 'number' },
-    { key: 'max_knowledge_sources',   label: 'Max Knowledge Sources',  type: 'number' },
-];
-
-export const AGENT_TYPES = [
-    { key: 'chat', label: 'Chat Agents', dot: 'bg-blue-500' },
+    { key: 'max_cost_per_month',      label: 'Cost cap / month (€)',  type: 'currency' },
+    { key: 'max_users',               label: 'Max users',             type: 'number' },
+    { key: 'max_agents',              label: 'Max agents',            type: 'number' },
+    { key: 'max_knowledge_sources',   label: 'Max knowledge sources', type: 'number' },
 ];
 
 export const TIER_PRESETS = ['community', 'enterprise', 'full'];

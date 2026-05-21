@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useRef, useState } from 'react';
+import React, { createContext, useContext, useLayoutEffect, useRef, useState } from 'react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import AppIcon from '../../AppIcon';
 
@@ -32,16 +32,103 @@ export function FieldRow({ label, hint, children }) {
     );
 }
 
-export function TextField({ value, onChange, placeholder, label, hint }) {
+/**
+ * AutoTextarea — a single-line-looking textarea that grows to fit its
+ * content. Replaces <input type="text"> for any field whose visible
+ * output is real prose (heading / body / label / …): an <input> silently
+ * strips newlines, a textarea preserves them. Starts at one row, never
+ * shows a scrollbar or drag handle, and re-measures on every value change.
+ */
+export function AutoTextarea({ value, onChange, placeholder, className, ariaLabel, onKeyDown }) {
+    const ref = useRef(null);
+    const resize = () => {
+        const el = ref.current;
+        if (!el) return;
+        el.style.height = 'auto';
+        el.style.height = `${el.scrollHeight}px`;
+    };
+    // useLayoutEffect (not useEffect) so the height is correct before the
+    // browser paints — avoids a one-frame flash at the default rows={1}
+    // height when a field mounts with multi-line content.
+    useLayoutEffect(() => { resize(); }, [value]);
+    return (
+        <textarea
+            ref={ref}
+            rows={1}
+            className={className}
+            style={{ resize: 'none', overflow: 'hidden' }}
+            value={value || ''}
+            placeholder={placeholder}
+            aria-label={ariaLabel}
+            onChange={(e) => onChange(e.target.value)}
+            onInput={resize}
+            onKeyDown={onKeyDown}
+        />
+    );
+}
+
+/**
+ * AlignControl — a compact 3-button icon group (left / center / right)
+ * for a single text field's alignment. `value` is the *resolved* current
+ * alignment (callers pass `data.{field}Align || data.align || 'left'`);
+ * `onChange` fires only on an explicit click, so the key is written into
+ * block data lazily — never seeded as a default.
+ */
+export function AlignControl({ value, onChange }) {
+    const current = (value === 'center' || value === 'right') ? value : 'left';
+    const OPTIONS = [
+        { v: 'left',   icon: 'AlignLeft',   title: 'Align left' },
+        { v: 'center', icon: 'AlignCenter', title: 'Align center' },
+        { v: 'right',  icon: 'AlignRight',  title: 'Align right' },
+    ];
+    return (
+        <div
+            className="inline-flex w-fit rounded-md border border-[var(--border-default)] overflow-hidden"
+            role="group"
+            aria-label="Text alignment"
+        >
+            {OPTIONS.map((o, i) => {
+                const active = current === o.v;
+                return (
+                    <button
+                        key={o.v}
+                        type="button"
+                        title={o.title}
+                        aria-pressed={active}
+                        onClick={() => onChange(o.v)}
+                        className={`px-2 py-1 transition-colors ${i > 0 ? 'border-l border-[var(--border-default)]' : ''} ${
+                            active
+                                ? 'bg-[var(--accent-primary)] text-white'
+                                : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'
+                        }`}
+                    >
+                        <AppIcon name={o.icon} className="w-3.5 h-3.5" />
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
+/**
+ * TextField — a labelled text field. Renders an auto-growing textarea so
+ * line breaks survive. When `onAlignChange` is supplied it also shows an
+ * AlignControl directly below the field for that field's own alignment
+ * (`align` is the resolved current value).
+ */
+export function TextField({ value, onChange, placeholder, label, hint, align, onAlignChange }) {
     return (
         <FieldRow label={label} hint={hint}>
-            <input
-                type="text"
-                className={inputClass}
-                value={value || ''}
-                onChange={(e) => onChange(e.target.value)}
+            <AutoTextarea
+                value={value}
+                onChange={onChange}
                 placeholder={placeholder}
+                className={inputClass}
+                ariaLabel={label}
             />
+            {typeof onAlignChange === 'function' ? (
+                <AlignControl value={align} onChange={onAlignChange} />
+            ) : null}
         </FieldRow>
     );
 }
@@ -95,7 +182,23 @@ export function IconField({ value, onChange, label }) {
     );
 }
 
-export function ImageField({ value, onChange, label }) {
+export function ImageField({
+    value,
+    onChange,
+    label,
+    // Optional — drives the <input type="file"> accept attribute. Defaults
+    // to `image/*` so existing call sites stay unchanged. The Media + Text
+    // editor passes `video/mp4,video/webm` for its silent-video kind.
+    accept = 'image/*',
+    // Optional — switches the thumbnail/preview between an <img> tag and
+    // an inline <video> tag. Both are sized identically by the surrounding
+    // CSS box. Callers that don't pass this default to 'image'.
+    previewKind = 'image',
+    // Optional — surfaces in the upload button + placeholder text so the
+    // user knows what kind of file is expected.
+    uploadLabel,
+    placeholder,
+}) {
     const [uploading, setUploading] = useState(false);
     const [error, setError] = useState(null);
 
@@ -123,11 +226,18 @@ export function ImageField({ value, onChange, label }) {
         }
     };
 
+    const previewIsVideo = previewKind === 'video';
     return (
         <FieldRow label={label}>
             <div className="flex items-start gap-3">
                 <div className="w-16 h-16 rounded-md bg-[var(--bg-tertiary)] border border-[var(--border-default)] overflow-hidden flex items-center justify-center text-xs text-[var(--text-muted)]">
-                    {value ? <img src={value} alt="" className="w-full h-full object-contain" /> : '—'}
+                    {value ? (
+                        previewIsVideo ? (
+                            <video src={value} muted autoPlay loop playsInline className="w-full h-full object-contain" />
+                        ) : (
+                            <img src={value} alt="" className="w-full h-full object-contain" />
+                        )
+                    ) : '—'}
                 </div>
                 <div className="flex-1 flex flex-col gap-2">
                     <input
@@ -135,14 +245,14 @@ export function ImageField({ value, onChange, label }) {
                         className={inputClass}
                         value={value || ''}
                         onChange={(e) => onChange(e.target.value)}
-                        placeholder="https://… or /api/cms/asset/cms/…"
+                        placeholder={placeholder || 'https://… or /api/cms/asset/cms/…'}
                     />
                     <div className="flex items-center gap-2">
                         <label className="px-3 py-1.5 text-xs rounded-md cursor-pointer bg-[var(--bg-tertiary)] border border-[var(--border-default)] hover:border-[var(--accent-primary)] transition-colors">
-                            {uploading ? 'Uploading…' : 'Upload image'}
+                            {uploading ? 'Uploading…' : (uploadLabel || 'Upload image')}
                             <input
                                 type="file"
-                                accept="image/*"
+                                accept={accept}
                                 className="hidden"
                                 disabled={uploading}
                                 onChange={(e) => handleFile(e.target.files?.[0])}
@@ -168,8 +278,15 @@ export function ImageField({ value, onChange, label }) {
 /**
  * RepeatableList — generic add/remove/reorder for an array field.
  * `renderItem(item, update)` is responsible for rendering one row's fields.
+ *
+ * `duplicateItem` is opt-in: when provided, the row header shows a
+ * "Duplicate" button between ↓ and Remove. The callback receives the
+ * source item and returns the clone (callers can rename it, mutate
+ * nested fields, etc.); the clone is inserted directly after the source.
+ * When omitted, the button isn't rendered — no other repeater sees any
+ * change.
  */
-export function RepeatableList({ items = [], onChange, renderItem, makeNew, label, addLabel = 'Add item', itemLabel, collapsible = false }) {
+export function RepeatableList({ items = [], onChange, renderItem, makeNew, label, addLabel = 'Add item', itemLabel, collapsible = false, duplicateItem }) {
     const update = (idx, next) => {
         const copy = [...items];
         copy[idx] = next;
@@ -182,6 +299,13 @@ export function RepeatableList({ items = [], onChange, renderItem, makeNew, labe
         const copy = [...items];
         [copy[idx], copy[j]] = [copy[j], copy[idx]];
         onChange(copy);
+    };
+    const duplicate = (idx) => {
+        if (typeof duplicateItem !== 'function') return;
+        const clone = duplicateItem(items[idx]);
+        const next = [...items];
+        next.splice(idx + 1, 0, clone);
+        onChange(next);
     };
 
     // Collapse state — UI-only, NOT persisted. Keyed by item.id so that
@@ -271,6 +395,10 @@ export function RepeatableList({ items = [], onChange, renderItem, makeNew, labe
                                         className="px-2 py-0.5 text-xs rounded hover:bg-[var(--bg-tertiary)] disabled:opacity-30">↑</button>
                                 <button type="button" onClick={() => move(idx,  1)} disabled={idx === items.length - 1}
                                         className="px-2 py-0.5 text-xs rounded hover:bg-[var(--bg-tertiary)] disabled:opacity-30">↓</button>
+                                {typeof duplicateItem === 'function' ? (
+                                    <button type="button" onClick={() => duplicate(idx)}
+                                            className="px-2 py-0.5 text-xs rounded text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]">Duplicate</button>
+                                ) : null}
                                 <button type="button" onClick={() => remove(idx)}
                                         className="px-2 py-0.5 text-xs rounded text-red-400 hover:bg-red-500/10">Remove</button>
                             </div>

@@ -7,7 +7,13 @@ export default function useTranscription(id) {
     const [error, setError] = useState(null);
     const mounted = useRef(true);
 
-    useEffect(() => () => { mounted.current = false; }, []);
+    // React 18 Strict Mode runs effects mount → unmount → mount in dev. Resetting
+    // `mounted.current` on every mount keeps the guard correct for the *current*
+    // mounted instance (otherwise the remount sees `false` and never updates).
+    useEffect(() => {
+        mounted.current = true;
+        return () => { mounted.current = false; };
+    }, []);
 
     useEffect(() => {
         if (!id) { setData(null); return; }

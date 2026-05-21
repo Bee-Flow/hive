@@ -4,7 +4,7 @@ const CaptureContext = createContext(null);
 
 export function CaptureProvider({ children }) {
     const [open, setOpen] = useState(false);
-    const [mode, setMode] = useState(null); // null = choose tile screen; 'record' | 'upload' | 'bot'
+    const [mode, setMode] = useState(null); // null = choose tile screen; 'record' | 'upload'
 
     const openCapture = useCallback((initialMode = null) => {
         setMode(initialMode);

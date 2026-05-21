@@ -169,11 +169,23 @@ export function TranslationProvider({ children }) {
     }, []);
 
     /**
-     * t(key, interpolation?) — translate a key
-     * Falls back: server strings → EN_DEFAULTS → raw key
+     * t(key, fallbackOrParams?, params?) — translate a key.
+     *
+     * Supported signatures:
+     *   t('org.cost')                          → strings['org.cost'] || EN_DEFAULTS['org.cost'] || 'org.cost'
+     *   t('org.cost', 'Cost')                  → string fallback used when key is missing in both server strings AND EN_DEFAULTS
+     *   t('hello', { name: 'Tom' })            → interpolate "{name}" placeholders
+     *   t('greet', 'Hi {name}', { name: 'T' }) → fallback + interpolation
+     *
+     * Resolution order: server strings → EN_DEFAULTS → string fallback → raw key.
      */
-    const t = useCallback((key, params) => {
-        let value = strings[key] || EN_DEFAULTS[key] || key;
+    const t = useCallback((key, fallbackOrParams, paramsArg) => {
+        const hasStringFallback = typeof fallbackOrParams === 'string';
+        const params = hasStringFallback ? paramsArg : fallbackOrParams;
+        let value = strings[key] || EN_DEFAULTS[key];
+        if (value === undefined || value === null) {
+            value = hasStringFallback ? fallbackOrParams : key;
+        }
         if (params && typeof params === 'object') {
             for (const [k, v] of Object.entries(params)) {
                 value = value.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));

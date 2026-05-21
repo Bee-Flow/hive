@@ -3,10 +3,12 @@ import { authFetch } from '../../../utils/helpers';
 import AppIcon from '../../AppIcon';
 import { Toggle, CreatePageContext } from './fields';
 import { BLOCK_CATALOGUE, BLOCK_EDITORS, BLOCK_DEFAULTS, HeaderEditor, FooterEditor } from './editors';
-import PageList from './PageList';
+import PageList, { SaveTemplateDialog } from './PageList';
+import { ToastHost, showToast } from '../guardrails/Toast';
 import BlockList from './BlockList';
 import SitemapView from './SitemapView';
 import SiteSwitcher from './SiteSwitcher';
+import VersionSwitcher from './VersionSwitcher';
 import DesignEditor from './DesignEditor';
 import BlockStyleEditor from './BlockStyleEditor';
 import { cmsApi } from './cmsApi';
@@ -155,6 +157,13 @@ export default function ProductWebsitePanel() {
     const [activeBlockId, setActiveBlockId]   = useState(null);
     const [blockEditorTab, setBlockEditorTab] = useState('content'); // 'content' | 'style'
     const [rightView, setRightView]           = useState('preview'); // 'preview' | 'sitemap'
+    // Page templates — global list, summary shape (no blocks payload).
+    // Loaded once on mount and refreshed after save/delete. `pendingTemplatePage`
+    // holds the page whose context-menu opened the Save dialog (null = no
+    // dialog open). The blocks for that page are read out of `pages` state
+    // when the user confirms the save.
+    const [templates, setTemplates]                       = useState([]);
+    const [pendingTemplatePage, setPendingTemplatePage]   = useState(null);
 
     // refs for debounced saves
     const iframeRef         = useRef(null);
@@ -515,14 +524,14 @@ export default function ProductWebsitePanel() {
     // through the page list. Callers that initiated from PageList (the
     // default) get the new page focused in the side panel; callers from
     // inside a picker pass `{ keepActive: true }` to stay where they were.
-    const handleAddPage = useCallback(async ({ title, slug } = {}, options = {}) => {
+    const handleAddPage = useCallback(async ({ title, slug, templateId } = {}, options = {}) => {
         const siteId = activeSiteIdRef.current;
         if (!siteId) return null;
         try {
             const res = await authFetch(cmsApi.pages(siteId), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ title, slug }),
+                body: JSON.stringify({ title, slug, templateId }),
             });
             const data = await res.json();
             if (!res.ok) throw new Error(data.error || 'Failed to create page');
@@ -606,6 +615,106 @@ export default function ProductWebsitePanel() {
         setLocales(data.locales || locales);
         if (data.publishedAt !== undefined) setPublishedAt(data.publishedAt || null);
     }, [locales]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // ── page templates (global, shared across sites) ──────────────────
+    const refreshTemplates = useCallback(async () => {
+        try {
+            const res = await authFetch(cmsApi.templates());
+            if (!res.ok) return;
+            const data = await res.json();
+            setTemplates(Array.isArray(data.templates) ? data.templates : []);
+        } catch { /* non-fatal — manager + picker just stay empty */ }
+    }, []);
+
+    // Initial load — runs once when the panel mounts. Templates are
+    // org-wide so they don't need to re-fetch on site switches.
+    useEffect(() => { refreshTemplates(); }, [refreshTemplates]);
+
+    // Resolve the page's blocks BEFORE opening the dialog. The panel's
+    // `pages` state caches every PageDoc for the active site, so the
+    // currently active page is always there. Pages from another site
+    // (or freshly imported sites that haven't been touched yet) get a
+    // fallback fetch so the dialog never opens with `undefined` blocks.
+    // Empty arrays are refused too — the saved template would otherwise
+    // be an unusable starter that the user can't tell apart from a real
+    // save until they try to apply it.
+    const handleSaveAsTemplate = useCallback(async (page) => {
+        if (!page?.id) return;
+        const siteId = activeSiteIdRef.current;
+
+        let blocks = pages.find(p => p.id === page.id)?.blocks;
+
+        if (!Array.isArray(blocks) && siteId) {
+            // Fallback — not in the local cache. Round-trip to fetch the
+            // PageDoc so we never open the dialog without blocks.
+            try {
+                const res = await authFetch(cmsApi.page(siteId, page.id));
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    throw new Error(data.error || 'Failed to load page');
+                }
+                const doc = await res.json();
+                blocks = Array.isArray(doc?.blocks) ? doc.blocks : null;
+            } catch (err) {
+                console.error('[templates] failed to load page blocks', err);
+                showToast('error', `Couldn't load page blocks — ${err.message}`);
+                return;
+            }
+        }
+
+        if (!Array.isArray(blocks) || blocks.length === 0) {
+            showToast('error', 'This page has no blocks to save as a template.');
+            return;
+        }
+
+        // Stash blocks alongside the page so submitTemplate doesn't have
+        // to resolve them a second time (and can't drift if `pages`
+        // re-renders between the dialog opening and the user confirming).
+        setPendingTemplatePage({ ...page, blocks });
+    }, [pages]);
+
+    const submitTemplate = useCallback(async ({ name, description }) => {
+        const page = pendingTemplatePage;
+        if (!page?.id) return;
+        const blocks = Array.isArray(page.blocks) ? page.blocks : [];
+        if (blocks.length === 0) {
+            showToast('error', 'No blocks resolved — can\'t save an empty template.');
+            return;
+        }
+        try {
+            const res = await authFetch(cmsApi.templates(), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ name, description, blocks }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+            await refreshTemplates();
+            setPendingTemplatePage(null);
+            showToast('success', 'Template saved');
+        } catch (err) {
+            console.error('[templates] save failed', err);
+            showToast('error', 'Failed to save template — check console');
+            // No rethrow — the dialog's inner try/finally always resets
+            // `saving` and the parent keeps `pendingTemplatePage` set so
+            // the modal stays open for retry. Rethrowing would just
+            // produce a duplicate unhandled-rejection log.
+        }
+    }, [pendingTemplatePage, refreshTemplates]);
+
+
+    const handleDeleteTemplate = useCallback(async (id) => {
+        try {
+            const res = await authFetch(cmsApi.template(id), { method: 'DELETE' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+            await refreshTemplates();
+            showToast('success', 'Template deleted');
+        } catch (err) {
+            console.error('[templates] delete failed', err);
+            showToast('error', 'Failed to delete template — check console');
+        }
+    }, [refreshTemplates]);
 
     // ── site chrome mutations ────────────────────────────────────────
 
@@ -880,6 +989,79 @@ export default function ProductWebsitePanel() {
         } catch (err) { setError(err.message); }
     }, [refreshSites, reloadPayload]);
 
+    // ── Site export / import ────────────────────────────────────────
+    // Export streams the server's JSON response into a Blob and uses
+    // a temporary <a download> to trigger a file save dialog. We rely
+    // on the Content-Disposition filename the server sets — falling
+    // back to a generic name if the browser strips it.
+    const [siteIoStatus, setSiteIoStatus] = useState(null);   // { kind: 'success'|'error'|'busy', text }
+    const importInputRef = useRef(null);
+
+    const handleExportSite = useCallback(async () => {
+        const siteId = activeSiteIdRef.current;
+        if (!siteId) return;
+        setSiteIoStatus({ kind: 'busy', text: 'Exporting…' });
+        try {
+            const res = await authFetch(cmsApi.siteExport(siteId));
+            if (!res.ok) {
+                const body = await res.json().catch(() => ({}));
+                throw new Error(body.error || `Export failed (${res.status})`);
+            }
+            const blob = await res.blob();
+            // Prefer the server-provided filename from Content-Disposition.
+            const disposition = res.headers.get('Content-Disposition') || '';
+            const match = disposition.match(/filename="?([^";]+)"?/i);
+            const filename = match?.[1] || `site-export-${Date.now()}.json`;
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            // Revoke the blob URL after a tick — Chrome occasionally
+            // discards the download if revoked synchronously.
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+            setSiteIoStatus({ kind: 'success', text: 'Exported' });
+            setTimeout(() => setSiteIoStatus(null), 2400);
+        } catch (err) {
+            setSiteIoStatus({ kind: 'error', text: err.message || 'Export failed' });
+        }
+    }, []);
+
+    const handleImportFileChosen = useCallback(async (file) => {
+        if (!file) return;
+        setSiteIoStatus({ kind: 'busy', text: 'Importing…' });
+        let payload;
+        try {
+            const text = await file.text();
+            payload = JSON.parse(text);
+        } catch {
+            setSiteIoStatus({ kind: 'error', text: 'Selected file is not valid JSON' });
+            return;
+        }
+        if (!payload || payload._beeflow_export !== true) {
+            setSiteIoStatus({ kind: 'error', text: 'Not a Bee Flow site export file' });
+            return;
+        }
+        try {
+            const res = await authFetch(cmsApi.importSite(), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || `Import failed (${res.status})`);
+            // Refresh the sidebar list and switch to the newly-created site.
+            await refreshSites();
+            if (data.siteId) await handleSwitchSite(data.siteId);
+            setSiteIoStatus({ kind: 'success', text: `Imported "${data.name || 'site'}"` });
+            setTimeout(() => setSiteIoStatus(null), 2400);
+        } catch (err) {
+            setSiteIoStatus({ kind: 'error', text: err.message || 'Import failed' });
+        }
+    }, [handleSwitchSite, refreshSites]);
+
     const handleDeleteSite = useCallback(async (siteId) => {
         try {
             const res = await authFetch(cmsApi.site(siteId), { method: 'DELETE' });
@@ -902,6 +1084,57 @@ export default function ProductWebsitePanel() {
             }
         } catch (err) { setError(err.message); }
     }, [handleSwitchSite, refreshSites]);
+
+    // ── version management (multi-version per site) ──────────────────
+    //
+    // A "version" is a full site that shares a versionGroupId with its
+    // siblings. Duplicating deep-copies the active site into a new
+    // version of the same group; switching versions is just a site
+    // switch under the hood.
+
+    // Duplicate the active site into a new version. Pending edits are
+    // flushed first so the copy captures the latest content, then the
+    // editor switches to the freshly-created version.
+    const handleDuplicateSite = useCallback(async () => {
+        const siteId = activeSiteIdRef.current;
+        if (!siteId) return;
+        if (saveTimerRef.current) {
+            clearTimeout(saveTimerRef.current);
+            saveTimerRef.current = null;
+        }
+        if (inFlightSaveRef.current) {
+            try { await inFlightSaveRef.current; } catch { /* surfaced already */ }
+            inFlightSaveRef.current = null;
+        }
+        await flushSaves();
+        try {
+            const res = await authFetch(cmsApi.siteDuplicate(siteId), { method: 'POST' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || `Duplicate failed (${res.status})`);
+            await refreshSites();
+            if (data.id) await handleSwitchSite(data.id);
+        } catch (err) { setError(err.message); }
+    }, [flushSaves, refreshSites, handleSwitchSite]);
+
+    // Make a specific version live. Only one site is live at a time
+    // (cms_live_site_id), so this takes the previously-live one — sibling
+    // or otherwise — offline. Optimistic with rollback on failure.
+    const handleSetLiveVersion = useCallback(async (siteId) => {
+        if (!siteId || siteId === liveSiteId) return;
+        const prevLive = liveSiteId;
+        setLiveSiteId(siteId);
+        try {
+            const res = await authFetch(cmsApi.siteLive(siteId), {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ live: true }),
+            });
+            if (!res.ok) throw new Error(`Failed to set version live (${res.status})`);
+        } catch (err) {
+            setError(err.message);
+            setLiveSiteId(prevLive);
+        }
+    }, [liveSiteId]);
 
     // Context value for the LinkField "+ Create new page…" picker. Wraps
     // handleAddPage with keepActive=true so the user stays on whatever
@@ -948,6 +1181,15 @@ export default function ProductWebsitePanel() {
         ...(site?.pages || []),
     ];
 
+    // Versions of the active site = every site sharing its versionGroupId.
+    // listSites() carries versionGroupId/versionName on each entry; the
+    // `|| s.id` fallback covers entries that pre-date versioning.
+    const activeGroupId =
+        sites.find(s => s.id === activeSiteId)?.versionGroupId
+        || site?.versionGroupId
+        || activeSiteId;
+    const versions = sites.filter(s => (s.versionGroupId || s.id) === activeGroupId);
+
     return (
       <CreatePageContext.Provider value={createPageFromPicker}>
         <div className="h-full flex flex-row" style={{ background: 'var(--bg-primary)' }}>
@@ -965,6 +1207,69 @@ export default function ProductWebsitePanel() {
                         onRename={handleRenameSite}
                         onDelete={handleDeleteSite}
                     />
+                    {/* Version switcher — lists every version of the
+                        active site, set-live per version, duplicate. */}
+                    <VersionSwitcher
+                        versions={versions}
+                        activeSiteId={activeSiteId}
+                        liveSiteId={liveSiteId}
+                        onSelect={handleSwitchSite}
+                        onSetLive={handleSetLiveVersion}
+                        onDuplicate={handleDuplicateSite}
+                    />
+                    {/* Site export / import — secondary visual weight so
+                        the main "Create / Delete site" affordance in the
+                        switcher above stays primary. */}
+                    <div className="flex items-center gap-1.5 mt-2">
+                        <button
+                            type="button"
+                            onClick={handleExportSite}
+                            disabled={!activeSiteId || siteIoStatus?.kind === 'busy'}
+                            className="flex-1 px-2 py-1 text-[11px] rounded-md border border-[var(--border-default)] text-[var(--text-secondary)] hover:border-[var(--accent-primary)]/60 hover:text-[var(--accent-primary)] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+                            title="Download this site as a JSON file"
+                        >
+                            <AppIcon name="Download" className="w-3 h-3" />
+                            Export site
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => importInputRef.current?.click()}
+                            disabled={siteIoStatus?.kind === 'busy'}
+                            className="flex-1 px-2 py-1 text-[11px] rounded-md border border-[var(--border-default)] text-[var(--text-secondary)] hover:border-[var(--accent-primary)]/60 hover:text-[var(--accent-primary)] disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-1"
+                            title="Restore a site from a previously-exported JSON file"
+                        >
+                            <AppIcon name="Upload" className="w-3 h-3" />
+                            Import site
+                        </button>
+                        {/* Hidden input — opened programmatically by the
+                            Import button. Reset value on every selection
+                            so the same file can be re-picked back-to-back. */}
+                        <input
+                            ref={importInputRef}
+                            type="file"
+                            accept="application/json,.json"
+                            className="hidden"
+                            onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                e.target.value = '';
+                                if (file) handleImportFileChosen(file);
+                            }}
+                        />
+                    </div>
+                    {/* Inline status line — success / error / busy. */}
+                    {siteIoStatus ? (
+                        <p
+                            className={`mt-1.5 text-[10px] leading-tight ${
+                                siteIoStatus.kind === 'error'
+                                    ? 'text-red-400'
+                                    : siteIoStatus.kind === 'success'
+                                        ? 'text-emerald-500'
+                                        : 'text-[var(--text-muted)]'
+                            }`}
+                        >
+                            {siteIoStatus.kind === 'busy' ? '… ' : ''}{siteIoStatus.text}
+                        </p>
+                    ) : null}
                 </div>
                 {/* global controls */}
                 <div className="p-3 border-b border-[var(--border-subtle)] shrink-0">
@@ -1047,7 +1352,11 @@ export default function ProductWebsitePanel() {
                         onDelete={handleDeletePage}
                         onSetHomepage={handleSetHomepage}
                         onRename={(pageId, title) => savePageMeta(pageId, { title })}
+                        onEditSlug={(pageId, slug) => savePageMeta(pageId, { slug })}
                         onReorder={handleReorderPages}
+                        templates={templates}
+                        onSaveAsTemplate={handleSaveAsTemplate}
+                        onDeleteTemplate={handleDeleteTemplate}
                     />
                 </div>
 
@@ -1219,6 +1528,14 @@ export default function ProductWebsitePanel() {
                     />
                 )}
             </div>
+            {pendingTemplatePage ? (
+                <SaveTemplateDialog
+                    page={pendingTemplatePage}
+                    onCancel={() => setPendingTemplatePage(null)}
+                    onConfirm={submitTemplate}
+                />
+            ) : null}
+            <ToastHost />
         </div>
       </CreatePageContext.Provider>
     );
@@ -1439,17 +1756,37 @@ function buildPreviewContent(site, activePage) {
             // sibling to navLinks because the items array can't carry
             // string keys.
             navStyle: site.header.navStyle || undefined,
-            navLinks: (site.header.nav || []).map(n => ({
-                label: n.label,
-                href: resolvePreviewHref(n.link, site?.pages),
-                // Dropdown children are flattened the same way as the
-                // parent so Header.jsx can render them without knowing
-                // anything about the storage Link shape.
-                children: (n.children || []).map(c => ({
-                    label: c.label,
-                    href: resolvePreviewHref(c.link, site?.pages),
-                })),
-            })),
+            navLinks: (site.header.nav || []).map(n => {
+                const out = {
+                    label: n.label,
+                    href: resolvePreviewHref(n.link, site?.pages),
+                    // Flat children (legacy list-mode dropdown). Always
+                    // emitted so the existing renderer path still works.
+                    children: (n.children || []).map(c => ({
+                        label: c.label,
+                        href: resolvePreviewHref(c.link, site?.pages),
+                    })),
+                };
+                // Mega-menu (columns) shape — additive. Only emitted when
+                // the user explicitly switched the dropdown to "columns".
+                if (n.dropdown?.layout === 'columns') {
+                    out.dropdown = {
+                        layout: 'columns',
+                        columns: (n.dropdown.columns || []).map(col => ({
+                            heading: col.heading || '',
+                            items: (col.items || []).map(mi => ({
+                                label:       mi.label || '',
+                                href:        resolvePreviewHref(mi.link, site?.pages),
+                                description: mi.description || '',
+                                icon:        mi.icon || '',
+                                target:      mi.openInNewTab ? '_blank' : undefined,
+                                rel:         mi.openInNewTab ? 'noopener noreferrer' : undefined,
+                            })),
+                        })),
+                    };
+                }
+                return out;
+            }),
             activeSlug: activePage?.isHomepage ? '' : (activePage?.slug || ''),
         };
     }
@@ -1486,6 +1823,13 @@ function buildPreviewContent(site, activePage) {
     //     site renderer at "/" keeps working until it migrates,
     //   - blocks[] in panel order so the preview can render them in the
     //     order the editor sees (multi-page WordPress-style).
+    // Per-page chrome visibility — sourced from the site-index entry
+    // (kept in sync with the page doc by savePageMeta). The renderer
+    // hides Header/Footer when these are true; preview shows the editor
+    // the same outcome the published site will produce.
+    out.hideHeader = !!activePage?.hideHeader;
+    out.hideFooter = !!activePage?.hideFooter;
+
     if (activePage?.blocks) {
         const blocksOut = [];
         for (const block of activePage.blocks) {

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mic, Upload, Video, FileAudio } from 'lucide-react';
+import { Mic, Upload, FileAudio } from 'lucide-react';
 import { useCapture } from '../capture/CaptureContext';
 
 export default function DetailEmptyState() {
@@ -19,7 +19,6 @@ export default function DetailEmptyState() {
                 {[
                     [Mic, 'Record', 'record', '#ffd400'],
                     [Upload, 'Upload', 'upload', 'var(--accent-primary)'],
-                    [Video, 'Send bot', 'bot', '#10b981'],
                 ].map(([Icon, label, mode, accent]) => (
                     <button
                         key={mode}

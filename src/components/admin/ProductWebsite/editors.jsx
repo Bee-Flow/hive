@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { TextField, Toggle, IconField, ImageField, RepeatableList, LinkField, FieldRow, inputCls } from './fields';
+import React, { useEffect, useState } from 'react';
+import { TextField, Toggle, IconField, ImageField, RepeatableList, LinkField, FieldRow, AlignControl, inputCls } from './fields';
 // Reused for per-block text styling (Social Proof eyebrow / title).
 // FontRow + ColorRow are the same components the site-wide Design tab
 // uses, so the affordance is consistent across the editor.
@@ -47,20 +47,52 @@ function CollapsibleCard({ title, defaultOpen = true, children }) {
     );
 }
 
-// Small inline color swatch — used when a full ColorRow (with hex input +
-// label + hint) would be visually heavy. Mirrors `<input type="color">`
-// in dimensions to the rest of the compact field controls (height ~28px).
+// Small inline color swatch + hex text input. Used everywhere a compact
+// color affordance is needed (size & color rows, per-card title color,
+// etc.). The hex input lets users paste a colour code instead of fishing
+// around in the native swatch picker. Local `hexInput` state lets the
+// user type partial values (e.g. "#F3") without snapping every keystroke
+// to the prop value; only a complete `#RRGGBB` commits via onChange.
 function ColorSwatch({ value, onChange, title }) {
     const hex = typeof value === 'string' && /^#[0-9a-fA-F]{6}$/.test(value) ? value : '#000000';
+    const [hexInput, setHexInput] = useState(typeof value === 'string' ? value : '');
+
+    // Resync local typing state when the prop value changes from outside
+    // (the native swatch picker, or another control mutating the same key).
+    useEffect(() => {
+        setHexInput(typeof value === 'string' ? value : '');
+    }, [value]);
+
+    const handleHexChange = (raw) => {
+        const cleaned = raw.replace(/[^0-9a-fA-F#]/g, '');
+        const withHash = cleaned.startsWith('#') ? cleaned : (cleaned ? `#${cleaned}` : '');
+        setHexInput(withHash);
+        if (/^#[0-9a-fA-F]{6}$/.test(withHash)) {
+            onChange(withHash);
+        }
+    };
+
     return (
-        <input
-            type="color"
-            value={hex}
-            onChange={(e) => onChange(e.target.value)}
-            title={title}
-            className="h-7 w-7 rounded border border-[var(--border-default)] bg-[var(--bg-tertiary)] cursor-pointer p-0 shrink-0"
-            style={{ minWidth: '28px' }}
-        />
+        <div className="inline-flex items-center gap-1.5">
+            <input
+                type="color"
+                value={hex}
+                onChange={(e) => onChange(e.target.value)}
+                title={title}
+                className="h-7 w-7 rounded border border-[var(--border-default)] bg-[var(--bg-tertiary)] cursor-pointer p-0 shrink-0"
+                style={{ minWidth: '28px' }}
+            />
+            <input
+                type="text"
+                value={hexInput}
+                onChange={(e) => handleHexChange(e.target.value)}
+                placeholder="#000000"
+                maxLength={7}
+                spellCheck={false}
+                aria-label={title ? `${title} hex` : 'Color hex'}
+                className="w-20 px-1.5 py-1 rounded text-xs font-mono uppercase border border-[var(--border-default)] bg-[var(--bg-tertiary)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)]"
+            />
+        </div>
     );
 }
 
@@ -114,6 +146,8 @@ function SectionHeaderFields({ data = {}, onChange, showLead = true }) {
                     value={data.eyebrow || ''}
                     onChange={v => onChange(set(data, 'eyebrow', v))}
                     placeholder="Small label above the title"
+                    align={data.eyebrowAlign || data.align || 'left'}
+                    onAlignChange={v => onChange(set(data, 'eyebrowAlign', v))}
                 />
                 <FontRow
                     label="Font"
@@ -146,6 +180,8 @@ function SectionHeaderFields({ data = {}, onChange, showLead = true }) {
                     value={data.title || ''}
                     onChange={v => onChange(set(data, 'title', v))}
                     placeholder="Section heading"
+                    align={data.titleAlign || data.align || 'left'}
+                    onAlignChange={v => onChange(set(data, 'titleAlign', v))}
                 />
                 <FontRow
                     label="Font"
@@ -174,15 +210,14 @@ function SectionHeaderFields({ data = {}, onChange, showLead = true }) {
 
             {showLead ? (
                 <CollapsibleCard title="Lead" defaultOpen={false}>
-                    <FieldRow label="Text">
-                        <textarea
-                            rows={3}
-                            className={inputCls + ' resize-y'}
-                            value={data.lead || ''}
-                            onChange={e => onChange(set(data, 'lead', e.target.value))}
-                            placeholder="Short paragraph below the title."
-                        />
-                    </FieldRow>
+                    <TextField
+                        label="Text"
+                        value={data.lead || ''}
+                        onChange={v => onChange(set(data, 'lead', v))}
+                        placeholder="Short paragraph below the title."
+                        align={data.leadAlign || data.align || 'left'}
+                        onAlignChange={v => onChange(set(data, 'leadAlign', v))}
+                    />
                     <FontRow
                         label="Font"
                         value={leadStyle.fontFamily || ''}
@@ -289,6 +324,8 @@ function GroupedItemsField({
                         label={`${groupLabel} name`}
                         value={group?.[headingKey] || ''}
                         onChange={v => updateGroup({ ...group, [headingKey]: v })}
+                        align={group?.[`${headingKey}Align`] || 'left'}
+                        onAlignChange={v => updateGroup({ ...group, [`${headingKey}Align`]: v })}
                     />
                     <RepeatableList
                         label={innerLabel}
@@ -575,25 +612,185 @@ export function HeaderEditor({ data = {}, pages = [], onChange }) {
                             pages={pages}
                             onChange={v => update({ ...item, link: v })}
                         />
-                        <RepeatableList
-                            label="Dropdown children (optional)"
-                            items={item.children || []}
-                            onChange={v => update({ ...item, children: v })}
-                            makeNew={() => ({ id: `nav_${Math.random().toString(36).slice(2,8)}`, label: 'Child link', link: { kind: 'external', url: '#' } })}
-                            itemLabel={(child) => child.label}
-                            renderItem={(child, updChild) => (
-                                <>
-                                    <TextField label="Label" value={child.label} onChange={v => updChild({ ...child, label: v })} />
-                                    <LinkField label="Link" value={child.link} pages={pages} onChange={v => updChild({ ...child, link: v })} />
-                                </>
-                            )}
-                            addLabel="Add child"
-                        />
+                        <NavDropdownEditor item={item} update={update} pages={pages} />
                     </>
                 )}
                 />
             </CollapsibleCard>
         </>
+    );
+}
+
+// ── Nav dropdown editor (mega-menu support) ──────────────────────────
+//
+// Each top-level nav link can carry either:
+//   • children:   flat list (legacy, default — exactly the original shape)
+//   • dropdown:   { layout: 'columns', columns: [{ heading, items: [{
+//                  label, link, description, icon, openInNewTab }] }] }
+//
+// Layout is chosen via the segmented control. List mode keeps writing to
+// `children` so existing sites keep rendering unchanged. Columns mode
+// stores a separate `dropdown` blob — additive, no migration required.
+
+const newColumn = () => ({
+    id: `col_${Math.random().toString(36).slice(2, 8)}`,
+    heading: '',
+    items: [],
+});
+const newMegaItem = () => ({
+    id: `mi_${Math.random().toString(36).slice(2, 8)}`,
+    label: 'New item',
+    link: { kind: 'external', url: '#' },
+    description: '',
+    icon: '',
+    openInNewTab: false,
+});
+
+function NavDropdownEditor({ item, update, pages }) {
+    const layout = item.dropdown?.layout === 'columns' ? 'columns' : 'list';
+    const columns = Array.isArray(item.dropdown?.columns) ? item.dropdown.columns : [];
+    const children = Array.isArray(item.children) ? item.children : [];
+
+    const itemCount = layout === 'columns'
+        ? columns.reduce((sum, c) => sum + (Array.isArray(c.items) ? c.items.length : 0), 0)
+        : children.length;
+
+    const setLayout = (next) => {
+        if (next === layout) return;
+        if (next === 'columns') {
+            // Lazy-migrate: fold any existing flat children into a single
+            // column so the user sees their work, not an empty editor.
+            const seeded = columns.length > 0
+                ? columns
+                : [{
+                    ...newColumn(),
+                    items: children.map(c => ({
+                        id: c.id || `mi_${Math.random().toString(36).slice(2, 8)}`,
+                        label: c.label || '',
+                        link: c.link,
+                        description: '',
+                        icon: '',
+                        openInNewTab: false,
+                    })),
+                }];
+            update({ ...item, dropdown: { layout: 'columns', columns: seeded } });
+        } else {
+            // Keep the columns blob around so toggling back doesn't lose
+            // work, but mark layout=list so the renderer falls back to
+            // `children` (the legacy source of truth for list mode).
+            update({ ...item, dropdown: { ...(item.dropdown || {}), layout: 'list' } });
+        }
+    };
+
+    const SegBtn = ({ value, label }) => (
+        <button
+            type="button"
+            onClick={() => setLayout(value)}
+            className={
+                'px-3 py-1.5 text-xs transition-colors ' +
+                (layout === value
+                    ? 'bg-[var(--accent-primary)] text-white'
+                    : 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]')
+            }
+        >
+            {label}
+        </button>
+    );
+
+    return (
+        <CollapsibleCard
+            title={`Dropdown  (${itemCount} ${itemCount === 1 ? 'item' : 'items'})`}
+            defaultOpen={false}
+        >
+            <FieldRow label="Layout">
+                <div className="inline-flex rounded-md border border-[var(--border-subtle)] overflow-hidden">
+                    <SegBtn value="list"    label="List" />
+                    <SegBtn value="columns" label="Columns" />
+                </div>
+            </FieldRow>
+
+            {layout === 'columns' ? (
+                <RepeatableList
+                    label="Columns"
+                    items={columns}
+                    onChange={v => update({ ...item, dropdown: { layout: 'columns', columns: v } })}
+                    makeNew={newColumn}
+                    itemLabel={(col) => col.heading || '(no heading)'}
+                    collapsible
+                    renderItem={(col, updCol) => (
+                        <>
+                            <TextField
+                                label="Section heading"
+                                value={col.heading || ''}
+                                onChange={v => updCol({ ...col, heading: v })}
+                                placeholder="Optional — e.g. Features, Channels"
+                            />
+                            <RepeatableList
+                                label="Items"
+                                items={col.items || []}
+                                onChange={v => updCol({ ...col, items: v })}
+                                makeNew={newMegaItem}
+                                itemLabel={(mi) => mi.label || '(no label)'}
+                                collapsible
+                                renderItem={(mi, updMi) => (
+                                    <>
+                                        <TextField
+                                            label="Label"
+                                            value={mi.label || ''}
+                                            onChange={v => updMi({ ...mi, label: v })}
+                                        />
+                                        <LinkField
+                                            label="Link"
+                                            value={mi.link}
+                                            pages={pages}
+                                            onChange={v => updMi({ ...mi, link: v })}
+                                        />
+                                        <TextField
+                                            label="Description"
+                                            value={mi.description || ''}
+                                            onChange={v => updMi({ ...mi, description: v })}
+                                            placeholder="Optional one-liner shown under the label"
+                                        />
+                                        <TextField
+                                            label="Icon"
+                                            value={mi.icon || ''}
+                                            onChange={v => updMi({ ...mi, icon: v })}
+                                            placeholder="Optional emoji (e.g. 🚀) or short text"
+                                        />
+                                        <Toggle
+                                            label="Open in new tab"
+                                            value={!!mi.openInNewTab}
+                                            onChange={v => updMi({ ...mi, openInNewTab: v })}
+                                        />
+                                    </>
+                                )}
+                                addLabel="Add item"
+                            />
+                        </>
+                    )}
+                    addLabel="Add column"
+                />
+            ) : (
+                <RepeatableList
+                    label="Dropdown children (optional)"
+                    items={children}
+                    onChange={v => update({ ...item, children: v })}
+                    makeNew={() => ({
+                        id: `nav_${Math.random().toString(36).slice(2, 8)}`,
+                        label: 'Child link',
+                        link: { kind: 'external', url: '#' },
+                    })}
+                    itemLabel={(child) => child.label}
+                    renderItem={(child, updChild) => (
+                        <>
+                            <TextField label="Label" value={child.label} onChange={v => updChild({ ...child, label: v })} />
+                            <LinkField label="Link"  value={child.link}  pages={pages} onChange={v => updChild({ ...child, link: v })} />
+                        </>
+                    )}
+                    addLabel="Add child"
+                />
+            )}
+        </CollapsibleCard>
     );
 }
 
@@ -638,8 +835,7 @@ export function HeroEditor({ data = {}, pages = [], onChange }) {
             <InlineHint>Click the badge, title segments, lead, CTA labels, and chat bubbles in the preview to edit them inline. Use the panels below for structure and styling.</InlineHint>
 
             {/* ── Badge ───────────────────────────────────────────── */}
-            <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
-                <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Badge</div>
+            <CollapsibleCard title="Badge" defaultOpen={true}>
                 <Toggle
                     label="Show badge"
                     value={badgeOn}
@@ -652,6 +848,8 @@ export function HeroEditor({ data = {}, pages = [], onChange }) {
                             value={badge.text || ''}
                             onChange={v => setBadge({ text: v })}
                             placeholder="e.g. New · v2.0"
+                            align={data.badgeAlign || data.align || 'left'}
+                            onAlignChange={v => onChange(set(data, 'badgeAlign', v))}
                         />
                         <IconField
                             label="Icon"
@@ -684,11 +882,10 @@ export function HeroEditor({ data = {}, pages = [], onChange }) {
                         />
                     </>
                 ) : null}
-            </div>
+            </CollapsibleCard>
 
             {/* ── Headline ────────────────────────────────────────── */}
-            <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
-                <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Headline</div>
+            <CollapsibleCard title="Headline" defaultOpen={true}>
                 <RepeatableList
                     label="Title segments"
                     items={data.titleParts || []}
@@ -713,6 +910,12 @@ export function HeroEditor({ data = {}, pages = [], onChange }) {
                     )}
                     addLabel="Add segment"
                 />
+                <FieldRow label="Alignment">
+                    <AlignControl
+                        value={data.titleAlign || data.align || 'left'}
+                        onChange={v => onChange(set(data, 'titleAlign', v))}
+                    />
+                </FieldRow>
                 <FontRow
                     label="Font"
                     value={titleStyle.fontFamily || ''}
@@ -737,11 +940,10 @@ export function HeroEditor({ data = {}, pages = [], onChange }) {
                     value={titleStyle.color || ''}
                     onChange={v => setTitleStyle({ color: v })}
                 />
-            </div>
+            </CollapsibleCard>
 
             {/* ── Lead ────────────────────────────────────────────── */}
-            <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
-                <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Lead paragraph</div>
+            <CollapsibleCard title="Lead paragraph" defaultOpen={true}>
                 <Toggle
                     label="Show lead"
                     value={leadOn}
@@ -749,15 +951,14 @@ export function HeroEditor({ data = {}, pages = [], onChange }) {
                 />
                 {leadOn ? (
                     <>
-                        <FieldRow label="Text">
-                            <textarea
-                                rows={3}
-                                className={inputCls + ' resize-y'}
-                                value={data.lead || ''}
-                                onChange={e => onChange(set(data, 'lead', e.target.value))}
-                                placeholder="Short paragraph below the headline."
-                            />
-                        </FieldRow>
+                        <TextField
+                            label="Text"
+                            value={data.lead || ''}
+                            onChange={v => onChange(set(data, 'lead', v))}
+                            placeholder="Short paragraph below the headline."
+                            align={data.leadAlign || data.align || 'left'}
+                            onAlignChange={v => onChange(set(data, 'leadAlign', v))}
+                        />
                         <FontRow
                             label="Font"
                             value={leadStyle.fontFamily || ''}
@@ -784,11 +985,10 @@ export function HeroEditor({ data = {}, pages = [], onChange }) {
                         />
                     </>
                 ) : null}
-            </div>
+            </CollapsibleCard>
 
             {/* ── Primary CTA ─────────────────────────────────────── */}
-            <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
-                <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Primary CTA</div>
+            <CollapsibleCard title="Primary CTA" defaultOpen={true}>
                 <Toggle
                     label="Show primary CTA"
                     value={primaryOn}
@@ -816,11 +1016,10 @@ export function HeroEditor({ data = {}, pages = [], onChange }) {
                         />
                     </>
                 ) : null}
-            </div>
+            </CollapsibleCard>
 
             {/* ── Secondary CTA ───────────────────────────────────── */}
-            <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
-                <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Secondary CTA</div>
+            <CollapsibleCard title="Secondary CTA" defaultOpen={true}>
                 <Toggle
                     label="Show secondary CTA"
                     value={secondaryOn}
@@ -848,11 +1047,10 @@ export function HeroEditor({ data = {}, pages = [], onChange }) {
                         />
                     </>
                 ) : null}
-            </div>
+            </CollapsibleCard>
 
             {/* ── Mockup ──────────────────────────────────────────── */}
-            <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
-                <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Mockup</div>
+            <CollapsibleCard title="Mockup" defaultOpen={true}>
                 <Toggle
                     label="Show mockup"
                     value={mockupOn}
@@ -888,11 +1086,10 @@ export function HeroEditor({ data = {}, pages = [], onChange }) {
                         addLabel="Add bubble"
                     />
                 ) : null}
-            </div>
+            </CollapsibleCard>
 
             {/* ── Background ──────────────────────────────────────── */}
-            <div className="rounded-md border border-[var(--border-subtle)] p-3 mb-3">
-                <div className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Background</div>
+            <CollapsibleCard title="Background" defaultOpen={true}>
                 <FieldSelect
                     label="Variant"
                     value={data.backgroundVariant || 'default'}
@@ -904,12 +1101,60 @@ export function HeroEditor({ data = {}, pages = [], onChange }) {
                     ]}
                     onChange={v => onChange(set(data, 'backgroundVariant', v))}
                 />
-            </div>
+            </CollapsibleCard>
         </>
     );
 }
 
 // ── Social Proof ──────────────────────────────────────────────────────
+
+// Grayscale + sepia tint control for the Social Proof logo strip.
+// Maps a 0–80 slider value to the `--logo-tint` CSS variable read by the
+// renderer's filter rule: `filter: grayscale(1) sepia(<value>%)`. The
+// three reference swatches below the slider are pure visual hints.
+function LogoTintControl({ value, onChange }) {
+    const v = Math.max(0, Math.min(80, Number(value) || 0));
+    const SWATCHES = [
+        { tint: 0,  label: 'Cool'    },
+        { tint: 30, label: 'Neutral' },
+        { tint: 60, label: 'Warm'    },
+    ];
+    return (
+        <FieldRow label={`Logo tint — ${v}`} hint="Adds warmth to the default grayscale. 0 = cool grey, 80 = warm sepia. Hover a logo to see its full color.">
+            <div className="flex flex-col gap-2">
+                <input
+                    type="range"
+                    min={0}
+                    max={80}
+                    step={1}
+                    value={v}
+                    onChange={(e) => onChange(Number(e.target.value))}
+                    className="w-full accent-[var(--accent-primary)]"
+                    aria-label="Logo tint"
+                />
+                <div className="flex items-center gap-3">
+                    {SWATCHES.map(s => (
+                        <div key={s.tint} className="flex items-center gap-1.5">
+                            <span
+                                className="inline-block rounded-sm border border-[var(--border-subtle)]"
+                                style={{
+                                    width: 22,
+                                    height: 14,
+                                    background: '#888',
+                                    filter: `grayscale(1) sepia(${s.tint}%)`,
+                                }}
+                                aria-hidden="true"
+                            />
+                            <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)]">
+                                {s.label}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </FieldRow>
+    );
+}
 
 export function SocialProofEditor({ data = {}, onChange }) {
     // Eyebrow + Title (style controls + text fields) come from the
@@ -922,20 +1167,26 @@ export function SocialProofEditor({ data = {}, onChange }) {
             <SectionHeaderFields data={data} onChange={onChange} showLead={false} />
 
             {/* ── Logos ───────────────────────────────────────── */}
-            <RepeatableList
-                label="Logos"
-                items={data.logos || []}
-                onChange={v => onChange(set(data, 'logos', v))}
-                makeNew={() => ({ src: '', alt: 'New logo' })}
-                itemLabel={(item) => item.alt}
-                renderItem={(item, update) => (
-                    <>
-                        <ImageField label="Logo image (optional)" value={item.src} onChange={v => update({ ...item, src: v })} />
-                        <TextField label="Alt text" value={item.alt || ''} onChange={v => update({ ...item, alt: v })} placeholder="Used as the logo's accessible name" />
-                    </>
-                )}
-                addLabel="Add logo"
-            />
+            <CollapsibleCard title={`Logos (${(data.logos || []).length})`} defaultOpen={true}>
+                <RepeatableList
+                    label="Logos"
+                    items={data.logos || []}
+                    onChange={v => onChange(set(data, 'logos', v))}
+                    makeNew={() => ({ src: '', alt: 'New logo' })}
+                    itemLabel={(item) => item.alt}
+                    renderItem={(item, update) => (
+                        <>
+                            <ImageField label="Logo image (optional)" value={item.src} onChange={v => update({ ...item, src: v })} />
+                            <TextField label="Alt text" value={item.alt || ''} onChange={v => update({ ...item, alt: v })} placeholder="Used as the logo's accessible name" />
+                        </>
+                    )}
+                    addLabel="Add logo"
+                />
+                <LogoTintControl
+                    value={Number.isFinite(data.logoTint) ? data.logoTint : 0}
+                    onChange={v => onChange(set(data, 'logoTint', v))}
+                />
+            </CollapsibleCard>
         </>
     );
 }
@@ -1180,27 +1431,24 @@ function ElementFields({ el, pages, update }) {
                         value={el.heading || ''}
                         onChange={v => update({ ...el, heading: v })}
                         placeholder="Optional heading"
+                        align={el.headingAlign || el.align || 'left'}
+                        onAlignChange={v => update({ ...el, headingAlign: v })}
                     />
                     <TextField
                         label="Subheading"
                         value={el.subheading || ''}
                         onChange={v => update({ ...el, subheading: v })}
                         placeholder="Optional subheading"
+                        align={el.subheadingAlign || el.align || 'left'}
+                        onAlignChange={v => update({ ...el, subheadingAlign: v })}
                     />
-                    <FieldRow label="Body">
-                        <textarea
-                            rows={4}
-                            className={inputCls + ' resize-y'}
-                            value={el.body || ''}
-                            onChange={e => update({ ...el, body: e.target.value })}
-                            placeholder="Write paragraph text. Line breaks are preserved."
-                        />
-                    </FieldRow>
-                    <FieldSelect
-                        label="Align"
-                        value={el.align || 'left'}
-                        options={ALIGNS}
-                        onChange={v => update({ ...el, align: v })}
+                    <TextField
+                        label="Body"
+                        value={el.body || ''}
+                        onChange={v => update({ ...el, body: v })}
+                        placeholder="Write paragraph text. Line breaks are preserved."
+                        align={el.bodyAlign || el.align || 'left'}
+                        onAlignChange={v => update({ ...el, bodyAlign: v })}
                     />
                     {/* Per-text-element typography. Stored under
                         element.headingStyle / subheadingStyle / bodyStyle. */}
@@ -1274,12 +1522,38 @@ function ElementFields({ el, pages, update }) {
 
             {el.kind === 'video' ? (
                 <>
-                    <TextField
-                        label="Video URL"
-                        value={el.url || ''}
-                        onChange={v => update({ ...el, url: v })}
-                        placeholder="YouTube or Vimeo URL"
+                    {/* Source toggle: external embed (YouTube/Vimeo iframe)
+                        vs. self-hosted file upload (MP4/WebM, looped + muted
+                        like the Media + Text 'video-silent' kind). Both paths
+                        write the resulting address to el.url so the renderer
+                        only has one field to read. */}
+                    <FieldSelect
+                        label="Source"
+                        value={el.source === 'upload' ? 'upload' : 'embed'}
+                        options={[
+                            { value: 'embed',  label: 'External URL (YouTube / Vimeo)' },
+                            { value: 'upload', label: 'Upload file (MP4 / WebM)' },
+                        ]}
+                        onChange={v => update({ ...el, source: v, url: '' })}
                     />
+                    {el.source === 'upload' ? (
+                        <ImageField
+                            label="Video file"
+                            value={el.url || ''}
+                            onChange={v => update({ ...el, url: v })}
+                            accept="video/mp4,video/webm"
+                            previewKind="video"
+                            uploadLabel="Upload video"
+                            placeholder="https://… or /api/cms/asset/cms/…"
+                        />
+                    ) : (
+                        <TextField
+                            label="Video URL"
+                            value={el.url || ''}
+                            onChange={v => update({ ...el, url: v })}
+                            placeholder="YouTube or Vimeo URL"
+                        />
+                    )}
                     <FieldSelect
                         label="Aspect ratio"
                         value={el.aspectRatio || '16/9'}
@@ -1373,6 +1647,21 @@ function ElementFields({ el, pages, update }) {
 export function MediaTextEditor({ data = {}, pages = [], onChange }) {
     const setField = (key, value) => onChange(set(data, key, value));
     const media    = data.media || { kind: 'image', src: '', alt: '' };
+    const cta      = data.cta || {};
+
+    // Per-field style blobs — same `*Style.{fontFamily,fontSize,color}`
+    // shape Hero uses (badgeStyle/titleStyle/leadStyle). Keeping the
+    // storage shape stable means existing pages don't need migration and
+    // the renderer's inlineTextStyle() reads keep working unchanged.
+    const headingStyle    = data.headingStyle    || {};
+    const subheadingStyle = data.subheadingStyle || {};
+    const bodyStyle       = data.bodyStyle       || {};
+    const ctaStyle        = data.ctaStyle        || {};
+
+    const setHeadingStyle    = (patch) => onChange(set(data, 'headingStyle',    { ...headingStyle,    ...patch }));
+    const setSubheadingStyle = (patch) => onChange(set(data, 'subheadingStyle', { ...subheadingStyle, ...patch }));
+    const setBodyStyle       = (patch) => onChange(set(data, 'bodyStyle',       { ...bodyStyle,       ...patch }));
+    const setCtaStyle        = (patch) => onChange(set(data, 'ctaStyle',        { ...ctaStyle,        ...patch }));
 
     const showSubheading = data.subheading !== null && data.subheading !== undefined;
     const showCta        = !!data.cta;
@@ -1382,41 +1671,247 @@ export function MediaTextEditor({ data = {}, pages = [], onChange }) {
         next ? { label: 'Learn more', link: { kind: 'anchor', anchor: '' } } : null);
 
     const updateMedia = (key, value) => setField('media', { ...media, [key]: value });
-    const updateCta   = (key, value) => setField('cta',   { ...(data.cta || {}), [key]: value });
+    const updateCta   = (key, value) => setField('cta',   { ...cta, [key]: value });
 
     return (
         <>
-            <InlineHint>
-                Click the heading, subheading, body, and CTA label in the preview to edit them.
-                Media (image / video) and the layout knobs live below.
-            </InlineHint>
+            <InlineHint>Click the heading, subheading, body, and CTA label in the preview to edit them inline. Use the panels below for structure and styling.</InlineHint>
 
-            <Toggle label="Show subheading" value={showSubheading} onChange={toggleSubheading} />
-            <Toggle label="Show CTA"        value={showCta}        onChange={toggleCta} />
-
-            {showCta ? (
-                <CollapsibleCard title="CTA" defaultOpen={true}>
-                    <CtaButtonField
-                        value={data.cta || {}}
-                        pages={pages}
-                        onChange={v => setField('cta', v)}
-                        label="CTA"
+            {/* ── Heading ─────────────────────────────────────────── */}
+            <CollapsibleCard title="Heading" defaultOpen={true}>
+                <TextField
+                    label="Text"
+                    value={data.heading || ''}
+                    onChange={v => setField('heading', v)}
+                    placeholder="Heading"
+                    align={data.headingAlign || data.align || 'left'}
+                    onAlignChange={v => setField('headingAlign', v)}
+                />
+                <FontRow
+                    label="Font"
+                    value={headingStyle.fontFamily || ''}
+                    onChange={v => setHeadingStyle({ fontFamily: v })}
+                    sample={data.heading || 'Heading preview'}
+                    weight={700}
+                />
+                <FieldRow label="Size (px)">
+                    <input
+                        type="number"
+                        min={12}
+                        max={96}
+                        step={1}
+                        className={inputCls}
+                        value={Number.isFinite(headingStyle.fontSize) && headingStyle.fontSize > 0 ? headingStyle.fontSize : ''}
+                        placeholder="inherit"
+                        onChange={e => setHeadingStyle({ fontSize: Number(e.target.value) || 0 })}
                     />
-                </CollapsibleCard>
-            ) : null}
+                </FieldRow>
+                <ColorRow
+                    label="Color"
+                    value={headingStyle.color || ''}
+                    onChange={v => setHeadingStyle({ color: v })}
+                />
+            </CollapsibleCard>
 
-            <CollapsibleCard title="Media" defaultOpen={true}>
+            {/* ── Subheading ──────────────────────────────────────── */}
+            <CollapsibleCard title="Subheading" defaultOpen={false}>
+                <Toggle
+                    label="Show subheading"
+                    value={showSubheading}
+                    onChange={toggleSubheading}
+                />
+                {showSubheading ? (
+                    <>
+                        <TextField
+                            label="Text"
+                            value={data.subheading || ''}
+                            onChange={v => setField('subheading', v)}
+                            placeholder="Subheading"
+                            align={data.subheadingAlign || data.align || 'left'}
+                            onAlignChange={v => setField('subheadingAlign', v)}
+                        />
+                        <FontRow
+                            label="Font"
+                            value={subheadingStyle.fontFamily || ''}
+                            onChange={v => setSubheadingStyle({ fontFamily: v })}
+                            sample={data.subheading || 'Subheading preview'}
+                            weight={500}
+                        />
+                        <FieldRow label="Size (px)">
+                            <input
+                                type="number"
+                                min={10}
+                                max={48}
+                                step={1}
+                                className={inputCls}
+                                value={Number.isFinite(subheadingStyle.fontSize) && subheadingStyle.fontSize > 0 ? subheadingStyle.fontSize : ''}
+                                placeholder="inherit"
+                                onChange={e => setSubheadingStyle({ fontSize: Number(e.target.value) || 0 })}
+                            />
+                        </FieldRow>
+                        <ColorRow
+                            label="Color"
+                            value={subheadingStyle.color || ''}
+                            onChange={v => setSubheadingStyle({ color: v })}
+                        />
+                    </>
+                ) : null}
+            </CollapsibleCard>
+
+            {/* ── Body ────────────────────────────────────────────── */}
+            <CollapsibleCard title="Body" defaultOpen={false}>
+                <TextField
+                    label="Text"
+                    value={data.body || ''}
+                    onChange={v => setField('body', v)}
+                    placeholder="Body text"
+                    align={data.bodyAlign || data.align || 'left'}
+                    onAlignChange={v => setField('bodyAlign', v)}
+                />
+                <FontRow
+                    label="Font"
+                    value={bodyStyle.fontFamily || ''}
+                    onChange={v => setBodyStyle({ fontFamily: v })}
+                    sample={data.body || 'The quick brown fox jumps over the lazy dog.'}
+                    weight={400}
+                />
+                <FieldRow label="Size (px)">
+                    <input
+                        type="number"
+                        min={10}
+                        max={32}
+                        step={1}
+                        className={inputCls}
+                        value={Number.isFinite(bodyStyle.fontSize) && bodyStyle.fontSize > 0 ? bodyStyle.fontSize : ''}
+                        placeholder="inherit"
+                        onChange={e => setBodyStyle({ fontSize: Number(e.target.value) || 0 })}
+                    />
+                </FieldRow>
+                <ColorRow
+                    label="Color"
+                    value={bodyStyle.color || ''}
+                    onChange={v => setBodyStyle({ color: v })}
+                />
+            </CollapsibleCard>
+
+            {/* ── CTA ─────────────────────────────────────────────── */}
+            <CollapsibleCard title="CTA" defaultOpen={false}>
+                <Toggle
+                    label="Show CTA"
+                    value={showCta}
+                    onChange={toggleCta}
+                />
+                {showCta ? (
+                    <>
+                        <TextField
+                            label="Label"
+                            value={cta.label || ''}
+                            onChange={v => updateCta('label', v)}
+                            placeholder="Learn more"
+                        />
+                        <LinkField
+                            label="Destination"
+                            value={cta.link}
+                            pages={pages}
+                            onChange={v => updateCta('link', v)}
+                        />
+                        <FieldRow label="Style">
+                            <select
+                                className={inputCls}
+                                value={cta.style || 'primary'}
+                                onChange={e => updateCta('style', e.target.value)}
+                            >
+                                <option value="primary">Primary (filled)</option>
+                                <option value="secondary">Secondary (outlined)</option>
+                                <option value="ghost">Ghost (no border)</option>
+                                <option value="link">Link (underlined)</option>
+                            </select>
+                        </FieldRow>
+                        <FontRow
+                            label="Font"
+                            value={ctaStyle.fontFamily || ''}
+                            onChange={v => setCtaStyle({ fontFamily: v })}
+                            sample={cta.label || 'Button label'}
+                            weight={600}
+                        />
+                        <FieldRow label="Size (px)">
+                            <input
+                                type="number"
+                                min={10}
+                                max={32}
+                                step={1}
+                                className={inputCls}
+                                value={Number.isFinite(ctaStyle.fontSize) && ctaStyle.fontSize > 0 ? ctaStyle.fontSize : ''}
+                                placeholder="inherit"
+                                onChange={e => setCtaStyle({ fontSize: Number(e.target.value) || 0 })}
+                            />
+                        </FieldRow>
+                        <ColorRow
+                            label="Color"
+                            value={ctaStyle.color || ''}
+                            onChange={v => setCtaStyle({ color: v })}
+                        />
+                    </>
+                ) : null}
+            </CollapsibleCard>
+
+            {/* ── Media ───────────────────────────────────────────── */}
+            <CollapsibleCard title="Media" defaultOpen={false}>
                 <FieldSelect
                     label="Media type"
                     value={media.kind || 'image'}
                     options={[
-                        { value: 'image', label: 'Image' },
-                        { value: 'video', label: 'Video (embed URL)' },
+                        { value: 'image',        label: 'Image' },
+                        { value: 'gif',          label: 'GIF / Animation' },
+                        { value: 'video',        label: 'Video (embed URL)' },
+                        { value: 'video-silent', label: 'Video loop (no audio)' },
                     ]}
                     onChange={v => updateMedia('kind', v)}
                 />
-
-                {media.kind === 'image' ? (
+                {media.kind === 'gif' ? (
+                    <>
+                        <ImageField
+                            label="GIF / animation"
+                            value={media.src || ''}
+                            onChange={v => updateMedia('src', v)}
+                            accept="image/gif,image/webp,image/apng,image/png,image/jpeg"
+                            uploadLabel="Upload GIF"
+                            placeholder="https://… or /api/cms/asset/cms/…"
+                        />
+                        <TextField
+                            label="Alt text"
+                            value={media.alt || ''}
+                            onChange={v => updateMedia('alt', v)}
+                            placeholder="Describe the animation"
+                        />
+                    </>
+                ) : media.kind === 'video-silent' ? (
+                    <>
+                        <ImageField
+                            label="Video"
+                            value={media.src || ''}
+                            onChange={v => updateMedia('src', v)}
+                            accept="video/mp4,video/webm"
+                            previewKind="video"
+                            uploadLabel="Upload video"
+                            placeholder="https://… or /api/cms/asset/cms/…"
+                        />
+                        <TextField
+                            label="Alt text"
+                            value={media.alt || ''}
+                            onChange={v => updateMedia('alt', v)}
+                            placeholder="Describe the video"
+                        />
+                    </>
+                ) : media.kind === 'video' ? (
+                    <TextField
+                        label="Video embed URL"
+                        value={media.src || ''}
+                        onChange={v => updateMedia('src', v)}
+                        placeholder="https://www.youtube.com/embed/… or https://player.vimeo.com/video/…"
+                        hint="Use the embed URL, not the public watch URL."
+                    />
+                ) : (
                     <>
                         <ImageField
                             label="Image"
@@ -1430,78 +1925,29 @@ export function MediaTextEditor({ data = {}, pages = [], onChange }) {
                             placeholder="Describe the image"
                         />
                     </>
-                ) : (
-                    <TextField
-                        label="Video embed URL"
-                        value={media.src || ''}
-                        onChange={v => updateMedia('src', v)}
-                        placeholder="https://www.youtube.com/embed/… or https://player.vimeo.com/video/…"
-                        hint="Use the embed URL, not the public watch URL."
-                    />
                 )}
-            </CollapsibleCard>
-
-            <FieldSelect
-                label="Media position"
-                value={data.mediaPosition || 'left'}
-                options={[
-                    { value: 'left',  label: 'Left' },
-                    { value: 'right', label: 'Right' },
-                ]}
-                onChange={v => setField('mediaPosition', v)}
-            />
-
-            <FieldSelect
-                label="Media size"
-                value={data.mediaSize || 'half'}
-                options={[
-                    { value: 'half',       label: 'Half (50 / 50)' },
-                    { value: 'third',      label: 'One third (33 / 67)' },
-                    { value: 'two-thirds', label: 'Two thirds (66 / 34)' },
-                ]}
-                onChange={v => setField('mediaSize', v)}
-            />
-
-            {/* Text styles — heading / subheading / body. Empty values
-                = inherit page CSS / Design tab. */}
-            <CollapsibleCard title="Text styles" defaultOpen={false}>
-                <StyleTriplet
-                    label="Heading"
-                    style={data.headingStyle}
-                    onChange={v => setField('headingStyle', v)}
-                    sample={data.heading || 'Heading preview'}
-                    weight={700}
-                    min={12} max={96}
+                <FieldSelect
+                    label="Media position"
+                    value={data.mediaPosition || 'left'}
+                    options={[
+                        { value: 'left',  label: 'Left' },
+                        { value: 'right', label: 'Right' },
+                    ]}
+                    onChange={v => setField('mediaPosition', v)}
                 />
-                <StyleTriplet
-                    label="Subheading"
-                    style={data.subheadingStyle}
-                    onChange={v => setField('subheadingStyle', v)}
-                    sample={data.subheading || 'Subheading preview'}
-                    weight={500}
-                    min={10} max={48}
-                />
-                <StyleTriplet
-                    label="Body"
-                    style={data.bodyStyle}
-                    onChange={v => setField('bodyStyle', v)}
-                    sample={data.body || 'The quick brown fox jumps over the lazy dog.'}
-                    weight={400}
-                    min={10} max={32}
+                <FieldSelect
+                    label="Media size"
+                    value={data.mediaSize || 'half'}
+                    options={[
+                        { value: 'half',       label: 'Half (50 / 50)' },
+                        { value: 'third',      label: 'One third (33 / 67)' },
+                        { value: 'two-thirds', label: 'Two thirds (66 / 34)' },
+                    ]}
+                    onChange={v => setField('mediaSize', v)}
                 />
             </CollapsibleCard>
 
-            <FieldSelect
-                label="Background"
-                value={data.backgroundVariant || 'default'}
-                options={[
-                    { value: 'default', label: 'Default (page bg)' },
-                    { value: 'surface', label: 'Surface (alt bg)' },
-                    { value: 'primary', label: 'Primary (brand color)' },
-                    { value: 'dark',    label: 'Dark (secondary color)' },
-                ]}
-                onChange={v => setField('backgroundVariant', v)}
-            />
+            <BackgroundCard data={data} onChange={onChange} />
         </>
     );
 }
@@ -1511,17 +1957,46 @@ export function MediaTextEditor({ data = {}, pages = [], onChange }) {
 export function FeaturesEditor({ data = {}, onChange }) {
     return (
         <>
-            <InlineHint>Eyebrow, title, lead, and each card's title / body / tag are editable in the preview.</InlineHint>
+            <InlineHint>Eyebrow, title, lead, and each card's title and body are editable in the preview.</InlineHint>
             <SectionHeaderFields data={data} onChange={onChange} />
             <RepeatableList
                 label="Feature cards"
                 items={data.items || []}
                 onChange={v => onChange(set(data, 'items', v))}
-                makeNew={() => ({ icon: 'Sparkles', title: 'New feature', body: '', techTag: '' })}
+                makeNew={() => ({ icon: 'Sparkles', title: 'New feature', body: '', popupEmbed: '', cardAction: 'none', cardUrl: '' })}
                 itemLabel={(item) => item.title || '(no title)'}
+                // Deep-clone via JSON so future nested fields (e.g. a per-card
+                // style sub-object) can't share references between the source
+                // and its duplicate. Appending " (copy)" gives the user an
+                // obvious visual cue for which card is the clone.
+                duplicateItem={(item) => ({
+                    ...JSON.parse(JSON.stringify(item)),
+                    title: `${item.title || 'Feature'} (copy)`,
+                })}
                 renderItem={(item, update) => (
                     <>
                         <IconField label="Icon" value={item.icon} onChange={v => update({ ...item, icon: v })} />
+                        {/* Card title + body — also inline-editable in the
+                            preview, but the editor needs explicit inputs so
+                            users can fill them in before the card is
+                            rendered (newly added cards start empty and
+                            have nothing to click in the preview). */}
+                        <TextField
+                            label="Title"
+                            value={item.title || ''}
+                            onChange={v => update({ ...item, title: v })}
+                            placeholder="Feature title"
+                            align={item.titleAlign || 'left'}
+                            onAlignChange={v => update({ ...item, titleAlign: v })}
+                        />
+                        <TextField
+                            label="Body"
+                            value={item.body ?? item.description ?? ''}
+                            onChange={v => update({ ...item, body: v })}
+                            placeholder="Describe this feature"
+                            align={item.bodyAlign || 'left'}
+                            onAlignChange={v => update({ ...item, bodyAlign: v })}
+                        />
                         {/* Per-card text colors. Single hex string, no
                             sub-object — matches the spec for these two
                             fields specifically. Empty = inherit. */}
@@ -1539,6 +2014,49 @@ export function FeaturesEditor({ data = {}, onChange }) {
                                 title="Card body color"
                             />
                         </FieldRow>
+                        {/* Card action — none/link/popup. Drives the
+                            renderer's per-card behaviour: link wraps the
+                            card in an <a>; popup opens a modal with a
+                            sandboxed iframe; none leaves the card static. */}
+                        <FieldSelect
+                            label="Card action"
+                            value={item.cardAction || 'none'}
+                            options={[
+                                { value: 'none',  label: 'None — static card' },
+                                { value: 'link',  label: 'Link — open URL' },
+                                { value: 'popup', label: 'Popup — open iframe' },
+                            ]}
+                            onChange={v => update({ ...item, cardAction: v })}
+                        />
+                        {(item.cardAction || 'none') === 'link' ? (
+                            <TextField
+                                label="URL"
+                                value={item.cardUrl || ''}
+                                onChange={v => update({ ...item, cardUrl: v })}
+                                placeholder="https://…"
+                            />
+                        ) : null}
+                        {(item.cardAction || 'none') === 'popup' ? (
+                            <FieldRow
+                                label="Popup HTML (optional)"
+                                hint="Clicking the card opens a modal containing this HTML in a sandboxed iframe."
+                            >
+                                <textarea
+                                    rows={6}
+                                    className={inputCls + ' resize-y'}
+                                    style={{
+                                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                                        fontSize: 12.5,
+                                        lineHeight: 1.5,
+                                        whiteSpace: 'pre',
+                                    }}
+                                    value={item.popupEmbed || ''}
+                                    onChange={e => update({ ...item, popupEmbed: e.target.value })}
+                                    placeholder={'<!-- Paste HTML / CSS / JS shown when the card is clicked -->'}
+                                    spellCheck={false}
+                                />
+                            </FieldRow>
+                        ) : null}
                     </>
                 )}
                 addLabel="Add card"
@@ -1573,21 +2091,24 @@ export function StepsEditor({ data = {}, onChange }) {
                             label="Title"
                             value={item.title || ''}
                             onChange={v => update({ ...item, title: v })}
+                            align={item.titleAlign || 'left'}
+                            onAlignChange={v => update({ ...item, titleAlign: v })}
                         />
-                        <FieldRow label="Body">
-                            <textarea
-                                rows={3}
-                                className={inputCls + ' resize-y'}
-                                value={item.body || ''}
-                                onChange={e => update({ ...item, body: e.target.value })}
-                                placeholder="Describe what happens in this step."
-                            />
-                        </FieldRow>
+                        <TextField
+                            label="Body"
+                            value={item.body || ''}
+                            onChange={v => update({ ...item, body: v })}
+                            placeholder="Describe what happens in this step."
+                            align={item.bodyAlign || 'left'}
+                            onAlignChange={v => update({ ...item, bodyAlign: v })}
+                        />
                         <TextField
                             label="Example"
                             value={item.example || ''}
                             onChange={v => update({ ...item, example: v })}
                             placeholder="Optional caption / example"
+                            align={item.exampleAlign || 'left'}
+                            onAlignChange={v => update({ ...item, exampleAlign: v })}
                         />
                         {/* Per-step title color — single hex string. */}
                         <FieldRow label="Title color">
@@ -1617,11 +2138,27 @@ export function SecurityEditor({ data = {}, onChange }) {
                 label="Security cards"
                 items={data.cards || []}
                 onChange={v => onChange(set(data, 'cards', v))}
-                makeNew={() => ({ icon: 'ShieldCheck', title: 'New card', summary: '', details: [] })}
+                makeNew={() => ({ icon: 'ShieldCheck', title: 'New card', summary: '', details: [], cardAction: 'none', cardUrl: '', popupEmbed: '' })}
                 itemLabel={(item) => item.title || '(no title)'}
                 renderItem={(item, update) => (
                     <>
                         <IconField label="Icon" value={item.icon} onChange={v => update({ ...item, icon: v })} />
+                        <TextField
+                            label="Title"
+                            value={item.title || ''}
+                            onChange={v => update({ ...item, title: v })}
+                            placeholder="Card title"
+                            align={item.titleAlign || 'left'}
+                            onAlignChange={v => update({ ...item, titleAlign: v })}
+                        />
+                        <TextField
+                            label="Summary"
+                            value={item.summary || ''}
+                            onChange={v => update({ ...item, summary: v })}
+                            placeholder="Short summary"
+                            align={item.summaryAlign || 'left'}
+                            onAlignChange={v => update({ ...item, summaryAlign: v })}
+                        />
                         <RepeatableList
                             label="Detail bullets"
                             items={item.details || []}
@@ -1640,6 +2177,50 @@ export function SecurityEditor({ data = {}, onChange }) {
                             )}
                             addLabel="Add detail"
                         />
+                        {/* Card action — same toggle as the Features block.
+                            none/link/popup drives the renderer's per-card
+                            behaviour: link wraps in an <a>; popup opens a
+                            sandboxed iframe modal; none leaves the card
+                            static. */}
+                        <FieldSelect
+                            label="Card action"
+                            value={item.cardAction || 'none'}
+                            options={[
+                                { value: 'none',  label: 'None — static card' },
+                                { value: 'link',  label: 'Link — open URL' },
+                                { value: 'popup', label: 'Popup — open iframe' },
+                            ]}
+                            onChange={v => update({ ...item, cardAction: v })}
+                        />
+                        {(item.cardAction || 'none') === 'link' ? (
+                            <TextField
+                                label="URL"
+                                value={item.cardUrl || ''}
+                                onChange={v => update({ ...item, cardUrl: v })}
+                                placeholder="https://…"
+                            />
+                        ) : null}
+                        {(item.cardAction || 'none') === 'popup' ? (
+                            <FieldRow
+                                label="Popup HTML (optional)"
+                                hint="Clicking the card opens a modal containing this HTML in a sandboxed iframe."
+                            >
+                                <textarea
+                                    rows={6}
+                                    className={inputCls + ' resize-y'}
+                                    style={{
+                                        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+                                        fontSize: 12.5,
+                                        lineHeight: 1.5,
+                                        whiteSpace: 'pre',
+                                    }}
+                                    value={item.popupEmbed || ''}
+                                    onChange={e => update({ ...item, popupEmbed: e.target.value })}
+                                    placeholder={'<!-- Paste HTML / CSS / JS shown when the card is clicked -->'}
+                                    spellCheck={false}
+                                />
+                            </FieldRow>
+                        ) : null}
                     </>
                 )}
                 addLabel="Add card"
@@ -1710,12 +2291,16 @@ export function TechStatsEditor({ data = {}, onChange }) {
                             value={item.number || ''}
                             onChange={v => update({ ...item, number: v })}
                             placeholder="e.g. 99%"
+                            align={item.numberAlign || 'left'}
+                            onAlignChange={v => update({ ...item, numberAlign: v })}
                         />
                         <TextField
                             label="Label"
                             value={item.label || ''}
                             onChange={v => update({ ...item, label: v })}
                             placeholder="e.g. Uptime"
+                            align={item.labelAlign || 'left'}
+                            onAlignChange={v => update({ ...item, labelAlign: v })}
                         />
                         {/* Per-stat number typography. The big number is
                             the visual centrepiece of a stat; lets users
@@ -1744,6 +2329,24 @@ export function CTAEditor({ data = {}, pages = [], onChange }) {
     return (
         <>
             <InlineHint>Title, lead, and button label are editable in the preview.</InlineHint>
+            <CollapsibleCard title="Text" defaultOpen={true}>
+                <TextField
+                    label="Title"
+                    value={data.title || ''}
+                    onChange={v => onChange(set(data, 'title', v))}
+                    placeholder="Call to action title"
+                    align={data.titleAlign || data.align || 'left'}
+                    onAlignChange={v => onChange(set(data, 'titleAlign', v))}
+                />
+                <TextField
+                    label="Lead"
+                    value={data.lead || ''}
+                    onChange={v => onChange(set(data, 'lead', v))}
+                    placeholder="Supporting line"
+                    align={data.leadAlign || data.align || 'left'}
+                    onAlignChange={v => onChange(set(data, 'leadAlign', v))}
+                />
+            </CollapsibleCard>
             <CtaButtonField
                 value={button}
                 pages={pages}
@@ -1771,6 +2374,25 @@ export function CtaBannerEditor({ data = {}, pages = [], onChange }) {
     return (
         <>
             <InlineHint>Click heading and subheading in the preview to edit inline.</InlineHint>
+
+            <CollapsibleCard title="Text" defaultOpen={true}>
+                <TextField
+                    label="Heading"
+                    value={data.heading || ''}
+                    onChange={v => setField('heading', v)}
+                    placeholder="Heading"
+                    align={data.headingAlign || data.align || 'left'}
+                    onAlignChange={v => setField('headingAlign', v)}
+                />
+                <TextField
+                    label="Subheading"
+                    value={data.subheading || ''}
+                    onChange={v => setField('subheading', v)}
+                    placeholder="Subheading"
+                    align={data.subheadingAlign || data.align || 'left'}
+                    onAlignChange={v => setField('subheadingAlign', v)}
+                />
+            </CollapsibleCard>
 
             <FieldSelect
                 label="Layout"
@@ -1837,6 +2459,288 @@ export function CtaBannerEditor({ data = {}, pages = [], onChange }) {
                 />
             </CollapsibleCard>
         </>
+    );
+}
+
+// ── Live Component ────────────────────────────────────────────────────
+//
+// Single textarea — the user pastes a full HTML document (or just a
+// snippet with <style>/<script> tags). The renderer drops it into an
+// `srcDoc` iframe sandboxed to `allow-scripts` only, so untrusted code
+// can't reach back into the parent page.
+
+export function LiveComponentEditor({ data = {}, pages = [], onChange }) {
+    const setField = (key, value) => onChange(set(data, key, value));
+    const layout   = data.layout || 'full';
+    const cta      = data.cta || {};
+    const ctaOn    = cta.enabled !== false;
+    const setCta   = (patch) => onChange(set(data, 'cta', { ...cta, ...patch }));
+    const CTA_STYLE_OPTIONS = [
+        { value: 'primary',   label: 'Primary (filled)' },
+        { value: 'secondary', label: 'Secondary (outlined)' },
+        { value: 'ghost',     label: 'Ghost (no border)' },
+        { value: 'link',      label: 'Link (underlined)' },
+    ];
+
+    // Font-weight options for the Heading / Body typography cards. The
+    // shared StyleTriplet only covers font / size / color, so weight is a
+    // sibling FieldSelect that writes `fontWeight` onto the same *Style
+    // blob. '' (Default) = inherit — the renderer skips it like the other
+    // empty StyleTriplet fields.
+    const WEIGHT_OPTIONS = [
+        { value: '',    label: 'Default (inherit)' },
+        { value: '300', label: 'Light (300)' },
+        { value: '400', label: 'Regular (400)' },
+        { value: '500', label: 'Medium (500)' },
+        { value: '600', label: 'Semibold (600)' },
+        { value: '700', label: 'Bold (700)' },
+        { value: '800', label: 'Extrabold (800)' },
+    ];
+    const weightValue = (s) => (s && s.fontWeight ? String(s.fontWeight) : '');
+    const setWeight   = (key, s, v) => setField(key, { ...(s || {}), fontWeight: Number(v) || 0 });
+
+    const codeTextareaStyle = {
+        minHeight: 320,
+        fontFamily: 'ui-monospace, SFMono-Regular, Menlo, Consolas, monospace',
+        fontSize: 12.5,
+        lineHeight: 1.5,
+        whiteSpace: 'pre',
+    };
+
+    return (
+        <>
+            <InlineHint>
+                Paste any self-contained HTML / CSS / JS snippet — useful for
+                AI-built animations or custom widgets that don't fit the other
+                blocks. Runs in a sandboxed iframe.
+            </InlineHint>
+
+            {/* Layout picker — always visible, no collapse. */}
+            <FieldRow label="Layout">
+                <LayoutPicker value={layout} onChange={v => setField('layout', v)} />
+            </FieldRow>
+
+            <CollapsibleCard title="Component" defaultOpen={true}>
+                <FieldRow label="Code" hint="Paste full HTML including <style> and <script> tags.">
+                    <textarea
+                        rows={16}
+                        className={inputCls + ' resize-y'}
+                        style={codeTextareaStyle}
+                        value={data.code || ''}
+                        onChange={e => setField('code', e.target.value)}
+                        placeholder={'<!-- Paste your HTML/CSS/JS here -->'}
+                        spellCheck={false}
+                    />
+                </FieldRow>
+            </CollapsibleCard>
+
+            {layout === 'two-components' ? (
+                <CollapsibleCard title="Second component" defaultOpen={true}>
+                    <FieldRow label="Code" hint="Paste full HTML including <style> and <script> tags.">
+                        <textarea
+                            rows={16}
+                            className={inputCls + ' resize-y'}
+                            style={codeTextareaStyle}
+                            value={data.codeRight || ''}
+                            onChange={e => setField('codeRight', e.target.value)}
+                            placeholder={'<!-- Paste your HTML/CSS/JS here -->'}
+                            spellCheck={false}
+                        />
+                    </FieldRow>
+                </CollapsibleCard>
+            ) : null}
+
+            {layout === 'component-text' ? (
+                <CollapsibleCard title="Text" defaultOpen={true}>
+                    <TextField
+                        label="Heading"
+                        value={data.heading || ''}
+                        onChange={v => setField('heading', v)}
+                        placeholder="Section heading"
+                        align={data.headingAlign || 'left'}
+                        onAlignChange={v => setField('headingAlign', v)}
+                    />
+                    <TextField
+                        label="Body"
+                        value={data.body || ''}
+                        onChange={v => setField('body', v)}
+                        placeholder="Short paragraph next to the component."
+                        align={data.bodyAlign || 'left'}
+                        onAlignChange={v => setField('bodyAlign', v)}
+                    />
+                </CollapsibleCard>
+            ) : null}
+
+            {layout === 'component-cta' ? (
+                <CollapsibleCard title="CTA" defaultOpen={true}>
+                    <TextField
+                        label="Heading"
+                        value={data.heading || ''}
+                        onChange={v => setField('heading', v)}
+                        placeholder="Section heading"
+                        align={data.headingAlign || 'left'}
+                        onAlignChange={v => setField('headingAlign', v)}
+                    />
+                    <Toggle
+                        label="Show CTA"
+                        value={ctaOn}
+                        onChange={v => setCta({ enabled: v })}
+                    />
+                    {ctaOn ? (
+                        <>
+                            <TextField
+                                label="Label"
+                                value={cta.label || ''}
+                                onChange={v => setCta({ label: v })}
+                                placeholder="Get started"
+                            />
+                            <LinkField
+                                label="Destination"
+                                value={cta.link}
+                                pages={pages}
+                                onChange={v => setCta({ link: v })}
+                            />
+                            <FieldSelect
+                                label="Style"
+                                value={cta.style || 'primary'}
+                                options={CTA_STYLE_OPTIONS}
+                                onChange={v => setCta({ style: v })}
+                            />
+                        </>
+                    ) : null}
+                </CollapsibleCard>
+            ) : null}
+
+            {/* Typography for the Heading / Body shown in the
+                component-text and component-cta layouts. Mirrors the
+                Content block's "Text styles" card — StyleTriplet covers
+                font / size / color; font weight is an extra sibling
+                control since StyleTriplet itself doesn't expose it. */}
+            {(layout === 'component-text' || layout === 'component-cta') ? (
+                <CollapsibleCard title="Text styles" defaultOpen={false}>
+                    <StyleTriplet
+                        label="Heading"
+                        style={data.headingStyle}
+                        onChange={v => setField('headingStyle', v)}
+                        sample={data.heading || 'Heading preview'}
+                        weight={700}
+                        min={12} max={96}
+                    />
+                    <FieldSelect
+                        label="Heading weight"
+                        value={weightValue(data.headingStyle)}
+                        options={WEIGHT_OPTIONS}
+                        onChange={v => setWeight('headingStyle', data.headingStyle, v)}
+                    />
+                    {layout === 'component-text' ? (
+                        <>
+                            <StyleTriplet
+                                label="Body"
+                                style={data.bodyStyle}
+                                onChange={v => setField('bodyStyle', v)}
+                                sample={data.body || 'The quick brown fox jumps over the lazy dog.'}
+                                weight={400}
+                                min={10} max={32}
+                            />
+                            <FieldSelect
+                                label="Body weight"
+                                value={weightValue(data.bodyStyle)}
+                                options={WEIGHT_OPTIONS}
+                                onChange={v => setWeight('bodyStyle', data.bodyStyle, v)}
+                            />
+                        </>
+                    ) : null}
+                </CollapsibleCard>
+            ) : null}
+        </>
+    );
+}
+
+// 2×2 layout picker — each option is a tile with a tiny SVG diagram of
+// what that layout produces. Selected option gets an amber border + tint
+// so the user can see at a glance which mode is active. Click sets
+// `data.layout` via the parent's setField callback.
+function LayoutPicker({ value, onChange }) {
+    const OPTIONS = [
+        { id: 'full',            label: 'Full width',     diagram: <DiagramFull /> },
+        { id: 'two-components',  label: 'Two components', diagram: <DiagramTwo /> },
+        { id: 'component-text',  label: 'Component + text', diagram: <DiagramText /> },
+        { id: 'component-cta',   label: 'Component + CTA',  diagram: <DiagramCta /> },
+    ];
+    return (
+        <div className="grid grid-cols-2 gap-2 w-full">
+            {OPTIONS.map(opt => {
+                const selected = value === opt.id;
+                return (
+                    <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => onChange(opt.id)}
+                        className={
+                            'flex flex-col items-center gap-1.5 p-2 rounded-md border transition-colors text-left ' +
+                            (selected
+                                ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/10'
+                                : 'border-[var(--border-default)] bg-[var(--bg-tertiary)] hover:border-[var(--accent-primary)]/60')
+                        }
+                        aria-pressed={selected}
+                    >
+                        <div
+                            className="w-full flex items-center justify-center rounded"
+                            style={{
+                                height: 44,
+                                background: selected ? 'rgba(245, 166, 35, 0.06)' : 'var(--bg-secondary, #ffffff)',
+                                border: '1px solid var(--border-subtle, rgba(15,23,42,0.08))',
+                            }}
+                        >
+                            {opt.diagram}
+                        </div>
+                        <span className="text-[11px] text-[var(--text-secondary)] leading-tight">{opt.label}</span>
+                    </button>
+                );
+            })}
+        </div>
+    );
+}
+
+// Tiny SVG diagrams for the layout picker. Same viewBox so they line
+// up at the same scale. Kept inline because they're trivial and only
+// the picker uses them.
+const DIAGRAM_FILL_FRAME = 'rgba(15,23,42,0.18)';
+const DIAGRAM_FILL_TEXT  = 'rgba(15,23,42,0.32)';
+const DIAGRAM_FILL_CTA   = '#F5A623';
+function DiagramFull() {
+    return (
+        <svg viewBox="0 0 60 30" width="56" height="28" aria-hidden="true">
+            <rect x="2" y="4" width="56" height="22" rx="3" fill={DIAGRAM_FILL_FRAME} />
+        </svg>
+    );
+}
+function DiagramTwo() {
+    return (
+        <svg viewBox="0 0 60 30" width="56" height="28" aria-hidden="true">
+            <rect x="2"  y="4" width="26" height="22" rx="3" fill={DIAGRAM_FILL_FRAME} />
+            <rect x="32" y="4" width="26" height="22" rx="3" fill={DIAGRAM_FILL_FRAME} />
+        </svg>
+    );
+}
+function DiagramText() {
+    return (
+        <svg viewBox="0 0 60 30" width="56" height="28" aria-hidden="true">
+            <rect x="2" y="4" width="26" height="22" rx="3" fill={DIAGRAM_FILL_FRAME} />
+            <rect x="32" y="7"  width="24" height="3" rx="1.5" fill={DIAGRAM_FILL_TEXT} />
+            <rect x="32" y="13" width="22" height="2" rx="1"   fill={DIAGRAM_FILL_TEXT} opacity="0.75" />
+            <rect x="32" y="17" width="20" height="2" rx="1"   fill={DIAGRAM_FILL_TEXT} opacity="0.65" />
+            <rect x="32" y="21" width="18" height="2" rx="1"   fill={DIAGRAM_FILL_TEXT} opacity="0.55" />
+        </svg>
+    );
+}
+function DiagramCta() {
+    return (
+        <svg viewBox="0 0 60 30" width="56" height="28" aria-hidden="true">
+            <rect x="2"  y="4"  width="26" height="22" rx="3"   fill={DIAGRAM_FILL_FRAME} />
+            <rect x="32" y="9"  width="20" height="3"  rx="1.5" fill={DIAGRAM_FILL_TEXT} />
+            <rect x="32" y="17" width="14" height="6"  rx="3"   fill={DIAGRAM_FILL_CTA} />
+        </svg>
     );
 }
 
@@ -1981,6 +2885,179 @@ function FieldSelect({ value, onChange, options, label }) {
     );
 }
 
+// ── Pricing ───────────────────────────────────────────────────────────
+//
+// Dynamic pricing block. Plans come from the subscription database via
+// `GET /api/billing/public-plans`. The admin picks an audience
+// (`planType`: organization or consumer); the marketing block fetches
+// and renders matching plans live. To show both audiences on one page,
+// drop two pricing blocks — one per audience — onto the page.
+//
+// Editor exposes only: heading/subheading + audience + monthly/yearly
+// toggle controls + CTA / empty-state copy. Plan content itself is
+// managed at /app/admin/subscriptions and is NOT editable here.
+
+const PRICING_PLAN_TYPES = [
+    { value: 'organization', label: 'Organisations' },
+    { value: 'consumer',     label: 'Consumers' },
+];
+
+const PRICING_INTERVAL_OPTIONS = [
+    { value: 'monthly', label: 'Monthly' },
+    { value: 'yearly',  label: 'Yearly' },
+];
+
+export function PricingEditor({ data = {}, onChange }) {
+    const setField = (key, value) => onChange(set(data, key, value));
+
+    const planType        = data.planType === 'consumer' ? 'consumer' : 'organization';
+    const enableToggle    = data.enableToggle !== false;
+    const defaultInterval = data.defaultInterval === 'yearly' ? 'yearly' : 'monthly';
+
+    // Live preview of which plans the visitor will see, given the
+    // currently-selected planType. Refetched on Refresh — admins can
+    // change plans in /app/admin/subscriptions and confirm here without
+    // reopening the editor.
+    const [preview, setPreview] = React.useState({ loading: true, error: null, plans: [] });
+    const reloadPreview = React.useCallback(() => {
+        setPreview(p => ({ ...p, loading: true, error: null }));
+        fetch('/api/billing/public-plans', { credentials: 'include' })
+            .then(r => r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`)))
+            .then(payload => {
+                const plans = Array.isArray(payload?.plans) ? payload.plans : [];
+                setPreview({ loading: false, error: null, plans });
+            })
+            .catch(err => setPreview({ loading: false, error: err.message || 'Failed', plans: [] }));
+    }, []);
+    React.useEffect(() => { reloadPreview(); }, [reloadPreview]);
+    const matchingPlans = preview.plans.filter(p => p?.planType === planType);
+
+    return (
+        <>
+            <InlineHint>
+                Pricing cards are pulled live from your published subscription
+                plans. Manage plans at <a href="/app/admin/subscriptions" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'underline' }}>/app/admin/subscriptions</a>.
+                For both audiences on one page, add a second pricing block
+                with the other audience.
+            </InlineHint>
+
+            <CollapsibleCard title="Heading" defaultOpen={true}>
+                <TextField
+                    label="Heading"
+                    value={data.heading || ''}
+                    onChange={v => setField('heading', v)}
+                    placeholder="Pricing"
+                />
+                <TextField
+                    label="Subheading"
+                    value={data.subheading || ''}
+                    onChange={v => setField('subheading', v)}
+                    placeholder="Short line that sits under the heading."
+                />
+            </CollapsibleCard>
+
+            <CollapsibleCard title="Audience" defaultOpen={true}>
+                <FieldSelect
+                    label="Show plans for"
+                    value={planType}
+                    options={PRICING_PLAN_TYPES}
+                    onChange={v => setField('planType', v)}
+                />
+
+                {/* Live preview list — tells the admin exactly which plans
+                    will show up for this audience right now. */}
+                <div className="mt-3 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-secondary)] p-3">
+                    <div className="flex items-center justify-between mb-2">
+                        <div className="text-xs font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+                            Plans the visitor will see
+                        </div>
+                        <button
+                            type="button"
+                            onClick={reloadPreview}
+                            className="text-xs underline text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                        >
+                            Refresh
+                        </button>
+                    </div>
+                    {preview.loading ? (
+                        <div className="text-xs text-[var(--text-muted)]">Loading…</div>
+                    ) : preview.error ? (
+                        <div className="text-xs text-red-500">Failed: {preview.error}</div>
+                    ) : matchingPlans.length === 0 ? (
+                        <div className="text-xs text-[var(--text-muted)]">
+                            No public plans for this audience. Create one at /app/admin/subscriptions.
+                        </div>
+                    ) : (
+                        <ul className="text-xs text-[var(--text-secondary)] space-y-1 list-disc pl-4">
+                            {matchingPlans.map(p => (
+                                <li key={p.id}>
+                                    <strong>{p.name}</strong>
+                                    {p.price != null ? ` — ${p.currency || 'EUR'} ${p.price} / ${p.billingInterval || '—'}` : ' — Custom pricing'}
+                                    {p.trialDays > 0 ? ` · ${p.trialDays}d trial` : ''}
+                                </li>
+                            ))}
+                        </ul>
+                    )}
+                </div>
+            </CollapsibleCard>
+
+            <CollapsibleCard title="Billing interval toggle" defaultOpen={true}>
+                <Toggle
+                    label="Show monthly/yearly toggle to visitors"
+                    value={enableToggle}
+                    onChange={v => setField('enableToggle', v)}
+                />
+                {enableToggle ? (
+                    <>
+                        <FieldSelect
+                            label="Default side"
+                            value={defaultInterval}
+                            options={PRICING_INTERVAL_OPTIONS}
+                            onChange={v => setField('defaultInterval', v)}
+                        />
+                        <TextField
+                            label="Monthly label"
+                            value={data.toggleLabelMonthly || ''}
+                            onChange={v => setField('toggleLabelMonthly', v)}
+                            placeholder="Maandelijks"
+                        />
+                        <TextField
+                            label="Yearly label"
+                            value={data.toggleLabelYearly || ''}
+                            onChange={v => setField('toggleLabelYearly', v)}
+                            placeholder="Jaarlijks"
+                        />
+                    </>
+                ) : (
+                    <FieldSelect
+                        label="Show only this interval"
+                        value={defaultInterval}
+                        options={PRICING_INTERVAL_OPTIONS}
+                        onChange={v => setField('defaultInterval', v)}
+                    />
+                )}
+            </CollapsibleCard>
+
+            <CollapsibleCard title="Call to action" defaultOpen={false}>
+                <TextField
+                    label="Button label"
+                    value={data.ctaLabel || ''}
+                    onChange={v => setField('ctaLabel', v)}
+                    placeholder="Kies plan"
+                    hint="Buttons link to /app/billing?plan=<id>. The plan id is added automatically per card."
+                />
+                <TextField
+                    label="Empty-state text"
+                    value={data.emptyText || ''}
+                    onChange={v => setField('emptyText', v)}
+                    placeholder="Geen plannen beschikbaar"
+                    hint="Shown when no public plans match the selected audience and interval."
+                />
+            </CollapsibleCard>
+        </>
+    );
+}
+
 // ── Catalogue + registries ────────────────────────────────────────────
 //
 // BLOCK_CATALOGUE   used by BlockList (add picker) and BlockRow (labels/icons)
@@ -2000,6 +3077,8 @@ export const BLOCK_CATALOGUE = {
     techStats:    { type: 'techStats',    label: 'Stats',          icon: 'BarChart3',   category: 'Content' },
     cta:          { type: 'cta',          label: 'Call to action', icon: 'Target',           category: 'Conversion' },
     'cta-banner': { type: 'cta-banner',   label: 'CTA Banner',     icon: 'Rocket',           category: 'Conversion' },
+    'live-component': { type: 'live-component', label: 'Live Component', icon: 'Code',         category: 'Content' },
+    pricing:      { type: 'pricing',      label: 'Pricing',        icon: 'CreditCard',       category: 'Conversion' },
 };
 
 export const BLOCK_EDITORS = {
@@ -2015,6 +3094,8 @@ export const BLOCK_EDITORS = {
     techStats:    { component: TechStatsEditor,    label: 'Stats',          icon: 'BarChart3'   },
     cta:          { component: CTAEditor,          label: 'Call to action', icon: 'Target'           },
     'cta-banner': { component: CtaBannerEditor,    label: 'CTA Banner',     icon: 'Rocket'           },
+    'live-component': { component: LiveComponentEditor, label: 'Live Component', icon: 'Code'        },
+    pricing:      { component: PricingEditor,      label: 'Pricing',        icon: 'CreditCard'        },
 };
 
 // Brand-neutral placeholder content used when the user clicks "+ Add block"
@@ -2160,6 +3241,39 @@ export const BLOCK_DEFAULTS = {
             link: { kind: 'external', url: '', newTab: false },
         },
         secondaryCta:      null,                        // null | { label, link: { kind, ... } }
+    },
+    // Live Component — user pastes raw HTML/CSS/JS into one of four
+    // layout modes. The renderer reads `layout` to pick the column
+    // structure and falls back to 'full' for blocks that pre-date the
+    // multi-layout upgrade. CTA mirrors the Hero pattern: nested
+    // { enabled, label, link, style } blob so the LinkField gives users
+    // anchor / external-URL / internal-page destinations consistently.
+    'live-component': {
+        layout:    'full',
+        code:      '',
+        codeRight: '',
+        heading:   '',
+        body:      '',
+        cta: {
+            enabled: true,
+            label:   'Get started',
+            link:    { kind: 'external', url: '', newTab: false },
+            style:   'primary',
+        },
+    },
+    // Pricing — dynamic. Plans come from /api/billing/public-plans;
+    // the admin chooses an audience (planType) and the toggle defaults
+    // here. Kept in sync with server/i18n/defaults/cmsDefaults.js.
+    pricing: {
+        heading: 'Pricing',
+        subheading: '',
+        planType: 'organization',
+        enableToggle: true,
+        defaultInterval: 'monthly',
+        toggleLabelMonthly: 'Maandelijks',
+        toggleLabelYearly: 'Jaarlijks',
+        ctaLabel: 'Kies plan',
+        emptyText: 'Geen plannen beschikbaar',
     },
 };
 

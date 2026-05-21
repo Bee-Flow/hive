@@ -4,6 +4,7 @@ import { useTranslation } from '../../hooks/useTranslation';
 import { Bot, MessageSquare, BookOpen, Search, Code, LayoutTemplate, Filter, X, Cpu, Users, ChevronDown, Activity, ArrowUpRight, ArrowDownLeft, BarChart3, Zap, DollarSign, TrendingUp, ChevronRight, Shield, AlertTriangle, Eye, Fingerprint, Clock, Globe, Server, ArrowRight, ArrowLeft, Link2, Info, FileText, ScanEye, ShieldCheck, Binary, ThumbsUp } from 'lucide-react';
 import OrgFeedbackPanel from './OrgFeedbackPanel';
 import OrgTerminationsPanel from './OrgTerminationsPanel';
+import { useLicenseContext } from '../../components/LicenseContext';
 import { getIntegrationIcon, hasIntegrationIcon } from '../../config/integrationIcons';
 import { rowsToCsv as rowsToCsvShared, downloadCsv as downloadCsvShared, computeHalfPeriodDelta } from '../../utils/usageHelpers';
 import {
@@ -23,6 +24,19 @@ const fNum = (n) => {
     return n?.toLocaleString() || '0';
 };
 const fCur = (c) => `$${(c || 0).toFixed(2)}`;
+
+const currencySym = (c) => ({ EUR: '€', USD: '$', GBP: '£' }[String(c || 'EUR').toUpperCase()] || (c || '€'));
+const formatDateRange = (startIso, endIso) => {
+    try {
+        const a = startIso ? new Date(startIso) : null;
+        const b = endIso ? new Date(endIso) : null;
+        const opts = { day: 'numeric', month: 'short' };
+        const yearOpts = { day: 'numeric', month: 'short', year: 'numeric' };
+        if (!a || !b) return '';
+        const sameYear = a.getFullYear() === b.getFullYear();
+        return `${a.toLocaleDateString(undefined, opts)} – ${b.toLocaleDateString(undefined, sameYear ? yearOpts : yearOpts)}`;
+    } catch { return ''; }
+};
 
 const shortModel = (m) => {
     if (!m) return 'Unknown';
@@ -414,20 +428,22 @@ const IntegrationLogo = ({ integrationType, size = 26, fallbackColor }) => {
 };
 
 /* Sparkline */
-const TrendChart = ({ timeline, title, avgLabel, noDataLabel }) => {
+const TrendChart = ({ timeline, title, avgLabel, noDataLabel, valueField = 'total_tokens', valueFormatter }) => {
     if (!timeline?.length) return (
         <div style={{ height: 48, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, color: 'var(--text-muted)', background: 'var(--bg-secondary)', borderRadius: 10 }}>
             {noDataLabel}
         </div>
     );
-    const maxTokens = Math.max(...timeline.map(t => t.total_tokens || 0), 10);
+    const get = (t) => Number(t?.[valueField]) || 0;
+    const maxVal = Math.max(...timeline.map(get), 1);
     const points = timeline.map((t, i) => {
         const x = (i / Math.max(timeline.length - 1, 1)) * 100;
-        const y = 100 - ((t.total_tokens || 0) / maxTokens) * 100;
+        const y = 100 - (get(t) / maxVal) * 100;
         return `${x},${y}`;
     }).join(' ');
 
-    const avgDay = (timeline.reduce((s, t) => s + (t.total_tokens || 0), 0) / timeline.length);
+    const avgDay = (timeline.reduce((s, t) => s + get(t), 0) / timeline.length);
+    const fmt = valueFormatter || fNum;
 
     return (
         <Card style={{ padding: '12px 16px' }}>
@@ -436,7 +452,7 @@ const TrendChart = ({ timeline, title, avgLabel, noDataLabel }) => {
                     <TrendingUp style={{ width: 13, height: 13, color: 'var(--accent-primary)', opacity: 0.7 }} />
                     <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)' }}>{title}</span>
                 </div>
-                <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>{avgLabel.replace('{value}', fNum(avgDay))}</span>
+                <span style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 500 }}>{avgLabel.replace('{value}', fmt(avgDay))}</span>
             </div>
             <div style={{ height: 56, width: '100%', position: 'relative' }}>
                 <svg viewBox="0 0 100 100" preserveAspectRatio="none" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
@@ -496,12 +512,12 @@ const REPORT_TABS = [
     { id: 'terminations', labelKey: 'usage.tab_terminations', icon: AlertTriangle, color: '#f43f5e' },
 ];
 
-const ReportTabBar = ({ active, onChange, t: translate }) => (
+const ReportTabBar = ({ active, onChange, t: translate, tabs = REPORT_TABS }) => (
     <div style={{
         display: 'flex', alignItems: 'center', gap: 4,
         borderBottom: '1px solid var(--border-default, var(--border-subtle))',
     }}>
-        {REPORT_TABS.map(tab => {
+        {tabs.map(tab => {
             const Icon = tab.icon;
             const isActive = active === tab.id;
             return (
@@ -529,10 +545,50 @@ const ReportTabBar = ({ active, onChange, t: translate }) => (
 
 const UsageSection = () => {
     const { t } = useTranslation();
+    // `advanced_usage_monitoring` (Enterprise+) gates every non-Overview
+    // tab. The four backend routes (/api/usage/{guardrails,integrations,
+    // azure-services}/* and /api/{feedback,terminations}) also enforce
+    // this — the UI filter just keeps community admins from clicking
+    // tabs that would 403.
+    const { hasFeature: hasLicenseFeature } = useLicenseContext();
+    const canSeeAdvancedUsage = hasLicenseFeature('advanced_usage_monitoring');
+    const visibleTabs = useMemo(
+        () => canSeeAdvancedUsage ? REPORT_TABS : REPORT_TABS.filter(tab => tab.id === 'overview'),
+        [canSeeAdvancedUsage]
+    );
     const [days, setDays] = useState(30);
     const [loading, setLoading] = useState(true);
     const [expandedAgent, setExpandedAgent] = useState(null);
     const [activeReport, setActiveReport] = useState('overview');
+
+    // If the user arrived with a deep-link to a non-Overview tab (e.g.
+    // ?tab=safety bookmark) but the licence dropped them back to
+    // Overview, fall back so the page doesn't render an empty body.
+    useEffect(() => {
+        if (!canSeeAdvancedUsage && activeReport !== 'overview') {
+            setActiveReport('overview');
+        }
+    }, [canSeeAdvancedUsage, activeReport]);
+
+    // Resolve the user's org and pull their subscription so the customer
+    // view can show plan name, billing period, seat count, and cost cap.
+    useEffect(() => {
+        let cancelled = false;
+        (async () => {
+            try {
+                const permsRes = await authFetch(`${API_BASE}/api/auth/my-permissions`);
+                if (!permsRes.ok) return;
+                const perms = await permsRes.json();
+                const orgId = (perms?.organizations || [])[0];
+                if (!orgId) return;
+                const subRes = await authFetch(`${API_BASE}/api/subscriptions/orgs/${orgId}`);
+                if (!subRes.ok) return;
+                const sub = await subRes.json();
+                if (!cancelled) setSubscription(sub);
+            } catch (_) { /* non-fatal */ }
+        })();
+        return () => { cancelled = true; };
+    }, []);
 
     // Filters
     const [filterUser, setFilterUser] = useState(null);
@@ -545,6 +601,14 @@ const UsageSection = () => {
         summary: null, timeline: [], users: [], sources: [],
         agents: [], models: [], modelsByAgent: [], modelsByUser: [],
     });
+    // Subscription context for the customer-view header (plan, billing,
+    // cost cap). Backend route is auth+org-scoped, so we resolve the
+    // org id via /api/auth/my-permissions and call /api/subscriptions/orgs/:id.
+    const [subscription, setSubscription] = useState(null);
+    // Backend redacts token/message counts for non-admin callers and replaces
+    // estimated_cost with marked-up billed_cost. Detect that shape so the UI
+    // shows a cost-only customer view instead of empty token/call counters.
+    const isCustomerView = data.summary && data.summary.total_calls === undefined && data.summary.billed_cost !== undefined;
     const [guardrails, setGuardrails] = useState({
         summary: null, timeline: [], byUser: [], byCategory: [], byAction: [], recent: [],
     });
@@ -774,7 +838,7 @@ const UsageSection = () => {
             </div>
 
             {/* ── Report Tabs ── */}
-            <ReportTabBar active={activeReport} onChange={setActiveReport} t={t} />
+            <ReportTabBar active={activeReport} onChange={setActiveReport} t={t} tabs={visibleTabs} />
 
             {/* ── Filter Bar ── */}
             <div style={{
@@ -814,6 +878,89 @@ const UsageSection = () => {
                     {/* ════════════════════════════════════════════════════════════ */}
                     {activeReport === 'overview' && (<>
                     {(() => {
+                        if (isCustomerView) {
+                            // Customer-facing view: marked-up AI usage cost + subscription context.
+                            // Token/call counts are intentionally absent from the redacted backend payload.
+                            const billedCost = Number(data.summary?.billed_cost || 0);
+                            const sub = subscription;
+                            const billing = sub?.billing || null;
+                            const costCap = Number(sub?.effective_limits?.max_cost_per_month) || 0;
+                            const sym = currencySym(billing?.plan_currency || 'EUR');
+                            const statusDot = sub?.status === 'active' ? '#10b981'
+                                : sub?.status === 'trialing' ? '#f59e0b'
+                                : sub?.status ? '#f43f5e' : 'var(--text-muted)';
+                            return (
+                                <div style={{ marginBottom: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                                    {/* Tile row: Plan · Billed per cycle · AI usage */}
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 12 }}>
+                                        <Card style={{ padding: 16 }}>
+                                            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 4 }}>Plan</div>
+                                            <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>{sub?.plan_name || '—'}</div>
+                                            {sub?.status && (
+                                                <div style={{ marginTop: 8, display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                                    <span style={{ width: 6, height: 6, borderRadius: 999, background: statusDot, display: 'inline-block' }} />
+                                                    <span style={{ color: 'var(--text-secondary)' }}>{sub.status}</span>
+                                                </div>
+                                            )}
+                                            {sub?.billing_period && (
+                                                <div style={{ marginTop: 10, fontSize: 11, color: 'var(--text-muted)' }}>
+                                                    {formatDateRange(sub.billing_period.startDate, sub.billing_period.endDate)}
+                                                </div>
+                                            )}
+                                        </Card>
+                                        <Card style={{ padding: 16 }}>
+                                            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 4 }}>Billed per cycle</div>
+                                            <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)' }}>
+                                                {sym}{Number(billing?.subscription_total || 0).toFixed(2)}
+                                                <span style={{ marginLeft: 6, fontSize: 11, fontWeight: 500, color: 'var(--text-muted)' }}>
+                                                    / {billing?.billing_interval === 'yearly' ? 'year' : 'month'}
+                                                </span>
+                                            </div>
+                                            {billing?.per_seat && (
+                                                <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)' }}>
+                                                    {billing.seat_quantity} × {sym}{Number(billing.plan_price || 0).toFixed(2)} / seat
+                                                </div>
+                                            )}
+                                        </Card>
+                                        <Card style={{ padding: 16 }}>
+                                            <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 4 }}>AI usage this period</div>
+                                            <div style={{ fontSize: 24, fontWeight: 800, color: '#10b981' }}>€{billedCost.toFixed(2)}</div>
+                                            <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)' }}>
+                                                {(data.summary?.unique_users || data.users?.length || 0)} active users
+                                            </div>
+                                        </Card>
+                                    </div>
+
+                                    {/* Cost-cap progress (only when a cap is set) */}
+                                    {costCap > 0 && (() => {
+                                        const pct = Math.min(100, Math.round((billedCost / costCap) * 100));
+                                        const isWarn = pct >= 80 && pct < 95;
+                                        const isCrit = pct >= 95;
+                                        const barColor = isCrit ? '#ef4444' : isWarn ? '#f59e0b' : '#10b981';
+                                        const pctColor = isCrit ? '#ef4444' : isWarn ? '#f59e0b' : 'var(--text-muted)';
+                                        return (
+                                            <Card style={{ padding: 16 }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                                                        <DollarSign style={{ width: 14, height: 14, color: '#10b981' }} />
+                                                        AI usage vs. cap
+                                                    </div>
+                                                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                                                        €{billedCost.toFixed(2)} / €{Number(costCap).toFixed(2)}
+                                                    </span>
+                                                </div>
+                                                <div style={{ height: 8, borderRadius: 999, background: 'var(--bg-tertiary)', overflow: 'hidden' }}>
+                                                    <div style={{ height: '100%', width: `${pct}%`, background: barColor, borderRadius: 999, transition: 'width 0.5s' }} />
+                                                </div>
+                                                <div style={{ marginTop: 6, textAlign: 'right', fontSize: 10, fontWeight: 600, color: pctColor }}>
+                                                    {pct}% used
+                                                </div>
+                                            </Card>
+                                        );
+                                    })()}
+                                </div>
+                            );
+                        }
                         const cost = Number(data.summary?.combined_total_cost ?? data.summary?.total_estimated_cost ?? 0);
                         // Cost-alert banner — amber over 1×, red over 2× the threshold.
                         const overBudget = cost > OVERVIEW_COST_ALERT;
@@ -881,11 +1028,91 @@ const UsageSection = () => {
                     {/* ── Trend ── */}
                     <TrendChart
                         timeline={data.timeline}
-                        title={t('usage.token_trend')}
+                        title={isCustomerView ? t('usage.cost_trend', 'Cost trend') : t('usage.token_trend')}
                         avgLabel={t('usage.avg_per_day')}
                         noDataLabel={t('usage.no_data')}
+                        valueField={isCustomerView ? 'billed_cost' : 'total_tokens'}
+                        valueFormatter={isCustomerView ? (v => '€' + Number(v).toFixed(2)) : undefined}
                     />
 
+                    {/* ── Customer-view breakdowns (cost-only) ── */}
+                    {isCustomerView && (() => {
+                        const billing = subscription?.billing || {};
+                        const perUserMode = billing.usage_pooled === false;
+                        const perUserCap = Number(billing.per_user_cap) || 0;
+                        const sortedUsers = [...(data.users || [])]
+                            .sort((a, b) => Number(b.billed_cost || 0) - Number(a.billed_cost || 0))
+                            .slice(0, 8);
+                        const sortedSources = [...(data.sources || [])]
+                            .sort((a, b) => Number(b.billed_cost || 0) - Number(a.billed_cost || 0))
+                            .slice(0, 8);
+                        return (
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                                {/* Top users by cost */}
+                                <div>
+                                    <SectionTitle icon={Users}>{t('usage.top_users_by_cost', 'Top users by cost')}</SectionTitle>
+                                    <Card>
+                                        {sortedUsers.length === 0 ? (
+                                            <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>{t('usage.no_active_users')}</div>
+                                        ) : sortedUsers.map((u, i) => {
+                                            const used = Number(u.billed_cost || 0);
+                                            const pct = perUserMode && perUserCap > 0 ? Math.min(100, Math.round((used / perUserCap) * 100)) : null;
+                                            const dotColor = pct == null ? 'transparent' : pct >= 95 ? '#ef4444' : pct >= 80 ? '#f59e0b' : '#10b981';
+                                            return (
+                                                <ListRow key={i}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, flex: 1 }}>
+                                                        <Avatar user={u} color={getColor(i)} />
+                                                        <div style={{ display: 'flex', flexDirection: 'column', minWidth: 0, flex: 1 }}>
+                                                            <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                                {u.display_name}
+                                                            </span>
+                                                            {perUserMode && perUserCap > 0 && (
+                                                                <span style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
+                                                                    €{used.toFixed(2)} / €{perUserCap.toFixed(2)}
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingLeft: 10, flexShrink: 0 }}>
+                                                        {pct != null && (
+                                                            <span style={{ width: 8, height: 8, borderRadius: 999, background: dotColor, display: 'inline-block' }} />
+                                                        )}
+                                                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>€{used.toFixed(2)}</span>
+                                                    </div>
+                                                </ListRow>
+                                            );
+                                        })}
+                                    </Card>
+                                </div>
+
+                                {/* By source */}
+                                <div>
+                                    <SectionTitle icon={Activity}>{t('usage.by_app_area', 'By app area')}</SectionTitle>
+                                    <Card>
+                                        {sortedSources.length === 0 ? (
+                                            <div style={{ padding: 24, textAlign: 'center', fontSize: 13, color: 'var(--text-muted)' }}>{t('usage.no_usage_recorded', 'No usage recorded yet')}</div>
+                                        ) : sortedSources.map((s, i) => {
+                                            const d = getSourceDetails(s.source);
+                                            const Icon = d.icon;
+                                            return (
+                                                <ListRow key={i}>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0 }}>
+                                                        <IconBadge icon={Icon} color={d.color} />
+                                                        <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{d.label}</span>
+                                                    </div>
+                                                    <div style={{ textAlign: 'right', flexShrink: 0, paddingLeft: 10 }}>
+                                                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>€{Number(s.billed_cost || 0).toFixed(2)}</span>
+                                                    </div>
+                                                </ListRow>
+                                            );
+                                        })}
+                                    </Card>
+                                </div>
+                            </div>
+                        );
+                    })()}
+
+                    {!isCustomerView && (<>
                     {/* ── Two Column: Users + Models ── */}
                     <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
 
@@ -1156,6 +1383,8 @@ const UsageSection = () => {
                             </Card>
                         </div>
                     )}
+
+                    </>)}
 
                     </>)}
 

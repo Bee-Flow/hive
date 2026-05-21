@@ -2,6 +2,7 @@ import React from 'react';
 import Button from '../components/Button';
 import EditableText from '../components/EditableText';
 import SectionFrame from '../components/SectionFrame';
+import { inlineTextStyle } from './textStyle';
 
 /**
  * CTA Banner — louder Conversion section. Two layouts (centered vs split),
@@ -25,6 +26,10 @@ export default function CtaBanner({ data }) {
     const backgroundVariant = data.backgroundVariant || 'primary';
     const primary           = data.primaryCta   || null;
     const secondary         = data.secondaryCta;
+    // Per-text inline overrides — empty = inherit CSS / Design tab. The
+    // second arg is the field's own `{field}Align`.
+    const headingStyle    = inlineTextStyle(data.headingStyle,    data.headingAlign || data.align);
+    const subheadingStyle = inlineTextStyle(data.subheadingStyle, data.subheadingAlign || data.align);
 
     // legacyifyLinks (admin preview) flattens cta.link → cta.href.
     // resolveLinksInTree (public path) leaves cta.link.href. Read both.
@@ -50,8 +55,10 @@ export default function CtaBanner({ data }) {
                             <EditableText
                                 path="cta-banner.heading"
                                 as="h2"
+                                multiline
                                 placeholder="Heading"
                                 className="headline-md cta-banner-block-heading"
+                                style={headingStyle}
                             >
                                 {heading}
                             </EditableText>
@@ -62,6 +69,7 @@ export default function CtaBanner({ data }) {
                                 multiline
                                 placeholder="Subheading"
                                 className="cta-banner-block-subheading"
+                                style={subheadingStyle}
                             >
                                 {subheading}
                             </EditableText>

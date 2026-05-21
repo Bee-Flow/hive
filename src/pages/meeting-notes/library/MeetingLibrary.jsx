@@ -19,7 +19,8 @@ export default function MeetingLibrary({ meetings, loading, currentUserId, selec
             arr = arr.filter((m) =>
                 (m.title || '').toLowerCase().includes(q) ||
                 (m.fileName || '').toLowerCase().includes(q) ||
-                (m.tags || []).some((t) => String(t).toLowerCase().includes(q)),
+                (m.tags || []).some((t) => String(t).toLowerCase().includes(q)) ||
+                (m.transcriptSnippet || m.fullText || m.transcript || '').toLowerCase().includes(q),
             );
         }
         if (owner === 'mine') arr = arr.filter((m) => m.isOwner !== false && m.ownerId === currentUserId);

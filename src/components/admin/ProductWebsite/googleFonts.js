@@ -46,11 +46,15 @@ const FONT_LIBRARY = [
     { name: 'Playfair Display',source: 'google' },
     { name: 'Lora',            source: 'google' },
     { name: 'IBM Plex Serif',  source: 'google' },
-    // ── Fontshare ──
-    // Cabinet Grotesk: geometric sans, strong display weights.
-    { name: 'Cabinet Grotesk', source: 'fontshare', slug: 'cabinet-grotesk' },
-    // General Sans: clean neutral sans, very wide weight range.
-    { name: 'General Sans',    source: 'fontshare', slug: 'general-sans' },
+    // ── Self-hosted (Fontshare originals, served from /public/fonts/) ──
+    // Variable WOFF2s under agent-hub/public/fonts/<slug>/ and loaded
+    // via the @font-face block in agent-hub/src/marketing/
+    // self-hosted-fonts.css. No CDN dependency.
+    { name: 'Satoshi',         source: 'self' },
+    { name: 'Cabinet Grotesk', source: 'self' },
+    { name: 'General Sans',    source: 'self' },
+    { name: 'Clash Display',   source: 'self' },
+    { name: 'Clash Grotesk',   source: 'self' },
 ];
 
 // Flat list of every available font name. Misnamed for historical
@@ -85,6 +89,12 @@ export function buildFontsHrefs(families, weights = [400]) {
     for (const name of familyList) {
         const entry = BY_NAME.get(name.toLowerCase());
         const source = entry?.source || 'google';
+        if (source === 'self') {
+            // Self-hosted fonts are loaded once at build time via the
+            // @font-face block in agent-hub/src/marketing/
+            // self-hosted-fonts.css — no <link> needed here.
+            continue;
+        }
         if (source === 'fontshare') {
             byHost.fontshare.push(entry);
         } else {

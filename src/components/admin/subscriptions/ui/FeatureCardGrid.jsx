@@ -82,7 +82,7 @@ export function FeatureCardGrid({
                             <button
                                 type="button"
                                 onClick={() => onChange(options.map(o => o.id))}
-                                className="font-semibold text-blue-400 hover:text-blue-300"
+                                className="font-semibold text-blue-600 hover:text-blue-500 dark:text-blue-400 dark:hover:text-blue-300"
                             >
                                 Select all
                             </button>
@@ -146,7 +146,7 @@ function FeatureCard({ item, selected, disabled, icon, onToggle }) {
         >
             <div
                 className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 ${
-                    selected ? 'bg-emerald-500/10 text-emerald-400' : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)]'
+                    selected ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-[var(--bg-secondary)] text-[var(--text-secondary)]'
                 }`}
             >
                 {icon || <span className="text-[10px] uppercase font-bold">{(item.label || item.id || '?').slice(0, 2)}</span>}

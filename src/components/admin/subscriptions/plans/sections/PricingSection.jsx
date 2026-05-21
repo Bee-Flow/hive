@@ -1,6 +1,7 @@
 import React from 'react';
 import { Euro, TrendingUp, Info, Users } from 'lucide-react';
 import { Field, Input, Select, NumberInput } from '../../ui/Input';
+import { LimitField } from '../../ui/LimitField';
 import { ChoiceCards } from '../../ui/Choice';
 import { Banner } from '../../ui/Banner';
 import { Toggle } from '../../ui/Toggle';
@@ -38,7 +39,7 @@ export function PricingSection({ form, update }) {
                     checked={!!form.per_seat}
                     onChange={v => update('per_seat', v)}
                     label="Bill per seat"
-                    description="When enabled, the price above is per active user per month. Stripe is invoiced with quantity = seat count, and the org-wide message cap is computed as per-seat cap × seat count."
+                    description="When enabled, the price above is per active user per month. Stripe is invoiced with quantity = seat count."
                     icon={Users}
                 />
             )}
@@ -56,19 +57,17 @@ export function PricingSection({ form, update }) {
                         />
                     </Field>
                 )}
-                {metered && (
-                    <Field label="Markup %" hint="on top of raw AI provider cost">
-                        <NumberInput
-                            value={form.markup_percent ?? 0}
-                            onChange={v => update('markup_percent', v ?? 0)}
-                            placeholder="20"
-                            step="0.1"
-                            min="0"
-                            max="1000"
-                            allowDecimal
-                        />
-                    </Field>
-                )}
+                <Field label="Markup %" hint="on top of raw AI provider cost — applied to AI usage cost shown to subscribers">
+                    <NumberInput
+                        value={form.markup_percent ?? 0}
+                        onChange={v => update('markup_percent', v ?? 0)}
+                        placeholder="20"
+                        step="0.1"
+                        min="0"
+                        max="1000"
+                        allowDecimal
+                    />
+                </Field>
                 <Field label="Currency">
                     <Select value={form.currency} onChange={e => update('currency', e.target.value)}>
                         <option value="EUR">EUR (€)</option>
@@ -100,6 +99,33 @@ export function PricingSection({ form, update }) {
                     summed marked-up cost of their AI calls. A payment method is required up front — trials are not supported on PAYG plans.
                 </Banner>
             )}
+
+            <div className="pt-5 border-t border-[var(--border-default)]">
+                <h4 className="text-[14px] font-bold text-[var(--text-primary)] mb-1">Limits</h4>
+                <p className="text-[12px] text-[var(--text-muted)] mb-3">Caps that apply to subscribers on this plan. Leave any field empty for unlimited.</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4">
+                    <LimitField
+                        field={{ key: 'max_cost_per_month', label: `Cost cap / month (${sym})`, type: 'currency' }}
+                        value={form.max_cost_per_month}
+                        onChange={v => update('max_cost_per_month', v)}
+                    />
+                    <LimitField
+                        field={{ key: 'max_users', label: 'Max users', type: 'number' }}
+                        value={form.max_users}
+                        onChange={v => update('max_users', v)}
+                    />
+                    <LimitField
+                        field={{ key: 'max_agents', label: 'Max agents', type: 'number' }}
+                        value={form.max_agents}
+                        onChange={v => update('max_agents', v)}
+                    />
+                    <LimitField
+                        field={{ key: 'max_knowledge_sources', label: 'Max knowledge sources', type: 'number' }}
+                        value={form.max_knowledge_sources}
+                        onChange={v => update('max_knowledge_sources', v)}
+                    />
+                </div>
+            </div>
         </div>
     );
 }

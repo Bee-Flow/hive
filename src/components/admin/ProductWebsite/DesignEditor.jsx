@@ -2,6 +2,10 @@ import React, { useEffect } from 'react';
 import AppIcon from '../../AppIcon';
 import { Toggle, ImageField, FieldRow } from './fields';
 import { GOOGLE_FONTS, buildFontsHrefs, fontStack } from './googleFonts';
+// Self-hosted Fontshare @font-face — needed here so the picker's
+// dropdown previews render in the chosen face. Same CSS file the
+// iframe imports via ProductWebsite.jsx.
+import '../../../marketing/self-hosted-fonts.css';
 
 /**
  * Design tab — site-wide branding controls.

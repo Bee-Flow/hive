@@ -31,10 +31,16 @@ export default function Hero({ data }) {
 
     // Per-text inline styles — `inlineTextStyle` returns `undefined`
     // when nothing applies, so an unstyled block emits no inline style
-    // attribute at all (and the CSS file's defaults still win).
+    // attribute at all (and the CSS file's defaults still win). The
+    // second arg is the field's own alignment (`{field}Align`), falling
+    // back to the block's legacy single `align` when that field hasn't
+    // been aligned individually yet.
     const badgeTextStyle = inlineTextStyle(data.badgeStyle);
-    const titleStyle     = inlineTextStyle(data.titleStyle);
-    const leadStyle      = inlineTextStyle(data.leadStyle);
+    const titleStyle     = inlineTextStyle(data.titleStyle, data.titleAlign || data.align);
+    const leadStyle      = inlineTextStyle(data.leadStyle, data.leadAlign || data.align);
+    // Badge alignment positions the inline-flex pill within the hero
+    // column, applied via a per-field wrapper's text-align.
+    const badgeAlign     = data.badgeAlign || data.align || null;
 
     // legacyifyLinks (admin preview) flattens link → href; resolveLinksInTree
     // (public site) leaves it on link.href. Read both so the same component
@@ -57,11 +63,13 @@ export default function Hero({ data }) {
                 <div className="container">
                     <div className="hero-content">
                         {showBadge ? (
-                            <div className="hero-badge reveal" style={badgeTextStyle}>
-                                {badge.icon ? <AppIcon name={badge.icon} className="w-4 h-4" /> : null}
-                                <EditableText path="hero.badge.text" placeholder="Badge text">
-                                    {badge.text || ''}
-                                </EditableText>
+                            <div style={badgeAlign ? { textAlign: badgeAlign } : undefined}>
+                                <div className="hero-badge reveal" style={badgeTextStyle}>
+                                    {badge.icon ? <AppIcon name={badge.icon} className="w-4 h-4" /> : null}
+                                    <EditableText path="hero.badge.text" placeholder="Badge text">
+                                        {badge.text || ''}
+                                    </EditableText>
+                                </div>
                             </div>
                         ) : null}
                         <h1 className="headline-xl reveal reveal-delay-1" style={titleStyle}>
@@ -70,6 +78,7 @@ export default function Hero({ data }) {
                                     key={i}
                                     path={`hero.titleParts.${i}.text`}
                                     placeholder="…"
+                                    multiline
                                     className={part.gradient ? 'gradient-text' : ''}
                                 >
                                     {part.text || ''}

@@ -1,10 +1,11 @@
-import React, { useCallback, useRef, useState } from 'react';
-import { Loader2 } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { X } from 'lucide-react';
 import MeetingHeader from './MeetingHeader';
 import WaveformPlayer from './WaveformPlayer';
 import SummaryActionsLayout from './SummaryActionsLayout';
 import AssistantSidebar from './AssistantSidebar';
-import ShareDialog from './ShareDialog';
+import PublishMenu from './PublishMenu';
+import SpeakerEditor from './SpeakerEditor';
 import * as api from '../lib/transcriptionsApi';
 import useTranscription from '../hooks/useTranscription';
 import { parseTimestampToSeconds } from '../lib/format';
@@ -13,11 +14,23 @@ import useMediaQuery from '../hooks/useMediaQuery';
 export default function MeetingDetail({ id, currentUserId, onBack, onChanged, onDeleted }) {
     const { data, loading, refresh, setLocal } = useTranscription(id);
     const [chatOpen, setChatOpen] = useState(false);
-    const [shareOpen, setShareOpen] = useState(false);
     const [busy, setBusy] = useState(false);
     const [regenerating, setRegenerating] = useState(false);
+    const [speakerEditorOpen, setSpeakerEditorOpen] = useState(false);
+    const [regenerateOffer, setRegenerateOffer] = useState(false);
     const playerApi = useRef(null);
     const isMobile = useMediaQuery('(max-width: 767px)');
+
+    // Reset transient pane state whenever the user navigates to a different
+    // meeting — otherwise a leftover "regenerate?" banner or open speaker
+    // editor would apply to the wrong meeting.
+    useEffect(() => {
+        setChatOpen(false);
+        setSpeakerEditorOpen(false);
+        setRegenerateOffer(false);
+        setBusy(false);
+        setRegenerating(false);
+    }, [id]);
 
     const onPlayerReady = useCallback((apiRef) => { playerApi.current = apiRef; }, []);
 
@@ -102,6 +115,25 @@ export default function MeetingDetail({ id, currentUserId, onBack, onChanged, on
         try { await api.patchTranscription(data.id, { actionItems: next }); } catch (_) { refresh(); }
     };
 
+    const handleEditActionItem = async (itemId, nextText) => {
+        if (!data) return;
+        const cleaned = String(nextText || '').trim();
+        if (!cleaned) return;
+        const next = (data.actionItems || []).map((ai) => (ai.id === itemId ? { ...ai, text: cleaned } : ai));
+        setLocal((p) => ({ ...p, actionItems: next }));
+        try { await api.patchTranscription(data.id, { actionItems: next }); } catch (_) { refresh(); }
+    };
+
+    const handleSpeakerEditSave = async ({ renames, merges }) => {
+        if (!data) return null;
+        const updated = await api.updateSpeakers(data.id, { renames, merges });
+        // Replace the local meeting with the fresh server shape.
+        setLocal(() => updated);
+        onChanged?.(data.id, updated);
+        setRegenerateOffer(true);
+        return updated;
+    };
+
     const handleRegenerateSummary = async (template) => {
         if (!data) return;
         setRegenerating(true);
@@ -116,14 +148,24 @@ export default function MeetingDetail({ id, currentUserId, onBack, onChanged, on
     };
 
     if (loading && !data) {
-        return (
-            <div className="h-full flex items-center justify-center">
-                <Loader2 className="w-6 h-6 animate-spin" style={{ color: 'var(--text-muted)' }} />
-            </div>
-        );
+        return <DetailSkeleton />;
     }
 
     if (!data) return null;
+
+    const isOwner = data.isOwner !== false;
+    const publishMenu = (
+        <PublishMenu
+            transcriptionId={data.id}
+            isPublished={!!data.isPublished}
+            sharedGroups={data.sharedGroups || []}
+            canManage={isOwner}
+            onChange={({ isPublished, sharedGroups }) => {
+                setLocal((p) => ({ ...p, isPublished, sharedGroups }));
+                onChanged?.(data.id, { isPublished, sharedGroups });
+            }}
+        />
+    );
 
     return (
         <div className="h-full flex">
@@ -135,14 +177,43 @@ export default function MeetingDetail({ id, currentUserId, onBack, onChanged, on
                     onDelete={handleDelete}
                     onReprocess={handleReprocess}
                     onExport={handleExport}
-                    onShareOpen={() => setShareOpen(true)}
                     onCopyTranscript={handleCopyTranscript}
+                    onEditSpeakers={isOwner ? () => setSpeakerEditorOpen(true) : undefined}
                     onToggleChat={() => setChatOpen((o) => !o)}
                     chatVisible={chatOpen}
                     onAddTag={handleAddTag}
                     onRemoveTag={handleRemoveTag}
                     busy={busy}
+                    publishMenuSlot={publishMenu}
                 />
+                {regenerateOffer && (
+                    <div
+                        className="mx-4 sm:mx-6 mt-3 flex items-center justify-between gap-3 px-3 py-2 rounded-lg border text-xs"
+                        style={{ background: 'color-mix(in srgb, var(--accent-primary) 6%, var(--bg-secondary))', borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
+                    >
+                        <span>Speakers updated. Regenerate the summary with the new names?</span>
+                        <div className="flex items-center gap-2">
+                            <button
+                                type="button"
+                                onClick={async () => { setRegenerateOffer(false); await handleRegenerateSummary('general'); }}
+                                disabled={regenerating}
+                                className="px-2.5 py-1 rounded-md text-xs font-semibold text-white disabled:opacity-50"
+                                style={{ background: 'var(--accent-primary)' }}
+                            >
+                                {regenerating ? 'Regenerating…' : 'Regenerate'}
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setRegenerateOffer(false)}
+                                aria-label="Dismiss"
+                                className="p-1 rounded-md"
+                                style={{ color: 'var(--text-muted)' }}
+                            >
+                                <X className="w-3.5 h-3.5" />
+                            </button>
+                        </div>
+                    </div>
+                )}
                 <div className="px-4 sm:px-6 pt-3">
                     <WaveformPlayer audioSrc={api.audioUrl(data.id)} onReady={onPlayerReady} />
                 </div>
@@ -151,6 +222,7 @@ export default function MeetingDetail({ id, currentUserId, onBack, onChanged, on
                         meeting={data}
                         onSeek={seek}
                         onToggleActionItem={handleToggleActionItem}
+                        onEditActionItem={isOwner ? handleEditActionItem : undefined}
                         onRegenerateSummary={handleRegenerateSummary}
                         regenerating={regenerating}
                     />
@@ -168,14 +240,43 @@ export default function MeetingDetail({ id, currentUserId, onBack, onChanged, on
                     </div>
                 </div>
             )}
-            <ShareDialog
-                open={shareOpen}
-                onClose={() => setShareOpen(false)}
-                transcriptionId={data.id}
-                currentUserId={currentUserId}
-                sharedWith={data.sharedWith || []}
-                onShareChange={(sharedWith) => setLocal((p) => ({ ...p, sharedWith }))}
+            <SpeakerEditor
+                open={speakerEditorOpen}
+                onClose={() => setSpeakerEditorOpen(false)}
+                meeting={data}
+                onSave={handleSpeakerEditSave}
             />
+        </div>
+    );
+}
+
+function DetailSkeleton() {
+    const bar = (w, h = 12) => (
+        <div
+            className="rounded-md animate-pulse"
+            style={{ background: 'var(--bg-tertiary)', width: w, height: h }}
+        />
+    );
+    return (
+        <div className="h-full flex flex-col gap-4 px-4 sm:px-6 py-4" aria-busy="true" aria-label="Loading meeting">
+            <div className="flex items-start gap-3">
+                <div className="flex-1 flex flex-col gap-2">
+                    {bar('60%', 22)}
+                    <div className="flex gap-2">
+                        {bar(60)} {bar(80)} {bar(50)}
+                    </div>
+                </div>
+                {bar(80, 28)}
+            </div>
+            {bar('100%', 64)}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="flex flex-col gap-2">
+                    {bar('90%')} {bar('80%')} {bar('95%')} {bar('70%')} {bar('85%')}
+                </div>
+                <div className="flex flex-col gap-2">
+                    {bar('60%', 14)} {bar('100%')} {bar('100%')} {bar('80%')}
+                </div>
+            </div>
         </div>
     );
 }

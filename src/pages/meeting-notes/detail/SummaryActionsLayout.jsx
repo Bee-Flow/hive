@@ -10,6 +10,7 @@ export default function SummaryActionsLayout({
     meeting,
     onSeek,
     onToggleActionItem,
+    onEditActionItem,
     onRegenerateSummary,
     regenerating,
 }) {
@@ -32,7 +33,7 @@ export default function SummaryActionsLayout({
                     <SummaryView summary={meeting.summary} onRegenerate={onRegenerateSummary} regenerating={regenerating} />
                 )}
                 {tab === 'actions' && (
-                    <ActionItemsList items={meeting.actionItems || []} onToggle={onToggleActionItem} onSeek={onSeek} />
+                    <ActionItemsList items={meeting.actionItems || []} onToggle={onToggleActionItem} onEdit={onEditActionItem} onSeek={onSeek} />
                 )}
                 {tab === 'transcript' && (
                     <TranscriptView segments={meeting.segments || []} speakers={meeting.speakers || []} fullText={meeting.fullText || meeting.transcript} onSeek={onSeek} />
@@ -45,7 +46,7 @@ export default function SummaryActionsLayout({
         <div className="flex flex-col gap-4">
             <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] gap-4" style={{ minHeight: 320 }}>
                 <SummaryView summary={meeting.summary} onRegenerate={onRegenerateSummary} regenerating={regenerating} />
-                <ActionItemsList items={meeting.actionItems || []} onToggle={onToggleActionItem} onSeek={onSeek} />
+                <ActionItemsList items={meeting.actionItems || []} onToggle={onToggleActionItem} onEdit={onEditActionItem} onSeek={onSeek} />
             </div>
             <div>
                 <h2 className="text-sm font-semibold mb-2 flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>

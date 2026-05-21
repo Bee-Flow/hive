@@ -7,7 +7,16 @@ export default function useTranscriptions() {
     const [error, setError] = useState(null);
     const mounted = useRef(true);
 
-    useEffect(() => () => { mounted.current = false; }, []);
+    // React 18 Strict Mode runs effects mount → unmount → mount in dev. A naïve
+    // `mounted.current = false` on cleanup leaves the ref stuck at false for
+    // the remounted instance, and the in-flight fetch's success branch never
+    // calls setLoading(false) — UI hangs on the spinner forever. Resetting
+    // the ref on every mount keeps the guard correct for the *current*
+    // mounted instance.
+    useEffect(() => {
+        mounted.current = true;
+        return () => { mounted.current = false; };
+    }, []);
 
     const reload = useCallback(async () => {
         setLoading(true);

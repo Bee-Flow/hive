@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { ArrowLeft, Plus, Search, Pencil, Trash2, FolderOpen } from 'lucide-react';
+import { RequireTier } from './LicenseContext';
 
 // Matches the Studio (Webpages) list-view shell: single-row header, inline
 // create+search toolbar, card grid body with a top visual band per card.
@@ -114,7 +115,7 @@ const ProjectCard = React.memo(({ project, onSelect, onEdit, onDelete }) => {
     );
 });
 
-const ProjectsPage = ({
+const ProjectsPageInner = ({
     projects = [],
     user: _user, // accepted for parent contract; not rendered here
     onSelectProject,
@@ -268,4 +269,12 @@ const ProjectsPage = ({
     );
 };
 
-export default ProjectsPage;
+// Licence-gated wrapper. Community-tier sessions see the upgrade panel
+// instead of a Projects shell whose /api/projects calls would 403.
+export default function ProjectsPage(props) {
+    return (
+        <RequireTier feature="projects">
+            <ProjectsPageInner {...props} />
+        </RequireTier>
+    );
+}

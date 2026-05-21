@@ -66,16 +66,12 @@ export function PlanCard({ plan, onEdit, onDelete, onSyncStripe, syncing }) {
                 <p className="mb-3 text-[12px] text-[var(--text-secondary)] line-clamp-2 leading-relaxed">{plan.description}</p>
             )}
 
-            {/* Key limits — 4 most useful */}
+            {/* Key limits — cost cap + capacity */}
             <StatGrid className="mb-4">
-                {perSeat ? (
-                    <StatRow label="Msgs / seat" value={plan.max_messages_per_seat} />
-                ) : (
-                    <StatRow label="Messages" value={plan.max_messages_per_month} />
-                )}
-                <StatRow label="Cost cap"  value={plan.max_cost_per_month} unit="€" />
-                <StatRow label="Users"     value={plan.max_users} />
-                <StatRow label="Agents"    value={plan.max_agents} />
+                <StatRow label="Cost cap" value={plan.max_cost_per_month} unit="€" />
+                <StatRow label="Users"    value={plan.max_users} />
+                <StatRow label="Agents"   value={plan.max_agents} />
+                <StatRow label="KB"       value={plan.max_knowledge_sources} />
             </StatGrid>
 
             {/* Stripe sync status — only relevant for paid plans */}

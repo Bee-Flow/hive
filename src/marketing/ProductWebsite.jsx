@@ -1,5 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import './marketing.css';
+// Self-hosted Fontshare families — registers @font-face for Satoshi,
+// Cabinet Grotesk, General Sans, Clash Display, Clash Grotesk. No CDN
+// dependency; files live under agent-hub/public/fonts/.
+import './self-hosted-fonts.css';
 
 import Header       from './sections/Header';
 import Hero         from './sections/Hero';
@@ -14,6 +18,8 @@ import Architecture from './sections/Architecture';
 import TechStats    from './sections/TechStats';
 import CTA          from './sections/CTA';
 import CtaBanner    from './sections/CtaBanner';
+import LiveComponent from './sections/LiveComponent';
+import Pricing      from './sections/PricingSection';
 import Footer       from './sections/Footer';
 
 import { useScrollReveal } from './components/ScrollReveal';
@@ -31,6 +37,8 @@ const SECTION_REGISTRY = {
     techStats: TechStats,
     cta: CTA,
     'cta-banner': CtaBanner,
+    'live-component': LiveComponent,
+    pricing: Pricing,
 };
 
 const isPreviewMode = () =>
@@ -459,9 +467,18 @@ export default function ProductWebsite({ content: initialContent }) {
         ? content.blocks.filter(b => b && b.enabled !== false && SECTION_REGISTRY[b.type])
         : null;
 
+    // Per-page chrome visibility. When the active page has hideHeader /
+    // hideFooter set, suppress that part of the site chrome. Both are
+    // ignored in chrome-preview mode (the user is editing the chrome
+    // itself and needs to see it). Undefined/null/missing → show, so
+    // pages that pre-date the flags keep their original behaviour.
+    const isChromePreview = previewMode === 'chrome';
+    const showHeader = isChromePreview || !content.hideHeader;
+    const showFooter = isChromePreview || !content.hideFooter;
+
     return (
         <div className="marketing-root" ref={rootRef}>
-            <Header data={content.header} />
+            {showHeader ? <Header data={content.header} /> : null}
             {previewMode === 'chrome' ? (
                 <ChromePreviewPlaceholder />
             ) : orderedBlocks ? (
@@ -494,11 +511,13 @@ export default function ProductWebsite({ content: initialContent }) {
                     <CTA          data={content.cta} />
                 </>
             )}
-            <Footer
-                data={content.footer}
-                isDark={isDark}
-                onToggleTheme={toggleTheme}
-            />
+            {showFooter ? (
+                <Footer
+                    data={content.footer}
+                    isDark={isDark}
+                    onToggleTheme={toggleTheme}
+                />
+            ) : null}
         </div>
     );
 }

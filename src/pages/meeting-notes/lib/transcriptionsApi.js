@@ -3,11 +3,16 @@ import { API_BASE, authFetch } from '../../../utils/helpers';
 async function jsonOrThrow(res) {
     if (!res.ok) {
         let msg = `HTTP ${res.status}`;
+        let code = null;
         try {
             const body = await res.json();
             if (body?.error) msg = body.error;
+            if (body?.code) code = body.code;
         } catch (_) { /* ignore */ }
-        throw new Error(msg);
+        const err = new Error(msg);
+        err.status = res.status;
+        if (code) err.code = code;
+        throw err;
     }
     return res.json();
 }
@@ -89,20 +94,30 @@ export async function regenerateSummary(id, template) {
     return jsonOrThrow(res);
 }
 
-export async function shareTranscription(id, userIds) {
-    const res = await authFetch(`${API_BASE}/api/transcriptions/${id}/share`, {
-        method: 'POST',
+/**
+ * Atomically rename and/or merge speakers on a transcription. Owner-only.
+ * Payload mirrors the backend route shape:
+ *   { renames: { "Old name": "New name" }, merges: [{ from: ["A","B"], into: "A" }] }
+ * Returns the full updated transcription.
+ */
+export async function updateSpeakers(id, { renames = {}, merges = [] } = {}) {
+    const res = await authFetch(`${API_BASE}/api/transcriptions/${id}/speakers`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userIds }),
+        body: JSON.stringify({ renames, merges }),
     });
     return jsonOrThrow(res);
 }
 
-export async function unshareTranscription(id, userIds) {
-    const res = await authFetch(`${API_BASE}/api/transcriptions/${id}/unshare`, {
-        method: 'POST',
+/**
+ * Publish a transcription to the owner's organisation (or specific groups).
+ * Mirrors the publish model used by Knowledge Bases.
+ */
+export async function publishTranscription(id, isPublished, sharedGroups) {
+    const res = await authFetch(`${API_BASE}/api/transcriptions/${id}/publish`, {
+        method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userIds }),
+        body: JSON.stringify({ isPublished, sharedGroups: Array.isArray(sharedGroups) ? sharedGroups : [] }),
     });
     return jsonOrThrow(res);
 }
@@ -122,6 +137,12 @@ export async function listOrgUsers() {
     return jsonOrThrow(res);
 }
 
+export async function listOrgGroups() {
+    const res = await authFetch(`${API_BASE}/auth/groups`);
+    const data = await jsonOrThrow(res);
+    return Array.isArray(data?.groups) ? data.groups : (Array.isArray(data) ? data : []);
+}
+
 export async function getAiConfig() {
     const res = await authFetch(`${API_BASE}/api/admin/ai-config`);
     return jsonOrThrow(res);
@@ -130,43 +151,4 @@ export async function getAiConfig() {
 export async function getChatModelTiers() {
     const res = await authFetch(`${API_BASE}/ai/config/chat-models`);
     return jsonOrThrow(res);
-}
-
-export async function listBotSessions() {
-    const res = await authFetch(`${API_BASE}/api/meet-bot/sessions`);
-    return jsonOrThrow(res);
-}
-
-export async function joinBotToMeeting({ meetLink, title, language }) {
-    const res = await authFetch(`${API_BASE}/api/meet-bot/join`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ meetLink, title, language }),
-    });
-    return jsonOrThrow(res);
-}
-
-export async function stopBotSession(id) {
-    const res = await authFetch(`${API_BASE}/api/meet-bot/sessions/${id}/stop`, { method: 'POST' });
-    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-}
-
-export async function getBotCredentials() {
-    const res = await authFetch(`${API_BASE}/api/meet-bot/credentials`);
-    return jsonOrThrow(res);
-}
-
-export async function saveBotCredentials({ email, password }) {
-    const res = await authFetch(`${API_BASE}/api/meet-bot/credentials`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
-    });
-    return jsonOrThrow(res);
-}
-
-export async function listBotPlatforms() {
-    const res = await authFetch(`${API_BASE}/api/meet-bot/platforms`);
-    const data = await jsonOrThrow(res);
-    return Array.isArray(data?.platforms) ? data.platforms : [];
 }

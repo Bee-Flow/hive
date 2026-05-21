@@ -4,9 +4,6 @@ export function initPlanForm(plan) {
     return {
         name: plan?.name || '',
         description: plan?.description || '',
-        max_messages_per_month: plan?.max_messages_per_month ?? null,
-        max_messages_by_type:   plan?.max_messages_by_type   || {},
-        max_tokens_per_month:   plan?.max_tokens_per_month   ?? null,
         max_cost_per_month:     plan?.max_cost_per_month     ?? null,
         max_users:              plan?.max_users              ?? null,
         max_agents:             plan?.max_agents             ?? null,
@@ -28,9 +25,7 @@ export function initPlanForm(plan) {
         plan_type:              plan?.plan_type              || 'organization',
         nc_recommended:         plan?.nc_recommended         || false,
         tagline:                plan?.tagline                || '',
-        tier:                   plan?.tier                   || '',
         per_seat:               plan?.per_seat               || false,
-        max_messages_per_seat:  plan?.max_messages_per_seat  ?? null,
     };
 }
 

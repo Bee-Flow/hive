@@ -45,6 +45,11 @@ export default function EditableText({
     const focusValueRef = useRef(childrenStr);
     const previewMode = isPreviewMode();
 
+    // Multi-line fields keep their newlines: `white-space: pre-wrap` makes
+    // a stored "\n" render as a real line break in both preview and the
+    // live site. Caller-supplied `style` still wins if it sets the prop.
+    const mergedStyle = multiline ? { whiteSpace: 'pre-wrap', ...style } : style;
+
     // Sync external prop changes into the contentEditable element. Bails
     // when the element is focused so the user's typing isn't disturbed —
     // their pending text is committed via handleBlur. Runs after every
@@ -68,11 +73,17 @@ export default function EditableText({
 
     // If we're not in preview mode, render as plain text — no edit affordance.
     if (!previewMode) {
-        return <Tag className={className} style={style}>{children}</Tag>;
+        return <Tag className={className} style={mergedStyle}>{children}</Tag>;
     }
 
     const handleBlur = (e) => {
-        const next = (e.currentTarget.textContent || '').replace(/ /g, ' ');
+        // Multi-line fields read `innerText` so newlines the user typed
+        // (browsers store them as <div>/<br> inside contentEditable)
+        // survive as "\n"; `textContent` would silently flatten them.
+        const raw = multiline
+            ? (e.currentTarget.innerText || '')
+            : (e.currentTarget.textContent || '');
+        const next = (raw).replace(/ /g, ' ');
         const prev = childrenStr;
         if (next) e.currentTarget.removeAttribute('data-cms-empty');
         else      e.currentTarget.setAttribute('data-cms-empty', 'true');
@@ -108,7 +119,7 @@ export default function EditableText({
         <Tag
             ref={ref}
             className={`${className} cms-editable`.trim()}
-            style={style}
+            style={mergedStyle}
             contentEditable
             suppressContentEditableWarning
             spellCheck="true"

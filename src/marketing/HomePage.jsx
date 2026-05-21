@@ -4,6 +4,7 @@ import {
     Search, Mic, PenLine, ArrowRight,
 } from 'lucide-react';
 import { API_BASE } from '../utils/helpers';
+import ContactSection from './sections/ContactSection';
 
 // Public landing page shown at the root of the application domain
 // (beeflow.ai, and beeflow.nl when used) while the CMS-managed Product
@@ -294,12 +295,14 @@ export default function HomePage() {
                                 Open the app
                                 <ArrowRight size={16} aria-hidden="true" />
                             </a>
-                            <a href="mailto:info@beeflow.nl" style={secondaryButtonStyle}>
-                                Email us
+                            <a href="#contact" style={secondaryButtonStyle}>
+                                Talk to us
                             </a>
                         </div>
                     </div>
                 </section>
+
+                <ContactSection />
             </main>
 
             <footer style={footerStyle}>
@@ -313,7 +316,7 @@ export default function HomePage() {
                         {hasPublicPlans ? (
                             <a href="/pricing" style={footerLinkStyle}>Pricing</a>
                         ) : null}
-                        <a href="mailto:info@beeflow.nl" style={footerLinkStyle}>Contact</a>
+                        <a href="#contact" style={footerLinkStyle}>Contact</a>
                     </nav>
                 </div>
             </footer>

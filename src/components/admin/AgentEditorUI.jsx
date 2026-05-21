@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import KnowledgePanel from '../KnowledgePanel';
 import VersionHistory from '../VersionHistory';
-import { API_BASE } from '../../utils/helpers';
+import ModelTierSelector from '../ModelTierSelector';
+import { API_BASE, authFetch } from '../../utils/helpers';
 import { isImageAvatar, resolveAvatarSrc, DEFAULT_AGENT_EMOJI } from '../../utils/agentAvatar';
 import { useUrlQueryParam } from '../../hooks/useUrlTab';
 import AgentSkillsTab from './AgentSkillsTab';
@@ -38,10 +39,30 @@ const AgentEditorUI = ({
     // When set (e.g. 'editTab'), the inner tab is mirrored on a URL query
     // parameter so the editor is deep-linkable. Undefined → local state only.
     urlSyncKey = null,
+    // Tier definitions for the canonical ModelTierSelector. When omitted we
+    // fetch from `/ai/config/tiers-for-user?taskType=direct_chat` ourselves —
+    // exact same endpoint InputArea / BuilderSplit / AgentDesigner consume —
+    // so admins see only tiers that are actually configured + entitled.
+    modelTiers: modelTiersProp = null,
 }) => {
     const VALID_TABS = ['general', ...(hasKnowledge ? ['knowledge'] : []), ...(hasSkills ? ['skills'] : [])];
     const [urlTab, setUrlTab] = useUrlQueryParam(urlSyncKey || '__noop_editor_tab__');
     const [localTab, setLocalTab] = useState('general');
+    const [fetchedTiers, setFetchedTiers] = useState({});
+    const modelTiers = modelTiersProp || fetchedTiers;
+    useEffect(() => {
+        if (modelTiersProp) return;
+        let cancelled = false;
+        (async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/ai/config/tiers-for-user?taskType=direct_chat`);
+                if (!res.ok) return;
+                const data = await res.json();
+                if (!cancelled) setFetchedTiers(data || {});
+            } catch { /* keep empty — selector still shows standard tiers */ }
+        })();
+        return () => { cancelled = true; };
+    }, [modelTiersProp]);
     const activeTab = urlSyncKey
         ? (VALID_TABS.includes(urlTab) ? urlTab : 'general')
         : localTab;
@@ -133,34 +154,18 @@ const AgentEditorUI = ({
                                 <div>
                                     <div>
                                         <label className="text-xs mb-1 block text-[var(--text-muted)]">Model</label>
-                                        <div className="grid grid-cols-4 gap-2">
-                                            {[
-                                                { key: 'auto', icon: '🔀', label: 'Auto', desc: 'Smart selection' },
-                                                { key: 'fast', icon: '⚡', label: 'Fast', desc: 'Quick answers' },
-                                                { key: 'thinking', icon: '🧠', label: 'Thinking', desc: 'Complex problems' },
-                                                { key: 'pro', icon: '✨', label: 'Deep Thinking', desc: 'Max quality' }
-                                            ].map(tier => {
-                                                const currentTier = data.model ? data.model.replace('tier:', '') : 'auto';
-                                                const isSelected = currentTier === tier.key;
-                                                return (
-                                                    <button
-                                                        key={tier.key}
-                                                        type="button"
-                                                        onClick={() => handleChange('model', `tier:${tier.key}`)}
-                                                        className={`p-3 rounded-xl border-2 text-center transition-all ${isSelected
-                                                            ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/10 shadow-md'
-                                                            : 'border-transparent bg-white/5 hover:bg-white/10 hover:border-[var(--border-subtle)]'
-                                                            }`}
-                                                    >
-                                                        <span className="text-xl block mb-1">{tier.icon}</span>
-                                                        <span className={`text-xs font-semibold block ${isSelected ? 'text-[var(--accent-primary)]' : 'text-[var(--text-primary)]'}`}>{tier.label}</span>
-                                                        <span className="text-[10px] text-muted block mt-0.5">{tier.desc}</span>
-                                                    </button>
-                                                );
-                                            })}
-                                        </div>
+                                        {/* Canonical tier picker — same component direct chat (InputArea),
+                                            BuilderSplit, AgentDesigner and AITasksDesigner use. Tier list
+                                            is fetched from /ai/config/tiers-for-user?taskType=direct_chat
+                                            so we surface exactly the tiers the caller is actually allowed
+                                            and that have a configured modelId. */}
+                                        <ModelTierSelector
+                                            tiers={modelTiers || {}}
+                                            value={data.model ? data.model.replace('tier:', '') : 'auto'}
+                                            onChange={(tier) => handleChange('model', `tier:${tier}`)}
+                                            dropDirection="down"
+                                        />
                                     </div>
-
                                 </div>
                             </div>
                         </div>

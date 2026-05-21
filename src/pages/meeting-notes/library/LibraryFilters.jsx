@@ -31,7 +31,7 @@ export default function LibraryFilters({
                     <input
                         value={query}
                         onChange={(e) => onQueryChange(e.target.value)}
-                        placeholder="Search meetings…"
+                        placeholder="Search title, tags or transcript…"
                         className="w-full pl-9 pr-3 py-2 rounded-xl text-sm border outline-none"
                         style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                     />

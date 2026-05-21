@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { API_BASE } from '../utils/helpers';
+import ContactSection from './sections/ContactSection';
 
 // Public /pricing page. Fetches plans flagged `is_public` from the
 // no-auth /api/billing/public-plans endpoint and renders a card grid
@@ -114,16 +115,15 @@ export default function PricingPage() {
                     <section style={emptyStyle}>
                         <p style={emptyTitle}>Pricing details are coming soon.</p>
                         <p style={emptyBody}>
-                            Email us at{' '}
-                            <a href="mailto:info@beeflow.nl" style={emptyLink}>
-                                info@beeflow.nl
-                            </a>
+                            <a href="#contact" style={emptyLink}>Reach out to us</a>
                             {' '}for an early conversation.
                         </p>
                     </section>
                 ) : (
                     <PlanSections plans={state.plans} />
                 )}
+
+                <ContactSection />
             </main>
 
             <footer style={footerStyle}>
@@ -134,7 +134,7 @@ export default function PricingPage() {
                     <nav style={footerNav}>
                         <a href="/privacy" style={footerLinkStyle}>Privacy</a>
                         <a href="/terms" style={footerLinkStyle}>Terms</a>
-                        <a href="mailto:info@beeflow.nl" style={footerLinkStyle}>Contact</a>
+                        <a href="#contact" style={footerLinkStyle}>Contact</a>
                     </nav>
                 </div>
             </footer>

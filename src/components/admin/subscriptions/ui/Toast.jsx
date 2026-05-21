@@ -29,10 +29,10 @@ export function ToastProvider({ children }) {
                         key={t.id}
                         className={`pointer-events-auto flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg border shadow-lg text-[13px] font-medium min-w-[240px] max-w-[420px] backdrop-blur-sm animate-in fade-in slide-in-from-top-2 ${
                             t.tone === 'error'
-                                ? 'bg-rose-500/15 border-rose-500/40 text-rose-200'
+                                ? 'bg-rose-500/15 border-rose-500/40 text-rose-800 dark:text-rose-200'
                                 : t.tone === 'success'
-                                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-200'
-                                    : 'bg-blue-500/15 border-blue-500/40 text-blue-200'
+                                    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-800 dark:text-emerald-200'
+                                    : 'bg-blue-500/15 border-blue-500/40 text-blue-800 dark:text-blue-200'
                         }`}
                     >
                         {t.tone === 'error'

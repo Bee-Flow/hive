@@ -25,9 +25,11 @@ export function RecorderProvider({ children }) {
     const [uploadStage, setUploadStage] = useState('');
     const [uploadError, setUploadError] = useState(null);
     const [lastResultId, setLastResultId] = useState(null);
+    const [lastResultMeta, setLastResultMeta] = useState(null);
+    const [lastFailedFile, setLastFailedFile] = useState(null);
     const [version, setVersion] = useState(0); // bumps when a transcription finishes — list listeners refetch
 
-    const handleFileReady = useCallback(async (file) => {
+    const handleFileReady = useCallback(async (file, overrideProvider) => {
         setUploading(true);
         setUploadError(null);
         let stageIdx = 0;
@@ -40,19 +42,25 @@ export function RecorderProvider({ children }) {
             const title = file.name.startsWith('recording.') ? generateAutoTitle() : file.name.replace(/\.[^/.]+$/, '');
             const controller = new AbortController();
             const tid = setTimeout(() => controller.abort(), 600000);
+            const provider = overrideProvider || settings.provider || undefined;
             const result = await api.uploadAudio({
                 file,
                 language: settings.language,
                 title,
                 contextTerms: settings.contextTerms,
-                provider: settings.provider || undefined,
+                provider,
                 signal: controller.signal,
             });
             clearTimeout(tid);
             setLastResultId(result.id);
+            setLastResultMeta({ providerFallback: result.providerFallback || null });
+            setLastFailedFile(null);
             setVersion((v) => v + 1);
+            return { ok: true, result };
         } catch (err) {
+            setLastFailedFile(file);
             setUploadError(err);
+            return { ok: false, error: err };
         } finally {
             clearInterval(stageTimer);
             setUploading(false);
@@ -63,8 +71,13 @@ export function RecorderProvider({ children }) {
     const recorder = useAudioRecorder({ onStopped: handleFileReady });
 
     const uploadFile = useCallback(async (file) => {
-        await handleFileReady(file);
+        return handleFileReady(file);
     }, [handleFileReady]);
+
+    const retryWithProvider = useCallback(async (provider) => {
+        if (!lastFailedFile) return { ok: false };
+        return handleFileReady(lastFailedFile, provider);
+    }, [lastFailedFile, handleFileReady]);
 
     const uploadFromNextcloud = useCallback(async (item) => {
         setUploading(true);
@@ -79,9 +92,12 @@ export function RecorderProvider({ children }) {
                 contextTerms: settings.contextTerms,
             });
             setLastResultId(result.id);
+            setLastResultMeta({ providerFallback: result.providerFallback || null });
             setVersion((v) => v + 1);
+            return { ok: true, result };
         } catch (err) {
             setUploadError(err);
+            return { ok: false, error: err };
         } finally {
             setUploading(false);
             setUploadStage('');
@@ -90,9 +106,11 @@ export function RecorderProvider({ children }) {
 
     const consumeLastResult = useCallback(() => {
         const id = lastResultId;
+        const meta = lastResultMeta;
         setLastResultId(null);
-        return id;
-    }, [lastResultId]);
+        setLastResultMeta(null);
+        return { id, meta };
+    }, [lastResultId, lastResultMeta]);
 
     const value = useMemo(() => ({
         recorder,
@@ -102,12 +120,15 @@ export function RecorderProvider({ children }) {
         uploadStage,
         uploadError,
         lastResultId,
+        lastResultMeta,
         consumeLastResult,
         uploadFile,
         uploadFromNextcloud,
+        retryWithProvider,
+        canRetry: !!lastFailedFile,
         version,
-        clearError: () => setUploadError(null),
-    }), [recorder, settings, uploading, uploadStage, uploadError, lastResultId, consumeLastResult, uploadFile, uploadFromNextcloud, version]);
+        clearError: () => { setUploadError(null); setLastFailedFile(null); },
+    }), [recorder, settings, uploading, uploadStage, uploadError, lastResultId, lastResultMeta, consumeLastResult, uploadFile, uploadFromNextcloud, retryWithProvider, lastFailedFile, version]);
 
     return <RecorderContext.Provider value={value}>{children}</RecorderContext.Provider>;
 }
@@ -125,9 +146,12 @@ export function useRecorder() {
             uploadStage: '',
             uploadError: null,
             lastResultId: null,
-            consumeLastResult: () => null,
-            uploadFile: async () => {},
-            uploadFromNextcloud: async () => {},
+            lastResultMeta: null,
+            consumeLastResult: () => ({ id: null, meta: null }),
+            uploadFile: async () => ({ ok: false }),
+            uploadFromNextcloud: async () => ({ ok: false }),
+            retryWithProvider: async () => ({ ok: false }),
+            canRetry: false,
             version: 0,
             clearError: () => {},
         };

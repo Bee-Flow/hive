@@ -4,12 +4,19 @@ import { API_BASE, authFetch } from '../../utils/helpers';
 import { guardrailCatalogIdFor } from '../../utils/guardrailCategories';
 import AppEmoji from '../AppEmoji';
 import { ToastHost, showToast } from './guardrails/Toast';
-import PiiGuardInstallCard from './guardrails/PiiGuardInstallCard';
 import { piiCategoriesLocalized } from '../../config/piiCategories';
+import { useLicenseContext } from '../LicenseContext';
 
 // Guardrails Configuration Panel (Regex Rules)
 const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     const { t } = useTranslation();
+    // Licence gates: 'pii_tokenize' unlocks the Tokenize & round-trip PII
+    // action; 'web_search_guard' unlocks the Web Search Guard block. Both
+    // are Enterprise-only — community installs see read-only upgrade
+    // hints + the backend clamps the values regardless.
+    const { hasFeature: hasLicenseFeature, upgradeUrl } = useLicenseContext();
+    const canTokenizePii = hasLicenseFeature('pii_tokenize');
+    const canUseWebSearchGuard = hasLicenseFeature('web_search_guard');
     // Global Regex Rules State
     const [rules, setRules] = useState([]);
     const [collections, setCollections] = useState([]);
@@ -673,7 +680,6 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
 
                 {activeTab === 'orgshield' && (
                     <div className="max-w-3xl mx-auto space-y-8 animate-fadeIn">
-                        <PiiGuardInstallCard />
                         <div>
                             <h2 className="text-xl font-bold mb-1 text-primary">{t('admin.guard_org_title')}</h2>
                             <p className="text-sm text-muted">{t('admin.guard_org_desc')}</p>
@@ -779,12 +785,14 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                             )}
                                                         </div>
 
-                                                        {/* PII Action — three clear choices with end-user impact explainers. */}
+                                                        {/* PII Action — Tokenize is gated on `pii_tokenize` (Enterprise+);
+                                                           option hidden on community + backend clamps stored value to
+                                                           'block' (see server/routes/orgPrivacyShield.js). */}
                                                         <div className="p-4 rounded-xl border" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-subtle)' }}>
                                                             <label className="text-xs font-medium text-muted block mb-2">{t('admin.pii_action_on_detection', 'Action when PII is detected')}</label>
                                                             <div className="flex gap-2 flex-wrap">
                                                                 {[
-                                                                    {
+                                                                    canTokenizePii && {
                                                                         id: 'tokenize',
                                                                         label: t('dlp.action_tokenize_label', 'Tokenize & round-trip'),
                                                                         desc: t('dlp.action_tokenize_help', 'Replace sensitive values with placeholders like [email_1] before the AI sees them. The real values are never sent to the model; BeeFlow swaps them back in the response. User sees a small \uD83D\uDD12 badge under their message.'),
@@ -796,7 +804,7 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                                         desc: t('dlp.action_block_help', 'Reject the message before it leaves the organisation. The user is asked to rephrase without sensitive data.'),
                                                                         icon: '🚫',
                                                                     },
-                                                                ].map(opt => (
+                                                                ].filter(Boolean).map(opt => (
                                                                     <button
                                                                         key={opt.id}
                                                                         onClick={() => setOrgPiiAction(opt.id)}
@@ -814,6 +822,14 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                             <p className="text-[10px] mt-2 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
                                                                 {t('dlp.action_footnote', 'Admins who want the user to choose per-message can enable the separate DLP gate (Ask mode) below.')}
                                                             </p>
+                                                            {!canTokenizePii && (
+                                                                <p className="text-[10px] mt-2 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
+                                                                    🔒 {t('dlp.action_tokenize_locked', 'Tokenize & round-trip is an Enterprise feature.')}{' '}
+                                                                    <a href={upgradeUrl || 'https://beeflow.ai/pricing'} target="_blank" rel="noreferrer" style={{ color: '#3b82f6' }}>
+                                                                        {t('license.upgrade_at_beeflow', 'Upgrade at beeflow.ai')}
+                                                                    </a>
+                                                                </p>
+                                                            )}
                                                         </div>
 
                                                         {/* Transparency toggle — show original / tokenised / raw / mapping in chat */}
@@ -887,8 +903,29 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                 </div>
                                                 )}
 
-                                                {/* Web Search Guard — only shown when web search is enabled */}
-                                                {hasWebSearchEnabled && (
+                                                {/* Web Search Guard — Enterprise-only feature (`web_search_guard`).
+                                                   On community we show a locked card with an upgrade CTA instead
+                                                   of the live toggle. The backend also force-disables this on
+                                                   community (defence-in-depth — see orgPrivacyShield.js). */}
+                                                {hasWebSearchEnabled && !canUseWebSearchGuard && (
+                                                <div className="p-4 rounded-xl border" style={{ background: 'rgba(59,130,246,0.06)', borderColor: 'rgba(59,130,246,0.25)' }}>
+                                                    <div className="flex items-start gap-3">
+                                                        <span className="text-base">🔒</span>
+                                                        <div className="flex-1">
+                                                            <span className="text-sm font-medium block" style={{ color: 'var(--text-primary)' }}>🔍 {t('admin.shield_web_guard')}</span>
+                                                            <span className="text-xs text-muted block mt-0.5">{t('admin.shield_web_guard_desc')}</span>
+                                                            <p className="text-[11px] mt-2" style={{ color: 'var(--text-secondary)' }}>
+                                                                {t('admin.shield_web_guard_locked', 'Web Search Guard is an Enterprise feature.')}{' '}
+                                                                <a href={upgradeUrl || 'https://beeflow.ai/pricing'} target="_blank" rel="noreferrer" style={{ color: '#3b82f6' }}>
+                                                                    {t('license.upgrade_at_beeflow', 'Upgrade at beeflow.ai')}
+                                                                </a>
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                                )}
+                                                {/* Web Search Guard — only shown when web search is enabled AND licence allows */}
+                                                {hasWebSearchEnabled && canUseWebSearchGuard && (
                                                 <div className="flex items-center justify-between p-4 rounded-xl border bg-white/5 border-white/10">
                                                     <div>
                                                         <span className="text-sm font-medium text-[var(--text-primary)] block">🔍 {t('admin.shield_web_guard')}</span>
@@ -900,8 +937,8 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                     </label>
                                                 </div>
                                                 )}
-                                                {/* Web Search Guard PII Filter — shown when guard is ON */}
-                                                {hasWebSearchEnabled && orgWebSearchGuard && (
+                                                {/* Web Search Guard PII Filter — shown when guard is ON (licence-gated) */}
+                                                {hasWebSearchEnabled && canUseWebSearchGuard && orgWebSearchGuard && (
                                                 <div className="ml-6 p-4 rounded-xl border bg-white/3 border-white/8">
                                                     <div className="flex items-center justify-between mb-3">
                                                         <span className="text-xs font-medium text-muted">🛡️ {t('admin.shield_web_pii_filter') || 'Web Search PII Filter'}</span>

@@ -3,6 +3,7 @@ import SectionHeader from '../components/SectionHeader';
 import AppIcon from '../../components/AppIcon';
 import EditableText from '../components/EditableText';
 import SectionFrame from '../components/SectionFrame';
+import { inlineTextStyle } from './textStyle';
 
 export default function Integrations({ data }) {
     if (!data?.enabled) return null;
@@ -10,14 +11,21 @@ export default function Integrations({ data }) {
         <SectionFrame id="integrations" name="Integrations" enabled={data.enabled}>
             <section id="integrations" className="alt-bg">
                 <div className="container">
-                    <SectionHeader pathPrefix="integrations" eyebrow={data.eyebrow} title={data.title} lead={data.lead} />
+                    <SectionHeader
+                        pathPrefix="integrations"
+                        eyebrow={data.eyebrow} title={data.title} lead={data.lead}
+                        eyebrowStyle={data.eyebrowStyle} titleStyle={data.titleStyle} leadStyle={data.leadStyle}
+                        eyebrowAlign={data.eyebrowAlign} titleAlign={data.titleAlign} leadAlign={data.leadAlign} align={data.align}
+                    />
                     <div className="integrations-categories">
                         {(data.categories || []).map((cat, i) => (
                             <div key={i} className="integration-category reveal">
                                 <EditableText
                                     as="h3"
                                     path={`integrations.categories.${i}.heading`}
+                                    multiline
                                     placeholder="Category heading"
+                                    style={inlineTextStyle(undefined, cat.headingAlign)}
                                 >
                                     {cat.heading || ''}
                                 </EditableText>

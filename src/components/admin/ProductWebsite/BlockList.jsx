@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import ReactDOM from 'react-dom';
 import {
     DndContext,
     closestCenter,
@@ -128,35 +129,72 @@ function AddBlockPicker({ onAdd, onCancel }) {
         return out;
     }, []);
 
-    return (
-        <div className="p-3 bg-[var(--bg-secondary)] border-b border-[var(--border-subtle)]">
-            <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-semibold text-[var(--text-secondary)]">Add block</span>
-                <button type="button" onClick={onCancel} className="text-[var(--text-muted)] hover:text-[var(--text-secondary)]">
-                    <AppIcon name="X" className="w-3.5 h-3.5" />
-                </button>
-            </div>
-            {Object.entries(categories).map(([cat, items]) => (
-                <div key={cat} className="mb-2">
-                    <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-1 px-1">{cat}</p>
-                    <div className="grid grid-cols-2 gap-1">
-                        {items.map(meta => (
-                            <button
-                                key={meta.type}
-                                type="button"
-                                onClick={() => onAdd(meta.type)}
-                                className="flex items-center gap-2 px-2 py-1.5 rounded-md text-sm text-left
-                                    text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]
-                                    border border-transparent hover:border-[var(--border-subtle)] transition-colors"
-                            >
-                                <AppIcon name={meta.icon} className="w-3.5 h-3.5 shrink-0 text-[var(--accent-primary)]" />
-                                {meta.label}
-                            </button>
-                        ))}
-                    </div>
+    // Escape closes the modal. Outside-click is handled via the backdrop's
+    // onClick — clicking the modal box itself stopPropagation()s the
+    // event so a click inside the modal isn't treated as an outside click.
+    React.useEffect(() => {
+        const onKey = (e) => { if (e.key === 'Escape') onCancel(); };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, [onCancel]);
+
+    // Portal to document.body so the modal escapes the sidebar's overflow
+    // / z-index stack entirely. Backdrop covers the whole viewport;
+    // sidebar content stays exactly where it is and is fully visible
+    // (just darkened) behind it.
+    return ReactDOM.createPortal(
+        <div
+            className="fixed inset-0 z-[1000] flex items-center justify-center bg-black/50"
+            onMouseDown={onCancel}
+            role="presentation"
+        >
+            <div
+                role="dialog"
+                aria-modal="true"
+                aria-label="Add block"
+                onMouseDown={e => e.stopPropagation()}
+                className="bg-[var(--bg-primary)] border border-[var(--border-default)] rounded-lg shadow-2xl flex flex-col overflow-hidden"
+                style={{ width: 'min(600px, 92vw)', height: 'min(500px, 86vh)' }}
+            >
+                {/* Header */}
+                <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--border-subtle)] shrink-0">
+                    <span className="text-sm font-semibold text-[var(--text-primary)]">Add block</span>
+                    <button
+                        type="button"
+                        onClick={onCancel}
+                        className="w-7 h-7 inline-flex items-center justify-center rounded text-[var(--text-muted)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
+                        title="Close"
+                        aria-label="Close add block dialog"
+                    >
+                        <AppIcon name="X" className="w-4 h-4" />
+                    </button>
                 </div>
-            ))}
-        </div>
+                {/* Body — categories + block grid (unchanged) */}
+                <div className="flex-1 overflow-y-auto p-4">
+                    {Object.entries(categories).map(([cat, items]) => (
+                        <div key={cat} className="mb-4 last:mb-0">
+                            <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] mb-2 px-1">{cat}</p>
+                            <div className="grid grid-cols-2 gap-2">
+                                {items.map(meta => (
+                                    <button
+                                        key={meta.type}
+                                        type="button"
+                                        onClick={() => onAdd(meta.type)}
+                                        className="flex items-center gap-2 px-3 py-2 rounded-md text-sm text-left
+                                            text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] hover:text-[var(--text-primary)]
+                                            border border-[var(--border-subtle)] hover:border-[var(--accent-primary)]/40 transition-colors"
+                                    >
+                                        <AppIcon name={meta.icon} className="w-4 h-4 shrink-0 text-[var(--accent-primary)]" />
+                                        {meta.label}
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        </div>,
+        document.body,
     );
 }
 
@@ -176,6 +214,10 @@ export default function BlockList({ blocks, activeBlockId, onSelect, onAdd, onTo
     };
 
     return (
+        // The Add-block picker is portal-rendered to document.body as a
+        // centered modal, so the sidebar layout here doesn't need to
+        // reserve any space or act as a positioning anchor — `flex-col
+        // h-full` is the original layout.
         <div className="flex flex-col h-full">
             <div className="px-4 py-2 flex items-center justify-between border-b border-[var(--border-subtle)] shrink-0">
                 <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-semibold">
@@ -190,13 +232,6 @@ export default function BlockList({ blocks, activeBlockId, onSelect, onAdd, onTo
                     <AppIcon name={picking ? 'X' : 'Plus'} className="w-4 h-4" />
                 </button>
             </div>
-
-            {picking && (
-                <AddBlockPicker
-                    onAdd={type => { onAdd(type); setPicking(false); }}
-                    onCancel={() => setPicking(false)}
-                />
-            )}
 
             <div className="flex-1 overflow-y-auto px-2 py-2">
                 <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
@@ -220,6 +255,18 @@ export default function BlockList({ blocks, activeBlockId, onSelect, onAdd, onTo
                     </p>
                 )}
             </div>
+
+            {/* Floating overlay — rendered last so it stacks on top of
+                the list. Position is `absolute` inset-x-0 top-0 so it
+                anchors to the BlockList container, not the document.
+                Block list + editor below stay in place and remain
+                visible underneath the panel. */}
+            {picking && (
+                <AddBlockPicker
+                    onAdd={type => { onAdd(type); setPicking(false); }}
+                    onCancel={() => setPicking(false)}
+                />
+            )}
         </div>
     );
 }

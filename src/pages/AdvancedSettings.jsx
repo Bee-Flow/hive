@@ -14,9 +14,10 @@ import ConsumerUsageSection from './settings/ConsumerUsageSection';
 import ConsumerIntegrationsSection from './settings/ConsumerIntegrationsSection';
 import ConsumerBetaFeaturesSection from './settings/ConsumerBetaFeaturesSection';
 import AppearanceSection from './settings/AppearanceSection';
+import HelpSupportSection from './settings/HelpSupportSection';
 import { SECTIONS as ORG_SECTIONS } from '../components/admin/OrgInfoPanel';
 import OrgAzureConfigPanel from '../components/admin/OrgAzureConfigPanel';
-import { Users, Link2, BarChart2, Cloud, CreditCard, Shield, FolderGit2, Palette, Sparkles } from 'lucide-react';
+import { Users, Link2, BarChart2, Cloud, CreditCard, Shield, FolderGit2, Palette, Sparkles, LifeBuoy } from 'lucide-react';
 
 /* ── Org sub-items (use labelKey for i18n) ────────────────────────────────── */
 const BASE_ORG_SUB_ITEMS = [
@@ -36,7 +37,7 @@ const AZURE_SUB_ITEM = { id: 'org_azure', labelKey: 'settings.azure_config', ico
  * friendlier URL names (`users`, `license`) — disambiguated by the parent
  * path segment.
  */
-const TOP_LEVEL_TAB_IDS = ['preferences', 'appearance', 'memory', 'integrations'];
+const TOP_LEVEL_TAB_IDS = ['preferences', 'appearance', 'memory', 'integrations', 'help_support'];
 const TOP_LEVEL_ID_TO_URL = {};
 const TOP_LEVEL_URL_TO_ID = Object.fromEntries(Object.entries(TOP_LEVEL_ID_TO_URL).map(([id, url]) => [url, id]));
 // Legacy URL: Simple Mode used to live at /app/settings/simple-mode. It now
@@ -141,6 +142,10 @@ const NAV_ITEMS = [
     {
         id: 'integrations', labelKey: 'settings.connections',
         icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>,
+    },
+    {
+        id: 'help_support', labelKey: 'settings.help_support',
+        icon: <LifeBuoy width="15" height="15" strokeWidth={1.75} />,
     },
 ];
 
@@ -353,10 +358,10 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
     };
     const fetchMemoryStats = async () => {
         try {
-            const res = await authFetch(`${API_BASE}/agents/memory`);
+            const res = await authFetch(`${API_BASE}/agents/memory/stats`);
             if (!res.ok) return;
             const data = await res.json();
-            setMemoryStats({ total: data.memories?.length || 0 });
+            setMemoryStats(data);
         } catch (err) { console.error('Failed to fetch memory stats:', err); }
     };
     const fetchOrgAuthLocked = async () => {
@@ -424,8 +429,9 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
         switch (activeTab) {
             case 'preferences': return <PreferencesSection defaultAgentMode={defaultAgentMode} setDefaultAgentMode={setDefaultAgentMode} defaultAgentId={defaultAgentId} setDefaultAgentId={setDefaultAgentId} agents={agents} onLogout={onLogout} user={user} onUpdateUser={onUpdateUser} />;
             case 'appearance': return <AppearanceSection />;
-            case 'memory': return <MemorySection memoryStats={memoryStats} onOpenMemory={() => setShowMemoryPanel(true)} user={user} />;
+            case 'memory': return <MemorySection memoryStats={memoryStats} onOpenMemory={() => setShowMemoryPanel(true)} onImported={fetchMemoryStats} />;
             case 'integrations': return <IntegrationsSection statuses={statuses} onSaved={handleIntegrationSaved} enabledIntegrations={user?.enabledIntegrations} isOrgAdmin={canSeeOrg} user={user} showOrgIntegrations={isConsumerAccount} />;
+            case 'help_support': return <HelpSupportSection user={user} />;
             case 'organisation': return canSeeOrg ? <OrganisationSection user={user} activeSection="license" /> : null;
             default: return null;
         }

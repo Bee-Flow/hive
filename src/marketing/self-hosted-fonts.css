@@ -1,0 +1,80 @@
+/*
+ * Self-hosted Fontshare families.
+ *
+ * Files live under agent-hub/public/fonts/<slug>/ and are served by Vite
+ * at /fonts/<slug>/<filename>. Each family ships as a single variable
+ * WOFF2 covering the whole weight axis (100–900) plus an optional
+ * italic variable — one file per axis × style.
+ *
+ * Loading these via @font-face here means the editor (Design tab
+ * preview) AND the iframe (live + preview rendering of marketing
+ * sections) can both reference the family by name without any
+ * external CDN dependency. The font loader in ProductWebsite.jsx
+ * skips network fetches for families whose registry entry uses
+ * `source: 'self'` — see googleFonts.js.
+ *
+ * font-display: swap means fallback text shows immediately on first
+ * paint, then the real font swaps in once the WOFF2 has loaded from
+ * the same origin (so basically instantly after the first request).
+ */
+
+@font-face {
+    font-family: 'Satoshi';
+    src: url('/fonts/satoshi/Satoshi-Variable.woff2') format('woff2-variations'),
+         url('/fonts/satoshi/Satoshi-Variable.woff2') format('woff2');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'Satoshi';
+    src: url('/fonts/satoshi/Satoshi-VariableItalic.woff2') format('woff2-variations'),
+         url('/fonts/satoshi/Satoshi-VariableItalic.woff2') format('woff2');
+    font-weight: 100 900;
+    font-style: italic;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Cabinet Grotesk';
+    src: url('/fonts/cabinet-grotesk/CabinetGrotesk-Variable.woff2') format('woff2-variations'),
+         url('/fonts/cabinet-grotesk/CabinetGrotesk-Variable.woff2') format('woff2');
+    font-weight: 100 900;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'General Sans';
+    src: url('/fonts/general-sans/GeneralSans-Variable.woff2') format('woff2-variations'),
+         url('/fonts/general-sans/GeneralSans-Variable.woff2') format('woff2');
+    font-weight: 200 700;
+    font-style: normal;
+    font-display: swap;
+}
+@font-face {
+    font-family: 'General Sans';
+    src: url('/fonts/general-sans/GeneralSans-VariableItalic.woff2') format('woff2-variations'),
+         url('/fonts/general-sans/GeneralSans-VariableItalic.woff2') format('woff2');
+    font-weight: 200 700;
+    font-style: italic;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Clash Display';
+    src: url('/fonts/clash-display/ClashDisplay-Variable.woff2') format('woff2-variations'),
+         url('/fonts/clash-display/ClashDisplay-Variable.woff2') format('woff2');
+    font-weight: 200 700;
+    font-style: normal;
+    font-display: swap;
+}
+
+@font-face {
+    font-family: 'Clash Grotesk';
+    src: url('/fonts/clash-grotesk/ClashGrotesk-Variable.woff2') format('woff2-variations'),
+         url('/fonts/clash-grotesk/ClashGrotesk-Variable.woff2') format('woff2');
+    font-weight: 200 700;
+    font-style: normal;
+    font-display: swap;
+}

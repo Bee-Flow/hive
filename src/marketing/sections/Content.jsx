@@ -3,6 +3,7 @@ import Button from '../components/Button';
 import EditableText from '../components/EditableText';
 import SectionFrame from '../components/SectionFrame';
 import { migrateLegacyContent, resolveVideoEmbed } from './contentMigration';
+import { inlineTextStyle } from './textStyle';
 
 /**
  * Flexible Content section. Each block is a grid of N columns, each column
@@ -73,6 +74,15 @@ function ContentElement({ el, colIdx, elIdx, firstHeading }) {
 function TextElement({ el, pathBase, firstHeading }) {
     const align = ['left', 'center', 'right'].includes(el.align) ? el.align : 'left';
     const HeadingTag = firstHeading ? 'h2' : 'h3';
+    // Per-text inline overrides from the editor's StyleTriplet — empty
+    // values fall through to CSS / Design tab defaults. Alignment is
+    // resolved per field: each field uses its own `{field}Align`, falling
+    // back to the element's legacy single `align` (always set by
+    // makeElement). That makes every field emit an explicit text-align —
+    // alignment never depends on the `content-el-text--align-*` wrapper.
+    const headingStyle    = inlineTextStyle(el.headingStyle,    el.headingAlign    || el.align);
+    const subheadingStyle = inlineTextStyle(el.subheadingStyle, el.subheadingAlign || el.align);
+    const bodyStyle       = inlineTextStyle(el.bodyStyle,       el.bodyAlign       || el.align);
     return (
         // TODO: render basic markdown (**bold**, *italic*, [text](url)) on
         // the body when not in preview mode. For now plain text with
@@ -82,8 +92,10 @@ function TextElement({ el, pathBase, firstHeading }) {
                 <EditableText
                     as={HeadingTag}
                     path={`${pathBase}.heading`}
+                    multiline
                     placeholder="Heading"
                     className="content-el-heading"
+                    style={headingStyle}
                 >
                     {el.heading || ''}
                 </EditableText>
@@ -92,8 +104,10 @@ function TextElement({ el, pathBase, firstHeading }) {
                 <EditableText
                     as="p"
                     path={`${pathBase}.subheading`}
+                    multiline
                     placeholder="Subheading"
                     className="content-el-subheading"
+                    style={subheadingStyle}
                 >
                     {el.subheading || ''}
                 </EditableText>
@@ -105,6 +119,7 @@ function TextElement({ el, pathBase, firstHeading }) {
                     path={`${pathBase}.body`}
                     placeholder="Body text"
                     className="content-el-body"
+                    style={bodyStyle}
                 >
                     {el.body || ''}
                 </EditableText>
@@ -144,6 +159,11 @@ function ImageElement({ el, pathBase }) {
 function VideoElement({ el, pathBase }) {
     const ratio = ['16/9', '4/3', '1/1'].includes(el.aspectRatio) ? el.aspectRatio : '16/9';
     const embed = resolveVideoEmbed(el.url);
+    // Anything that isn't a recognised YouTube/Vimeo URL but is still a
+    // non-empty URL is treated as a self-hosted file (the editor's "Upload
+    // file" source writes the asset URL into el.url). Rendered as a muted
+    // autoplay loop to match the Media + Text 'video-silent' affordance.
+    const hasUrl = typeof el.url === 'string' && el.url.trim() !== '';
     return (
         <figure className="content-el content-el-video">
             <div className="content-el-video-wrap" style={{ aspectRatio: ratio }}>
@@ -154,9 +174,18 @@ function VideoElement({ el, pathBase }) {
                         allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
                         allowFullScreen
                     />
+                ) : hasUrl ? (
+                    <video
+                        src={el.url}
+                        autoPlay
+                        muted
+                        loop
+                        playsInline
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    />
                 ) : (
                     <div className="content-el-video-placeholder">
-                        <span>Paste a YouTube or Vimeo URL in the panel</span>
+                        <span>Paste a YouTube or Vimeo URL in the panel, or upload a video file</span>
                     </div>
                 )}
             </div>

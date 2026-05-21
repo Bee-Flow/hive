@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
-    ArrowLeft, MoreHorizontal, Pencil, Trash2, RefreshCw, Download, Share2, Copy, MessageSquare,
-    Tag, X, Check, Loader2, Clock, Users, Languages,
+    ArrowLeft, MoreHorizontal, Pencil, Trash2, RefreshCw, Download, Copy, MessageSquare,
+    Tag, X, Check, Loader2, Clock, Users, Languages, UsersRound,
 } from 'lucide-react';
 import IconButton from '../../../components/shared/IconButton';
 import { formatDuration, formatRelativeDate } from '../lib/format';
@@ -13,13 +13,14 @@ export default function MeetingHeader({
     onDelete,
     onReprocess,
     onExport,
-    onShareOpen,
     onCopyTranscript,
+    onEditSpeakers,
     onToggleChat,
     chatVisible,
     onAddTag,
     onRemoveTag,
     busy,
+    publishMenuSlot = null,
 }) {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(meeting.title || '');
@@ -96,7 +97,8 @@ export default function MeetingHeader({
                         )}
                     </div>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-2">
+                    {publishMenuSlot}
                     <button
                         type="button"
                         onClick={onToggleChat}
@@ -117,7 +119,9 @@ export default function MeetingHeader({
                         {menuOpen && (
                             <div className="absolute right-0 top-full mt-1 z-20 rounded-xl border shadow-lg overflow-hidden min-w-[180px]" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
                                 <MenuItem icon={Copy} label="Copy transcript" onClick={() => { setMenuOpen(false); onCopyTranscript?.(); }} />
-                                <MenuItem icon={Share2} label="Share" onClick={() => { setMenuOpen(false); onShareOpen?.(); }} />
+                                {onEditSpeakers && (
+                                    <MenuItem icon={UsersRound} label="Edit speakers" onClick={() => { setMenuOpen(false); onEditSpeakers(); }} />
+                                )}
                                 <MenuItem icon={Download} label="Export as Markdown" onClick={() => { setMenuOpen(false); onExport?.('md'); }} />
                                 <MenuItem icon={Download} label="Export as Text" onClick={() => { setMenuOpen(false); onExport?.('txt'); }} />
                                 <MenuItem icon={RefreshCw} label="Re-transcribe" onClick={() => { setMenuOpen(false); onReprocess?.(); }} disabled={busy} />

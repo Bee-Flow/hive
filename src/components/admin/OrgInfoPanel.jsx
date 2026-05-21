@@ -5,8 +5,10 @@ import { useTranslation } from '../../hooks/useTranslation';
 import GuardrailsPanel from './GuardrailsPanel';
 import LicenseKeyActivation from './LicenseKeyActivation';
 import { useLicenseContext } from '../LicenseContext';
-import { getCostVisibility } from './subscriptions/ui/costVisibility';
 import { useDeploymentMode } from '../../hooks/useDeploymentMode';
+
+// Map a 3-letter currency code to its glyph for inline display.
+const currencySym = (c) => ({ EUR: '€', USD: '$', GBP: '£' }[String(c || 'EUR').toUpperCase()] || (c || '€'));
 
 // Skeleton loader
 const Skeleton = () => (
@@ -37,7 +39,7 @@ const AUTH_METHODS = [
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
         ),
-        color: '#6366f1',
+        color: '#3b82f6',
     },
     {
         id: 'google',
@@ -73,7 +75,7 @@ const SECTIONS = [
     { id: 'license', labelKey: 'settings.license_usage', icon: CreditCard, color: '#3b82f6' },
     { id: 'auth', labelKey: 'settings.signin_method', icon: KeyRound, color: '#10b981' },
     { id: 'privacy', labelKey: 'settings.privacy_shield', icon: Shield, color: '#ef4444' },
-    { id: 'info', labelKey: 'settings.org_info', icon: Info, color: '#8b5cf6' },
+    { id: 'info', labelKey: 'settings.org_info', icon: Info, color: '#14b8a6' },
 ];
 
 // ── Allowed Domains editor (tag-input) ──
@@ -179,7 +181,7 @@ const AllowedDomainsEditor = ({ domains = [], onChange, t }) => {
 };
 
 // ── Usage bar component ──
-const UsageBar = ({ label, icon: Icon, used, limit, unit, color = '#8b5cf6', pctLabel }) => {
+const UsageBar = ({ label, icon: Icon, used, limit, unit, color = '#3b82f6', pctLabel }) => {
     const isUnlimited = limit === null || limit === undefined || limit === -1;
     const pct = isUnlimited ? 0 : limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
     const isWarning = pct >= 80 && pct < 95;
@@ -346,6 +348,10 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
     const [stripeEnabled, setStripeEnabled] = useState(false);
     const [checkoutLoading, setCheckoutLoading] = useState(null);
     const [portalLoading, setPortalLoading] = useState(false);
+    // Inline plan-picker shown when an already-subscribed org wants to
+    // switch plans. Reuses the existing checkout endpoint — Stripe handles
+    // the swap server-side, the webhook mirrors it back.
+    const [showChangePlan, setShowChangePlan] = useState(false);
     const originalDataRef = useRef(null);
 
     const fetchData = useCallback(async () => {
@@ -417,6 +423,9 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                     allowSignup: !!myOrg.allowSignup,
                     authMethod: myOrg.authMethod || null,
                     autoApproveSSO: !!myOrg.autoApproveSSO,
+                    // Default to pooled (true) when the column is null on
+                    // pre-migration orgs — matches the server-side default.
+                    usagePooled: myOrg.usagePooled === undefined ? true : !!myOrg.usagePooled,
                     allowedDomains: Array.isArray(myOrg.allowedDomains) ? myOrg.allowedDomains : [],
                 };
                 setOrgData(data);
@@ -645,16 +654,13 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
     const limits = sub?.effective_limits || {};
     const usage = sub?.current_usage || {};
 
-    // Hide internal € costs from member-facing org views when on a flat plan.
-    // PAYG orgs still see costs because that is literally their Stripe bill.
-    const { showCost: showOrgCost } = getCostVisibility(sub?.billing_model);
-    const orgMsgPct = limits.max_messages_per_month
-        ? Math.min(100, Math.round(((usage.messages || 0) / limits.max_messages_per_month) * 100))
+    // Member-facing org view always shows marked-up cost — message/token
+    // counts are deliberately hidden. The upgrade CTA fires when AI usage
+    // cost approaches the plan's cost cap (if one is set).
+    const orgCostPct = (limits.max_cost_per_month && limits.max_cost_per_month !== -1)
+        ? Math.min(100, Math.round(((usage.cost || 0) / limits.max_cost_per_month) * 100))
         : 0;
-    const orgTokPct = limits.max_tokens_per_month
-        ? Math.min(100, Math.round(((usage.tokens || 0) / limits.max_tokens_per_month) * 100))
-        : 0;
-    const showOrgUpgradeCta = !showOrgCost && Math.max(orgMsgPct, orgTokPct) >= 80;
+    const showOrgUpgradeCta = orgCostPct >= 80;
 
     return (
         <div className="flex-1 overflow-y-auto p-6">
@@ -689,10 +695,10 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                 </div>
 
                                 {/* Available plans from Stripe — cloud only; self-hosted uses license keys */}
-                                {isCloud && stripeEnabled && availablePlans.length > 0 && (
+                                {isCloud && availablePlans.length > 0 ? (
                                     <div>
                                         <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3 flex items-center gap-2">
-                                            <Zap className="w-4 h-4" style={{ color: '#8b5cf6' }} />
+                                            <Zap className="w-4 h-4" style={{ color: '#3b82f6' }} />
                                             {t('org.choose_plan', 'Choose a Plan')}
                                         </h3>
                                         <div className="grid gap-3">
@@ -712,7 +718,6 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                                                 </div>
                                                                 {plan.description && <p className="text-[11px] text-[var(--text-muted)] mb-2">{plan.description}</p>}
                                                                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-[var(--text-muted)]">
-                                                                    {plan.max_messages_per_month && plan.max_messages_per_month !== -1 && <span>{plan.max_messages_per_month.toLocaleString()} msg/mo</span>}
                                                                     {plan.max_users && plan.max_users !== -1 && <span>{plan.max_users} users</span>}
                                                                     {plan.max_agents && plan.max_agents !== -1 && <span>{plan.max_agents} agents</span>}
                                                                     {plan.max_knowledge_sources && plan.max_knowledge_sources !== -1 && <span>{plan.max_knowledge_sources} KB sources</span>}
@@ -727,7 +732,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                                                     onClick={() => handleCheckout(plan.id)}
                                                                     disabled={checkoutLoading === plan.id || !plan.has_stripe_price}
                                                                     className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50"
-                                                                    style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }}
+                                                                    style={{ background: '#3b82f6' }}
                                                                 >
                                                                     {checkoutLoading === plan.id ? (
                                                                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -743,15 +748,22 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                             })}
                                         </div>
                                     </div>
-                                )}
+                                ) : isCloud ? (
+                                    <div className="p-5 rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] text-center">
+                                        <p className="text-sm text-[var(--text-primary)]">{t('org.no_plans_configured', 'No plans are available right now.')}</p>
+                                        <p className="text-xs text-[var(--text-muted)] mt-1">
+                                            {t('org.contact_for_plan', 'Reach out to')} <a href="mailto:info@beeflow.nl" className="text-[#3b82f6] hover:underline">info@beeflow.nl</a> {t('org.to_get_started', 'to get started.')}
+                                        </p>
+                                    </div>
+                                ) : null}
                             </div>
                         ) : (
                             <>
                                 {/* Plan Card */}
                                 <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden">
-                                    <div className="p-5 flex items-center justify-between" style={{ background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.06), rgba(139, 92, 246, 0.06))' }}>
+                                    <div className="p-5 flex items-center justify-between" style={{ background: 'rgba(59, 130, 246, 0.06)' }}>
                                         <div className="flex items-center gap-4">
-                                            <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #3b82f6, #8b5cf6)' }}>
+                                            <div className="w-12 h-12 rounded-xl flex items-center justify-center" style={{ background: '#3b82f6' }}>
                                                 <Zap className="w-6 h-6 text-white" />
                                             </div>
                                             <div>
@@ -769,7 +781,19 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                                 </p>
                                             </div>
                                         </div>
-                                        {/* Manage Billing button */}
+                                        {/* Change plan / Manage Billing actions */}
+                                        {isCloud && availablePlans.length > 1 && (
+                                            <button
+                                                onClick={() => setShowChangePlan(v => !v)}
+                                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all hover:opacity-80"
+                                                style={{ borderColor: 'rgba(59,130,246,0.3)', color: '#3b82f6', background: 'rgba(59,130,246,0.05)' }}
+                                            >
+                                                <Zap className="w-3 h-3" />
+                                                {showChangePlan
+                                                    ? t('org.change_plan_close', 'Close')
+                                                    : t('org.change_plan', 'Change plan')}
+                                            </button>
+                                        )}
                                         {sub.stripe_customer_id && (
                                             <button
                                                 onClick={handleManageBilling}
@@ -781,7 +805,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                                 {t('org.manage_billing', 'Manage Billing')}
                                             </button>
                                         )}
-                                        {showOrgCost && limits.max_cost_per_month != null && limits.max_cost_per_month !== -1 && (
+                                        {limits.max_cost_per_month != null && limits.max_cost_per_month !== -1 && (
                                             <div className="text-right">
                                                 <div className="text-xl font-bold text-[var(--text-primary)]">€{Number(limits.max_cost_per_month).toFixed(2)}</div>
                                                 <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider">{t('org.cost_cap_month')}</div>
@@ -789,43 +813,105 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                         )}
                                     </div>
 
-                                    {/* Quick stats */}
-                                    <div className="grid grid-cols-3 divide-x divide-[var(--border-subtle)] border-t border-[var(--border-subtle)]">
+                                    {/* Quick stats — AI usage cost only */}
+                                    <div className="border-t border-[var(--border-subtle)]">
                                         <div className="p-4 text-center">
-                                            <div className="text-lg font-bold text-[var(--text-primary)]">{usage.messages?.toLocaleString() || 0}</div>
-                                            <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">{t('org.messages')}</div>
-                                        </div>
-                                        <div className="p-4 text-center">
-                                            <div className="text-lg font-bold text-[var(--text-primary)]">
-                                                {usage.tokens >= 1_000_000 ? `${(usage.tokens / 1_000_000).toFixed(1)}M` : usage.tokens >= 1_000 ? `${(usage.tokens / 1_000).toFixed(1)}K` : (usage.tokens || 0).toLocaleString()}
-                                            </div>
-                                            <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">{t('org.tokens')}</div>
-                                        </div>
-                                        <div className="p-4 text-center">
-                                            {showOrgCost ? (
-                                                <>
-                                                    <div className="text-lg font-bold text-[var(--text-primary)]">€{Number(usage.cost || 0).toFixed(2)}</div>
-                                                    <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">{t('org.cost')}</div>
-                                                </>
-                                            ) : (
-                                                <>
-                                                    <div className="text-lg font-bold text-[var(--text-primary)]">{orgMsgPct}%</div>
-                                                    <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">Plan used</div>
-                                                </>
-                                            )}
+                                            <div className="text-2xl font-bold text-[var(--text-primary)]">€{Number(usage.cost || 0).toFixed(2)}</div>
+                                            <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">{t('org.ai_usage_this_period', 'AI usage this period')}</div>
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Upgrade CTA — surfaces when a flat-plan org nears its quota */}
+                                {/* Inline Change Plan picker — visible only when toggled */}
+                                {showChangePlan && isCloud && availablePlans.length > 0 && (
+                                    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5 space-y-3">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <Zap className="w-4 h-4" style={{ color: '#3b82f6' }} />
+                                            <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t('org.change_plan', 'Change plan')}</h3>
+                                        </div>
+                                        <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                                            {t('org.change_plan_hint', 'Switching plans takes effect immediately. Stripe will prorate the difference on your next invoice.')}
+                                        </p>
+                                        <div className="grid gap-3">
+                                            {availablePlans.filter(p => p.id !== sub.plan_id).map(plan => {
+                                                const sym = (plan.currency || 'eur').toUpperCase() === 'EUR' ? '€' : (plan.currency || 'eur').toUpperCase() === 'GBP' ? '£' : '$';
+                                                return (
+                                                    <div key={plan.id} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 hover:border-[var(--accent-primary)] transition-colors">
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center gap-2 mb-1">
+                                                                    <h4 className="text-sm font-bold text-[var(--text-primary)]">{plan.name}</h4>
+                                                                </div>
+                                                                {plan.description && <p className="text-[11px] text-[var(--text-muted)] mb-2">{plan.description}</p>}
+                                                                <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-[var(--text-muted)]">
+                                                                    {plan.max_users && plan.max_users !== -1 && <span>{plan.max_users} users</span>}
+                                                                    {plan.max_agents && plan.max_agents !== -1 && <span>{plan.max_agents} agents</span>}
+                                                                    {plan.max_knowledge_sources && plan.max_knowledge_sources !== -1 && <span>{plan.max_knowledge_sources} KB sources</span>}
+                                                                </div>
+                                                            </div>
+                                                            <div className="flex items-center gap-3 ml-4">
+                                                                <div className="text-right">
+                                                                    <div className="text-lg font-bold text-[var(--text-primary)]">{sym}{plan.price.toFixed(2)}</div>
+                                                                    <div className="text-[9px] text-[var(--text-muted)] uppercase tracking-wider">/ {plan.billing_interval || 'month'}</div>
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => handleCheckout(plan.id)}
+                                                                    disabled={checkoutLoading === plan.id || !plan.has_stripe_price}
+                                                                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50"
+                                                                    style={{ background: '#3b82f6' }}
+                                                                >
+                                                                    {checkoutLoading === plan.id ? (
+                                                                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                                                    ) : (
+                                                                        <ArrowRight className="w-3.5 h-3.5" />
+                                                                    )}
+                                                                    {t('org.switch_to', 'Switch')}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Subscription billing card */}
+                                {sub.billing && Number(sub.billing.subscription_total) > 0 && (
+                                    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
+                                        <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-3 flex items-center gap-2">
+                                            <CreditCard className="w-4 h-4 text-[var(--text-muted)]" />
+                                            {t('org.subscription', 'Subscription')}
+                                        </h3>
+                                        <div className="flex items-baseline justify-between">
+                                            <span className="text-[12px] text-[var(--text-muted)]">{t('org.billed_per_cycle', 'Billed per cycle')}</span>
+                                            <span className="text-2xl font-bold text-[var(--text-primary)]">
+                                                {currencySym(sub.billing.plan_currency)}{Number(sub.billing.subscription_total).toFixed(2)}
+                                                <span className="ml-1 text-[11px] font-normal text-[var(--text-muted)]">/ {sub.billing.billing_interval === 'yearly' ? t('org.year', 'year') : t('org.month', 'month')}</span>
+                                            </span>
+                                        </div>
+                                        {sub.billing.per_seat && (
+                                            <div className="mt-2 pt-2 border-t border-[var(--border-subtle)] flex items-center justify-between text-[12px]">
+                                                <span className="text-[var(--text-muted)]">
+                                                    {sub.billing.seat_quantity} × {currencySym(sub.billing.plan_currency)}{Number(sub.billing.plan_price).toFixed(2)} {t('org.per_seat', '/ seat')}
+                                                </span>
+                                                <span className="text-[var(--text-secondary)] font-medium">
+                                                    {sub.billing.seat_quantity} {sub.billing.seat_quantity === 1 ? t('org.seat', 'seat') : t('org.seats', 'seats')}
+                                                </span>
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
+
+                                {/* Upgrade CTA — surfaces when AI usage cost approaches the plan cap */}
                                 {showOrgUpgradeCta && (
                                     <div className="rounded-2xl border border-amber-500/30 bg-amber-500/5 px-4 py-3 flex items-center gap-3">
                                         <Sparkles className="w-4 h-4 text-amber-500 shrink-0" />
                                         <div className="flex-1 min-w-0">
                                             <p className="text-[13px] font-semibold text-[var(--text-primary)]">
-                                                You've used {Math.max(orgMsgPct, orgTokPct)}% of your plan this period.
+                                                You've used {orgCostPct}% of your AI usage budget this period.
                                             </p>
-                                            <p className="text-[11.5px] text-[var(--text-muted)]">Upgrade to unlock more messages and higher model tiers.</p>
+                                            <p className="text-[11.5px] text-[var(--text-muted)]">Upgrade to a higher plan for more AI usage.</p>
                                         </div>
                                         <a
                                             href="/app/admin/subscriptions"
@@ -836,7 +922,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                     </div>
                                 )}
 
-                                {/* Usage Bars */}
+                                {/* Usage Bars — AI usage cost only */}
                                 <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5 space-y-4">
                                     <div className="flex items-center gap-2 mb-1">
                                         <BarChart3 className="w-4 h-4 text-[var(--text-muted)]" />
@@ -844,89 +930,58 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                     </div>
 
                                     <UsageBar
-                                        label={t('org.messages')}
-                                        icon={MessageSquare}
-                                        used={usage.messages || 0}
-                                        limit={limits.max_messages_per_month}
-                                        color="#3b82f6"
-                                    />
-                                    {showOrgCost ? (
-                                        <UsageBar
-                                            label={t('org.cost')}
-                                            icon={DollarSign}
-                                            used={usage.cost || 0}
-                                            limit={limits.max_cost_per_month}
-                                            unit="€"
-                                            color="#10b981"
-                                        />
-                                    ) : (
-                                        <p className="text-[11.5px] text-[var(--text-muted)] leading-relaxed pl-1">
-                                            Your plan includes a flat-rate price — there are no per-message charges to track.
-                                        </p>
-                                    )}
-                                    <UsageBar
-                                        label={t('org.tokens')}
-                                        icon={Zap}
-                                        used={usage.tokens || 0}
-                                        limit={limits.max_tokens_per_month}
-                                        color="#3b82f6"
+                                        label={t('org.cost', 'Cost')}
+                                        icon={DollarSign}
+                                        used={usage.cost || 0}
+                                        limit={limits.max_cost_per_month}
+                                        unit="€"
+                                        color="#10b981"
                                     />
                                 </div>
 
-                                {/* Plan limits grid */}
-                                <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
-                                    <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4">{t('org.plan_limits')}</h3>
-                                    <div className="grid grid-cols-2 gap-3">
-                                        {[
-                                            { label: t('org.users'), icon: Users, val: limits.max_users, color: '#6366f1' },
-                                            { label: t('org.agents'), icon: Bot, val: limits.max_agents, color: '#f59e0b' },
-                                            { label: t('org.knowledge_sources'), icon: Database, val: limits.max_knowledge_sources, color: '#10b981' },
-                                            { label: t('org.messages_per_month'), icon: MessageSquare, val: limits.max_messages_per_month, color: '#3b82f6' },
-                                        ].map(item => {
-                                            const Icon = item.icon;
-                                            const isUnlimited = item.val === null || item.val === undefined || item.val === -1;
-                                            return (
-                                                <div key={item.label} className="flex items-center gap-3 p-3 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-subtle)]">
-                                                    <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${item.color}10` }}>
-                                                        <Icon className="w-4 h-4" style={{ color: item.color }} />
-                                                    </div>
-                                                    <div>
-                                                        <div className="text-sm font-bold text-[var(--text-primary)]">
-                                                            {isUnlimited ? '∞' : item.val?.toLocaleString()}
-                                                        </div>
-                                                        <div className="text-[10px] text-[var(--text-muted)]">{item.label}</div>
-                                                    </div>
+                                {/* Plan limits grid — only renders concrete caps; ∞ tiles are hidden,
+                                    and the whole card collapses when no limits are set and there are no notes. */}
+                                {(() => {
+                                    const limitItems = [
+                                        { label: t('org.users'), icon: Users, val: limits.max_users, color: '#3b82f6' },
+                                        { label: t('org.agents'), icon: Bot, val: limits.max_agents, color: '#f59e0b' },
+                                        { label: t('org.knowledge_sources'), icon: Database, val: limits.max_knowledge_sources, color: '#10b981' },
+                                    ].filter(it => it.val !== null && it.val !== undefined && it.val !== -1);
+                                    if (limitItems.length === 0 && !sub.notes) return null;
+                                    return (
+                                        <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5">
+                                            <h3 className="text-sm font-semibold text-[var(--text-primary)] mb-4">{t('org.plan_limits')}</h3>
+                                            {limitItems.length > 0 && (
+                                                <div className="grid grid-cols-2 gap-3">
+                                                    {limitItems.map(item => {
+                                                        const Icon = item.icon;
+                                                        return (
+                                                            <div key={item.label} className="flex items-center gap-3 p-3 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-subtle)]">
+                                                                <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ background: `${item.color}10` }}>
+                                                                    <Icon className="w-4 h-4" style={{ color: item.color }} />
+                                                                </div>
+                                                                <div>
+                                                                    <div className="text-sm font-bold text-[var(--text-primary)]">
+                                                                        {Number(item.val).toLocaleString()}
+                                                                    </div>
+                                                                    <div className="text-[10px] text-[var(--text-muted)]">{item.label}</div>
+                                                                </div>
+                                                            </div>
+                                                        );
+                                                    })}
                                                 </div>
-                                            );
-                                        })}
-                                    </div>
-
-                                    {/* Per-type limits */}
-                                    {limits.max_messages_by_type && Object.keys(limits.max_messages_by_type).length > 0 && (
-                                        <div className="mt-4 pt-4 border-t border-[var(--border-subtle)]">
-                                            <h4 className="text-xs font-medium text-[var(--text-muted)] mb-2">{t('org.message_limits_by_type')}</h4>
-                                            <div className="flex flex-wrap gap-2">
-                                                {Object.entries(limits.max_messages_by_type).map(([type, val]) => (
-                                                    <span key={type} className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg bg-[var(--bg-tertiary)] text-[var(--text-secondary)] border border-[var(--border-subtle)]">
-                                                        <span className="font-medium capitalize">{type.replace(/_/g, ' ')}</span>
-                                                        <span className="text-[var(--text-muted)]">
-                                                            {val === null || val === -1 ? '∞' : val}
-                                                        </span>
-                                                    </span>
-                                                ))}
-                                            </div>
+                                            )}
+                                            {sub.notes && (
+                                                <div className={limitItems.length > 0 ? 'mt-4 pt-4 border-t border-[var(--border-subtle)]' : ''}>
+                                                    <p className="text-xs text-[var(--text-muted)]">
+                                                        <span className="font-medium text-[var(--text-secondary)]">{t('org.notes')}: </span>
+                                                        {sub.notes}
+                                                    </p>
+                                                </div>
+                                            )}
                                         </div>
-                                    )}
-
-                                    {sub.notes && (
-                                        <div className="mt-4 pt-4 border-t border-[var(--border-subtle)]">
-                                            <p className="text-xs text-[var(--text-muted)]">
-                                                <span className="font-medium text-[var(--text-secondary)]">{t('org.notes')}: </span>
-                                                {sub.notes}
-                                            </p>
-                                        </div>
-                                    )}
-                                </div>
+                                    );
+                                })()}
                             </>
                         )}
                     </div>
@@ -1137,6 +1192,43 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
 
                         {/* ── Default Language for New Users ── */}
                         <OrgDefaultLanguage />
+
+                        {/* ── Divider ── */}
+                        <div className="border-t border-[var(--border-subtle)]" />
+
+                        {/* ── AI usage sharing toggle ── */}
+                        <div className="space-y-5">
+                            <div>
+                                <h2 className="text-lg font-bold text-[var(--text-primary)]">{t('org.share_usage', 'AI usage sharing')}</h2>
+                                <p className="text-sm text-[var(--text-muted)] mt-0.5">{t('org.share_usage_desc', 'Choose whether your team shares one AI-usage budget, or whether each user gets their own slice.')}</p>
+                            </div>
+                            <div className="p-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] flex items-start gap-3">
+                                <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: 'rgba(16,185,129,0.12)' }}>
+                                    <Users className="w-4 h-4" style={{ color: '#10b981' }} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-[13px] font-medium text-[var(--text-primary)]">{t('org.share_usage_label', 'Share AI usage across the organisation')}</p>
+                                    <p className="text-[11px] text-[var(--text-muted)] mt-0.5 mb-3">{t('org.share_usage_explainer', 'When on, every user shares the plan\'s cost budget. When off, the budget is divided equally between active users so each user gets their own slice for the period.')}</p>
+                                    <label className="inline-flex items-center gap-3 cursor-pointer select-none">
+                                        <span className="relative inline-flex h-5 w-9 items-center">
+                                            <input
+                                                type="checkbox"
+                                                checked={!!orgData.usagePooled}
+                                                onChange={e => setOrgData(p => ({ ...p, usagePooled: e.target.checked }))}
+                                                className="sr-only peer"
+                                            />
+                                            <span className="absolute inset-0 rounded-full bg-[var(--bg-tertiary)] border border-[var(--border-default)] peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-colors" />
+                                            <span className="absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-4" />
+                                        </span>
+                                        <span className="text-[12px] text-[var(--text-secondary)]">
+                                            {orgData.usagePooled
+                                                ? t('org.share_usage_on', 'Pooled across the organisation')
+                                                : t('org.share_usage_off', 'Each user has their own budget')}
+                                        </span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
                     </div>
                 )}
                 {/* ── Privacy Shield ── */}

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
-import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, Mic, FileText, PenLine, Sparkles, Mail, Ticket, BookOpen, LayoutGrid } from 'lucide-react';
+import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, FileText, PenLine, Sparkles, Mail, Ticket, BookOpen, LayoutGrid } from 'lucide-react';
 import { useTheme } from './ThemeContext';
 import { useLicenseContext } from './LicenseContext';
 import { API_BASE, authFetch } from '../utils/helpers';
@@ -377,7 +377,7 @@ const Sidebar = ({
     groupedConversations, currentConversation,
     onSelectConversation, onDeleteConversation,
     onSelectAgent, onOpenMarketplace, onOpenSearch, onOpenKBStore,
-    user, onLogout, onNavigate, currentPage,
+    user, onLogout, onNavigate, currentPage, studioRoute = null,
     onDirectChat, directChatMode,
     directConversations = [],
     onSelectDirectConversation, onDeleteDirectConversation,
@@ -617,9 +617,8 @@ const Sidebar = ({
         // hasLicenseFeature short-circuits each entry on community-tier
         // installs — the licence gate is the source of truth; the beta
         // opt-in and permissions remain as additional org-level controls.
-        ...(!_simpleMode && hasLicenseFeature('meeting_notes') && _featureFlags.meeting_notes !== false && (_isAdminLike || _betaFeatures.includes('meeting_notes'))
-            ? [{ key: 'meeting-notes', label: t('sidebar.meeting_notes') || 'Meetings', icon: Mic, onClick: () => onNavigate && onNavigate('meetingNotes'), active: currentPage === 'meetingNotes' }]
-            : []),
+        // Meeting Notes lives inside Studio (Mic tab) and is reached there;
+        // no top-level sidebar entry.
         ...(!_simpleMode && !isMobile && hasLicenseFeature('ticket_assistant') && (_betaFeatures.includes('itil_ticket_assistant') || _betaFeatures.includes('email_knowledge_base'))
             ? [{ key: 'ticket-assistant', label: t('ticket_assistant.sidebar_label') || 'Ticket Assistant', icon: Ticket, onClick: () => onNavigate && onNavigate('ticketAssistant'), active: showTicketAssistant, beta: true }]
             : []),
@@ -687,9 +686,13 @@ const Sidebar = ({
             <div className={`px-3 py-3 flex items-center flex-shrink-0 ${isOpen ? 'justify-between' : 'justify-center border-b border-[var(--border-subtle)]/50'}`}>
                 {isOpen ? (
                     <>
-                        <div className="flex items-center gap-2.5">
+                        <button
+                            onClick={onDirectChat}
+                            className="flex items-center gap-2.5 rounded-xl transition-transform hover:scale-105"
+                            aria-label={t('sidebar.new_chat') || 'New Chat'}
+                        >
                             <img src="/bee-flow-logo.svg" alt="Bee Flow" className="w-[4.5rem] h-[4.5rem] rounded-xl object-cover" />
-                        </div>
+                        </button>
                         <div className="flex items-center gap-1">
                             <NotificationCenter variant="icon" />
                             <button
@@ -769,7 +772,7 @@ const Sidebar = ({
             )}
 
             {/* ── Projects ── */}
-            {isOpen && !_simpleMode && user?.featureFlags?.projects !== false && projects.length > 0 && (
+            {isOpen && !_simpleMode && hasLicenseFeature('projects') && user?.featureFlags?.projects !== false && projects.length > 0 && (
                 <div className="mt-1">
                     <div className={SECTION_HDR} onClick={toggleProjects}>
                         <span className={SECTION_LBL}>{t('sidebar.projects')}</span>
@@ -821,7 +824,7 @@ const Sidebar = ({
             )}
 
             {/* ── New Project (when no projects yet) ── */}
-            {isOpen && user?.featureFlags?.projects !== false && projects.length === 0 && (
+            {isOpen && hasLicenseFeature('projects') && user?.featureFlags?.projects !== false && projects.length === 0 && (
                 <div className="px-2 mt-1">
                     <button
                         onClick={() => onCreateProject?.()}

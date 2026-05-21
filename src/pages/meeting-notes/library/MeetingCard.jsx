@@ -6,7 +6,13 @@ import { formatDuration, formatRelativeDate } from '../lib/format';
 export default function MeetingCard({ meeting, active, onClick }) {
     const status = meeting.status || 'completed';
     const actionItems = Array.isArray(meeting.actionItems) ? meeting.actionItems.length : 0;
-    const sharedCount = Array.isArray(meeting.sharedWith) ? meeting.sharedWith.length : 0;
+    const groupCount = Array.isArray(meeting.sharedGroups) ? meeting.sharedGroups.length : 0;
+    const publishLabel = meeting.isPublished
+        ? (groupCount > 0 ? `${groupCount}` : 'org')
+        : null;
+    const publishTitle = meeting.isPublished
+        ? (groupCount > 0 ? `Shared with ${groupCount} group${groupCount > 1 ? 's' : ''}` : 'Shared with your organization')
+        : '';
 
     return (
         <button
@@ -42,8 +48,10 @@ export default function MeetingCard({ meeting, active, onClick }) {
                     {actionItems > 0 && (
                         <span className="inline-flex items-center gap-1"><ListChecks className="w-3 h-3" />{actionItems}</span>
                     )}
-                    {sharedCount > 0 && (
-                        <span className="inline-flex items-center gap-1"><Share2 className="w-3 h-3" />{sharedCount}</span>
+                    {publishLabel && (
+                        <span className="inline-flex items-center gap-1 font-medium" title={publishTitle} style={{ color: 'var(--accent-primary)' }}>
+                            <Share2 className="w-3 h-3" />{publishLabel}
+                        </span>
                     )}
                 </div>
                 {Array.isArray(meeting.tags) && meeting.tags.length > 0 && (

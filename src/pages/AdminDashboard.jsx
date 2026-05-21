@@ -13,6 +13,7 @@ import LanguagesPanel from '../components/admin/LanguagesPanel';
 import AppearancePanel from '../components/admin/appearance-studio/AppearancePanel';
 import ProductWebsitePanel from '../components/admin/ProductWebsite/ProductWebsitePanel';
 import ServerLicensePanel from '../components/admin/ServerLicensePanel';
+import SupportInboxPanel from '../components/admin/SupportInboxPanel';
 import { useDeploymentMode } from '../hooks/useDeploymentMode';
 
 
@@ -39,6 +40,11 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
         { id: 'integrations', label: t('admin.tab_integrations'), perm: ['admin_security'], superAdminOnly: true },
         { id: 'monitoring', label: t('admin.tab_monitoring'), perm: ['admin_monitoring'], superAdminOnly: false },
         { id: 'compliance', label: t('admin.tab_compliance'), perm: ['admin_compliance'], superAdminOnly: false },
+        // Bee Flow customer-support inbox. Visible to any super-admin (or a
+        // user with the `admin_support` permission), on cloud and self-hosted
+        // alike — outbound email + AI reply are best-effort and degrade
+        // gracefully if SMTP / KB aren't configured.
+        { id: 'support', label: t('admin.tab_support') || 'Support', perm: ['admin_support'], superAdminOnly: true },
         // Subscriptions are a Bee Flow Cloud feature. Self-hosted installs
         // manage paid access via license keys (Settings → License & Usage).
         { id: 'subscriptions', label: t('admin.tab_subscriptions'), perm: ['admin_subscriptions'], superAdminOnly: true, cloudOnly: true },
@@ -191,6 +197,10 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                     ) : activeTab === 'subscriptions' ? (
                         <div className="absolute inset-0 overflow-hidden">
                             <SubscriptionsPanel />
+                        </div>
+                    ) : activeTab === 'support' ? (
+                        <div className="absolute inset-0">
+                            <SupportInboxPanel focusThreadId={adminPath.seg2 || null} />
                         </div>
                     ) : activeTab === 'licenses' ? (
                         <div className="absolute inset-0 overflow-auto p-6">

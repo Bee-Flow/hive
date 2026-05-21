@@ -7,45 +7,13 @@ import { Banner } from '../ui/Banner';
 import { Field, Select, Textarea } from '../ui/Input';
 import { LimitField } from '../ui/LimitField';
 import { UsageBar } from '../ui/UsageBar';
-import { LIMIT_FIELDS, AGENT_TYPES } from '../constants';
-import { NumberInput } from '../ui/Input';
+import { LIMIT_FIELDS } from '../constants';
 import { useToast } from '../ui/Toast';
-
-function AgentTypeOverrides({ values = {}, planDefaults, onChange }) {
-    const updateType = (key, val) => {
-        const next = { ...values };
-        if (val == null) delete next[key];
-        else next[key] = val;
-        onChange(Object.keys(next).length > 0 ? next : null);
-    };
-
-    return (
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3 p-3 rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-default)]">
-            {AGENT_TYPES.map(t => (
-                <Field key={t.key} label={
-                    <span className="inline-flex items-center gap-2">
-                        <span className={`inline-block w-2 h-2 rounded-full ${t.dot}`} />
-                        {t.label}
-                    </span>
-                }>
-                    <NumberInput
-                        value={values?.[t.key] ?? null}
-                        onChange={v => updateType(t.key, v)}
-                        placeholder={planDefaults?.[t.key] != null ? `Plan: ${planDefaults[t.key].toLocaleString()}` : 'Unlimited'}
-                    />
-                </Field>
-            ))}
-        </div>
-    );
-}
 
 export function OrgEditor({ orgSub, plans, onBack, onSave, onRemove, onStartTrial }) {
     const [form, setForm] = useState({
         plan_id:                orgSub?.plan_id || '',
         status:                 orgSub?.status || 'active',
-        max_messages_per_month: orgSub?.max_messages_per_month ?? null,
-        max_messages_by_type:   orgSub?.max_messages_by_type   || null,
-        max_tokens_per_month:   orgSub?.max_tokens_per_month   ?? null,
         max_cost_per_month:     orgSub?.max_cost_per_month     ?? null,
         max_users:              orgSub?.max_users              ?? null,
         max_agents:             orgSub?.max_agents             ?? null,
@@ -161,15 +129,6 @@ export function OrgEditor({ orgSub, plans, onBack, onSave, onRemove, onStartTria
                                 />
                             ))}
                         </div>
-                    </div>
-
-                    <div>
-                        <h3 className="text-[13px] font-semibold text-[var(--text-primary)] mb-2">Per agent-type overrides</h3>
-                        <AgentTypeOverrides
-                            values={form.max_messages_by_type || {}}
-                            planDefaults={selectedPlan?.max_messages_by_type}
-                            onChange={v => update('max_messages_by_type', v)}
-                        />
                     </div>
 
                     <Field label="Notes" hint="internal, not visible to the org">

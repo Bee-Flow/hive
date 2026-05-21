@@ -1,6 +1,6 @@
 import React from 'react';
 import { Building2, Users } from 'lucide-react';
-import { Field, Input, Textarea, Select } from '../../ui/Input';
+import { Field, Input, Textarea } from '../../ui/Input';
 import { ChoiceCards } from '../../ui/Choice';
 
 export function BasicsSection({ form, update }) {
@@ -46,17 +46,6 @@ export function BasicsSection({ form, update }) {
                     placeholder="Brief description of this plan"
                     rows={2}
                 />
-            </Field>
-
-            <Field
-                label="Tier"
-                hint="Cloud subscription tier. 'community' / 'full' are reserved for self-hosted license keys."
-            >
-                <Select value={form.tier} onChange={e => update('tier', e.target.value)}>
-                    <option value="">— Unset (Free; community floor applies) —</option>
-                    <option value="pro">Pro</option>
-                    <option value="enterprise">Enterprise</option>
-                </Select>
             </Field>
         </div>
     );

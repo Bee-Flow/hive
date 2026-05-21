@@ -109,16 +109,18 @@ const ConsumerUsageSection = () => {
 
     const sparklinePoints = useMemo(() => {
         return costTimeline.map(row => ({
-            value: Number(row.total_cost || row.cost || row.value || 0),
+            value: Number(row.billed_cost ?? row.total_cost ?? row.cost ?? row.value ?? 0),
             label: row.date || row.day || '',
         }));
     }, [costTimeline]);
 
-    const totalCost = summary?.combined_total_cost ?? summary?.total_estimated_cost ?? 0;
-    const totalCalls = summary?.total_calls ?? 0;
-    const totalTokens = summary?.total_tokens ?? 0;
-    const inputCost = summary?.total_input_cost ?? 0;
-    const outputCost = summary?.total_output_cost ?? 0;
+    // Backend redacts token/message counts for non-admin callers and replaces
+    // estimated_cost with marked-up billed_cost. Detect that shape so the UI
+    // shows a cost-only customer view.
+    const isCustomerView = summary && summary.total_calls === undefined && summary.billed_cost !== undefined;
+    const totalCost = isCustomerView
+        ? Number(summary?.billed_cost || 0)
+        : Number(summary?.combined_total_cost ?? summary?.total_estimated_cost ?? 0);
 
     if (loading && !summary) {
         return (
@@ -163,29 +165,40 @@ const ConsumerUsageSection = () => {
             </div>
 
             {/* Stat cards */}
-            <div className="grid grid-cols-3 gap-3">
-                <StatCard
-                    icon={DollarSign}
-                    label="Estimated cost"
-                    value={fCur(totalCost)}
-                    sub={`In: ${fCur(inputCost)} · Out: ${fCur(outputCost)}`}
-                    color="#10b981"
-                />
-                <StatCard
-                    icon={Zap}
-                    label="AI calls"
-                    value={fNum(totalCalls)}
-                    sub={`${fNum(totalTokens)} tokens`}
-                    color="#0ea5e9"
-                />
-                <StatCard
-                    icon={Activity}
-                    label="Tokens"
-                    value={fNum(totalTokens)}
-                    sub={`In: ${fNum(summary?.total_prompt_tokens || 0)} · Out: ${fNum(summary?.total_completion_tokens || 0)}`}
-                    color="#f59e0b"
-                />
-            </div>
+            {isCustomerView ? (
+                <div className="grid grid-cols-1 gap-3">
+                    <StatCard
+                        icon={DollarSign}
+                        label="AI usage this period"
+                        value={`€${totalCost.toFixed(2)}`}
+                        color="#10b981"
+                    />
+                </div>
+            ) : (
+                <div className="grid grid-cols-3 gap-3">
+                    <StatCard
+                        icon={DollarSign}
+                        label="Estimated cost"
+                        value={fCur(totalCost)}
+                        sub={`In: ${fCur(summary?.total_input_cost ?? 0)} · Out: ${fCur(summary?.total_output_cost ?? 0)}`}
+                        color="#10b981"
+                    />
+                    <StatCard
+                        icon={Zap}
+                        label="AI calls"
+                        value={fNum(summary?.total_calls ?? 0)}
+                        sub={`${fNum(summary?.total_tokens ?? 0)} tokens`}
+                        color="#0ea5e9"
+                    />
+                    <StatCard
+                        icon={Activity}
+                        label="Tokens"
+                        value={fNum(summary?.total_tokens ?? 0)}
+                        sub={`In: ${fNum(summary?.total_prompt_tokens || 0)} · Out: ${fNum(summary?.total_completion_tokens || 0)}`}
+                        color="#f59e0b"
+                    />
+                </div>
+            )}
 
             {/* Cost trend */}
             <Card>
@@ -198,7 +211,8 @@ const ConsumerUsageSection = () => {
                 </div>
             </Card>
 
-            {/* Per-model + per-source side by side */}
+            {/* Per-model + per-source side by side — admin/raw view only */}
+            {!isCustomerView && (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                 <Card>
                     <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border-subtle)', fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
@@ -256,6 +270,7 @@ const ConsumerUsageSection = () => {
                     )}
                 </Card>
             </div>
+            )}
         </div>
     );
 };

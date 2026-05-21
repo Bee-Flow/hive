@@ -301,7 +301,8 @@
     align-self: center;
 }
 .marketing-root .header-nav .nav-item.has-dropdown:hover > a::before,
-.marketing-root .header-nav .nav-item.has-dropdown:focus-within > a::before {
+.marketing-root .header-nav .nav-item.has-dropdown:focus-within > a::before,
+.marketing-root .header-nav .nav-item.has-dropdown.is-open > a::before {
     opacity: 1;
     transform: rotate(180deg);
 }
@@ -330,7 +331,8 @@
     z-index: 100;
 }
 .marketing-root .header-nav .nav-item.has-dropdown:hover .nav-dropdown,
-.marketing-root .header-nav .nav-item.has-dropdown:focus-within .nav-dropdown {
+.marketing-root .header-nav .nav-item.has-dropdown:focus-within .nav-dropdown,
+.marketing-root .header-nav .nav-item.has-dropdown.is-open .nav-dropdown {
     opacity: 1;
     visibility: visible;
     transform: translateY(0);
@@ -354,6 +356,121 @@
 .marketing-root .header-nav .nav-dropdown li a.active {
     color: var(--text-primary);
     background: var(--bg-card);
+}
+
+/* ── Mega menu (columns layout) ──────────────────────────────────────
+   Wider, multi-column panel that opens below the parent nav item.
+   Driven by the same `.is-open` class as the flat dropdown, with the
+   same 150ms close-delay (JS-managed in Header.jsx).                  */
+.marketing-root .header-nav .nav-mega {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    padding: 18px;
+    background: var(--bg-glass);
+    border: 1px solid var(--border-subtle);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-card);
+    backdrop-filter: blur(10px);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-4px);
+    transition: opacity var(--transition-fast),
+                transform var(--transition-fast),
+                visibility 0s linear var(--transition-fast);
+    z-index: 100;
+    /* Sized to its contents; the inner grid sets column widths. */
+    max-width: min(960px, calc(100vw - 32px));
+}
+.marketing-root .header-nav .nav-item.has-dropdown:hover .nav-mega,
+.marketing-root .header-nav .nav-item.has-dropdown:focus-within .nav-mega,
+.marketing-root .header-nav .nav-item.has-dropdown.is-open .nav-mega {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+    transition-delay: 0s;
+}
+.marketing-root .header-nav .nav-mega-grid {
+    display: grid;
+    grid-auto-flow: column;
+    grid-auto-columns: minmax(180px, 1fr);
+    gap: 24px;
+    align-items: start;
+}
+.marketing-root .header-nav .nav-mega-col {
+    min-width: 0;
+}
+.marketing-root .header-nav .nav-mega-col > ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+.marketing-root .header-nav .nav-mega-heading {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    padding: 0 8px;
+}
+.marketing-root .header-nav .nav-mega-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 8px 8px;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    transition: background var(--transition-fast), color var(--transition-fast);
+}
+.marketing-root .header-nav .nav-mega-item::after { content: none; }
+.marketing-root .header-nav .nav-mega-item:hover {
+    background: var(--bg-card);
+    color: var(--text-primary);
+}
+.marketing-root .header-nav .nav-mega-item.active {
+    background: var(--bg-card);
+    color: var(--text-primary);
+}
+.marketing-root .header-nav .nav-mega-item-icon {
+    flex: 0 0 auto;
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    line-height: 1;
+}
+.marketing-root .header-nav .nav-mega-item-text {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+.marketing-root .header-nav .nav-mega-item-label {
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: inherit;
+    line-height: 1.25;
+}
+.marketing-root .header-nav .nav-mega-item-desc {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+    line-height: 1.3;
+}
+
+/* Mobile section heading inside the accordion (mega-menu columns only). */
+.marketing-root .mobile-nav-heading {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-top: 6px;
 }
 
 /* Mobile dropdown children — always visible, indented under the parent.
@@ -561,25 +678,101 @@
     font-weight: 700;
     line-height: 1.2;
 }
+/* Logo strip — single clean line, no borders/cards/backgrounds. The
+   viewport always renders, and a JS check toggles `.is-scrolling` when
+   the originals' natural width exceeds the viewport. When scrolling is
+   off, the track sits centered; when on, the duplicate half is present
+   and the track animates a -50% translate for a seamless loop.
+
+   `--logo-tint` is set inline on the viewport from the block's
+   `logoTint` value (0–80, mapped to sepia 0–80%).                    */
 .marketing-root .social-proof-logos {
-    display: flex;
-    justify-content: center;        /* logos cluster from the centre and grow outward */
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 2rem;
-    /* No opacity / filter here on purpose. Logos render in full color
-       at full opacity — see the editor's "Logo image" upload. */
+    overflow: hidden;
+    padding: 16px 0;
+    width: 100%;
+}
+.marketing-root .social-proof-logos.is-scrolling {
+    -webkit-mask-image: linear-gradient(to right, transparent, black 64px, black calc(100% - 64px), transparent);
+            mask-image: linear-gradient(to right, transparent, black 64px, black calc(100% - 64px), transparent);
 }
 .marketing-root .social-proof-logos img {
-    max-height: 32px;
-    /* Intentionally no `filter` rule. Earlier `grayscale(1) brightness(2)`
-       washed every logo to white; removed so brand colors render correctly. */
+    height: 72px;
+    width: auto;
+    max-width: 200px;
+    object-fit: contain;
+    filter: grayscale(1) sepia(var(--logo-tint, 0%));
+    opacity: 0.55;
+    transition: filter 250ms ease, opacity 250ms ease;
+}
+.marketing-root .social-proof-logos img:hover {
+    filter: none;
+    opacity: 1;
 }
 .marketing-root .social-proof-logos .logo-placeholder {
     color: var(--text-muted);
     font-weight: 600;
     font-size: 1.1rem;
     letter-spacing: 0.05em;
+    display: inline-flex;
+    align-items: center;
+    height: 72px;
+    padding: 0 8px;
+}
+
+/* Track + halves. Static (non-scrolling) state centers the single half;
+   scrolling state lays both halves out flat at the start and animates. */
+.marketing-root .social-proof-logos-track {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    width: max-content;
+    justify-content: center;
+}
+.marketing-root .social-proof-logos:not(.is-scrolling) .social-proof-logos-track {
+    /* Centered statically inside the viewport when the originals fit. */
+    width: 100%;
+}
+.marketing-root .social-proof-logos.is-scrolling .social-proof-logos-track {
+    will-change: transform;
+    animation: socialProofMarquee 45s linear infinite;
+    justify-content: flex-start;
+}
+.marketing-root .social-proof-logos.is-scrolling:hover .social-proof-logos-track {
+    animation-play-state: paused;
+}
+.marketing-root .social-proof-logos-half {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 48px;
+}
+/* The seam between the two halves needs the same 48px breathing room
+   any neighbour pair gets, otherwise the loop point would visually
+   stutter (gap collapses between halves with `display: flex; gap`). */
+.marketing-root .social-proof-logos.is-scrolling .social-proof-logos-half + .social-proof-logos-half {
+    margin-left: 48px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .marketing-root .social-proof-logos.is-scrolling .social-proof-logos-track {
+        animation: none;
+        transform: none;
+    }
+}
+@keyframes socialProofMarquee {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+}
+
+/* Mobile — shorter logos, tighter gap. Marquee math is unchanged
+   because both halves still each contribute exactly 50% of track width. */
+@media (max-width: 768px) {
+    .marketing-root .social-proof-logos img               { height: 48px; max-width: 140px; }
+    .marketing-root .social-proof-logos .logo-placeholder { height: 48px; font-size: 0.95rem; }
+    .marketing-root .social-proof-logos-half              { gap: 32px; }
+    .marketing-root .social-proof-logos.is-scrolling .social-proof-logos-half + .social-proof-logos-half {
+        margin-left: 32px;
+    }
 }
 
 /* ── Section header pattern ───────────────────────────────────────────── */
@@ -889,12 +1082,21 @@
     border-top: 1px solid var(--border-subtle);
 }
 .marketing-root .footer-grid {
-    display: grid;
-    grid-template-columns: 2fr 1fr 1fr 1fr;
+    display: flex;
+    flex-wrap: nowrap;
+    align-items: flex-start;
     gap: 40px;
     margin-bottom: 48px;
 }
-.marketing-root .footer-brand { max-width: 360px; }
+.marketing-root .footer-brand {
+    flex: 0 1 320px;
+    max-width: 360px;
+    min-width: 0;
+}
+.marketing-root .footer-col {
+    flex: 1 1 0;
+    min-width: 0;
+}
 .marketing-root .footer-brand p {
     color: var(--text-secondary);
     font-size: 0.95rem;
@@ -1019,7 +1221,9 @@
 @media (max-width: 1024px) {
     .marketing-root .features-grid { grid-template-columns: repeat(2, 1fr); }
     .marketing-root .tech-stats    { grid-template-columns: repeat(2, 1fr); }
-    .marketing-root .footer-grid   { grid-template-columns: repeat(2, 1fr); }
+    .marketing-root .footer-grid   { display: grid; grid-template-columns: repeat(2, 1fr); }
+    .marketing-root .footer-brand,
+    .marketing-root .footer-col    { flex: initial; max-width: none; }
 }
 @media (max-width: 768px) {
     .marketing-root section { padding: 80px 0; }
@@ -1030,7 +1234,7 @@
     .marketing-root .features-grid,
     .marketing-root .steps,
     .marketing-root .security-grid,
-    .marketing-root .footer-grid { grid-template-columns: 1fr; }
+    .marketing-root .footer-grid { display: grid; grid-template-columns: 1fr; }
     .marketing-root .hero-ctas   { flex-direction: column; align-items: stretch; }
     .marketing-root .arch-layer  { flex-direction: column; align-items: flex-start; gap: 12px; }
     .marketing-root .arch-layer-label { flex: none; }

@@ -6,6 +6,7 @@ import EmbedChat from './pages/EmbedChat';
 import DlpPreviewModal from './components/DlpPreviewModal';
 import ErrorBoundary from './components/ErrorBoundary';
 import { LicenseProvider, RequireTier } from './components/LicenseContext';
+import { SubscriptionProvider, useSubscriptionContext } from './components/SubscriptionContext';
 import NcOnboardingWizard from './components/NcOnboardingWizard';
 import NcOnboardingPending from './components/NcOnboardingPending';
 import NcBindingApprovalModal from './components/NcBindingApprovalModal';
@@ -23,7 +24,9 @@ import termsMd from './marketing/legal/terms.md?raw';
 const ComponentBuilder = lazy(() => import('./components/admin/ComponentBuilder'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const OrgSettings = lazy(() => import('./pages/OrgSettings'));
-const MeetingNotesPage = lazy(() => import('./pages/meeting-notes/MeetingNotesPage'));
+// MeetingNotesPage is now mounted inside Studio (./components/admin/Studio/index.jsx).
+// The RecorderProvider/CaptureProvider remain mounted at the app root so capture
+// state persists across page navigation even when the Studio tab isn't open.
 import { RecorderProvider } from './pages/meeting-notes/hooks/RecorderContext';
 import { CaptureProvider } from './pages/meeting-notes/capture/CaptureContext';
 import CaptureModal from './pages/meeting-notes/capture/CaptureModal';
@@ -66,6 +69,8 @@ const PAGE_ROUTES = {
     aiTasks: '/app/routines',
     reports: '/app/reports',
     components: '/app/components',
+    // Kept for /app/meeting-notes backward-compat — the page now renders
+    // inside Studio so /app/meeting-notes redirects to /app/studio/meeting-notes.
     meetingNotes: '/app/meeting-notes',
     templates: '/app/templates',
     notebooks: '/app/notebooks',
@@ -118,6 +123,8 @@ function pageFromPath(pathname) {
     if (pathname.startsWith('/app/notebooks')) return 'notebooks';
     // /app/webpages/:id → unified Studio (Webpages tab)
     if (pathname.startsWith('/app/webpages')) return 'studio';
+    // /app/meeting-notes → unified Studio (Meeting Notes tab)
+    if (pathname === '/app/meeting-notes' || pathname.startsWith('/app/meeting-notes/')) return 'studio';
 
     // /app/a/:shortId or /app/agent/:id → agents page
     if (pathname.startsWith('/app/a/') || pathname.startsWith('/app/agent/')) return 'agents';
@@ -167,6 +174,9 @@ function parseStudioUrl(pathname) {
     // Legacy /app/webpages[/<id>] paths route into Studio's Webpages section.
     const wp = pathname.match(/^\/app\/webpages(?:\/([^/]+))?/);
     if (wp) return { section: 'webpages', id: wp[1] || null };
+    // Legacy /app/meeting-notes[/<id>] paths route into Studio's Meeting Notes section.
+    const mn = pathname.match(/^\/app\/meeting-notes(?:\/([^/]+))?/);
+    if (mn) return { section: 'meetingNotes', id: mn[1] || null };
     const m = pathname.match(/^\/app\/studio(?:\/([^/]+))?(?:\/([^/]+))?/);
     const seg = m?.[1] || 'agents';
     const id = m?.[2] || null;
@@ -174,6 +184,8 @@ function parseStudioUrl(pathname) {
         : seg === 'skills' ? 'skills'
         : seg === 'knowledge' ? 'knowledge'
         : seg === 'webpages' ? 'webpages'
+        : seg === 'tests' ? 'tests'
+        : seg === 'meeting-notes' ? 'meetingNotes'
         : 'agents';
     return { section, id };
 }
@@ -590,8 +602,12 @@ function App() {
                 : sectionRaw === 'skills' ? 'skills'
                 : sectionRaw === 'knowledge' ? 'knowledge'
                 : sectionRaw === 'webpages' ? 'webpages'
+                : sectionRaw === 'tests' ? 'tests'
+                : (sectionRaw === 'meeting-notes' || sectionRaw === 'meetingNotes') ? 'meetingNotes'
                 : 'agents';
-            const pathSegment = section === 'aiTasks' ? 'routines' : section;
+            const pathSegment = section === 'aiTasks' ? 'routines'
+                : section === 'meetingNotes' ? 'meeting-notes'
+                : section;
             const path = id ? `/app/studio/${pathSegment}/${id}` : `/app/studio/${pathSegment}`;
             setStudioRoute({ section, id });
             setShowStudio(true);
@@ -1093,13 +1109,12 @@ function App() {
 
 
 
+        // Meeting Notes now renders inside Studio (see studio handler above).
+        // The legacy `/app/meeting-notes` URL is normalised to the Studio
+        // route by pageFromPath() / parseStudioUrl().
         if (currentPage === 'meetingNotes') {
-            if (user?.featureFlags?.meeting_notes === false) return navigateToPage('agents');
-            return routed('meetingNotes',
-                <RequireTier feature="meeting_notes" onNavigateToLicense={() => navigateToPage('settings')}>
-                    <MeetingNotesPage user={user} onBack={() => navigateToPage('agents')} />
-                </RequireTier>
-            );
+            navigateToPage('studio/meeting-notes');
+            return null;
         }
         if (currentPage === 'templates') {
             if (user?.featureFlags?.templates === false) return navigateToPage('agents');
@@ -1161,9 +1176,21 @@ function App() {
     };
 
     return (
+        <SubscriptionProvider user={user}>
         <RecorderProvider>
         <CaptureProvider>
         <div className="h-screen flex flex-col">
+
+            {/* No-subscription gate: org users without an active plan can
+                only reach the License & Usage page so they can subscribe. */}
+            {isAuthenticated && (
+                <SubscriptionGate
+                    user={user}
+                    currentPage={currentPage}
+                    deploymentMode={deploymentMode}
+                    navigateToPage={navigateToPage}
+                />
+            )}
 
             {/* Content */}
             <div className="flex-1 overflow-hidden">
@@ -1177,6 +1204,9 @@ function App() {
             {/* Global Meeting Notes surfaces — mounted once, available from any page. */}
             {isAuthenticated && <CaptureModal />}
             {isAuthenticated && <MeetingCommandPalette user={user} onNavigate={navigateToPage} />}
+
+            {/* The floating customer-support drawer was retired — the user-side
+                support inbox now lives at /app/settings → Help & Support. */}
 
             {/* Dropdown animation keyframe */}
             <style>{`
@@ -1205,7 +1235,37 @@ function App() {
         </div>
         </CaptureProvider>
         </RecorderProvider>
+        </SubscriptionProvider>
     );
+}
+
+/**
+ * Invisible app-shell gate. When the org has no active subscription
+ * (status !== 'active' / 'trialing'), force navigate to the License &
+ * Usage page so the admin can buy one. Skips for the hardcoded platform
+ * operator and for consumer accounts (no orgId).
+ */
+function SubscriptionGate({ user, currentPage, deploymentMode, navigateToPage }) {
+    const { hasActiveSub, loading } = useSubscriptionContext();
+    const isPlatformOperator = user?.id === 'admin';
+    const isConsumer = !(user?.organizationId || user?.orgId);
+    const isSelfHosted = deploymentMode === 'self-hosted';
+
+    useEffect(() => {
+        if (loading || hasActiveSub) return;
+        if (isPlatformOperator || isConsumer || isSelfHosted) return;
+        // Already on the License & Usage page (or its loading path) — let
+        // it render so the admin can finish the checkout flow. Stripe
+        // bounces back to the same URL with `?checkout=success`; allow
+        // those query strings too.
+        const path = window.location.pathname;
+        const onLicensePage = path === '/app/settings/organisation/license'
+            || path.startsWith('/app/settings/organisation/license');
+        if (onLicensePage) return;
+        navigateToPage('settings/organisation/license');
+    }, [loading, hasActiveSub, isPlatformOperator, isConsumer, isSelfHosted, currentPage, navigateToPage]);
+
+    return null;
 }
 
 export default AppRoot;

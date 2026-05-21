@@ -1,38 +1,23 @@
-import React, { useEffect, useState } from 'react';
-import { Mic, Upload, Video, ArrowLeft, X } from 'lucide-react';
+import React from 'react';
+import { Mic, Upload, ArrowLeft, X } from 'lucide-react';
 import Modal from '../../../components/shared/Modal';
 import IconButton from '../../../components/shared/IconButton';
 import CaptureTile from './CaptureTile';
 import RecordPanel from './RecordPanel';
 import UploadPanel from './UploadPanel';
-import BotPanel from './BotPanel';
 import { useCapture } from './CaptureContext';
 import { useRecorder } from '../hooks/RecorderContext';
 import useMediaQuery from '../hooks/useMediaQuery';
-import * as api from '../lib/transcriptionsApi';
 
 const MODES = {
     record: { title: 'Record audio', description: 'Capture from your microphone.', Panel: RecordPanel },
-    upload: { title: 'Upload a recording', description: 'Drop a file from your computer or Nextcloud.', Panel: UploadPanel },
-    bot: { title: 'Send the Meeting Bot', description: 'Paste a meeting link and the bot will join, transcribe and summarize.', Panel: BotPanel },
+    upload: { title: 'Upload a recording', description: 'Drop a file from your computer.', Panel: UploadPanel },
 };
 
 export default function CaptureModal() {
     const { open, mode, setMode, closeCapture } = useCapture();
     const isMobile = useMediaQuery('(max-width: 767px)');
-    const [serverDefault, setServerDefault] = useState('voxtral');
-    const [localEnabled, setLocalEnabled] = useState(true);
     const { recorder } = useRecorder();
-
-    useEffect(() => {
-        if (!open) return;
-        api.getAiConfig()
-            .then((cfg) => {
-                if (cfg.transcriptionProvider) setServerDefault(cfg.transcriptionProvider);
-                setLocalEnabled(cfg.localWhisperEnabled !== false);
-            })
-            .catch(() => {});
-    }, [open]);
 
     const recording = recorder.state === 'recording' || recorder.state === 'paused';
     const close = () => {
@@ -50,10 +35,9 @@ export default function CaptureModal() {
     const body = (
         <div className="flex flex-col gap-5">
             {!mode && (
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     <CaptureTile icon={Mic} title="Record audio" description="Capture live from your microphone." onClick={() => setMode('record')} accent="#ffd400" />
                     <CaptureTile icon={Upload} title="Upload a file" description="Drop a .mp3, .wav, .m4a or .mp4." onClick={() => setMode('upload')} accent="var(--accent-primary)" />
-                    <CaptureTile icon={Video} title="Send Meeting Bot" description="Bot joins Meet / Teams / Zoom for you." onClick={() => setMode('bot')} accent="#10b981" />
                 </div>
             )}
             {mode && ModePanel && (
@@ -67,7 +51,7 @@ export default function CaptureModal() {
                             <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{MODES[mode].description}</div>
                         </div>
                     </div>
-                    <ModePanel serverDefault={serverDefault} localEnabled={localEnabled} onComplete={onComplete} />
+                    <ModePanel onComplete={onComplete} />
                 </div>
             )}
         </div>
@@ -102,7 +86,7 @@ export default function CaptureModal() {
             open={open}
             onClose={close}
             title="New transcription"
-            description="Record, upload, or send a bot to a meeting."
+            description="Record or upload audio to a meeting."
             size="lg"
         >
             {body}

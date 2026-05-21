@@ -18,7 +18,7 @@ import AppIcon from '../../AppIcon';
 
 // ── Single draggable page row ────────────────────────────────────────
 
-function PageRow({ page, isActive, onClick, onSetHomepage, onDuplicate, onRename, onDelete }) {
+function PageRow({ page, isActive, onClick, onSetHomepage, onDuplicate, onRename, onEditSlug, onDelete, onSaveAsTemplate }) {
     const {
         attributes, listeners, setNodeRef, transform, transition, isDragging,
     } = useSortable({ id: page.id });
@@ -29,9 +29,15 @@ function PageRow({ page, isActive, onClick, onSetHomepage, onDuplicate, onRename
         opacity: isDragging ? 0.5 : 1,
     };
 
-    const [menuOpen, setMenuOpen] = useState(false);
-    const [renaming, setRenaming] = useState(false);
+    const [menuOpen, setMenuOpen]       = useState(false);
+    const [renaming, setRenaming]       = useState(false);
+    const [editingSlug, setEditingSlug] = useState(false);
     const menuBtnRef = useRef(null);
+
+    // Row is in some inline-edit mode whenever either field is open.
+    // While editing we suppress the row's click-to-select and hide the
+    // actions button so it can't be triggered mid-edit.
+    const isEditing = renaming || editingSlug;
 
     const handleRenameSubmit = (nextTitle) => {
         const trimmed = nextTitle.trim();
@@ -41,17 +47,26 @@ function PageRow({ page, isActive, onClick, onSetHomepage, onDuplicate, onRename
         setRenaming(false);
     };
 
+    const handleSlugSubmit = (nextSlug) => {
+        const cleaned = (nextSlug || '').trim();
+        // Empty slug is invalid — cancel rather than wipe.
+        if (!cleaned) { setEditingSlug(false); return; }
+        if (cleaned === page.slug) { setEditingSlug(false); return; }
+        if (typeof onEditSlug === 'function') onEditSlug(page.id, cleaned);
+        setEditingSlug(false);
+    };
+
     return (
         <div
             ref={setNodeRef}
             style={style}
             className={`group flex items-center gap-1 px-2 py-1.5 rounded-md select-none
-                ${renaming ? '' : 'cursor-pointer'}
+                ${isEditing ? '' : 'cursor-pointer'}
                 ${isActive
                     ? 'bg-[var(--accent-primary)]/10 text-[var(--text-primary)]'
                     : 'text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)]'
                 }`}
-            onClick={() => { if (!renaming) onClick(page.id); }}
+            onClick={() => { if (!isEditing) onClick(page.id); }}
         >
             {/* drag handle */}
             <span
@@ -64,7 +79,7 @@ function PageRow({ page, isActive, onClick, onSetHomepage, onDuplicate, onRename
                 <AppIcon name="GripVertical" className="w-3.5 h-3.5" />
             </span>
 
-            {/* page icon + info (or inline rename input) */}
+            {/* page icon + info (or inline rename / slug input) */}
             <span className="flex items-center gap-1.5 flex-1 min-w-0">
                 {page.isHomepage
                     ? <AppIcon name="Home" className="w-3.5 h-3.5 shrink-0 text-[var(--accent-primary)]" />
@@ -76,6 +91,18 @@ function PageRow({ page, isActive, onClick, onSetHomepage, onDuplicate, onRename
                         onConfirm={handleRenameSubmit}
                         onCancel={() => setRenaming(false)}
                     />
+                ) : editingSlug ? (
+                    // Keep the title visible above the slug input so the
+                    // user has context for which page they're editing.
+                    <span className="flex flex-col min-w-0 w-full">
+                        <span className="text-sm truncate leading-tight">{page.title || '(untitled)'}</span>
+                        <SlugInput
+                            initial={page.slug || ''}
+                            isHomepage={!!page.isHomepage}
+                            onConfirm={handleSlugSubmit}
+                            onCancel={() => setEditingSlug(false)}
+                        />
+                    </span>
                 ) : (
                     <span className="flex flex-col min-w-0">
                         <span className="text-sm truncate leading-tight">{page.title || '(untitled)'}</span>
@@ -87,7 +114,7 @@ function PageRow({ page, isActive, onClick, onSetHomepage, onDuplicate, onRename
             </span>
 
             {/* actions menu */}
-            {!renaming && (
+            {!isEditing && (
                 <div className="relative shrink-0" onClick={e => e.stopPropagation()}>
                     <button
                         ref={menuBtnRef}
@@ -105,10 +132,12 @@ function PageRow({ page, isActive, onClick, onSetHomepage, onDuplicate, onRename
                             anchorEl={menuBtnRef.current}
                             page={page}
                             onClose={() => setMenuOpen(false)}
-                            onSetHomepage={() => { onSetHomepage(page.id); setMenuOpen(false); }}
-                            onDuplicate={()  => { onDuplicate(page.id);   setMenuOpen(false); }}
-                            onRename={()     => { setMenuOpen(false); setRenaming(true); }}
-                            onDelete={()     => { onDelete(page.id);      setMenuOpen(false); }}
+                            onSetHomepage={()    => { onSetHomepage(page.id); setMenuOpen(false); }}
+                            onDuplicate={()      => { onDuplicate(page.id);   setMenuOpen(false); }}
+                            onRename={()         => { setMenuOpen(false); setRenaming(true); }}
+                            onEditSlug={()       => { setMenuOpen(false); setEditingSlug(true); }}
+                            onDelete={()         => { onDelete(page.id);      setMenuOpen(false); }}
+                            onSaveAsTemplate={() => { onSaveAsTemplate?.(page); setMenuOpen(false); }}
                         />
                     )}
                 </div>
@@ -143,10 +172,63 @@ function RenameInput({ initial, onConfirm, onCancel }) {
     );
 }
 
+// ── Inline slug input ─────────────────────────────────────────────────
+//
+// Mirrors RenameInput but with slug-shaped sanitisation: lowercase,
+// spaces → hyphens, anything outside [a-z0-9_-] dropped. Same Enter / Esc
+// / blur-to-confirm pattern. Server-side `cmsStore.updatePageMeta` also
+// re-normalises and resolves slug collisions, so this client-side filter
+// is purely for the typing UX.
+function normalizeSlugForInput(raw) {
+    return String(raw || '')
+        .toLowerCase()
+        .replace(/\s+/g, '-')
+        .replace(/[^a-z0-9_-]/g, '');
+}
+
+function SlugInput({ initial, isHomepage, onConfirm, onCancel }) {
+    const [value, setValue] = useState(initial);
+    const inputRef = useRef(null);
+
+    useEffect(() => { inputRef.current?.focus(); inputRef.current?.select(); }, []);
+
+    return (
+        <span className="flex flex-col w-full gap-0.5">
+            <span className="flex items-center gap-1 text-[10px] text-[var(--text-muted)]">
+                <span className="font-mono">/</span>
+                <input
+                    ref={inputRef}
+                    type="text"
+                    value={value}
+                    onChange={e => setValue(normalizeSlugForInput(e.target.value))}
+                    onClick={e => e.stopPropagation()}
+                    onMouseDown={e => e.stopPropagation()}
+                    onBlur={() => onConfirm(value)}
+                    onKeyDown={(e) => {
+                        if (e.key === 'Enter')  { e.preventDefault(); onConfirm(value); }
+                        if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+                    }}
+                    placeholder="page-slug"
+                    spellCheck={false}
+                    className="flex-1 min-w-0 px-1.5 py-0.5 rounded text-[10px] font-mono border bg-[var(--bg-primary)] border-[var(--accent-primary)] text-[var(--text-primary)] focus:outline-none"
+                />
+            </span>
+            {isHomepage ? (
+                // Spec: "still allow slug editing but warn the user".
+                // Inline warning keeps the affordance one-step (no
+                // modal); the user can still cancel via Escape.
+                <span className="text-[10px] leading-tight text-amber-500/90">
+                    ⚠ Homepage slug. Changing it may break external links.
+                </span>
+            ) : null}
+        </span>
+    );
+}
+
 // ── Actions menu — rendered in a portal at fixed coords so it escapes
 //    the page-list's overflow-y:auto container and doesn't clip. ──────
 
-function PageMenu({ anchorEl, page, onClose, onSetHomepage, onDuplicate, onRename, onDelete }) {
+function PageMenu({ anchorEl, page, onClose, onSetHomepage, onDuplicate, onRename, onEditSlug, onDelete, onSaveAsTemplate }) {
     const [coords, setCoords] = useState(null);
 
     // Compute menu coordinates from the button's viewport rect. Anchored to
@@ -195,10 +277,12 @@ function PageMenu({ anchorEl, page, onClose, onSetHomepage, onDuplicate, onRenam
             {!page.isHomepage && (
                 <MenuBtn icon="Home" label="Set as homepage" onClick={onSetHomepage} />
             )}
-            <MenuBtn icon="Pencil" label="Rename page"    onClick={onRename} />
-            <MenuBtn icon="Copy"   label="Duplicate page" onClick={onDuplicate} />
+            <MenuBtn icon="Pencil"   label="Rename page"        onClick={onRename} />
+            <MenuBtn icon="Link"     label="Edit slug"          onClick={onEditSlug} />
+            <MenuBtn icon="Copy"     label="Duplicate page"     onClick={onDuplicate} />
+            <MenuBtn icon="Bookmark" label="Save as template…"  onClick={onSaveAsTemplate} />
             <div className="my-1 border-t border-[var(--border-subtle)]" />
-            <MenuBtn icon="Trash2" label="Delete page" onClick={onDelete} danger />
+            <MenuBtn icon="Trash2"   label="Delete page" onClick={onDelete} danger />
         </div>,
         document.body,
     );
@@ -219,10 +303,16 @@ function MenuBtn({ icon, label, onClick, danger }) {
 }
 
 // ── Add page dialog ──────────────────────────────────────────────────
+//
+// Lives inline at the top of the pages list (not a portal-modal). When
+// templates exist, a "Start from" picker is appended below the slug
+// input — picking a template causes the new page to be seeded with a
+// deep copy of the template's blocks (fresh ids generated server-side).
 
-function AddPageDialog({ onConfirm, onCancel }) {
-    const [title, setTitle] = useState('');
-    const [slug, setSlug]   = useState('');
+function AddPageDialog({ onConfirm, onCancel, templates = [] }) {
+    const [title, setTitle]            = useState('');
+    const [slug, setSlug]              = useState('');
+    const [templateId, setTemplateId]  = useState('');   // '' = blank
     const slugAuto = React.useRef(true);
 
     const deriveSlug = (t) =>
@@ -238,7 +328,7 @@ function AddPageDialog({ onConfirm, onCancel }) {
     };
 
     return (
-        <div className="p-4 bg-[var(--bg-secondary)] border-b border-[var(--border-subtle)]">
+        <div className="p-4 bg-[var(--bg-secondary)] border-b border-[var(--border-subtle)] max-h-[60vh] overflow-y-auto">
             <p className="text-xs font-semibold text-[var(--text-secondary)] mb-3">New page</p>
             <input
                 autoFocus
@@ -255,10 +345,42 @@ function AddPageDialog({ onConfirm, onCancel }) {
                 onChange={e => handleSlugChange(e.target.value)}
                 className="w-full px-3 py-2 mb-3 rounded-md text-sm border bg-[var(--bg-tertiary)] border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)] font-mono"
             />
+
+            {/* "Start from" — only when there's at least one saved template.
+                Hidden completely otherwise so the empty state stays clean. */}
+            {templates.length > 0 ? (
+                <>
+                    <p className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-semibold mb-2">
+                        Start from
+                    </p>
+                    <div className="flex flex-col gap-1.5 mb-3">
+                        <TemplateCard
+                            selected={templateId === ''}
+                            onClick={() => setTemplateId('')}
+                            title="Blank page"
+                            subtitle="No blocks — start from scratch"
+                        />
+                        {templates.map(t => (
+                            <TemplateCard
+                                key={t.id}
+                                selected={templateId === t.id}
+                                onClick={() => setTemplateId(t.id)}
+                                title={t.name}
+                                subtitle={
+                                    t.description
+                                        ? `${t.description} · ${t.blockCount} block${t.blockCount === 1 ? '' : 's'}`
+                                        : `${t.blockCount} block${t.blockCount === 1 ? '' : 's'}`
+                                }
+                            />
+                        ))}
+                    </div>
+                </>
+            ) : null}
+
             <div className="flex gap-2">
                 <button
                     type="button"
-                    onClick={() => onConfirm({ title, slug })}
+                    onClick={() => onConfirm({ title, slug, templateId: templateId || undefined })}
                     disabled={!title.trim()}
                     className="flex-1 px-3 py-1.5 text-sm rounded-md bg-[var(--accent-primary)] text-white disabled:opacity-40"
                 >
@@ -276,11 +398,243 @@ function AddPageDialog({ onConfirm, onCancel }) {
     );
 }
 
+function TemplateCard({ selected, onClick, title, subtitle }) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            className={
+                'w-full text-left px-3 py-2 rounded-md border transition-colors ' +
+                (selected
+                    ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/10'
+                    : 'border-[var(--border-default)] bg-[var(--bg-tertiary)] hover:border-[var(--accent-primary)]/60')
+            }
+        >
+            <div className="flex items-center gap-2">
+                <span
+                    className={
+                        'w-3 h-3 rounded-full shrink-0 border ' +
+                        (selected
+                            ? 'bg-[var(--accent-primary)] border-[var(--accent-primary)]'
+                            : 'border-[var(--border-default)]')
+                    }
+                    aria-hidden="true"
+                />
+                <span className="text-sm text-[var(--text-primary)] font-medium truncate">{title}</span>
+            </div>
+            {subtitle ? (
+                <div className="ml-5 mt-0.5 text-[11px] text-[var(--text-muted)] truncate">{subtitle}</div>
+            ) : null}
+        </button>
+    );
+}
+
+// ── Modal overlay primitive ──────────────────────────────────────────
+//
+// Portals to <body>, dims the rest of the UI, and centers a card that
+// scrolls internally on small screens. Used by SaveTemplateDialog and
+// TemplatesManagerDialog. Esc + backdrop click close.
+
+function ModalOverlay({ children, onClose, labelledBy }) {
+    useEffect(() => {
+        const onKey = (e) => { if (e.key === 'Escape') onClose?.(); };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, [onClose]);
+    return ReactDOM.createPortal(
+        <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby={labelledBy}
+            className="fixed inset-0 z-[1100] flex items-start sm:items-center justify-center p-4 overflow-y-auto"
+            onMouseDown={(e) => { if (e.target === e.currentTarget) onClose?.(); }}
+            style={{ background: 'rgba(0,0,0,0.55)' }}
+        >
+            <div
+                className="w-full max-w-md rounded-lg border border-[var(--border-default)] bg-[var(--bg-secondary)] shadow-xl my-8 max-h-[calc(100vh-4rem)] overflow-y-auto"
+                onMouseDown={(e) => e.stopPropagation()}
+            >
+                {children}
+            </div>
+        </div>,
+        document.body,
+    );
+}
+
+// ── Save-as-template dialog ──────────────────────────────────────────
+
+export function SaveTemplateDialog({ page, onConfirm, onCancel }) {
+    const [name, setName]               = useState(page?.title || '');
+    const [description, setDescription] = useState('');
+    const [saving, setSaving]           = useState(false);
+    const trimmed = name.trim();
+    return (
+        <ModalOverlay onClose={onCancel} labelledBy="save-tpl-title">
+            <div className="p-5">
+                <h3 id="save-tpl-title" className="text-sm font-semibold text-[var(--text-primary)] mb-1">
+                    Save as template
+                </h3>
+                <p className="text-xs text-[var(--text-muted)] mb-4">
+                    Save this page's blocks as a reusable template. You can apply it from the New page dialog.
+                </p>
+                <label className="text-[11px] uppercase tracking-wider text-[var(--text-muted)] font-semibold">
+                    Template name
+                </label>
+                <input
+                    autoFocus
+                    type="text"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                    placeholder="Solution page"
+                    className="w-full mt-1 mb-3 px-3 py-2 rounded-md text-sm border bg-[var(--bg-tertiary)] border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)]"
+                />
+                <label className="text-[11px] uppercase tracking-wider text-[var(--text-muted)] font-semibold">
+                    Description (optional)
+                </label>
+                <input
+                    type="text"
+                    value={description}
+                    onChange={e => setDescription(e.target.value)}
+                    placeholder="Short one-liner shown when picking a template"
+                    className="w-full mt-1 mb-4 px-3 py-2 rounded-md text-sm border bg-[var(--bg-tertiary)] border-[var(--border-default)] text-[var(--text-primary)] focus:outline-none focus:border-[var(--accent-primary)]"
+                />
+                <div className="flex gap-2 justify-end">
+                    <button
+                        type="button"
+                        onClick={onCancel}
+                        disabled={saving}
+                        className="px-3 py-1.5 text-sm rounded-md border border-[var(--border-default)] text-[var(--text-secondary)]"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        disabled={!trimmed || saving}
+                        onClick={async () => {
+                            setSaving(true);
+                            try { await onConfirm({ name: trimmed, description: description.trim() }); }
+                            finally { setSaving(false); }
+                        }}
+                        className="px-3 py-1.5 text-sm rounded-md bg-[var(--accent-primary)] text-white disabled:opacity-40"
+                    >
+                        {saving ? 'Saving…' : 'Save template'}
+                    </button>
+                </div>
+            </div>
+        </ModalOverlay>
+    );
+}
+
+// ── Templates manager dialog ─────────────────────────────────────────
+
+export function TemplatesManagerDialog({ templates, onDelete, onClose }) {
+    // Inline confirm — clicking Delete reveals an inline "Confirm?" so
+    // there's no second modal stacked on top of this one.
+    const [confirmId, setConfirmId] = useState(null);
+    return (
+        <ModalOverlay onClose={onClose} labelledBy="tpl-mgr-title">
+            <div className="p-5">
+                <div className="flex items-center justify-between mb-1">
+                    <h3 id="tpl-mgr-title" className="text-sm font-semibold text-[var(--text-primary)]">
+                        Templates
+                    </h3>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="text-[var(--text-muted)] hover:text-[var(--text-primary)] p-1 rounded"
+                        aria-label="Close"
+                    >
+                        <AppIcon name="X" className="w-4 h-4" />
+                    </button>
+                </div>
+                <p className="text-xs text-[var(--text-muted)] mb-4">
+                    Saved page templates. Apply one when creating a new page.
+                </p>
+                {templates.length === 0 ? (
+                    <p className="text-sm text-[var(--text-muted)] text-center py-6">
+                        No templates saved yet. Use a page's menu → "Save as template…" to create one.
+                    </p>
+                ) : (
+                    <ul className="flex flex-col divide-y divide-[var(--border-subtle)]">
+                        {templates.map(t => (
+                            <li key={t.id} className="py-2.5 flex items-start gap-3">
+                                <div className="flex-1 min-w-0">
+                                    <div className="text-sm text-[var(--text-primary)] font-medium truncate">{t.name}</div>
+                                    {t.description ? (
+                                        <div className="text-[11px] text-[var(--text-muted)] truncate">{t.description}</div>
+                                    ) : null}
+                                    <div className="text-[10px] text-[var(--text-muted)] mt-0.5">
+                                        {t.blockCount} block{t.blockCount === 1 ? '' : 's'}
+                                        {t.createdAt ? ` · ${formatTemplateDate(t.createdAt)}` : ''}
+                                    </div>
+                                </div>
+                                {confirmId === t.id ? (
+                                    <div className="flex items-center gap-1 shrink-0">
+                                        <button
+                                            type="button"
+                                            onClick={async () => { await onDelete(t.id); setConfirmId(null); }}
+                                            className="px-2 py-1 text-[11px] rounded bg-red-500/90 text-white"
+                                        >
+                                            Delete
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => setConfirmId(null)}
+                                            className="px-2 py-1 text-[11px] rounded border border-[var(--border-default)] text-[var(--text-secondary)]"
+                                        >
+                                            Cancel
+                                        </button>
+                                    </div>
+                                ) : (
+                                    <button
+                                        type="button"
+                                        onClick={() => setConfirmId(t.id)}
+                                        className="shrink-0 text-[var(--text-muted)] hover:text-red-400 p-1.5 rounded hover:bg-[var(--bg-tertiary)]"
+                                        title="Delete template"
+                                        aria-label={`Delete template "${t.name}"`}
+                                    >
+                                        <AppIcon name="Trash2" className="w-4 h-4" />
+                                    </button>
+                                )}
+                            </li>
+                        ))}
+                    </ul>
+                )}
+            </div>
+        </ModalOverlay>
+    );
+}
+
+function formatTemplateDate(iso) {
+    try {
+        const d = new Date(iso);
+        if (Number.isNaN(d.getTime())) return '';
+        return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' });
+    } catch { return ''; }
+}
+
 // ── PageList ─────────────────────────────────────────────────────────
 
-export default function PageList({ pages, activePageId, onSelect, onAdd, onDuplicate, onDelete, onSetHomepage, onRename, onReorder }) {
+export default function PageList({
+    pages,
+    activePageId,
+    onSelect,
+    onAdd,
+    onDuplicate,
+    onDelete,
+    onSetHomepage,
+    onRename,
+    onEditSlug,
+    onReorder,
+    // Templates plumbing — all optional so callers that haven't wired up
+    // templates yet keep working with the old surface.
+    templates = [],
+    onSaveAsTemplate,
+    onDeleteTemplate,
+}) {
     const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
-    const [adding, setAdding] = useState(false);
+    const [adding, setAdding]             = useState(false);
+    const [managerOpen, setManagerOpen]   = useState(false);
 
     const handleDragEnd = (event) => {
         const { active, over } = event;
@@ -297,19 +651,33 @@ export default function PageList({ pages, activePageId, onSelect, onAdd, onDupli
                 <span className="text-[10px] uppercase tracking-wider text-[var(--text-muted)] font-semibold">
                     Pages
                 </span>
-                <button
-                    type="button"
-                    onClick={() => setAdding(v => !v)}
-                    className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
-                    title="Add page"
-                >
-                    <AppIcon name="Plus" className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-1">
+                    {/* Templates manager — opens a modal listing every saved
+                        template with a per-row delete. Always visible so users
+                        can land on the empty state and discover the feature. */}
+                    <button
+                        type="button"
+                        onClick={() => setManagerOpen(true)}
+                        className="text-[10px] uppercase tracking-wider px-1.5 py-1 rounded text-[var(--text-muted)] hover:text-[var(--text-secondary)] hover:bg-[var(--bg-tertiary)] font-semibold"
+                        title="Manage templates"
+                    >
+                        Templates{templates.length > 0 ? ` (${templates.length})` : ''}
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setAdding(v => !v)}
+                        className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                        title="Add page"
+                    >
+                        <AppIcon name="Plus" className="w-4 h-4" />
+                    </button>
+                </div>
             </div>
 
             {adding && (
                 <AddPageDialog
-                    onConfirm={({ title, slug }) => { onAdd({ title, slug }); setAdding(false); }}
+                    templates={templates}
+                    onConfirm={(payload) => { onAdd(payload); setAdding(false); }}
                     onCancel={() => setAdding(false)}
                 />
             )}
@@ -326,7 +694,9 @@ export default function PageList({ pages, activePageId, onSelect, onAdd, onDupli
                                 onSetHomepage={onSetHomepage}
                                 onDuplicate={onDuplicate}
                                 onRename={onRename}
+                                onEditSlug={onEditSlug}
                                 onDelete={onDelete}
+                                onSaveAsTemplate={onSaveAsTemplate}
                             />
                         ))}
                     </SortableContext>
@@ -337,6 +707,14 @@ export default function PageList({ pages, activePageId, onSelect, onAdd, onDupli
                     </p>
                 )}
             </div>
+
+            {managerOpen ? (
+                <TemplatesManagerDialog
+                    templates={templates}
+                    onDelete={async (id) => { await onDeleteTemplate?.(id); }}
+                    onClose={() => setManagerOpen(false)}
+                />
+            ) : null}
         </div>
     );
 }

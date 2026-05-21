@@ -13,9 +13,18 @@ export const cmsApi = {
     // ── Site management (no siteId required) ──
     listSites:           ()                            => `${root}/sites`,
     createSite:          ()                            => `${root}/sites`,
+    // Import a previously-exported site (POST JSON body). Always
+    // creates a NEW siteId — never overwrites an existing one.
+    importSite:          ()                            => `${root}/sites/import`,
     // /sites/:siteId → also serves as the SiteDoc / admin payload endpoint
     // for that site (replaces /admin/site).
     site:                (siteId)                      => `${root}/sites/${siteId}`,
+    // Site export — GET returns the full SiteDoc + every PageDoc as a
+    // downloadable JSON file (Content-Disposition: attachment).
+    siteExport:          (siteId)                      => `${root}/sites/${siteId}/export`,
+    // Duplicate a site into a new version of the same version group
+    // (POST, no body). Returns { id, name, versionGroupId, versionName }.
+    siteDuplicate:       (siteId)                      => `${root}/sites/${siteId}/duplicate`,
 
     // ── Per-site editor operations ──
     siteLive:            (siteId)                      => `${root}/sites/${siteId}/live`,
@@ -33,4 +42,8 @@ export const cmsApi = {
     enabled:             ()                            => `${root}/admin/enabled`,
     defaultLocale:       ()                            => `${root}/admin/default-locale`,
     upload:              ()                            => `${root}/admin/upload`,
+    // Page templates — global, shared across all sites. List/save/delete
+    // only; "apply" happens by passing `templateId` to POST pages.
+    templates:           ()                            => `${root}/admin/templates`,
+    template:            (templateId)                  => `${root}/admin/templates/${templateId}`,
 };

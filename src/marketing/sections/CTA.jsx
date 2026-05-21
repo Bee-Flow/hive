@@ -2,6 +2,7 @@ import React from 'react';
 import Button from '../components/Button';
 import EditableText from '../components/EditableText';
 import SectionFrame from '../components/SectionFrame';
+import { inlineTextStyle } from './textStyle';
 
 export default function CTA({ data }) {
     if (!data?.enabled) return null;
@@ -13,8 +14,10 @@ export default function CTA({ data }) {
                         <EditableText
                             as="h2"
                             path="cta.title"
+                            multiline
                             placeholder="CTA title"
                             className="headline-lg"
+                            style={inlineTextStyle(undefined, data.titleAlign || data.align)}
                         >
                             {data.title || ''}
                         </EditableText>
@@ -24,6 +27,7 @@ export default function CTA({ data }) {
                             multiline
                             placeholder="CTA lead"
                             className="body-lg"
+                            style={inlineTextStyle(undefined, data.leadAlign || data.align)}
                         >
                             {data.lead || ''}
                         </EditableText>

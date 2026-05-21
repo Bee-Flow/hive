@@ -1703,6 +1703,7 @@ const AgentHub = ({
                 onLogout={onLogout}
                 onNavigate={onNavigate}
                 currentPage={currentPage}
+                studioRoute={studioRoute}
                 showSettings={showSettings}
                 showAgentDesigner={showAgentDesigner}
                 showAITasks={showAITasks}

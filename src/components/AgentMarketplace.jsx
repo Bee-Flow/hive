@@ -124,10 +124,7 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
     const { t } = useTranslation();
     const [search, setSearch] = useState('');
     const [showFilters, setShowFilters] = useState(false);
-    // Default to "All" instead of "Popular": Popular filters on usage metrics
-    // that are empty in low-traffic / fresh-org environments, so users land on
-    // a blank store (BFSF-164). "All" is always populated when agents exist.
-    const [activeCategory, setActiveCategory] = useState('all');
+    const [activeCategory, setActiveCategory] = useState('popular');
     const [activeJobs, setActiveJobs] = useState([]);
     const [sortBy, setSortBy] = useState('top');
     const [usageByAgent, setUsageByAgent] = useState({});
@@ -180,9 +177,13 @@ const AgentMarketplace = ({ agents = [], favorites = [], categories = [], onTogg
         }
         if (activeCategory === 'favorites') list = list.filter(a => favorites.includes(a.id));
         else if (activeCategory === 'popular') {
-            list = list.filter(a => (usageByAgent[a.id] || 0) > 0)
-                .sort((a, b) => (usageByAgent[b.id] || 0) - (usageByAgent[a.id] || 0))
-                .slice(0, 6);
+            list = [...list].sort((a, b) => {
+                const diff = (usageByAgent[b.id] || 0) - (usageByAgent[a.id] || 0);
+                if (diff !== 0) return diff;
+                const favDiff = (favorites.includes(a.id) ? 0 : 1) - (favorites.includes(b.id) ? 0 : 1);
+                if (favDiff !== 0) return favDiff;
+                return a.name.localeCompare(b.name);
+            }).slice(0, 6);
         }
         else if (activeCategory === 'lastused') list = list.filter(a => recents.includes(a.id)).slice(0, 6);
         else if (activeCategory !== 'all') list = list.filter(a => getAgentType(a) === activeCategory);

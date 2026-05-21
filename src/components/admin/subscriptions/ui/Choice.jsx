@@ -6,11 +6,11 @@ import React from 'react';
  */
 export function ChoiceCards({ value, onChange, options, accent = 'blue', columns = 2 }) {
     const accentClasses = {
-        blue:    { active: 'border-blue-500 bg-blue-500/10 text-blue-300',     iconActive: 'text-blue-400' },
-        emerald: { active: 'border-emerald-500 bg-emerald-500/10 text-emerald-300', iconActive: 'text-emerald-400' },
-        amber:   { active: 'border-amber-500 bg-amber-500/10 text-amber-300',  iconActive: 'text-amber-400' },
-        teal:    { active: 'border-teal-500 bg-teal-500/10 text-teal-300',     iconActive: 'text-teal-400' },
-        sky:     { active: 'border-sky-500 bg-sky-500/10 text-sky-300',        iconActive: 'text-sky-400' },
+        blue:    { active: 'border-blue-500 bg-blue-500/10 text-blue-700 dark:text-blue-300',         iconActive: 'text-blue-500 dark:text-blue-400' },
+        emerald: { active: 'border-emerald-500 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300', iconActive: 'text-emerald-500 dark:text-emerald-400' },
+        amber:   { active: 'border-amber-500 bg-amber-500/10 text-amber-700 dark:text-amber-300',     iconActive: 'text-amber-500 dark:text-amber-400' },
+        teal:    { active: 'border-teal-500 bg-teal-500/10 text-teal-700 dark:text-teal-300',         iconActive: 'text-teal-500 dark:text-teal-400' },
+        sky:     { active: 'border-sky-500 bg-sky-500/10 text-sky-700 dark:text-sky-300',             iconActive: 'text-sky-500 dark:text-sky-400' },
     };
     return (
         <div className={`grid grid-cols-${columns} gap-2`}>

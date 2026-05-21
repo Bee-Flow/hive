@@ -64,7 +64,7 @@ export function TrialSection({ form, update }) {
                             ))}
                         </StatGrid>
                         <div className="mt-3 text-[11px] text-[var(--text-muted)]">
-                            To change these, jump to the <strong>Limits</strong> section.
+                            To change these, jump to the <strong>Pricing</strong> section.
                         </div>
                     </Card>
 

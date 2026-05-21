@@ -1,29 +1,24 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ChevronDown, ChevronUp, Settings2 } from 'lucide-react';
 import { LANGUAGES } from '../../../config/meetingNotesConfig';
 import { useRecorder } from '../hooks/RecorderContext';
 
-const PROVIDER_LABELS = {
-    '': 'Server default',
-    voxtral: 'Voxtral (cloud, multilingual)',
-    whisperx: 'WhisperX (self-hosted)',
-    whisper_azure: 'Whisper via Azure',
-    azure: 'Azure Speech',
-    local: 'Local Whisper (private, slower)',
-};
-
-export default function CaptureControls({ serverDefault = 'voxtral', localEnabled = true, compact = false }) {
+// The engine selector was removed — uploads always use the server-configured
+// transcription provider. The component still accepts `serverDefault` /
+// `localEnabled` for API compatibility but ignores them.
+export default function CaptureControls({ compact = false }) {
     const [expanded, setExpanded] = useState(false);
     const { settings, setSettings } = useRecorder();
 
-    const providerOptions = [
-        ['', `Server default (${serverDefault})`],
-        ['voxtral', PROVIDER_LABELS.voxtral],
-        ['whisperx', PROVIDER_LABELS.whisperx],
-        ['whisper_azure', PROVIDER_LABELS.whisper_azure],
-        ['azure', PROVIDER_LABELS.azure],
-        ...(localEnabled ? [['local', PROVIDER_LABELS.local]] : []),
-    ];
+    // If a previously-saved per-user provider override is hanging around in
+    // state (from before the engine picker was removed), clear it so the
+    // upload route picks the server default.
+    useEffect(() => {
+        if (settings.provider) {
+            setSettings((s) => ({ ...s, provider: '' }));
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
 
     return (
         <div className="w-full">
@@ -35,12 +30,12 @@ export default function CaptureControls({ serverDefault = 'voxtral', localEnable
             >
                 <span className="flex items-center gap-2">
                     <Settings2 className="w-3.5 h-3.5" />
-                    Advanced (language, engine, glossary)
+                    Advanced (language, glossary)
                 </span>
                 {expanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
             {expanded && (
-                <div className={`mt-2 grid gap-3 ${compact ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-3'}`}>
+                <div className={`mt-2 grid gap-3 ${compact ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-2'}`}>
                     <Field label="Language">
                         <select
                             value={settings.language}
@@ -49,19 +44,10 @@ export default function CaptureControls({ serverDefault = 'voxtral', localEnable
                             style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                         >
                             {LANGUAGES.map((l) => (
-                                <option key={l.code} value={l.code}>{l.flag} {l.name}</option>
-                            ))}
-                        </select>
-                    </Field>
-                    <Field label="Engine">
-                        <select
-                            value={settings.provider}
-                            onChange={(e) => setSettings((s) => ({ ...s, provider: e.target.value }))}
-                            className="w-full px-3 py-2 rounded-lg text-sm border outline-none"
-                            style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
-                        >
-                            {providerOptions.map(([v, label]) => (
-                                <option key={v} value={v}>{label}</option>
+                                // Explicit colours on each <option> — without them, native
+                                // dropdowns inherit the page background and render
+                                // white-on-white in light themes.
+                                <option key={l.code} value={l.code} style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)' }}>{l.flag} {l.name}</option>
                             ))}
                         </select>
                     </Field>
