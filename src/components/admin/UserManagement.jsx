@@ -95,7 +95,14 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
     };
 
     const handleAddUser = async () => {
-        if (!userData.username || !userData.displayName || !userData.password) return;
+        if (!userData.username || !userData.displayName || !userData.password) {
+            const missing = [];
+            if (!userData.username) missing.push('username');
+            if (!userData.displayName) missing.push('display name');
+            if (!userData.password) missing.push('password');
+            setMessage({ type: 'error', text: `Required: ${missing.join(', ')}` });
+            return;
+        }
         try {
             const res = await authFetch(`${API_BASE}/auth/users`, {
                 method: 'POST',
@@ -394,7 +401,7 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                 <div className="flex-1" />
                 {message && (
                     <span className={`text-sm ${message.type === 'success' ? 'text-green-500' : 'text-red-500'}`}>
-                        {message.text}
+                        {typeof message.text === 'string' ? message.text : JSON.stringify(message.text)}
                     </span>
                 )}
             </div>
@@ -917,7 +924,19 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                         </div>
                         <div className="flex justify-end gap-3 mt-6">
                             <button onClick={() => { setShowAddUser(false); setShowEditUser(false); }} className="px-4 py-2 rounded-lg font-medium" style={{ color: 'var(--text-secondary)' }}>Cancel</button>
-                            <button onClick={showEditUser ? handleUpdateUser : handleAddUser} className="px-4 py-2 rounded-lg font-medium" style={{ background: 'var(--accent-primary)', color: 'white' }}>{showEditUser ? 'Save' : 'Add User'}</button>
+                            {(() => {
+                                const canSubmit = showEditUser || (userData.username && userData.displayName && userData.password);
+                                return (
+                                    <button
+                                        onClick={showEditUser ? handleUpdateUser : handleAddUser}
+                                        disabled={!canSubmit}
+                                        className="px-4 py-2 rounded-lg font-medium"
+                                        style={{ background: 'var(--accent-primary)', color: 'white', opacity: canSubmit ? 1 : 0.5, cursor: canSubmit ? 'pointer' : 'not-allowed' }}
+                                    >
+                                        {showEditUser ? 'Save' : 'Add User'}
+                                    </button>
+                                );
+                            })()}
                         </div>
                     </div>
                 </div>

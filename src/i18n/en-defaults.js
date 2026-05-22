@@ -302,6 +302,7 @@ const EN_DEFAULTS = {
     "sidebar.older": "Older",
     "sidebar.pinned": "Pinned",
     "sidebar.direct_chat": "Direct Chat",
+    "sidebar.powered_by": "Powered by Bee Flow",
     "sidebar.agent_store": "Agents",
     "sidebar.agents": "Agents",
     "sidebar.knowledge_bases": "Knowledge Bases",

@@ -417,7 +417,15 @@ const Sidebar = ({
     // and if !isOpen, we'll show the narrow 'Power Bar'
     const [showProfileMenu, setShowProfileMenu] = useState(false);
     const themeCtx = useTheme();
-    const { hasFeature: hasLicenseFeature } = useLicenseContext();
+    const { hasFeature: hasLicenseFeature, deploymentMode } = useLicenseContext();
+    // White-label override: in self-hosted deploys swap the Bee Flow logo for
+    // the org's uploaded logo (and show a "Powered by Bee Flow" footer below).
+    // Cloud is unchanged. Falls back to the Bee Flow logo if no org logo set.
+    const orgLogoUrl = user?.organization?.logo
+        ? (user.organization.logo.startsWith('/') ? `${API_BASE}${user.organization.logo}` : user.organization.logo)
+        : null;
+    const useOrgBrand = deploymentMode === 'self-hosted' && !!orgLogoUrl;
+    const orgAltText = user?.organization?.name || 'Organization';
     const [agentsOpen, setAgentsOpen] = useState(() => readExpanded('agents', true));
     const [chatsOpen, setChatsOpen] = useState(() => readExpanded('chats', false));
     const [projectsOpen, setProjectsOpen] = useState(() => readExpanded('projects', true));
@@ -691,7 +699,11 @@ const Sidebar = ({
                             className="flex items-center gap-2.5 rounded-xl transition-transform hover:scale-105"
                             aria-label={t('sidebar.new_chat') || 'New Chat'}
                         >
-                            <img src="/bee-flow-logo.svg" alt="Bee Flow" className="w-[4.5rem] h-[4.5rem] rounded-xl object-cover" />
+                            {useOrgBrand
+                                ? <div className="w-[4.5rem] h-[4.5rem] rounded-xl overflow-hidden flex items-center justify-center bg-[var(--bg-primary)]">
+                                      <img src={orgLogoUrl} alt={orgAltText} className="w-full h-full object-contain" />
+                                  </div>
+                                : <img src="/bee-flow-logo.svg" alt="Bee Flow" className="w-[4.5rem] h-[4.5rem] rounded-xl object-cover" />}
                         </button>
                         <div className="flex items-center gap-1">
                             <NotificationCenter variant="icon" />
@@ -708,12 +720,29 @@ const Sidebar = ({
                 ) : (
                     <button
                         onClick={toggleSidebar}
-                        className="p-2 hover:bg-[var(--bg-tertiary)] rounded-xl text-[var(--text-primary)] transition-all transform hover:scale-105"
+                        className="hover:bg-[var(--bg-tertiary)] rounded-xl text-[var(--text-primary)] transition-all transform hover:scale-105 flex items-center justify-center w-12 h-12 overflow-hidden p-1"
                     >
-                        <img src="/BeeFlow-logo-Icon-2026.svg" alt="Bee Flow" className="w-8 h-8 rounded-lg object-contain" />
+                        {useOrgBrand
+                            ? <img src={orgLogoUrl} alt={orgAltText} className="w-full h-full rounded-lg object-contain" />
+                            : <img src="/BeeFlow-logo-Icon-2026.svg" alt="Bee Flow" className="w-8 h-8 rounded-lg object-contain" />}
                     </button>
                 )}
             </div>
+
+            {/* "Powered by Bee Flow" — placed directly under the org logo in
+                self-hosted (white-label) mode. Hidden in collapsed sidebar. */}
+            {useOrgBrand && isOpen && (
+                <div className="flex-shrink-0 px-3 -mt-1 mb-1 text-[10px] text-left text-[var(--text-tertiary)]">
+                    <a
+                        href="https://beeflow.nl"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="hover:text-[var(--text-secondary)] transition-colors"
+                    >
+                        {t('sidebar.powered_by', 'Powered by Bee Flow')}
+                    </a>
+                </div>
+            )}
 
             {/* ── Nav rows ── (pinned: New Chat + Search) */}
             <nav aria-label="Main navigation" data-testid="main-navigation" className={`px-2 pt-3 flex-shrink-0 flex flex-col gap-1 ${isOpen ? '' : 'items-center'}`}>

@@ -186,6 +186,13 @@ export function TranslationProvider({ children }) {
         if (value === undefined || value === null) {
             value = hasStringFallback ? fallbackOrParams : key;
         }
+        // Guard: a malformed server payload could land a non-string at this key
+        // (e.g. an object). Returning it would crash React with the
+        // "Objects are not valid as a React child" reconciler throw. Coerce
+        // to the fallback or raw key instead so the UI keeps rendering.
+        if (typeof value !== 'string') {
+            value = hasStringFallback ? fallbackOrParams : key;
+        }
         if (params && typeof params === 'object') {
             for (const [k, v] of Object.entries(params)) {
                 value = value.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));

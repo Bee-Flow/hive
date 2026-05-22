@@ -401,6 +401,7 @@ function App() {
 
     const [isLoading, setIsLoading] = useState(true);
     const [deploymentMode, setDeploymentMode] = useState('cloud');
+    const [orgLogo, setOrgLogo] = useState(null);
     const [serverAvailable, setServerAvailable] = useState(null); // null=unknown, true=ok, false=down
     const [showProfileMenu, setShowProfileMenu] = useState(false);
     const [showAgentDesigner, setShowAgentDesigner] = useState(() => pageFromPath(window.location.pathname) === 'agentDesigner');
@@ -433,6 +434,12 @@ function App() {
     // present (and user is org_admin), <NcBindingApprovalModal/> takes
     // precedence over the onboarding wizard.
     const [pendingNcBinding, setPendingNcBinding] = useState(null);
+    // Connector-side bootstrap diagnostics, fetched from /setup/diagnostics
+    // when the main SaaS calls fail. Surfaces categorised remediation
+    // ("set BEEFLOW_NC_PUBLIC_URL", "SaaS unreachable", …) in the error
+    // overlay so admins know what to fix instead of staring at a generic
+    // retry button. Admin-only data — see info.xml route gating.
+    const [bootstrapDiagnostics, setBootstrapDiagnostics] = useState(null);
     const profileMenuRef = useRef(null);
 
     // Parse initial agent/conversation from URL
@@ -451,13 +458,28 @@ function App() {
                         if (setupData.deploymentMode) {
                             setDeploymentMode(setupData.deploymentMode);
                         }
+                        if (setupData.branding?.logo) {
+                            setOrgLogo(`${API_BASE}${setupData.branding.logo}`);
+                        }
                         setServerAvailable(true);
                     } else {
                         setServerAvailable(true); // server responded, even if not OK
                     }
                 } catch (_) {
-                    // Network error — server is unreachable
+                    // Network error — the SaaS-backed setup-status call
+                    // failed. The connector itself may still be reachable;
+                    // ask it for categorised bootstrap diagnostics so the
+                    // overlay can show actionable remediation instead of
+                    // a generic retry button. Admin-only endpoint — non-
+                    // admins get a 401/403 and fall back to the bare
+                    // overlay, which is fine (they couldn't fix it anyway).
                     setServerAvailable(false);
+                    try {
+                        const diagRes = await authFetch(`${API_BASE}/setup/diagnostics`, { cache: 'no-store' });
+                        if (diagRes.ok) {
+                            setBootstrapDiagnostics(await diagRes.json());
+                        }
+                    } catch (_) { /* connector itself unreachable — leave bootstrapDiagnostics null */ }
                     setIsLoading(false);
                     return;
                 }
@@ -473,6 +495,10 @@ function App() {
                         // Update deployment mode from authenticated response too
                         if (data.featureFlags?.deploymentMode) {
                             setDeploymentMode(data.featureFlags.deploymentMode);
+                        }
+                        // Post-auth org branding overrides the pre-auth guess
+                        if (data.organization?.logo) {
+                            setOrgLogo(`${API_BASE}${data.organization.logo}`);
                         }
                         // Check for SSO encryption setup needs (only if encryption feature is enabled)
                         if (data.encryptionEnabled !== false) {
@@ -523,7 +549,7 @@ function App() {
                             canUseFeature = permsData.canUseFeature || {};
                         }
                         const canManageUsers = permissions.includes('all') || permissions.includes('manage_users');
-                        setUser({ ...data.user, permissions, groups: userGroups, organizations: userOrgs, allowedAgentTypes, betaFeatures, canUseFeature, featureFlags: data.featureFlags || {}, enabledIntegrations: data.enabledIntegrations || null, canManageUsers: canManageUsers || data.user.isAdmin, encryptionEnabled: data.encryptionEnabled !== false, isConsumerAccount: !!data.isConsumerAccount, ncOrg: data.ncOrg || null });
+                        setUser({ ...data.user, permissions, groups: userGroups, organizations: userOrgs, allowedAgentTypes, betaFeatures, canUseFeature, featureFlags: data.featureFlags || {}, enabledIntegrations: data.enabledIntegrations || null, canManageUsers: canManageUsers || data.user.isAdmin, encryptionEnabled: data.encryptionEnabled !== false, isConsumerAccount: !!data.isConsumerAccount, ncOrg: data.ncOrg || null, organization: data.organization || null });
                         setIsAuthenticated(true);
                     }
                 }
@@ -801,7 +827,18 @@ function App() {
                 canUseFeature = permsData.canUseFeature || {};
             }
             const canManageUsers = permissions.includes('all') || permissions.includes('manage_users');
-            setUser({ ...userData, permissions, groups: userGroups, organizations: userOrgs, allowedAgentTypes, betaFeatures, canUseFeature, canManageUsers: canManageUsers || userData.isAdmin, isConsumerAccount: !!userData.isConsumerAccount });
+            // Pull `organization` (logo/name) from /auth/user — handleLogin's
+            // userData payload doesn't include it, so the sidebar would
+            // otherwise miss the org logo until the next full page refresh.
+            let organization = null;
+            try {
+                const userRes = await authFetch(`${API_BASE}/auth/user`, { cache: 'no-store' });
+                if (userRes.ok) {
+                    const userJson = await userRes.json();
+                    if (userJson?.organization) organization = userJson.organization;
+                }
+            } catch (_) { /* non-fatal */ }
+            setUser({ ...userData, permissions, groups: userGroups, organizations: userOrgs, allowedAgentTypes, betaFeatures, canUseFeature, canManageUsers: canManageUsers || userData.isAdmin, isConsumerAccount: !!userData.isConsumerAccount, organization });
         } catch (err) {
             console.error('Failed to fetch permissions after login:', err);
             setUser(userData);
@@ -839,16 +876,17 @@ function App() {
     };
 
     // Show loading spinner while checking auth
+    const useOrgBrand = deploymentMode === 'self-hosted' && !!orgLogo;
     if (isLoading) {
         return (
             <div className="h-screen flex items-center justify-center" style={{ background: 'var(--bg-primary)' }}>
                 <div className="flex flex-col items-center gap-4">
                     <img
-                        src="/BeeFlow-logo-Icon-2026.svg"
-                        alt="Bee Flow"
-                        className="w-16 h-16 rounded-2xl object-contain animate-pulse"
+                        src={useOrgBrand ? orgLogo : '/BeeFlow-logo-Icon-2026.svg'}
+                        alt={useOrgBrand ? 'Organization' : 'Bee Flow'}
+                        className={`w-16 h-16 rounded-2xl animate-pulse ${useOrgBrand ? 'object-contain' : 'object-contain'}`}
                     />
-                    <p className="text-[var(--text-secondary)] text-sm">Loading...</p>
+                    <p className="text-[var(--text-secondary)] text-sm">{t('app.loading', 'Loading...')}</p>
                 </div>
             </div>
         );
@@ -883,8 +921,8 @@ function App() {
                         background: 'linear-gradient(90deg, transparent, var(--border-default), transparent)',
                     }} />
                     <img
-                        src="/BeeFlow-logo-Icon-2026.svg"
-                        alt="Bee Flow"
+                        src={useOrgBrand ? orgLogo : '/BeeFlow-logo-Icon-2026.svg'}
+                        alt={useOrgBrand ? 'Organization' : 'Bee Flow'}
                         style={{
                             width: 64, height: 64, borderRadius: 18, margin: '0 auto 20px',
                             objectFit: 'contain',
@@ -901,11 +939,44 @@ function App() {
                         </svg>
                     </div>
                     <h2 style={{ margin: '0 0 10px', fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>
-                        {t('app.server_unavailable_title', 'Server Unavailable')}
+                        {bootstrapDiagnostics?.state === 'awaiting_admin_approval'
+                            ? t('app.bootstrap_pending_title', 'Setup awaiting approval')
+                            : bootstrapDiagnostics?.state === 'failed'
+                                ? t('app.bootstrap_failed_title', 'Bee Flow setup failed')
+                                : t('app.server_unavailable_title', 'Server Unavailable')}
                     </h2>
-                    <p style={{ margin: '0 0 28px', fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.65 }}>
-                        {t('app.server_unavailable_desc', 'Could not connect to the Bee Flow server. Please make sure the server is running and try again.')}
+                    <p style={{ margin: '0 0 20px', fontSize: 14, color: 'var(--text-secondary)', lineHeight: 1.65 }}>
+                        {bootstrapDiagnostics?.state === 'awaiting_admin_approval'
+                            ? t('app.bootstrap_pending_desc', 'A Bee Flow admin needs to approve this Nextcloud as part of an existing organisation. The setup will continue automatically once approved.')
+                            : bootstrapDiagnostics?.lastError
+                                ? `${bootstrapDiagnostics.lastError.category}: ${bootstrapDiagnostics.lastError.error}`
+                                : t('app.server_unavailable_desc', 'Could not connect to the Bee Flow server. Please make sure the server is running and try again.')}
                     </p>
+                    {bootstrapDiagnostics?.lastError && (
+                        <details style={{
+                            margin: '0 0 24px',
+                            textAlign: 'left',
+                            background: 'var(--bg-primary)',
+                            border: '1px solid var(--border-subtle)',
+                            borderRadius: 10,
+                            padding: '12px 14px',
+                            fontSize: 13,
+                            color: 'var(--text-secondary)',
+                            lineHeight: 1.6,
+                        }}>
+                            <summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--text-primary)' }}>
+                                {t('app.bootstrap_show_remediation', 'How to fix this')}
+                            </summary>
+                            <p style={{ marginTop: 10, marginBottom: 8 }}>
+                                {bootstrapDiagnostics.lastError.remediation || t('app.bootstrap_no_remediation', 'See docs.beeflow.ai/connector/troubleshooting for diagnostic commands.')}
+                            </p>
+                            {bootstrapDiagnostics.lastError.nextRetryAt && (
+                                <p style={{ margin: 0, fontSize: 12, opacity: 0.7 }}>
+                                    {t('app.bootstrap_next_retry', 'Next retry')}: {new Date(bootstrapDiagnostics.lastError.nextRetryAt).toLocaleTimeString()}
+                                </p>
+                            )}
+                        </details>
+                    )}
                     <button
                         onClick={() => window.location.reload()}
                         style={{

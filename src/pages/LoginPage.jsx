@@ -36,6 +36,7 @@ const LoginPage = ({ onLogin }) => {
     const [allowPasswordLogin, setAllowPasswordLogin] = useState(null);
     const [authSettingsLoaded, setAuthSettingsLoaded] = useState(false);
     const [deploymentMode, setDeploymentMode] = useState('cloud');
+    const [orgLogo, setOrgLogo] = useState(null);
     const [confirmPassword, setConfirmPassword] = useState('');
     const [adminRecoveryKey, setAdminRecoveryKey] = useState(null);
 
@@ -82,6 +83,9 @@ const LoginPage = ({ onLogin }) => {
                     if (data.allowPasswordLogin === false) setAllowPasswordLogin(false);
                     else setAllowPasswordLogin(true);
                     if (data.deploymentMode) setDeploymentMode(data.deploymentMode);
+                    if (data.branding?.logo) {
+                        setOrgLogo(data.branding.logo.startsWith('/') ? `${API_BASE}${data.branding.logo}` : data.branding.logo);
+                    }
                     if (data.availableLocales) setAvailableLocales(data.availableLocales);
                 } else {
                     // If setup-status fails, show everything (safe fallback)
@@ -557,8 +561,10 @@ const LoginPage = ({ onLogin }) => {
 
                     {/* Header */}
                     <div className="text-center mb-8">
-                        <div className="w-36 h-36 mx-auto mb-5 rounded-full overflow-hidden shadow-xl ring-4 ring-[var(--border-subtle)]">
-                            <img src="/bee-flow-logo.svg" alt="Bee Flow" className="w-full h-full object-cover" />
+                        <div className="w-36 h-36 mx-auto mb-5 rounded-full overflow-hidden shadow-xl ring-4 ring-[var(--border-subtle)] flex items-center justify-center bg-[var(--bg-primary)]">
+                            {deploymentMode === 'self-hosted' && orgLogo
+                                ? <img src={orgLogo} alt="Organization" className="max-w-[80%] max-h-[80%] object-contain" />
+                                : <img src="/bee-flow-logo.svg" alt="Bee Flow" className="w-full h-full object-cover" />}
                         </div>
                         {signupMode && (
                             <h1 className="text-2xl font-bold text-[var(--text-primary)]">
@@ -660,6 +666,19 @@ const LoginPage = ({ onLogin }) => {
                 <p className="text-center text-xs text-[var(--text-tertiary)] mt-6">
                     {t('login.platform_name')}
                 </p>
+
+                {deploymentMode === 'self-hosted' && (
+                    <p className="text-center text-[10px] text-[var(--text-tertiary)] mt-2">
+                        <a
+                            href="https://beeflow.nl"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="hover:text-[var(--text-secondary)] transition-colors"
+                        >
+                            {t('sidebar.powered_by', 'Powered by Bee Flow')}
+                        </a>
+                    </p>
+                )}
             </div>
         </div>
     );

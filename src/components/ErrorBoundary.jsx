@@ -109,6 +109,7 @@ export class ErrorBoundary extends React.Component {
                         }}>
                             {String(error?.message || error)}
                             {error?.stack ? `\n\n${error.stack}` : ''}
+                            {this.state.info?.componentStack ? `\n\nComponent stack:${this.state.info.componentStack}` : ''}
                         </pre>
                     </details>
                 </div>
