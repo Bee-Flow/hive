@@ -240,8 +240,10 @@ function SkeletonCards() {
 export default function Pricing({ data }) {
     // The block is mounted by ProductWebsite's SECTION_REGISTRY only when
     // its type matches, so we always want to render *something*. The
-    // `enabled` check is the visibility toggle the editor exposes.
-    if (data && data.enabled === false) return null;
+    // `enabled` check is the visibility toggle the editor exposes — applied
+    // as an early return below the hooks so hook order stays stable across
+    // renders (eslint react-hooks/rules-of-hooks).
+    const isDisabled = data && data.enabled === false;
 
     const planType        = data?.planType === 'consumer' ? 'consumer' : 'organization';
     const defaultInterval = data?.defaultInterval === 'yearly' ? 'yearly' : 'monthly';
@@ -298,6 +300,8 @@ export default function Pricing({ data }) {
     }, [state.plans, planType, activeInterval]);
 
     const showToggle = enableToggle;
+
+    if (isDisabled) return null;
 
     return (
         <SectionFrame id="pricing" name="Pricing" enabled={data?.enabled !== false}>
