@@ -1,7 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { ChevronDown, Globe, Lock, Building2, Check } from 'lucide-react';
 
-export default function PublishMenu({ t, agent, open, onToggle, onClose, isPublished, onSetPersonal, onSetEntireOrg, embedEnabled, orgGroups, sharedGroups, onToggleGroup }) {
+export default function PublishMenu({ t, agent, open, onToggle, onClose, isPublished, onSetPersonal, onSetEntireOrg, embedEnabled, orgGroups, sharedGroups, onToggleGroup, extraSection }) {
     const popoverRef = useRef(null);
     const triggerRef = useRef(null);
     useEffect(() => {
@@ -41,7 +41,7 @@ export default function PublishMenu({ t, agent, open, onToggle, onClose, isPubli
             {open && (
                 <div
                     ref={popoverRef}
-                    className="absolute z-30 right-8 top-full mt-1 w-[320px] rounded-xl border border-[var(--border-default)] bg-[var(--bg-card,#fff)] shadow-xl overflow-hidden"
+                    className={`absolute z-30 right-8 top-full mt-1 rounded-xl border border-[var(--border-default)] bg-[var(--bg-card,#fff)] shadow-xl overflow-hidden ${extraSection ? 'w-[380px]' : 'w-[320px]'}`}
                 >
                     <div className="px-4 py-3 border-b border-[var(--border-default)]">
                         <div className="text-sm font-medium text-[var(--text-primary)]">
@@ -110,6 +110,10 @@ export default function PublishMenu({ t, agent, open, onToggle, onClose, isPubli
                             {t('agent_wizard.publish.embed_hint') || 'Web embed is on — manage it in Behavior.'}
                         </div>
                     )}
+
+                    {/* Extension slot — webpages mount their external-share manager here.
+                        Agents leave it null and the menu reads identically to before. */}
+                    {extraSection}
                 </div>
             )}
         </>

@@ -11,6 +11,7 @@ import downloadWebpageZip from '../utils/downloadWebpageZip';
 import computeWebpageDiff from '../utils/computeWebpageDiff';
 import scopedStorage from '../utils/scopedStorage';
 import PublishMenu from '../components/admin/AgentWizard/pickers/PublishMenu';
+import ExternalShareSection from '../components/admin/AgentWizard/pickers/ExternalShareSection';
 import useTranslation from '../hooks/useTranslation';
 import { RequireTier } from '../components/LicenseContext';
 
@@ -1039,6 +1040,12 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
                         orgGroups={orgGroups.filter(g => !user?.organizationId || g.organizationId === user.organizationId)}
                         sharedGroups={Array.isArray(selected.sharedGroups) ? selected.sharedGroups : []}
                         onToggleGroup={handleToggleGroup}
+                        extraSection={
+                            <ExternalShareSection
+                                webpageId={selected.id}
+                                webpageName={selected.name}
+                            />
+                        }
                     />
                 )}
             </div>

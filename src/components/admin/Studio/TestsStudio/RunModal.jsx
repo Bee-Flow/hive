@@ -15,6 +15,7 @@ export default function RunModal({ suite, defaultMode = 'suite', onClose, onStar
     const [ghOwner, setGhOwner] = useState('');
     const [ghRepo, setGhRepo] = useState('');
     const [ghNumber, setGhNumber] = useState('');
+    const [maxSteps, setMaxSteps] = useState(25);
     const [err, setErr] = useState(null);
     const [busy, setBusy] = useState(false);
 
@@ -39,9 +40,17 @@ export default function RunModal({ suite, defaultMode = 'suite', onClose, onStar
                 source = { type: 'github', owner: ghOwner.trim(), repo: ghRepo.trim(), number: Number(ghNumber) };
             }
         }
+        let parsedMaxSteps = null;
+        if (mode === 'agent') {
+            parsedMaxSteps = parseInt(maxSteps, 10);
+            if (!Number.isFinite(parsedMaxSteps) || parsedMaxSteps < 1 || parsedMaxSteps > 200) {
+                setErr('Max steps must be between 1 and 200.');
+                return;
+            }
+        }
         setBusy(true);
         try {
-            await onStart({ targetUrl, mode, source });
+            await onStart({ targetUrl, mode, source, maxSteps: parsedMaxSteps });
         } catch (e) {
             setErr(e.message || 'Failed to start run');
         } finally {
@@ -105,6 +114,23 @@ export default function RunModal({ suite, defaultMode = 'suite', onClose, onStar
                             {mode === 'agent' && 'Claude drives the browser step-by-step against a real Chromium. Watch live below.'}
                         </div>
                     </div>
+
+                    {mode === 'agent' && (
+                        <label className="text-xs text-[var(--text-secondary)]">
+                            Max steps
+                            <input
+                                type="number"
+                                min={1}
+                                max={200}
+                                value={maxSteps}
+                                onChange={(e) => setMaxSteps(e.target.value)}
+                                className="mt-1 w-full px-3 py-2 text-sm rounded border border-[var(--border-default)] bg-[var(--bg-secondary)]"
+                            />
+                            <span className="block mt-1 text-[10px] text-[var(--text-tertiary)]">
+                                How many actions the agent may take before stopping. Default 25, max 200.
+                            </span>
+                        </label>
+                    )}
 
                     {mode === 'agent' && (
                         <div className="flex flex-col gap-2 mt-2 p-3 rounded border border-[var(--border-default)] bg-[var(--bg-secondary)]">

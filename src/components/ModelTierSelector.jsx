@@ -153,7 +153,21 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
                                         fontSize: '13px', fontWeight: 600,
                                         color: 'var(--text-primary)',
                                         lineHeight: 1.25,
-                                    }}>{meta.label}</div>
+                                        display: 'flex', alignItems: 'center', gap: '6px',
+                                    }}>
+                                        <span>{meta.label}</span>
+                                        {meta.beta && (
+                                            <span
+                                                className="text-[9px] px-1 py-px rounded font-medium flex-shrink-0"
+                                                style={{
+                                                    background: 'color-mix(in srgb, var(--accent-primary) 12%, transparent)',
+                                                    color: 'var(--accent-primary)',
+                                                }}
+                                            >
+                                                beta
+                                            </span>
+                                        )}
+                                    </div>
                                     <div style={{
                                         fontSize: '11.5px',
                                         color: 'var(--text-muted)',

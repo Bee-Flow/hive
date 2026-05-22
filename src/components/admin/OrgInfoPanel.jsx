@@ -349,9 +349,14 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
     const [checkoutLoading, setCheckoutLoading] = useState(null);
     const [portalLoading, setPortalLoading] = useState(false);
     // Inline plan-picker shown when an already-subscribed org wants to
-    // switch plans. Reuses the existing checkout endpoint — Stripe handles
-    // the swap server-side, the webhook mirrors it back.
+    // upgrade. Drives /api/subscriptions/orgs/:orgId/upgrade — no Stripe
+    // redirect; the subscription stays the same and Stripe pro-rates.
     const [showChangePlan, setShowChangePlan] = useState(false);
+    const [cancelBusy, setCancelBusy] = useState(false);
+    // True between landing on ?checkout=success and the webhook flipping
+    // status to active/trialing. Drives a "Subscription activating…" banner
+    // so the user never sees stale "no subscription" copy after paying.
+    const [checkoutSettling, setCheckoutSettling] = useState(false);
     const originalDataRef = useRef(null);
 
     const fetchData = useCallback(async () => {
@@ -490,22 +495,54 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
         fetchStripePlans();
     }, [orgData?.id, fetchSubscription, fetchStripePlans]);
 
-    // Handle Stripe checkout return URLs
+    // Handle Stripe checkout return URLs. The success branch polls every
+    // 1.5s for up to 30s until the subscription flips to active/trialing —
+    // the previous single-setTimeout left the UI showing "no subscription"
+    // when the webhook took longer than 2s, which is the common path on
+    // first-checkout (Stripe issues the event after the redirect).
     useEffect(() => {
+        if (!orgData?.id) return;
         const params = new URLSearchParams(window.location.search);
-        if (params.get('checkout') === 'success') {
-            setMessage({ type: 'success', text: '🎉 Subscription activated! Your plan is now active.' });
-            // Clean URL
-            window.history.replaceState({}, '', window.location.pathname);
-            // Refresh subscription data after a short delay for webhook processing
-            setTimeout(() => {
-                if (orgData?.id) fetchSubscription(orgData.id);
-            }, 2000);
-        } else if (params.get('checkout') === 'cancelled') {
+        const status = params.get('checkout');
+        if (status === 'cancelled') {
             setMessage({ type: 'error', text: 'Checkout was cancelled. No changes were made.' });
             window.history.replaceState({}, '', window.location.pathname);
+            return;
         }
-    }, []);
+        if (status !== 'success') return;
+
+        let cancelled = false;
+        setCheckoutSettling(true);
+        const deadline = Date.now() + 30000;
+        (async () => {
+            while (!cancelled && Date.now() < deadline) {
+                await new Promise(r => setTimeout(r, 1500));
+                try {
+                    const res = await authFetch(`${API_BASE}/api/subscriptions/orgs/${orgData.id}`);
+                    if (res.ok) {
+                        const fresh = await res.json();
+                        if (fresh && (fresh.status === 'active' || fresh.status === 'trialing')) {
+                            if (cancelled) return;
+                            setSubscription(fresh);
+                            setCheckoutSettling(false);
+                            setMessage({ type: 'success', text: '🎉 Subscription activated!' });
+                            window.history.replaceState({}, '', window.location.pathname);
+                            return;
+                        }
+                    }
+                } catch (_) { /* keep polling */ }
+            }
+            if (!cancelled) {
+                setCheckoutSettling(false);
+                setMessage({
+                    type: 'error',
+                    text: 'Payment received, but activation is taking longer than expected. Refresh in a minute or email info@beeflow.nl.'
+                });
+                window.history.replaceState({}, '', window.location.pathname);
+            }
+        })();
+        return () => { cancelled = true; };
+    }, [orgData?.id]);
 
     const handleCheckout = async (planId) => {
         setCheckoutLoading(planId);
@@ -525,6 +562,70 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
             setMessage({ type: 'error', text: 'Failed to connect to payment service' });
         } finally {
             setCheckoutLoading(null);
+        }
+    };
+
+    const handleUpgrade = async (planId) => {
+        if (!orgData?.id) return;
+        setCheckoutLoading(planId);
+        try {
+            const res = await authFetch(`${API_BASE}/api/subscriptions/orgs/${orgData.id}/upgrade`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ planId }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) {
+                const friendly = data.message
+                    || ({
+                        payment_required: 'Your card was declined. Update your payment method via "Manage Billing".',
+                        downgrade_not_supported: 'Downgrades are not supported. Contact info@beeflow.nl.',
+                        interval_mismatch: 'Switching between monthly and yearly billing is not available via Upgrade. Contact info@beeflow.nl.',
+                    }[data.error])
+                    || data.error
+                    || 'Upgrade failed';
+                throw new Error(friendly);
+            }
+            setSubscription(data);
+            setMessage({ type: 'success', text: 'Plan upgraded. Stripe has invoiced the prorated difference.' });
+            setShowChangePlan(false);
+        } catch (e) {
+            setMessage({ type: 'error', text: e.message });
+        } finally {
+            setCheckoutLoading(null);
+        }
+    };
+
+    const handleCancelSubscription = async () => {
+        if (!orgData?.id) return;
+        if (!window.confirm('Cancel subscription at the end of the current period? You keep access until then.')) return;
+        setCancelBusy(true);
+        try {
+            const res = await authFetch(`${API_BASE}/api/subscriptions/orgs/${orgData.id}/cancel`, { method: 'POST' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.message || data.error || 'Cancel failed');
+            setSubscription(data);
+            setMessage({ type: 'success', text: 'Cancellation scheduled.' });
+        } catch (e) {
+            setMessage({ type: 'error', text: e.message });
+        } finally {
+            setCancelBusy(false);
+        }
+    };
+
+    const handleReactivateSubscription = async () => {
+        if (!orgData?.id) return;
+        setCancelBusy(true);
+        try {
+            const res = await authFetch(`${API_BASE}/api/subscriptions/orgs/${orgData.id}/reactivate`, { method: 'POST' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.message || data.error || 'Reactivate failed');
+            setSubscription(data);
+            setMessage({ type: 'success', text: 'Subscription will continue.' });
+        } catch (e) {
+            setMessage({ type: 'error', text: e.message });
+        } finally {
+            setCancelBusy(false);
         }
     };
 
@@ -676,6 +777,25 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                         {/* License key activation (self-hosted; or cloud Full-tier internal orgs) */}
                         {showLicenseActivation && <LicenseKeyActivation />}
 
+                        {/* Post-checkout settling spinner. Drives the polling loop that waits
+                            for the Stripe webhook to flip status → active/trialing. */}
+                        {checkoutSettling && (
+                            <div
+                                className="rounded-2xl border px-4 py-3 flex items-center gap-3"
+                                style={{ borderColor: 'rgba(59,130,246,0.3)', background: 'rgba(59,130,246,0.06)' }}
+                            >
+                                <Loader2 className="w-4 h-4 animate-spin shrink-0" style={{ color: '#3b82f6' }} />
+                                <div className="flex-1 min-w-0">
+                                    <p className="text-[13px] font-semibold text-[var(--text-primary)]">
+                                        {t('org.activating_subscription', 'Activating your subscription…')}
+                                    </p>
+                                    <p className="text-[11.5px] text-[var(--text-muted)]">
+                                        {t('org.activating_subscription_hint', 'Payment received — confirming with Stripe.')}
+                                    </p>
+                                </div>
+                            </div>
+                        )}
+
                         {subLoading ? (
                             <div className="space-y-4 animate-pulse">
                                 <div className="h-28 rounded-2xl bg-[var(--bg-tertiary)]" />
@@ -781,8 +901,10 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                                 </p>
                                             </div>
                                         </div>
-                                        {/* Change plan / Manage Billing actions */}
-                                        {isCloud && availablePlans.length > 1 && (
+                                        {/* Upgrade plan / Manage Billing actions. The toggle is only shown when
+                                            the server has flagged a strictly higher plan as eligible and the sub
+                                            isn't already mid-cancellation. */}
+                                        {isCloud && Array.isArray(sub.upgradeable_plans) && sub.upgradeable_plans.length > 0 && !sub.cancel_at_period_end && (
                                             <button
                                                 onClick={() => setShowChangePlan(v => !v)}
                                                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all hover:opacity-80"
@@ -791,7 +913,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                                 <Zap className="w-3 h-3" />
                                                 {showChangePlan
                                                     ? t('org.change_plan_close', 'Close')
-                                                    : t('org.change_plan', 'Change plan')}
+                                                    : t('org.upgrade_plan', 'Upgrade plan')}
                                             </button>
                                         )}
                                         {sub.stripe_customer_id && (
@@ -822,18 +944,21 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                     </div>
                                 </div>
 
-                                {/* Inline Change Plan picker — visible only when toggled */}
-                                {showChangePlan && isCloud && availablePlans.length > 0 && (
+                                {/* Inline Upgrade Plan picker. Drives the in-app upgrade endpoint —
+                                    no new Stripe Checkout session. Server provides upgradeable_plans
+                                    pre-filtered (same scope + interval, strictly higher price), so
+                                    downgrades simply never reach the UI. */}
+                                {showChangePlan && isCloud && Array.isArray(sub.upgradeable_plans) && sub.upgradeable_plans.length > 0 && !sub.cancel_at_period_end && (
                                     <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5 space-y-3">
                                         <div className="flex items-center gap-2 mb-1">
                                             <Zap className="w-4 h-4" style={{ color: '#3b82f6' }} />
-                                            <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t('org.change_plan', 'Change plan')}</h3>
+                                            <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t('org.upgrade_plan', 'Upgrade plan')}</h3>
                                         </div>
                                         <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-                                            {t('org.change_plan_hint', 'Switching plans takes effect immediately. Stripe will prorate the difference on your next invoice.')}
+                                            {t('org.upgrade_plan_hint', 'Upgrading takes effect immediately. Stripe invoices the prorated difference for the remainder of this period right away.')}
                                         </p>
                                         <div className="grid gap-3">
-                                            {availablePlans.filter(p => p.id !== sub.plan_id).map(plan => {
+                                            {sub.upgradeable_plans.map(plan => {
                                                 const sym = (plan.currency || 'eur').toUpperCase() === 'EUR' ? '€' : (plan.currency || 'eur').toUpperCase() === 'GBP' ? '£' : '$';
                                                 return (
                                                     <div key={plan.id} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 hover:border-[var(--accent-primary)] transition-colors">
@@ -851,11 +976,11 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                                             </div>
                                                             <div className="flex items-center gap-3 ml-4">
                                                                 <div className="text-right">
-                                                                    <div className="text-lg font-bold text-[var(--text-primary)]">{sym}{plan.price.toFixed(2)}</div>
+                                                                    <div className="text-lg font-bold text-[var(--text-primary)]">{sym}{Number(plan.price).toFixed(2)}</div>
                                                                     <div className="text-[9px] text-[var(--text-muted)] uppercase tracking-wider">/ {plan.billing_interval || 'month'}</div>
                                                                 </div>
                                                                 <button
-                                                                    onClick={() => handleCheckout(plan.id)}
+                                                                    onClick={() => handleUpgrade(plan.id)}
                                                                     disabled={checkoutLoading === plan.id || !plan.has_stripe_price}
                                                                     className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50"
                                                                     style={{ background: '#3b82f6' }}
@@ -865,7 +990,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                                                     ) : (
                                                                         <ArrowRight className="w-3.5 h-3.5" />
                                                                     )}
-                                                                    {t('org.switch_to', 'Switch')}
+                                                                    {t('org.upgrade_button', 'Upgrade')}
                                                                 </button>
                                                             </div>
                                                         </div>
@@ -873,6 +998,42 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                                 );
                                             })}
                                         </div>
+                                    </div>
+                                )}
+
+                                {/* Highest-plan message: only when there's a paying sub and the
+                                    server has no upgradeable plans (and we're not mid-cancel). */}
+                                {isCloud && (sub.billing?.subscription_total || 0) > 0 && Array.isArray(sub.upgradeable_plans) && sub.upgradeable_plans.length === 0 && !sub.cancel_at_period_end && (
+                                    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3 text-[12px] text-[var(--text-muted)]">
+                                        {t('org.on_highest_plan', "You're on the highest plan — contact")} <a href="mailto:info@beeflow.nl" className="text-[#3b82f6] hover:underline">info@beeflow.nl</a> {t('org.for_custom_pricing', 'for custom pricing.')}
+                                    </div>
+                                )}
+
+                                {/* Scheduled-cancel banner. Shown when Stripe (or this user) has set
+                                    cancel_at_period_end=true. The org keeps access until cancel_at;
+                                    the Reactivate button calls /reactivate to clear the flag. */}
+                                {sub.cancel_at_period_end && (
+                                    <div
+                                        className="rounded-2xl border px-4 py-3 flex items-center gap-3"
+                                        style={{ borderColor: 'rgba(59,130,246,0.3)', background: 'rgba(59,130,246,0.06)' }}
+                                    >
+                                        <AlertTriangle className="w-4 h-4 shrink-0" style={{ color: '#3b82f6' }} />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-[13px] font-semibold text-[var(--text-primary)]">
+                                                {t('org.cancel_scheduled', 'Subscription cancels on')} {sub.cancel_at ? new Date(sub.cancel_at).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' }) : 'the end of this period'}.
+                                            </p>
+                                            <p className="text-[11.5px] text-[var(--text-muted)]">
+                                                {t('org.cancel_keeps_access', 'You keep access until that date.')}
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={handleReactivateSubscription}
+                                            disabled={cancelBusy}
+                                            className="shrink-0 px-3 py-1.5 rounded-lg text-[12px] font-semibold border transition-all hover:opacity-80 disabled:opacity-50"
+                                            style={{ borderColor: 'rgba(59,130,246,0.3)', color: '#3b82f6', background: 'rgba(59,130,246,0.05)' }}
+                                        >
+                                            {cancelBusy ? <Loader2 className="w-3 h-3 animate-spin inline" /> : t('org.keep_subscription', 'Keep subscription')}
+                                        </button>
                                     </div>
                                 )}
 
@@ -898,6 +1059,20 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                                 <span className="text-[var(--text-secondary)] font-medium">
                                                     {sub.billing.seat_quantity} {sub.billing.seat_quantity === 1 ? t('org.seat', 'seat') : t('org.seats', 'seats')}
                                                 </span>
+                                            </div>
+                                        )}
+                                        {/* Cancel-at-period-end action. Muted — destructive but reversible
+                                            (the Reactivate banner appears on success). Hidden during the
+                                            scheduled-cancel window since the banner has its own undo CTA. */}
+                                        {sub.stripe_subscription_id && sub.status === 'active' && !sub.cancel_at_period_end && (
+                                            <div className="mt-3 pt-3 border-t border-[var(--border-subtle)] flex justify-end">
+                                                <button
+                                                    onClick={handleCancelSubscription}
+                                                    disabled={cancelBusy}
+                                                    className="text-[11.5px] font-medium text-[#64748b] hover:text-[var(--text-primary)] disabled:opacity-50 transition-colors"
+                                                >
+                                                    {cancelBusy ? <Loader2 className="w-3 h-3 animate-spin inline" /> : t('org.cancel_subscription', 'Cancel subscription')}
+                                                </button>
                                             </div>
                                         )}
                                     </div>

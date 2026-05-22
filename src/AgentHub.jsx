@@ -383,7 +383,7 @@ const AgentHub = ({
             if (window.innerWidth < 768) return;
             setShowGammaPreview(false);
             setNotebookContent(content);
-            if (content) setShowNotebook(true);
+            if (content && content.trim()) setShowNotebook(true);
         }, []),
         onGammaPreview: useCallback((preview) => {
             if (window.innerWidth < 768) return;

@@ -18,8 +18,8 @@ import { Sparkles, Zap, Brain, Workflow, Users, PenLine, Lightbulb, Shuffle } fr
 export const TIER_META = {
     auto:          { Icon: Shuffle,   emoji: '🔀',    label: 'Auto',          desc: 'Optimal choice',                       color: 'var(--accent-primary)' },
     fast:          { Icon: Zap,       emoji: '⚡',    label: 'Fast',          desc: 'Quick answers',                        color: 'var(--accent-primary)' },
-    standard:      { Icon: Workflow,  emoji: '🐝',   iconSrc: '/BeeFlow-logo-Icon-2026.svg', label: 'Flow',  desc: 'Multi-stage orchestration',            color: 'var(--accent-primary)' },
-    swarm:         { Icon: Users,     emoji: '🐝🐝', iconSrc: '/BeeFlow-logo-Icon-2026.svg', label: 'Swarm', desc: 'Parallel agents, synthesised answer',  color: 'var(--accent-primary)' },
+    standard:      { Icon: Workflow,  emoji: '🐝',   iconSrc: '/BeeFlow-logo-Icon-2026.svg', label: 'Flow',  desc: 'Multi-stage orchestration',            color: 'var(--accent-primary)', beta: true },
+    swarm:         { Icon: Users,     emoji: '🐝🐝', iconSrc: '/BeeFlow-logo-Icon-2026.svg', label: 'Swarm', desc: 'Parallel agents, synthesised answer',  color: 'var(--accent-primary)', beta: true },
     thinking:      { Icon: Brain,     emoji: '🧠',    label: 'Think',         desc: 'Complex problems',                     color: 'var(--accent-primary)' },
     writer:        { Icon: PenLine,   emoji: '✍️',   label: 'Write',         desc: 'Long-form content',                    color: 'var(--accent-primary)' },
     deep_thinking: { Icon: Lightbulb, emoji: '✨',   label: 'Deep Thinking', desc: 'Advanced reasoning',                   color: 'var(--accent-primary)' },

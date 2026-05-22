@@ -168,12 +168,13 @@ export default function TestsStudio({ user }) {
         fetchActiveRun();
     };
 
-    const startRun = async ({ targetUrl, mode, source }) => {
+    const startRun = async ({ targetUrl, mode, source, maxSteps }) => {
         let body;
         if (mode === 'agent') {
             // Agent runs always carry a source; suite link is optional so the
             // user can pin the run to a suite for history without using its code.
             body = { targetUrl, mode, source, suiteId: adHocExplore ? null : (selected?.id || null) };
+            if (Number.isFinite(maxSteps) && maxSteps > 0) body.maxSteps = maxSteps;
         } else if (mode === 'explore' && adHocExplore) {
             body = { targetUrl, mode: 'explore' };
         } else {
