@@ -73,6 +73,26 @@ server {
         proxy_buffering off;
     }
 
+    # Proxy /p/* requests — public webpage viewer (external share links).
+    # Unauthenticated; the server enforces its own gates (token + CSP + rate
+    # limit). Must be proxied because otherwise nginx would serve the SPA
+    # which redirects unauthenticated visitors to the login screen.
+    #
+    # Adding any `add_header` here suppresses inheritance of the server-level
+    # `add_header` directives (nginx behavior), so the backend's strict
+    # per-route CSP isn't shadowed by the SPA's permissive CSP. We re-add
+    # only the headers that are safe to apply uniformly.
+    location /p/ {
+        proxy_pass $backend;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy        "no-referrer" always;
+    }
+
     # Proxy /auth requests
     location /auth {
         proxy_pass $backend;
