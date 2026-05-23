@@ -27,6 +27,30 @@ server {
     add_header Permissions-Policy      "camera=(), microphone=(self), geolocation=(), clipboard-read=(self), clipboard-write=(self)" always;
     add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'" always;
 
+    # Public agent chat embed (/chat/<agentId>) — must be framable from any
+    # origin so the "Web embed" iframe snippet works on third-party sites
+    # AND inside Bee Flow's own Webpages preview (whose sandbox makes the
+    # parent opaque-origin). We re-declare the security headers here WITHOUT
+    # `X-Frame-Options` and WITHOUT `frame-ancestors` in the CSP. Embedding
+    # is opt-in per-agent via the `embed_enabled` flag enforced by the chat
+    # metadata API; that's the trust gate, not framing policy.
+    #
+    # NOTE: `try_files … /index.html` would internal-redirect into
+    # `location /`, and `add_header` directives from the original location
+    # are NOT applied to responses served from a redirected location. So we
+    # use `rewrite … break` instead — it rewrites the URI to /index.html
+    # but keeps the request in this location, so our header block actually
+    # wins.
+    location ~ ^/chat/ {
+        root /usr/share/nginx/html;
+        rewrite ^ /index.html break;
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header Referrer-Policy        "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy     "camera=(), microphone=(self), geolocation=(), clipboard-read=(self), clipboard-write=(self)" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; base-uri 'self'; form-action 'self'" always;
+    }
+
     # Handle SPA routing - redirect all non-file requests to index.html
     # NOTE: add_header in a location block overrides all server-level add_header
     # directives, so security headers must be re-declared here.
