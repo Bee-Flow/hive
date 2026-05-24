@@ -2222,7 +2222,7 @@ const EN_DEFAULTS = {
     "license.tier_label":                "License tier",
     "license.community_subtitle":        "No license key — running on the free Community tier",
     "license.activated_subtitle":        "Activated via license key",
-    "license.community_explainer":       "You can activate Pro, Enterprise, or a custom plan with a license key purchased at beeflow.ai. Activation unlocks features like automations, multi-user, guardrails, and more.",
+    "license.community_explainer":       "You can activate Pro, Enterprise, or a custom plan with a license key purchased at beeflow.nl. Activation unlocks features like automations, multi-user, guardrails, and more.",
     "license.enter_key":                 "Enter license key",
     "license.replace_key":               "Replace key",
     "license.deactivate":                "Deactivate",
@@ -2231,7 +2231,7 @@ const EN_DEFAULTS = {
     "license.refresh":                   "Refresh",
     "license.refresh_now":               "Re-check with license server",
     "license.paste_token":               "Paste your license key (JWT)",
-    "license.buy_at_beeflow":            "Buy at beeflow.ai",
+    "license.buy_at_beeflow":            "Buy at beeflow.nl",
     "license.expires_on":                "Expires on",
     "license.expired":                   "expired",
     "license.in_days":                   "{n} days",
@@ -2243,7 +2243,7 @@ const EN_DEFAULTS = {
     "license.tier_enterprise":           "Enterprise",
     "license.tier_full":                 "Full",
     "license.feature_locked":            "Requires {tier} license",
-    "license.upgrade_at_beeflow":        "Upgrade at beeflow.ai",
+    "license.upgrade_at_beeflow":        "Upgrade at beeflow.nl",
     "license.refresh_no_server":         "No license server configured — JWT signature is authoritative. Refresh has no effect."
 };
 

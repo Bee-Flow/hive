@@ -1,6 +1,6 @@
 // Thin wrapper over LicenseContext exposing just the deployment mode.
 //
-// 'cloud' = Bee Flow SaaS (saas.beeflow.ai). Stripe subscriptions are the
+// 'cloud' = Bee Flow SaaS (saas.beeflow.nl). Stripe subscriptions are the
 //   paid-access mechanism; license-key UI is hidden except for internal
 //   Full-tier admin orgs.
 //

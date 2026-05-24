@@ -1,4 +1,4 @@
-These Terms of Service ("**Terms**") govern your access to and use of the Bee Flow platform available at beeflow.ai (and beeflow.nl) and any related applications, APIs and services (together, the "**Service**") provided by Bee Flow B.V., a Dutch private company with limited liability ("**Bee Flow**", "**we**", "**us**", "**our**").
+These Terms of Service ("**Terms**") govern your access to and use of the Bee Flow platform available at beeflow.nl (and beeflow.nl) and any related applications, APIs and services (together, the "**Service**") provided by Bee Flow B.V., a Dutch private company with limited liability ("**Bee Flow**", "**we**", "**us**", "**our**").
 
 By creating an account, signing in, or otherwise using the Service, you agree to be bound by these Terms. If you are using the Service on behalf of an organisation, you represent that you have authority to bind that organisation, and "**you**" and "**your**" refer to both you and the organisation.
 

@@ -248,7 +248,7 @@ export default function LicenseKeyActivation() {
                     </div>
                 ) : (
                     <div className="text-xs text-[var(--text-muted)] leading-relaxed">
-                        {t('license.community_explainer', 'You can activate Pro, Enterprise, or a custom plan with a license key purchased at beeflow.ai. Activation unlocks features like automations, multi-user, guardrails, and more.')}
+                        {t('license.community_explainer', 'You can activate Pro, Enterprise, or a custom plan with a license key purchased at beeflow.nl. Activation unlocks features like automations, multi-user, guardrails, and more.')}
                     </div>
                 )}
 
@@ -278,13 +278,13 @@ export default function LicenseKeyActivation() {
                                 {t('license.enter_key', 'Enter license key')}
                             </button>
                             <a
-                                href="https://beeflow.ai/pricing"
+                                href="https://beeflow.nl/pricing"
                                 target="_blank"
                                 rel="noreferrer"
                                 className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-[var(--border-subtle)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
                             >
                                 <ExternalLink className="w-3.5 h-3.5" />
-                                {t('license.buy_at_beeflow', 'Buy at beeflow.ai')}
+                                {t('license.buy_at_beeflow', 'Buy at beeflow.nl')}
                             </a>
                         </>
                     )}

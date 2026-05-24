@@ -825,8 +825,8 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                             {!canTokenizePii && (
                                                                 <p className="text-[10px] mt-2 leading-relaxed" style={{ color: 'var(--text-muted)' }}>
                                                                     🔒 {t('dlp.action_tokenize_locked', 'Tokenize & round-trip is an Enterprise feature.')}{' '}
-                                                                    <a href={upgradeUrl || 'https://beeflow.ai/pricing'} target="_blank" rel="noreferrer" style={{ color: '#3b82f6' }}>
-                                                                        {t('license.upgrade_at_beeflow', 'Upgrade at beeflow.ai')}
+                                                                    <a href={upgradeUrl || 'https://beeflow.nl/pricing'} target="_blank" rel="noreferrer" style={{ color: '#3b82f6' }}>
+                                                                        {t('license.upgrade_at_beeflow', 'Upgrade at beeflow.nl')}
                                                                     </a>
                                                                 </p>
                                                             )}
@@ -916,8 +916,8 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                             <span className="text-xs text-muted block mt-0.5">{t('admin.shield_web_guard_desc')}</span>
                                                             <p className="text-[11px] mt-2" style={{ color: 'var(--text-secondary)' }}>
                                                                 {t('admin.shield_web_guard_locked', 'Web Search Guard is an Enterprise feature.')}{' '}
-                                                                <a href={upgradeUrl || 'https://beeflow.ai/pricing'} target="_blank" rel="noreferrer" style={{ color: '#3b82f6' }}>
-                                                                    {t('license.upgrade_at_beeflow', 'Upgrade at beeflow.ai')}
+                                                                <a href={upgradeUrl || 'https://beeflow.nl/pricing'} target="_blank" rel="noreferrer" style={{ color: '#3b82f6' }}>
+                                                                    {t('license.upgrade_at_beeflow', 'Upgrade at beeflow.nl')}
                                                                 </a>
                                                             </p>
                                                         </div>

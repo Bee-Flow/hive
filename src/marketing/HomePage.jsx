@@ -7,7 +7,7 @@ import { API_BASE } from '../utils/helpers';
 import ContactSection from './sections/ContactSection';
 
 // Public landing page shown at the root of the application domain
-// (beeflow.ai, and beeflow.nl when used) while the CMS-managed Product
+// (beeflow.nl, and beeflow.nl when used) while the CMS-managed Product
 // Website is still being built. Self-contained: inline styles only, no
 // dependency on marketing.css or the CMS Hero/Features/Steps components.
 // When the CMS is later enabled with a real homepage, RootPathGate in

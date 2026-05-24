@@ -74,7 +74,7 @@ const ConsumerBetaFeaturesSection = () => {
                                 rel="noreferrer"
                                 className="inline-flex items-center px-3 py-1.5 rounded-md text-xs font-semibold bg-blue-500 text-white hover:bg-blue-600"
                             >
-                                {t('license.upgrade_at_beeflow') || 'Upgrade at beeflow.ai'}
+                                {t('license.upgrade_at_beeflow') || 'Upgrade at beeflow.nl'}
                             </a>
                         </div>
                     </div>

@@ -1,7 +1,7 @@
 # Bee Flow — Frontend (`@beeflow/frontend`)
 
 The React + Vite single-page application that fronts every Bee Flow deployment:
-the SaaS at [app.beeflow.ai](https://app.beeflow.ai), self-hosted installs, and
+the SaaS at [app.beeflow.nl](https://app.beeflow.nl), self-hosted installs, and
 the embedded Nextcloud ExApp shipped via the
 [Bee Flow Nextcloud connector](https://github.com/Bee-Flow/connector).
 

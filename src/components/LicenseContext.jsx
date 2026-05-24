@@ -46,7 +46,7 @@ const LicenseContext = createContext({
     // banner ("Tier is managed server-wide"). See server/license/index.js
     // → getLicenseStatus.
     serverOverride: false,
-    upgradeUrl: 'https://beeflow.ai/pricing',
+    upgradeUrl: 'https://beeflow.nl/pricing',
     // 'cloud' (Bee Flow SaaS) or 'self-hosted' (customer-run install). Drives
     // which paid-access mechanism is shown: subscriptions on cloud, license
     // keys on self-hosted. Sourced from /auth/setup-status (server env
@@ -74,7 +74,7 @@ export function LicenseProvider({ children }) {
         serverOverride: false,
         loading: true,
         error: null,
-        upgradeUrl: 'https://beeflow.ai/pricing',
+        upgradeUrl: 'https://beeflow.nl/pricing',
         deploymentMode: 'cloud',
     });
     // Must SET the ref to true on every mount, not just rely on useRef's
@@ -222,7 +222,7 @@ export function useLicenseContext() {
 export function RequireTier({ tier = 'enterprise', feature = null, children, fallback = null, onNavigateToLicense = null }) {
     const ctx = useLicenseContext();
     const { t } = useTranslation();
-    const upgradeUrl = ctx.upgradeUrl || 'https://beeflow.ai/pricing';
+    const upgradeUrl = ctx.upgradeUrl || 'https://beeflow.nl/pricing';
     if (ctx.loading) return null;
 
     const ok = feature ? ctx.hasFeature(feature) : ctx.hasTier(tier);
@@ -238,7 +238,7 @@ export function RequireTier({ tier = 'enterprise', feature = null, children, fal
                 {t('license.feature_locked', 'Requires {tier} license').replace('{tier}', tier)}
             </h2>
             <p className="text-sm text-[var(--text-muted)] max-w-md mb-4">
-                {t('license.community_explainer', 'You can activate Enterprise or a custom plan with a license key purchased at beeflow.ai. Activation unlocks compliance features such as SSO, audit log export, GDPR/AI Act hubs, and admin controls.')}
+                {t('license.community_explainer', 'You can activate Enterprise or a custom plan with a license key purchased at beeflow.nl. Activation unlocks compliance features such as SSO, audit log export, GDPR/AI Act hubs, and admin controls.')}
             </p>
             <div className="flex items-center gap-2">
                 {onNavigateToLicense && (
@@ -255,7 +255,7 @@ export function RequireTier({ tier = 'enterprise', feature = null, children, fal
                     rel="noreferrer"
                     className="px-4 py-2 rounded-lg text-xs font-semibold border border-[var(--border-subtle)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
                 >
-                    {t('license.upgrade_at_beeflow', 'Upgrade at beeflow.ai')}
+                    {t('license.upgrade_at_beeflow', 'Upgrade at beeflow.nl')}
                 </a>
             </div>
         </div>

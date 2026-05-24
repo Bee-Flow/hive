@@ -89,7 +89,7 @@ const NcConsentGate = ({ user, onAccept }) => {
 
                     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mb-6 text-[12px]">
                         <a
-                            href="https://beeflow.ai/privacy"
+                            href="https://beeflow.nl/privacy"
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 hover:underline"
@@ -98,7 +98,7 @@ const NcConsentGate = ({ user, onAccept }) => {
                             Privacy policy <ExternalLink className="w-3 h-3" />
                         </a>
                         <a
-                            href="https://beeflow.ai/terms"
+                            href="https://beeflow.nl/terms"
                             target="_blank"
                             rel="noopener noreferrer"
                             className="inline-flex items-center gap-1 hover:underline"

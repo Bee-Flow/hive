@@ -968,7 +968,7 @@ function App() {
                                 {t('app.bootstrap_show_remediation', 'How to fix this')}
                             </summary>
                             <p style={{ marginTop: 10, marginBottom: 8 }}>
-                                {bootstrapDiagnostics.lastError.remediation || t('app.bootstrap_no_remediation', 'See docs.beeflow.ai/connector/troubleshooting for diagnostic commands.')}
+                                {bootstrapDiagnostics.lastError.remediation || t('app.bootstrap_no_remediation', 'See docs.beeflow.nl/connector/troubleshooting for diagnostic commands.')}
                             </p>
                             {bootstrapDiagnostics.lastError.nextRetryAt && (
                                 <p style={{ margin: 0, fontSize: 12, opacity: 0.7 }}>

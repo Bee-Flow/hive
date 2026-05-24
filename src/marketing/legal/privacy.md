@@ -1,6 +1,6 @@
 Bee Flow ("**Bee Flow**", "**we**", "**us**", or "**our**") respects your privacy and is committed to processing your personal data lawfully, fairly and transparently. This Privacy Policy explains what personal data we collect, why we collect it, how we use it, and what rights you have under the EU General Data Protection Regulation (GDPR) and the Dutch implementation thereof (Uitvoeringswet AVG).
 
-This policy applies to the Bee Flow platform available at beeflow.ai (and beeflow.nl) and any related applications, APIs, and services (together, the "**Service**").
+This policy applies to the Bee Flow platform available at beeflow.nl (and beeflow.nl) and any related applications, APIs, and services (together, the "**Service**").
 
 ## 1. Who we are
 

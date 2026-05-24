@@ -528,7 +528,7 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
 
 
     // Resolve relative /api/ image URLs → full API_BASE URLs when loading saved content
-    // Production (nginx): API_BASE='', no-op. Dev: prepends server.dev.beeflow.ai
+    // Production (nginx): API_BASE='', no-op. Dev: prepends server.dev.beeflow.nl
     const resolveContentUrls = useCallback((html) => {
         if (!html || !API_BASE) return html;
         return html.replace(/(src=["'])(\/(api\/storage\/[^"']+))/gi, `$1${API_BASE}/$3`);
@@ -606,7 +606,7 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
             if (data.url) {
                 // Prepend API_BASE so images resolve correctly:
                 // - Production (nginx): API_BASE='', stays relative → goes through proxy
-                // - Dev deployment: API_BASE='https://server.dev.beeflow.ai' → hits backend directly
+                // - Dev deployment: API_BASE='https://server.dev.beeflow.nl' → hits backend directly
                 const imgSrc = `${API_BASE}${data.url}`;
                 // Defense-in-depth: only accept http(s) or root-relative URLs.
                 // Rejects javascript:, data:, vbscript:, file: if the backend is ever compromised.

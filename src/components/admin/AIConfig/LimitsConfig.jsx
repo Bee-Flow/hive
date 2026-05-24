@@ -81,7 +81,7 @@ const LimitsConfig = ({ onNavigateToTab }) => {
     const KB_OPTIONS = [
         { id: 'auto', label: 'Auto', desc: 'Local KB when no SEARCH_SERVICE_URL is set, remote service when it is. Safe default for both fresh installs and upgrades.' },
         { id: 'local', label: 'Local (in-process)', desc: 'pgvector + RRF + reranker run inside this Node server. No GPU service required. Recommended for most self-hosted setups.' },
-        { id: 'remote', label: 'Remote search-service', desc: 'Forward KB ingest + search to the external services.beeflow.ai (or self-hosted SEARCH_SERVICE_URL). Required for legacy GPU-backed deployments.' },
+        { id: 'remote', label: 'Remote search-service', desc: 'Forward KB ingest + search to the external services.beeflow.nl (or self-hosted SEARCH_SERVICE_URL). Required for legacy GPU-backed deployments.' },
     ];
 
     return (

@@ -4,7 +4,7 @@
     "type": "module",
     "description": "Bee Flow — frontend SPA. The React + Vite client for every Bee Flow deployment (SaaS, self-hosted, Nextcloud ExApp).",
     "license": "SEE LICENSE IN LICENSE.md",
-    "homepage": "https://beeflow.ai",
+    "homepage": "https://beeflow.nl",
     "repository": {
         "type": "git",
         "url": "https://github.com/Bee-Flow/hive.git"
