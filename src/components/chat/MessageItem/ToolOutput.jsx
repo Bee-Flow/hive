@@ -110,7 +110,9 @@ export default function ToolOutput({ msg, sessionSkills = [] }) {
         if (msg.toolCall && msg.toolCall.status === 'running') {
             // Don't show generic indicator for sequential thinking — handled by renderSequentialThinking
             if (msg.toolCall.name === 'sequentialthinking') return null;
-            // Don't show when reasoning model thinking header is already visible
+            // Pre-content streaming is owned by <ActivityIndicator/>; this chip
+            // is only for the mid-stream case where text has already appeared
+            // and a second tool starts running.
             if (msg.isStreaming && !msg.content) return null;
 
             const toolCallId = toolNameToCatalogId(msg.toolCall.name);

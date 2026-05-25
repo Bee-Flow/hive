@@ -1,6 +1,7 @@
 {
     "name": "@beeflow/frontend",
     "version": "1.2.0",
+    "private": true,
     "type": "module",
     "description": "Bee Flow — frontend SPA. The React + Vite client for every Bee Flow deployment (SaaS, self-hosted, Nextcloud ExApp).",
     "license": "SEE LICENSE IN LICENSE.md",

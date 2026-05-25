@@ -2192,6 +2192,9 @@ const EN_DEFAULTS = {
     "chat.phase.processed_history":      "Loading history…",
     "chat.phase.streaming_start":        "Thinking…",
 
+    // Generic activity fallback when no phase or tool event is in flight.
+    "chat.activity.thinking":            "Thinking…",
+
     // Privacy Shield — PII detection toggles
     "admin.shield_pii_master_title":     "PII detection",
     "admin.shield_pii_master_desc":      "Scan messages for personal data — names, emails, phone numbers, addresses, dates of birth, bank accounts and secrets — and block or replace it with placeholders before it reaches the AI. Runs on-server by default; Azure AI Language extends coverage when configured.",
