@@ -3,6 +3,7 @@ import { Plus, Sparkles, Upload, AppWindow, ArrowLeft, X, ArrowUp, Check, Clock,
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import { pickAgentAvatar, DEFAULT_AGENT_EMOJI } from '../../../utils/agentAvatar';
 import useTranslation from '../../../hooks/useTranslation';
+import beeFlowIcon from '../../../assets/BeeFlow-logo-Icon-2026.svg';
 import ModelTierSelector from '../../ModelTierSelector';
 import MarkdownRenderer from '../../MarkdownRenderer';
 import { INTEGRATION_CATALOG } from '../AgentDesigner/integrations';
@@ -832,7 +833,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 <div ref={chatScrollRef} className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
                     {chat.length === 0 && (
                         <div className="h-full flex flex-col items-center justify-center text-center px-3">
-                            <img src="/BeeFlow-logo-Icon-2026.svg" alt="Bee Flow" className="w-12 h-12 mb-4" />
+                            <img src={beeFlowIcon} alt="Bee Flow" className="w-12 h-12 mb-4" />
                             <div className="text-base font-semibold text-[var(--text-primary)] mb-2">
                                 Refine this agent
                             </div>

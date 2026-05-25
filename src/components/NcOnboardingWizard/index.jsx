@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Cloud, Users, Shield, CheckCircle2, ChevronRight, ChevronLeft, Loader2, Server, Tag, Star, Building2, Key, CreditCard } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
+import beeFlowLogo from '../../assets/bee-flow-logo.svg';
 
 /**
  * Bee Flow ↔ Nextcloud App Store onboarding wizard.
@@ -50,6 +51,9 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
     const [selectedPlanId, setSelectedPlanId] = useState(null); // null = Community/free
     const [plans, setPlans] = useState([]);
     const [plansLoading, setPlansLoading] = useState(true);
+    // From /api/billing/offered-plans — false on self-hosted, blocks any
+    // attempt to redirect the admin to Stripe checkout.
+    const [stripeEnabled, setStripeEnabled] = useState(false);
 
     const [syncMode, setSyncMode] = useState('mirror_all');
     const [syncGroups, setSyncGroups] = useState([]);
@@ -106,6 +110,7 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
             if (cancelled) return;
             const list = j.plans || [];
             setPlans(list);
+            setStripeEnabled(!!j.stripeEnabled);
             if (requestedPlanId) {
                 const match = list.find(p => p.id === requestedPlanId);
                 if (match) setSelectedPlanId(match.id);
@@ -206,7 +211,11 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
 
             // 3. If a paid plan is selected, redirect to Stripe-hosted checkout.
             //    Webhook activates the subscription + issues the license JWT.
-            if (isPaid) {
+            //    Self-hosted installs and trial-only flows skip Stripe entirely
+            //    — the wizard finishes locally; the admin can attach a license
+            //    later via Settings → License & Usage.
+            const stripeAvailable = stripeEnabled && deploymentMode === 'cloud';
+            if (isPaid && stripeAvailable) {
                 const origin = window.location.origin;
                 const co = await authFetch(`${API_BASE}/api/stripe/checkout`, {
                     method: 'POST',
@@ -457,7 +466,7 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
                     {/* Header */}
                     <div className="flex items-center gap-3 mb-6">
                         <div className="w-12 h-12 rounded-2xl overflow-hidden ring-2 ring-[var(--border-subtle)]">
-                            <img src="bee-flow-logo.svg" alt="Bee Flow" className="w-full h-full object-cover" />
+                            <img src={beeFlowLogo} alt="Bee Flow" className="w-full h-full object-cover" />
                         </div>
                         <div className="flex-1">
                             <h1 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
@@ -669,7 +678,11 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
                                 className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-medium disabled:opacity-50"
                                 style={{ background: 'var(--accent-primary)', color: 'white' }}>
                                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                                {submitting ? (isPaid ? 'Redirecting…' : 'Finishing…') : (isPaid ? 'Continue to payment' : 'Finish setup')}
+                                {(() => {
+                                    const willGoToStripe = isPaid && stripeEnabled && deploymentMode === 'cloud';
+                                    if (submitting) return willGoToStripe ? 'Redirecting…' : 'Finishing…';
+                                    return willGoToStripe ? 'Continue to payment' : 'Finish setup';
+                                })()}
                             </button>
                         )}
                     </div>

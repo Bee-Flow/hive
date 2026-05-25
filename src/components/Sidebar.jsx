@@ -7,6 +7,8 @@ import { API_BASE, authFetch } from '../utils/helpers';
 import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar, DEFAULT_AGENT_EMOJI } from '../utils/agentAvatar';
 import NotificationCenter from './NotificationCenter';
 import NavLink from './NavLink';
+import beeFlowIcon from '../assets/BeeFlow-logo-Icon-2026.svg';
+import beeFlowLogo from '../assets/bee-flow-logo.svg';
 
 
 /* ─── Design tokens ─── */
@@ -703,7 +705,7 @@ const Sidebar = ({
                                 ? <div className="w-[4.5rem] h-[4.5rem] rounded-xl overflow-hidden flex items-center justify-center bg-[var(--bg-primary)]">
                                       <img src={orgLogoUrl} alt={orgAltText} className="w-full h-full object-contain" />
                                   </div>
-                                : <img src="/bee-flow-logo.svg" alt="Bee Flow" className="w-[4.5rem] h-[4.5rem] rounded-xl object-cover" />}
+                                : <img src={beeFlowLogo} alt="Bee Flow" className="w-[4.5rem] h-[4.5rem] rounded-xl object-cover" />}
                         </button>
                         <div className="flex items-center gap-1">
                             <NotificationCenter variant="icon" />
@@ -724,7 +726,7 @@ const Sidebar = ({
                     >
                         {useOrgBrand
                             ? <img src={orgLogoUrl} alt={orgAltText} className="w-full h-full rounded-lg object-contain" />
-                            : <img src="/BeeFlow-logo-Icon-2026.svg" alt="Bee Flow" className="w-8 h-8 rounded-lg object-contain" />}
+                            : <img src={beeFlowIcon} alt="Bee Flow" className="w-8 h-8 rounded-lg object-contain" />}
                     </button>
                 )}
             </div>

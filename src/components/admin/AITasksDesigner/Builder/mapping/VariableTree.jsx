@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
 import { ChevronDown, ChevronRight, Database, MousePointer2, Clock, Webhook, Zap, Sparkles, GitBranch, Repeat, Code, Bell, Workflow } from 'lucide-react';
+import React, { useState } from 'react';
 import { previewValue } from '../../../../../utils/bindingHelpers';
 
 /**

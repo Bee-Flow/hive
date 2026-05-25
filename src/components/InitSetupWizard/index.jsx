@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { API_BASE, authFetch } from '../../utils/helpers';
+import beeFlowLogo from '../../assets/bee-flow-logo.svg';
 
 import StepPassword from './StepPassword';
 import StepDeploymentType from './StepDeploymentType';
@@ -284,7 +285,7 @@ const InitSetupWizard = ({ onComplete }) => {
                     {/* Header */}
                     <div className="text-center mb-6">
                         <div className="w-20 h-20 mx-auto mb-4 rounded-full overflow-hidden shadow-xl ring-4 ring-[var(--border-subtle)]">
-                            <img src="/bee-flow-logo.svg" alt="Bee Flow" className="w-full h-full object-cover" />
+                            <img src={beeFlowLogo} alt="Bee Flow" className="w-full h-full object-cover" />
                         </div>
                         <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>
                             {step === 0 ? 'Welcome to Bee Flow' : step === 1 ? 'Choose Your Setup' : 'Setup Wizard'}

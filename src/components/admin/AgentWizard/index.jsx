@@ -3,6 +3,7 @@ import { ArrowUp, MessageCircle, Calendar, Tag } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../utils/helpers';
 import useTranslation from '../../../hooks/useTranslation';
 import ModelTierSelector from '../../ModelTierSelector';
+import beeFlowIcon from '../../../assets/BeeFlow-logo-Icon-2026.svg';
 import BuilderSplit from './BuilderSplit';
 
 // Landing-only wizard. The legacy "review/plan card" stage has been removed:
@@ -93,7 +94,7 @@ export default function AgentWizard({ user, onClose, onPublished, onSwitchToManu
     return (
         <div className="flex flex-col h-full bg-[var(--bg-primary)]">
             <div className="flex-1 flex flex-col items-center justify-center px-6">
-                <img src="/BeeFlow-logo-Icon-2026.svg" alt="Bee Flow" className="w-14 h-14 mb-3" />
+                <img src={beeFlowIcon} alt="Bee Flow" className="w-14 h-14 mb-3" />
                 <h1 className="text-2xl font-semibold text-[var(--text-primary)] mb-6">{t('agent_wizard.title')}</h1>
                 <div className="w-full max-w-xl rounded-2xl border border-[var(--border-default)] bg-[var(--bg-secondary)] overflow-hidden">
                     <div className="p-4">

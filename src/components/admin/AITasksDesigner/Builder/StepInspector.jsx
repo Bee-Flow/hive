@@ -1,10 +1,13 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { X, Save, RotateCcw, PanelRightClose, PanelRightOpen, Loader2, Check, AlertCircle, Play, Pin, PinOff, RotateCw, Power } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import ApprovalActionBar from './approvals/ApprovalActionBar';
+import RunTabContainer from './debug/RunTabContainer';
 import { matchValidationToStep } from './flow/matchValidationToStep';
 import SettingsForm from './flow/SettingsForm';
+import { VariablePickerProvider } from './mapping/VariablePickerContext';
 import VariableTree from './mapping/VariableTree';
-import useUpstreamVariables from '../../../../hooks/useUpstreamVariables';
 import useAutomationApi from '../../../../hooks/useAutomationApi';
+import useUpstreamVariables from '../../../../hooks/useUpstreamVariables';
 import scopedStorage from '../../../../utils/scopedStorage';
 
 /**
@@ -306,6 +309,12 @@ export default function StepInspector({ step, runStep, onClose, definition, onSa
                     </button>
                 </div>
             </div>
+            {runStep?.status === 'awaiting_approval' && runStep?.runId && (
+                <ApprovalActionBar
+                    runId={runStep.runId}
+                    stepId={step?.id}
+                />
+            )}
             {/* n8n-style action bar: Execute · Pin · Disable · Retry.
                 Pin/Disable persist into the step definition; Execute and
                 Retry call back into the parent to hit the partial-run API. */}
@@ -368,27 +377,29 @@ export default function StepInspector({ step, runStep, onClose, definition, onSa
             <div className="flex border-b border-[var(--border-default)] text-xs">
                 <TabBtn active={tab === 'settings'} onClick={() => setTab('settings')}>Settings</TabBtn>
                 <TabBtn active={tab === 'definition'} onClick={() => setTab('definition')}>JSON</TabBtn>
-                <TabBtn active={tab === 'last_run'} onClick={() => setTab('last_run')} disabled={!runStep}>
-                    Last run{runStep ? ` — ${runStep.status}` : ''}
+                <TabBtn active={tab === 'last_run'} onClick={() => setTab('last_run')}>
+                    Run{runStep ? ` — ${runStep.status}` : ''}
                 </TabBtn>
             </div>
 
             <div className="flex-1 min-h-0 flex">
                 <div className="flex-1 min-w-0 min-h-0 flex flex-col">
                 {tab === 'settings' && step?.id && (
-                    <SettingsForm
-                        key={step.id}
-                        step={step}
-                        modelTiers={modelTiers}
-                        stepIssues={stepIssues}
-                        saving={saving}
-                        saveError={saveError}
-                        onPatch={persistStepPatch}
-                        onFocusField={onFocusField}
-                        previewSample={previewSample}
-                        catalog={catalog}
-                        groups={groups}
-                    />
+                    <VariablePickerProvider groups={groups} previewSample={previewSample}>
+                        <SettingsForm
+                            key={step.id}
+                            step={step}
+                            modelTiers={modelTiers}
+                            stepIssues={stepIssues}
+                            saving={saving}
+                            saveError={saveError}
+                            onPatch={persistStepPatch}
+                            onFocusField={onFocusField}
+                            previewSample={previewSample}
+                            catalog={catalog}
+                            groups={groups}
+                        />
+                    </VariablePickerProvider>
                 )}
                 {tab === 'definition' && (
                     <div className="flex flex-col h-full">
@@ -453,16 +464,10 @@ export default function StepInspector({ step, runStep, onClose, definition, onSa
                         </div>
                     </div>
                 )}
-                {tab === 'last_run' && runStep && (
-                    <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3 text-xs">
-                        <KV label="Status" value={runStep.status} />
-                        {runStep.error && <ErrPre value={runStep.error} />}
-                        <Section title="Input"><Pre value={runStep.input} /></Section>
-                        <Section title="Output"><Pre value={runStep.output} /></Section>
+                {tab === 'last_run' && (
+                    <div className="flex-1 min-h-0">
+                        <RunTabContainer step={step} runStep={runStep} />
                     </div>
-                )}
-                {tab === 'last_run' && !runStep && (
-                    <div className="p-4 text-xs text-[var(--text-tertiary)]">No run output for this step yet — try a dry-run.</div>
                 )}
                 </div>
                 {treeOpen && (
@@ -525,24 +530,6 @@ function ValidationLine({ record }) {
             {record.hint && <div className="text-[var(--text-tertiary)] mt-0.5">→ {record.hint}</div>}
         </div>
     );
-}
-
-function Section({ title, children }) {
-    return (
-        <div>
-            <div className="text-[10px] font-bold uppercase tracking-wide text-[var(--text-tertiary)] mb-1">{title}</div>
-            {children}
-        </div>
-    );
-}
-function KV({ label, value }) {
-    return <div><span className="text-[var(--text-tertiary)]">{label}:</span> <span className="text-[var(--text-primary)]">{String(value ?? '—')}</span></div>;
-}
-function Pre({ value }) {
-    return <pre className="bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded-md p-2 text-xs overflow-auto max-h-72 text-[var(--text-primary)]">{JSON.stringify(value, null, 2)}</pre>;
-}
-function ErrPre({ value }) {
-    return <pre className="bg-red-500/10 text-red-600 dark:text-red-400 rounded-md p-2 text-xs whitespace-pre-wrap">{value}</pre>;
 }
 
 function safeStringify(step) {

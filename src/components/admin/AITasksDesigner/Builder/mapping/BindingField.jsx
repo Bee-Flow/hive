@@ -1,5 +1,8 @@
+import { Braces, FunctionSquare, Type } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
-import { FunctionSquare, Type } from 'lucide-react';
+import useVariablePicker from './useVariablePicker';
+import VariablePicker from './VariablePicker';
+import { useVariablePickerContext } from './VariablePickerContext';
 import {
     inputFromBinding,
     bindingFromInput,
@@ -48,6 +51,10 @@ export default function BindingField({
     const [mode, setMode] = useState(seed.mode);
     const [text, setText] = useState(seed.text);
     const inputRef = useRef(null);
+    const picker = useVariablePicker();
+    const pickerCtx = useVariablePickerContext();
+    const effectivePreviewSample = previewSample ?? pickerCtx.previewSample;
+    const pickerGroups = pickerCtx.groups;
 
     // Sync from outside (AI patch / undo / load). Intentional setState
     // from useEffect — we're syncing local UI state with the controlled
@@ -116,7 +123,19 @@ export default function BindingField({
     };
 
     const binding = bindingFromInput(text, mode);
-    const preview = resolveBindingPreview(binding, previewSample);
+    const preview = resolveBindingPreview(binding, effectivePreviewSample);
+
+    const insertFromPicker = (path) => {
+        const snippet = formatPathForInsert(path, mode);
+        if (!snippet) {
+            picker.closePicker();
+            return;
+        }
+        inputRef.current?.focus();
+        const result = insertAtCursor(inputRef.current, snippet);
+        if (result != null) emit(result, mode);
+        picker.closePicker();
+    };
 
     const inputClass = `w-full px-2 py-1.5 text-xs rounded border border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] ${mode === 'expression' ? 'font-mono' : ''}`;
 
@@ -168,6 +187,17 @@ export default function BindingField({
                 >
                     {mode === 'expression' ? <FunctionSquare size={12} /> : <Type size={12} />}
                 </button>
+                <button
+                    type="button"
+                    onClick={(e) => picker.openPicker(e.currentTarget)}
+                    title="Insert variable from upstream"
+                    aria-label="Insert variable"
+                    aria-haspopup="dialog"
+                    aria-expanded={picker.open}
+                    className="shrink-0 px-2 rounded border border-[var(--border-default)] text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] flex items-center justify-center"
+                >
+                    <Braces size={12} />
+                </button>
             </div>
             {hint && <div className="text-[10px] text-[var(--text-tertiary)]">{hint}</div>}
             {preview != null && (
@@ -176,6 +206,13 @@ export default function BindingField({
                     <span className="font-mono text-[var(--text-secondary)] truncate">{preview}</span>
                 </div>
             )}
+            <VariablePicker
+                {...picker.pickerProps}
+                groups={pickerGroups}
+                previewSample={effectivePreviewSample}
+                onPick={insertFromPicker}
+                title={label ? `Insert into ${label}` : 'Insert variable'}
+            />
         </div>
     );
 }

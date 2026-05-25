@@ -54,6 +54,7 @@ import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar, DEFAULT_AGENT_EMOJI }
 import scopedStorage from './utils/scopedStorage';
 import { normalizeLoadedMessages } from './utils/messageShape';
 import { X, PenLine, Heart, MoreVertical, Menu, EyeOff, Pencil } from 'lucide-react';
+import beeFlowIcon from './assets/BeeFlow-logo-Icon-2026.svg';
 
 const AgentHub = ({
     onNavigate, user, onUpdateUser, onLogout, currentPage,
@@ -2425,7 +2426,7 @@ const AgentHub = ({
                 ) : (
                     /* No Agent Selected - Empty State */
                     <div className="flex-1 flex flex-col items-center justify-center p-8">
-                        <img src="/BeeFlow-logo-Icon-2026.svg" alt="Bee Flow" className="w-24 h-24 rounded-2xl object-contain mb-6 shadow-xl" />
+                        <img src={beeFlowIcon} alt="Bee Flow" className="w-24 h-24 rounded-2xl object-contain mb-6 shadow-xl" />
                         <h1 className="text-2xl font-bold text-[var(--text-primary)] mb-2">
                             Welcome to Bee Flow
                         </h1>

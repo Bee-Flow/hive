@@ -1,23 +1,26 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Wrench, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import BuilderHeader from './BuilderHeader';
+import DiagramPane, { applyAddNode } from './DiagramPane';
+import DryRunPanel from './DryRunPanel';
+import FloatingValidationPill from './FloatingValidationPill';
+import AddNodeFab from './flow/AddNodeFab';
+import NodePalette from './flow/NodePalette';
+import useRoutineDraftHistory from './flow/useRoutineDraftHistory';
+import JsonTab from './JsonTab';
+import RunHistoryTab from './RunHistoryTab';
+import SettingsTab from './SettingsTab';
+import StepInspector from './StepInspector';
+import TriggerDiagnosePanel from './TriggerDiagnosePanel';
+import useBuilderHotkeys from './useBuilderHotkeys';
+import useAutomationApi from '../../../../hooks/useAutomationApi';
+import useAutomationBuilderStream from '../../../../hooks/useAutomationBuilderStream';
 import { API_BASE, authFetch } from '../../../../utils/helpers';
 import scopedStorage from '../../../../utils/scopedStorage';
 import InputArea from '../../../InputArea';
 import MarkdownRenderer from '../../../MarkdownRenderer';
+import { toast } from '../../../shared/Toast';
 import { tierLabel } from '../../../tierMeta';
-import DiagramPane, { applyAddNode } from './DiagramPane';
-import NodePalette from './flow/NodePalette';
-import AddNodeFab from './flow/AddNodeFab';
-import StepInspector from './StepInspector';
-import DryRunPanel from './DryRunPanel';
-import TriggerDiagnosePanel from './TriggerDiagnosePanel';
-import BuilderHeader from './BuilderHeader';
-import FloatingValidationPill from './FloatingValidationPill';
-import SettingsTab from './SettingsTab';
-import RunHistoryTab from './RunHistoryTab';
-import JsonTab from './JsonTab';
-import useAutomationApi from '../../../../hooks/useAutomationApi';
-import useAutomationBuilderStream from '../../../../hooks/useAutomationBuilderStream';
 
 /**
  * Split-view conversational builder.
@@ -327,29 +330,79 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
      * When no automation exists yet we lazy-create one (the user clicked
      * a node in the palette but never sent a chat message). After creation
      * subsequent edits flow through the normal PUT round-trip.
+     *
+     * `applyVisualDraft` is the shared apply path used by both onVisualEdit
+     * and the undo/redo history hook — every local-edit path goes through
+     * here so undos auto-persist to the server too. A save failure surfaces
+     * as a toast; the local draft stays so the user doesn't lose work.
      */
     const visualSaveTimer = useRef(null);
-    const onVisualEdit = useCallback((nextDef) => {
+    const performVisualSave = useCallback(async (nextDef) => {
+        try {
+            const aid = await ensureAutomationCreated(nextDef);
+            if (!aid) { setSavingState('error'); return; }
+            const r = await api.updateAutomation(aid, { definition: nextDef });
+            const persisted = r.automation || r;
+            setServerAutomation(persisted);
+            markServerConfirmed(persisted?.definition || nextDef);
+            setSavingState('saved');
+            if (savedTimer.current) clearTimeout(savedTimer.current);
+            savedTimer.current = setTimeout(() => setSavingState('idle'), 1500);
+        } catch (e) {
+            console.warn('[BuilderShell] visual save failed:', e.message);
+            setSavingState('error');
+            toast.error(`Save failed — your edits are still on the canvas. ${e.message || ''}`.trim());
+        }
+    }, [api, ensureAutomationCreated, markServerConfirmed]);
+
+    const applyVisualDraft = useCallback((nextDef) => {
         setDraft(nextDef);
         if (visualSaveTimer.current) clearTimeout(visualSaveTimer.current);
         setSavingState('saving');
-        visualSaveTimer.current = setTimeout(async () => {
-            try {
-                const aid = await ensureAutomationCreated(nextDef);
-                if (!aid) { setSavingState('error'); return; }
-                const r = await api.updateAutomation(aid, { definition: nextDef });
-                const persisted = r.automation || r;
-                setServerAutomation(persisted);
-                markServerConfirmed(persisted?.definition || nextDef);
-                setSavingState('saved');
-                if (savedTimer.current) clearTimeout(savedTimer.current);
-                savedTimer.current = setTimeout(() => setSavingState('idle'), 1500);
-            } catch (e) {
-                console.warn('[BuilderShell] visual save failed:', e.message);
-                setSavingState('error');
-            }
-        }, 500);
-    }, [api, setDraft, ensureAutomationCreated, markServerConfirmed]);
+        visualSaveTimer.current = setTimeout(() => performVisualSave(nextDef), 500);
+    }, [setDraft, performVisualSave]);
+
+    const draftHistory = useRoutineDraftHistory({
+        currentDraft: effectiveDef,
+        apply: applyVisualDraft,
+    });
+
+    const onVisualEdit = useCallback((nextDef) => {
+        draftHistory.commit(nextDef);
+    }, [draftHistory]);
+
+    /**
+     * Force-flush any pending debounced save. Lets Cmd+S behave the way
+     * users expect ("save it now") without waiting for the 500ms timer
+     * to elapse. No-op when nothing is dirty.
+     */
+    const forceSaveNow = useCallback(() => {
+        if (!visualSaveTimer.current) return;
+        clearTimeout(visualSaveTimer.current);
+        visualSaveTimer.current = null;
+        if (effectiveDef) performVisualSave(effectiveDef);
+    }, [effectiveDef, performVisualSave]);
+
+    /**
+     * Escape closes whichever modal/panel is on top, in priority order.
+     * Returning early on each branch keeps the precedence explicit and
+     * keeps Esc context-aware without a separate focus tracker.
+     */
+    const onEscape = useCallback(() => {
+        if (selectedStepId) {
+            setSelectedStepId(null);
+        }
+    }, [selectedStepId]);
+
+    useBuilderHotkeys({
+        enabled: true,
+        onUndo: draftHistory.undo,
+        onRedo: draftHistory.redo,
+        onSave: forceSaveNow,
+        onDryRun,
+        onEscape,
+    });
+
     useEffect(() => () => {
         if (visualSaveTimer.current) clearTimeout(visualSaveTimer.current);
     }, []);
@@ -421,6 +474,10 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
                 savingState={savingState}
                 tab={tab}
                 onTabChange={setTab}
+                onUndo={draftHistory.undo}
+                onRedo={draftHistory.redo}
+                canUndo={draftHistory.canUndo}
+                canRedo={draftHistory.canRedo}
             />
 
             {diagnoseOpen && (
@@ -463,6 +520,7 @@ export default function BuilderShell({ automationId, onBack, user, initialChatIn
                         pollRunProgress={pollRunProgress}
                         fatalError={error || state.error}
                         onDismissFatal={() => setError(null)}
+                        onDiagnose={onDiagnose}
                     />
                 )}
                 {tab === 'settings' && (
@@ -502,7 +560,9 @@ function BuildTab({
     onVisualEdit,
     onExecuteStep, onRetryFromStep, onStopRun, pollRunProgress,
     fatalError, onDismissFatal,
+    onDiagnose = null,
 }) {
+    const isAppEventTrigger = effectiveDef?.trigger?.kind === 'app_event';
     // Imperative handle to DiagramPane — we need getCenter() for the
     // click-to-add path (when the user clicks rather than drags an item).
     const diagramRef = useRef(null);
@@ -764,6 +824,7 @@ function BuildTab({
                         onExecuteStep={onExecuteStep}
                         executingStepId={state.executingStepId}
                         runInFlight={liveRunInFlight}
+                        onDiagnose={isAppEventTrigger ? onDiagnose : null}
                     />
                 </div>
                 {liveRunInFlight && (

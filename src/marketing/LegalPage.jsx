@@ -1,6 +1,7 @@
 import React, { useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import beeFlowLogo from '../assets/bee-flow-logo.svg';
 
 // Self-contained public legal page. Renders a markdown source string with a
 // minimal header/footer that doesn't depend on the CMS data shape — so these
@@ -31,7 +32,7 @@ export default function LegalPage({ title, source, lastUpdated }) {
             <header style={headerStyle}>
                 <a href="/" style={brandStyle}>
                     <img
-                        src="/bee-flow-logo.svg"
+                        src={beeFlowLogo}
                         alt="Bee Flow"
                         style={{ height: 28, width: 'auto' }}
                     />

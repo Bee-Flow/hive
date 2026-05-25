@@ -18,8 +18,12 @@
 
 import { onCLS, onINP, onLCP, onFCP, onTTFB } from 'web-vitals';
 import { APP_BUILD_SHA } from './appVersion';
+import { API_BASE } from './helpers';
 
-const ENDPOINT = '/api/web-vitals';
+// Must be absolute against API_BASE — when the SPA runs inside the
+// Nextcloud iframe, a bare `/api/...` resolves to NC's domain rather
+// than the connector's proxy path and the request 404s on NC.
+const ENDPOINT = `${API_BASE}/api/web-vitals`;
 
 function send(metric) {
     const body = JSON.stringify({

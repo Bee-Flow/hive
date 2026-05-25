@@ -1,4 +1,8 @@
+import { Braces } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
+import useVariablePicker from './useVariablePicker';
+import VariablePicker from './VariablePicker';
+import { useVariablePickerContext } from './VariablePickerContext';
 import { insertAtCursor, walkPath, previewValue } from '../../../../../utils/bindingHelpers';
 
 /**
@@ -34,6 +38,10 @@ export default function TemplateField({
 }) {
     const [text, setText] = useState(value || '');
     const inputRef = useRef(null);
+    const picker = useVariablePicker();
+    const pickerCtx = useVariablePickerContext();
+    const effectivePreviewSample = previewSample ?? pickerCtx.previewSample;
+    const pickerGroups = pickerCtx.groups;
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -75,13 +83,35 @@ export default function TemplateField({
         if (result != null) emit(result);
     };
 
-    const preview = renderPreview(text, previewSample);
+    const preview = renderPreview(text, effectivePreviewSample);
+
+    const insertFromPicker = (path) => {
+        const snippet = `{{${path}}}`;
+        inputRef.current?.focus();
+        const result = insertAtCursor(inputRef.current, snippet);
+        if (result != null) emit(result);
+        picker.closePicker();
+    };
 
     return (
         <div className="space-y-1">
-            {label && (
-                <div className="text-[11px] font-medium text-[var(--text-secondary)]">{label}</div>
-            )}
+            <div className="flex items-center justify-between gap-2">
+                {label
+                    ? <div className="text-[11px] font-medium text-[var(--text-secondary)]">{label}</div>
+                    : <span />}
+                <button
+                    type="button"
+                    onClick={(e) => picker.openPicker(e.currentTarget)}
+                    title="Insert variable from upstream"
+                    aria-label="Insert variable"
+                    aria-haspopup="dialog"
+                    aria-expanded={picker.open}
+                    className="shrink-0 inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-[var(--border-default)] text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]"
+                >
+                    <Braces size={11} />
+                    <span>Insert</span>
+                </button>
+            </div>
             <textarea
                 ref={inputRef}
                 rows={rows}
@@ -94,6 +124,14 @@ export default function TemplateField({
                 className="w-full px-2 py-1.5 text-xs rounded border border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
             />
             {hint && <div className="text-[10px] text-[var(--text-tertiary)]">{hint}</div>}
+            <VariablePicker
+                {...picker.pickerProps}
+                groups={pickerGroups}
+                previewSample={effectivePreviewSample}
+                onPick={insertFromPicker}
+                title={label ? `Insert into ${label}` : 'Insert variable'}
+            />
+
             {preview != null && (
                 <div className="text-[10px] text-[var(--text-tertiary)] space-y-0.5">
                     <div className="uppercase tracking-wide">preview</div>

@@ -1,11 +1,11 @@
-import React from 'react';
 import {
     Clock, Zap, Webhook, MousePointer2, Mail, Calendar,
     Tag, BellRing, FileUp, FilePlus, FilePen, Share2, Activity, Bell,
-    Ticket, RefreshCw,
+    Ticket, RefreshCw, Stethoscope,
 } from 'lucide-react';
-import StepNodeBase, { NodeChip } from './StepNodeBase';
+import React from 'react';
 import IntegrationLogo from './IntegrationLogo';
+import StepNodeBase, { NodeChip } from './StepNodeBase';
 
 /**
  * Trigger provider id → integration id used by INTEGRATION_META.
@@ -49,7 +49,7 @@ const APP_EVENT_META = {
 };
 
 export default function TriggerNode({ id, data }) {
-    const { step, runStep, issues, onAddAfter } = data;
+    const { step, runStep, issues, onAddAfter, onDiagnose } = data;
     const kind = step.kind || 'manual';
 
     let meta = KIND_META[kind] || KIND_META.manual;
@@ -88,6 +88,20 @@ export default function TriggerNode({ id, data }) {
                         </NodeChip>
                     ))}
                 </div>
+            )}
+            {kind === 'app_event' && typeof onDiagnose === 'function' && (
+                <button
+                    type="button"
+                    onClick={(e) => {
+                        e.stopPropagation();
+                        onDiagnose();
+                    }}
+                    title="Probe the trigger pipeline (subscription, credentials, filter match)"
+                    className="mt-2 inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-[var(--border-default)] text-[10px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] transition"
+                >
+                    <Stethoscope size={10} />
+                    Diagnose
+                </button>
             )}
         </div>
     );

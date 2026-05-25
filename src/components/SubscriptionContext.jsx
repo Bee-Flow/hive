@@ -13,7 +13,8 @@
  */
 
 import { createContext, useContext, useEffect, useState } from 'react';
-import { API_BASE, authFetch } from '../utils/helpers';
+import { API_BASE } from '../utils/helpers';
+import { cloudFetch } from '../utils/cloudFetch';
 
 const SubscriptionContext = createContext({
     sub: null,
@@ -34,13 +35,14 @@ export function SubscriptionProvider({ children, user }) {
         // through with no subscription state — the gate ignores them.
         if (!orgId) { setSub(null); setLoading(false); return; }
         setLoading(true);
-        authFetch(`${API_BASE}/api/subscriptions/orgs/${orgId}`)
-            .then(r => (r.ok ? r.json() : null))
+        const deploymentMode = user?.featureFlags?.deploymentMode || 'cloud';
+        cloudFetch(deploymentMode, `${API_BASE}/api/subscriptions/orgs/${orgId}`)
+            .then(r => (r?.ok ? r.json() : null))
             .then(data => { if (!cancelled) setSub(data || null); })
             .catch(() => { if (!cancelled) setSub(null); })
             .finally(() => { if (!cancelled) setLoading(false); });
         return () => { cancelled = true; };
-    }, [user?.organizationId, user?.orgId, version]);
+    }, [user?.organizationId, user?.orgId, user?.featureFlags?.deploymentMode, version]);
 
     const hasActiveSub = !!sub && ['active', 'trialing'].includes(sub.status);
     const value = { sub, loading, hasActiveSub, refresh: () => setVersion(v => v + 1) };

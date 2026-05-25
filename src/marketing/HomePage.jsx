@@ -3,6 +3,7 @@ import {
     Bot, FileText, FilePlus2, Sparkles, Plug, ShieldCheck,
     Search, Mic, PenLine, ArrowRight,
 } from 'lucide-react';
+import beeFlowLogo from '../assets/bee-flow-logo.svg';
 import { API_BASE } from '../utils/helpers';
 import ContactSection from './sections/ContactSection';
 
@@ -130,7 +131,7 @@ export default function HomePage() {
                 <div style={headerInnerStyle}>
                     <a href="/" style={brandStyle}>
                         <img
-                            src="/bee-flow-logo.svg"
+                            src={beeFlowLogo}
                             alt="Bee Flow"
                             style={{ height: 28, width: 'auto' }}
                         />

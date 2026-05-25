@@ -576,7 +576,7 @@ const UsageSection = () => {
         let cancelled = false;
         (async () => {
             try {
-                const permsRes = await authFetch(`${API_BASE}/api/auth/my-permissions`);
+                const permsRes = await authFetch(`${API_BASE}/auth/my-permissions`);
                 if (!permsRes.ok) return;
                 const perms = await permsRes.json();
                 const orgId = (perms?.organizations || [])[0];

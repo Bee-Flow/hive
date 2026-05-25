@@ -1,6 +1,7 @@
 import React, { useMemo, useRef, useEffect } from 'react';
 import { Check, Loader2, Lock } from 'lucide-react';
 import { classifySessionSkill, deriveCompletedSkillIds } from '../../skills/sessionSkillState';
+import beeFlowIcon from '../../../assets/BeeFlow-logo-Icon-2026.svg';
 
 /**
  * SessionSkillsTimeline — inline Flow progress card that sits above the
@@ -157,7 +158,7 @@ export default function SessionSkillsTimeline({
                 >
                     {isPending
                         ? <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
-                        : <img src="/BeeFlow-logo-Icon-2026.svg" alt="" className="w-4 h-4 object-contain" />}
+                        : <img src={beeFlowIcon} alt="" className="w-4 h-4 object-contain" />}
                 </span>
                 <div className="flex-1 min-w-0">
                     {bootstrap ? (

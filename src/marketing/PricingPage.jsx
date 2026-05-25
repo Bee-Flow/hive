@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { API_BASE } from '../utils/helpers';
 import ContactSection from './sections/ContactSection';
+import beeFlowLogo from '../assets/bee-flow-logo.svg';
 
 // Public /pricing page. Fetches plans flagged `is_public` from the
 // no-auth /api/billing/public-plans endpoint and renders a card grid
@@ -91,7 +92,7 @@ export default function PricingPage() {
             <header style={headerStyle}>
                 <a href="/" style={brandStyle}>
                     <img
-                        src="/bee-flow-logo.svg"
+                        src={beeFlowLogo}
                         alt="Bee Flow"
                         style={{ height: 28, width: 'auto' }}
                     />

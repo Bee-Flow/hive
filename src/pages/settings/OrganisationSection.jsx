@@ -6,6 +6,7 @@ import UsageSection from './UsageSection';
 import GitHubSyncPanel from '../../components/admin/GitHubSyncPanel';
 import NextcloudSyncPanel from '../../components/admin/NextcloudSyncPanel';
 import OrgNcIntegrationsPanel from '../../components/admin/OrgNcIntegrationsPanel';
+import OrgNcPairingPanel from '../../components/admin/OrgNcPairingPanel';
 import OrgFeatureTogglesPanel from '../../components/admin/OrgFeatureTogglesPanel';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
@@ -219,7 +220,10 @@ const OrganisationSection = ({ user, activeSection = 'license' }) => {
 
             {/* Nextcloud Sync */}
             {activeSection === 'nextcloud_sync' && isOrgAdmin && (
-                <NextcloudSyncPanel user={user} />
+                <>
+                    {isNcOrg && <OrgNcPairingPanel />}
+                    <NextcloudSyncPanel user={user} />
+                </>
             )}
         </div>
     );

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { API_BASE, authFetch } from '../../utils/helpers';
+import beeFlowIcon from '../../assets/BeeFlow-logo-Icon-2026.svg';
 
 // Convert a model ID into a human-readable display name
 const formatModelId = (id) => {
@@ -90,8 +91,8 @@ const MODEL_META = {
 
 const TIERS = [
     { key: 'fast', icon: '⚡', label: 'Fast', desc: 'Quick responses for simple questions' },
-    { key: 'standard', icon: '🐝', iconSrc: '/BeeFlow-logo-Icon-2026.svg', label: 'Flow (Direct)', desc: 'Direct chat tier with per-chat orchestrated stages' },
-    { key: 'swarm', icon: '🐝🐝', iconSrc: '/BeeFlow-logo-Icon-2026.svg', label: 'Swarm (Direct)', desc: 'Direct chat tier that runs a multi-agent swarm (Deep Research) and synthesises one answer' },
+    { key: 'standard', icon: '🐝', iconSrc: beeFlowIcon, label: 'Flow (Direct)', desc: 'Direct chat tier with per-chat orchestrated stages' },
+    { key: 'swarm', icon: '🐝🐝', iconSrc: beeFlowIcon, label: 'Swarm (Direct)', desc: 'Direct chat tier that runs a multi-agent swarm (Deep Research) and synthesises one answer' },
     { key: 'thinking', icon: '🧠', label: 'Thinking', desc: 'Complex reasoning and analysis' },
     { key: 'writer', icon: '✍️', label: 'Writer', desc: 'Long-form content and reports' },
     { key: 'pro', icon: '✨', label: 'Deep Thinking', desc: 'Maximum quality output' }

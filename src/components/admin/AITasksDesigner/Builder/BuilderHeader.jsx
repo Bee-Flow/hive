@@ -1,8 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react';
 import {
     ArrowLeft, Power, Eye, Stethoscope, ChevronDown,
     Mail, Clock, Webhook, MousePointer2, Sparkles, Check, Loader2, AlertTriangle,
+    Undo2, Redo2,
 } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
 
 /**
  * Studio-style detail-view header for the automation builder.
@@ -37,6 +38,10 @@ export default function BuilderHeader({
     savingState = 'idle', // idle | saving | saved | error
     tab,
     onTabChange,
+    onUndo = null,
+    onRedo = null,
+    canUndo = false,
+    canRedo = false,
 }) {
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState(title || '');
@@ -96,6 +101,30 @@ export default function BuilderHeader({
                 <span className={`text-[11px] uppercase tracking-wide font-medium px-2 py-1 rounded-full ${statusBadgeClass}`}>
                     {statusLabel}
                 </span>
+                {onUndo && (
+                    <div className="flex items-center gap-0.5">
+                        <button
+                            type="button"
+                            onClick={onUndo}
+                            disabled={!canUndo}
+                            title="Undo (⌘Z)"
+                            aria-label="Undo"
+                            className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)] transition disabled:opacity-40 disabled:hover:bg-transparent"
+                        >
+                            <Undo2 size={14} />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={onRedo}
+                            disabled={!canRedo}
+                            title="Redo (⌘⇧Z)"
+                            aria-label="Redo"
+                            className="p-1.5 rounded-lg text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] hover:text-[var(--text-primary)] transition disabled:opacity-40 disabled:hover:bg-transparent"
+                        >
+                            <Redo2 size={14} />
+                        </button>
+                    </div>
+                )}
                 <button
                     onClick={onDryRun}
                     disabled={busy}

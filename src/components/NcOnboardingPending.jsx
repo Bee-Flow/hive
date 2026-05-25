@@ -1,5 +1,6 @@
 import React from 'react';
 import { RefreshCw, Clock } from 'lucide-react';
+import beeFlowLogo from '../assets/bee-flow-logo.svg';
 
 /**
  * Shown to NC users (non-admin) who click the Bee Flow icon while their
@@ -15,7 +16,7 @@ const NcOnboardingPending = ({ orgName, onRefresh }) => {
             <div className="w-full max-w-md">
                 <div className="backdrop-blur-xl rounded-3xl p-8 shadow-2xl border text-center" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)' }}>
                     <div className="w-20 h-20 mx-auto mb-5 rounded-full overflow-hidden shadow-xl ring-4 ring-[var(--border-subtle)]">
-                        <img src="bee-flow-logo.svg" alt="Bee Flow" className="w-full h-full object-cover" />
+                        <img src={beeFlowLogo} alt="Bee Flow" className="w-full h-full object-cover" />
                     </div>
                     <div className="flex items-center justify-center gap-2 mb-2">
                         <Clock className="w-5 h-5 text-amber-500" />

@@ -1,7 +1,9 @@
-import React, { useEffect, useState, useCallback } from 'react';
-import { Webhook, Copy, RefreshCw, Trash2, Plus, Check, Terminal } from 'lucide-react';
+import { Webhook, Copy, RefreshCw, Trash2, Plus, Check, Terminal, Eye, EyeOff } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import useAutomationApi from '../../../../hooks/useAutomationApi';
 import { API_BASE } from '../../../../utils/helpers';
+
+const REVEAL_AUTO_MASK_MS = 30_000;
 
 /**
  * Manage signed inbound webhook URLs for one automation. Lists every
@@ -26,8 +28,34 @@ export default function WebhookPanel({ automation }) {
     const [loading, setLoading] = useState(false);
     const [creating, setCreating] = useState(false);
     const [revealedSecrets, setRevealedSecrets] = useState({}); // id → secret (in-memory only)
+    const [visibleSecretIds, setVisibleSecretIds] = useState({}); // id → boolean (currently shown vs masked)
     const [copied, setCopied] = useState(null); // id of the row that was just copied
     const [errorMsg, setErrorMsg] = useState(null);
+    // Auto-mask timers — one per webhook id whose secret is currently shown.
+    // We persist secrets in memory but mask them after a window so the
+    // panel doesn't shoulder-surf a value into a screenshare.
+    const maskTimersRef = useRef({});
+    const scheduleAutoMask = useCallback((id) => {
+        const existing = maskTimersRef.current[id];
+        if (existing) clearTimeout(existing);
+        maskTimersRef.current[id] = setTimeout(() => {
+            setVisibleSecretIds((prev) => ({ ...prev, [id]: false }));
+            delete maskTimersRef.current[id];
+        }, REVEAL_AUTO_MASK_MS);
+    }, []);
+    const cancelAutoMask = useCallback((id) => {
+        if (maskTimersRef.current[id]) {
+            clearTimeout(maskTimersRef.current[id]);
+            delete maskTimersRef.current[id];
+        }
+    }, []);
+    useEffect(() => () => {
+        // Sweep all pending mask timers on unmount.
+        for (const id of Object.keys(maskTimersRef.current)) {
+            clearTimeout(maskTimersRef.current[id]);
+        }
+        maskTimersRef.current = {};
+    }, []);
 
     const reload = useCallback(async () => {
         if (!automation?.id) return;
@@ -67,6 +95,8 @@ export default function WebhookPanel({ automation }) {
             const wh = r?.webhook;
             if (wh) {
                 setRevealedSecrets((prev) => ({ ...prev, [wh.id]: wh.secret }));
+                setVisibleSecretIds((prev) => ({ ...prev, [wh.id]: true }));
+                scheduleAutoMask(wh.id);
             }
             await reload();
         } catch (e) {
@@ -83,11 +113,20 @@ export default function WebhookPanel({ automation }) {
             const r = await api.rotateWebhook(automation.id, wh.id);
             if (r?.webhook?.secret) {
                 setRevealedSecrets((prev) => ({ ...prev, [wh.id]: r.webhook.secret }));
+                setVisibleSecretIds((prev) => ({ ...prev, [wh.id]: true }));
+                scheduleAutoMask(wh.id);
             }
             await reload();
         } catch (e) {
             setErrorMsg(e.message);
         }
+    };
+
+    const toggleReveal = (id) => {
+        const next = !visibleSecretIds[id];
+        setVisibleSecretIds((prev) => ({ ...prev, [id]: next }));
+        if (next) scheduleAutoMask(id);
+        else cancelAutoMask(id);
     };
 
     const onDelete = async (wh) => {
@@ -222,13 +261,28 @@ export default function WebhookPanel({ automation }) {
                                 </div>
                                 {secret && (
                                     <div className="mt-2 text-[11px] text-[var(--text-secondary)]">
-                                        <div className="text-[var(--text-tertiary)] mb-1">
-                                            Secret (shown once — copy now):
+                                        <div className="text-[var(--text-tertiary)] mb-1 flex items-center justify-between gap-2">
+                                            <span>
+                                                Secret — only visible here until you navigate away.
+                                            </span>
+                                            {visibleSecretIds[wh.id] && (
+                                                <span className="text-[10px] text-[var(--text-tertiary)]">
+                                                    Auto-masks in 30s
+                                                </span>
+                                            )}
                                         </div>
                                         <div className="flex items-center gap-2">
                                             <code className="flex-1 truncate text-[11px] text-[var(--text-primary)] bg-[var(--bg-secondary)] px-2 py-1 rounded font-mono">
-                                                {secret}
+                                                {visibleSecretIds[wh.id] ? secret : maskSecret(secret)}
                                             </code>
+                                            <button
+                                                onClick={() => toggleReveal(wh.id)}
+                                                title={visibleSecretIds[wh.id] ? 'Hide secret' : 'Reveal secret'}
+                                                aria-label={visibleSecretIds[wh.id] ? 'Hide secret' : 'Reveal secret'}
+                                                className="p-1 rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-tertiary)]"
+                                            >
+                                                {visibleSecretIds[wh.id] ? <EyeOff size={14} /> : <Eye size={14} />}
+                                            </button>
                                             <button
                                                 onClick={() => onCopySecret(wh.id, secret)}
                                                 title="Copy secret"
@@ -251,4 +305,16 @@ export default function WebhookPanel({ automation }) {
             )}
         </div>
     );
+}
+
+/**
+ * Render a placeholder string the same width as the actual secret so
+ * the masked state doesn't reflow the row. We expose just enough of the
+ * tail (last 4 chars) to let users sanity-check they're looking at the
+ * right secret without revealing it fully.
+ */
+function maskSecret(secret) {
+    const s = String(secret || '');
+    if (s.length <= 8) return '••••••••';
+    return `${'•'.repeat(Math.max(0, s.length - 4))}${s.slice(-4)}`;
 }

@@ -23,7 +23,7 @@ import { buildStepLabelMap } from './displayHelpers';
  *   dims       — { width, height } per-node estimate; passed in by the
  *                renderer so dagre's box sizing matches the rendered card.
  */
-export function buildLayout(def, { runByStep, issuesByStep, onAddAfter = null, dims = { width: 240, height: 96 } }) {
+export function buildLayout(def, { runByStep, issuesByStep, onAddAfter = null, onDiagnose = null, dims = { width: 240, height: 96 } }) {
     if (!def || !def.trigger) {
         return { nodes: [], edges: [] };
     }
@@ -49,7 +49,7 @@ export function buildLayout(def, { runByStep, issuesByStep, onAddAfter = null, d
             id: s.id,
             type,
             position: { x: pos.x, y: pos.y },
-            data: { step: s, runStep, issues, isTrigger, onAddAfter, stepLabelById },
+            data: { step: s, runStep, issues, isTrigger, onAddAfter, onDiagnose: isTrigger ? onDiagnose : null, stepLabelById },
         };
     });
 
@@ -83,7 +83,49 @@ function isFinitePos(p) {
         && Number.isFinite(p.x) && Number.isFinite(p.y);
 }
 
+/**
+ * Module-level LRU for dagre layout results. The cost of laying out a
+ * 30-step graph isn't huge but it adds up: every keystroke in an
+ * inspector field rebuilds the draft → `seedPositions` runs → dagre
+ * fires. Topology rarely changes between keystrokes, so caching against
+ * a structural key (node IDs + edge endpoints + dims) is almost
+ * always a hit during text editing. Capacity is intentionally small —
+ * we only need to remember a handful of recent shapes.
+ */
+const LAYOUT_CACHE_CAP = 8;
+const layoutCache = new Map(); // key -> positionById Map
+
+function layoutCacheKey(allSteps, edges, dims) {
+    // Stable: sort to ignore array order changes that don't affect shape.
+    const nodeIds = allSteps.map(s => s.id).sort().join(',');
+    const edgeKey = edges
+        .filter(e => e.from && e.to)
+        .map(e => `${e.from}>${e.to}`)
+        .sort()
+        .join('|');
+    return `${dims.width}x${dims.height}#${nodeIds}#${edgeKey}`;
+}
+
+function rememberLayout(key, positionById) {
+    if (layoutCache.has(key)) layoutCache.delete(key);
+    layoutCache.set(key, positionById);
+    if (layoutCache.size > LAYOUT_CACHE_CAP) {
+        // Drop the oldest entry — Maps preserve insertion order.
+        const oldest = layoutCache.keys().next().value;
+        if (oldest !== undefined) layoutCache.delete(oldest);
+    }
+}
+
 function runDagre(allSteps, edges, dims) {
+    const key = layoutCacheKey(allSteps, edges, dims);
+    const cached = layoutCache.get(key);
+    if (cached) {
+        // LRU touch: re-insert so the hit promotes to most-recent.
+        layoutCache.delete(key);
+        layoutCache.set(key, cached);
+        return cached;
+    }
+
     const g = new dagre.graphlib.Graph();
     g.setGraph({ rankdir: 'LR', nodesep: 32, ranksep: 64, marginx: 16, marginy: 16 });
     g.setDefaultEdgeLabel(() => ({}));
@@ -98,6 +140,7 @@ function runDagre(allSteps, edges, dims) {
         const n = g.node(s.id) || { x: 0, y: 0 };
         out.set(s.id, { x: n.x - dims.width / 2, y: n.y - dims.height / 2 });
     }
+    rememberLayout(key, out);
     return out;
 }
 

@@ -4,6 +4,7 @@ import { AlertCircle, Globe } from 'lucide-react';
 import { API_BASE, authFetch, setSessionToken } from '../utils/helpers';
 import { opaqueLogin } from '../lib/opaque';
 import InitSetupWizard from '../components/InitSetupWizard';
+import beeFlowLogo from '../assets/bee-flow-logo.svg';
 
 // Detect if we're running inside an iframe (embedded in Nextcloud, etc.)
 const isEmbedded = (() => {
@@ -564,7 +565,7 @@ const LoginPage = ({ onLogin }) => {
                         <div className="w-36 h-36 mx-auto mb-5 rounded-full overflow-hidden shadow-xl ring-4 ring-[var(--border-subtle)] flex items-center justify-center bg-[var(--bg-primary)]">
                             {deploymentMode === 'self-hosted' && orgLogo
                                 ? <img src={orgLogo} alt="Organization" className="max-w-[80%] max-h-[80%] object-contain" />
-                                : <img src="/bee-flow-logo.svg" alt="Bee Flow" className="w-full h-full object-cover" />}
+                                : <img src={beeFlowLogo} alt="Bee Flow" className="w-full h-full object-cover" />}
                         </div>
                         {signupMode && (
                             <h1 className="text-2xl font-bold text-[var(--text-primary)]">

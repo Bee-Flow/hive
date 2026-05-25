@@ -16,6 +16,8 @@ import HomePage from './marketing/HomePage';
 import PricingPage from './marketing/PricingPage';
 import privacyMd from './marketing/legal/privacy.md?raw';
 import termsMd from './marketing/legal/terms.md?raw';
+import beeFlowIcon from './assets/BeeFlow-logo-Icon-2026.svg';
+import beeFlowLogo from './assets/bee-flow-logo.svg';
 
 // Heavy admin / studio routes are loaded on demand so the initial chat
 // bundle stays lean. Each render site is wrapped in <Suspense> + a per-
@@ -882,7 +884,7 @@ function App() {
             <div className="h-screen flex items-center justify-center" style={{ background: 'var(--bg-primary)' }}>
                 <div className="flex flex-col items-center gap-4">
                     <img
-                        src={useOrgBrand ? orgLogo : '/BeeFlow-logo-Icon-2026.svg'}
+                        src={useOrgBrand ? orgLogo : beeFlowIcon}
                         alt={useOrgBrand ? 'Organization' : 'Bee Flow'}
                         className={`w-16 h-16 rounded-2xl animate-pulse ${useOrgBrand ? 'object-contain' : 'object-contain'}`}
                     />
@@ -921,7 +923,7 @@ function App() {
                         background: 'linear-gradient(90deg, transparent, var(--border-default), transparent)',
                     }} />
                     <img
-                        src={useOrgBrand ? orgLogo : '/BeeFlow-logo-Icon-2026.svg'}
+                        src={useOrgBrand ? orgLogo : beeFlowIcon}
                         alt={useOrgBrand ? 'Organization' : 'Bee Flow'}
                         style={{
                             width: 64, height: 64, borderRadius: 18, margin: '0 auto 20px',
@@ -1068,7 +1070,7 @@ function App() {
                     <div className="backdrop-blur-xl rounded-3xl p-8 shadow-2xl border relative overflow-hidden text-center" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)' }}>
                         <div className="absolute top-0 left-8 right-8 h-px bg-gradient-to-r from-transparent via-[var(--border-default)] to-transparent" />
                         <div className="w-20 h-20 mx-auto mb-5 rounded-full overflow-hidden shadow-xl ring-4 ring-[var(--border-subtle)]">
-                            <img src="/bee-flow-logo.svg" alt="Bee Flow" className="w-full h-full object-cover" />
+                            <img src={beeFlowLogo} alt="Bee Flow" className="w-full h-full object-cover" />
                         </div>
                         <div className="w-14 h-14 mx-auto mb-4 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(245, 158, 11, 0.1)' }}>
                             <svg className="w-7 h-7" fill="none" stroke="#f59e0b" viewBox="0 0 24 24" strokeWidth={1.5}>
@@ -1109,7 +1111,7 @@ function App() {
                     <div className="backdrop-blur-xl rounded-3xl p-8 shadow-2xl border relative overflow-hidden text-center" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)' }}>
                         <div className="absolute top-0 left-8 right-8 h-px bg-gradient-to-r from-transparent via-[var(--border-default)] to-transparent" />
                         <div className="w-20 h-20 mx-auto mb-5 rounded-full overflow-hidden shadow-xl ring-4 ring-[var(--border-subtle)]">
-                            <img src="/bee-flow-logo.svg" alt="Bee Flow" className="w-full h-full object-cover" />
+                            <img src={beeFlowLogo} alt="Bee Flow" className="w-full h-full object-cover" />
                         </div>
                         <div className="w-14 h-14 mx-auto mb-4 rounded-2xl flex items-center justify-center" style={{ background: 'rgba(59, 130, 246, 0.1)' }}>
                             <svg className="w-7 h-7" fill="none" stroke="#3b82f6" viewBox="0 0 24 24" strokeWidth={1.5}>

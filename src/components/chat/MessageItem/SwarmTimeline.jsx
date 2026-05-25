@@ -1,5 +1,6 @@
 import React, { useMemo, useState } from 'react';
 import { Check, Loader2, AlertCircle, Lock, ChevronDown, ChevronRight, Wrench } from 'lucide-react';
+import beeFlowIcon from '../../../assets/BeeFlow-logo-Icon-2026.svg';
 
 /**
  * SwarmTimeline — inline progress card shown above the assistant message body
@@ -159,7 +160,7 @@ export default function SwarmTimeline({ swarm }) {
                 >
                     {isPending
                         ? <Loader2 className="w-3.5 h-3.5 animate-spin text-emerald-600" />
-                        : <img src="/BeeFlow-logo-Icon-2026.svg" alt="" className="w-4 h-4 object-contain" />}
+                        : <img src={beeFlowIcon} alt="" className="w-4 h-4 object-contain" />}
                 </span>
                 <div className="flex-1 min-w-0">
                     <div className="text-[12.5px] font-semibold leading-tight" style={{ color: 'var(--text-primary)' }}>

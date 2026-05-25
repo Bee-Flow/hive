@@ -1,33 +1,33 @@
-import React, { forwardRef, useMemo, useCallback, useRef, useState, useEffect, useImperativeHandle } from 'react';
 import {
     ReactFlow, ReactFlowProvider, Background, Controls, MiniMap,
     useReactFlow, MarkerType, applyNodeChanges,
 } from '@xyflow/react';
+import React, { forwardRef, useMemo, useCallback, useRef, useState, useEffect, useImperativeHandle } from 'react';
 import '@xyflow/react/dist/style.css';
 import { Plus } from 'lucide-react';
 
-import { buildLayout, seedPositions } from './flow/layout';
 import { edgeTypes } from './flow/edges';
+import { buildLayout, seedPositions } from './flow/layout';
 import { buildIssuesByStep } from './flow/matchValidationToStep';
 import { NodeRuntimeContext } from './flow/NodeRuntimeContext';
 
-import TriggerNode from './flow/nodes/TriggerNode';
-import IntegrationActionNode from './flow/nodes/IntegrationActionNode';
+import AggregateNode from './flow/nodes/AggregateNode';
 import AiStepNode from './flow/nodes/AiStepNode';
-import ConditionNode from './flow/nodes/ConditionNode';
-import LoopNode from './flow/nodes/LoopNode';
 import CodeNode from './flow/nodes/CodeNode';
+import ConditionNode from './flow/nodes/ConditionNode';
+import DateTimeNode from './flow/nodes/DateTimeNode';
+import DedupeNode from './flow/nodes/DedupeNode';
+import FilterNode from './flow/nodes/FilterNode';
+import IntegrationActionNode from './flow/nodes/IntegrationActionNode';
+import LimitNode from './flow/nodes/LimitNode';
+import LoopNode from './flow/nodes/LoopNode';
 import NotificationNode from './flow/nodes/NotificationNode';
 import SetNode from './flow/nodes/SetNode';
-import DateTimeNode from './flow/nodes/DateTimeNode';
-import WaitNode from './flow/nodes/WaitNode';
 import StopErrorNode from './flow/nodes/StopErrorNode';
-import SwitchNode from './flow/nodes/SwitchNode';
-import FilterNode from './flow/nodes/FilterNode';
-import LimitNode from './flow/nodes/LimitNode';
-import DedupeNode from './flow/nodes/DedupeNode';
-import AggregateNode from './flow/nodes/AggregateNode';
 import SummarizeNode from './flow/nodes/SummarizeNode';
+import SwitchNode from './flow/nodes/SwitchNode';
+import TriggerNode from './flow/nodes/TriggerNode';
+import WaitNode from './flow/nodes/WaitNode';
 
 const NODE_TYPES = {
     trigger:            TriggerNode,
@@ -130,6 +130,7 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
     validation, readOnly, editable, structuralEditsBlocked,
     onRequestAddNode, onRequestOpenPalette, onRequestAddAfter,
     onExecuteStep, executingStepId, runInFlight,
+    onDiagnose = null,
 }, ref) {
     const rf = useReactFlow();
     const wrapperRef = useRef(null);
@@ -185,8 +186,8 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
     const onAddAfterForLayout = (editable && !structuralEditsBlocked) ? onRequestAddAfter : null;
 
     const { nodes: computedNodes, edges } = useMemo(
-        () => buildLayout(definition, { runByStep, issuesByStep, onAddAfter: onAddAfterForLayout }),
-        [definition, runByStep, issuesByStep, onAddAfterForLayout],
+        () => buildLayout(definition, { runByStep, issuesByStep, onAddAfter: onAddAfterForLayout, onDiagnose }),
+        [definition, runByStep, issuesByStep, onAddAfterForLayout, onDiagnose],
     );
 
     // ── Live drag mirror ────────────────────────────────────────────────

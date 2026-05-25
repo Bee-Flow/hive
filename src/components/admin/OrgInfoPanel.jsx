@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Building2, Save, Upload, Palette, FileText, Check, Lock, KeyRound, AlertTriangle, CreditCard, BarChart3, Zap, MessageSquare, DollarSign, Users, Bot, Database, Shield, Info, Globe, X, Plus, ExternalLink, Loader2, ArrowRight, Sparkles } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
+import { cloudFetch } from '../../utils/cloudFetch';
 import { useTranslation } from '../../hooks/useTranslation';
 import GuardrailsPanel from './GuardrailsPanel';
 import LicenseKeyActivation from './LicenseKeyActivation';
@@ -449,12 +450,13 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
         if (!orgId) return;
         setSubLoading(true);
         try {
-            const res = await authFetch(`${API_BASE}/api/subscriptions/orgs/${orgId}`);
-            if (res.ok) {
+            const res = await cloudFetch(deploymentMode, `${API_BASE}/api/subscriptions/orgs/${orgId}`);
+            if (res?.ok) {
                 const data = await res.json();
                 setSubscription(data);
             } else {
-                // 403 = user not in org or no subscription assigned — expected, handle silently
+                // 403 = user not in org or no subscription assigned — expected, handle silently.
+                // skipped = self-hosted (no /api/subscriptions mount).
                 setSubscription(null);
             }
         } catch (err) {
@@ -464,7 +466,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
         } finally {
             setSubLoading(false);
         }
-    }, []);
+    }, [deploymentMode]);
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -472,21 +474,21 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
     const fetchStripePlans = useCallback(async () => {
         try {
             const [statusRes, plansRes] = await Promise.all([
-                authFetch(`${API_BASE}/api/stripe/status`),
-                authFetch(`${API_BASE}/api/stripe/plans`),
+                cloudFetch(deploymentMode, `${API_BASE}/api/stripe/status`),
+                cloudFetch(deploymentMode, `${API_BASE}/api/stripe/plans`),
             ]);
-            if (statusRes.ok) {
+            if (statusRes?.ok) {
                 const statusData = await statusRes.json();
                 setStripeEnabled(statusData.enabled);
             }
-            if (plansRes.ok) {
+            if (plansRes?.ok) {
                 const plansData = await plansRes.json();
                 setAvailablePlans(plansData);
             }
         } catch (err) {
             console.warn('[OrgInfoPanel] Failed to fetch Stripe plans:', err);
         }
-    }, []);
+    }, [deploymentMode]);
 
     useEffect(() => {
         if (orgData?.id) {
@@ -518,8 +520,8 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
             while (!cancelled && Date.now() < deadline) {
                 await new Promise(r => setTimeout(r, 1500));
                 try {
-                    const res = await authFetch(`${API_BASE}/api/subscriptions/orgs/${orgData.id}`);
-                    if (res.ok) {
+                    const res = await cloudFetch(deploymentMode, `${API_BASE}/api/subscriptions/orgs/${orgData.id}`);
+                    if (res?.ok) {
                         const fresh = await res.json();
                         if (fresh && (fresh.status === 'active' || fresh.status === 'trialing')) {
                             if (cancelled) return;
@@ -547,12 +549,12 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
     const handleCheckout = async (planId) => {
         setCheckoutLoading(planId);
         try {
-            const res = await authFetch(`${API_BASE}/api/stripe/checkout`, {
+            const res = await cloudFetch(deploymentMode, `${API_BASE}/api/stripe/checkout`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ planId, origin: window.location.origin }),
             });
-            const data = await res.json();
+            const data = res?.skipped ? {} : await res.json();
             if (res.ok && data.url) {
                 window.location.href = data.url;
             } else {
@@ -569,7 +571,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
         if (!orgData?.id) return;
         setCheckoutLoading(planId);
         try {
-            const res = await authFetch(`${API_BASE}/api/subscriptions/orgs/${orgData.id}/upgrade`, {
+            const res = await cloudFetch(deploymentMode, `${API_BASE}/api/subscriptions/orgs/${orgData.id}/upgrade`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ planId }),
@@ -601,7 +603,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
         if (!window.confirm('Cancel subscription at the end of the current period? You keep access until then.')) return;
         setCancelBusy(true);
         try {
-            const res = await authFetch(`${API_BASE}/api/subscriptions/orgs/${orgData.id}/cancel`, { method: 'POST' });
+            const res = await cloudFetch(deploymentMode, `${API_BASE}/api/subscriptions/orgs/${orgData.id}/cancel`, { method: 'POST' });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.message || data.error || 'Cancel failed');
             setSubscription(data);
@@ -617,7 +619,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
         if (!orgData?.id) return;
         setCancelBusy(true);
         try {
-            const res = await authFetch(`${API_BASE}/api/subscriptions/orgs/${orgData.id}/reactivate`, { method: 'POST' });
+            const res = await cloudFetch(deploymentMode, `${API_BASE}/api/subscriptions/orgs/${orgData.id}/reactivate`, { method: 'POST' });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.message || data.error || 'Reactivate failed');
             setSubscription(data);
@@ -632,12 +634,12 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
     const handleManageBilling = async () => {
         setPortalLoading(true);
         try {
-            const res = await authFetch(`${API_BASE}/api/stripe/portal`, {
+            const res = await cloudFetch(deploymentMode, `${API_BASE}/api/stripe/portal`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ origin: window.location.origin }),
             });
-            const data = await res.json();
+            const data = res?.skipped ? {} : await res.json();
             if (res.ok && data.url) {
                 window.location.href = data.url;
             } else {
