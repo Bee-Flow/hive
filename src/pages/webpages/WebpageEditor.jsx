@@ -1,4 +1,5 @@
-import React, { Suspense, lazy, useRef, useState } from 'react';
+import React, { Suspense, useRef, useState } from 'react';
+import { lazy } from '../../utils/lazyWithReload';
 
 const MonacoEditor = lazy(() =>
     import('@monaco-editor/react')

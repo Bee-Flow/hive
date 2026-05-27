@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import {
     ArrowLeft, Plus, Trash2, Loader2, AlertCircle, Search,
-    X, Pencil, Globe, FileCode2, Check,
+    X, Pencil, Globe, FileCode2, Check, Copy,
 } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 import useChatEngine from '../hooks/useChatEngine';
@@ -715,6 +715,23 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
         }
     };
 
+    const handleClone = async (id) => {
+        const source = webpages.find(w => w.id === id);
+        // Localized prefix client-side so the new name matches the user's
+        // language without the server having to know the locale. Falls back
+        // to the server's "Copy of …" default when source isn't found.
+        const newName = source ? `Kopie van ${source.name}` : undefined;
+        try {
+            const { webpage } = await api(`/${id}/clone`, {
+                method: 'POST',
+                body: JSON.stringify({ name: newName }),
+            });
+            setWebpages(prev => [webpage, ...prev]);
+        } catch (err) {
+            setError(err.message);
+        }
+    };
+
     const handleDelete = async (id) => {
         if (!confirm('Delete this webpage? This cannot be undone.')) return;
         try {
@@ -939,6 +956,10 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
                                             <button onClick={(e) => { e.stopPropagation(); loadWebpage(w.id, { edit: true }); }}
                                                     className="p-1 rounded-md bg-white/80 hover:bg-white shadow-sm" title="Edit in IDE">
                                                 <Pencil className="w-3 h-3" style={{ color: 'var(--text-secondary)' }} />
+                                            </button>
+                                            <button onClick={(e) => { e.stopPropagation(); handleClone(w.id); }}
+                                                    className="p-1 rounded-md bg-white/80 hover:bg-white shadow-sm" title="Dupliceren">
+                                                <Copy className="w-3 h-3" style={{ color: 'var(--text-secondary)' }} />
                                             </button>
                                             <button onClick={(e) => { e.stopPropagation(); handleDelete(w.id); }}
                                                     className="p-1 rounded-md bg-white/80 hover:bg-white shadow-sm" title="Delete">

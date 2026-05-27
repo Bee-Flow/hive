@@ -221,7 +221,7 @@ const OrganisationSection = ({ user, activeSection = 'license' }) => {
             {/* Nextcloud Sync */}
             {activeSection === 'nextcloud_sync' && isOrgAdmin && (
                 <>
-                    {isNcOrg && <OrgNcPairingPanel />}
+                    {(isNcOrg || isFullAdmin) && <OrgNcPairingPanel />}
                     <NextcloudSyncPanel user={user} />
                 </>
             )}

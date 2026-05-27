@@ -77,27 +77,16 @@ function inlineDataUrl(html, targetPath, dataUrl) {
 }
 
 /**
- * Build the `window.beeflowAI`, `window.beeflowAutomations`, and
- * `window.beeflowIntegrations` shims — the runtime API a webpage's
- * script.js calls to use platform capabilities. Each goes through an
- * HMAC-bearer-token-authenticated proxy that runs acts-as-author.
- * Emitted only when (token, base, id) are present — same gating as the
- * DB shim. See server/routes/webpagesPreview.js for the route surface
- * and server/core/webpageBridgeAuth.js for the author-context resolver.
+ * Build the shared auth helper used by both the DB shim and the bridges
+ * shim. Owns the bearer token, the 401-triggered refresh via parent
+ * postMessage, and exposes `window.__beeflowAuth.fetchWithAuth(url, init)`
+ * which automatically retries once with a fresh token. Emitted once,
+ * before either shim, so a single rotation propagates to all callers.
  */
-function buildBeeflowBridgesScript({ dbToken, dbApiBase, dbWebpageId }) {
-    if (!dbToken || !dbApiBase || !dbWebpageId) return '';
-    const safeBase = String(dbApiBase || '').replace(/\/+$/, '');
-    const safeId = encodeURIComponent(dbWebpageId);
+function buildBeeflowAuthScript({ dbToken }) {
     const tokenLiteral = JSON.stringify(dbToken);
-    const baseLiteral = JSON.stringify(safeBase);
-    const idLiteral = JSON.stringify(safeId);
     return `<script>(function(){
   var TOKEN = ${tokenLiteral};
-  var BASE  = ${baseLiteral} + "/api/webpages-preview/" + ${idLiteral};
-  function headers() {
-    return { "Content-Type": "application/json", "Authorization": "Bearer " + TOKEN };
-  }
   // When the server rejects our token (signing secret rotated, expiry, etc.)
   // ask the parent for a fresh one via postMessage. The parent's session can
   // mint a new token; we swap it in and retry the original request once.
@@ -126,26 +115,50 @@ function buildBeeflowBridgesScript({ dbToken, dbApiBase, dbWebpageId }) {
     });
     return _refreshPending;
   }
+  function stampAuth(init) {
+    var next = Object.assign({}, init || {});
+    next.headers = Object.assign({}, (init && init.headers) || {});
+    next.headers.Authorization = "Bearer " + TOKEN;
+    return next;
+  }
   async function fetchWithAuth(url, init, retried) {
-    var res = await fetch(url, init);
+    var res = await fetch(url, stampAuth(init));
     if (res.status === 401 && !retried) {
       try { await refreshToken(); } catch (_) { return res; }
-      // Re-build the request with the fresh TOKEN before the retry.
-      var nextInit = Object.assign({}, init);
-      if (init && init.headers) {
-        nextInit.headers = Object.assign({}, init.headers);
-        if (nextInit.headers.Authorization || nextInit.headers.authorization) {
-          nextInit.headers.Authorization = "Bearer " + TOKEN;
-        }
-      }
-      return fetchWithAuth(url, nextInit, true);
+      return fetchWithAuth(url, init, true);
     }
     return res;
   }
+  window.__beeflowAuth = {
+    fetchWithAuth: fetchWithAuth,
+    getToken: function(){ return TOKEN; }
+  };
+})();<\/script>`;
+}
+
+/**
+ * Build the `window.beeflowAI`, `window.beeflowAutomations`, and
+ * `window.beeflowIntegrations` shims — the runtime API a webpage's
+ * script.js calls to use platform capabilities. Each goes through an
+ * HMAC-bearer-token-authenticated proxy that runs acts-as-author.
+ * Emitted only when (token, base, id) are present — same gating as the
+ * DB shim. See server/routes/webpagesPreview.js for the route surface
+ * and server/core/webpageBridgeAuth.js for the author-context resolver.
+ */
+function buildBeeflowBridgesScript({ dbToken, dbApiBase, dbWebpageId }) {
+    if (!dbToken || !dbApiBase || !dbWebpageId) return '';
+    const safeBase = String(dbApiBase || '').replace(/\/+$/, '');
+    const safeId = encodeURIComponent(dbWebpageId);
+    const baseLiteral = JSON.stringify(safeBase);
+    const idLiteral = JSON.stringify(safeId);
+    return `<script>(function(){
+  var BASE = ${baseLiteral} + "/api/webpages-preview/" + ${idLiteral};
+  var fetchWithAuth = window.__beeflowAuth.fetchWithAuth;
+  function jsonHeaders() { return { "Content-Type": "application/json" }; }
   async function postJson(path, body) {
     var res = await fetchWithAuth(BASE + path, {
       method: "POST",
-      headers: headers(),
+      headers: jsonHeaders(),
       body: body ? JSON.stringify(body) : undefined
     });
     var json = null;
@@ -158,7 +171,7 @@ function buildBeeflowBridgesScript({ dbToken, dbApiBase, dbWebpageId }) {
     return json;
   }
   async function getJson(path) {
-    var res = await fetchWithAuth(BASE + path, { headers: { "Authorization": "Bearer " + TOKEN } });
+    var res = await fetchWithAuth(BASE + path, {});
     var json = null;
     try { json = await res.json(); } catch(_) {}
     if (!res.ok) {
@@ -171,7 +184,7 @@ function buildBeeflowBridgesScript({ dbToken, dbApiBase, dbWebpageId }) {
   // Parse a fetch ReadableStream of SSE chunks (event: <name>\\ndata: <json>\\n\\n)
   // and dispatch them to a callback. Used by beeflowAI.stream.
   async function streamSSE(path, body, onEvent) {
-    var res = await fetchWithAuth(BASE + path, { method: "POST", headers: headers(), body: JSON.stringify(body || {}) });
+    var res = await fetchWithAuth(BASE + path, { method: "POST", headers: jsonHeaders(), body: JSON.stringify(body || {}) });
     if (!res.ok) {
       var errJson = null;
       try { errJson = await res.json(); } catch(_) {}
@@ -291,23 +304,17 @@ function buildBeeflowBridgesScript({ dbToken, dbApiBase, dbWebpageId }) {
  * are present — otherwise the page renders without DB support and any
  * `beeflowDB.*` call surfaces as a clear ReferenceError.
  */
-function buildBeeflowDbScript({ dbToken, dbApiBase, dbWebpageId }) {
+function buildBeeflowDbScript({ dbApiBase, dbWebpageId }) {
     const safeBase = String(dbApiBase || '').replace(/\/+$/, '');
     const safeId = encodeURIComponent(dbWebpageId);
-    // JSON-stringify the token so it survives any quote characters and lands
-    // in the iframe as a plain string literal.
-    const tokenLiteral = JSON.stringify(dbToken);
     const baseLiteral = JSON.stringify(safeBase);
     return `<script>(function(){
-  var TOKEN = ${tokenLiteral};
-  var BASE  = ${baseLiteral} + "/api/webpages-preview/${safeId}/db";
+  var BASE = ${baseLiteral} + "/api/webpages-preview/${safeId}/db";
+  var fetchWithAuth = window.__beeflowAuth.fetchWithAuth;
   async function call(path, body, method){
-    var res = await fetch(BASE + path, {
+    var res = await fetchWithAuth(BASE + path, {
       method: method || "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": "Bearer " + TOKEN
-      },
+      headers: { "Content-Type": "application/json" },
       body: body ? JSON.stringify(body) : undefined
     });
     var json = null;
@@ -339,8 +346,13 @@ export function composeWebpageDocument({ html, css, js }, options = {}) {
     // The user's JS body is additionally defanged in case it embeds a literal
     // `</script` sequence (regex, KaTeX delimiters, marked source, etc.).
     const scriptTag = js ? `<script>\n${defangScriptClose(js)}\n<\/script>` : '';
+    // Auth helper must be first so both shims can reach window.__beeflowAuth.
+    // Gated identically to the shims it serves.
+    const beeflowAuthScript = (dbToken && dbApiBase && dbWebpageId)
+        ? buildBeeflowAuthScript({ dbToken })
+        : '';
     const beeflowDbScript = (dbToken && dbApiBase && dbWebpageId)
-        ? buildBeeflowDbScript({ dbToken, dbApiBase, dbWebpageId })
+        ? buildBeeflowDbScript({ dbApiBase, dbWebpageId })
         : '';
     // Bridges (AI / Automations / Integrations) live alongside the DB shim.
     // Same token + base, different route surface — see webpagesPreview.js.
@@ -434,7 +446,7 @@ export function composeWebpageDocument({ html, css, js }, options = {}) {
         // beeflowDbScript + beeflowBridgesScript go immediately after <head>
         // so the globals are defined before any user CSS/JS that might reach
         // for them.
-        let out = working.replace(/<head([^>]*)>/i, `<head$1>\n${beeflowDbScript}\n${beeflowBridgesScript}\n${headStyleTag}`);
+        let out = working.replace(/<head([^>]*)>/i, `<head$1>\n${beeflowAuthScript}\n${beeflowDbScript}\n${beeflowBridgesScript}\n${headStyleTag}`);
         if (/<\/body>/i.test(out)) {
             out = out.replace(/<\/body>/i, `${bodyScriptTag}\n${bridgeScript}\n</body>`);
         } else {
@@ -442,7 +454,7 @@ export function composeWebpageDocument({ html, css, js }, options = {}) {
         }
         return out;
     }
-    return `<!DOCTYPE html><html><head>${beeflowDbScript}${beeflowBridgesScript}${headStyleTag}</head><body>${working}${bodyScriptTag}${bridgeScript}</body></html>`;
+    return `<!DOCTYPE html><html><head>${beeflowAuthScript}${beeflowDbScript}${beeflowBridgesScript}${headStyleTag}</head><body>${working}${bodyScriptTag}${bridgeScript}</body></html>`;
 }
 
 export default composeWebpageDocument;

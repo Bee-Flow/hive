@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
+import { lazy } from '../../utils/lazyWithReload';
 import AIComponentDesigner from '../AIComponentDesigner';
 import { API_BASE, authFetch } from '../../utils/helpers';
 

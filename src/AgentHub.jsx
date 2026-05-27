@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useCallback, useMemo, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, useCallback, useMemo, Suspense } from 'react';
+import { lazy } from './utils/lazyWithReload';
 import { v4 as uuidv4 } from 'uuid';
 
 // ── Chat-critical (eager) ────────────────────────────────────────────
