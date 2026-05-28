@@ -60,7 +60,7 @@ function PageRow({ page, isActive, onClick, onSetHomepage, onDuplicate, onRename
         <div
             ref={setNodeRef}
             style={style}
-            className={`group flex items-center gap-1 px-2 py-1.5 rounded-md select-none
+            className={`group flex items-center gap-1 px-2 py-1 rounded-md select-none
                 ${isEditing ? '' : 'cursor-pointer'}
                 ${isActive
                     ? 'bg-[var(--accent-primary)]/10 text-[var(--text-primary)]'
@@ -105,8 +105,16 @@ function PageRow({ page, isActive, onClick, onSetHomepage, onDuplicate, onRename
                     </span>
                 ) : (
                     <span className="flex flex-col min-w-0">
-                        <span className="text-sm truncate leading-tight">{page.title || '(untitled)'}</span>
-                        <span className="text-[10px] text-[var(--text-muted)] truncate leading-tight">
+                        <span
+                            className="text-sm truncate leading-tight"
+                            title={page.title || '(untitled)'}
+                        >
+                            {page.title || '(untitled)'}
+                        </span>
+                        <span
+                            className="text-[10px] text-[var(--text-muted)] truncate leading-tight"
+                            title={`/${page.slug}`}
+                        >
                             /{page.slug}
                         </span>
                     </span>

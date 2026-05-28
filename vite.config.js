@@ -145,6 +145,10 @@ export default defineConfig(({ mode }) => {
         },
         server: {
             port: parseInt(CLIENT_PORT),
+            // Fail fast if CLIENT_PORT is already taken instead of silently
+            // drifting to 5277/5278 — those break because the backend's
+            // CORS_ORIGIN only trusts the configured client port.
+            strictPort: true,
             proxy: {
                 '/agents': {
                     target: `http://localhost:${SERVER_PORT}`,

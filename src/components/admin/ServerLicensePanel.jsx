@@ -9,9 +9,9 @@ import { useLicenseContext } from '../LicenseContext';
  * key that governs the entire install. Per-org licences are overridden
  * while a server-wide licence is active.
  *
- * Self-hosted only (the surrounding /admin tab already gates on
- * isSelfHosted, but this component refuses to render on cloud as
- * defence-in-depth in case the route is reached directly).
+ * Available to super-admins on any deployment mode; the surrounding /admin
+ * tab gates on superAdminOnly and the backend re-asserts the super-admin
+ * check on activate/deactivate.
  */
 
 const TIER_BADGE = {

@@ -1,10 +1,15 @@
 import React, { useState } from 'react';
-import { X, FileText, Bug, Github } from 'lucide-react';
+import { X, FileText, Bug, Github, Lock, ChevronDown, ChevronRight } from 'lucide-react';
 
 /**
  * RunModal — collects target URL + mode (suite / explore / agent) and submits a run.
  * Agent mode also collects a single source (text / YouTrack / GitHub) so the
  * worker has a concrete ticket body to drive Claude with.
+ *
+ * Credentials (optional, agent + suite modes) are passed in the run request and
+ * held only in the worker's memory for that run — never persisted, never echoed
+ * back. Agent mode substitutes {{USERNAME}}-style tokens at type-time; suite
+ * mode exposes them to the Playwright code as process.env.BF_USERNAME etc.
  */
 export default function RunModal({ suite, defaultMode = 'suite', onClose, onStart }) {
     const [targetUrl, setTargetUrl] = useState('');
@@ -16,8 +21,14 @@ export default function RunModal({ suite, defaultMode = 'suite', onClose, onStar
     const [ghRepo, setGhRepo] = useState('');
     const [ghNumber, setGhNumber] = useState('');
     const [maxSteps, setMaxSteps] = useState(25);
+    const [showCreds, setShowCreds] = useState(false);
+    const [credUsername, setCredUsername] = useState('');
+    const [credPassword, setCredPassword] = useState('');
+    const [credTotp, setCredTotp] = useState('');
     const [err, setErr] = useState(null);
     const [busy, setBusy] = useState(false);
+
+    const supportsCreds = mode === 'agent' || mode === 'suite';
 
     const submit = async () => {
         setErr(null);
@@ -48,9 +59,17 @@ export default function RunModal({ suite, defaultMode = 'suite', onClose, onStar
                 return;
             }
         }
+        let credentials = null;
+        if (supportsCreds) {
+            const c = {};
+            if (credUsername.trim()) c.username = credUsername.trim();
+            if (credPassword) c.password = credPassword;
+            if (credTotp.trim()) c.totp = credTotp.trim();
+            if (Object.keys(c).length > 0) credentials = c;
+        }
         setBusy(true);
         try {
-            await onStart({ targetUrl, mode, source, maxSteps: parsedMaxSteps });
+            await onStart({ targetUrl, mode, source, maxSteps: parsedMaxSteps, credentials });
         } catch (e) {
             setErr(e.message || 'Failed to start run');
         } finally {
@@ -198,6 +217,53 @@ export default function RunModal({ suite, defaultMode = 'suite', onClose, onStar
                                         onChange={(e) => setGhNumber(e.target.value)}
                                         placeholder="#"
                                         className="px-3 py-2 text-xs rounded border border-[var(--border-default)] bg-[var(--bg-primary)]"
+                                    />
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {supportsCreds && (
+                        <div className="flex flex-col gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setShowCreds(s => !s)}
+                                className="flex items-center gap-1 text-xs text-[var(--text-secondary)] hover:text-[var(--text-primary)] self-start"
+                            >
+                                {showCreds ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                                <Lock size={12} /> Credentials (optional)
+                            </button>
+                            {showCreds && (
+                                <div className="flex flex-col gap-2 p-3 rounded border border-[var(--border-default)] bg-[var(--bg-secondary)]">
+                                    <div className="text-[10px] text-[var(--text-tertiary)] leading-relaxed">
+                                        Held in memory for this run only — never written to the database, never echoed back.
+                                        {mode === 'agent'
+                                            ? <> The agent uses tokens like <code>{`{{USERNAME}}`}</code>/<code>{`{{PASSWORD}}`}</code>/<code>{`{{TOTP}}`}</code> and the worker fills the real value at type-time; password fields are blurred in the live preview.</>
+                                            : <> Available to your Playwright code as <code>process.env.BF_USERNAME</code>, <code>BF_PASSWORD</code> and <code>BF_TOTP</code>. They are injected into the isolated runner container only while it runs.</>}
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <input
+                                            value={credUsername}
+                                            onChange={(e) => setCredUsername(e.target.value)}
+                                            placeholder="Username / email"
+                                            autoComplete="off"
+                                            className="px-2 py-1.5 text-xs rounded border border-[var(--border-default)] bg-[var(--bg-primary)]"
+                                        />
+                                        <input
+                                            type="password"
+                                            value={credPassword}
+                                            onChange={(e) => setCredPassword(e.target.value)}
+                                            placeholder="Password"
+                                            autoComplete="new-password"
+                                            className="px-2 py-1.5 text-xs rounded border border-[var(--border-default)] bg-[var(--bg-primary)]"
+                                        />
+                                    </div>
+                                    <input
+                                        value={credTotp}
+                                        onChange={(e) => setCredTotp(e.target.value)}
+                                        placeholder="TOTP code (optional, 6 digits)"
+                                        autoComplete="off"
+                                        className="px-2 py-1.5 text-xs rounded border border-[var(--border-default)] bg-[var(--bg-primary)]"
                                     />
                                 </div>
                             )}

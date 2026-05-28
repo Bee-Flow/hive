@@ -1511,6 +1511,16 @@ function ElementFields({ el, pages, update }) {
                         value={!!el.rounded}
                         onChange={v => update({ ...el, rounded: v })}
                     />
+                    <Toggle
+                        label="Full width image"
+                        value={!!el.fullBleed}
+                        onChange={v => update({ ...el, fullBleed: v })}
+                    />
+                    <Toggle
+                        label="Click to enlarge (lightbox)"
+                        value={!!el.lightbox}
+                        onChange={v => update({ ...el, lightbox: v })}
+                    />
                     <TextField
                         label="Caption"
                         value={el.caption || ''}

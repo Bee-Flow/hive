@@ -1,4 +1,16 @@
-import React, { useLayoutEffect, useRef } from 'react';
+import React, { createContext, useContext, useLayoutEffect, useRef } from 'react';
+
+/**
+ * Identifies which page block the editable text lives inside.
+ * ProductWebsite.jsx wraps each rendered block's subtree in a provider set
+ * to that block's unique `id`. EditableText reads it and stamps it onto the
+ * `cms-edit` message, so the panel can write to the exact block that was
+ * edited — paths alone are block-type-relative (e.g. "content.columns.0…")
+ * and collide when a page has two blocks of the same type. Default `null`
+ * means "not inside a block" (site chrome: header/footer), which the panel
+ * routes by path prefix instead.
+ */
+export const BlockIdContext = createContext(null);
 
 /**
  * Click-to-edit text node, used inside the marketing site when it renders
@@ -37,6 +49,10 @@ export default function EditableText({
     style,
 }) {
     const ref = useRef(null);
+    // Which block this editable belongs to (null for site chrome). Stamped
+    // onto cms-edit so the panel writes to this exact block, not the first
+    // block of the same type.
+    const blockId = useContext(BlockIdContext);
     // String form is the "external truth" — what the side panel believes
     // the value to be. We compare against textContent in the sync effect
     // below to decide whether to push it into the DOM.
@@ -89,7 +105,7 @@ export default function EditableText({
         else      e.currentTarget.setAttribute('data-cms-empty', 'true');
         if (next !== prev) {
             window.parent?.postMessage(
-                { type: 'cms-edit', path, value: next },
+                { type: 'cms-edit', blockId, path, value: next },
                 '*'
             );
         }
@@ -113,6 +129,17 @@ export default function EditableText({
         // Capture the value at focus-time as the "original" — used by Esc
         // and to compare against blur-time content for change detection.
         if (ref.current) focusValueRef.current = ref.current.textContent || '';
+        // Mirror the write path's target: when the user starts editing a
+        // field, tell the panel to highlight THIS block, so the left-panel
+        // selection tracks the block being edited (same blockId the blur
+        // cms-edit will write to). Chrome editables (blockId null) don't map
+        // to a page block, so they leave block selection untouched.
+        if (blockId) {
+            window.parent?.postMessage(
+                { type: 'cms-select', blockId },
+                '*'
+            );
+        }
     };
 
     return (

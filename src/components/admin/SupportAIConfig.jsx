@@ -4,6 +4,20 @@ import AgentEditorUI from './AgentEditorUI';
 import MarkdownRenderer from '../MarkdownRenderer';
 import { tierLabel } from '../tierMeta';
 import { authFetch, API_BASE } from '../../utils/helpers';
+import SupportSlaPoliciesTab from './support/SupportSlaPoliciesTab';
+import SupportCannedResponsesTab from './support/SupportCannedResponsesTab';
+import SupportTagsTab from './support/SupportTagsTab';
+import SupportInsightsTab from './support/SupportInsightsTab';
+import SupportToolsTab from './support/SupportToolsTab';
+
+const CONFIG_TABS = [
+    { id: 'agent', label: 'Agent' },
+    { id: 'behaviour', label: 'AI behaviour' },
+    { id: 'sla', label: 'SLA' },
+    { id: 'canned', label: 'Templates' },
+    { id: 'tags', label: 'Tags' },
+    { id: 'insights', label: 'Insights' },
+];
 
 /**
  * SupportAIConfig — Studio-style editor for the singleton Bee Flow Support
@@ -49,6 +63,7 @@ export default function SupportAIConfig() {
     const [previewReply, setPreviewReply] = useState(null);
     const [previewError, setPreviewError] = useState(null);
     const [tiers, setTiers] = useState({});
+    const [tab, setTab] = useState('agent');
     const mountedRef = useRef(true);
 
     // Set `true` on every (re-)mount and only `false` during cleanup. React 18
@@ -174,19 +189,38 @@ export default function SupportAIConfig() {
         }
     }, [previewInput, previewing]);
 
-    if (loading) {
-        return <div className="p-8 text-sm" style={{ color: 'var(--text-muted)' }}>Loading Bee Flow Support agent…</div>;
-    }
-    if (!data) {
-        return (
-            <div className="p-8 text-sm" style={{ color: 'var(--text-muted)' }}>
-                {saveError || 'Bee Flow Support agent is not seeded yet. Restart the server.'}
-            </div>
-        );
-    }
-
     return (
         <div className="h-full flex flex-col" style={{ background: 'var(--bg-primary)' }}>
+            {/* Sub-tab bar */}
+            <div className="px-4 pt-2 border-b flex items-center gap-1 overflow-x-auto" style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)' }}>
+                {CONFIG_TABS.map(t => (
+                    <button key={t.id} onClick={() => setTab(t.id)}
+                        className="px-3 py-1.5 text-sm font-medium rounded-t-md whitespace-nowrap"
+                        style={{
+                            color: tab === t.id ? 'var(--text-primary)' : 'var(--text-muted)',
+                            borderBottom: tab === t.id ? '2px solid var(--accent-primary)' : '2px solid transparent',
+                        }}>
+                        {t.label}
+                    </button>
+                ))}
+            </div>
+
+            {tab === 'behaviour' && <div className="flex-1 overflow-auto"><SupportToolsTab /></div>}
+            {tab === 'sla' && <div className="flex-1 overflow-auto"><SupportSlaPoliciesTab /></div>}
+            {tab === 'canned' && <div className="flex-1 overflow-auto"><SupportCannedResponsesTab /></div>}
+            {tab === 'tags' && <div className="flex-1 overflow-auto"><SupportTagsTab /></div>}
+            {tab === 'insights' && <div className="flex-1 overflow-auto"><SupportInsightsTab /></div>}
+
+            {tab === 'agent' && loading && (
+                <div className="p-8 text-sm" style={{ color: 'var(--text-muted)' }}>Loading Bee Flow Support agent…</div>
+            )}
+            {tab === 'agent' && !loading && !data && (
+                <div className="p-8 text-sm" style={{ color: 'var(--text-muted)' }}>
+                    {saveError || 'Bee Flow Support agent is not seeded yet. Restart the server.'}
+                </div>
+            )}
+            {tab === 'agent' && !loading && data && (
+            <>
             {/* Sticky save bar */}
             <div className="px-4 py-2 border-b flex items-center justify-between"
                 style={{ borderColor: 'var(--border-default)', background: 'var(--bg-secondary)' }}>
@@ -332,6 +366,8 @@ export default function SupportAIConfig() {
                     </div>
                 </div>
             </div>
+            </>
+            )}
         </div>
     );
 }

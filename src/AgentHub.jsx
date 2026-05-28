@@ -35,6 +35,7 @@ const AITasksDesigner = lazy(() => import('./components/admin/AITasksDesigner'))
 const SkillsPanel = lazy(() => import('./components/SkillsPanel'));
 const EmailKBSettings = lazy(() => import('./components/EmailKBSettings'));
 const NotebooksPage = lazy(() => import('./pages/NotebooksPage'));
+const LegalStudioPage = lazy(() => import('./pages/legal/LegalStudioPage'));
 
 import useChatEngine from './hooks/useChatEngine';
 import { useViewport } from './hooks/useViewport';
@@ -69,6 +70,7 @@ const AgentHub = ({
     showEmailKB = false, onCloseEmailKB,
     // Notebooks rendered inline (previously a standalone page at App level).
     showNotebooks = false, onCloseNotebooks, initialNotebookId = null, onNotebookChange,
+    showLegal = false, onCloseLegal, initialMatterId = null, onMatterChange,
 }) => {
     // Permission helper - checks if user has a specific permission
     const hasPermission = (perm) => {
@@ -1804,7 +1806,19 @@ const AgentHub = ({
 
             {/* Main Content Area */}
             <div className="flex-1 flex flex-col min-w-0 relative">
-                {showNotebooks ? (
+                {showLegal ? (
+                    /* Legal Studio (Dutch legal matters) — same inline slot as
+                       Notebooks. A matter is a notebook of type 'legal_matter',
+                       so it shares the notebooks licence gate. */
+                    <RequireTier feature="notebooks">
+                        <LegalStudioPage
+                            user={user}
+                            onBack={onCloseLegal}
+                            initialMatterId={initialMatterId}
+                            onMatterChange={onMatterChange}
+                        />
+                    </RequireTier>
+                ) : showNotebooks ? (
                     /* Notebooks rendered inline in conversation area (same slot as
                        Settings / Agent Designer) so the app sidebar stays visible.
                        Wrapped in RequireTier so community installs see the upgrade

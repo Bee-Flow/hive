@@ -49,8 +49,9 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
         // manage paid access via license keys (Settings → License & Usage).
         { id: 'subscriptions', label: t('admin.tab_subscriptions'), perm: ['admin_subscriptions'], superAdminOnly: true, cloudOnly: true },
         // Server-wide licence governs every org/user on this install.
-        // Self-hosted only — cloud has its own multi-tenant billing.
-        { id: 'licenses', label: t('admin.tab_server_license') || 'Server licence', perm: ['all'], superAdminOnly: true, selfHostedOnly: true },
+        // Available to super-admins on any deployment mode — a single-tenant
+        // operator applies one licence for the whole server.
+        { id: 'licenses', label: t('admin.tab_server_license') || 'Server licence', perm: ['all'], superAdminOnly: true },
         { id: 'appearance', label: t('admin.tab_appearance'), perm: ['admin_ai_config'], superAdminOnly: true },
         { id: 'languages', label: t('admin.tab_languages'), perm: ['admin_ai_config'], superAdminOnly: true },
         { id: 'product-website', label: t('admin.tab_product_website'), perm: ['admin_ai_config'], superAdminOnly: true },

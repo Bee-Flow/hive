@@ -3,6 +3,7 @@ import { authFetch } from '../../../utils/helpers';
 import AppIcon from '../../AppIcon';
 import { Toggle, CreatePageContext } from './fields';
 import { BLOCK_CATALOGUE, BLOCK_EDITORS, BLOCK_DEFAULTS, HeaderEditor, FooterEditor } from './editors';
+import CookieBannerEditor from './CookieBannerEditor';
 import PageList, { SaveTemplateDialog } from './PageList';
 import { ToastHost, showToast } from '../guardrails/Toast';
 import BlockList from './BlockList';
@@ -73,17 +74,30 @@ function formatRelative(iso) {
     return new Date(ts).toLocaleDateString();
 }
 
-function SaveBadge({ status }) {
+function SaveBadge({ status, onRetry }) {
     const map = {
-        idle:   { label: '',            color: 'var(--text-muted)' },
-        dirty:  { label: '● Unsaved',   color: '#fbbf24' },
-        saving: { label: 'Saving…',     color: 'var(--text-secondary)' },
-        saved:  { label: '✓ Saved',     color: '#34d399' },
-        error:  { label: '⚠ Error',     color: '#f87171' },
+        idle:   { label: '',                  color: 'var(--text-muted)' },
+        dirty:  { label: '● Unsaved',         color: '#fbbf24' },
+        saving: { label: 'Saving…',           color: 'var(--text-secondary)' },
+        saved:  { label: '✓ Saved',           color: '#34d399' },
+        error:  { label: '⚠ Save failed',     color: '#f87171' },
     };
     const s = map[status] || map.idle;
     if (!s.label) return <span />;
-    return <span className="text-xs font-medium" style={{ color: s.color }}>{s.label}</span>;
+    return (
+        <span className="flex items-center gap-1.5 text-xs font-medium" style={{ color: s.color }}>
+            {s.label}
+            {status === 'error' && onRetry ? (
+                <button
+                    type="button"
+                    onClick={onRetry}
+                    className="ml-1 px-1.5 py-0.5 rounded border border-[var(--border-default)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
+                >
+                    Retry
+                </button>
+            ) : null}
+        </span>
+    );
 }
 
 function TabBtn({ icon, label, active, onClick }) {
@@ -176,6 +190,9 @@ export default function ProductWebsitePanel() {
     // (the timer callback otherwise drops the Promise on the floor, which
     // lets a Publish click race the network round-trip).
     const inFlightSaveRef   = useRef(null);
+    // Holds the batch from the most recent failed flushSaves() so the user
+    // can retry without losing their edits. Cleared when a flush succeeds.
+    const failedSavesRef    = useRef(null);
 
     // ── derived ─────────────────────────────────────────────────────
 
@@ -324,9 +341,16 @@ export default function ProductWebsitePanel() {
         // sites flushes pending saves BEFORE updating the ref, so the
         // edits land on the correct site even mid-switch.
         const siteId = activeSiteIdRef.current;
-        const batch = { ...pendingSaves.current };
+        // Merge any prior failed batch back in so a retry includes
+        // everything the user thought they saved. Newer edits in
+        // pendingSaves win on key collisions.
+        const batch = { ...(failedSavesRef.current || {}), ...pendingSaves.current };
+        if (!siteId || Object.keys(batch).length === 0) {
+            inFlightSaveRef.current = null;
+            return;
+        }
         pendingSaves.current = {};
-        if (!siteId || Object.keys(batch).length === 0) return;
+        failedSavesRef.current = null;
         setSaveStatus('saving');
         try {
             const tasks = Object.entries(batch).map(([key, payload]) => {
@@ -354,8 +378,13 @@ export default function ProductWebsitePanel() {
             if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
             saveStatusTimer.current = setTimeout(() => setSaveStatus('idle'), 1800);
         } catch (err) {
+            // Keep the batch so the user can retry without retyping.
+            failedSavesRef.current = batch;
             setError(err.message);
             setSaveStatus('error');
+            showToast('error', `Save failed: ${err.message}`);
+        } finally {
+            inFlightSaveRef.current = null;
         }
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -363,6 +392,32 @@ export default function ProductWebsitePanel() {
         if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
         if (saveStatusTimer.current) clearTimeout(saveStatusTimer.current);
     }, []);
+
+    // Re-flush the failed batch held by flushSaves. Bound to the Retry
+    // button in SaveBadge; no-op unless the most recent flush errored.
+    const retrySave = useCallback(() => {
+        if (!failedSavesRef.current) return;
+        inFlightSaveRef.current = flushSaves();
+    }, [flushSaves]);
+
+    // Drain any pending debounced saves before an action that triggers a
+    // reloadPayload — otherwise the reload overwrites local state with what
+    // the DB has, and the user's in-flight edit blinks out of the UI while
+    // the timer is still on its way to writing it. Called from savePageMeta
+    // and the page CRUD handlers (add/duplicate/delete/setHomepage).
+    const drainPendingSaves = useCallback(async () => {
+        if (saveTimerRef.current) {
+            clearTimeout(saveTimerRef.current);
+            saveTimerRef.current = null;
+        }
+        if (inFlightSaveRef.current) {
+            await inFlightSaveRef.current.catch(() => {});
+        }
+        if (Object.keys(pendingSaves.current).length > 0) {
+            inFlightSaveRef.current = flushSaves();
+            await inFlightSaveRef.current;
+        }
+    }, [flushSaves]);
 
     // ── page mutations ───────────────────────────────────────────────
 
@@ -398,15 +453,13 @@ export default function ProductWebsitePanel() {
     //
     // The section components in agent-hub/src/marketing/sections/ hard-code
     // the block type as the path root (e.g. EditableText path="hero.lead"),
-    // so we look up the target block by type — not by id. The first matching
-    // block on the active page wins.
-    //
-    // TODO: ambiguous when a page has two blocks of the same type — both
-    // EditableText instances would emit the same path and only the first
-    // block would receive the edit. The clean fix is to thread block.id
-    // from ProductWebsite.jsx into each section and have EditableText use
-    // `${blockId}.field` paths. Out of scope for now.
-    const applyIframeEdit = useCallback((path, value) => {
+    // which is only block-*type*-relative. To write to the right block when a
+    // page has several of the same type, EditableText also stamps the block's
+    // unique id (threaded via BlockIdContext from ProductWebsite.jsx) onto the
+    // cms-edit message — we resolve the target by that id here. `blockId` is
+    // absent only for site chrome (header/footer), handled by the prefix
+    // branch below, and for legacy messages, where we fall back to first-of-type.
+    const applyIframeEdit = useCallback((path, value, blockId = null) => {
         // Site-chrome paths (header.* / footer.*) target the SiteDoc, not a
         // page block. The iframe receives chrome in a re-shaped form
         // (buildPreviewContent below) — e.g. footer.brand.blurb is the
@@ -441,7 +494,14 @@ export default function ProductWebsitePanel() {
             return {
                 ...p,
                 blocks: p.blocks.map(b => {
-                    if (matched || b.type !== blockType) return b;
+                    // Prefer the exact block by id (unique, so no ambiguity
+                    // between blocks of the same type). Only when no id was
+                    // supplied (legacy message) do we fall back to the old
+                    // first-block-of-type behaviour.
+                    const isTarget = blockId
+                        ? b.id === blockId
+                        : (!matched && b.type === blockType);
+                    if (!isTarget) return b;
                     matched = true;
                     const content = JSON.parse(JSON.stringify(b.content));
                     let cur = content;
@@ -527,6 +587,7 @@ export default function ProductWebsitePanel() {
     const handleAddPage = useCallback(async ({ title, slug, templateId } = {}, options = {}) => {
         const siteId = activeSiteIdRef.current;
         if (!siteId) return null;
+        await drainPendingSaves();
         try {
             const res = await authFetch(cmsApi.pages(siteId), {
                 method: 'POST',
@@ -550,6 +611,7 @@ export default function ProductWebsitePanel() {
     const handleDuplicatePage = useCallback(async (pageId) => {
         const siteId = activeSiteIdRef.current;
         if (!siteId) return;
+        await drainPendingSaves();
         try {
             const res = await authFetch(cmsApi.pages(siteId), {
                 method: 'POST',
@@ -567,6 +629,7 @@ export default function ProductWebsitePanel() {
         const siteId = activeSiteIdRef.current;
         if (!siteId) return;
         if (!window.confirm('Delete this page? This cannot be undone.')) return;
+        await drainPendingSaves();
         try {
             const res = await authFetch(cmsApi.page(siteId, pageId), { method: 'DELETE' });
             if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
@@ -578,6 +641,7 @@ export default function ProductWebsitePanel() {
     const handleSetHomepage = useCallback(async (pageId) => {
         const siteId = activeSiteIdRef.current;
         if (!siteId) return;
+        await drainPendingSaves();
         try {
             const res = await authFetch(cmsApi.pageHomepage(siteId, pageId), { method: 'PUT' });
             if (!res.ok) { const d = await res.json(); throw new Error(d.error); }
@@ -615,6 +679,23 @@ export default function ProductWebsitePanel() {
         setLocales(data.locales || locales);
         if (data.publishedAt !== undefined) setPublishedAt(data.publishedAt || null);
     }, [locales]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Refetch latest payload when the tab regains focus, so opening the CMS
+    // after a break (or after editing in another tab) shows current content
+    // instead of the cached snapshot from initial mount. Guarded against any
+    // dirty/in-flight state so we never yank state out from under an edit.
+    useEffect(() => {
+        const onVisible = () => {
+            if (document.visibilityState !== 'visible') return;
+            if (saveStatus !== 'idle' && saveStatus !== 'saved') return;
+            if (Object.keys(pendingSaves.current).length > 0) return;
+            if (inFlightSaveRef.current) return;
+            if (!activeSiteIdRef.current) return;
+            reloadPayload();
+        };
+        document.addEventListener('visibilitychange', onVisible);
+        return () => document.removeEventListener('visibilitychange', onVisible);
+    }, [saveStatus, reloadPayload]);
 
     // ── page templates (global, shared across sites) ──────────────────
     const refreshTemplates = useCallback(async () => {
@@ -857,7 +938,16 @@ export default function ProductWebsitePanel() {
                 return;
             }
             if (msg.type === 'cms-edit' && typeof msg.path === 'string') {
-                applyIframeEdit(msg.path, msg.value);
+                applyIframeEdit(msg.path, msg.value, msg.blockId);
+                return;
+            }
+            // Inline focus in the preview → highlight that block in the left
+            // panel, keeping selection in sync with the block being edited.
+            // Functional update skips a redundant render when it's already
+            // selected; the iframe isn't re-posted (postPreview ignores
+            // activeBlockId), so the user's caret/focus isn't disturbed.
+            if (msg.type === 'cms-select' && typeof msg.blockId === 'string') {
+                setActiveBlockId(prev => (prev === msg.blockId ? prev : msg.blockId));
                 return;
             }
         };
@@ -898,6 +988,10 @@ export default function ProductWebsitePanel() {
     const savePageMeta = useCallback(async (pageId, patch) => {
         const siteId = activeSiteIdRef.current;
         if (!siteId) return;
+        // Drain debounced edits first — otherwise the reloadPayload() below
+        // would overwrite local state with stale DB content while the
+        // user's pending block edit is still on its way out.
+        await drainPendingSaves();
         setSaveStatus('saving');
         try {
             const res = await authFetch(cmsApi.pageMeta(siteId, pageId), {
@@ -916,8 +1010,9 @@ export default function ProductWebsitePanel() {
         } catch (err) {
             setError(err.message);
             setSaveStatus('error');
+            showToast('error', `Save failed: ${err.message}`);
         }
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [drainPendingSaves]); // eslint-disable-line react-hooks/exhaustive-deps
 
     const updatePageMeta = useCallback((field, value) => {
         if (!activePage) return;
@@ -1195,7 +1290,7 @@ export default function ProductWebsitePanel() {
         <div className="h-full flex flex-row" style={{ background: 'var(--bg-primary)' }}>
 
             {/* ── PANE A: page list (160px) ── */}
-            <div className="w-[180px] shrink-0 flex flex-col border-r border-[var(--border-subtle)] h-full">
+            <div className="w-[240px] shrink-0 flex flex-col border-r border-[var(--border-subtle)] h-full">
                 {/* site switcher */}
                 <div className="p-3 border-b border-[var(--border-subtle)] shrink-0">
                     <SiteSwitcher
@@ -1275,7 +1370,7 @@ export default function ProductWebsitePanel() {
                 <div className="p-3 border-b border-[var(--border-subtle)] shrink-0">
                     <div className="flex items-center justify-between mb-2">
                         <span className="text-xs font-semibold text-[var(--text-primary)]">Website</span>
-                        <SaveBadge status={saveStatus} />
+                        <SaveBadge status={saveStatus} onRetry={retrySave} />
                     </div>
                     <Toggle label="Live" value={liveSiteId === activeSiteId} onChange={persistLive} />
                     <button
@@ -1630,6 +1725,7 @@ function SiteChromeEditor({ site, onChange, pages }) {
     if (!site) return null;
     const setHeader = (h) => onChange({ ...site, header: h });
     const setFooter = (f) => onChange({ ...site, footer: f });
+    const setCookieBanner = (c) => onChange({ ...site, cookieBanner: c });
 
     return (
         <div className="flex-1 overflow-y-auto">
@@ -1639,12 +1735,14 @@ function SiteChromeEditor({ site, onChange, pages }) {
                     <span className="text-sm font-semibold text-[var(--text-primary)]">Site chrome</span>
                 </div>
                 <p className="text-xs text-[var(--text-muted)] mb-4">
-                    Header and footer are shared across all pages.
+                    Header, footer, and cookie banner are shared across all pages.
                 </p>
                 <SectionDivider label="Header" />
                 <HeaderEditor data={site.header} pages={pages} onChange={setHeader} />
                 <SectionDivider label="Footer" />
                 <FooterEditor data={site.footer} pages={pages} onChange={setFooter} />
+                <SectionDivider label="Cookie banner" />
+                <CookieBannerEditor data={site.cookieBanner} onChange={setCookieBanner} />
             </div>
         </div>
     );
@@ -1817,6 +1915,9 @@ function buildPreviewContent(site, activePage) {
             copyright: site.footer.copyright,
         };
     }
+    // Cookie banner — site-wide chrome, passed through verbatim so the
+    // preview iframe renders/edits it the same way the published site will.
+    if (site?.cookieBanner) out.cookieBanner = site.cookieBanner;
 
     // Blocks for the active page. We emit BOTH:
     //   - the legacy keyed shape (out.hero, out.features, …) so the public

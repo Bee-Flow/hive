@@ -37,6 +37,9 @@ const ADD_BUTTONS = [
     { key: 'meeting', label: 'Notes',   Icon: Mic,     accent: '#ec4899' },
 ];
 
+// Max characters for a pasted-text source (server still re-validates on ingest).
+const PASTE_MAX_CHARS = 500000;
+
 /* ── SourceCard ────────────────────────────────────────────────── */
 function SourceCard({ source, onDelete, onRetry, onCancel }) {
     const meta  = SOURCE_META[source.type] || SOURCE_META.file;
@@ -269,6 +272,32 @@ export default function NotebookSources({
         try { localStorage.setItem('nb_meeting_mode', m); } catch {}
     }, []);
 
+    const pasteOverLimit = textInput.length > PASTE_MAX_CHARS;
+
+    // Add-source button behaviour. 'file' opens the OS picker (there's no inline
+    // file panel); the other keys toggle their inline panel open/closed.
+    const togglePanel = (key) => {
+        if (key === 'file') { fileInputRef.current?.click(); return; }
+        setActivePanel(prev => (prev === key ? null : key));
+    };
+
+    const submitUrl = () => {
+        const u = urlInput.trim();
+        if (!u) return;
+        onAddUrl?.(u);
+        setUrlInput('');
+        setActivePanel(null);
+    };
+
+    const submitText = () => {
+        const t = textInput.trim();
+        if (!t || pasteOverLimit) return;
+        onAddText?.(t, textName.trim() || undefined);
+        setTextInput('');
+        setTextName('');
+        setActivePanel(null);
+    };
+
     const readyPct = sources.length > 0 ? Math.round((readyCount / sources.length) * 100) : 0;
 
     return (
@@ -443,7 +472,7 @@ export default function NotebookSources({
                             {ADD_BUTTONS.map(({ key, label, Icon, accent }) => (
                                 <button
                                     key={key}
-                                    onClick={() => setActivePanel(key)}
+                                    onClick={() => togglePanel(key)}
                                     className="flex flex-col items-center gap-1 py-2 rounded-lg border transition-all hover:shadow-sm"
                                     style={{ background: 'var(--surface-1)', borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}
                                 >

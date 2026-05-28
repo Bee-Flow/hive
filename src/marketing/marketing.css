@@ -103,7 +103,10 @@
 .marketing-root button { font-family: inherit; cursor: pointer; border: none; background: none; }
 
 /* ── Typography ────────────────────────────────────────────────────────── */
-.marketing-root .headline-xl { font-size: clamp(2.5rem, 5vw, 4.2rem); font-weight: 800; line-height: 1.1; letter-spacing: -0.02em; }
+.marketing-root .headline-xl { font-size: clamp(2.5rem, 5vw, 3.25rem); font-weight: 800; line-height: 1.1; letter-spacing: -0.02em; }
+/* Above the hero content container's own breakpoint (~900px), keep the
+   hero title on one line. Mobile still wraps naturally (rule doesn't apply). */
+@media (min-width: 900px) { .marketing-root .headline-xl { white-space: nowrap; } }
 .marketing-root .headline-lg { font-size: clamp(2rem,  4vw, 3rem);   font-weight: 700; line-height: 1.15; letter-spacing: -0.01em; }
 .marketing-root .headline-md { font-size: clamp(1.3rem, 2.5vw, 1.75rem); font-weight: 600; line-height: 1.25; }
 .marketing-root .body-lg     { font-size: 1.125rem; font-weight: 400; line-height: 1.6; color: var(--text-secondary); }
@@ -1396,6 +1399,22 @@
 .marketing-root .content-el-image.is-rounded .content-el-image-wrap { border-radius: var(--radius-xl); }
 .marketing-root .content-el-image-wrap img  { width: 100%; height: 100%; object-fit: cover; display: block; }
 .marketing-root .content-el-image-wrap[style*="aspect-ratio"] img { object-fit: cover; }
+
+/* Full-bleed image — escapes the (narrower) grid column and renders at the
+   full content-container width, matching the Live Component block's
+   `.container` width (max-width var(--max-width), 24px side padding). The
+   centered-container breakout centres the image on its column's horizontal
+   centre, so it lines up exactly for single-column / lone-image rows (the
+   intended use). Column layout itself is untouched. */
+.marketing-root .content-el-image--bleed {
+    --bleed-w: min(calc(var(--max-width) - 48px), calc(100vw - 48px));
+    width: var(--bleed-w);
+    max-width: none;
+    margin-left:  calc(50% - var(--bleed-w) / 2);
+    margin-right: calc(50% - var(--bleed-w) / 2);
+}
+/* Edge-to-edge images read better flush; drop the corner rounding. */
+.marketing-root .content-el-image--bleed .content-el-image-wrap { border-radius: 0; }
 .marketing-root .content-el-image-placeholder {
     width: 100%; height: 100%;
     min-height: 180px;

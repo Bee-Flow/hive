@@ -411,7 +411,7 @@ function MoreItem({ icon: Icon, label, onClick, active, danger, disabled }) {
 
 /* ── Main Editor Component ───────────────────────────────────────────────────── */
 const NotebookEditor = forwardRef(function NotebookEditorInner(
-    { content, onChange, onSave, onAIAction, onAIFill, saving, onImportClick, generating, aiFilling, onTocUpdate, notebookId, askAiEnabled = true },
+    { content, onChange, onSave, onAIAction, onAIFill, saving, onImportClick, generating, aiFilling, onTocUpdate, notebookId, askAiEnabled = true, placeholder },
     ref
 ) {
     const saveTimerRef = useRef(null);
@@ -465,7 +465,7 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
                 codeBlock: { HTMLAttributes: { class: 'notebook-code-block' } },
             }),
             Placeholder.configure({
-                placeholder: t('notebooks.placeholder'),
+                placeholder: placeholder || t('notebooks.placeholder'),
             }),
             // NOTE: Underline and Link are NOT part of StarterKit v3 — they must
             // be listed explicitly. The "duplicate extension" tiptap warning is caused

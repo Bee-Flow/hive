@@ -21,8 +21,28 @@ import CtaBanner    from './sections/CtaBanner';
 import LiveComponent from './sections/LiveComponent';
 import Pricing      from './sections/PricingSection';
 import Footer       from './sections/Footer';
+// Site-wide cookie consent banner. Lives outside ./sections because it's
+// chrome (fixed-position overlay), not an in-flow page section.
+import CookieBanner from '../components/CookieBanner';
 
 import { useScrollReveal } from './components/ScrollReveal';
+import { BlockIdContext } from './components/EditableText';
+
+// Resolve which language the cookie banner should show. The banner's `text`
+// blob carries every locale, so we pick one at render time from the URL
+// `?locale=` (set by the public route) or the browser language — mirroring
+// the locale logic in App.jsx's RootPathGate. Anything other than Dutch
+// falls back to English.
+function resolveCookieLang() {
+    if (typeof window === 'undefined') return 'en';
+    try {
+        const param = new URLSearchParams(window.location.search).get('locale');
+        const loc = (param || navigator.language || 'en').toLowerCase().split('-')[0];
+        return loc === 'nl' ? 'nl' : 'en';
+    } catch {
+        return 'en';
+    }
+}
 
 const SECTION_REGISTRY = {
     hero: Hero,
@@ -476,6 +496,11 @@ export default function ProductWebsite({ content: initialContent }) {
     const showHeader = isChromePreview || !content.hideHeader;
     const showFooter = isChromePreview || !content.hideFooter;
 
+    // Click-to-select only in the admin preview (?preview=1). The block
+    // wrappers also render on the public site, where posting to the parent
+    // frame would be pointless — gate it so the public page stays inert.
+    const inPreview = isPreviewMode();
+
     return (
         <div className="marketing-root" ref={rootRef}>
             {showHeader ? <Header data={content.header} /> : null}
@@ -492,8 +517,23 @@ export default function ProductWebsite({ content: initialContent }) {
                                 data-cms-block-id={b.id}
                                 className={blockWrapClasses(b.style)}
                                 style={blockWrapStyle(b.style)}
+                                // Clicking anywhere in the block (images,
+                                // buttons, empty space — not just editable
+                                // text) selects it in the panel. Bubbles up
+                                // from descendants; doesn't preventDefault, so
+                                // links/buttons still work. Editable-text focus
+                                // posts the same id, which the panel dedupes.
+                                onClick={inPreview
+                                    ? () => window.parent?.postMessage(
+                                        { type: 'cms-select', blockId: b.id }, '*')
+                                    : undefined}
                             >
-                                <Comp data={{ enabled: b.enabled !== false, ...(b.content || {}) }} />
+                                {/* Stamp this block's id onto every EditableText
+                                    inside so inline edits write back to THIS
+                                    block, not the first one of its type. */}
+                                <BlockIdContext.Provider value={b.id}>
+                                    <Comp data={{ enabled: b.enabled !== false, ...(b.content || {}) }} />
+                                </BlockIdContext.Provider>
                             </div>
                         </React.Fragment>
                     );
@@ -516,6 +556,17 @@ export default function ProductWebsite({ content: initialContent }) {
                     data={content.footer}
                     isDark={isDark}
                     onToggleTheme={toggleTheme}
+                />
+            ) : null}
+            {/* Site-wide cookie banner. Rendered inside .marketing-root so its
+                inline styles resolve the brand CSS variables (--brand-primary
+                etc.). Only mounts when the site has banner config — absent for
+                the empty CMS-preview host. */}
+            {content.cookieBanner ? (
+                <CookieBanner
+                    enabled={content.cookieBanner.enabled !== false}
+                    language={resolveCookieLang()}
+                    text={content.cookieBanner.text}
                 />
             ) : null}
         </div>

@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
-import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, FileText, PenLine, Sparkles, Mail, Ticket, BookOpen, LayoutGrid } from 'lucide-react';
+import { MessageSquare, Trash2, Store, Bot, User, Shield, Settings, LogOut, ChevronDown, Search, X, FolderOpen, Plus, FolderInput, Pin, PinOff, Pencil, MoreHorizontal, Tag, Check, FileText, PenLine, Sparkles, Mail, Ticket, BookOpen, LayoutGrid, Scale } from 'lucide-react';
 import { useTheme } from './ThemeContext';
 import { useLicenseContext } from './LicenseContext';
 import { API_BASE, authFetch } from '../utils/helpers';
@@ -634,6 +634,11 @@ const Sidebar = ({
             : []),
         ...(!_simpleMode && !isMobile && hasLicenseFeature('notebooks') && _featureFlags.notebooks !== false && _featureFlags.notebooksMenu !== false && (_permissions.includes('all') || _permissions.includes('use_notebooks'))
             ? [{ key: 'notebooks', label: t('sidebar.notebooks') || 'Notebooks', icon: FileText, onClick: () => onNavigate && onNavigate('notebooks'), active: currentPage === 'notebooks' }]
+            : []),
+        // Legal Studio — gated by the dutch_legal_sources beta + use_notebooks
+        // (a matter is a notebook of type 'legal_matter').
+        ...(!_simpleMode && !isMobile && hasLicenseFeature('notebooks') && _betaFeatures.includes('dutch_legal_sources') && (_permissions.includes('all') || _permissions.includes('use_notebooks'))
+            ? [{ key: 'legal', label: t('sidebar.legal') || 'Juridisch', icon: Scale, onClick: () => onNavigate && onNavigate('legal'), active: currentPage === 'legal', beta: true }]
             : []),
     ];
 

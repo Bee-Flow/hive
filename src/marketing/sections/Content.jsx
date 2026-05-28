@@ -33,23 +33,37 @@ export default function Content({ data }) {
             <section className={`content-block ${bgClass}`.trim()}>
                 <div className="container">
                     <div className={`content-block-grid ${layoutClass} ${alignClass}`}>
-                        {c.columns.map((col, colIdx) => (
-                            <div key={col.id || colIdx} className="content-block-col">
-                                {(col.elements || []).map((el, elIdx) => (
-                                    <ContentElement
-                                        key={el.id || elIdx}
-                                        el={el}
-                                        colIdx={colIdx}
-                                        elIdx={elIdx}
-                                        // First text element on the first
-                                        // column gets an h2 (page-level
-                                        // heading hierarchy); subsequent
-                                        // text elements get h3.
-                                        firstHeading={colIdx === 0 && elIdx === 0}
-                                    />
-                                ))}
-                            </div>
-                        ))}
+                        {c.columns.map((col, colIdx) => {
+                            // A lone image (the column's only element) becomes
+                            // full-width *iff* no sibling column carries any
+                            // text — i.e. it isn't acting as the visual half of
+                            // a text+image pair. In that case it renders
+                            // edge-to-edge within the content container.
+                            const loneImageCol = (col.elements || []).length === 1
+                                && col.elements[0]?.kind === 'image';
+                            const textElsewhere = c.columns.some((other, i) =>
+                                i !== colIdx
+                                && (other.elements || []).some(e => e?.kind === 'text'));
+                            const imageFull = loneImageCol && !textElsewhere;
+                            return (
+                                <div key={col.id || colIdx} className="content-block-col">
+                                    {(col.elements || []).map((el, elIdx) => (
+                                        <ContentElement
+                                            key={el.id || elIdx}
+                                            el={el}
+                                            colIdx={colIdx}
+                                            elIdx={elIdx}
+                                            // First text element on the first
+                                            // column gets an h2 (page-level
+                                            // heading hierarchy); subsequent
+                                            // text elements get h3.
+                                            firstHeading={colIdx === 0 && elIdx === 0}
+                                            fullWidth={el.kind === 'image' && imageFull}
+                                        />
+                                    ))}
+                                </div>
+                            );
+                        })}
                     </div>
                 </div>
             </section>
@@ -59,11 +73,11 @@ export default function Content({ data }) {
 
 // ── Element renderers ──────────────────────────────────────────────────
 
-function ContentElement({ el, colIdx, elIdx, firstHeading }) {
+function ContentElement({ el, colIdx, elIdx, firstHeading, fullWidth }) {
     const pathBase = `content.columns.${colIdx}.elements.${elIdx}`;
     switch (el?.kind) {
         case 'text':   return <TextElement   el={el} pathBase={pathBase} firstHeading={firstHeading} />;
-        case 'image':  return <ImageElement  el={el} pathBase={pathBase} />;
+        case 'image':  return <ImageElement  el={el} pathBase={pathBase} fullWidth={fullWidth} />;
         case 'video':  return <VideoElement  el={el} pathBase={pathBase} />;
         case 'iframe': return <IframeElement el={el} pathBase={pathBase} />;
         case 'cta':    return <CtaElement    el={el} pathBase={pathBase} />;
@@ -128,14 +142,68 @@ function TextElement({ el, pathBase, firstHeading }) {
     );
 }
 
-function ImageElement({ el, pathBase }) {
+function ImageElement({ el, pathBase, fullWidth }) {
     const ratio = ['16/9', '4/3', '1/1', '3/4'].includes(el.aspectRatio) ? el.aspectRatio : 'auto';
     const wrapStyle = ratio !== 'auto' ? { aspectRatio: ratio } : undefined;
+
+    // Default sizing: fill the column. With a fixed aspect ratio the wrap
+    // defines the box and the image covers it; with the intrinsic ratio the
+    // image keeps its proportions (height: auto) at full column width. Set
+    // inline so it wins over the generic `.content-el-image-wrap img` rule.
+    const imgStyle = ratio !== 'auto'
+        ? { width: '100%', height: '100%', objectFit: 'cover', display: 'block' }
+        : { width: '100%', height: 'auto', display: 'block' };
+
+    const [lightboxOpen, setLightboxOpen] = React.useState(false);
+    React.useEffect(() => {
+        if (!lightboxOpen) return undefined;
+        const onKey = (e) => { if (e.key === 'Escape') setLightboxOpen(false); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [lightboxOpen]);
+
+    // Explicit full-bleed wins over the implicit lone-image full width: it
+    // breaks out of the grid column to the full content-container width
+    // (CSS class .content-el-image--bleed), matching the Live Component block.
+    const bleed = el.fullBleed === true;
+    const figureClass = [
+        'content-el',
+        'content-el-image',
+        bleed ? 'content-el-image--bleed' : '',
+        // A lone, text-free image renders edge-to-edge within the content
+        // container — no artificial max-width cap.
+        !bleed && fullWidth ? 'img--full' : '',
+        el.rounded ? 'is-rounded' : '',
+    ].filter(Boolean).join(' ');
+    const figureStyle = (!bleed && fullWidth) ? { width: '100%', maxWidth: '100%' } : undefined;
+
+    const imgEl = el.src
+        ? <img src={el.src} alt={el.alt || ''} loading="lazy" style={imgStyle} />
+        : null;
+
     return (
-        <figure className={`content-el content-el-image ${el.rounded ? 'is-rounded' : ''}`.trim()}>
+        <figure className={figureClass} style={figureStyle}>
             <div className="content-el-image-wrap" style={wrapStyle}>
                 {el.src ? (
-                    <img src={el.src} alt={el.alt || ''} loading="lazy" />
+                    el.lightbox === true ? (
+                        <button
+                            type="button"
+                            className="content-el-image-zoom"
+                            onClick={() => setLightboxOpen(true)}
+                            aria-label={el.alt ? `Enlarge image: ${el.alt}` : 'Enlarge image'}
+                            style={{
+                                display: 'block',
+                                width: '100%',
+                                height: ratio !== 'auto' ? '100%' : 'auto',
+                                padding: 0,
+                                border: 'none',
+                                background: 'none',
+                                cursor: 'zoom-in',
+                            }}
+                        >
+                            {imgEl}
+                        </button>
+                    ) : imgEl
                 ) : (
                     <div className="content-el-image-placeholder">
                         <span>Add an image in the panel</span>
@@ -151,6 +219,41 @@ function ImageElement({ el, pathBase }) {
                 >
                     {el.caption || ''}
                 </EditableText>
+            ) : null}
+
+            {lightboxOpen && el.src ? (
+                <div
+                    className="content-el-lightbox"
+                    role="dialog"
+                    aria-modal="true"
+                    onClick={() => setLightboxOpen(false)}
+                    style={{
+                        position: 'fixed',
+                        inset: 0,
+                        zIndex: 9999,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '24px',
+                        background: 'rgba(0, 0, 0, 0.85)',
+                        cursor: 'zoom-out',
+                    }}
+                >
+                    <img
+                        src={el.src}
+                        alt={el.alt || ''}
+                        // Clicking the image itself shouldn't close — only the
+                        // backdrop (or Escape) dismisses the overlay.
+                        onClick={(e) => e.stopPropagation()}
+                        style={{
+                            maxWidth: '90vw',
+                            maxHeight: '90vh',
+                            objectFit: 'contain',
+                            display: 'block',
+                            cursor: 'default',
+                        }}
+                    />
+                </div>
             ) : null}
         </figure>
     );

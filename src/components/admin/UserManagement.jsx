@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
-import { Users, UserPlus, Shield, Trash2, Edit2, Key, Loader2, Tag, Image, Smile, Building, ChevronDown } from 'lucide-react';
+import { Users, UserPlus, Shield, Trash2, Edit2, Key, Loader2, Tag, Image, Smile, Building, ChevronDown, Unlink, Cloud } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 
 import { ORG_ROLES } from '../../config/orgRoles';
@@ -369,9 +369,19 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
         } catch (err) { setMessage({ type: 'error', text: 'Connection error' }); }
     };
 
+    const handleRemoveNcBinding = async (org) => {
+        if (!window.confirm(t('admin.org_nc_remove_confirm', { name: org.name }))) return;
+        try {
+            const res = await authFetch(`${API_BASE}/auth/admin/nc-bindings/org/${org.id}`, { method: 'DELETE' });
+            if (res.ok) { setMessage({ type: 'success', text: t('admin.org_nc_remove_success') }); loadData(); }
+            else { const d = await res.json(); setMessage({ type: 'error', text: d.error || t('admin.org_nc_remove_error') }); }
+        } catch (err) { setMessage({ type: 'error', text: 'Connection error' }); }
+    };
+
     const sections = isFullAdmin ? [
         { key: 'users', labelKey: 'admin.users_tab_users', icon: Users },
         { key: 'organizations', labelKey: 'admin.users_tab_organizations', icon: () => <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" /><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" /><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" /><path d="M10 6h4" /><path d="M10 10h4" /><path d="M10 14h4" /><path d="M10 18h4" /></svg> },
+        { key: 'nextcloud', labelKey: 'admin.users_tab_nextcloud', icon: Cloud },
         { key: 'groups', labelKey: 'admin.users_tab_groups', icon: Shield },
         { key: 'roles', labelKey: 'admin.users_tab_roles', icon: Tag },
         { key: 'permissions', labelKey: 'admin.users_tab_permissions', icon: Key },
@@ -504,16 +514,65 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
                                                     ) : (
                                                         <div className="w-10 h-10 rounded-lg flex items-center justify-center" style={{ background: 'rgba(59, 130, 246, 0.15)' }}><svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-blue-400"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z" /><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2" /><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2" /><path d="M10 6h4" /><path d="M10 10h4" /><path d="M10 14h4" /><path d="M10 18h4" /></svg></div>
                                                     )}
-                                                    <div><h4 className="font-semibold" style={{ color: 'var(--text-primary)' }}>{org.name}</h4><p className="text-sm" style={{ color: 'var(--text-muted)' }}>{org.description}</p></div>
+                                                    <div>
+                                                        <h4 className="font-semibold" style={{ color: 'var(--text-primary)' }}>{org.name}</h4>
+                                                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{org.description}</p>
+                                                        {org.nc_instance_id && <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{t('admin.org_nc_bound_label')}: {org.nc_base_url || org.nc_instance_id}</p>}
+                                                    </div>
                                                 </div>
                                                 <div className="flex items-center gap-2 opacity-100 xl:opacity-0 xl:group-hover:opacity-100">
                                                     <button onClick={() => openEditOrg(org)} className="p-1.5 rounded hover:bg-blue-500/10 text-blue-500"><Edit2 className="w-4 h-4" /></button>
+                                                    {isFullAdmin && org.nc_instance_id && <button onClick={() => handleRemoveNcBinding(org)} title={t('admin.org_nc_remove_title')} className="p-1.5 rounded hover:bg-amber-500/10 text-amber-500"><Unlink className="w-4 h-4" /></button>}
                                                     {isFullAdmin && <button onClick={() => handleDeleteOrg(org.id)} className="p-1.5 rounded hover:bg-red-500/10 text-red-500"><Trash2 className="w-4 h-4" /></button>}
                                                 </div>
                                             </div>
                                         </div>
                                     ))}
                                 </div>
+                            </div>
+                        )}
+
+                        {/* Nextcloud Bindings Section (global admin) */}
+                        {activeSection === 'nextcloud' && (
+                            <div className="space-y-4">
+                                <div className="mb-6">
+                                    <h3 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>{t('admin.nc_bindings_title')}</h3>
+                                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{t('admin.nc_bindings_desc')}</p>
+                                </div>
+                                {(() => {
+                                    const bound = organizations.filter(o => o.nc_instance_id);
+                                    if (bound.length === 0) {
+                                        return <div className="text-sm p-6 text-center rounded-xl border" style={{ color: 'var(--text-muted)', background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>{t('admin.nc_bindings_empty')}</div>;
+                                    }
+                                    return (
+                                        <div className="rounded-xl border overflow-x-auto" style={{ borderColor: 'var(--border-default)' }}>
+                                            <table className="w-full text-sm">
+                                                <thead>
+                                                    <tr style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>
+                                                        <th className="text-left font-medium px-4 py-2">{t('admin.nc_bindings_col_org')}</th>
+                                                        <th className="text-left font-medium px-4 py-2">{t('admin.nc_bindings_col_url')}</th>
+                                                        <th className="text-left font-medium px-4 py-2">{t('admin.nc_bindings_col_instance')}</th>
+                                                        <th className="text-left font-medium px-4 py-2">{t('admin.nc_bindings_col_bound')}</th>
+                                                        <th className="px-4 py-2"></th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {bound.map(org => (
+                                                        <tr key={org.id} className="border-t" style={{ borderColor: 'var(--border-subtle)' }}>
+                                                            <td className="px-4 py-2" style={{ color: 'var(--text-primary)' }}>{org.name}<span className="block text-xs" style={{ color: 'var(--text-muted)' }}>{org.id}</span></td>
+                                                            <td className="px-4 py-2" style={{ color: 'var(--text-secondary)' }}>{org.nc_base_url || '—'}</td>
+                                                            <td className="px-4 py-2 font-mono text-xs" style={{ color: 'var(--text-muted)' }}>{org.nc_instance_id}</td>
+                                                            <td className="px-4 py-2" style={{ color: 'var(--text-muted)' }}>{org.nc_provisioned_at ? new Date(org.nc_provisioned_at).toLocaleDateString() : '—'}</td>
+                                                            <td className="px-4 py-2 text-right whitespace-nowrap">
+                                                                <button onClick={() => handleRemoveNcBinding(org)} className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-amber-600 hover:bg-amber-500/10 font-medium"><Unlink className="w-4 h-4" /> {t('admin.org_nc_remove_title')}</button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         )}
 

@@ -56,6 +56,65 @@ function formatRelative(iso) {
     return d.toLocaleDateString();
 }
 
+// Live-counting SLA badge. Green when comfortably ahead, amber within 30min of
+// the due time, red once breached. Pauses (grey) when the thread waits on the
+// customer or is already resolved/closed.
+function SlaBadge({ thread }) {
+    const [, force] = useState(0);
+    useEffect(() => {
+        const t = setInterval(() => force(n => n + 1), 30000);
+        return () => clearInterval(t);
+    }, []);
+    const dueAt = thread.sla_first_response_due_at && !thread.first_response_at
+        ? thread.sla_first_response_due_at
+        : thread.sla_resolution_due_at;
+    const breached = thread.sla_first_response_breached_at || thread.sla_resolution_breached_at;
+    if (!dueAt && !breached) return null;
+    if (['resolved', 'closed'].includes(thread.status)) return null;
+
+    let bg = 'rgba(16,185,129,0.12)', fg = '#059669', label;
+    if (breached) {
+        bg = 'rgba(239,68,68,0.15)'; fg = '#dc2626'; label = 'SLA breached';
+    } else if (thread.sla_paused) {
+        bg = 'var(--bg-tertiary)'; fg = 'var(--text-muted)'; label = 'SLA paused';
+    } else {
+        const ms = new Date(dueAt).getTime() - Date.now();
+        const mins = Math.round(ms / 60000);
+        if (mins <= 30) { bg = 'rgba(245,158,11,0.15)'; fg = '#b45309'; }
+        if (mins < 0) { label = 'SLA breached'; bg = 'rgba(239,68,68,0.15)'; fg = '#dc2626'; }
+        else if (mins < 60) label = `SLA ${mins}m`;
+        else if (mins < 1440) label = `SLA ${Math.round(mins / 60)}h`;
+        else label = `SLA ${Math.round(mins / 1440)}d`;
+    }
+    return <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: bg, color: fg }}>{label}</span>;
+}
+
+function TagChips({ tags, onRemove }) {
+    if (!Array.isArray(tags) || !tags.length) return null;
+    return (
+        <div className="flex items-center gap-1 flex-wrap">
+            {tags.map(t => (
+                <span key={t} className="text-xs px-1.5 py-0.5 rounded inline-flex items-center gap-1"
+                    style={{ background: 'rgba(99,102,241,0.0)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}>
+                    #{t}
+                    {onRemove && (
+                        <button onClick={() => onRemove(t)} className="opacity-60 hover:opacity-100" style={{ color: 'var(--text-muted)' }}>×</button>
+                    )}
+                </span>
+            ))}
+        </div>
+    );
+}
+
+function CsatStars({ score }) {
+    if (!score) return null;
+    return (
+        <span className="text-xs inline-flex items-center" title={`Customer rated ${score}/5`} style={{ color: '#f59e0b' }}>
+            {'★'.repeat(score)}<span style={{ color: 'var(--text-muted)' }}>{'★'.repeat(5 - score)}</span>
+        </span>
+    );
+}
+
 export default function SupportInboxPanel({ focusThreadId = null }) {
     const [threads, setThreads] = useState([]);
     const [counts, setCounts] = useState({});
@@ -71,6 +130,11 @@ export default function SupportInboxPanel({ focusThreadId = null }) {
     const [view, setView] = useState('inbox'); // 'inbox' | 'ai-config'
     const [showActivity, setShowActivity] = useState(false);
     const [activity, setActivity] = useState([]);
+    const [selectedIds, setSelectedIds] = useState(() => new Set()); // bulk selection
+    const [bulkBusy, setBulkBusy] = useState(false);
+    const [cannedResponses, setCannedResponses] = useState([]);
+    const [showCanned, setShowCanned] = useState(false);
+    const [newTag, setNewTag] = useState('');
     const esRef = useRef(null);
 
     const statusInQuery = useMemo(() => {
@@ -193,6 +257,71 @@ export default function SupportInboxPanel({ focusThreadId = null }) {
         }
     };
 
+    // Load canned responses once (used by the reply composer picker).
+    useEffect(() => {
+        (async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/api/support/canned`);
+                if (res.ok) { const d = await res.json(); setCannedResponses(d.responses || []); }
+            } catch {}
+        })();
+    }, []);
+
+    const toggleSelected = (id) => {
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            return next;
+        });
+    };
+
+    const runBulk = async (action, params = {}) => {
+        const ids = Array.from(selectedIds);
+        if (!ids.length) return;
+        setBulkBusy(true);
+        try {
+            const res = await authFetch(`${API_BASE}/api/support/threads/bulk`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ ids, action, params }),
+            });
+            if (res.ok) {
+                setSelectedIds(new Set());
+                await fetchThreads();
+                if (selectedId && ids.includes(selectedId)) await fetchThread(selectedId);
+            }
+        } finally {
+            setBulkBusy(false);
+        }
+    };
+
+    const addTag = async () => {
+        const t = newTag.trim();
+        if (!t || !thread) return;
+        const tags = [...(thread.tags || []), t];
+        setNewTag('');
+        await patchThread({ tags });
+    };
+    const removeTag = async (t) => {
+        if (!thread) return;
+        await patchThread({ tags: (thread.tags || []).filter(x => x !== t) });
+    };
+
+    const insertCanned = async (canned) => {
+        try {
+            const res = await authFetch(`${API_BASE}/api/support/canned/${canned.id}/render`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ threadId: selectedId }),
+            });
+            const rendered = res.ok ? (await res.json()).rendered : canned.body;
+            setReply(prev => (prev ? `${prev}\n${rendered}` : rendered));
+        } catch {
+            setReply(prev => (prev ? `${prev}\n${canned.body}` : canned.body));
+        }
+        setShowCanned(false);
+    };
+
     const counter = (key) => counts[key] || 0;
     const activeTotal = counter('open') + counter('ai_responding') + counter('awaiting_user') + counter('awaiting_agent');
 
@@ -280,21 +409,46 @@ export default function SupportInboxPanel({ focusThreadId = null }) {
                             >{f.label}</button>
                         ))}
                     </div>
+                    {selectedIds.size > 0 && (
+                        <div className="px-3 py-2 border-b flex items-center gap-2 flex-wrap text-xs" style={{ borderColor: 'var(--border-default)', background: 'var(--bg-tertiary)' }}>
+                            <span style={{ color: 'var(--text-secondary)' }}>{selectedIds.size} selected</span>
+                            <button disabled={bulkBusy} onClick={() => runBulk('resolve')} className="px-2 py-1 rounded border disabled:opacity-50" style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}>Resolve</button>
+                            <select disabled={bulkBusy} onChange={e => { if (e.target.value) { runBulk('priority', { priority: e.target.value }); e.target.value = ''; } }} className="px-1.5 py-1 rounded border" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }} defaultValue="">
+                                <option value="">Set priority…</option>
+                                {Object.entries(PRIORITY_BADGES).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
+                            </select>
+                            <input
+                                placeholder="Add tag + Enter"
+                                disabled={bulkBusy}
+                                onKeyDown={e => { if (e.key === 'Enter' && e.target.value.trim()) { runBulk('tag', { tag: e.target.value.trim() }); e.target.value = ''; } }}
+                                className="px-2 py-1 rounded border w-28" style={{ background: 'var(--bg-card)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                            />
+                            <button onClick={() => setSelectedIds(new Set())} className="px-2 py-1 rounded" style={{ color: 'var(--text-muted)' }}>Clear</button>
+                        </div>
+                    )}
                     <div className="flex-1 overflow-y-auto">
                         {threads.length === 0 && !loading && (
                             <div className="p-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>No threads</div>
                         )}
                         {threads.map(t => (
-                            <button
+                            <div
                                 key={t.id}
+                                className="w-full flex items-start gap-2 px-3 py-2.5 border-b hover:bg-[var(--bg-tertiary)] cursor-pointer"
                                 onClick={() => setSelectedId(t.id)}
-                                className="w-full text-left px-3 py-2.5 border-b hover:bg-[var(--bg-tertiary)]"
                                 style={{
                                     borderColor: 'var(--border-default)',
                                     background: selectedId === t.id ? 'var(--bg-tertiary)' : 'transparent',
                                 }}
                             >
-                                <div className="flex items-center gap-2 mb-1">
+                                <input
+                                    type="checkbox"
+                                    checked={selectedIds.has(t.id)}
+                                    onClick={e => e.stopPropagation()}
+                                    onChange={() => toggleSelected(t.id)}
+                                    className="mt-1 shrink-0"
+                                />
+                                <div className="min-w-0 flex-1 text-left">
+                                <div className="flex items-center gap-2 mb-1 flex-wrap">
                                     <span className="w-2 h-2 rounded-full" style={{ background: STATUS_DOT[t.status] }} />
                                     <span className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                                         {STATUS_LABELS[t.status] || t.status}
@@ -307,12 +461,17 @@ export default function SupportInboxPanel({ focusThreadId = null }) {
                                             {PRIORITY_BADGES[t.priority].label}
                                         </span>
                                     )}
+                                    <SlaBadge thread={t} />
+                                    <CsatStars score={t.csat_score} />
                                 </div>
                                 <div className="text-sm font-medium line-clamp-1" style={{ color: 'var(--text-primary)' }}>{t.subject}</div>
                                 <div className="text-xs mt-0.5 flex items-center justify-between" style={{ color: 'var(--text-muted)' }}>
                                     <span className="truncate">{t.requester_email}</span>
                                     <span className="shrink-0 ml-2">{formatRelative(t.last_message_at)}</span>
                                 </div>
+                                {Array.isArray(t.tags) && t.tags.length > 0 && (
+                                    <div className="mt-1"><TagChips tags={t.tags} /></div>
+                                )}
                                 {(t.requester_org_role || t.requester_org_name) && (
                                     <div className="text-xs mt-1 flex items-center gap-1.5 flex-wrap" style={{ color: 'var(--text-muted)' }}>
                                         <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded"
@@ -324,7 +483,8 @@ export default function SupportInboxPanel({ focusThreadId = null }) {
                                         )}
                                     </div>
                                 )}
-                            </button>
+                                </div>
+                            </div>
                         ))}
                     </div>
                 </div>
@@ -353,6 +513,20 @@ export default function SupportInboxPanel({ focusThreadId = null }) {
                                             <span>Source: {thread.source}</span>
                                             {thread.ai_handled && <span style={{ color: '#0ea5e9' }}>AI handled</span>}
                                             {thread.ai_escalated_reason && <span style={{ color: '#b45309' }}>Escalated: {thread.ai_escalated_reason}</span>}
+                                            <SlaBadge thread={thread} />
+                                            {thread.csat_score && <CsatStars score={thread.csat_score} />}
+                                            {thread.category && <span className="px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>{thread.category}</span>}
+                                        </div>
+                                        <div className="mt-2 flex items-center gap-2 flex-wrap">
+                                            <TagChips tags={thread.tags} onRemove={removeTag} />
+                                            <input
+                                                value={newTag}
+                                                onChange={e => setNewTag(e.target.value)}
+                                                onKeyDown={e => e.key === 'Enter' && addTag()}
+                                                placeholder="+ tag"
+                                                className="text-xs px-1.5 py-0.5 rounded border w-20"
+                                                style={{ background: 'var(--bg-card)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                                            />
                                         </div>
                                     </div>
                                     <div className="flex items-center gap-1.5">
@@ -459,20 +633,43 @@ export default function SupportInboxPanel({ focusThreadId = null }) {
                                     );
                                 })}
                             </div>
-                            <div className="border-t p-3" style={{ borderColor: 'var(--border-default)' }}>
+                            <div className="border-t p-3 relative" style={{ borderColor: 'var(--border-default)' }}>
+                                {showCanned && cannedResponses.length > 0 && (
+                                    <div className="absolute bottom-full left-3 right-3 mb-1 max-h-56 overflow-y-auto rounded-md border shadow-lg z-10"
+                                        style={{ background: 'var(--bg-card)', borderColor: 'var(--border-default)' }}>
+                                        {cannedResponses.map(c => (
+                                            <button key={c.id} onClick={() => insertCanned(c)}
+                                                className="w-full text-left px-3 py-2 border-b hover:bg-[var(--bg-tertiary)] text-sm"
+                                                style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}>
+                                                <div className="font-medium flex items-center gap-2">{c.title}{c.shortcut && <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{c.shortcut}</span>}</div>
+                                                <div className="text-xs line-clamp-1" style={{ color: 'var(--text-muted)' }}>{c.body}</div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
                                 <textarea
                                     rows={3}
                                     value={reply}
                                     onChange={e => setReply(e.target.value)}
-                                    placeholder={internalNote ? 'Internal note (only visible to staff)…' : 'Reply to the customer…'}
+                                    onKeyDown={e => {
+                                        // Open the canned picker when "/" is typed on an empty line.
+                                        if (e.key === '/' && !reply.trim()) setShowCanned(true);
+                                        if (e.key === 'Escape') setShowCanned(false);
+                                    }}
+                                    placeholder={internalNote ? 'Internal note (only visible to staff)…' : 'Reply to the customer…  (type / for templates)'}
                                     className="w-full px-3 py-2 rounded-md border text-sm resize-y"
                                     style={{ background: 'var(--bg-card)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                                 />
                                 <div className="mt-2 flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
                                     <label className="text-xs flex items-center gap-1.5" style={{ color: 'var(--text-secondary)' }}>
                                         <input type="checkbox" checked={internalNote} onChange={e => setInternalNote(e.target.checked)} />
                                         Internal note
                                     </label>
+                                    {cannedResponses.length > 0 && (
+                                        <button onClick={() => setShowCanned(v => !v)} className="text-xs" style={{ color: 'var(--text-muted)' }}>Templates</button>
+                                    )}
+                                    </div>
                                     <button
                                         onClick={sendReply}
                                         disabled={sending || !reply.trim()}

@@ -1,11 +1,13 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Plus, Play, Wand2, Search, Trash2, Compass, StopCircle, Eye, Loader2 } from 'lucide-react';
+import { Plus, Play, Wand2, Search, Trash2, Compass, StopCircle, Eye, Loader2, LayoutDashboard } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../../utils/helpers';
 import useTranslation from '../../../../hooks/useTranslation';
 import StudioShell from '../../../shared/StudioShell';
 import SourcePicker from './SourcePicker';
 import RunModal from './RunModal';
 import RunResults from './RunResults';
+import InsightsDashboard, { StatusDot } from './InsightsDashboard';
+import SuiteTrends from './SuiteTrends';
 
 /**
  * TestsStudio — beta-quality Studio tab for Playwright test generation + runs.
@@ -26,32 +28,38 @@ export default function TestsStudio({ user }) {
     const [showRunModal, setShowRunModal] = useState(false);
     const [adHocExplore, setAdHocExplore] = useState(false);
     const [activeRunId, setActiveRunId] = useState(null);
+    const [showDashboard, setShowDashboard] = useState(false);
 
     const [generating, setGenerating] = useState(false);
     const [genError, setGenError] = useState(null);
     const [draftCode, setDraftCode] = useState('');
     const [editing, setEditing] = useState(false);
-    const [activeRun, setActiveRun] = useState(null);
+    const [activeRuns, setActiveRuns] = useState([]);
 
-    const fetchActiveRun = useCallback(async () => {
+    const fetchActiveRuns = useCallback(async () => {
         try {
             const res = await authFetch(`${API_BASE}/api/tests/runs/active`);
             if (res.ok) {
                 const data = await res.json();
-                setActiveRun(data.run || null);
+                setActiveRuns(data.runs || (data.run ? [data.run] : []));
             }
         } catch (_) { /* ignore */ }
     }, []);
 
-    useEffect(() => { fetchActiveRun(); }, [fetchActiveRun]);
+    // Poll in-flight runs so several concurrent runs stay live in the sidebar.
+    useEffect(() => {
+        fetchActiveRuns();
+        const id = setInterval(fetchActiveRuns, 5000);
+        return () => clearInterval(id);
+    }, [fetchActiveRuns]);
 
-    const cancelActiveRun = async () => {
-        if (!activeRun) return;
+    const cancelRun = async (run) => {
+        if (!run) return;
         if (!window.confirm('Cancel the running test? Any progress so far is kept.')) return;
-        const res = await authFetch(`${API_BASE}/api/tests/runs/${encodeURIComponent(activeRun.id)}/cancel`, { method: 'POST' });
+        const res = await authFetch(`${API_BASE}/api/tests/runs/${encodeURIComponent(run.id)}/cancel`, { method: 'POST' });
         if (res.ok || res.status === 409) {
-            setActiveRun(null);
-            if (activeRunId === activeRun.id) setActiveRunId(null);
+            if (activeRunId === run.id) setActiveRunId(null);
+            fetchActiveRuns();
         } else {
             const data = await res.json().catch(() => ({}));
             window.alert(data?.message || data?.error || 'Failed to cancel');
@@ -96,6 +104,7 @@ export default function TestsStudio({ user }) {
         if (res.ok) {
             const data = await res.json();
             await fetchSuites();
+            setShowDashboard(false);
             setSelected(data.suite);
         }
     };
@@ -149,11 +158,6 @@ export default function TestsStudio({ user }) {
     };
 
     const startAgentRunFromPicker = async ({ targetUrl, source, credentials }) => {
-        // SourcePicker is a generation-only modal; the "Run with Agent"
-        // shortcut bypasses Generate and starts a live agent run with the
-        // first agent-compatible source the user picked. `credentials`, if
-        // provided, is sent over the request body and stashed in the
-        // worker's in-memory map — it is never persisted server-side.
         const body = { targetUrl, mode: 'agent', source, suiteId: selected?.id || null };
         if (credentials && Object.keys(credentials).length > 0) body.credentials = credentials;
         const res = await authFetch(`${API_BASE}/api/tests/runs`, {
@@ -165,14 +169,12 @@ export default function TestsStudio({ user }) {
         if (!res.ok) throw new Error(data?.message || data?.error || 'failed_to_start');
         setShowSourcePicker(false);
         setActiveRunId(data.runId);
-        fetchActiveRun();
+        fetchActiveRuns();
     };
 
-    const startRun = async ({ targetUrl, mode, source, maxSteps }) => {
+    const startRun = async ({ targetUrl, mode, source, maxSteps, credentials }) => {
         let body;
         if (mode === 'agent') {
-            // Agent runs always carry a source; suite link is optional so the
-            // user can pin the run to a suite for history without using its code.
             body = { targetUrl, mode, source, suiteId: adHocExplore ? null : (selected?.id || null) };
             if (Number.isFinite(maxSteps) && maxSteps > 0) body.maxSteps = maxSteps;
         } else if (mode === 'explore' && adHocExplore) {
@@ -180,6 +182,9 @@ export default function TestsStudio({ user }) {
         } else {
             body = { suiteId: selected?.id, targetUrl, mode };
         }
+        // Credentials (agent + suite) ride along in the request only; the worker
+        // keeps them in memory for the run and never persists them.
+        if (credentials && Object.keys(credentials).length > 0) body.credentials = credentials;
         const res = await authFetch(`${API_BASE}/api/tests/runs`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -190,10 +195,16 @@ export default function TestsStudio({ user }) {
         setShowRunModal(false);
         setAdHocExplore(false);
         setActiveRunId(data.runId);
-        fetchActiveRun();
+        fetchActiveRuns();
     };
 
+    const openExplore = () => { setAdHocExplore(true); setShowRunModal(true); };
+
     const filtered = suites.filter(s => !q || (s.name || '').toLowerCase().includes(q.toLowerCase()));
+    const running = activeRuns.filter(r => r.status === 'running');
+    const queued = activeRuns.filter(r => r.status === 'queued');
+
+    const selectSuite = (s) => { setShowDashboard(false); setActiveRunId(null); setSelected(s); };
 
     return (
         <>
@@ -215,6 +226,15 @@ export default function TestsStudio({ user }) {
                 )}
                 sidebar={(
                     <div className="flex flex-col gap-2 p-3">
+                        <button
+                            onClick={() => { setShowDashboard(true); setSelected(null); setActiveRunId(null); }}
+                            className={`flex items-center gap-2 text-xs px-3 py-2 rounded border ${showDashboard && !selected && !activeRunId
+                                ? 'border-[var(--accent-primary)] bg-[var(--bg-secondary)]'
+                                : 'border-transparent hover:bg-[var(--bg-secondary)]'}`}
+                        >
+                            <LayoutDashboard size={12} /> Overview
+                        </button>
+
                         <div className="relative">
                             <Search size={12} className="absolute left-2 top-2 text-[var(--text-tertiary)]" />
                             <input
@@ -225,31 +245,39 @@ export default function TestsStudio({ user }) {
                             />
                         </div>
 
-                        {activeRun && activeRun.id !== activeRunId && (
+                        {(running.length > 0 || queued.length > 0) && (
                             <div className="text-[11px] rounded border border-amber-500/40 bg-amber-500/10 p-2 flex flex-col gap-1.5">
                                 <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-semibold">
-                                    <Loader2 className="animate-spin" size={11} /> Run in progress
+                                    <Loader2 className="animate-spin" size={11} />
+                                    {running.length} running{queued.length > 0 ? ` · ${queued.length} queued` : ''}
                                 </div>
-                                <div className="font-mono text-[10px] truncate text-[var(--text-secondary)]">{activeRun.id.slice(0, 8)} — {activeRun.mode}</div>
-                                <div className="flex gap-1">
-                                    <button
-                                        onClick={() => setActiveRunId(activeRun.id)}
-                                        className="flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded border border-[var(--border-default)] hover:border-[var(--accent-primary)]"
-                                    >
-                                        <Eye size={10} /> View
-                                    </button>
-                                    <button
-                                        onClick={cancelActiveRun}
-                                        className="flex-1 flex items-center justify-center gap-1 px-2 py-1 rounded border border-red-500/40 text-red-500 hover:bg-red-500/10"
-                                    >
-                                        <StopCircle size={10} /> Cancel
-                                    </button>
-                                </div>
+                                {activeRuns.slice(0, 6).map(run => (
+                                    <div key={run.id} className="flex items-center gap-1.5">
+                                        <StatusDot status={run.status} />
+                                        <span className="font-mono text-[10px] truncate text-[var(--text-secondary)] flex-1">
+                                            {run.id.slice(0, 8)} · {run.mode}
+                                        </span>
+                                        <button
+                                            onClick={() => { setSelected(null); setShowDashboard(false); setActiveRunId(run.id); }}
+                                            className="p-0.5 rounded hover:bg-amber-500/20"
+                                            title="View run"
+                                        >
+                                            <Eye size={11} />
+                                        </button>
+                                        <button
+                                            onClick={() => cancelRun(run)}
+                                            className="p-0.5 rounded text-red-500 hover:bg-red-500/10"
+                                            title="Cancel run"
+                                        >
+                                            <StopCircle size={11} />
+                                        </button>
+                                    </div>
+                                ))}
                             </div>
                         )}
 
                         <button
-                            onClick={() => { setAdHocExplore(true); setShowRunModal(true); }}
+                            onClick={openExplore}
                             className="flex items-center gap-2 text-xs px-3 py-2 rounded border border-dashed border-[var(--border-default)] hover:border-[var(--accent-primary)] text-[var(--text-secondary)]"
                         >
                             <Compass size={12} /> Ad-hoc explore
@@ -265,7 +293,7 @@ export default function TestsStudio({ user }) {
                             {filtered.map(s => (
                                 <button
                                     key={s.id}
-                                    onClick={() => setSelected(s)}
+                                    onClick={() => selectSuite(s)}
                                     className={`text-left text-xs px-3 py-2 rounded border ${selected?.id === s.id
                                         ? 'border-[var(--accent-primary)] bg-[var(--bg-secondary)]'
                                         : 'border-transparent hover:bg-[var(--bg-secondary)]'}`}
@@ -283,12 +311,10 @@ export default function TestsStudio({ user }) {
                 {activeRunId ? (
                     <RunResults
                         runId={activeRunId}
-                        onClose={() => { setActiveRunId(null); fetchActiveRun(); }}
-                        onCancelled={() => { fetchActiveRun(); }}
+                        onClose={() => { setActiveRunId(null); fetchActiveRuns(); }}
+                        onCancelled={() => { fetchActiveRuns(); }}
                     />
-                ) : !selected ? (
-                    <EmptyMain onCreate={createSuite} />
-                ) : (
+                ) : selected ? (
                     <Detail
                         suite={selectedDetail || selected}
                         runs={runs}
@@ -303,6 +329,12 @@ export default function TestsStudio({ user }) {
                         onOpenRun={(id) => setActiveRunId(id)}
                         generating={generating}
                         genError={genError}
+                    />
+                ) : (
+                    <InsightsDashboard
+                        onCreate={createSuite}
+                        onExplore={openExplore}
+                        onOpenRun={(id) => setActiveRunId(id)}
                     />
                 )}
             </StudioShell>
@@ -322,25 +354,6 @@ export default function TestsStudio({ user }) {
                 />
             )}
         </>
-    );
-}
-
-function EmptyMain({ onCreate }) {
-    return (
-        <div className="h-full flex flex-col items-center justify-center text-center p-10 text-[var(--text-secondary)]">
-            <div className="text-base font-semibold mb-2">Generate Playwright tests from your sources</div>
-            <p className="max-w-md text-sm text-[var(--text-tertiary)] mb-5">
-                Pick AI conversations, GitHub commits or files, YouTrack issues, or paste a spec.
-                Generate a Playwright suite, run it against a URL, or skip generation and explore the
-                site with a live browser.
-            </p>
-            <button
-                onClick={onCreate}
-                className="px-4 py-2 text-sm rounded text-white font-semibold" style={{ background: 'var(--accent-primary)' }}
-            >
-                <Plus size={14} className="inline mr-1" /> Create test suite
-            </button>
-        </div>
     );
 }
 
@@ -382,6 +395,11 @@ function Detail({ suite, runs, draftCode, setDraftCode, editing, setEditing, onS
 
             <div className="flex-1 min-h-0 overflow-y-auto p-5 flex flex-col gap-4">
                 {genError && <GenerationError data={genError} />}
+
+                <section className="rounded-lg border border-[var(--border-default)] p-4">
+                    <h4 className="text-xs font-semibold text-[var(--text-secondary)] mb-3">Insights</h4>
+                    <SuiteTrends suiteId={suite.id} refreshKey={runs.length} />
+                </section>
 
                 <section>
                     <h4 className="text-xs font-semibold text-[var(--text-secondary)] mb-2">Sources used</h4>

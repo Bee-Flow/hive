@@ -11,6 +11,7 @@ import { SubscriptionProvider, useSubscriptionContext } from './components/Subsc
 import NcOnboardingWizard from './components/NcOnboardingWizard';
 import NcOnboardingPending from './components/NcOnboardingPending';
 import NcBindingApprovalModal from './components/NcBindingApprovalModal';
+import EmailVerificationScreen from './components/EmailVerificationScreen';
 import ProductWebsite from './marketing/ProductWebsite';
 import LegalPage from './marketing/LegalPage';
 import HomePage from './marketing/HomePage';
@@ -77,6 +78,7 @@ const PAGE_ROUTES = {
     meetingNotes: '/app/meeting-notes',
     templates: '/app/templates',
     notebooks: '/app/notebooks',
+    legal: '/app/legal',
     webpages: '/app/webpages',
     ticketAssistant: '/ticket-assistant',
 };
@@ -124,6 +126,8 @@ function pageFromPath(pathname) {
     if (pathname === '/app/ai-tasks' || pathname.startsWith('/app/ai-tasks/')) return 'aiTasks';
     // /app/notebooks/:id → notebooks page (must come before generic /app/*)
     if (pathname.startsWith('/app/notebooks')) return 'notebooks';
+    // /app/legal/:id → Legal Studio (must come before generic /app/*)
+    if (pathname.startsWith('/app/legal')) return 'legal';
     // /app/webpages/:id → unified Studio (Webpages tab)
     if (pathname.startsWith('/app/webpages')) return 'studio';
     // /app/meeting-notes → unified Studio (Meeting Notes tab)
@@ -219,6 +223,12 @@ function parseDirectChatUrl(pathname) {
 // Extract notebook ID from URL: /app/notebooks/:id
 function parseNotebookUrl(pathname) {
     const match = pathname.match(/^\/app\/notebooks\/([a-zA-Z0-9_-]+)/);
+    return match ? match[1] : null;
+}
+
+// Extract matter ID from URL: /app/legal/:id
+function parseLegalUrl(pathname) {
+    const match = pathname.match(/^\/app\/legal\/([a-zA-Z0-9_-]+)/);
     return match ? match[1] : null;
 }
 
@@ -392,6 +402,7 @@ function App() {
     const [adminPath, setAdminPath] = useState(() => parseAdminPath(window.location.pathname));
     const [orgSettingsPath, setOrgSettingsPath] = useState(() => parseOrgSettingsPath(window.location.pathname));
     const [initialNotebookId, setInitialNotebookId] = useState(() => parseNotebookUrl(window.location.pathname));
+    const [initialMatterId, setInitialMatterId] = useState(() => parseLegalUrl(window.location.pathname));
     const [user, setUser] = useState(null);
     const [isAuthenticated, setIsAuthenticated] = useState(false);
 
@@ -425,6 +436,7 @@ function App() {
     // Hard-refreshes on /app/notebooks and /app/notebooks/:id still land the
     // user on the notebook via `initialNotebookId` parsed by pageFromPath.
     const [showNotebooks, setShowNotebooks] = useState(() => pageFromPath(window.location.pathname) === 'notebooks');
+    const [showLegal, setShowLegal] = useState(() => pageFromPath(window.location.pathname) === 'legal');
     const [encryptionState, setEncryptionState] = useState(null); // null | 'setup' | 'pin' | { recoveryKey: string }
     const [noOrganization, setNoOrganization] = useState(false);
     const [pendingApproval, setPendingApproval] = useState(false);
@@ -554,6 +566,17 @@ function App() {
                         const canManageUsers = permissions.includes('all') || permissions.includes('manage_users');
                         setUser({ ...data.user, permissions, groups: userGroups, organizations: userOrgs, allowedAgentTypes, betaFeatures, canUseFeature, featureFlags: data.featureFlags || {}, enabledIntegrations: data.enabledIntegrations || null, canManageUsers: canManageUsers || data.user.isAdmin, encryptionEnabled: data.encryptionEnabled !== false, isConsumerAccount: !!data.isConsumerAccount, ncOrg: data.ncOrg || null, organization: data.organization || null });
                         setIsAuthenticated(true);
+                    } else {
+                        // Not authenticated. In the embedded connector this can
+                        // mean bootstrap hasn't finished (no tenant key yet) —
+                        // ask the connector for diagnostics so we can show the
+                        // in-app email-verification screen instead of a dead
+                        // login form. Connector-owned route; 404s harmlessly in
+                        // standalone (non-embedded) mode.
+                        try {
+                            const diagRes = await authFetch(`${API_BASE}/setup/diagnostics`, { cache: 'no-store' });
+                            if (diagRes.ok) setBootstrapDiagnostics(await diagRes.json());
+                        } catch (_) { /* not embedded / connector unreachable */ }
                     }
                 }
             } catch (err) {
@@ -586,6 +609,8 @@ function App() {
             setShowAITasks(isAITasks);
             if (isAITasks) setInitialAITaskId(parseAITasksUrl(window.location.pathname));
             setShowNotebooks(page === 'notebooks');
+            setShowLegal(page === 'legal');
+            if (page === 'legal') setInitialMatterId(parseLegalUrl(window.location.pathname));
         };
         window.addEventListener('popstate', handlePopState);
         return () => window.removeEventListener('popstate', handlePopState);
@@ -601,6 +626,10 @@ function App() {
     }, []);
 
     const navigateToPage = useCallback((page) => {
+        // Close the Legal Studio panel whenever we navigate elsewhere. The panel
+        // is rendered first in AgentHub's ternary, so it must be reset here for
+        // any non-legal destination (mirrors how showNotebooks is managed).
+        if (page !== 'legal' && !page.startsWith('legal/')) setShowLegal(false);
         // Root / home → redirect to /app
         if (page === '/' || page === 'home') {
             setCurrentPage('agents');
@@ -779,6 +808,27 @@ function App() {
             const path = notebookId ? `/app/notebooks/${notebookId}` : '/app/notebooks';
             if (window.location.pathname !== path) {
                 window.history.pushState({ page: 'notebooks', notebookId }, '', path);
+            }
+            return;
+        }
+        // Legal Studio — rendered inline inside AgentHub (same pattern as
+        // Notebooks). Bare 'legal' → dossier list; 'legal/:id' deep-links a matter.
+        if (page === 'legal' || page.startsWith('legal/')) {
+            const matterId = page.startsWith('legal/') ? page.slice('legal/'.length) : null;
+            setInitialMatterId(matterId);
+            setShowLegal(true);
+            setShowNotebooks(false);
+            setShowSettings(false);
+            setShowAgentDesigner(false);
+            setShowSkillsPanel(false);
+            setShowEmailKB(false);
+            setShowAITasks(false);
+            setShowStudio(false);
+            setCurrentPage('legal');
+            setShowProfileMenu(false);
+            const path = matterId ? `/app/legal/${matterId}` : '/app/legal';
+            if (window.location.pathname !== path) {
+                window.history.pushState({ page: 'legal', matterId }, '', path);
             }
             return;
         }
@@ -995,6 +1045,14 @@ function App() {
                 </div>
             </div>
         );
+    }
+
+    // Embedded connector awaiting in-app email verification — show the code
+    // screen instead of the login form. The connector has no tenant key yet, so
+    // /auth/user reports unauthenticated; the connector's /setup/diagnostics
+    // tells us a code was emailed to the org admin.
+    if (!isAuthenticated && bootstrapDiagnostics?.state === 'awaiting_email_verification') {
+        return <EmailVerificationScreen verification={bootstrapDiagnostics.verification} t={t} />;
     }
 
     // Not authenticated → show login page directly
@@ -1243,6 +1301,17 @@ function App() {
             // Mirror the Settings / Agent Designer close pattern — rewrite the
             // URL back to the app root so /app/notebooks doesn't linger.
             if (window.location.pathname.startsWith('/app/notebooks')) {
+                setCurrentPage('agents');
+                window.history.pushState({ page: 'agents' }, '', '/app');
+            }
+        }} showLegal={showLegal} initialMatterId={initialMatterId} onMatterChange={(id) => {
+            setInitialMatterId(id);
+            const path = id ? `/app/legal/${id}` : '/app/legal';
+            window.history.replaceState({ page: 'legal', matterId: id }, '', path);
+        }} onCloseLegal={() => {
+            setShowLegal(false);
+            setInitialMatterId(null);
+            if (window.location.pathname.startsWith('/app/legal')) {
                 setCurrentPage('agents');
                 window.history.pushState({ page: 'agents' }, '', '/app');
             }
