@@ -779,9 +779,30 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                         {/* License key activation (self-hosted; or cloud Full-tier internal orgs) */}
                         {showLicenseActivation && <LicenseKeyActivation />}
 
+                        {/* Server-wide licence in effect: the whole install runs at the
+                            licence tier, so this org needs no Stripe subscription. Hide the
+                            cloud subscription/usage/plans dashboard entirely and show a
+                            read-only note instead. Suppressed when LicenseKeyActivation is
+                            already rendering its own server-override banner (self-hosted). */}
+                        {licenseCtx?.serverOverride && !showLicenseActivation && (
+                            <div className="rounded-2xl border px-5 py-4 flex items-start gap-3"
+                                style={{ borderColor: 'rgba(59,130,246,0.3)', background: 'rgba(59,130,246,0.06)' }}>
+                                <Shield className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: 'rgb(59,130,246)' }} />
+                                <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                                    <div className="font-semibold mb-0.5" style={{ color: 'var(--text-primary)' }}>
+                                        {t('license.server_override_title', 'Tier is managed server-wide')}
+                                    </div>
+                                    <div>
+                                        {t('org.server_license_no_subscription',
+                                           'This installation is covered by a server-wide licence, so your organisation does not need a subscription. Usage and billing are managed by the platform operator.')}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
                         {/* Post-checkout settling spinner. Drives the polling loop that waits
                             for the Stripe webhook to flip status → active/trialing. */}
-                        {checkoutSettling && (
+                        {!licenseCtx?.serverOverride && checkoutSettling && (
                             <div
                                 className="rounded-2xl border px-4 py-3 flex items-center gap-3"
                                 style={{ borderColor: 'rgba(59,130,246,0.3)', background: 'rgba(59,130,246,0.06)' }}
@@ -798,7 +819,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                             </div>
                         )}
 
-                        {subLoading ? (
+                        {!licenseCtx?.serverOverride && (subLoading ? (
                             <div className="space-y-4 animate-pulse">
                                 <div className="h-28 rounded-2xl bg-[var(--bg-tertiary)]" />
                                 <div className="h-40 rounded-2xl bg-[var(--bg-tertiary)]" />
@@ -1160,7 +1181,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                     );
                                 })()}
                             </>
-                        )}
+                        ))}
                     </div>
                 )}
 

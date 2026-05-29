@@ -57,6 +57,11 @@ const EmbeddingsConfig = ({ providers, allModels, fetchAllModels }) => {
         ? allModels.filter(m => m.providerId === config.embeddingProviderId)
         : [];
 
+    // Azure embedding model is a deployment name and must be typed manually
+    const selectedProvider = providers.find(p => p.id === config.embeddingProviderId);
+    const isAzure = selectedProvider?.type === 'azure';
+    const useModelDropdown = providerModels.length > 0 && !isAzure;
+
     if (loading) return <div className="text-sm p-4" style={{ color: 'var(--text-muted)' }}>Loading settings...</div>;
 
     return (
@@ -96,7 +101,7 @@ const EmbeddingsConfig = ({ providers, allModels, fetchAllModels }) => {
 
                 <div>
                     <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-primary)' }}>Embedding Model</label>
-                    {providerModels.length > 0 ? (
+                    {useModelDropdown ? (
                         <select
                             value={config.embeddingModel}
                             onChange={e => setConfig({ ...config, embeddingModel: e.target.value })}
@@ -113,13 +118,15 @@ const EmbeddingsConfig = ({ providers, allModels, fetchAllModels }) => {
                             type="text"
                             value={config.embeddingModel}
                             onChange={e => setConfig({ ...config, embeddingModel: e.target.value })}
-                            placeholder="e.g. text-embedding-3-small"
+                            placeholder={isAzure ? 'Your Azure deployment name, e.g. text-embedding-3-small' : 'e.g. text-embedding-3-small'}
                             className="w-full px-4 py-2.5 rounded-lg border outline-none focus:border-[var(--accent-primary)]"
                             style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                         />
                     )}
                     <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
-                        For Mistral, &quot;mistral-embed&quot; is recommended.
+                        {isAzure
+                            ? 'For Azure, enter the deployment name of your embedding model (not the base model name).'
+                            : 'For Mistral, "mistral-embed" is recommended.'}
                     </p>
                 </div>
 

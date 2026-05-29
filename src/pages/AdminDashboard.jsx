@@ -15,11 +15,15 @@ import ProductWebsitePanel from '../components/admin/ProductWebsite/ProductWebsi
 import ServerLicensePanel from '../components/admin/ServerLicensePanel';
 import SupportInboxPanel from '../components/admin/SupportInboxPanel';
 import { useDeploymentMode } from '../hooks/useDeploymentMode';
+import { useLicenseContext } from '../components/LicenseContext';
 
 
 const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
     const { t } = useTranslation();
     const { isCloud, isSelfHosted } = useDeploymentMode();
+    // A server-wide licence covers the whole install — no org needs a Stripe
+    // subscription, so the cloud Subscriptions management surface is moot.
+    const { serverOverride } = useLicenseContext();
     const isPlatformAdmin = user?.isAdmin || user?.role === 'admin';
 
     // Permission helper - checks if user has a specific permission
@@ -61,6 +65,8 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
     const checkTabAccess = (tab) => {
         if (!tab) return true;
         if (tab.cloudOnly && !isCloud) return false;
+        // Server-wide licence active → no per-org subscriptions to manage.
+        if (tab.id === 'subscriptions' && serverOverride) return false;
         if (tab.selfHostedOnly && !isSelfHosted) return false;
         if (tab.superAdminOnly && !isSuperAdmin) return false;
         return tab.perm.some(p => hasPermission(p));

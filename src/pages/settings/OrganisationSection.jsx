@@ -113,6 +113,9 @@ const OrganisationSection = ({ user, activeSection = 'license' }) => {
     // NC-bound orgs get an additional org-admin panel for Nextcloud
     // integration management (Fase G). Standalone orgs never see it.
     const isNcOrg = !!user?.ncOrg?.instanceId;
+    // Private-cloud deployments are pre-provisioned by Bee Flow ops — admins
+    // don't self-pair new Nextclouds, so the pairing-code generator is hidden.
+    const isPrivateCloud = (user?.featureFlags?.deploymentMode || 'cloud') === 'private-cloud';
 
     const isInfoSection = INFO_SECTIONS.some(s => s.id === activeSection);
 
@@ -221,7 +224,7 @@ const OrganisationSection = ({ user, activeSection = 'license' }) => {
             {/* Nextcloud Sync */}
             {activeSection === 'nextcloud_sync' && isOrgAdmin && (
                 <>
-                    {(isNcOrg || isFullAdmin) && <OrgNcPairingPanel />}
+                    {!isPrivateCloud && (isNcOrg || isFullAdmin) && <OrgNcPairingPanel />}
                     <NextcloudSyncPanel user={user} />
                 </>
             )}
