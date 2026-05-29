@@ -328,10 +328,13 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
     const licenseCtx = useLicenseContext();
     const hasActiveLicenseKey = licenseCtx?.source === 'license_key';
     const { isCloud, isSelfHosted } = useDeploymentMode();
-    // Hide license-key activation on cloud unless the org already has an
-    // active Full-tier license (internal/operator orgs that need to manage
-    // their key). Always show it on self-hosted.
-    const showLicenseActivation = isSelfHosted || (isCloud && hasActiveLicenseKey && licenseCtx?.tier === 'full');
+    // Licence-key management belongs to the admin dashboard, not to per-org
+    // settings. On cloud, org settings shows the Stripe subscription ONLY —
+    // never a licence-key card (even for Full-tier internal/operator orgs;
+    // they manage their key under Admin → Server licence / License keys). On
+    // self-hosted there are no subscriptions, so licence keys ARE the org's
+    // paid-access mechanism and stay visible here.
+    const showLicenseActivation = isSelfHosted;
     const deploymentMode = user?.featureFlags?.deploymentMode || 'cloud';
     const isPrivateCloud = deploymentMode === 'private-cloud';
     const ncOrg = user?.ncOrg || null;

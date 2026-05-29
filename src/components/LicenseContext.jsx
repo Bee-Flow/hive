@@ -41,11 +41,16 @@ const LicenseContext = createContext({
     subscription: null,
     features: [],
     limits: {},
-    // serverOverride: true when a super-admin has applied a server-wide
-    // licence. Per-org activation UI uses this to switch into a read-only
-    // banner ("Tier is managed server-wide"). See server/license/index.js
-    // → getLicenseStatus.
+    // serverOverride: true when a server-wide licence is GOVERNING this
+    // install (self-hosted / private-cloud). Per-org activation UI uses it to
+    // switch into a read-only banner ("Tier is managed server-wide"). It is
+    // false on cloud even when a server licence exists. See
+    // server/license/index.js → getLicenseStatus / serverLicenseGovernsOrgs.
     serverOverride: false,
+    // serverLicense: the server-wide licence row (public shape) when one
+    // exists, regardless of deployment mode — admin Server-licence panel uses
+    // it to display/manage the licence even on cloud (where it doesn't govern).
+    serverLicense: null,
     upgradeUrl: 'https://beeflow.nl/pricing',
     // 'cloud' (Bee Flow SaaS) or 'self-hosted' (customer-run install). Drives
     // which paid-access mechanism is shown: subscriptions on cloud, license
@@ -72,6 +77,7 @@ export function LicenseProvider({ children }) {
         features: [],
         limits: {},
         serverOverride: false,
+        serverLicense: null,
         loading: true,
         error: null,
         upgradeUrl: 'https://beeflow.nl/pricing',

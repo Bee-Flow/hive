@@ -64,10 +64,18 @@ export default function ServerLicensePanel() {
 
     useEffect(() => { reload(); }, [reload]);
 
-    const isServerScope = status?.scope === 'server' && status?.serverOverride === true;
-    const tier = status?.tier || 'community';
+    // `serverLicense` is present whenever a server-wide row exists, regardless
+    // of deployment mode — so the panel shows/manages the licence on cloud too
+    // (where it no longer overrides per-org billing). `serverOverride` only
+    // reflects whether it currently governs the install, which we surface as a
+    // hint. Fall back to the legacy override shape for older API responses.
+    const serverLicense = status?.serverLicense
+        || (status?.scope === 'server' && status?.serverOverride ? status?.license : null);
+    const isServerScope = !!serverLicense;
+    const isGoverning = status?.serverOverride === true;
+    const tier = serverLicense?.tier || 'community';
     const badge = TIER_BADGE[tier] || TIER_BADGE.community;
-    const expiresAt = status?.license?.expiresAt || null;
+    const expiresAt = serverLicense?.expiresAt || null;
     const daysLeft = daysUntil(expiresAt);
 
     const handleActivate = async () => {
@@ -175,11 +183,11 @@ export default function ServerLicensePanel() {
                     )}
                 </div>
 
-                {isServerScope && status?.license && (
+                {isServerScope && serverLicense && (
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs" style={{ color: 'var(--text-secondary)' }}>
                         <div>
                             <div className="opacity-60 mb-0.5">{t('admin.server_license.issuer') || 'Issuer'}</div>
-                            <div className="font-mono truncate">{status.license.issuer || '—'}</div>
+                            <div className="font-mono truncate">{serverLicense.issuer || '—'}</div>
                         </div>
                         <div>
                             <div className="opacity-60 mb-0.5">{t('admin.server_license.expires') || 'Expires'}</div>
@@ -187,8 +195,17 @@ export default function ServerLicensePanel() {
                         </div>
                         <div>
                             <div className="opacity-60 mb-0.5">{t('admin.server_license.billing') || 'Billing'}</div>
-                            <div>{status.license.billingInterval || '—'}</div>
+                            <div>{serverLicense.billingInterval || '—'}</div>
                         </div>
+                    </div>
+                )}
+
+                {/* On cloud a server licence exists but does NOT govern per-org
+                    billing — make that explicit so an operator isn't surprised
+                    that orgs still need their own subscription. */}
+                {isServerScope && !isGoverning && (
+                    <div className="mt-3 p-2.5 rounded-lg text-xs" style={{ background: 'rgba(59,130,246,0.08)', color: 'var(--text-secondary)', border: '1px solid rgba(59,130,246,0.2)' }}>
+                        {t('admin.server_license.not_governing') || 'This licence is recorded but does not cover organisations on this deployment — each organisation still needs its own subscription.'}
                     </div>
                 )}
 

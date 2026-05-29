@@ -53,16 +53,36 @@ const MISTRAL_MODEL_META = {
     'open-mixtral-8x22b': { name: 'Mixtral 8x22B', desc: 'Large mixture-of-experts model', cat: 'Generalist', input: 2.0, output: 6.0 },
     'open-mixtral-8x7b': { name: 'Mixtral 8x7B', desc: 'Mixture-of-experts model', cat: 'Generalist', input: 0.7, output: 0.7 },
     'open-mistral-7b': { name: 'Mistral 7B', desc: 'Compact open-source model', cat: 'Generalist', input: 0.25, output: 0.25 },
-    // --- OpenAI: Flagship ---
-    'gpt-5.2': { name: 'GPT-5.2', desc: 'Latest flagship model for coding and agentic tasks', cat: 'Generalist', input: 1.75, output: 14.0 },
+    // --- OpenAI: Flagship (GPT-5 family) ---
+    // Newest first. Pricing is indicative for cost estimation; verify against
+    // the Azure/OpenAI pricing pages for billing-grade figures.
+    'gpt-5.5': { name: 'GPT-5.5', desc: 'Frontier reasoning with deep long-context & agentic execution', cat: 'Reasoning' },
+    'gpt-5.4': { name: 'GPT-5.4', desc: 'Strong multi-step reasoning for enterprise agents', cat: 'Reasoning' },
+    'gpt-5.4-mini': { name: 'GPT-5.4 Mini', desc: 'Real-time reasoning for apps and agents', cat: 'Generalist' },
+    'gpt-5.4-nano': { name: 'GPT-5.4 Nano', desc: 'Ultra-low-latency reasoning, smallest tier', cat: 'Generalist' },
+    'gpt-5.4-pro': { name: 'GPT-5.4 Pro', desc: 'Pro reasoning (high effort only)', cat: 'Reasoning' },
+    'gpt-5.2': { name: 'GPT-5.2', desc: 'Flagship model for coding and agentic tasks', cat: 'Generalist', input: 1.75, output: 14.0 },
     'gpt-5.2-pro': { name: 'GPT-5.2 Pro', desc: 'Smartest model for top-quality execution', cat: 'Reasoning', input: 21.0, output: 168.0 },
+    'gpt-5.1': { name: 'GPT-5.1', desc: 'General reasoning with flexible effort (defaults to none)', cat: 'Generalist', input: 1.25, output: 10.0 },
+    'gpt-5.1-chat': { name: 'GPT-5.1 Chat', desc: 'Chat-optimised reasoning model', cat: 'Generalist', input: 1.25, output: 10.0 },
+    'gpt-5': { name: 'GPT-5', desc: 'Base full reasoning model', cat: 'Reasoning', input: 1.25, output: 10.0 },
+    'gpt-5-pro': { name: 'GPT-5 Pro', desc: 'Pro reasoning tier (high effort only)', cat: 'Reasoning', input: 15.0, output: 120.0 },
+    'gpt-5-chat': { name: 'GPT-5 Chat', desc: 'Chat-optimised GPT-5', cat: 'Generalist', input: 1.25, output: 10.0 },
     'gpt-5-mini': { name: 'GPT-5 Mini', desc: 'Fast cost-efficient model for well-defined tasks', cat: 'Generalist', input: 0.25, output: 2.0 },
-    'gpt-4o': { name: 'GPT-4o', desc: 'Multimodal model for complex tasks', cat: 'Generalist', input: 2.5, output: 10.0 },
+    'gpt-5-nano': { name: 'GPT-5 Nano', desc: 'Ultra-light, lowest-latency reasoning', cat: 'Generalist', input: 0.05, output: 0.40 },
+    'gpt-4o': { name: 'GPT-4o', desc: 'Multimodal model (retires 2026-03-31 — migrate to GPT-5/4.1)', cat: 'Generalist', input: 2.5, output: 10.0 },
     'gpt-4o-mini': { name: 'GPT-4o Mini', desc: 'Fast, affordable small model', cat: 'Generalist', input: 0.15, output: 0.60 },
     'gpt-4.1': { name: 'GPT-4.1', desc: 'Flagship model for complex tasks', cat: 'Generalist', input: 2.0, output: 8.0 },
     'gpt-4.1-mini': { name: 'GPT-4.1 Mini', desc: 'Balanced performance and cost', cat: 'Generalist', input: 0.40, output: 1.60 },
     'gpt-4.1-nano': { name: 'GPT-4.1 Nano', desc: 'Fastest and cheapest model', cat: 'Generalist', input: 0.10, output: 0.40 },
-    // --- OpenAI: Reasoning ---
+    // --- OpenAI: Coding (Codex) ---
+    'gpt-5.3-codex': { name: 'GPT-5.3 Codex', desc: 'Code generation with reasoning', cat: 'Coding' },
+    'gpt-5.2-codex': { name: 'GPT-5.2 Codex', desc: 'Code generation with reasoning', cat: 'Coding' },
+    'gpt-5.1-codex': { name: 'GPT-5.1 Codex', desc: 'Code generation with reasoning', cat: 'Coding' },
+    'gpt-5.1-codex-mini': { name: 'GPT-5.1 Codex Mini', desc: 'Lightweight code generation', cat: 'Coding' },
+    'gpt-5.1-codex-max': { name: 'GPT-5.1 Codex Max', desc: 'Code generation with xHigh reasoning effort', cat: 'Coding' },
+    'gpt-5-codex': { name: 'GPT-5 Codex', desc: 'Code generation with reasoning', cat: 'Coding' },
+    // --- OpenAI: Reasoning (o-series) ---
     'o3': { name: 'o3', desc: 'Powerful reasoning model', cat: 'Reasoning', input: 2.0, output: 8.0 },
     'o3-mini': { name: 'o3 Mini', desc: 'Fast reasoning model', cat: 'Reasoning', input: 1.10, output: 4.40 },
     'o4-mini': { name: 'o4 Mini', desc: 'Latest fast reasoning model', cat: 'Reasoning', input: 1.10, output: 4.40 },
