@@ -31,8 +31,8 @@ export function VisibilitySection({ form, update }) {
                     checked={form.nc_recommended}
                     onChange={v => update('nc_recommended', v)}
                     iconClass="text-sky-400"
-                    label="Recommended for Nextcloud"
-                    description="Featured in the Nextcloud App Store onboarding wizard. Only one plan should carry this flag."
+                    label="Default plan for Nextcloud"
+                    description="Auto-assigned as the active subscription for every organisation that connects through the Nextcloud app — set this on a free plan to give NC users a free default. Also featured in the App Store onboarding wizard. Only one plan should carry this flag."
                 />
             </div>
         </div>

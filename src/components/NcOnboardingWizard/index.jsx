@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Cloud, Users, Shield, CheckCircle2, ChevronRight, ChevronLeft, Loader2, Server, Tag, Star, Building2, Key, CreditCard } from 'lucide-react';
+import { Users, Shield, CheckCircle2, ChevronRight, ChevronLeft, Loader2, Tag, Star, Building2, Key, CreditCard } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import beeFlowLogo from '../../assets/bee-flow-logo.svg';
 
@@ -18,7 +18,9 @@ import beeFlowLogo from '../../assets/bee-flow-logo.svg';
  * and pasted into the customer's own License & Usage panel.
  */
 
-const STEPS = ['welcome', 'org', 'deployment', 'subscription', 'sync', 'shield', 'done'];
+// Deployment (Bee Flow Cloud vs self-hosted) is chosen by the Nextcloud admin in
+// the connector's setup picker, not here — so the wizard has no 'deployment' step.
+const STEPS = ['welcome', 'org', 'subscription', 'sync', 'shield', 'done'];
 
 // Categories the Local PII detector (Transformers.js, OpenAI Privacy Filter)
 // actually emits — see server/core/localPiiDetection.js LABEL_TO_CATEGORY.
@@ -47,7 +49,9 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
         address: '', phone: '', website: '', kvk: '', vat: '',
     });
 
-    const [deploymentMode, setDeploymentMode] = useState('cloud');
+    // Deployment is set by the NC admin in the connector setup picker, not in
+    // this wizard; default to Cloud (the connector's default target).
+    const [deploymentMode] = useState('cloud');
     const [selectedPlanId, setSelectedPlanId] = useState(null); // null = Community/free
     const [plans, setPlans] = useState([]);
     const [plansLoading, setPlansLoading] = useState(true);
@@ -129,9 +133,11 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
 
     const canAdvance = () => {
         if (step === 'org' && !org.name.trim()) return false;
-        // Cloud mode is the hosted offering — Community is hidden and the
-        // admin must pick a paid plan before continuing.
-        if (step === 'subscription' && deploymentMode === 'cloud' && !selectedPlanId) return false;
+        // Cloud mode is the hosted offering — the admin must pick a paid plan
+        // before continuing, BUT only when plans actually exist. With none
+        // configured yet there's nothing to pick, so allow skipping (proceeds
+        // on Community/null); subscriptions can be set up later.
+        if (step === 'subscription' && deploymentMode === 'cloud' && plans.length > 0 && !selectedPlanId) return false;
         if (step === 'sync' && syncMode === 'selective_groups' && syncGroups.length === 0) return false;
         if (step === 'shield' && shieldEnabled && shieldCategories.length === 0) return false;
         return true;
@@ -309,45 +315,6 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
         </div>
     );
 
-    const renderDeployment = () => (
-        <div className="space-y-4">
-            <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                How will Bee Flow run for your team?
-            </p>
-            {[
-                {
-                    v: 'cloud', t: 'Bee Flow Cloud', icon: Cloud,
-                    d: 'Hosted by Bee Flow B.V. on EU infrastructure. Zero ops — updates, backups and uptime are managed for you.',
-                },
-                {
-                    v: 'self-hosted', t: 'Self-hosted', icon: Server,
-                    d: 'Run the Bee Flow server on your own infrastructure. Community tier is free; paid tiers issue a license key you activate on your install.',
-                },
-            ].map(opt => {
-                const Icon = opt.icon;
-                const active = deploymentMode === opt.v;
-                return (
-                    <button
-                        key={opt.v}
-                        type="button"
-                        onClick={() => setDeploymentMode(opt.v)}
-                        className="w-full flex items-start gap-3 p-4 rounded-xl border text-left"
-                        style={{
-                            borderColor: active ? 'var(--accent-primary)' : 'var(--border-subtle)',
-                            background: active ? 'var(--bg-tertiary)' : 'transparent',
-                        }}
-                    >
-                        <Icon className="w-5 h-5 mt-0.5" style={{ color: active ? 'var(--accent-primary)' : 'var(--text-secondary)' }} />
-                        <div className="flex-1">
-                            <div className="text-sm font-medium" style={{ color: 'var(--text-primary)' }}>{opt.t}</div>
-                            <div className="text-xs mt-1" style={{ color: 'var(--text-secondary)' }}>{opt.d}</div>
-                        </div>
-                    </button>
-                );
-            })}
-        </div>
-    );
-
     const renderSubscription = () => {
         const fmtPrice = (p) => {
             if (p.price == null || p.price === 0) return 'Free';
@@ -472,7 +439,6 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
                             <h1 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
                                 {step === 'welcome' && `Welcome to Bee Flow${orgName ? ` for ${orgName}` : ''}`}
                                 {step === 'org' && 'Organisation details'}
-                                {step === 'deployment' && 'Choose your deployment'}
                                 {step === 'subscription' && 'Pick your subscription'}
                                 {step === 'sync' && 'Nextcloud user sync'}
                                 {step === 'shield' && 'Privacy Shield'}
@@ -506,7 +472,6 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
                     )}
 
                     {step === 'org' && renderOrg()}
-                    {step === 'deployment' && renderDeployment()}
                     {step === 'subscription' && renderSubscription()}
 
                     {step === 'sync' && (
