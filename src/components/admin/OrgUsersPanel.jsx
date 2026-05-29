@@ -434,14 +434,14 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
     const orgGroups = groups.filter(g => g.organizationId && userOrgIds.has(g.organizationId));
     const orgRoles = roles.filter(r => ['org_admin', 'agent_admin', 'agent_editor'].includes(r.id));
 
-    const orgUsers = users.filter(u => {
-        if (u.isSystem) return false;
-        // Include users directly assigned to this org
-        if (u.organizationId && userOrgIds.has(u.organizationId)) return true;
-        // Include users in org-scoped groups
-        const uGroups = Array.isArray(u.groups) ? u.groups : [];
-        return uGroups.some(gid => orgGroups.some(og => og.id === gid));
-    });
+    // Trust the server's org scoping. GET /auth/users already returns exactly
+    // the org members the caller may see (scoped server-side via
+    // resolveUserOrgIds, self always included). Re-deriving the org set on the
+    // client from `user.organizationId` caused the member list to diverge
+    // between the embedded Nextcloud view and standalone, and could hide
+    // members from an org-admin whose client-side org pointer was stale. We
+    // only drop system rows here.
+    const orgUsers = users.filter(u => !u.isSystem);
 
     const filteredOrgUsers = useMemo(() => {
         const q = userSearch.trim().toLowerCase();
