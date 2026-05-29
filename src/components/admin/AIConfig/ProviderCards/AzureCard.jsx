@@ -162,9 +162,13 @@ const AzureConfigCard = ({ onMessage }) => {
                         placeholder="2025-04-01-preview"
                         className="w-48 px-4 py-2.5 rounded-lg border outline-none focus:border-[var(--accent-primary)] text-sm"
                         style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
-                        title="API Version (e.g. 2025-04-01-preview)"
+                        title="API Version — optional. Leave blank to use the recommended default (2025-04-01-preview)."
                     />
                 </div>
+                <p className="text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    API version is optional — leave blank for the recommended default (2025-04-01-preview),
+                    which enables the Responses API (reasoning summaries) for GPT-5 / o-series deployments.
+                </p>
 
                 {/* Models input */}
                 <div>

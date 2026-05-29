@@ -60,6 +60,15 @@ const isClaudeOpus47 = (modelId) => /^claude-opus-4-7/.test(modelId || '');
 // Any Claude model (used to show Claude-specific tier settings inline)
 const isClaudeModel = (modelId) => /^claude-/.test(modelId || '');
 
+// OpenAI reasoning models (o-series + GPT-5 family)
+const isOpenAIReasoning = (modelId) => /^gpt-5|^o\d/.test(modelId || '');
+// GPT-5 family (supports the 'minimal' effort tier and the verbosity knob)
+const isGpt5 = (modelId) => /^gpt-5/.test(modelId || '');
+// Pro models reason at 'high' only (gpt-5-pro, gpt-5.2-pro, gpt-5.4-pro, …)
+const isGpt5Pro = (modelId) => /^gpt-5(\.\d+)?-pro$/.test(modelId || '');
+// Only codex-max accepts the 'xhigh' effort tier
+const isCodexMax = (modelId) => /codex-max/.test(modelId || '');
+
 const MODEL_META = {
     // Mistral
     'mistral-large-latest': { name: 'Mistral Large 3', cat: 'Generalist' },
@@ -104,11 +113,11 @@ const TIERS = [
 // Must match the server-side TIER_DEFAULTS in server/core/modelResolver.js —
 // keep these two tables in sync so the admin UI shows the real fallback.
 const TIER_DEFAULTS = {
-    fast: { maxTokens: 4096, temperature: 0.2 },
-    standard: { maxTokens: 16384, temperature: 0.5 },
-    thinking: { maxTokens: 32768, temperature: 0.7 },
-    writer: { maxTokens: 32768, temperature: 0.7 },
-    pro: { maxTokens: 64000, temperature: 0.7 },
+    fast: { maxTokens: 4096, temperature: 0.2, verbosity: 'low' },
+    standard: { maxTokens: 16384, temperature: 0.5, verbosity: 'medium' },
+    thinking: { maxTokens: 32768, temperature: 0.7, verbosity: 'medium' },
+    writer: { maxTokens: 32768, temperature: 0.7, verbosity: 'high' },
+    pro: { maxTokens: 64000, temperature: 0.7, verbosity: 'high' },
 };
 
 // Custom tier defaults when creating a new one
@@ -1021,30 +1030,51 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                                     <div className="flex-1 min-w-[180px]">
                                         <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>🧠 {isClaudeReasoning(tierConfig.modelId) ? 'Thinking Effort' : 'Reasoning Effort'}</label>
                                         <select
-                                            value={tierConfig.reasoningEffort || (isClaudeReasoning(tierConfig.modelId) ? 'medium' : 'none')}
+                                            value={isGpt5Pro(tierConfig.modelId)
+                                                ? 'high'
+                                                : (tierConfig.reasoningEffort || (isClaudeReasoning(tierConfig.modelId) ? 'medium' : 'none'))}
                                             onChange={e => updateFn(tier.key, 'reasoningEffort', e.target.value)}
-                                            className="w-full px-3 py-2 rounded-lg border outline-none focus:border-[var(--accent-primary)] text-sm"
+                                            disabled={isGpt5Pro(tierConfig.modelId)}
+                                            className="w-full px-3 py-2 rounded-lg border outline-none focus:border-[var(--accent-primary)] text-sm disabled:opacity-60"
                                             style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                                         >
-                                            <option value="none">None (disabled)</option>
-                                            <option value="low">Low — quick tasks</option>
-                                            <option value="medium">Medium — balanced (default)</option>
-                                            <option value="high">High — complex reasoning</option>
-                                            {isClaudeOpus47(tierConfig.modelId) ? (
-                                                <>
-                                                    <option value="xhigh">xHigh — extended exploration</option>
-                                                    <option value="max">Max — no thinking constraints</option>
-                                                </>
+                                            {isGpt5Pro(tierConfig.modelId) ? (
+                                                <option value="high">High — pro models reason at high only</option>
                                             ) : isClaudeReasoning(tierConfig.modelId) ? (
-                                                <option value="xhigh">Max — deepest thinking</option>
+                                                <>
+                                                    <option value="none">None (disabled)</option>
+                                                    <option value="low">Low — quick tasks</option>
+                                                    <option value="medium">Medium — balanced (default)</option>
+                                                    <option value="high">High — complex reasoning</option>
+                                                    {isClaudeOpus47(tierConfig.modelId) ? (
+                                                        <>
+                                                            <option value="xhigh">xHigh — extended exploration</option>
+                                                            <option value="max">Max — no thinking constraints</option>
+                                                        </>
+                                                    ) : (
+                                                        <option value="xhigh">Max — deepest thinking</option>
+                                                    )}
+                                                </>
                                             ) : (
-                                                <option value="xhigh">xHigh — deepest reasoning</option>
+                                                /* OpenAI o-series / GPT-5 */
+                                                <>
+                                                    <option value="none">None (disabled)</option>
+                                                    {isGpt5(tierConfig.modelId) && <option value="minimal">Minimal — fastest, lightest reasoning</option>}
+                                                    <option value="low">Low — quick tasks</option>
+                                                    <option value="medium">Medium — balanced (default)</option>
+                                                    <option value="high">High — complex reasoning</option>
+                                                    {isCodexMax(tierConfig.modelId) && <option value="xhigh">xHigh — deepest reasoning</option>}
+                                                </>
                                             )}
                                         </select>
                                         <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
-                                            {isClaudeReasoning(tierConfig.modelId)
-                                                ? 'How deep Claude thinks before answering. Default: Medium.'
-                                                : 'Controls how much the model reasons before responding.'}
+                                            {isGpt5Pro(tierConfig.modelId)
+                                                ? 'Pro models always reason at high effort.'
+                                                : isClaudeReasoning(tierConfig.modelId)
+                                                    ? 'How deep Claude thinks before answering. Default: Medium.'
+                                                    : isGpt5(tierConfig.modelId)
+                                                        ? 'How much the model reasons. Minimal is the fast/cheap GPT-5 tier.'
+                                                        : 'Controls how much the model reasons before responding.'}
                                         </p>
                                     </div>
                                     {!isClaudeReasoning(tierConfig.modelId) && (
@@ -1064,6 +1094,24 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                                             </div>
                                             <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
                                                 Show a summary of the model's reasoning process.
+                                            </p>
+                                        </div>
+                                    )}
+                                    {isGpt5(tierConfig.modelId) && (
+                                        <div className="flex-1 min-w-[180px]">
+                                            <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>🗣️ Verbosity</label>
+                                            <select
+                                                value={tierConfig.verbosity || defaults.verbosity || 'medium'}
+                                                onChange={e => updateFn(tier.key, 'verbosity', e.target.value)}
+                                                className="w-full px-3 py-2 rounded-lg border outline-none focus:border-[var(--accent-primary)] text-sm"
+                                                style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                                            >
+                                                <option value="low">Low — concise</option>
+                                                <option value="medium">Medium — balanced (default)</option>
+                                                <option value="high">High — detailed</option>
+                                            </select>
+                                            <p className="text-[10px] mt-1" style={{ color: 'var(--text-muted)' }}>
+                                                GPT-5 output length / level of detail.
                                             </p>
                                         </div>
                                     )}
@@ -1275,17 +1323,41 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                             <div className="flex-1 min-w-[180px]">
                                 <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>🧠 {isClaudeReasoning(tier.modelId) ? 'Thinking Effort' : 'Reasoning Effort'}</label>
                                 <select
-                                    value={tier.reasoningEffort || 'none'}
+                                    value={isGpt5Pro(tier.modelId) ? 'high' : (tier.reasoningEffort || 'none')}
                                     onChange={e => updateCustomTier(tier.id, { reasoningEffort: e.target.value === 'none' ? undefined : e.target.value })}
+                                    disabled={isGpt5Pro(tier.modelId)}
+                                    className="w-full px-3 py-2 rounded-lg border outline-none focus:border-[var(--accent-primary)] text-sm disabled:opacity-60"
+                                    style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                                >
+                                    {isGpt5Pro(tier.modelId) ? (
+                                        <option value="high">High (pro: locked)</option>
+                                    ) : (
+                                        <>
+                                            <option value="none">None (disabled)</option>
+                                            {isGpt5(tier.modelId) && <option value="minimal">Minimal</option>}
+                                            <option value="low">Low</option>
+                                            <option value="medium">Medium</option>
+                                            <option value="high">High</option>
+                                            {isClaudeOpus47(tier.modelId) && <option value="xhigh">xHigh</option>}
+                                            {isClaudeOpus47(tier.modelId) && <option value="max">Max</option>}
+                                            {isCodexMax(tier.modelId) && <option value="xhigh">xHigh</option>}
+                                        </>
+                                    )}
+                                </select>
+                            </div>
+                        )}
+                        {isGpt5(tier.modelId) && (
+                            <div className="flex-1 min-w-[180px]">
+                                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-primary)' }}>🗣️ Verbosity</label>
+                                <select
+                                    value={tier.verbosity || 'medium'}
+                                    onChange={e => updateCustomTier(tier.id, { verbosity: e.target.value })}
                                     className="w-full px-3 py-2 rounded-lg border outline-none focus:border-[var(--accent-primary)] text-sm"
                                     style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                                 >
-                                    <option value="none">None (disabled)</option>
-                                    <option value="low">Low</option>
-                                    <option value="medium">Medium</option>
-                                    <option value="high">High</option>
-                                    {isClaudeOpus47(tier.modelId) && <option value="xhigh">xHigh</option>}
-                                    {isClaudeOpus47(tier.modelId) && <option value="max">Max</option>}
+                                    <option value="low">Low — concise</option>
+                                    <option value="medium">Medium — balanced</option>
+                                    <option value="high">High — detailed</option>
                                 </select>
                             </div>
                         )}

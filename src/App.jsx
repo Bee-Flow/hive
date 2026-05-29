@@ -6,7 +6,7 @@ import EncryptionSetup from './pages/EncryptionSetup';
 import EmbedChat from './pages/EmbedChat';
 import DlpPreviewModal from './components/DlpPreviewModal';
 import ErrorBoundary from './components/ErrorBoundary';
-import { LicenseProvider, RequireTier } from './components/LicenseContext';
+import { LicenseProvider, RequireTier, useLicenseContext } from './components/LicenseContext';
 import { SubscriptionProvider, useSubscriptionContext } from './components/SubscriptionContext';
 import NcOnboardingWizard from './components/NcOnboardingWizard';
 import NcOnboardingPending from './components/NcOnboardingPending';
@@ -1390,13 +1390,19 @@ function App() {
  */
 function SubscriptionGate({ user, currentPage, deploymentMode, navigateToPage }) {
     const { hasActiveSub, loading } = useSubscriptionContext();
+    const { serverOverride, loading: licLoading } = useLicenseContext();
     const isPlatformOperator = user?.id === 'admin';
     const isConsumer = !(user?.organizationId || user?.orgId);
     const isSelfHosted = deploymentMode === 'self-hosted';
 
     useEffect(() => {
-        if (loading || hasActiveSub) return;
-        if (isPlatformOperator || isConsumer || isSelfHosted) return;
+        // Wait for BOTH the subscription and licence probes before deciding,
+        // so a server-licensed install isn't briefly redirected on first load.
+        if (loading || licLoading || hasActiveSub) return;
+        // A server-wide licence covers the whole install — the licence is
+        // authoritative, no Stripe subscription is required (mirrors the
+        // backend bypass in server/core/limits.js).
+        if (isPlatformOperator || isConsumer || isSelfHosted || serverOverride) return;
         // Already on the License & Usage page (or its loading path) — let
         // it render so the admin can finish the checkout flow. Stripe
         // bounces back to the same URL with `?checkout=success`; allow
@@ -1406,7 +1412,7 @@ function SubscriptionGate({ user, currentPage, deploymentMode, navigateToPage })
             || path.startsWith('/app/settings/organisation/license');
         if (onLicensePage) return;
         navigateToPage('settings/organisation/license');
-    }, [loading, hasActiveSub, isPlatformOperator, isConsumer, isSelfHosted, currentPage, navigateToPage]);
+    }, [loading, licLoading, hasActiveSub, isPlatformOperator, isConsumer, isSelfHosted, serverOverride, currentPage, navigateToPage]);
 
     return null;
 }
