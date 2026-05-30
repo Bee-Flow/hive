@@ -15,7 +15,7 @@ import ProductWebsitePanel from '../components/admin/ProductWebsite/ProductWebsi
 import ServerLicensePanel from '../components/admin/ServerLicensePanel';
 import SupportInboxPanel from '../components/admin/SupportInboxPanel';
 import { useDeploymentMode } from '../hooks/useDeploymentMode';
-import { useLicenseContext } from '../components/LicenseContext';
+import { useLicenseContext, TIER_RANK } from '../components/LicenseContext';
 
 
 const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
@@ -26,7 +26,7 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
     const isPrivateCloud = (user?.featureFlags?.deploymentMode || 'cloud') === 'private-cloud';
     // A server-wide licence covers the whole install — no org needs a Stripe
     // subscription, so the cloud Subscriptions management surface is moot.
-    const { serverOverride } = useLicenseContext();
+    const { serverOverride, tier } = useLicenseContext();
     const isPlatformAdmin = user?.isAdmin || user?.role === 'admin';
 
     // Permission helper - checks if user has a specific permission
@@ -40,18 +40,28 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
 
     // Tab definitions — each tab requires its page-level permission
     // 'agents' tab accepts admin_agents (catch-all) OR any granular admin_agents_* permission
+    //
+    // minTier: 'enterprise' marks a tab as part of the paid admin surface. The
+    // Community tier only exposes AI Config, Security, Integrations, Server
+    // licence and Languages — every other tab carries minTier and stays hidden
+    // until the install reaches Enterprise. checkTabAccess reads the REAL
+    // resolved tier (LicenseContext.hasTier has no super-admin elevation), so a
+    // Community install hides these from its own operator too. Subscriptions is
+    // already cloudOnly, so it never surfaces on a self-hosted Community install
+    // and intentionally carries no minTier (keeps the cloud operator console
+    // reachable regardless of the operator org's own tier).
     const tabs = [
-        { id: 'agents', label: t('admin.tab_agents'), perm: ['admin_agents', 'admin_agents_chat', 'admin_agents_system'], superAdminOnly: false },
+        { id: 'agents', label: t('admin.tab_agents'), perm: ['admin_agents', 'admin_agents_chat', 'admin_agents_system'], superAdminOnly: false, minTier: 'enterprise' },
         { id: 'ai-config', label: t('admin.tab_ai_config'), perm: ['admin_ai_config'], superAdminOnly: true },
         { id: 'security', label: t('admin.tab_security'), perm: ['admin_security'], superAdminOnly: false },
         { id: 'integrations', label: t('admin.tab_integrations'), perm: ['admin_security'], superAdminOnly: true },
-        { id: 'monitoring', label: t('admin.tab_monitoring'), perm: ['admin_monitoring'], superAdminOnly: false },
-        { id: 'compliance', label: t('admin.tab_compliance'), perm: ['admin_compliance'], superAdminOnly: false },
+        { id: 'monitoring', label: t('admin.tab_monitoring'), perm: ['admin_monitoring'], superAdminOnly: false, minTier: 'enterprise' },
+        { id: 'compliance', label: t('admin.tab_compliance'), perm: ['admin_compliance'], superAdminOnly: false, minTier: 'enterprise' },
         // Bee Flow customer-support inbox. Visible to any super-admin (or a
         // user with the `admin_support` permission), on cloud and self-hosted
         // alike — outbound email + AI reply are best-effort and degrade
         // gracefully if SMTP / KB aren't configured.
-        { id: 'support', label: t('admin.tab_support') || 'Support', perm: ['admin_support'], superAdminOnly: true },
+        { id: 'support', label: t('admin.tab_support') || 'Support', perm: ['admin_support'], superAdminOnly: true, minTier: 'enterprise' },
         // Subscriptions are a Bee Flow Cloud feature. Self-hosted installs
         // manage paid access via license keys (Settings → License & Usage).
         { id: 'subscriptions', label: t('admin.tab_subscriptions'), perm: ['admin_subscriptions'], superAdminOnly: true, cloudOnly: true },
@@ -59,11 +69,11 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
         // Available to super-admins on any deployment mode — a single-tenant
         // operator applies one licence for the whole server.
         { id: 'licenses', label: t('admin.tab_server_license') || 'Server licence', perm: ['all'], superAdminOnly: true },
-        { id: 'appearance', label: t('admin.tab_appearance'), perm: ['admin_ai_config'], superAdminOnly: true },
+        { id: 'appearance', label: t('admin.tab_appearance'), perm: ['admin_ai_config'], superAdminOnly: true, minTier: 'enterprise' },
         { id: 'languages', label: t('admin.tab_languages'), perm: ['admin_ai_config'], superAdminOnly: true },
         // Product website builder is a Bee Flow Cloud / self-hosted feature —
         // hidden on local- (private-) cloud single-tenant installs.
-        { id: 'product-website', label: t('admin.tab_product_website'), perm: ['admin_ai_config'], superAdminOnly: true, privateCloudHidden: true },
+        { id: 'product-website', label: t('admin.tab_product_website'), perm: ['admin_ai_config'], superAdminOnly: true, privateCloudHidden: true, minTier: 'enterprise' },
     ];
 
     // If current tab isn't allowed, fall back to the first tab the user has access to
@@ -71,6 +81,13 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
         if (!tab) return true;
         if (tab.cloudOnly && !isCloud) return false;
         if (tab.privateCloudHidden && isPrivateCloud) return false;
+        // Tier gate — paid admin surfaces are hidden below their minTier. Uses
+        // the REAL resolved tier (TIER_RANK[tier]) rather than hasTier(), which
+        // is equivalent here but keeps the intent explicit: a Community install
+        // exposes only AI Config / Security / Integrations / Server licence /
+        // Languages, even to its own super-admin. tier is already normalised
+        // (LEGACY_TIER_ALIAS applied at fetch); default rank 0 = community.
+        if (tab.minTier && (TIER_RANK[tier] ?? 0) < (TIER_RANK[tab.minTier] ?? Infinity)) return false;
         // Server-wide licence active → no per-org subscriptions to manage.
         if (tab.id === 'subscriptions' && serverOverride) return false;
         if (tab.selfHostedOnly && !isSelfHosted) return false;
