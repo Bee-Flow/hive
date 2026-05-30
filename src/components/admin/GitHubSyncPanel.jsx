@@ -81,6 +81,14 @@ const GitHubSyncPanel = ({ user }) => {
             if (res.ok) {
                 setMessage({ type: 'success', text: 'GitHub sync disconnected' });
                 setStatus(prev => ({ ...prev, configured: false, config: null, overview: null }));
+                // Clear the config form so re-configuring starts from a clean slate.
+                setRepoOwner('');
+                setRepoName('');
+                setBranch('main');
+                setAutoSync(false);
+                setShowConfig(false);
+                setShowDetails(false);
+                setDetails(null);
             }
         } catch (err) {
             setMessage({ type: 'error', text: 'Failed to disconnect' });
@@ -158,7 +166,7 @@ const GitHubSyncPanel = ({ user }) => {
             {/* Header */}
             <div>
                 <h2 className="text-lg font-bold text-[var(--text-primary)] flex items-center gap-2">
-                    <FolderGit2 className="w-5 h-5" style={{ color: '#8b5cf6' }} />
+                    <FolderGit2 className="w-5 h-5" style={{ color: 'var(--accent-primary)' }} />
                     GitHub Sync
                 </h2>
                 <p className="text-sm text-[var(--text-muted)] mt-0.5">
@@ -193,8 +201,8 @@ const GitHubSyncPanel = ({ user }) => {
                 <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden">
                     <div className="p-6 text-center">
                         <div className="w-14 h-14 mx-auto rounded-2xl flex items-center justify-center mb-4"
-                            style={{ background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(59, 130, 246, 0.1))' }}>
-                            <FolderGit2 className="w-7 h-7" style={{ color: '#8b5cf6' }} />
+                            style={{ background: 'var(--brand-gradient-soft)' }}>
+                            <FolderGit2 className="w-7 h-7" style={{ color: 'var(--accent-primary)' }} />
                         </div>
                         <h3 className="text-base font-bold text-[var(--text-primary)] mb-1">Set Up Agent Sync</h3>
                         <p className="text-sm text-[var(--text-muted)] mb-5 max-w-md mx-auto">
@@ -203,7 +211,7 @@ const GitHubSyncPanel = ({ user }) => {
                         <button
                             onClick={() => setShowConfig(true)}
                             className="px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
-                            style={{ background: 'linear-gradient(135deg, #8b5cf6, #3b82f6)' }}
+                            style={{ background: 'var(--brand-gradient)' }}
                         >
                             Configure Repository
                         </button>
@@ -271,7 +279,7 @@ const GitHubSyncPanel = ({ user }) => {
                             onClick={handleConfigure}
                             disabled={configuring}
                             className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50"
-                            style={{ background: 'linear-gradient(135deg, #8b5cf6, #3b82f6)' }}
+                            style={{ background: 'var(--brand-gradient)' }}
                         >
                             {configuring ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
                             {status?.configured ? 'Update Configuration' : 'Connect Repository'}
@@ -293,9 +301,9 @@ const GitHubSyncPanel = ({ user }) => {
                 <>
                     {/* Connected Repo Card */}
                     <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] overflow-hidden">
-                        <div className="p-5 flex items-center justify-between" style={{ background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.06), rgba(59, 130, 246, 0.06))' }}>
+                        <div className="p-5 flex items-center justify-between" style={{ background: 'var(--brand-gradient-soft)' }}>
                             <div className="flex items-center gap-4">
-                                <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #8b5cf6, #3b82f6)' }}>
+                                <div className="w-11 h-11 rounded-xl flex items-center justify-center" style={{ background: 'var(--brand-gradient)' }}>
                                     <GitBranch className="w-5 h-5 text-white" />
                                 </div>
                                 <div>
@@ -348,7 +356,7 @@ const GitHubSyncPanel = ({ user }) => {
                                     { label: 'Synced', value: status.overview.synced, color: '#10b981' },
                                     { label: 'Pending', value: status.overview.pending, color: '#f59e0b' },
                                     { label: 'Errors', value: status.overview.error, color: '#ef4444' },
-                                    { label: 'Total', value: status.overview.total, color: '#8b5cf6' },
+                                    { label: 'Total', value: status.overview.total, color: 'var(--text-secondary)' },
                                 ].map(s => (
                                     <div key={s.label} className="p-3.5 text-center">
                                         <div className="text-lg font-bold text-[var(--text-primary)]">{s.value}</div>
@@ -365,7 +373,7 @@ const GitHubSyncPanel = ({ user }) => {
                             onClick={handlePushAll}
                             disabled={syncing}
                             className="flex-1 flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50"
-                            style={{ background: 'linear-gradient(135deg, #8b5cf6, #3b82f6)' }}
+                            style={{ background: 'var(--brand-gradient)' }}
                         >
                             {syncing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
                             Push All to GitHub
@@ -407,30 +415,37 @@ const GitHubSyncPanel = ({ user }) => {
                                 {details.length === 0 ? (
                                     <p className="p-4 text-sm text-[var(--text-muted)] text-center">No sync data yet. Push to GitHub to get started.</p>
                                 ) : details.map(item => (
-                                    <div key={item.id} className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--border-subtle)] last:border-0">
-                                        <div className="flex items-center gap-2.5 min-w-0">
-                                            {item.resource_type === 'agent'
-                                                ? <Bot className="w-3.5 h-3.5 text-[var(--text-muted)] flex-shrink-0" />
-                                                : <Sparkles className="w-3.5 h-3.5 text-[var(--text-muted)] flex-shrink-0" />
-                                            }
-                                            <div className="min-w-0">
-                                                <span className="text-xs font-medium text-[var(--text-primary)] truncate block">
-                                                    {item.resource_type}/{item.resource_id.substring(0, 8)}
-                                                </span>
-                                                {item.last_synced_at && (
-                                                    <span className="text-[10px] text-[var(--text-muted)]">
-                                                        {new Date(item.last_synced_at).toLocaleString()}
+                                    <div key={item.id} className="px-4 py-2.5 border-b border-[var(--border-subtle)] last:border-0">
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-2.5 min-w-0">
+                                                {item.resource_type === 'agent'
+                                                    ? <Bot className="w-3.5 h-3.5 text-[var(--text-muted)] flex-shrink-0" />
+                                                    : <Sparkles className="w-3.5 h-3.5 text-[var(--text-muted)] flex-shrink-0" />
+                                                }
+                                                <div className="min-w-0">
+                                                    <span className="text-xs font-medium text-[var(--text-primary)] truncate block">
+                                                        {item.resource_type}/{item.resource_id.substring(0, 8)}
                                                     </span>
-                                                )}
+                                                    {item.last_synced_at && (
+                                                        <span className="text-[10px] text-[var(--text-muted)]">
+                                                            {new Date(item.last_synced_at).toLocaleString()}
+                                                        </span>
+                                                    )}
+                                                </div>
                                             </div>
+                                            <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold flex-shrink-0 ${item.sync_status === 'synced' ? 'bg-green-500/15 text-green-500'
+                                                : item.sync_status === 'pending' ? 'bg-amber-500/15 text-amber-500'
+                                                    : item.sync_status === 'error' ? 'bg-red-500/15 text-red-500'
+                                                        : 'bg-[var(--bg-tertiary)] text-[var(--text-muted)]'
+                                                }`}>
+                                                {item.sync_status}
+                                            </span>
                                         </div>
-                                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-semibold ${item.sync_status === 'synced' ? 'bg-green-500/15 text-green-500'
-                                            : item.sync_status === 'pending' ? 'bg-amber-500/15 text-amber-500'
-                                                : item.sync_status === 'error' ? 'bg-red-500/15 text-red-500'
-                                                    : 'bg-[var(--bg-tertiary)] text-[var(--text-muted)]'
-                                            }`}>
-                                            {item.sync_status}
-                                        </span>
+                                        {item.sync_status === 'error' && item.error_message && (
+                                            <p className="mt-1.5 ml-6 text-[10px] text-red-500/90 break-words">
+                                                {item.error_message}
+                                            </p>
+                                        )}
                                     </div>
                                 ))}
                             </div>
@@ -439,8 +454,8 @@ const GitHubSyncPanel = ({ user }) => {
 
                     {/* Info Box */}
                     <div className="p-3 rounded-xl text-[12px] flex items-start gap-2"
-                        style={{ background: 'rgba(139, 92, 246, 0.06)', border: '1px solid rgba(139, 92, 246, 0.15)', color: 'var(--text-secondary)' }}>
-                        <FolderGit2 className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: '#8b5cf6' }} />
+                        style={{ background: 'var(--brand-gradient-soft)', border: '1px solid var(--border-subtle)', color: 'var(--text-secondary)' }}>
+                        <FolderGit2 className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
                         <span>
                             Agent system prompts are stored as <code className="text-[11px] px-1 py-0.5 rounded bg-[var(--bg-tertiary)]">.md</code> files for clean diffs.
                             Each agent change creates a traceable commit in your GitHub repo.

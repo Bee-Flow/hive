@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { LifeBuoy, Plus, ArrowLeft } from 'lucide-react';
+import { LifeBuoy, Plus, ArrowLeft, Compass } from 'lucide-react';
 import { authFetch, API_BASE } from '../../utils/helpers';
+import { TOUR_START_EVENT } from '../../components/onboarding/tourSteps';
 import {
     NewThreadForm,
     ThreadDetail,
@@ -49,13 +50,23 @@ export default function HelpSupportSection({ user }) {
                     </p>
                 </div>
                 {view === 'list' && (
-                    <button
-                        onClick={() => setView('new')}
-                        className="px-3 py-1.5 rounded-md text-sm font-medium flex items-center gap-1.5"
-                        style={{ background: 'var(--accent-primary)', color: 'white' }}
-                    >
-                        <Plus className="w-3.5 h-3.5" /> New question
-                    </button>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                        <button
+                            onClick={() => window.dispatchEvent(new CustomEvent(TOUR_START_EVENT))}
+                            className="px-3 py-1.5 rounded-md text-sm font-medium flex items-center gap-1.5 border transition-colors hover:bg-[var(--bg-tertiary)]"
+                            style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)', background: 'transparent' }}
+                            title="Replay the welcome tour"
+                        >
+                            <Compass className="w-3.5 h-3.5" /> Take the tour
+                        </button>
+                        <button
+                            onClick={() => setView('new')}
+                            className="px-3 py-1.5 rounded-md text-sm font-medium flex items-center gap-1.5"
+                            style={{ background: 'var(--accent-primary)', color: 'white' }}
+                        >
+                            <Plus className="w-3.5 h-3.5" /> New question
+                        </button>
+                    </div>
                 )}
             </div>
 

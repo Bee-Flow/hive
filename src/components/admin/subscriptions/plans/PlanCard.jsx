@@ -13,6 +13,7 @@ export function PlanCard({ plan, onEdit, onDelete, onSyncStripe, syncing }) {
     const metered = plan.billing_model === 'metered';
     const perSeat = !!plan.per_seat && !metered && !isConsumer;
     const isPaid = metered || (plan.price != null && plan.price > 0);
+    const isFree = !metered && plan.price != null && plan.price === 0;
 
     return (
         <Card className="flex flex-col" hover>
@@ -25,6 +26,9 @@ export function PlanCard({ plan, onEdit, onDelete, onSyncStripe, syncing }) {
                         </Badge>
                         {perSeat && (
                             <Badge tone="teal" icon={Users} size="sm">Per seat</Badge>
+                        )}
+                        {isFree && (
+                            <Badge tone="success" size="sm">Free</Badge>
                         )}
                         {plan.is_default && (
                             <Badge tone="warning" icon={Star} size="sm">Default</Badge>

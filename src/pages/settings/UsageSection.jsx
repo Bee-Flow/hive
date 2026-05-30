@@ -924,7 +924,11 @@ const UsageSection = () => {
                                         </Card>
                                         <Card style={{ padding: 16 }}>
                                             <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'var(--text-muted)', marginBottom: 4 }}>AI usage this period</div>
-                                            <div style={{ fontSize: 24, fontWeight: 800, color: '#10b981' }}>€{billedCost.toFixed(2)}</div>
+                                            {/* % of cap only — the absolute € spend is intentionally hidden
+                                                for fixed-plan customers (the plan price stays in € above). */}
+                                            <div style={{ fontSize: 24, fontWeight: 800, color: '#10b981' }}>
+                                                {costCap > 0 ? `${Math.min(100, Math.round((billedCost / costCap) * 100))}%` : '—'}
+                                            </div>
                                             <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)' }}>
                                                 {(data.summary?.unique_users || data.users?.length || 0)} active users
                                             </div>
@@ -945,8 +949,9 @@ const UsageSection = () => {
                                                         <DollarSign style={{ width: 14, height: 14, color: '#10b981' }} />
                                                         AI usage vs. cap
                                                     </div>
-                                                    <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                                                        €{billedCost.toFixed(2)} / €{Number(costCap).toFixed(2)}
+                                                    {/* % only — absolute € spend hidden for fixed-plan customers. */}
+                                                    <span style={{ fontSize: 12, fontWeight: 700, color: pctColor }}>
+                                                        {pct}%
                                                     </span>
                                                 </div>
                                                 <div style={{ height: 8, borderRadius: 999, background: 'var(--bg-tertiary)', overflow: 'hidden' }}>
@@ -1032,14 +1037,22 @@ const UsageSection = () => {
                         avgLabel={t('usage.avg_per_day')}
                         noDataLabel={t('usage.no_data')}
                         valueField={isCustomerView ? 'billed_cost' : 'total_tokens'}
-                        valueFormatter={isCustomerView ? (v => '€' + Number(v).toFixed(2)) : undefined}
+                        valueFormatter={isCustomerView ? (v => {
+                            // Customer view shows usage as % of the monthly cap, never € amounts.
+                            const cap = Number(subscription?.effective_limits?.max_cost_per_month) || 0;
+                            return cap > 0 ? Math.round((Number(v) / cap) * 100) + '%' : '';
+                        }) : undefined}
                     />
 
-                    {/* ── Customer-view breakdowns (cost-only) ── */}
+                    {/* ── Customer-view breakdowns (percentage share — no € amounts) ── */}
                     {isCustomerView && (() => {
                         const billing = subscription?.billing || {};
                         const perUserMode = billing.usage_pooled === false;
                         const perUserCap = Number(billing.per_user_cap) || 0;
+                        // Total billed usage this period — denominator for the % share each
+                        // user / app-area represents. Absolute € amounts are not shown.
+                        const totalBilled = Number(data.summary?.billed_cost || 0);
+                        const sharePct = (v) => totalBilled > 0 ? Math.round((Number(v || 0) / totalBilled) * 100) : 0;
                         const sortedUsers = [...(data.users || [])]
                             .sort((a, b) => Number(b.billed_cost || 0) - Number(a.billed_cost || 0))
                             .slice(0, 8);
@@ -1066,9 +1079,9 @@ const UsageSection = () => {
                                                             <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                                                                 {u.display_name}
                                                             </span>
-                                                            {perUserMode && perUserCap > 0 && (
+                                                            {perUserMode && perUserCap > 0 && pct != null && (
                                                                 <span style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 1 }}>
-                                                                    €{used.toFixed(2)} / €{perUserCap.toFixed(2)}
+                                                                    {pct}% {t('usage.of_personal_cap', 'of personal cap')}
                                                                 </span>
                                                             )}
                                                         </div>
@@ -1077,7 +1090,7 @@ const UsageSection = () => {
                                                         {pct != null && (
                                                             <span style={{ width: 8, height: 8, borderRadius: 999, background: dotColor, display: 'inline-block' }} />
                                                         )}
-                                                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>€{used.toFixed(2)}</span>
+                                                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{sharePct(used)}%</span>
                                                     </div>
                                                 </ListRow>
                                             );
@@ -1101,7 +1114,7 @@ const UsageSection = () => {
                                                         <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>{d.label}</span>
                                                     </div>
                                                     <div style={{ textAlign: 'right', flexShrink: 0, paddingLeft: 10 }}>
-                                                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>€{Number(s.billed_cost || 0).toFixed(2)}</span>
+                                                        <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>{sharePct(s.billed_cost)}%</span>
                                                     </div>
                                                 </ListRow>
                                             );

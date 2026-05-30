@@ -33,7 +33,7 @@ function daysUntil(s) {
 
 export default function LicenseKeyActivation() {
     const { t } = useTranslation();
-    const { tier, source, license, subscription, loading, error, activate, deactivate, refresh, reload, serverOverride } = useLicenseContext();
+    const { tier, source, license, subscription, loading, error, activate, deactivate, refresh, reload, serverOverride, upgradeUrl } = useLicenseContext();
     const [tokenInput, setTokenInput] = useState('');
     const [busy, setBusy] = useState(null); // 'activate' | 'refresh' | 'deactivate' | 'portal'
     const [actionError, setActionError] = useState(null);
@@ -278,7 +278,7 @@ export default function LicenseKeyActivation() {
                                 {t('license.enter_key', 'Enter license key')}
                             </button>
                             <a
-                                href="https://beeflow.nl/pricing"
+                                href={upgradeUrl || 'https://beeflow.nl/pricing'}
                                 target="_blank"
                                 rel="noreferrer"
                                 className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold border border-[var(--border-subtle)] text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"

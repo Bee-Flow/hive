@@ -5,7 +5,7 @@ import { useTranslation } from '../../hooks/useTranslation';
 import { useDeploymentMode } from '../../hooks/useDeploymentMode';
 
 /* ── Usage bar (matches OrgInfoPanel style) ─────────────────────────────── */
-const UsageBar = ({ label, icon: Icon, used, limit, unit, color = '#3b82f6' }) => {
+const UsageBar = ({ label, icon: Icon, used, limit, unit, color = '#3b82f6', percentOnly = false }) => {
     const isUnlimited = limit === null || limit === undefined || limit === -1;
     const pct = isUnlimited ? 0 : limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
     const isWarning = pct >= 80 && pct < 95;
@@ -26,9 +26,11 @@ const UsageBar = ({ label, icon: Icon, used, limit, unit, color = '#3b82f6' }) =
                     <Icon className="w-3.5 h-3.5" style={{ color }} />
                     {label}
                 </div>
-                <span className="text-xs text-[var(--text-muted)]">
-                    {fmt(used)}{unit ? ` ${unit}` : ''} / {fmt(limit)}{unit ? ` ${unit}` : ''}
-                </span>
+                {!percentOnly && (
+                    <span className="text-xs text-[var(--text-muted)]">
+                        {fmt(used)}{unit ? ` ${unit}` : ''} / {fmt(limit)}{unit ? ` ${unit}` : ''}
+                    </span>
+                )}
             </div>
             <div className="h-2 rounded-full bg-[var(--bg-tertiary)] overflow-hidden">
                 <div
@@ -139,10 +141,10 @@ const ConsumerLicenseSection = ({ user }) => {
             if (res.ok && result.url) {
                 window.location.href = result.url;
             } else {
-                alert(result.error || 'Failed to start checkout');
+                setCheckoutMessage({ type: 'error', text: result.error || 'Failed to start checkout' });
             }
         } catch (e) {
-            alert('Connection error. Please try again.');
+            setCheckoutMessage({ type: 'error', text: 'Connection error. Please try again.' });
         } finally {
             setCheckoutLoading(null);
         }
@@ -160,10 +162,10 @@ const ConsumerLicenseSection = ({ user }) => {
             if (res.ok && result.url) {
                 window.location.href = result.url;
             } else {
-                alert(result.error || 'Failed to open billing portal');
+                setCheckoutMessage({ type: 'error', text: result.error || 'Failed to open billing portal' });
             }
         } catch (e) {
-            alert('Connection error. Please try again.');
+            setCheckoutMessage({ type: 'error', text: 'Connection error. Please try again.' });
         } finally {
             setPortalLoading(false);
         }
@@ -276,11 +278,11 @@ const ConsumerLicenseSection = ({ user }) => {
                     </div>
                 </div>
 
-                {/* Quick Stats — AI usage cost only */}
+                {/* Quick Stats — AI usage as % of cap (absolute € intentionally hidden). */}
                 <div className="border-t border-[var(--border-subtle)]">
                     <div className="p-4 text-center">
-                        <div className="text-2xl font-bold text-[var(--text-primary)]">€{billedCost.toFixed(2)}</div>
-                        <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">AI usage this period</div>
+                        <div className="text-2xl font-bold text-[var(--text-primary)]">{costCap ? `${costPct}%` : '—'}</div>
+                        <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">{costCap ? 'AI usage of cap this period' : 'AI usage this period'}</div>
                     </div>
                 </div>
             </div>
@@ -311,7 +313,7 @@ const ConsumerLicenseSection = ({ user }) => {
                     <h3 className="text-sm font-semibold text-[var(--text-primary)]">Usage This Period</h3>
                 </div>
 
-                <UsageBar label="Cost" icon={DollarSign} used={billedCost} limit={limits?.max_cost_per_month} unit="€" color="#10b981" />
+                <UsageBar label="AI usage" icon={DollarSign} used={billedCost} limit={limits?.max_cost_per_month} color="#10b981" percentOnly />
             </div>
 
             {/* Plan Limits Grid */}

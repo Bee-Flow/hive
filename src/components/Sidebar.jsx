@@ -653,6 +653,7 @@ const Sidebar = ({
             aria-label={label}
             aria-current={active ? 'page' : undefined}
             data-testid={`nav-${label.toLowerCase().replace(/\s+/g, '-')}`}
+            data-tour={`nav-${key}`}
         >
             {isOpen && active && <div className="absolute left-0 top-2.5 bottom-2.5 w-[3px] rounded-r-full bg-[var(--accent-primary)]" />}
             <Icon className={`${isOpen ? 'w-4 h-4' : 'w-5 h-5'} ${isOpen ? (active ? 'text-[var(--accent-primary)]' : 'text-[var(--text-tertiary)]') : ''}`} strokeWidth={active || primary ? 2.25 : 1.75} />
@@ -974,6 +975,7 @@ const Sidebar = ({
                     aria-haspopup="menu"
                     aria-expanded={showProfileMenu}
                     data-testid="sidebar-profile"
+                    data-tour="account"
                 >
                     {user?.avatarType === 'emoji' && user?.avatar ? (
                         <div className={`rounded-full flex items-center justify-center flex-shrink-0 bg-[var(--bg-tertiary)] ${isOpen ? 'w-8 h-8 text-base' : 'w-10 h-10 text-xl'}`}>

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { Building2, Save, Upload, Palette, FileText, Check, Lock, KeyRound, AlertTriangle, CreditCard, BarChart3, Zap, MessageSquare, DollarSign, Users, Bot, Database, Shield, Info, Globe, X, Plus, ExternalLink, Loader2, ArrowRight, Sparkles } from 'lucide-react';
+import { Building2, Save, Upload, Palette, FileText, Check, Lock, KeyRound, AlertTriangle, CreditCard, BarChart3, Zap, MessageSquare, DollarSign, Users, Bot, Database, Shield, Info, Globe, X, Plus, ExternalLink, Loader2, ArrowRight, Sparkles, Clock } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { cloudFetch } from '../../utils/cloudFetch';
 import { useTranslation } from '../../hooks/useTranslation';
@@ -182,7 +182,7 @@ const AllowedDomainsEditor = ({ domains = [], onChange, t }) => {
 };
 
 // ── Usage bar component ──
-const UsageBar = ({ label, icon: Icon, used, limit, unit, color = '#3b82f6', pctLabel }) => {
+const UsageBar = ({ label, icon: Icon, used, limit, unit, color = '#3b82f6', pctLabel, percentOnly = false }) => {
     const isUnlimited = limit === null || limit === undefined || limit === -1;
     const pct = isUnlimited ? 0 : limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0;
     const isWarning = pct >= 80 && pct < 95;
@@ -203,9 +203,11 @@ const UsageBar = ({ label, icon: Icon, used, limit, unit, color = '#3b82f6', pct
                     <Icon className="w-3.5 h-3.5" style={{ color }} />
                     {label}
                 </div>
-                <span className="text-xs text-[var(--text-muted)]">
-                    {formatValue(used)}{unit ? ` ${unit}` : ''} / {formatValue(limit)}{unit ? ` ${unit}` : ''}
-                </span>
+                {!percentOnly && (
+                    <span className="text-xs text-[var(--text-muted)]">
+                        {formatValue(used)}{unit ? ` ${unit}` : ''} / {formatValue(limit)}{unit ? ` ${unit}` : ''}
+                    </span>
+                )}
             </div>
             <div className="h-2 rounded-full bg-[var(--bg-tertiary)] overflow-hidden">
                 <div
@@ -357,6 +359,18 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
     // redirect; the subscription stays the same and Stripe pro-rates.
     const [showChangePlan, setShowChangePlan] = useState(false);
     const [cancelBusy, setCancelBusy] = useState(false);
+    // Subscription actions (upgrade/downgrade/cancel/checkout/portal) surface
+    // their result HERE — kept separate from `message` so they never appear in
+    // the org-info save bar (which only handles form saves + the usage toggle).
+    const [subMessage, setSubMessage] = useState(null);
+    // Change-plan confirmation flow: the selected target plan + the prorated
+    // cost preview fetched from /preview-change before we commit the switch.
+    const [changeTarget, setChangeTarget] = useState(null);
+    const [changePreview, setChangePreview] = useState(null);
+    const [previewLoading, setPreviewLoading] = useState(false);
+    const [changeBusy, setChangeBusy] = useState(false);
+    // In-app cancel confirmation (replaces the native window.confirm dialog).
+    const [showCancelConfirm, setShowCancelConfirm] = useState(false);
     // True between landing on ?checkout=success and the webhook flipping
     // status to active/trialing. Drives a "Subscription activating…" banner
     // so the user never sees stale "no subscription" copy after paying.
@@ -516,6 +530,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
         }
         if (status !== 'success') return;
 
+        const sessionId = params.get('session_id');
         let cancelled = false;
         setCheckoutSettling(true);
         const deadline = Date.now() + 30000;
@@ -523,6 +538,11 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
             while (!cancelled && Date.now() < deadline) {
                 await new Promise(r => setTimeout(r, 1500));
                 try {
+                    // Reconcile straight from the Stripe session so activation
+                    // doesn't depend on the webhook landing in time (or at all).
+                    if (sessionId) {
+                        await cloudFetch(deploymentMode, `${API_BASE}/api/stripe/sessions/${encodeURIComponent(sessionId)}`).catch(() => {});
+                    }
                     const res = await cloudFetch(deploymentMode, `${API_BASE}/api/subscriptions/orgs/${orgData.id}`);
                     if (res?.ok) {
                         const fresh = await res.json();
@@ -561,60 +581,109 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
             if (res.ok && data.url) {
                 window.location.href = data.url;
             } else {
-                setMessage({ type: 'error', text: data.error || 'Failed to start checkout' });
+                setSubMessage({ type: 'error', text: data.error || 'Failed to start checkout' });
             }
         } catch {
-            setMessage({ type: 'error', text: 'Failed to connect to payment service' });
+            setSubMessage({ type: 'error', text: 'Failed to connect to payment service' });
         } finally {
             setCheckoutLoading(null);
         }
     };
 
-    const handleUpgrade = async (planId) => {
+    // Step 1 of a plan change: select a target and fetch the prorated cost
+    // preview. Opens the confirmation modal once the preview resolves.
+    const handleSelectChange = async (plan) => {
         if (!orgData?.id) return;
-        setCheckoutLoading(planId);
+        setChangeTarget(plan);
+        setChangePreview(null);
+        setPreviewLoading(true);
+        try {
+            const res = await cloudFetch(deploymentMode, `${API_BASE}/api/subscriptions/orgs/${orgData.id}/preview-change`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ planId: plan.id }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.message || data.error || 'Could not preview this change');
+            setChangePreview(data);
+        } catch (e) {
+            setSubMessage({ type: 'error', text: e.message });
+            setChangeTarget(null);
+        } finally {
+            setPreviewLoading(false);
+        }
+    };
+
+    // Step 2: commit. Same endpoint handles both directions — upgrades apply
+    // now (prorated), downgrades are scheduled at period end by the server.
+    const handleConfirmChange = async () => {
+        if (!orgData?.id || !changeTarget) return;
+        setChangeBusy(true);
         try {
             const res = await cloudFetch(deploymentMode, `${API_BASE}/api/subscriptions/orgs/${orgData.id}/upgrade`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ planId }),
+                body: JSON.stringify({ planId: changeTarget.id }),
             });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) {
                 const friendly = data.message
                     || ({
                         payment_required: 'Your card was declined. Update your payment method via "Manage Billing".',
-                        downgrade_not_supported: 'Downgrades are not supported. Contact info@beeflow.nl.',
-                        interval_mismatch: 'Switching between monthly and yearly billing is not available via Upgrade. Contact info@beeflow.nl.',
+                        interval_mismatch: 'Switching between monthly and yearly billing is not available here. Contact info@beeflow.nl.',
                     }[data.error])
                     || data.error
-                    || 'Upgrade failed';
+                    || 'Plan change failed';
                 throw new Error(friendly);
             }
             setSubscription(data);
-            setMessage({ type: 'success', text: 'Plan upgraded. Stripe has invoiced the prorated difference.' });
+            const msg = changeTarget.direction === 'downgrade'
+                ? t('org.downgrade_scheduled_msg', 'Downgrade scheduled for the end of this period.')
+                : t('org.upgrade_done_msg', 'Plan upgraded. Stripe invoiced the prorated difference.');
+            setSubMessage({ type: 'success', text: msg });
             setShowChangePlan(false);
+            setChangeTarget(null);
+            setChangePreview(null);
         } catch (e) {
-            setMessage({ type: 'error', text: e.message });
+            setSubMessage({ type: 'error', text: e.message });
         } finally {
-            setCheckoutLoading(null);
+            setChangeBusy(false);
         }
     };
 
-    const handleCancelSubscription = async () => {
+    const handleCancelDowngrade = async () => {
         if (!orgData?.id) return;
-        if (!window.confirm('Cancel subscription at the end of the current period? You keep access until then.')) return;
+        setCancelBusy(true);
+        try {
+            const res = await cloudFetch(deploymentMode, `${API_BASE}/api/subscriptions/orgs/${orgData.id}/cancel-downgrade`, { method: 'POST' });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.message || data.error || 'Could not cancel the scheduled change');
+            setSubscription(data);
+            setSubMessage({ type: 'success', text: t('org.downgrade_cancelled_msg', 'Scheduled downgrade cancelled — you stay on your current plan.') });
+        } catch (e) {
+            setSubMessage({ type: 'error', text: e.message });
+        } finally {
+            setCancelBusy(false);
+        }
+    };
+
+    // Opens the in-app confirmation modal (no native window.confirm).
+    const handleCancelSubscription = () => setShowCancelConfirm(true);
+
+    const doCancelSubscription = async () => {
+        if (!orgData?.id) return;
         setCancelBusy(true);
         try {
             const res = await cloudFetch(deploymentMode, `${API_BASE}/api/subscriptions/orgs/${orgData.id}/cancel`, { method: 'POST' });
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.message || data.error || 'Cancel failed');
             setSubscription(data);
-            setMessage({ type: 'success', text: 'Cancellation scheduled.' });
+            setSubMessage({ type: 'success', text: t('org.cancel_scheduled_msg', 'Cancellation scheduled.') });
         } catch (e) {
-            setMessage({ type: 'error', text: e.message });
+            setSubMessage({ type: 'error', text: e.message });
         } finally {
             setCancelBusy(false);
+            setShowCancelConfirm(false);
         }
     };
 
@@ -626,9 +695,9 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
             const data = await res.json().catch(() => ({}));
             if (!res.ok) throw new Error(data.message || data.error || 'Reactivate failed');
             setSubscription(data);
-            setMessage({ type: 'success', text: 'Subscription will continue.' });
+            setSubMessage({ type: 'success', text: 'Subscription will continue.' });
         } catch (e) {
-            setMessage({ type: 'error', text: e.message });
+            setSubMessage({ type: 'error', text: e.message });
         } finally {
             setCancelBusy(false);
         }
@@ -646,10 +715,10 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
             if (res.ok && data.url) {
                 window.location.href = data.url;
             } else {
-                setMessage({ type: 'error', text: data.error || 'Failed to open billing portal' });
+                setSubMessage({ type: 'error', text: data.error || 'Failed to open billing portal' });
             }
         } catch {
-            setMessage({ type: 'error', text: 'Failed to connect to billing portal' });
+            setSubMessage({ type: 'error', text: 'Failed to connect to billing portal' });
         } finally {
             setPortalLoading(false);
         }
@@ -775,9 +844,25 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                 {activeSection === 'license' && (
                     <div className="max-w-xl mx-auto space-y-6 animate-fadeIn">
                         <div>
-                            <h2 className="text-lg font-bold text-[var(--text-primary)]">{t('org.license_usage')}</h2>
+                            {/* Heading reflects whether this org is on a real paid subscription:
+                                "Subscription & Usage" when it is, "License & Usage" otherwise. */}
+                            <h2 className="text-lg font-bold text-[var(--text-primary)]">
+                                {(sub?.stripe_subscription_id || (sub?.billing?.subscription_total || 0) > 0)
+                                    ? t('org.subscription_usage', 'Subscription & Usage')
+                                    : t('org.license_usage')}
+                            </h2>
                             <p className="text-sm text-[var(--text-muted)] mt-0.5">{t('org.license_subtitle')}</p>
                         </div>
+
+                        {/* Subscription action result (upgrade/downgrade/cancel/checkout) —
+                            rendered inline here, never in the org-info save bar. */}
+                        {subMessage && (
+                            <div className={`rounded-xl px-4 py-2.5 text-[12.5px] font-medium flex items-center gap-2 ${subMessage.type === 'success' ? 'bg-green-500/10 text-green-600 border border-green-500/30' : 'bg-red-500/10 text-red-500 border border-red-500/30'}`}>
+                                <span>{subMessage.type === 'success' ? '✓' : '⚠'}</span>
+                                <span className="flex-1">{subMessage.text}</span>
+                                <button onClick={() => setSubMessage(null)} className="opacity-60 hover:opacity-100">✕</button>
+                            </div>
+                        )}
 
                         {/* License key activation (self-hosted; or cloud Full-tier internal orgs) */}
                         {showLicenseActivation && <LicenseKeyActivation />}
@@ -927,10 +1012,10 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                                 </p>
                                             </div>
                                         </div>
-                                        {/* Upgrade plan / Manage Billing actions. The toggle is only shown when
-                                            the server has flagged a strictly higher plan as eligible and the sub
-                                            isn't already mid-cancellation. */}
-                                        {isCloud && Array.isArray(sub.upgradeable_plans) && sub.upgradeable_plans.length > 0 && !sub.cancel_at_period_end && (
+                                        {/* Change plan / Manage Billing actions. The toggle shows when the
+                                            sub is Stripe-managed, the server offers a changeable plan (up or
+                                            down), and we're not mid-cancellation. */}
+                                        {isCloud && sub.stripe_subscription_id && Array.isArray(sub.changeable_plans) && sub.changeable_plans.length > 0 && !sub.cancel_at_period_end && !sub.pending_plan_id && (
                                             <button
                                                 onClick={() => setShowChangePlan(v => !v)}
                                                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all hover:opacity-80"
@@ -939,7 +1024,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                                 <Zap className="w-3 h-3" />
                                                 {showChangePlan
                                                     ? t('org.change_plan_close', 'Close')
-                                                    : t('org.upgrade_plan', 'Upgrade plan')}
+                                                    : t('org.change_plan', 'Change plan')}
                                             </button>
                                         )}
                                         {sub.stripe_customer_id && (
@@ -961,37 +1046,49 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                         )}
                                     </div>
 
-                                    {/* Quick stats — AI usage cost only */}
+                                    {/* Quick stats — AI usage shown as % of the cost cap (the actual
+                                        € amount is intentionally hidden for fixed-plan customers; the
+                                        cap itself and the subscription price remain in € below). */}
                                     <div className="border-t border-[var(--border-subtle)]">
                                         <div className="p-4 text-center">
-                                            <div className="text-2xl font-bold text-[var(--text-primary)]">€{Number(usage.cost || 0).toFixed(2)}</div>
-                                            <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">{t('org.ai_usage_this_period', 'AI usage this period')}</div>
+                                            <div className="text-2xl font-bold text-[var(--text-primary)]">
+                                                {(limits.max_cost_per_month && limits.max_cost_per_month !== -1) ? `${orgCostPct}%` : '—'}
+                                            </div>
+                                            <div className="text-[10px] text-[var(--text-muted)] uppercase tracking-wider mt-0.5">
+                                                {(limits.max_cost_per_month && limits.max_cost_per_month !== -1)
+                                                    ? t('org.ai_usage_of_cap', 'AI usage of cap this period')
+                                                    : t('org.ai_usage_this_period', 'AI usage this period')}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
 
-                                {/* Inline Upgrade Plan picker. Drives the in-app upgrade endpoint —
-                                    no new Stripe Checkout session. Server provides upgradeable_plans
-                                    pre-filtered (same scope + interval, strictly higher price), so
-                                    downgrades simply never reach the UI. */}
-                                {showChangePlan && isCloud && Array.isArray(sub.upgradeable_plans) && sub.upgradeable_plans.length > 0 && !sub.cancel_at_period_end && (
+                                {/* Inline Change Plan picker. Drives the in-app plan-change endpoint
+                                    — no new Stripe Checkout session. Server provides changeable_plans
+                                    (both directions, same scope + interval). Selecting one opens a
+                                    confirmation modal with the prorated cost preview. */}
+                                {showChangePlan && isCloud && sub.stripe_subscription_id && Array.isArray(sub.changeable_plans) && sub.changeable_plans.length > 0 && !sub.cancel_at_period_end && !sub.pending_plan_id && (
                                     <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5 space-y-3">
                                         <div className="flex items-center gap-2 mb-1">
                                             <Zap className="w-4 h-4" style={{ color: '#3b82f6' }} />
-                                            <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t('org.upgrade_plan', 'Upgrade plan')}</h3>
+                                            <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t('org.change_plan', 'Change plan')}</h3>
                                         </div>
                                         <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
-                                            {t('org.upgrade_plan_hint', 'Upgrading takes effect immediately. Stripe invoices the prorated difference for the remainder of this period right away.')}
+                                            {t('org.change_plan_hint', 'Upgrades take effect immediately (prorated). Downgrades take effect at the end of your current billing period.')}
                                         </p>
                                         <div className="grid gap-3">
-                                            {sub.upgradeable_plans.map(plan => {
+                                            {sub.changeable_plans.map(plan => {
                                                 const sym = (plan.currency || 'eur').toUpperCase() === 'EUR' ? '€' : (plan.currency || 'eur').toUpperCase() === 'GBP' ? '£' : '$';
+                                                const isDown = plan.direction === 'downgrade';
                                                 return (
                                                     <div key={plan.id} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 hover:border-[var(--accent-primary)] transition-colors">
                                                         <div className="flex items-center justify-between">
                                                             <div className="flex-1 min-w-0">
                                                                 <div className="flex items-center gap-2 mb-1">
                                                                     <h4 className="text-sm font-bold text-[var(--text-primary)]">{plan.name}</h4>
+                                                                    <span className={`text-[9px] px-1.5 py-0.5 rounded font-semibold uppercase tracking-wider ${isDown ? 'bg-[var(--bg-tertiary)] text-[var(--text-muted)]' : 'bg-blue-500/15 text-blue-500'}`}>
+                                                                        {isDown ? t('org.downgrade', 'Downgrade') : t('org.upgrade', 'Upgrade')}
+                                                                    </span>
                                                                 </div>
                                                                 {plan.description && <p className="text-[11px] text-[var(--text-muted)] mb-2">{plan.description}</p>}
                                                                 <div className="flex flex-wrap gap-x-4 gap-y-1 text-[10px] text-[var(--text-muted)]">
@@ -1006,17 +1103,17 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                                                     <div className="text-[9px] text-[var(--text-muted)] uppercase tracking-wider">/ {plan.billing_interval || 'month'}</div>
                                                                 </div>
                                                                 <button
-                                                                    onClick={() => handleUpgrade(plan.id)}
-                                                                    disabled={checkoutLoading === plan.id || !plan.has_stripe_price}
+                                                                    onClick={() => handleSelectChange(plan)}
+                                                                    disabled={previewLoading || !plan.has_stripe_price}
                                                                     className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50"
-                                                                    style={{ background: '#3b82f6' }}
+                                                                    style={{ background: isDown ? '#64748b' : '#3b82f6' }}
                                                                 >
-                                                                    {checkoutLoading === plan.id ? (
+                                                                    {(previewLoading && changeTarget?.id === plan.id) ? (
                                                                         <Loader2 className="w-3.5 h-3.5 animate-spin" />
                                                                     ) : (
                                                                         <ArrowRight className="w-3.5 h-3.5" />
                                                                     )}
-                                                                    {t('org.upgrade_button', 'Upgrade')}
+                                                                    {isDown ? t('org.downgrade', 'Downgrade') : t('org.upgrade_button', 'Upgrade')}
                                                                 </button>
                                                             </div>
                                                         </div>
@@ -1027,11 +1124,89 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                     </div>
                                 )}
 
+                                {/* Scheduled-downgrade banner. The org keeps its current (higher) plan
+                                    until pending_plan_effective, then the schedule flips it down.
+                                    The Undo button releases the Stripe schedule. */}
+                                {sub.pending_plan_id && (
+                                    <div
+                                        className="rounded-2xl border px-4 py-3 flex items-center gap-3"
+                                        style={{ borderColor: 'rgba(100,116,139,0.35)', background: 'rgba(100,116,139,0.06)' }}
+                                    >
+                                        <Clock className="w-4 h-4 shrink-0" style={{ color: '#64748b' }} />
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-[13px] font-semibold text-[var(--text-primary)]">
+                                                {t('org.downgrade_scheduled', 'Downgrade to')} {sub.pending_plan_name || t('org.a_lower_plan', 'a lower plan')} {t('org.downgrade_scheduled_on', 'on')} {sub.pending_plan_effective ? new Date(sub.pending_plan_effective).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' }) : t('org.period_end', 'the end of this period')}.
+                                            </p>
+                                            <p className="text-[11.5px] text-[var(--text-muted)]">
+                                                {t('org.downgrade_keeps_access', 'You keep your current plan until then.')}
+                                            </p>
+                                        </div>
+                                        <button
+                                            onClick={handleCancelDowngrade}
+                                            disabled={cancelBusy}
+                                            className="shrink-0 px-3 py-1.5 rounded-lg text-[12px] font-semibold border transition-all hover:opacity-80 disabled:opacity-50"
+                                            style={{ borderColor: 'rgba(100,116,139,0.35)', color: '#64748b', background: 'rgba(100,116,139,0.05)' }}
+                                        >
+                                            {cancelBusy ? <Loader2 className="w-3 h-3 animate-spin inline" /> : t('org.keep_current_plan', 'Keep current plan')}
+                                        </button>
+                                    </div>
+                                )}
+
                                 {/* Highest-plan message: only when there's a paying sub and the
-                                    server has no upgradeable plans (and we're not mid-cancel). */}
-                                {isCloud && (sub.billing?.subscription_total || 0) > 0 && Array.isArray(sub.upgradeable_plans) && sub.upgradeable_plans.length === 0 && !sub.cancel_at_period_end && (
+                                    server has no changeable plans (and we're not mid-cancel/pending). */}
+                                {isCloud && sub.stripe_subscription_id && (sub.billing?.subscription_total || 0) > 0 && Array.isArray(sub.changeable_plans) && sub.changeable_plans.length === 0 && !sub.cancel_at_period_end && !sub.pending_plan_id && (
                                     <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] px-4 py-3 text-[12px] text-[var(--text-muted)]">
                                         {t('org.on_highest_plan', "You're on the highest plan — contact")} <a href="mailto:info@beeflow.nl" className="text-[#3b82f6] hover:underline">info@beeflow.nl</a> {t('org.for_custom_pricing', 'for custom pricing.')}
+                                    </div>
+                                )}
+
+                                {/* Subscribe-to-paid section for orgs on a free/manual (non-Stripe)
+                                    plan. Routes through Stripe Checkout, which establishes the
+                                    stripe_subscription_id so upgrades/downgrades/billing work after. */}
+                                {isCloud && !sub.stripe_subscription_id && availablePlans.length > 0 && (
+                                    <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5 space-y-3">
+                                        <div className="flex items-center gap-2 mb-1">
+                                            <Zap className="w-4 h-4" style={{ color: '#3b82f6' }} />
+                                            <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t('org.upgrade_to_paid', 'Upgrade to a paid plan')}</h3>
+                                        </div>
+                                        <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                                            {t('org.upgrade_to_paid_hint', "You're on a free plan. Subscribe to unlock higher usage and more features — you'll be taken to secure Stripe checkout.")}
+                                        </p>
+                                        <div className="grid gap-3">
+                                            {availablePlans.map(plan => {
+                                                const sym = (plan.currency || 'eur').toUpperCase() === 'EUR' ? '€' : (plan.currency || 'eur').toUpperCase() === 'GBP' ? '£' : '$';
+                                                return (
+                                                    <div key={plan.id} className="rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-4 hover:border-[var(--accent-primary)] transition-colors">
+                                                        <div className="flex items-center justify-between">
+                                                            <div className="flex-1 min-w-0">
+                                                                <div className="flex items-center gap-2 mb-1">
+                                                                    <h4 className="text-sm font-bold text-[var(--text-primary)]">{plan.name}</h4>
+                                                                    {plan.trial_days > 0 && (
+                                                                        <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-green-500/15 text-green-500">{plan.trial_days}d free trial</span>
+                                                                    )}
+                                                                </div>
+                                                                {plan.description && <p className="text-[11px] text-[var(--text-muted)] mb-2">{plan.description}</p>}
+                                                            </div>
+                                                            <div className="flex items-center gap-3 ml-4">
+                                                                <div className="text-right">
+                                                                    <div className="text-lg font-bold text-[var(--text-primary)]">{sym}{Number(plan.price).toFixed(2)}</div>
+                                                                    <div className="text-[9px] text-[var(--text-muted)] uppercase tracking-wider">/ {plan.billing_interval || 'month'}{plan.per_seat ? ` ${t('org.per_seat', '/ seat')}` : ''}</div>
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => handleCheckout(plan.id)}
+                                                                    disabled={checkoutLoading === plan.id}
+                                                                    className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50"
+                                                                    style={{ background: '#3b82f6' }}
+                                                                >
+                                                                    {checkoutLoading === plan.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArrowRight className="w-3.5 h-3.5" />}
+                                                                    {t('org.subscribe', 'Subscribe')}
+                                                                </button>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
                                     </div>
                                 )}
 
@@ -1123,7 +1298,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                     </div>
                                 )}
 
-                                {/* Usage Bars — AI usage cost only */}
+                                {/* Usage Bars — AI usage shown as % of cap only (no € amount). */}
                                 <div className="rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5 space-y-4">
                                     <div className="flex items-center gap-2 mb-1">
                                         <BarChart3 className="w-4 h-4 text-[var(--text-muted)]" />
@@ -1131,12 +1306,12 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                     </div>
 
                                     <UsageBar
-                                        label={t('org.cost', 'Cost')}
+                                        label={t('org.ai_usage', 'AI usage')}
                                         icon={DollarSign}
                                         used={usage.cost || 0}
                                         limit={limits.max_cost_per_month}
-                                        unit="€"
                                         color="#10b981"
+                                        percentOnly
                                     />
                                 </div>
 
@@ -1185,6 +1360,111 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                 })()}
                             </>
                         ))}
+
+                        {/* ── AI usage sharing (moved here from Org Info) ── */}
+                        {!licenseCtx?.serverOverride && orgData && (
+                            <div className="space-y-3 pt-2">
+                                <div>
+                                    <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t('org.share_usage', 'AI usage sharing')}</h3>
+                                    <p className="text-[12px] text-[var(--text-muted)] mt-0.5">{t('org.share_usage_desc', 'Choose whether your team shares one AI-usage budget, or whether each user gets their own slice.')}</p>
+                                </div>
+                                <div className="p-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] flex items-start gap-3">
+                                    <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: 'rgba(16,185,129,0.12)' }}>
+                                        <Users className="w-4 h-4" style={{ color: '#10b981' }} />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <p className="text-[13px] font-medium text-[var(--text-primary)]">{t('org.share_usage_label', 'Share AI usage across the organisation')}</p>
+                                        <p className="text-[11px] text-[var(--text-muted)] mt-0.5 mb-3">{t('org.share_usage_explainer', 'When on, every user shares the plan\'s cost budget. When off, the budget is divided equally between active users so each user gets their own slice for the period.')}</p>
+                                        <label className="inline-flex items-center gap-3 cursor-pointer select-none">
+                                            <span className="relative inline-flex h-5 w-9 items-center">
+                                                <input
+                                                    type="checkbox"
+                                                    checked={!!orgData.usagePooled}
+                                                    onChange={e => setOrgData(p => ({ ...p, usagePooled: e.target.checked }))}
+                                                    className="sr-only peer"
+                                                />
+                                                <span className="absolute inset-0 rounded-full bg-[var(--bg-tertiary)] border border-[var(--border-default)] peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-colors" />
+                                                <span className="absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-4" />
+                                            </span>
+                                            <span className="text-[12px] text-[var(--text-secondary)]">
+                                                {orgData.usagePooled
+                                                    ? t('org.share_usage_on', 'Pooled across the organisation')
+                                                    : t('org.share_usage_off', 'Each user has their own budget')}
+                                            </span>
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ── Change-plan confirmation modal ── */}
+                        {changeTarget && changePreview && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.45)' }} onClick={() => { if (!changeBusy) { setChangeTarget(null); setChangePreview(null); } }}>
+                                <div className="w-full max-w-md rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5 space-y-4" onClick={e => e.stopPropagation()}>
+                                    <div className="flex items-center gap-2">
+                                        <Zap className="w-4 h-4" style={{ color: changePreview.direction === 'downgrade' ? '#64748b' : '#3b82f6' }} />
+                                        <h3 className="text-sm font-bold text-[var(--text-primary)]">
+                                            {changePreview.direction === 'downgrade' ? t('org.confirm_downgrade', 'Confirm downgrade') : t('org.confirm_upgrade', 'Confirm upgrade')} — {changeTarget.name}
+                                        </h3>
+                                    </div>
+                                    {(() => {
+                                        const sym = (changePreview.currency || 'EUR').toUpperCase() === 'EUR' ? '€' : (changePreview.currency || 'EUR').toUpperCase() === 'GBP' ? '£' : '$';
+                                        const renewal = `${sym}${Number(changePreview.next_renewal_total || 0).toFixed(2)} / ${(changeTarget.billing_interval === 'yearly' ? t('org.year', 'year') : t('org.month', 'month'))}`;
+                                        if (changePreview.direction === 'downgrade') {
+                                            const date = changePreview.effective ? new Date(changePreview.effective).toLocaleDateString('nl-NL', { day: 'numeric', month: 'short', year: 'numeric' }) : t('org.period_end', 'the end of this period');
+                                            return (
+                                                <div className="rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-subtle)] p-4 space-y-2 text-[13px]">
+                                                    <div className="flex justify-between"><span className="text-[var(--text-muted)]">{t('org.takes_effect', 'Takes effect')}</span><span className="font-semibold text-[var(--text-primary)]">{date}</span></div>
+                                                    <div className="flex justify-between"><span className="text-[var(--text-muted)]">{t('org.charge_today', 'Charge today')}</span><span className="font-semibold text-[var(--text-primary)]">{sym}0.00</span></div>
+                                                    <div className="flex justify-between"><span className="text-[var(--text-muted)]">{t('org.then', 'Then')}</span><span className="font-semibold text-[var(--text-primary)]">{renewal}</span></div>
+                                                </div>
+                                            );
+                                        }
+                                        const charge = Number(changePreview.proration_amount || 0);
+                                        return (
+                                            <div className="rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-subtle)] p-4 space-y-2 text-[13px]">
+                                                <div className="flex justify-between"><span className="text-[var(--text-muted)]">{t('org.prorated_charge_today', 'Prorated charge today')}</span><span className="font-semibold text-[var(--text-primary)]">{sym}{charge.toFixed(2)}</span></div>
+                                                <div className="flex justify-between"><span className="text-[var(--text-muted)]">{t('org.then', 'Then')}</span><span className="font-semibold text-[var(--text-primary)]">{renewal}</span></div>
+                                                {changePreview.per_seat && changePreview.seat_quantity > 0 && (
+                                                    <div className="flex justify-between text-[11px] pt-1 border-t border-[var(--border-subtle)]"><span className="text-[var(--text-muted)]">{changePreview.seat_quantity} {t('org.seats', 'seats')}</span><span className="text-[var(--text-muted)]">{t('org.billed_per_seat', 'billed per seat')}</span></div>
+                                                )}
+                                            </div>
+                                        );
+                                    })()}
+                                    <div className="flex justify-end gap-2">
+                                        <button onClick={() => { setChangeTarget(null); setChangePreview(null); }} disabled={changeBusy} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] disabled:opacity-50">
+                                            {t('org.cancel', 'Cancel')}
+                                        </button>
+                                        <button onClick={handleConfirmChange} disabled={changeBusy} className="px-4 py-1.5 rounded-lg text-[12px] font-semibold text-white disabled:opacity-50" style={{ background: changePreview.direction === 'downgrade' ? '#64748b' : '#3b82f6' }}>
+                                            {changeBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" /> : t('org.confirm', 'Confirm')}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* ── Cancel-subscription confirmation modal (in-app, not window.confirm) ── */}
+                        {showCancelConfirm && (
+                            <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.45)' }} onClick={() => { if (!cancelBusy) setShowCancelConfirm(false); }}>
+                                <div className="w-full max-w-md rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-card)] p-5 space-y-4" onClick={e => e.stopPropagation()}>
+                                    <div className="flex items-center gap-2">
+                                        <AlertTriangle className="w-4 h-4 text-amber-500" />
+                                        <h3 className="text-sm font-bold text-[var(--text-primary)]">{t('org.cancel_subscription', 'Cancel subscription')}</h3>
+                                    </div>
+                                    <p className="text-[13px] text-[var(--text-secondary)] leading-relaxed">
+                                        {t('org.cancel_confirm_body', 'Cancel your subscription at the end of the current billing period? You keep full access until then, and no further payments will be taken.')}
+                                    </p>
+                                    <div className="flex justify-end gap-2">
+                                        <button onClick={() => setShowCancelConfirm(false)} disabled={cancelBusy} className="px-3 py-1.5 rounded-lg text-[12px] font-semibold border border-[var(--border-subtle)] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] disabled:opacity-50">
+                                            {t('org.keep_subscription', 'Keep subscription')}
+                                        </button>
+                                        <button onClick={doCancelSubscription} disabled={cancelBusy} className="px-4 py-1.5 rounded-lg text-[12px] font-semibold text-white bg-red-500 hover:bg-red-600 disabled:opacity-50">
+                                            {cancelBusy ? <Loader2 className="w-3.5 h-3.5 animate-spin inline" /> : t('org.cancel_subscription_confirm', 'Cancel subscription')}
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
                 )}
 
@@ -1393,43 +1673,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
 
                         {/* ── Default Language for New Users ── */}
                         <OrgDefaultLanguage />
-
-                        {/* ── Divider ── */}
-                        <div className="border-t border-[var(--border-subtle)]" />
-
-                        {/* ── AI usage sharing toggle ── */}
-                        <div className="space-y-5">
-                            <div>
-                                <h2 className="text-lg font-bold text-[var(--text-primary)]">{t('org.share_usage', 'AI usage sharing')}</h2>
-                                <p className="text-sm text-[var(--text-muted)] mt-0.5">{t('org.share_usage_desc', 'Choose whether your team shares one AI-usage budget, or whether each user gets their own slice.')}</p>
-                            </div>
-                            <div className="p-4 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-secondary)] flex items-start gap-3">
-                                <div className="w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5" style={{ background: 'rgba(16,185,129,0.12)' }}>
-                                    <Users className="w-4 h-4" style={{ color: '#10b981' }} />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                    <p className="text-[13px] font-medium text-[var(--text-primary)]">{t('org.share_usage_label', 'Share AI usage across the organisation')}</p>
-                                    <p className="text-[11px] text-[var(--text-muted)] mt-0.5 mb-3">{t('org.share_usage_explainer', 'When on, every user shares the plan\'s cost budget. When off, the budget is divided equally between active users so each user gets their own slice for the period.')}</p>
-                                    <label className="inline-flex items-center gap-3 cursor-pointer select-none">
-                                        <span className="relative inline-flex h-5 w-9 items-center">
-                                            <input
-                                                type="checkbox"
-                                                checked={!!orgData.usagePooled}
-                                                onChange={e => setOrgData(p => ({ ...p, usagePooled: e.target.checked }))}
-                                                className="sr-only peer"
-                                            />
-                                            <span className="absolute inset-0 rounded-full bg-[var(--bg-tertiary)] border border-[var(--border-default)] peer-checked:bg-emerald-500 peer-checked:border-emerald-500 transition-colors" />
-                                            <span className="absolute left-0.5 top-0.5 w-4 h-4 rounded-full bg-white shadow transition-transform peer-checked:translate-x-4" />
-                                        </span>
-                                        <span className="text-[12px] text-[var(--text-secondary)]">
-                                            {orgData.usagePooled
-                                                ? t('org.share_usage_on', 'Pooled across the organisation')
-                                                : t('org.share_usage_off', 'Each user has their own budget')}
-                                        </span>
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
+                        {/* AI usage sharing moved to the License & Usage section. */}
                     </div>
                 )}
                 {/* ── Privacy Shield ── */}

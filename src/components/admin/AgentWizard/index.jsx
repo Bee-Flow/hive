@@ -137,6 +137,7 @@ function PromptInput({ value, onChange, onSubmit, busy, placeholder, tiers, tier
     return (
         <div className={`w-full max-w-xl px-1 py-1 ${noBorder ? '' : 'rounded-2xl border border-[var(--border-default)] bg-[var(--bg-secondary)] px-4 py-3'}`}>
             <textarea
+                data-tour="agent-wizard-prompt"
                 value={value}
                 onChange={(e) => onChange(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); onSubmit(); } }}

@@ -24,8 +24,12 @@ function pickBetaIcon(idOrName) {
 }
 
 const OrgFeatureTogglesPanel = ({ settingsSlot = null }) => {
-    const { hasTier, upgradeUrl } = useLicenseContext();
-    const betaTierLocked = !hasTier('enterprise');
+    const { hasTier, upgradeUrl, deploymentMode } = useLicenseContext();
+    // On cloud the org's SUBSCRIPTION decides which betas are available — the
+    // server returns the plan's entitlement in allowedBetaFeatures, so there's
+    // no Enterprise tier floor and no server-licence reference. Only
+    // self-hosted / private-cloud installs gate betas behind the server tier.
+    const betaTierLocked = deploymentMode !== 'cloud' && !hasTier('enterprise');
     const [tab, setTab] = useState('integrations');
     const [orgId, setOrgId] = useState(null);
     const [betaAllowed, setBetaAllowed] = useState([]);

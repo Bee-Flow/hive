@@ -221,6 +221,15 @@ const AgentHub = ({
         return () => window.removeEventListener('beeflow:open-webpage-side', onOpenSide);
     }, [openWebpageInSidePanel]);
 
+    // The onboarding tour asks us to expand the sidebar before it spotlights a
+    // sidebar nav item (the rail auto-collapses on narrow laptops / in Studio,
+    // which would hide the highlight target). Desktop only.
+    useEffect(() => {
+        const onEnsureSidebar = () => { if (!isMobile) setSidebarOpen(true); };
+        window.addEventListener('beeflow:tour-ensure-sidebar-open', onEnsureSidebar);
+        return () => window.removeEventListener('beeflow:tour-ensure-sidebar-open', onEnsureSidebar);
+    }, [isMobile]);
+
     // When Simple Mode is turned ON, force-close any open side panels — the
     // panel buttons disappear in the same frame so we'd otherwise leave the
     // panel orphaned on screen with no way to close it. Also force the model

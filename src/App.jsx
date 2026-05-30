@@ -5,6 +5,7 @@ import LoginPage from './pages/LoginPage';
 import EncryptionSetup from './pages/EncryptionSetup';
 import EmbedChat from './pages/EmbedChat';
 import DlpPreviewModal from './components/DlpPreviewModal';
+import OnboardingTour from './components/onboarding/OnboardingTour';
 import ErrorBoundary from './components/ErrorBoundary';
 import { LicenseProvider, RequireTier, useLicenseContext } from './components/LicenseContext';
 import { SubscriptionProvider, useSubscriptionContext } from './components/SubscriptionContext';
@@ -1347,6 +1348,11 @@ function App() {
             {/* Global Meeting Notes surfaces — mounted once, available from any page. */}
             {isAuthenticated && <CaptureModal />}
             {isAuthenticated && <MeetingCommandPalette user={user} onNavigate={navigateToPage} />}
+
+            {/* New-user product tour — auto-starts once per new user, replayable
+                from Settings → Help & Support. Mounted here so it floats above
+                the app shell and can drive navigation via navigateToPage. */}
+            {isAuthenticated && <OnboardingTour user={user} onNavigate={navigateToPage} currentPage={currentPage} />}
 
             {/* The floating customer-support drawer was retired — the user-side
                 support inbox now lives at /app/settings → Help & Support. */}

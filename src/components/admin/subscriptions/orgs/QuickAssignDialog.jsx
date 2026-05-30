@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { CalendarPlus, CheckCircle, Clock } from 'lucide-react';
+import { CalendarPlus, CheckCircle, Clock, Gift } from 'lucide-react';
 import { Modal } from '../ui/Modal';
 import { Field, Select } from '../ui/Input';
 import { Button } from '../ui/Button';
@@ -18,6 +18,25 @@ export function QuickAssignDialog({ org, plans, onClose, onSave, onStartTrial })
         && selectedPlan
         && selectedPlan.trial_days > 0
         && !!selectedPlan.stripe_price_id;
+
+    // The seeded €0 "Free" org plan — enables a one-click no-payment assign.
+    const freePlan = plans.find(p =>
+        (p.plan_type === 'organization' || !p.plan_type)
+        && (p.name === 'Free' || Number(p.price) === 0)
+    );
+
+    const assignFree = async () => {
+        if (!freePlan) return;
+        setBusy(true);
+        try {
+            await onSave({ plan_id: freePlan.id, status: 'active' });
+            toast.success('Free plan assigned.');
+        } catch (e) {
+            toast.error(e.message || 'Assign failed');
+        } finally {
+            setBusy(false);
+        }
+    };
 
     const startTrial = async () => {
         if (!selectedPlan) return;
@@ -54,6 +73,11 @@ export function QuickAssignDialog({ org, plans, onClose, onSave, onStartTrial })
             footer={
                 <>
                     <Button variant="ghost" onClick={onClose} disabled={busy || trialBusy}>Cancel</Button>
+                    {freePlan && planId !== freePlan.id && (
+                        <Button variant="secondary" icon={Gift} onClick={assignFree} busy={busy}>
+                            Assign Free plan
+                        </Button>
+                    )}
                     {trialEligible && (
                         <Button variant="secondary" icon={CalendarPlus} onClick={startTrial} busy={trialBusy}>
                             {trialBusy ? 'Starting…' : 'Start trial'}

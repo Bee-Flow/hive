@@ -98,6 +98,22 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     // in the save-state pill's title / tooltip so users see what went wrong
     // instead of a silent "Save error" with no context.
     const [saveErrorMsg, setSaveErrorMsg] = useState('');
+    // Plan-limit warning (e.g. "reached its limit of 5 agents"). Surfaced as a
+    // prominent dismissible banner with an upgrade CTA — never just a console
+    // error — so the user understands why the save was blocked.
+    const [limitWarning, setLimitWarning] = useState(null);
+
+    // Parse a non-OK fetch Response into { message, code, resource }. Tolerates
+    // both JSON ({error,code,resource}) and plain-text error bodies.
+    const parseSaveError = async (res) => {
+        let body = '';
+        try { body = await res.text(); } catch (_) { /* ignore */ }
+        let info = {};
+        try { info = JSON.parse(body); } catch (_) { info = { error: body }; }
+        const message = info.error || info.message || `Save failed (${res.status})`;
+        const isLimit = res.status === 403 && (info.code === 'limit_reached' || /reached (its|the) limit|seat limit/i.test(message));
+        return { message, code: info.code, resource: info.resource, isLimit };
+    };
 
     // Section open/closed state for the inline accordion.
     const [openSection, setOpenSection] = useState(null); // 'identity'|'model'|'knowledge'|'behavior'|'publishing'|'guardrails'|'embed'|null
@@ -354,7 +370,18 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     body: JSON.stringify(snapshot),
                     signal: unmountAbortRef.current?.signal,
                 });
-                if (!res.ok) throw new Error(await res.text());
+                if (!res.ok) {
+                    const info = await parseSaveError(res);
+                    if (info.isLimit) {
+                        if (!mountedRef.current) return;
+                        setLimitWarning({ message: info.message, resource: info.resource });
+                        setSavingState('error');
+                        setSaveErrorMsg(info.message);
+                        dirtyRef.current = true;
+                        return;
+                    }
+                    throw new Error(info.message);
+                }
                 const updated = await res.json();
                 if (!mountedRef.current) return;
                 // Refresh the `agent` shell only (id, timestamps, derived fields).
@@ -425,7 +452,16 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                     config: { ...stateRef.current.config },
                 }),
             });
-            if (!res.ok) throw new Error(await res.text());
+            if (!res.ok) {
+                const info = await parseSaveError(res);
+                if (info.isLimit) {
+                    setLimitWarning({ message: info.message, resource: info.resource });
+                    setSavingState('error');
+                    setSaveErrorMsg(info.message);
+                    return;
+                }
+                throw new Error(info.message);
+            }
             const created = await res.json();
             setAgent(created);
             agentIdRef.current = created.id;
@@ -434,6 +470,7 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
             setSavingState('saved');
             setSavedAt(new Date());
             setSaveErrorMsg('');
+            setLimitWarning(null);
             if (onPublished) onPublished(created);
         } catch (err) {
             console.error('Save draft failed:', err);
@@ -818,6 +855,31 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
 
     return (
         <div className="flex h-full">
+            {/* Plan-limit warning — a prominent, dismissible banner shown when a
+                save is blocked by the org's subscription limits (e.g. max agents).
+                Replaces the silent console error so the user can act on it. */}
+            {limitWarning && (
+                <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] w-[min(560px,92vw)]">
+                    <div className="rounded-xl border border-amber-500/40 bg-amber-50 dark:bg-amber-500/10 shadow-lg px-4 py-3 flex items-start gap-3">
+                        <Sparkles className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                        <div className="flex-1 min-w-0">
+                            <p className="text-[13px] font-semibold text-[var(--text-primary)]">
+                                {t('agent_wizard.limit_reached_title', 'Plan limit reached')}
+                            </p>
+                            <p className="text-[12px] text-[var(--text-secondary)] mt-0.5">{limitWarning.message}</p>
+                            <a
+                                href="/app/settings/organisation/license"
+                                className="inline-flex items-center gap-1 mt-2 px-3 py-1.5 rounded-md text-[12px] font-semibold bg-amber-500 text-white hover:bg-amber-600"
+                            >
+                                {t('agent_wizard.view_plans', 'View plans & upgrade')}
+                            </a>
+                        </div>
+                        <button onClick={() => setLimitWarning(null)} className="text-[var(--text-muted)] hover:text-[var(--text-primary)] shrink-0" aria-label="Dismiss">
+                            <X size={16} />
+                        </button>
+                    </div>
+                </div>
+            )}
             {/* Left chat panel — glass chrome tier so the wallpaper subtly
                 shows through under the refine-this-agent rail. */}
             <aside
