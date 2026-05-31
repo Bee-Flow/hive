@@ -338,7 +338,6 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
     // paid-access mechanism and stay visible here.
     const showLicenseActivation = isSelfHosted;
     const deploymentMode = user?.featureFlags?.deploymentMode || 'cloud';
-    const isPrivateCloud = deploymentMode === 'private-cloud';
     const ncOrg = user?.ncOrg || null;
     const isNcOrg = !!ncOrg?.instanceId;
     const [organizations, setOrganizations] = useState([]);
@@ -1538,8 +1537,8 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                             </div>
                         )}
 
-                        {/* Allowed Domains (private-cloud only) */}
-                        {isPrivateCloud && (
+                        {/* Allowed Domains (self-hosted org-management feature) */}
+                        {isSelfHosted && (
                             <AllowedDomainsEditor
                                 domains={orgData.allowedDomains || []}
                                 onChange={(domains) => setOrgData(p => ({ ...p, allowedDomains: domains }))}
@@ -1642,7 +1641,7 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                             </Field>
                         </div>
 
-                        {!isPrivateCloud && (
+                        {(
                             <>
                                 {/* ── Divider ── */}
                                 <div className="border-t border-[var(--border-subtle)]" />

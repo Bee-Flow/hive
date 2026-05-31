@@ -28,7 +28,7 @@ const OrgFeatureTogglesPanel = ({ settingsSlot = null }) => {
     // On cloud the org's SUBSCRIPTION decides which betas are available — the
     // server returns the plan's entitlement in allowedBetaFeatures, so there's
     // no Enterprise tier floor and no server-licence reference. Only
-    // self-hosted / private-cloud installs gate betas behind the server tier.
+    // self-hosted installs gate betas behind the server tier.
     const betaTierLocked = deploymentMode !== 'cloud' && !hasTier('enterprise');
     const [tab, setTab] = useState('integrations');
     const [orgId, setOrgId] = useState(null);

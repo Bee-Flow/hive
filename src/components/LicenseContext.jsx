@@ -42,7 +42,7 @@ const LicenseContext = createContext({
     features: [],
     limits: {},
     // serverOverride: true when a server-wide licence is GOVERNING this
-    // install (self-hosted / private-cloud). Per-org activation UI uses it to
+    // install (self-hosted). Per-org activation UI uses it to
     // switch into a read-only banner ("Tier is managed server-wide"). It is
     // false on cloud even when a server licence exists. See
     // server/license/index.js → getLicenseStatus / serverLicenseGovernsOrgs.

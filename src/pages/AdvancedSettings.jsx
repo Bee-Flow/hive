@@ -247,7 +247,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
 
     const canManageUsers = perms.includes('all') || perms.includes('manage_users') || user?.orgRole === 'admin' || user?.orgRole === 'org_admin';
     const deploymentMode = user?.featureFlags?.deploymentMode || 'cloud';
-    const isPrivateCloud = deploymentMode === 'private-cloud';
+    const isSelfHosted = deploymentMode === 'self-hosted';
     const isConsumerAccount = !!user?.isConsumerAccount;
     const ei = user?.enabledIntegrations;
     // The Integrations sub-item is shown when the org has anything to toggle —
@@ -315,8 +315,6 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
             // displays empty states for orgs without grants, and beta-feature
             // toggling lives here too (not just integrations).
             if (s.id === 'org_integrations') return canSeeOrg;
-            // In private-cloud mode, license is managed externally
-            if (isPrivateCloud && s.id === 'license') return false;
             // NC-bound orgs: auth is delegated to Nextcloud entirely. The
             // Sign-in Method panel configures username/password + OAuth
             // providers which are no-ops once identity comes from NC, so
@@ -337,12 +335,12 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
 
             return true;
         });
-        // Azure config only in private-cloud mode for org admins
-        if (isPrivateCloud && canSeeOrg) {
+        // Azure services config — self-hosted operator surface for org admins.
+        if (isSelfHosted && canSeeOrg) {
             items.push(AZURE_SUB_ITEM);
         }
         return items;
-    }, [canSeeOrg, canManageUsers, isPrivateCloud, hasOrgIntegrations, isNcConnectorUser, isNcOrg, isSuperAdmin, showNcSync, statuses.githubConnected, orgAuthLocked]);
+    }, [canSeeOrg, canManageUsers, isSelfHosted, hasOrgIntegrations, isNcConnectorUser, isNcOrg, isSuperAdmin, showNcSync, statuses.githubConnected, orgAuthLocked]);
 
     // User-scoped: these are personal "which agent do I start on?" preferences.
     const [defaultAgentMode, setDefaultAgentMode] = useState(() => scopedStorage.getItem('defaultAgentMode') || 'last-used');

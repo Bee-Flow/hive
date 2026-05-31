@@ -21,9 +21,6 @@ import { useLicenseContext, TIER_RANK } from '../components/LicenseContext';
 const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
     const { t } = useTranslation();
     const { isCloud, isSelfHosted } = useDeploymentMode();
-    // Local- ("private-") cloud installs are single-tenant deployments that
-    // don't surface the public-facing product/marketing website builder.
-    const isPrivateCloud = (user?.featureFlags?.deploymentMode || 'cloud') === 'private-cloud';
     // A server-wide licence covers the whole install — no org needs a Stripe
     // subscription, so the cloud Subscriptions management surface is moot.
     const { serverOverride, tier } = useLicenseContext();
@@ -71,16 +68,14 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
         { id: 'licenses', label: t('admin.tab_server_license') || 'Server licence', perm: ['all'], superAdminOnly: true },
         { id: 'appearance', label: t('admin.tab_appearance'), perm: ['admin_ai_config'], superAdminOnly: true, minTier: 'enterprise' },
         { id: 'languages', label: t('admin.tab_languages'), perm: ['admin_ai_config'], superAdminOnly: true },
-        // Product website builder is a Bee Flow Cloud / self-hosted feature —
-        // hidden on local- (private-) cloud single-tenant installs.
-        { id: 'product-website', label: t('admin.tab_product_website'), perm: ['admin_ai_config'], superAdminOnly: true, privateCloudHidden: true, minTier: 'enterprise' },
+        // Product website builder — Bee Flow Cloud / self-hosted, Enterprise+.
+        { id: 'product-website', label: t('admin.tab_product_website'), perm: ['admin_ai_config'], superAdminOnly: true, minTier: 'enterprise' },
     ];
 
     // If current tab isn't allowed, fall back to the first tab the user has access to
     const checkTabAccess = (tab) => {
         if (!tab) return true;
         if (tab.cloudOnly && !isCloud) return false;
-        if (tab.privateCloudHidden && isPrivateCloud) return false;
         // Tier gate — paid admin surfaces are hidden below their minTier. Uses
         // the REAL resolved tier (TIER_RANK[tier]) rather than hasTier(), which
         // is equivalent here but keeps the intent explicit: a Community install
