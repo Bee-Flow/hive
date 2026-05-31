@@ -18,7 +18,7 @@ import { useLicenseContext } from '../LicenseContext';
  */
 const SECTIONS = [
     { id: 'users', labelKey: 'admin.sec_users', icon: Users, color: '#3b82f6' },
-    { id: 'guardrails', labelKey: 'admin.sec_guardrails', icon: Shield, color: '#ef4444' },
+    { id: 'guardrails', labelKey: 'admin.sec_guardrails', icon: Shield, color: '#ef4444', enterpriseOnly: true },
     { id: 'sso', labelKey: 'admin.sec_sso', icon: KeyRound, color: '#f59e0b' },
     { id: 'beta', labelKey: 'admin.sec_beta', icon: Sparkles, color: '#8b5cf6', superAdminOnly: true, enterpriseOnly: true },
 ];

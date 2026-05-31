@@ -1360,8 +1360,13 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                             </>
                         ))}
 
-                        {/* ── AI usage sharing (moved here from Org Info) ── */}
-                        {!licenseCtx?.serverOverride && orgData && (
+                        {/* ── AI usage sharing (moved here from Org Info) ──
+                            Only shown when a subscription with a real cost
+                            budget is bound to the org; the toggle merely splits
+                            that budget, so it's meaningless (and hidden) on the
+                            free Community / no-subscription tier. */}
+                        {!licenseCtx?.serverOverride && orgData && subscription
+                            && limits.max_cost_per_month != null && limits.max_cost_per_month !== -1 && (
                             <div className="space-y-3 pt-2">
                                 <div>
                                     <h3 className="text-sm font-semibold text-[var(--text-primary)]">{t('org.share_usage', 'AI usage sharing')}</h3>

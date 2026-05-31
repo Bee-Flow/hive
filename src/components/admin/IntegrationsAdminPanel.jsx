@@ -26,6 +26,12 @@ const SECTION_FEATURE_GATE = {
     transcription: 'meeting_notes',
 };
 
+// Sections hidden on Community by raw tier rather than a single feature flag:
+// the Service Email (Gmail SMTP) config and the external Services panel
+// (LinkedIn API + Azure Document Processing) are Enterprise admin surfaces with
+// no dedicated licence feature of their own.
+const ENTERPRISE_ONLY_SECTIONS = new Set(['email', 'services']);
+
 // All known integration IDs + labels live in src/config/integrationCatalog.js
 // so the super-admin panel and the org-admin OrgFeatureTogglesPanel use the
 // same source. Categories (incl. Nextcloud) are rendered as-is; section order
@@ -34,12 +40,14 @@ const ALL_INTEGRATIONS = INTEGRATION_CATALOG;
 
 export default function IntegrationsAdminPanel({ activeSection: activeProp = 'features', onNavigate }) {
     const { t } = useTranslation();
-    const { hasFeature } = useLicenseContext();
+    const { hasFeature, hasTier } = useLicenseContext();
+    const isEnterprise = hasTier('enterprise');
     // Hide enterprise-gated sections on Community. A deep link to a hidden
     // section (or a tier downgrade) falls back to the always-visible Features
     // section so the enterprise panel never renders.
     const visibleSections = SECTIONS.filter(
-        s => !SECTION_FEATURE_GATE[s.id] || hasFeature(SECTION_FEATURE_GATE[s.id])
+        s => (!SECTION_FEATURE_GATE[s.id] || hasFeature(SECTION_FEATURE_GATE[s.id]))
+            && (!ENTERPRISE_ONLY_SECTIONS.has(s.id) || isEnterprise)
     );
     const active = visibleSections.map(s => s.id).includes(activeProp) ? activeProp : 'features';
     const handleSectionClick = (id) => {
