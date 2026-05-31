@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Sparkles, Settings, Loader2, Check, AlertTriangle, Clock, BookOpen, Globe, Zap, Workflow, Brain, SlidersHorizontal } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
-import { INTEGRATION_CATALOG, NEXTCLOUD_INTEGRATION_IDS } from '../../config/integrationCatalog';
+import { INTEGRATION_CATALOG, NEXTCLOUD_INTEGRATION_IDS, orderCategories } from '../../config/integrationCatalog';
 import { getIntegrationIcon } from '../../config/integrationIcons';
 import { useLicenseContext } from '../LicenseContext';
 
@@ -406,11 +406,11 @@ const OrgFeatureTogglesPanel = ({ settingsSlot = null }) => {
                     </div>
                 ) : (
                     <div className="space-y-5">
-                        {[...intByCategory.entries()].map(([cat, items]) => (
+                        {orderCategories([...intByCategory.keys()]).map(cat => (
                             <div key={cat}>
                                 <div className="text-xs font-semibold uppercase tracking-wide mb-2" style={{ color: 'var(--text-muted)' }}>{cat}</div>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                                    {items.map(i => (
+                                    {intByCategory.get(cat).map(i => (
                                         <IntegrationCard
                                             key={i.id}
                                             item={i}

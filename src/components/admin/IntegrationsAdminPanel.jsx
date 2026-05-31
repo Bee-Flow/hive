@@ -4,7 +4,7 @@ import { API_BASE, authFetch } from '../../utils/helpers';
 import { Loader2, ToggleLeft, ToggleRight, Check, Settings, Plus, Trash2, RefreshCw, Plug, ChevronDown, ExternalLink, Mail, Send, Layers, Search as SearchIcon, Cloud, BookOpen, FolderKanban, Sparkles, FileDown, Maximize2, LayoutList } from 'lucide-react';
 import McpMarketplace from './McpMarketplace';
 import AppEmoji from '../AppEmoji';
-import { INTEGRATION_CATALOG } from '../../config/integrationCatalog';
+import { INTEGRATION_CATALOG, orderCategories } from '../../config/integrationCatalog';
 
 const SECTIONS = [
     { id: 'features', labelKey: 'admin.integ_features', icon: Layers, color: '#10b981' },
@@ -18,12 +18,9 @@ const SECTIONS = [
 
 // All known integration IDs + labels live in src/config/integrationCatalog.js
 // so the super-admin panel and the org-admin OrgFeatureTogglesPanel use the
-// same source. The admin UI shows NC integrations grouped with "Third-Party"
-// here for historical layout reasons.
-const ALL_INTEGRATIONS = INTEGRATION_CATALOG.map(i => ({
-    ...i,
-    category: i.category === 'Nextcloud' ? 'Third-Party' : i.category,
-}));
+// same source. Categories (incl. Nextcloud) are rendered as-is; section order
+// is controlled by orderCategories().
+const ALL_INTEGRATIONS = INTEGRATION_CATALOG;
 
 export default function IntegrationsAdminPanel({ activeSection: activeProp = 'features', onNavigate }) {
     const { t } = useTranslation();
@@ -274,7 +271,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
         return !ints || ints.includes(id);
     };
 
-    const categories = [...new Set(allIntegrations.map(i => i.category))];
+    const categories = orderCategories([...new Set(allIntegrations.map(i => i.category))]);
 
     if (loading) {
         return (

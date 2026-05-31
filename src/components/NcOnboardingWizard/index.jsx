@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { Users, Shield, CheckCircle2, ChevronRight, ChevronLeft, Loader2, Tag, Star, Building2, Key, CreditCard } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import beeFlowLogo from '../../assets/bee-flow-logo.svg';
@@ -18,9 +18,12 @@ import beeFlowLogo from '../../assets/bee-flow-logo.svg';
  * and pasted into the customer's own License & Usage panel.
  */
 
-// Deployment (Bee Flow Cloud vs self-hosted) is chosen by the Nextcloud admin in
-// the connector's setup picker, not here — so the wizard has no 'deployment' step.
-const STEPS = ['welcome', 'org', 'subscription', 'sync', 'shield', 'done'];
+// The step list depends on the deployment mode. The "subscription" (Stripe /
+// paid plans) step is Bee Flow Cloud only — self-hosted installs use licence
+// keys, not Stripe — so it's dropped there. STEPS is computed from the
+// deploymentMode prop inside the component (see below).
+const CLOUD_STEPS = ['welcome', 'org', 'subscription', 'sync', 'shield', 'done'];
+const SELF_HOSTED_STEPS = ['welcome', 'org', 'sync', 'shield', 'done'];
 
 // Categories the Local PII detector (Transformers.js, OpenAI Privacy Filter)
 // actually emits — see server/core/localPiiDetection.js LABEL_TO_CATEGORY.
@@ -37,7 +40,7 @@ const PII_CATEGORIES = [
 
 const DEFAULT_PII = ['Person', 'Email', 'PhoneNumber', 'Address', 'BankAccountNumber'];
 
-const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
+const NcOnboardingWizard = ({ user, orgName, onComplete, deploymentMode = 'cloud' }) => {
     const orgId = user?.organizationId;
     const [stepIdx, setStepIdx] = useState(0);
     const [submitting, setSubmitting] = useState(false);
@@ -49,9 +52,19 @@ const NcOnboardingWizard = ({ user, orgName, onComplete }) => {
         address: '', phone: '', website: '', kvk: '', vat: '',
     });
 
-    // Deployment is set by the NC admin in the connector setup picker, not in
-    // this wizard; default to Cloud (the connector's default target).
-    const [deploymentMode] = useState('cloud');
+    // Deployment mode comes from the server (/auth/setup-status → deploymentMode),
+    // passed down from App.jsx. Self-hosted drops the Cloud-only "subscription"
+    // step; the "Step X of N" indicator and next/prev derive from STEPS, so the
+    // numbering follows automatically.
+    const STEPS = useMemo(
+        () => (deploymentMode === 'self-hosted' ? SELF_HOSTED_STEPS : CLOUD_STEPS),
+        [deploymentMode],
+    );
+    // If deploymentMode resolves after first paint and the list shrinks
+    // (Cloud → self-hosted), keep stepIdx in range.
+    useEffect(() => {
+        setStepIdx((i) => Math.min(i, STEPS.length - 1));
+    }, [STEPS.length]);
     const [selectedPlanId, setSelectedPlanId] = useState(null); // null = Community/free
     const [plans, setPlans] = useState([]);
     const [plansLoading, setPlansLoading] = useState(true);

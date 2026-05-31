@@ -1115,7 +1115,7 @@ function App() {
 
     // NC App Store onboarding wizard — admin sees this first time after install
     if (ncOnboardingState === 'admin' && user) {
-        return <NcOnboardingWizard user={user} orgName={ncOrgName} onComplete={() => setNcOnboardingState(null)} />;
+        return <NcOnboardingWizard user={user} orgName={ncOrgName} deploymentMode={deploymentMode} onComplete={() => setNcOnboardingState(null)} />;
     }
     if (ncOnboardingState === 'pending') {
         return <NcOnboardingPending orgName={ncOrgName} onRefresh={() => window.location.reload()} />;
