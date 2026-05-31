@@ -15,9 +15,10 @@ import JsonTree from './JsonTree';
  *   stepId        — current step id (used as basePath for leaf paths)
  *   liveOutput    — output from the most recent run (any JSON, or null)
  *   error         — top-level error message from the run, if any
+ *   remediation   — short "what to do next" hint for the error, if any
  *   onCopyPath(p) — clipboard hook for "copy path as binding"
  */
-export default function StepOutputTab({ stepId, liveOutput, error, onCopyPath }) {
+export default function StepOutputTab({ stepId, liveOutput, error, remediation, onCopyPath }) {
     const basePath = stepId ? `steps.${stepId}.output` : '';
 
     return (
@@ -25,9 +26,14 @@ export default function StepOutputTab({ stepId, liveOutput, error, onCopyPath })
             {error && (
                 <div className="px-3 py-2 border-b border-[var(--border-default)] flex items-start gap-2 bg-red-500/10">
                     <AlertCircle size={12} className="text-red-500 mt-0.5 shrink-0" />
-                    <pre className="text-[11px] text-red-700 dark:text-red-400 whitespace-pre-wrap break-words min-w-0">
-                        {String(error)}
-                    </pre>
+                    <div className="min-w-0">
+                        <pre className="text-[11px] text-red-700 dark:text-red-400 whitespace-pre-wrap break-words min-w-0">
+                            {String(error)}
+                        </pre>
+                        {remediation && (
+                            <div className="text-[11px] text-amber-600 dark:text-amber-400 mt-1">→ {remediation}</div>
+                        )}
+                    </div>
                 </div>
             )}
             <JsonTree

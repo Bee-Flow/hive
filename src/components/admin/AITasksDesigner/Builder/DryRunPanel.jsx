@@ -26,14 +26,27 @@ export default function DryRunPanel({ run, steps }) {
                     const out = s.output || null;
                     const wouldNotify = out && out.wouldNotify;
                     const wouldCall = out && out._dryRun;
+                    const isSynthesised = out && out._dryRunSynthesised;
                     return (
                         <div
                             key={`${s.stepId || 'step'}-${s.attempts ?? idx}`}
                             className="rounded-md border border-[var(--border-default)] bg-[var(--bg-primary)] p-2 text-xs"
                         >
-                            <div className="font-semibold text-[var(--text-primary)]">
-                                {s.stepId}
-                                <span className="ml-1 text-[var(--text-tertiary)] font-normal">({s.stepType})</span>
+                            <div className="font-semibold text-[var(--text-primary)] flex items-center gap-1.5">
+                                <span>{s.stepId}</span>
+                                <span className="text-[var(--text-tertiary)] font-normal">({s.stepType})</span>
+                                {isSynthesised && (
+                                    <span
+                                        title={out._dryRunFallback === 'live_failed'
+                                            ? 'The live read failed, so a sample shape was used for this preview.'
+                                            : out._dryRunFallback === 'live_empty'
+                                                ? 'The live read returned nothing, so a sample shape was used for this preview.'
+                                                : 'Synthesized preview — sample data, not a live result.'}
+                                        className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500 border border-amber-500/30"
+                                    >
+                                        Sample data
+                                    </span>
+                                )}
                             </div>
                             {wouldNotify && (
                                 <div className="text-amber-700 dark:text-amber-400 mt-1">

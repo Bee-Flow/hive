@@ -113,6 +113,23 @@ export default function TemplateGallery({ onPick }) {
                             <div className="text-[11px] text-[var(--text-tertiary)] leading-relaxed line-clamp-3">
                                 {tmpl.description}
                             </div>
+                            {(Array.isArray(tmpl.requiredIntegrations) && tmpl.requiredIntegrations.length > 0 || tmpl.triggerReadiness === 'push-pending') && (
+                                <div className="flex flex-wrap items-center gap-1 mt-2">
+                                    {(tmpl.requiredIntegrations || []).map((ig) => (
+                                        <span key={ig} className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-[var(--bg-tertiary)] text-[var(--text-tertiary)] border border-[var(--border-default)]">
+                                            {ig}
+                                        </span>
+                                    ))}
+                                    {tmpl.triggerReadiness === 'push-pending' && (
+                                        <span
+                                            title="This trigger needs the Bee Flow ExApp connector — pending live validation."
+                                            className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500 border border-amber-500/30"
+                                        >
+                                            connector
+                                        </span>
+                                    )}
+                                </div>
+                            )}
                         </button>
                     );
                 })}

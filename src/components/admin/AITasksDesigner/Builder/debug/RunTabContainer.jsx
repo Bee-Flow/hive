@@ -67,6 +67,7 @@ export default function RunTabContainer({ step, runStep }) {
                         stepId={step?.id}
                         liveOutput={runStep.output ?? null}
                         error={runStep.error}
+                        remediation={runStep.errorRemediation}
                         onCopyPath={copyPath}
                     />
                 )}

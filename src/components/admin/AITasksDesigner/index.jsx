@@ -707,7 +707,13 @@ export default function AITasksDesigner({ initialTaskId = null, onClose, onNavig
             <aside className="w-[264px] flex-shrink-0 border-r border-[var(--border-default)] flex flex-col bg-[var(--bg-primary)]">
                 {/* Sidebar header — title + plus, mirrors SkillsStudio */}
                 <div className="px-4 py-3 border-b border-[var(--border-default)] flex items-center justify-between">
-                    <span className="text-sm font-semibold text-[var(--text-primary)]">Routines</span>
+                    {/* Visual-only BETA badge — decorative, intentionally NOT gated on
+                        user.betaFeatures (access gating lives elsewhere). Amber house
+                        style mirrors the Tests Studio badge; no purple per brand rule. */}
+                    <div className="flex items-center gap-2">
+                        <span className="text-sm font-semibold text-[var(--text-primary)]">Routines</span>
+                        <span className="text-[10px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500 border border-amber-500/30">BETA</span>
+                    </div>
                     <button
                         onClick={onPlus}
                         title={effectiveSegment === 'automation' ? 'New automation' : 'New routine'}

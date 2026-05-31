@@ -118,7 +118,11 @@ export default function TriggerDiagnosePanel({ result, loading, error, onClose, 
                     </ul>
                     <div className="mt-3 text-xs text-[var(--text-tertiary)]">
                         {result.ok
-                            ? 'No critical issues found. Send a matching email to confirm the run fires.'
+                            ? (String(result.kind || '').startsWith('nextcloud.')
+                                ? 'No critical issues found. Trigger the matching Nextcloud action (e.g. upload a file) to confirm the run fires.'
+                                : String(result.kind || '').startsWith('gmail.')
+                                    ? 'No critical issues found. Send a matching email to confirm the run fires.'
+                                    : 'No critical issues found.')
                             : 'One or more checks failed — fix the highlighted issue and re-run the diagnose.'}
                     </div>
                 </>

@@ -147,6 +147,9 @@ export default function RunHistoryTab({ automationId, automation }) {
                                 {selectedStepRecord.error && (
                                     <div className="text-xs text-red-600 dark:text-red-400 mb-2">{selectedStepRecord.error}</div>
                                 )}
+                                {selectedStepRecord.errorRemediation && (
+                                    <div className="text-xs text-amber-600 dark:text-amber-400 mb-2">→ {selectedStepRecord.errorRemediation}</div>
+                                )}
                                 <pre className="text-[11px] bg-[var(--bg-primary)] border border-[var(--border-default)] rounded p-2 overflow-auto whitespace-pre-wrap break-words text-[var(--text-primary)]">
 {JSON.stringify({ input: selectedStepRecord.input, output: selectedStepRecord.output }, null, 2)}
                                 </pre>

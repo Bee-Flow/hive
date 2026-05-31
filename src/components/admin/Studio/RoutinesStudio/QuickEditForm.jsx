@@ -541,6 +541,17 @@ export default function QuickEditForm({
                                         <option key={ev} value={ev}>{ev}</option>
                                     ))}
                                 </select>
+                                {/* Honest hint: NC push-only events need the (pending)
+                                    Bee Flow ExApp connector. Sourced from /catalog
+                                    deliverability — visual only, amber (no purple). */}
+                                {trigger.appEvent?.provider === 'nextcloud'
+                                    && trigger.appEvent?.event
+                                    && (catalog?.deliverability?.pushPending?.nextcloud || []).includes(trigger.appEvent.event) && (
+                                        <div className="mt-1 flex items-center gap-1.5 text-[11px] text-amber-600 dark:text-amber-400">
+                                            <span className="text-[9px] uppercase tracking-wider px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-500 border border-amber-500/30">connector</span>
+                                            Needs the Bee Flow ExApp connector — pending validation. Use a poller-backed event (e.g. file.new) to fire today.
+                                        </div>
+                                    )}
                             </div>
                         </div>
                         {trigger.appEvent?.provider && trigger.appEvent?.event && (
