@@ -1,9 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
+import { useLicenseContext } from '../LicenseContext';
 
 const SSOConfigPanel = () => {
     const { t } = useTranslation();
+    // SSO tiering: Nextcloud OAuth login is Community (`nextcloud_oauth`);
+    // Google / Microsoft / SAML SSO are Enterprise (`sso_saml`). On Community
+    // only the Nextcloud provider is shown (the server also 403s the
+    // Google/Microsoft config + login routes). The resolved tier is the real
+    // tier, so a Community operator's own UI hides the enterprise providers.
+    const { hasFeature } = useLicenseContext();
+    const ssoSaml = hasFeature('sso_saml');
     const [providers, setProviders] = useState({
         nextcloud: { enabled: false, url: '', clientId: '', clientSecretSet: false },
         google: { enabled: false, clientId: '', clientSecretSet: false },
@@ -19,9 +27,20 @@ const SSOConfigPanel = () => {
 
     const navItems = [
         { id: 'nextcloud', label: 'Nextcloud', icon: '☁️', color: '#0082c9' },
-        { id: 'google', label: 'Google', icon: '🔍', color: '#4285f4' },
-        { id: 'microsoft', label: 'Microsoft', icon: '🪟', color: '#00a4ef' },
+        // Google / Microsoft require the `sso_saml` enterprise feature.
+        ...(ssoSaml ? [
+            { id: 'google', label: 'Google', icon: '🔍', color: '#4285f4' },
+            { id: 'microsoft', label: 'Microsoft', icon: '🪟', color: '#00a4ef' },
+        ] : []),
     ];
+
+    // If a non-Community deep link / stale state lands on an enterprise
+    // provider tab that's now hidden, fall back to Nextcloud so the enterprise
+    // config form never renders on Community.
+    useEffect(() => {
+        if (!navItems.some(n => n.id === activeTab)) setActiveTab('nextcloud');
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [ssoSaml, activeTab]);
 
     useEffect(() => {
         fetchProviders();

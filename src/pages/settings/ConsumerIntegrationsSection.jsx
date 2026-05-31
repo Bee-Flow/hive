@@ -2,16 +2,15 @@ import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Loader2, Check } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
-import { INTEGRATION_CATALOG, NEXTCLOUD_INTEGRATION_IDS } from '../../config/integrationCatalog';
+import { INTEGRATION_CATALOG, NEXTCLOUD_INTEGRATION_IDS, CATEGORY_ORDER } from '../../config/integrationCatalog';
 import { getIntegrationIcon, hasIntegrationIcon } from '../../config/integrationIcons';
 
 const SAVE_DEBOUNCE_MS = 400;
 const SAVED_FLASH_MS = 1500;
 
-// Visual order mirrors the org Integraties panel — Google first, then
-// Microsoft, then AI, Third-Party, with Nextcloud filtered out (consumer
-// accounts don't bind to NC instances).
-const CATEGORY_ORDER = ['Google', 'Microsoft', 'AI', 'Third-Party'];
+// Section order mirrors the org Integrations panel via the shared
+// CATEGORY_ORDER, with Nextcloud filtered out (consumer accounts don't bind
+// to NC instances) — its group ends up empty and is dropped below.
 
 // Categories not relevant for consumer accounts.
 const HIDDEN_CATEGORIES = new Set(['Nextcloud']);

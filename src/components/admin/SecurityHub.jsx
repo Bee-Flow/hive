@@ -5,22 +5,31 @@ import GuardrailsPanel from './GuardrailsPanel';
 import SSOConfigPanel from './SSOConfigPanel';
 import UserManagement from './UserManagement';
 import BetaFeaturesPanel from './BetaFeaturesPanel';
+import { useLicenseContext } from '../LicenseContext';
 
 /**
  * SecurityHub — Unified security configuration page
  * Groups Guardrails and SSO behind a compact left sidebar.
+ *
+ * `enterpriseOnly` sections are hidden on Community installs (the resolved
+ * tier is the REAL tier — LicenseContext.hasTier has no super-admin
+ * elevation — so the operator's own UI hides them too). Beta features are an
+ * Enterprise capability, so the Beta section is enterprise-gated.
  */
 const SECTIONS = [
     { id: 'users', labelKey: 'admin.sec_users', icon: Users, color: '#3b82f6' },
     { id: 'guardrails', labelKey: 'admin.sec_guardrails', icon: Shield, color: '#ef4444' },
     { id: 'sso', labelKey: 'admin.sec_sso', icon: KeyRound, color: '#f59e0b' },
-    { id: 'beta', labelKey: 'admin.sec_beta', icon: Sparkles, color: '#8b5cf6', superAdminOnly: true },
+    { id: 'beta', labelKey: 'admin.sec_beta', icon: Sparkles, color: '#8b5cf6', superAdminOnly: true, enterpriseOnly: true },
 ];
 
 const SecurityHub = ({ activeSection: activeProp = 'users', userSection = '', onNavigate, user }) => {
     const { t } = useTranslation();
+    const { hasTier } = useLicenseContext();
+    const isEnterprise = hasTier('enterprise');
     const isFullAdmin = user?.permissions?.includes('all') || user?.isAdmin;
-    const visibleSections = isFullAdmin ? SECTIONS : SECTIONS.filter(s => !s.superAdminOnly && s.id !== 'sso');
+    const visibleSections = (isFullAdmin ? SECTIONS : SECTIONS.filter(s => !s.superAdminOnly && s.id !== 'sso'))
+        .filter(s => !s.enterpriseOnly || isEnterprise);
     const VALID_IDS = visibleSections.map(s => s.id);
     const active = VALID_IDS.includes(activeProp) ? activeProp : 'users';
 

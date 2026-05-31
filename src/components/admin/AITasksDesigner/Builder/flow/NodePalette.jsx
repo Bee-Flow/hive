@@ -7,7 +7,7 @@ import {
 import useAutomationApi from '../../../../../hooks/useAutomationApi';
 import IntegrationLogo from './nodes/IntegrationLogo';
 import { resolveIntegrationFromTool } from '../../../../../utils/integrationIcons';
-import { INTEGRATION_CATALOG } from '../../../../../config/integrationCatalog';
+import { INTEGRATION_CATALOG, CATEGORY_ORDER as INTEGRATION_CATEGORY_ORDER } from '../../../../../config/integrationCatalog';
 
 /**
  * Right-side slide-in node palette modeled after n8n's add-node panel.
@@ -359,7 +359,9 @@ const CODE_ITEM = {
     payload: { kind: 'code', label: 'Code' },
 };
 
-const CATEGORY_ORDER = ['Google', 'Microsoft', 'Nextcloud', 'AI', 'Third-Party', 'Other'];
+// Mirror the shared integration section order, then a trailing 'Other' bucket
+// for apps that fell through buildCategoryMap().
+const CATEGORY_ORDER = [...INTEGRATION_CATEGORY_ORDER, 'Other'];
 
 function StepPickerView({ catalog, openCategory, setOpenCategory, openApp, setOpenApp, onAdd, onDragEnd }) {
     const grouped = useMemo(() => groupAppsByCategory(catalog), [catalog]);

@@ -5,6 +5,7 @@ import { Loader2, ToggleLeft, ToggleRight, Check, Settings, Plus, Trash2, Refres
 import McpMarketplace from './McpMarketplace';
 import AppEmoji from '../AppEmoji';
 import { INTEGRATION_CATALOG, orderCategories } from '../../config/integrationCatalog';
+import { useLicenseContext } from '../LicenseContext';
 
 const SECTIONS = [
     { id: 'features', labelKey: 'admin.integ_features', icon: Layers, color: '#10b981' },
@@ -16,6 +17,15 @@ const SECTIONS = [
     { id: 'mcp', labelKey: 'admin.integ_mcp', icon: Plug, color: '#f59e0b' },
 ];
 
+// Sidebar sections gated by an Enterprise licence feature — hidden on Community
+// (resolved tier is the real tier, so the operator's own UI hides them). The
+// MCP Server Marketplace is an Enterprise beta (`mcp_marketplace`); Meeting
+// Transcription config backs the Enterprise `meeting_notes` feature.
+const SECTION_FEATURE_GATE = {
+    mcp: 'mcp_marketplace',
+    transcription: 'meeting_notes',
+};
+
 // All known integration IDs + labels live in src/config/integrationCatalog.js
 // so the super-admin panel and the org-admin OrgFeatureTogglesPanel use the
 // same source. Categories (incl. Nextcloud) are rendered as-is; section order
@@ -24,7 +34,14 @@ const ALL_INTEGRATIONS = INTEGRATION_CATALOG;
 
 export default function IntegrationsAdminPanel({ activeSection: activeProp = 'features', onNavigate }) {
     const { t } = useTranslation();
-    const active = SECTIONS.map(s => s.id).includes(activeProp) ? activeProp : 'features';
+    const { hasFeature } = useLicenseContext();
+    // Hide enterprise-gated sections on Community. A deep link to a hidden
+    // section (or a tier downgrade) falls back to the always-visible Features
+    // section so the enterprise panel never renders.
+    const visibleSections = SECTIONS.filter(
+        s => !SECTION_FEATURE_GATE[s.id] || hasFeature(SECTION_FEATURE_GATE[s.id])
+    );
+    const active = visibleSections.map(s => s.id).includes(activeProp) ? activeProp : 'features';
     const handleSectionClick = (id) => {
         if (onNavigate) onNavigate(`admin/integrations/${id}`);
     };
@@ -294,7 +311,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                 background: 'var(--bg-secondary, #111)',
                 borderRight: '1px solid var(--border-default, rgba(255,255,255,0.08))',
             }}>
-                {SECTIONS.map(sec => {
+                {visibleSections.map(sec => {
                     const Icon = sec.icon;
                     const isActive = active === sec.id;
                     return (
