@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useMemo } from 'react';
-import { Users, Shield, CheckCircle2, ChevronRight, ChevronLeft, Loader2, Tag, Star, Building2, Key, CreditCard } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { CheckCircle2, ChevronRight, ChevronLeft, Loader2 } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import beeFlowLogo from '../../assets/bee-flow-logo.svg';
 
@@ -8,22 +8,18 @@ import beeFlowLogo from '../../assets/bee-flow-logo.svg';
  *
  * Mounted by App.jsx when /auth/user reports `ncOnboardingNeeded: true`
  * (org has nc_instance_id but nc_onboarding_completed_at is NULL and the
- * caller is the org admin). Submitting writes every choice in one POST and
+ * caller is an org admin). Submitting writes every choice in one POST and
  * flips the onboarding flag — only after that does connectorJwt unblock
  * auto-provisioning for everyone else.
  *
- * If the admin picks a paid plan, "Finish setup" redirects to Stripe; the
- * webhook activates the subscription server-side. Self-hosted + paid is a
- * supported combination — the resulting license JWT is delivered out-of-band
- * and pasted into the customer's own License & Usage panel.
+ * Subscription / billing is intentionally NOT part of this wizard. Plans and
+ * payment are managed by the organisation admin (Admin → Subscriptions and
+ * Settings → Organisation → License & Usage) so the onboarding flow stays
+ * about how Bee Flow runs and handles the team's data.
  */
 
-// The step list depends on the deployment mode. The "subscription" (Stripe /
-// paid plans) step is Bee Flow Cloud only — self-hosted installs use licence
-// keys, not Stripe — so it's dropped there. STEPS is computed from the
-// deploymentMode prop inside the component (see below).
-const CLOUD_STEPS = ['welcome', 'org', 'subscription', 'sync', 'shield', 'done'];
-const SELF_HOSTED_STEPS = ['welcome', 'org', 'sync', 'shield', 'done'];
+// Same step list for Cloud and self-hosted — billing lives elsewhere.
+const STEPS = ['welcome', 'org', 'sync', 'shield', 'done'];
 
 // Categories the Local PII detector (Transformers.js, OpenAI Privacy Filter)
 // actually emits — see server/core/localPiiDetection.js LABEL_TO_CATEGORY.
@@ -51,26 +47,6 @@ const NcOnboardingWizard = ({ user, orgName, onComplete, deploymentMode = 'cloud
         name: '', email: '', tagline: '', description: '',
         address: '', phone: '', website: '', kvk: '', vat: '',
     });
-
-    // Deployment mode comes from the server (/auth/setup-status → deploymentMode),
-    // passed down from App.jsx. Self-hosted drops the Cloud-only "subscription"
-    // step; the "Step X of N" indicator and next/prev derive from STEPS, so the
-    // numbering follows automatically.
-    const STEPS = useMemo(
-        () => (deploymentMode === 'self-hosted' ? SELF_HOSTED_STEPS : CLOUD_STEPS),
-        [deploymentMode],
-    );
-    // If deploymentMode resolves after first paint and the list shrinks
-    // (Cloud → self-hosted), keep stepIdx in range.
-    useEffect(() => {
-        setStepIdx((i) => Math.min(i, STEPS.length - 1));
-    }, [STEPS.length]);
-    const [selectedPlanId, setSelectedPlanId] = useState(null); // null = Community/free
-    const [plans, setPlans] = useState([]);
-    const [plansLoading, setPlansLoading] = useState(true);
-    // From /api/billing/offered-plans — false on self-hosted, blocks any
-    // attempt to redirect the admin to Stripe checkout.
-    const [stripeEnabled, setStripeEnabled] = useState(false);
 
     const [syncMode, setSyncMode] = useState('mirror_all');
     const [syncGroups, setSyncGroups] = useState([]);
@@ -114,70 +90,20 @@ const NcOnboardingWizard = ({ user, orgName, onComplete, deploymentMode = 'cloud
         return () => { cancelled = true; };
     }, [orgId]);
 
-    useEffect(() => {
-        let cancelled = false;
-        // The public /pricing page links here as `/app?plan=<id>`. If that
-        // id matches a real offered plan, jump straight to it — the visitor
-        // told us which one they want and pretending otherwise just makes
-        // them click twice. If the id doesn't match (plan unpublished
-        // between page-view and signup, typo'd URL, etc.) we fall through
-        // to the existing default-selection logic below.
-        const requestedPlanId = (new URLSearchParams(window.location.search).get('plan') || '').trim();
-        authFetch(`${API_BASE}/api/billing/offered-plans`).then(r => r.ok ? r.json() : { plans: [] }).then(j => {
-            if (cancelled) return;
-            const list = j.plans || [];
-            setPlans(list);
-            setStripeEnabled(!!j.stripeEnabled);
-            if (requestedPlanId) {
-                const match = list.find(p => p.id === requestedPlanId);
-                if (match) setSelectedPlanId(match.id);
-            }
-            // Default selection (when no `?plan=` match): Community (null).
-            // Admin opts in to a paid plan by clicking a card — no pre-
-            // selection so they can't pay by accident.
-            setPlansLoading(false);
-        }).catch(() => { if (!cancelled) setPlansLoading(false); });
-        return () => { cancelled = true; };
-    }, []);
-
     const step = STEPS[stepIdx];
     const next = () => setStepIdx(i => Math.min(i + 1, STEPS.length - 1));
     const prev = () => setStepIdx(i => Math.max(i - 1, 0));
 
     const canAdvance = () => {
         if (step === 'org' && !org.name.trim()) return false;
-        // Cloud mode is the hosted offering — the admin must pick a paid plan
-        // before continuing, BUT only when plans actually exist. With none
-        // configured yet there's nothing to pick, so allow skipping (proceeds
-        // on Community/null); subscriptions can be set up later.
-        if (step === 'subscription' && deploymentMode === 'cloud' && plans.length > 0 && !selectedPlanId) return false;
         if (step === 'sync' && syncMode === 'selective_groups' && syncGroups.length === 0) return false;
         if (step === 'shield' && shieldEnabled && shieldCategories.length === 0) return false;
         return true;
     };
 
-    // When the admin switches between deployment modes, reset the plan
-    // selection so a stale "Community" pick from self-hosted doesn't block
-    // cloud's gate (and vice-versa).
-    useEffect(() => {
-        if (deploymentMode === 'cloud') {
-            // Pre-select the NC-recommended plan if there is one; otherwise the
-            // admin will need to click a plan card before advancing.
-            if (selectedPlanId === null) {
-                const pick = plans.find(p => p.ncRecommended) || plans.find(p => Number(p.price) > 0) || null;
-                if (pick) setSelectedPlanId(pick.id);
-            }
-        }
-        // Self-hosted leaves the previous selection alone — Community (null)
-        // is a valid choice and is shown again as a card.
-    }, [deploymentMode, plans]); // eslint-disable-line react-hooks/exhaustive-deps
-
     const toggle = (list, setter, val) => {
         setter(list.includes(val) ? list.filter(x => x !== val) : [...list, val]);
     };
-
-    const selectedPlan = selectedPlanId ? plans.find(p => p.id === selectedPlanId) : null;
-    const isPaid = !!(selectedPlan && Number(selectedPlan.price) > 0);
 
     const handleFinish = async () => {
         if (!orgId) return;
@@ -205,13 +131,14 @@ const NcOnboardingWizard = ({ user, orgName, onComplete, deploymentMode = 'cloud
                 throw new Error(`Could not save organisation: ${j.error || orgRes.status}`);
             }
 
-            // 2. Persist wizard outputs (deployment + plan + sync + shield).
+            // 2. Persist wizard outputs (deployment + sync + shield). Subscription
+            //    is handled separately by the organisation admin, so it's not sent
+            //    here — the org keeps whatever plan it already has.
             const res = await authFetch(`${API_BASE}/auth/admin/${orgId}/nc-onboarding/complete`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     deploymentMode,
-                    selectedPlanId: selectedPlanId || null,
                     syncMode,
                     syncGroups: syncMode === 'selective_groups' ? syncGroups : [],
                     excludedGroups,
@@ -226,35 +153,6 @@ const NcOnboardingWizard = ({ user, orgName, onComplete, deploymentMode = 'cloud
             if (!res.ok) {
                 const j = await res.json().catch(() => ({}));
                 throw new Error(j.error || `HTTP ${res.status}`);
-            }
-
-            // 3. If a paid plan is selected, redirect to Stripe-hosted checkout.
-            //    Webhook activates the subscription + issues the license JWT.
-            //    Self-hosted installs and trial-only flows skip Stripe entirely
-            //    — the wizard finishes locally; the admin can attach a license
-            //    later via Settings → License & Usage.
-            const stripeAvailable = stripeEnabled && deploymentMode === 'cloud';
-            if (isPaid && stripeAvailable) {
-                const origin = window.location.origin;
-                const co = await authFetch(`${API_BASE}/api/stripe/checkout`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        planId: selectedPlanId,
-                        origin,
-                        successUrl: `${origin}/app/settings/organisation/license?wizard=complete&session_id={CHECKOUT_SESSION_ID}`,
-                    }),
-                });
-                const j = await co.json().catch(() => ({}));
-                if (!co.ok || !j.url) {
-                    // Wizard is already persisted; the admin can pay later via
-                    // License & Usage. Surface the error and exit to dashboard.
-                    setError(j.error || 'Could not start checkout. Your setup is saved — you can pay later in Settings → License & Usage.');
-                    setSubmitting(false);
-                    return;
-                }
-                window.location.href = j.url;
-                return;
             }
 
             onComplete?.();
@@ -328,117 +226,6 @@ const NcOnboardingWizard = ({ user, orgName, onComplete, deploymentMode = 'cloud
         </div>
     );
 
-    const renderSubscription = () => {
-        const fmtPrice = (p) => {
-            if (p.price == null || p.price === 0) return 'Free';
-            const sym = p.currency === 'USD' ? '$' : p.currency === 'GBP' ? '£' : '€';
-            return `${sym}${p.price}/${p.billingInterval === 'yearly' ? 'yr' : 'mo'}`;
-        };
-        const communityActive = selectedPlanId === null;
-        const isCloud = deploymentMode === 'cloud';
-        return (
-            <div className="space-y-3">
-                <p className="text-sm" style={{ color: 'var(--text-secondary)' }}>
-                    {isCloud
-                        ? <>Bee Flow Cloud is a paid service. Pick the plan that fits your team — you'll complete payment via Stripe on the next step.</>
-                        : <>Pick a starting subscription. You can upgrade or cancel anytime under <span className="font-medium">Settings → Organisation → License & Usage</span>.</>}
-                </p>
-
-                {/* Community / free card — only on self-hosted (cloud is paid-only). */}
-                {!isCloud && (
-                    <button
-                        type="button"
-                        onClick={() => setSelectedPlanId(null)}
-                        className="w-full text-left p-4 rounded-xl border"
-                        style={{
-                            borderColor: communityActive ? 'var(--accent-primary)' : 'var(--border-subtle)',
-                            background: communityActive ? 'var(--bg-tertiary)' : 'transparent',
-                        }}
-                    >
-                        <div className="flex items-baseline justify-between gap-3">
-                            <div>
-                                <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Community</div>
-                                <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
-                                    Single-user chat, local knowledge base, no payment required.
-                                </div>
-                            </div>
-                            <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Free</div>
-                        </div>
-                    </button>
-                )}
-
-                {plansLoading ? (
-                    <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin" /></div>
-                ) : plans.length === 0 ? (
-                    <div className="rounded-xl border p-3 text-xs" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
-                        No paid plans are configured yet. Your administrator can add them in <span className="font-medium">Admin → Subscriptions</span>.
-                    </div>
-                ) : (
-                    plans.map(p => {
-                        const active = selectedPlanId === p.id;
-                        return (
-                            <button
-                                key={p.id}
-                                type="button"
-                                onClick={() => setSelectedPlanId(p.id)}
-                                className="w-full text-left p-4 rounded-xl border"
-                                style={{
-                                    borderColor: active ? 'var(--accent-primary)' : 'var(--border-subtle)',
-                                    background: active ? 'var(--bg-tertiary)' : 'transparent',
-                                }}
-                            >
-                                {p.ncRecommended && (
-                                    <div className="mb-2">
-                                        <span
-                                            className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                                            style={{ background: '#0082C9', color: '#fff' }}
-                                        >
-                                            <Star className="w-2.5 h-2.5" /> Recommended for Nextcloud
-                                        </span>
-                                    </div>
-                                )}
-                                <div className="flex items-baseline justify-between gap-3">
-                                    <div className="min-w-0 flex-1">
-                                        <div className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{p.name}</div>
-                                        {p.tagline && (
-                                            <div className="text-xs mt-0.5 inline-flex items-center gap-1" style={{ color: 'var(--text-secondary)' }}>
-                                                <Tag className="w-3 h-3" /> {p.tagline}
-                                            </div>
-                                        )}
-                                    </div>
-                                    <div className="text-sm font-semibold whitespace-nowrap shrink-0" style={{ color: 'var(--text-primary)' }}>
-                                        {fmtPrice(p)}
-                                        {p.trialDays > 0 && <span className="ml-2 text-[10px] font-medium" style={{ color: '#22c55e' }}>{p.trialDays}d trial</span>}
-                                    </div>
-                                </div>
-                                {p.description && (
-                                    <div className="text-xs mt-2" style={{ color: 'var(--text-secondary)' }}>{p.description}</div>
-                                )}
-                                <div className="flex flex-wrap gap-1 mt-2">
-                                    {p.maxUsers != null && p.maxUsers > 0 && (
-                                        <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
-                                            Up to {p.maxUsers} users
-                                        </span>
-                                    )}
-                                    {p.maxAgents != null && p.maxAgents > 0 && (
-                                        <span className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
-                                            {p.maxAgents} agents
-                                        </span>
-                                    )}
-                                    {(p.allowedFeatures || []).slice(0, 3).map(f => (
-                                        <span key={f} className="text-[10px] px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
-                                            {f}
-                                        </span>
-                                    ))}
-                                </div>
-                            </button>
-                        );
-                    })
-                )}
-            </div>
-        );
-    };
-
     return (
         <div className="h-screen flex items-center justify-center p-4" style={{ background: 'linear-gradient(160deg, var(--bg-primary) 0%, var(--bg-secondary) 50%, var(--bg-tertiary) 100%)' }}>
             <div className="w-full max-w-2xl">
@@ -452,7 +239,6 @@ const NcOnboardingWizard = ({ user, orgName, onComplete, deploymentMode = 'cloud
                             <h1 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>
                                 {step === 'welcome' && `Welcome to Bee Flow${orgName ? ` for ${orgName}` : ''}`}
                                 {step === 'org' && 'Organisation details'}
-                                {step === 'subscription' && 'Pick your subscription'}
                                 {step === 'sync' && 'Nextcloud user sync'}
                                 {step === 'shield' && 'Privacy Shield'}
                                 {step === 'done' && 'You\'re ready'}
@@ -485,7 +271,6 @@ const NcOnboardingWizard = ({ user, orgName, onComplete, deploymentMode = 'cloud
                     )}
 
                     {step === 'org' && renderOrg()}
-                    {step === 'subscription' && renderSubscription()}
 
                     {step === 'sync' && (
                         <div className="space-y-4">
@@ -604,34 +389,12 @@ const NcOnboardingWizard = ({ user, orgName, onComplete, deploymentMode = 'cloud
                             <div className="rounded-xl border p-4 space-y-2 text-sm" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-tertiary)' }}>
                                 <div><span className="font-medium">Organisation:</span> {org.name || '—'}</div>
                                 <div><span className="font-medium">Deployment:</span> {deploymentMode === 'cloud' ? 'Bee Flow Cloud' : 'Self-hosted'}</div>
-                                <div><span className="font-medium">Subscription:</span> {selectedPlan ? selectedPlan.name : 'Community (free)'}</div>
                                 <div><span className="font-medium">Sync mode:</span> {syncMode}{syncMode === 'selective_groups' ? ` (${syncGroups.length} groups)` : ''}</div>
                                 <div><span className="font-medium">Privacy Shield:</span> {shieldEnabled ? `${shieldAction} • ${shieldCategories.length} categories` : 'disabled'}</div>
                             </div>
-                            {isPaid && (
-                                <div className="rounded-xl border p-4 space-y-2" style={{ borderColor: 'rgba(59,130,246,0.4)', background: 'rgba(59,130,246,0.08)', color: 'var(--text-primary)' }}>
-                                    <div className="inline-flex items-center gap-2 text-sm font-semibold">
-                                        <CreditCard className="w-4 h-4" style={{ color: '#3b82f6' }} />
-                                        Pay with Stripe
-                                    </div>
-                                    <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                                        {selectedPlan?.name} — {(() => {
-                                            const sym = selectedPlan?.currency === 'USD' ? '$' : selectedPlan?.currency === 'GBP' ? '£' : '€';
-                                            return `${sym}${selectedPlan?.price}/${selectedPlan?.billingInterval === 'yearly' ? 'year' : 'month'}`;
-                                        })()}
-                                        {selectedPlan?.trialDays > 0 && <span className="ml-1" style={{ color: '#22c55e' }}>• {selectedPlan.trialDays}-day free trial</span>}
-                                    </div>
-                                    <div className="text-xs" style={{ color: 'var(--text-secondary)' }}>
-                                        Clicking <span className="font-medium">Continue to payment</span> opens Stripe's hosted checkout in this tab. Your wizard answers are already saved — if you cancel checkout you can pay later under Settings → License & Usage.
-                                    </div>
-                                    {deploymentMode === 'self-hosted' && (
-                                        <div className="inline-flex items-start gap-1 pt-1 text-xs" style={{ color: 'var(--text-secondary)' }}>
-                                            <Key className="w-3 h-3 mt-0.5 shrink-0" />
-                                            <span>After payment you'll receive a license key — paste it into <span className="font-medium">Settings → License & Usage</span> on your own Bee Flow installation to activate {selectedPlan?.name}.</span>
-                                        </div>
-                                    )}
-                                </div>
-                            )}
+                            <p className="text-xs" style={{ color: 'var(--text-secondary)' }}>
+                                Your subscription is managed separately under <span className="font-medium">Settings → Organisation → License &amp; Usage</span>.
+                            </p>
                             {error && (
                                 <div className="text-sm text-red-500 p-3 rounded-xl border border-red-500/30 bg-red-500/10">{error}</div>
                             )}
@@ -656,11 +419,7 @@ const NcOnboardingWizard = ({ user, orgName, onComplete, deploymentMode = 'cloud
                                 className="inline-flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-medium disabled:opacity-50"
                                 style={{ background: 'var(--accent-primary)', color: 'white' }}>
                                 {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
-                                {(() => {
-                                    const willGoToStripe = isPaid && stripeEnabled && deploymentMode === 'cloud';
-                                    if (submitting) return willGoToStripe ? 'Redirecting…' : 'Finishing…';
-                                    return willGoToStripe ? 'Continue to payment' : 'Finish setup';
-                                })()}
+                                {submitting ? 'Finishing…' : 'Finish setup'}
                             </button>
                         )}
                     </div>
