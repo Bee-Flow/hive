@@ -18,9 +18,11 @@ export default function DryRunPanel({ run, steps }) {
                 <Eye size={16} /> Dry-run preview ({run.status})
             </div>
             {run.summary && (
-                <div className="text-xs text-[var(--text-secondary)] mb-2 whitespace-pre-wrap">{run.summary}</div>
+                <div className="text-xs text-[var(--text-secondary)] mb-2 whitespace-pre-wrap line-clamp-2">{run.summary}</div>
             )}
-            <div className="flex flex-col gap-1.5">
+            {/* Cap the step list so a many-step dry-run scrolls internally
+                instead of pushing the diagram canvas into a cramped strip. */}
+            <div className="flex flex-col gap-1.5 max-h-[34vh] overflow-y-auto pr-1">
                 {stepList.map((s, idx) => {
                     if (!s) return null;
                     const out = s.output || null;
