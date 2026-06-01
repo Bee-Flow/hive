@@ -40,6 +40,15 @@ export const getSessionToken = () => {
 export const authFetch = async (url, options = {}) => {
     const defaultOptions = {
         credentials: 'include',
+        // Never serve dynamic per-user API responses from the browser's HTTP
+        // cache. In the Nextcloud-embedded path (browser → AppAPI proxy →
+        // connector → server) the server's `Cache-Control: no-store` headers
+        // don't reliably survive the proxy, so the browser was replaying stale
+        // GETs — most visibly the chat list, which showed "No chats yet" after
+        // sending a message until the cache was cleared. A request-level
+        // `cache: 'no-store'` mirrors DevTools "Disable cache" and works
+        // regardless of response headers. Callers can still override per-request.
+        cache: 'no-store',
     };
 
     const finalOptions = {
