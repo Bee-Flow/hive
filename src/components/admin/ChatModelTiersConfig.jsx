@@ -559,6 +559,9 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
     const [classifierModel, setClassifierModel] = useState('');
     const [classifierSaving, setClassifierSaving] = useState(false);
     const [classifierMessage, setClassifierMessage] = useState(null);
+    const [titleModel, setTitleModel] = useState('');
+    const [titleModelSaving, setTitleModelSaving] = useState(false);
+    const [titleModelMessage, setTitleModelMessage] = useState(null);
     const [hiddenModelIds, setHiddenModelIds] = useState([]);
     const [claudeAutoRetry, setClaudeAutoRetry] = useState(true);
     const [claudeSaving, setClaudeSaving] = useState(false);
@@ -570,6 +573,7 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
         loadEuConfig();
         loadCustomTiers();
         loadClassifierModel();
+        loadTitleModel();
         loadHiddenModels();
         loadClaudeSettings();
     }, []);
@@ -710,6 +714,39 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
             setClassifierMessage({ type: 'error', text: 'Failed to save classifier model' });
         }
         setClassifierSaving(false);
+    };
+
+    const loadTitleModel = async () => {
+        try {
+            const res = await authFetch(`${API_BASE}/ai/config/title-model`);
+            if (res.ok) {
+                const data = await res.json();
+                setTitleModel(typeof data.modelId === 'string' ? data.modelId : '');
+            }
+        } catch (e) { console.error('Failed to load title model:', e); }
+    };
+
+    const saveTitleModel = async (next = titleModel) => {
+        setTitleModelSaving(true);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/config/title-model`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ modelId: next || null }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setTitleModel(typeof data.modelId === 'string' ? data.modelId : '');
+                setTitleModelMessage({ type: 'success', text: 'Title model saved' });
+                setTimeout(() => setTitleModelMessage(null), 3000);
+            } else {
+                const data = await res.json().catch(() => ({}));
+                setTitleModelMessage({ type: 'error', text: data.error || 'Failed to save title model' });
+            }
+        } catch (e) {
+            setTitleModelMessage({ type: 'error', text: 'Failed to save title model' });
+        }
+        setTitleModelSaving(false);
     };
 
     const loadConfig = async () => {
@@ -1721,6 +1758,58 @@ const ChatModelTiersConfig = ({ allModels = [] }) => {
                     style={{ background: 'var(--accent-primary)' }}
                 >
                     {classifierSaving ? 'Saving...' : 'Save Classifier Model'}
+                </button>
+            </div>
+
+            {/* Title Generation Model */}
+            <div className="p-4 sm:p-6 rounded-xl border" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
+                <div className="flex items-center gap-3 mb-4">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl" style={{ background: 'rgba(245, 158, 11, 0.15)' }}>🏷️</div>
+                    <div>
+                        <h3 className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>Title Generation Model</h3>
+                        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                            Model used to name conversations — a tiny, tool-free call made after the second reply. Pick the cheapest, fastest model so a heavy Fast tier doesn't make titling expensive. Defaults to the Fast tier model when unset.
+                        </p>
+                    </div>
+                </div>
+
+                {titleModelMessage && (
+                    <div className={`mb-4 p-3 rounded-lg text-sm ${titleModelMessage.type === 'success' ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'}`}>
+                        {titleModelMessage.text}
+                    </div>
+                )}
+
+                <div className="rounded-xl border p-4" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)' }}>
+                    <label className="block text-[11px] font-semibold mb-1.5 uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                        Title model
+                    </label>
+                    {(() => {
+                        const selected = chatModels.find(m => m.id === titleModel);
+                        const display = selected ? getDisplayName(selected) : null;
+                        const label = selected
+                            ? (display !== selected.id ? display : selected.id)
+                            : '— Use Fast tier model —';
+                        return (
+                            <SearchableModelSelect
+                                value={titleModel || ''}
+                                label={label}
+                                groups={byProvider}
+                                getModelMeta={getModelMeta}
+                                onChange={val => setTitleModel(val || '')}
+                                hiddenIds={hiddenModelIds}
+                                onToggleHidden={toggleHiddenModel}
+                            />
+                        );
+                    })()}
+                </div>
+
+                <button
+                    onClick={() => saveTitleModel()}
+                    disabled={titleModelSaving}
+                    className="mt-4 px-6 py-2.5 rounded-lg font-medium text-sm transition-all text-white hover:opacity-90 disabled:opacity-50"
+                    style={{ background: 'var(--accent-primary)' }}
+                >
+                    {titleModelSaving ? 'Saving...' : 'Save Title Model'}
                 </button>
             </div>
 
