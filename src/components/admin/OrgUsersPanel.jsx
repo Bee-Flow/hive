@@ -748,7 +748,7 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
                                             <div className="w-9 h-9 rounded-full bg-[var(--bg-tertiary)] flex items-center justify-center text-lg shrink-0">
                                                 {u.avatar}
                                             </div>
-                                        ) : u.avatarType === 'image' && u.avatar ? (
+                                        ) : (u.avatarType === 'image' || u.avatarType === 'url') && u.avatar ? (
                                             <img src={u.avatar.startsWith('/') ? `${API_BASE}${u.avatar}` : u.avatar} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
                                         ) : u.avatar && (u.avatar.startsWith('http') || u.avatar.startsWith('/')) ? (
                                             <img src={u.avatar.startsWith('/') ? `${API_BASE}${u.avatar}` : u.avatar} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />

@@ -1198,6 +1198,34 @@ export default function useChatEngine({
             let buffer = '';
             let currentEvent = '';
 
+            const processLine = (line) => {
+                if (line.startsWith('event: ')) {
+                    currentEvent = line.slice(7).trim();
+                } else if (line.startsWith('data: ')) {
+                    try {
+                        const data = JSON.parse(line.slice(6));
+
+                        // Handle direct-chat specific events
+                        if (isDirectMode) {
+                            if (currentEvent === 'conversation_created' && data.conversationId) {
+                                onDirectConversationCreated?.({ conversationId: data.conversationId });
+                            } else if (currentEvent === 'title' && data.title) {
+                                onDirectConversationCreated?.({ conversationId: data.conversationId, title: data.title });
+                            }
+                        }
+
+                        handleSSEEventRef.current(currentEvent, data, {
+                            assistantMsgId,
+                            userMsgId: msgId,
+                            activeIdRef,
+                            contentRef
+                        });
+                    } catch (e) {
+                        console.debug('[useChatEngine] SSE event parse skipped', currentEvent, e);
+                    }
+                }
+            };
+
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
@@ -1206,33 +1234,17 @@ export default function useChatEngine({
                 const lines = buffer.split('\n');
                 buffer = lines.pop() || '';
 
-                for (const line of lines) {
-                    if (line.startsWith('event: ')) {
-                        currentEvent = line.slice(7).trim();
-                    } else if (line.startsWith('data: ')) {
-                        try {
-                            const data = JSON.parse(line.slice(6));
+                for (const line of lines) processLine(line);
+            }
 
-                            // Handle direct-chat specific events
-                            if (isDirectMode) {
-                                if (currentEvent === 'conversation_created' && data.conversationId) {
-                                    onDirectConversationCreated?.({ conversationId: data.conversationId });
-                                } else if (currentEvent === 'title' && data.title) {
-                                    onDirectConversationCreated?.({ conversationId: data.conversationId, title: data.title });
-                                }
-                            }
-
-                            handleSSEEventRef.current(currentEvent, data, {
-                                assistantMsgId,
-                                userMsgId: msgId,
-                                activeIdRef,
-                                contentRef
-                            });
-                        } catch (e) {
-                            console.debug('[useChatEngine] SSE event parse skipped', currentEvent, e);
-                        }
-                    }
-                }
+            // Drain the decoder and process any final event left in the buffer.
+            // The server's terminal `done` event can arrive in the last chunk
+            // without a trailing newline; breaking on `done` without flushing left
+            // the message stuck in isStreaming:true so the notebook edit was never
+            // applied and the chat never finalized (BFSF-177).
+            buffer += decoder.decode();
+            if (buffer) {
+                for (const line of buffer.split('\n')) processLine(line);
             }
 
             setIsLoading(false);

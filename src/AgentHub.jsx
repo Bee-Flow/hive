@@ -1722,6 +1722,7 @@ const AgentHub = ({
                 showAITasks={showAITasks}
                 showSkillsPanel={showSkillsPanel}
                 showEmailKB={showEmailKB}
+                showMarketplace={showMarketplace}
                 onDirectChat={handleDirectChat}
                 directChatMode={directChatMode}
                 directConversations={directConversations}

@@ -407,6 +407,7 @@ const Sidebar = ({
     showAgentDesigner = false,
     showAITasks = false,
     showSkillsPanel = false,
+    showMarketplace = false,
     showTicketAssistant = false,
     // Legacy alias — callers passing showEmailKB still work for one release.
     showEmailKB = undefined,
@@ -620,7 +621,7 @@ const Sidebar = ({
     ];
 
     const secondaryNav = [
-        { key: 'agents', label: t('sidebar.agents') || 'Agents', icon: Store, onClick: onOpenMarketplace, active: currentPage === 'marketplace' },
+        { key: 'agents', label: t('sidebar.agents') || 'Agents', icon: Store, onClick: onOpenMarketplace, active: showMarketplace },
         ...(!_simpleMode && !isMobile && (_isAdminLike || _permissions.includes('manage_agents') || _permissions.includes('manage_skills') || user?.orgRole === 'admin' || user?.orgRole === 'org_admin')
             ? [{ key: 'studio', label: t('studio.sidebar_link') || 'Studio', icon: LayoutGrid, onClick: () => onNavigate && onNavigate('studio'), active: currentPage === 'studio' }]
             : []),
@@ -981,7 +982,7 @@ const Sidebar = ({
                         <div className={`rounded-full flex items-center justify-center flex-shrink-0 bg-[var(--bg-tertiary)] ${isOpen ? 'w-8 h-8 text-base' : 'w-10 h-10 text-xl'}`}>
                             {user.avatar}
                         </div>
-                    ) : user?.avatarType === 'image' && user?.avatar ? (
+                    ) : (user?.avatarType === 'image' || user?.avatarType === 'url') && user?.avatar ? (
                         <img src={user.avatar.startsWith('/') ? `${API_BASE}${user.avatar}` : user.avatar} alt="" className={`rounded-full object-cover flex-shrink-0 ${isOpen ? 'w-8 h-8' : 'w-10 h-10'}`} />
                     ) : (
                         <div className={`rounded-full flex items-center justify-center flex-shrink-0 ${isOpen ? 'w-8 h-8' : 'w-10 h-10'}`}

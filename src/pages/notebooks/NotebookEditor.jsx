@@ -513,6 +513,26 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
             // still paginates server-side via the export pipeline.)
         ],
         content: content || '',
+        editorProps: {
+            // Copying a table selection: tiptap-markdown has no tableCell/tableHeader
+            // serializer and falls back to raw HTML on the clipboard's text/plain
+            // flavor. Emit clean plain text for any selection containing table nodes;
+            // return undefined otherwise so normal content still copies as markdown —
+            // ProseMirror's someProp then defers to the markdown serializer (BFSF-167).
+            clipboardTextSerializer: (slice) => {
+                let hasTable = false;
+                slice.content.descendants((node) => {
+                    const n = node.type.name;
+                    if (n === 'table' || n === 'tableRow' || n === 'tableCell' || n === 'tableHeader') {
+                        hasTable = true;
+                        return false;
+                    }
+                    return true;
+                });
+                if (!hasTable) return undefined;
+                return slice.content.textBetween(0, slice.content.size, '\n', ' ');
+            },
+        },
         onUpdate: ({ editor }) => {
             const html = editor.getHTML();
             onChange?.(html);

@@ -24,6 +24,10 @@ const MemoryPanel = ({ onClose, projectId }) => {
     const [isSelectMode, setIsSelectMode] = useState(false);
     const [total, setTotal] = useState(0);
     const [hasMore, setHasMore] = useState(false);
+    // Full per-type distribution across ALL memories (filter-independent), used to
+    // decide which filter chips to show. Derived from the loaded list it would
+    // collapse to only the selected type once a filter is active (BFSF-180).
+    const [allTypeCounts, setAllTypeCounts] = useState({});
     // For project-scoped panel we still fetch the full list and filter client-side
     // (project memory backlogs are small and the API doesn't paginate that path).
     const isPaginated = !projectId;
@@ -74,6 +78,25 @@ const MemoryPanel = ({ onClose, projectId }) => {
         // Reset selection so it doesn't reference items no longer in view.
         setSelectedIds(new Set());
     }, [fetchMemories]);
+
+    // Fetch the full type distribution (filter-independent) for the global panel.
+    // Keyed on `total` so it also refreshes after add/delete/clear, all of which
+    // adjust the count. The project panel already holds the full client-side list.
+    const fetchStats = useCallback(async () => {
+        if (projectId) return;
+        try {
+            const res = await authFetch(`${API_BASE}/agents/memory/stats`);
+            if (!res.ok) return;
+            const data = await res.json();
+            const labels = data?.typeDistribution?.labels || [];
+            const counts = data?.typeDistribution?.data || [];
+            const map = {};
+            labels.forEach((label, i) => { map[label] = counts[i] || 0; });
+            setAllTypeCounts(map);
+        } catch (_) { /* non-fatal: chips fall back to loaded counts */ }
+    }, [projectId]);
+
+    useEffect(() => { fetchStats(); }, [fetchStats, total]);
 
     const handleLoadMore = () => {
         if (!hasMore || loadingMore) return;
@@ -248,11 +271,16 @@ const MemoryPanel = ({ onClose, projectId }) => {
             return true;
         });
 
-    // Count per type
+    // Count per type (of what's currently loaded)
     const typeCounts = memories.reduce((acc, m) => {
         acc[m.type] = (acc[m.type] || 0) + 1;
         return acc;
     }, {});
+
+    // Filter-chip visibility/counts must NOT depend on the active filter. For the
+    // global (paginated) view use the full stats distribution; the project view
+    // already holds the complete client-side list, so its typeCounts is accurate.
+    const typeTotals = isPaginated ? allTypeCounts : typeCounts;
 
     return (
         <div className="h-full flex flex-col" style={{ background: 'var(--bg-primary)' }} data-testid="memory-panel">
@@ -333,7 +361,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                             All
                         </button>
                         {Object.entries(typeConfig).filter(([key]) => allowedAddTypes.includes(key)).map(([key, cfg]) => (
-                            typeCounts[key] > 0 && (
+                            typeTotals[key] > 0 && (
                                 <button
                                     key={key}
                                     onClick={() => setFilterType(filterType === key ? 'all' : key)}
@@ -346,7 +374,7 @@ const MemoryPanel = ({ onClose, projectId }) => {
                                     data-testid={`memory-filter-${key}`}
                                 >
                                     <cfg.Icon className="w-3 h-3" />
-                                    {typeCounts[key]}
+                                    {typeTotals[key]}
                                 </button>
                             )
                         ))}
