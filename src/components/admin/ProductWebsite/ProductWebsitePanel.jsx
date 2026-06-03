@@ -5,9 +5,11 @@ import { Toggle, CreatePageContext } from './fields';
 import { BLOCK_CATALOGUE, BLOCK_EDITORS, BLOCK_DEFAULTS, HeaderEditor, FooterEditor } from './editors';
 import CookieBannerEditor from './CookieBannerEditor';
 import PageList, { SaveTemplateDialog } from './PageList';
+import { exportPage as exportPageToFile } from './pageIO';
 import { ToastHost, showToast } from '../guardrails/Toast';
 import BlockList from './BlockList';
 import SitemapView from './SitemapView';
+import AIPagePanel from './AIPagePanel';
 import SiteSwitcher from './SiteSwitcher';
 import VersionSwitcher from './VersionSwitcher';
 import DesignEditor from './DesignEditor';
@@ -783,6 +785,46 @@ export default function ProductWebsitePanel() {
             setActivePageId(data.id);
         } catch (err) { setError(err.message); }
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Per-page export — bundles { meta, blocks } as a JSON download. Looks
+    // up blocks from the full pages state (the site index in site.pages is
+    // meta-only). Triggered from the row's actions menu.
+    const handleExportPage = useCallback((pageId) => {
+        const page = pages.find(p => p.id === pageId);
+        if (!page) return;
+        exportPageToFile(page);
+    }, [pages]);
+
+    // Per-page import — always creates a NEW page (never overwrites). Goes
+    // through the existing create flow (so the server resolves slug
+    // collisions by suffixing) and then patches the imported blocks in via
+    // updatePage, which schedules the debounced PUT to persist them.
+    const handleImportPage = useCallback(async (payload) => {
+        const incomingSlug  = (payload?.meta?.slug  || '').trim() || 'page';
+        const incomingTitle = (payload?.meta?.title || '').trim() || incomingSlug;
+        let created;
+        try {
+            created = await handleAddPage({ title: incomingTitle, slug: incomingSlug });
+        } catch {
+            return;
+        }
+        if (!created?.id) return;
+        updatePage(created.id, p => ({ ...p, blocks: Array.isArray(payload?.blocks) ? payload.blocks : [] }));
+    }, [handleAddPage, updatePage]);
+
+    // AI page generator — saves a generated PageDoc as a NEW page. Mirrors
+    // handleImportPage: routes through handleAddPage (server resolves slug
+    // collisions) and patches blocks via updatePage. Errors propagate so
+    // AIPagePanel can surface them inline; handleAddPage also sets the
+    // panel-level error state.
+    const handleSaveGeneratedPage = useCallback(async (page) => {
+        const incomingSlug  = (page?.slug  || '').trim() || 'page';
+        const incomingTitle = (page?.title || '').trim() || incomingSlug;
+        const created = await handleAddPage({ title: incomingTitle, slug: incomingSlug });
+        if (!created?.id) throw new Error('Failed to create page');
+        updatePage(created.id, p => ({ ...p, blocks: Array.isArray(page?.blocks) ? page.blocks : [] }));
+        setRightView('preview');
+    }, [handleAddPage, updatePage]);
 
     const handleDeletePage = useCallback(async (pageId) => {
         const siteId = activeSiteIdRef.current;
@@ -1633,6 +1675,8 @@ export default function ProductWebsitePanel() {
                         templates={templates}
                         onSaveAsTemplate={handleSaveAsTemplate}
                         onDeleteTemplate={handleDeleteTemplate}
+                        onExportPage={handleExportPage}
+                        onImportPage={handleImportPage}
                     />
                 </div>
 
@@ -1801,6 +1845,12 @@ export default function ProductWebsitePanel() {
                         active={rightView === 'sitemap'}
                         onClick={() => setRightView('sitemap')}
                     />
+                    <TabBtn
+                        icon="Sparkles"
+                        label="AI"
+                        active={rightView === 'ai'}
+                        onClick={() => setRightView('ai')}
+                    />
                     <div className="flex-1" />
                     {rightView === 'preview' && (
                         <span className="text-[10px] text-[var(--text-muted)] pr-4">
@@ -1831,6 +1881,15 @@ export default function ProductWebsitePanel() {
                             setActivePageId(id);
                             setRightView('preview');
                         }}
+                    />
+                )}
+
+                {/* AI pane */}
+                {rightView === 'ai' && (
+                    <AIPagePanel
+                        activeSiteId={activeSiteId}
+                        activeLocale={activeLocale}
+                        onSaveAsNewPage={handleSaveGeneratedPage}
                     />
                 )}
             </div>

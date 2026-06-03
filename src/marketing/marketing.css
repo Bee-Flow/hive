@@ -104,9 +104,6 @@
 
 /* ── Typography ────────────────────────────────────────────────────────── */
 .marketing-root .headline-xl { font-size: clamp(2.5rem, 5vw, 3.25rem); font-weight: 800; line-height: 1.1; letter-spacing: -0.02em; }
-/* Above the hero content container's own breakpoint (~900px), keep the
-   hero title on one line. Mobile still wraps naturally (rule doesn't apply). */
-@media (min-width: 900px) { .marketing-root .headline-xl { white-space: nowrap; } }
 .marketing-root .headline-lg { font-size: clamp(2rem,  4vw, 3rem);   font-weight: 700; line-height: 1.15; letter-spacing: -0.01em; }
 .marketing-root .headline-md { font-size: clamp(1.3rem, 2.5vw, 1.75rem); font-weight: 600; line-height: 1.25; }
 .marketing-root .body-lg     { font-size: 1.125rem; font-weight: 400; line-height: 1.6; color: var(--text-secondary); }
@@ -215,11 +212,13 @@
     height: var(--header-height);
     z-index: 1000;
     transition: all var(--transition-med);
+    transform: translateZ(0);
+    will-change: transform;
 }
 .marketing-root .header.scrolled {
     background: var(--bg-glass);
     backdrop-filter: blur(20px) saturate(1.5);
-    border-bottom: 1px solid var(--border-subtle);
+    box-shadow: 0 1px 0 0 var(--border-subtle);
 }
 .marketing-root .header-inner {
     height: 100%;

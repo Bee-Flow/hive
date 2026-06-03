@@ -572,15 +572,13 @@ export default function ProductWebsite({ content: initialContent }) {
             ) : null}
             {/* Site-wide cookie banner. Rendered inside .marketing-root so its
                 inline styles resolve the brand CSS variables (--brand-primary
-                etc.). Only mounts when the site has banner config — absent for
-                the empty CMS-preview host. */}
-            {content.cookieBanner ? (
-                <CookieBanner
-                    enabled={content.cookieBanner.enabled !== false}
-                    language={resolveCookieLang()}
-                    text={content.cookieBanner.text}
-                />
-            ) : null}
+                etc.). Always mounted on marketing pages — the component itself
+                decides whether to render based on the visitor's stored choice. */}
+            <CookieBanner
+                enabled={content.cookieBanner?.enabled !== false}
+                language={resolveCookieLang()}
+                text={content.cookieBanner?.text}
+            />
         </div>
     );
 }

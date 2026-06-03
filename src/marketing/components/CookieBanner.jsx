@@ -5,11 +5,16 @@ import React, { useEffect, useState } from 'react';
 // fallbacks so it also renders correctly outside the marketing root) and
 // persists the visitor's choice in localStorage.
 //
-// Stored under `bf_cookie_consent` as one of: "accepted" | "declined".
+// Stored under `cookie_consent` as one of: "accepted" | "declined".
 // Absent/unknown → the banner is shown. Once a choice is made the banner is
-// replaced by a small 🍪 button (fixed bottom-right) that re-opens it.
+// replaced by a small 🍪 button (fixed bottom-right) that re-opens it — the
+// reopen affordance is required so visitors can withdraw consent under EU
+// GDPR ("intrekken even makkelijk als toestemming geven").
 
-const STORAGE_KEY = 'bf_cookie_consent';
+const STORAGE_KEY = 'cookie_consent';
+// Legacy key used by earlier builds; migrated on first read so returning
+// visitors don't see the banner again after the rename.
+const LEGACY_STORAGE_KEY = 'bf_cookie_consent';
 
 // Built-in copy. Caller-supplied `text` is overlaid per language, so a
 // partial override (e.g. just the message) keeps the default button labels.
@@ -51,7 +56,18 @@ export default function CookieBanner({
     useEffect(() => {
         if (typeof window === 'undefined') return;
         try {
-            const stored = window.localStorage.getItem(STORAGE_KEY);
+            let stored = window.localStorage.getItem(STORAGE_KEY);
+            if (stored !== 'accepted' && stored !== 'declined') {
+                // One-time migration from the legacy key. Copy it over so
+                // returning visitors keep their prior choice, then drop the
+                // old entry to avoid two sources of truth.
+                const legacy = window.localStorage.getItem(LEGACY_STORAGE_KEY);
+                if (legacy === 'accepted' || legacy === 'declined') {
+                    window.localStorage.setItem(STORAGE_KEY, legacy);
+                    window.localStorage.removeItem(LEGACY_STORAGE_KEY);
+                    stored = legacy;
+                }
+            }
             setConsent(stored === 'accepted' || stored === 'declined' ? stored : null);
         } catch {
             // Storage blocked (private mode / disabled cookies) → treat as
@@ -75,7 +91,8 @@ export default function CookieBanner({
     if (!enabled) return null;
     if (consent === 'unset') return null;
 
-    // Choice already made → compact re-open affordance, bottom-right.
+    // Choice already made → compact re-open affordance, bottom-right, so
+    // the visitor can withdraw or change their consent at any time.
     if (consent === 'accepted' || consent === 'declined') {
         return (
             <button
@@ -211,3 +228,4 @@ const reopenButtonStyle = {
     border: '1px solid var(--border-subtle, rgba(15, 23, 42, 0.15))',
     boxShadow: '0 4px 16px rgba(0, 0, 0, 0.18)',
 };
+

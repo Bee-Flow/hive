@@ -18,7 +18,7 @@ import AppIcon from '../../AppIcon';
 
 // ── Single draggable page row ────────────────────────────────────────
 
-function PageRow({ page, isActive, onClick, onSetHomepage, onDuplicate, onRename, onEditSlug, onDelete, onSaveAsTemplate }) {
+function PageRow({ page, isActive, onClick, onSetHomepage, onDuplicate, onRename, onEditSlug, onDelete, onSaveAsTemplate, onExport, onImport }) {
     const {
         attributes, listeners, setNodeRef, transform, transition, isDragging,
     } = useSortable({ id: page.id });
@@ -146,6 +146,8 @@ function PageRow({ page, isActive, onClick, onSetHomepage, onDuplicate, onRename
                             onEditSlug={()       => { setMenuOpen(false); setEditingSlug(true); }}
                             onDelete={()         => { onDelete(page.id);      setMenuOpen(false); }}
                             onSaveAsTemplate={() => { onSaveAsTemplate?.(page); setMenuOpen(false); }}
+                            onExport={onExport       ? () => { onExport(page.id); setMenuOpen(false); }   : undefined}
+                            onImport={onImport       ? () => { setMenuOpen(false); onImport(); }          : undefined}
                         />
                     )}
                 </div>
@@ -236,7 +238,7 @@ function SlugInput({ initial, isHomepage, onConfirm, onCancel }) {
 // ── Actions menu — rendered in a portal at fixed coords so it escapes
 //    the page-list's overflow-y:auto container and doesn't clip. ──────
 
-function PageMenu({ anchorEl, page, onClose, onSetHomepage, onDuplicate, onRename, onEditSlug, onDelete, onSaveAsTemplate }) {
+function PageMenu({ anchorEl, page, onClose, onSetHomepage, onDuplicate, onRename, onEditSlug, onDelete, onSaveAsTemplate, onExport, onImport }) {
     const [coords, setCoords] = useState(null);
 
     // Compute menu coordinates from the button's viewport rect. Anchored to
@@ -289,6 +291,12 @@ function PageMenu({ anchorEl, page, onClose, onSetHomepage, onDuplicate, onRenam
             <MenuBtn icon="Link"     label="Edit slug"          onClick={onEditSlug} />
             <MenuBtn icon="Copy"     label="Duplicate page"     onClick={onDuplicate} />
             <MenuBtn icon="Bookmark" label="Save as template…"  onClick={onSaveAsTemplate} />
+            {onExport ? (
+                <MenuBtn icon="Download" label="Export page" onClick={onExport} />
+            ) : null}
+            {onImport ? (
+                <MenuBtn icon="Upload"   label="Import page…" onClick={onImport} />
+            ) : null}
             <div className="my-1 border-t border-[var(--border-subtle)]" />
             <MenuBtn icon="Trash2"   label="Delete page" onClick={onDelete} danger />
         </div>,
@@ -639,10 +647,17 @@ export default function PageList({
     templates = [],
     onSaveAsTemplate,
     onDeleteTemplate,
+    // Per-page export / import. Both optional so a caller that hasn't
+    // wired them up just renders without the affordance. The same hidden
+    // input is shared by the header button and the per-row menu item
+    // (both flows create a NEW page from the chosen file).
+    onExportPage,
+    onImportPage,
 }) {
     const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
     const [adding, setAdding]             = useState(false);
     const [managerOpen, setManagerOpen]   = useState(false);
+    const importInputRef                  = useRef(null);
 
     const handleDragEnd = (event) => {
         const { active, over } = event;
@@ -671,6 +686,16 @@ export default function PageList({
                     >
                         Templates{templates.length > 0 ? ` (${templates.length})` : ''}
                     </button>
+                    {onImportPage ? (
+                        <button
+                            type="button"
+                            onClick={() => importInputRef.current?.click()}
+                            className="w-6 h-6 flex items-center justify-center rounded hover:bg-[var(--bg-tertiary)] text-[var(--text-muted)] hover:text-[var(--text-secondary)]"
+                            title="Import page from JSON file"
+                        >
+                            <AppIcon name="Upload" className="w-4 h-4" />
+                        </button>
+                    ) : null}
                     <button
                         type="button"
                         onClick={() => setAdding(v => !v)}
@@ -681,6 +706,33 @@ export default function PageList({
                     </button>
                 </div>
             </div>
+
+            {/* Shared hidden input — both the header Import button and the
+                per-row "Import page…" menu item click this. Resetting value
+                on every change so the same file can be re-picked. */}
+            {onImportPage ? (
+                <input
+                    ref={importInputRef}
+                    type="file"
+                    accept="application/json,.json"
+                    className="hidden"
+                    onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        e.target.value = '';
+                        if (!file) return;
+                        try {
+                            // Lazy import so the helper module isn't a hard
+                            // dependency of PageList — callers without
+                            // onImportPage never load it.
+                            const { importPage } = await import('./pageIO');
+                            const parsed = await importPage(file);
+                            onImportPage(parsed);
+                        } catch (err) {
+                            alert('Import failed: ' + (err?.message || err));
+                        }
+                    }}
+                />
+            ) : null}
 
             {adding && (
                 <AddPageDialog
@@ -705,6 +757,8 @@ export default function PageList({
                                 onEditSlug={onEditSlug}
                                 onDelete={onDelete}
                                 onSaveAsTemplate={onSaveAsTemplate}
+                                onExport={onExportPage}
+                                onImport={onImportPage ? () => importInputRef.current?.click() : undefined}
                             />
                         ))}
                     </SortableContext>

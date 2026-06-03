@@ -50,6 +50,13 @@ export default function Hero({ data }) {
     const primaryHref   = primary.href || primary.link?.href || '/app';
     const secondaryHref = second.href  || second.link?.href  || '#features';
 
+    // "Open in new tab" is stored on the link object by the shared
+    // LinkField (`link.newTab`). Also accept a top-level `openInNewTab`
+    // for forward-compat with blocks that put the flag on the CTA itself.
+    const primaryNewTab   = !!(primary.link?.newTab || primary.openInNewTab);
+    const secondaryNewTab = !!(second.link?.newTab  || second.openInNewTab);
+    const newTabProps = (on) => (on ? { target: '_blank', rel: 'noopener noreferrer' } : null);
+
     // Background variant — same scale as Media + Text and Content blocks.
     // 'default' produces no extra class (page bg shows through); the
     // others map to the shared .cms-bg--* utilities in marketing.css.
@@ -72,7 +79,16 @@ export default function Hero({ data }) {
                                 </div>
                             </div>
                         ) : null}
-                        <h1 className="headline-xl reveal reveal-delay-1" style={titleStyle}>
+                        <h1
+                            className="headline-xl reveal reveal-delay-1"
+                            style={{
+                                fontSize: 'clamp(1.5rem, 4vw, 2.5rem)',
+                                hyphens: 'none',
+                                overflowWrap: 'break-word',
+                                wordBreak: 'break-word',
+                                ...titleStyle,
+                            }}
+                        >
                             {titleParts.map((part, i) => (
                                 <EditableText
                                     key={i}
@@ -100,14 +116,14 @@ export default function Hero({ data }) {
                         {(showPrimary || showSecondary) ? (
                             <div className="hero-ctas reveal reveal-delay-3">
                                 {showPrimary ? (
-                                    <Button variant={primary.style || 'primary'} href={primaryHref}>
+                                    <Button variant={primary.style || 'primary'} href={primaryHref} {...newTabProps(primaryNewTab)}>
                                         <EditableText path="hero.primaryCta.label" placeholder="Primary action">
                                             {primary.label || 'Get started'}
                                         </EditableText>
                                     </Button>
                                 ) : null}
                                 {showSecondary ? (
-                                    <Button variant={second.style || 'secondary'} href={secondaryHref}>
+                                    <Button variant={second.style || 'secondary'} href={secondaryHref} {...newTabProps(secondaryNewTab)}>
                                         <EditableText path="hero.secondaryCta.label" placeholder="Secondary action">
                                             {second.label || 'Learn more'}
                                         </EditableText>

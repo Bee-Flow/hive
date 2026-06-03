@@ -67,6 +67,7 @@ export default function Header({ data }) {
     // legacy data.logoText / letter-avatar so existing sites with no
     // `logo` key still render the original logo.
     const logo       = data.logo || {};
+    const url        = logo.url;
     const brandText  = (logo.text !== undefined ? logo.text : data.logoText) || '';
     const initials   = (brandText || 'B').slice(0, 1).toUpperCase();
     // Size: prefer the new numeric `titleSize` (px) from the chrome
@@ -114,7 +115,7 @@ export default function Header({ data }) {
         <SectionFrame id="header" name="Header" enabled={data.enabled}>
             <header className={`header ${scrolled ? 'scrolled' : ''}`}>
                 <div className="header-inner">
-                    <a href="#" className="header-logo" onClick={navHandler}>
+                    <a href={url?.trim() || '/'} className="header-logo" onClick={navHandler}>
                         {logo.src ? (
                             // Image logo — uploaded via Site chrome → Logo image.
                             // Constrained to roughly the same vertical footprint

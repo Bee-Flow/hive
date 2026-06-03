@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import SectionHeader from '../components/SectionHeader';
 import AppIcon from '../../components/AppIcon';
 import EditableText from '../components/EditableText';
@@ -51,6 +52,14 @@ export default function Features({ data }) {
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
     }, [openIdx]);
+
+    // Lock body scroll while the popup is open; cleanup restores it
+    // even if the component unmounts mid-open.
+    const open = openIdx !== -1;
+    useEffect(() => {
+        if (open) document.body.style.overflow = 'hidden';
+        return () => { document.body.style.overflow = ''; };
+    }, [open]);
 
     if (!data?.enabled) return null;
 
@@ -174,11 +183,10 @@ export default function Features({ data }) {
                 </div>
             </section>
 
-            {openItem ? (
+            {openItem ? ReactDOM.createPortal(
                 // Overlay click closes; modal click is stopped so it doesn't
-                // bubble through to the overlay. position:fixed is
-                // viewport-relative — no marketing ancestor sets a
-                // transform/perspective on Features' lineage.
+                // bubble through to the overlay. Portaled to document.body
+                // so no section's stacking context can paint over it.
                 <div style={overlayStyle} onClick={() => setOpenIdx(-1)} role="presentation">
                     <div
                         style={modalStyle}
@@ -205,7 +213,8 @@ export default function Features({ data }) {
                             />
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             ) : null}
         </SectionFrame>
     );
@@ -236,6 +245,7 @@ const modalStyle = {
     background: 'var(--bg-primary, #ffffff)',
     borderRadius: '16px',
     boxShadow: '0 30px 80px -20px rgba(0, 0, 0, 0.4)',
+    zIndex: 10000,
 };
 
 const closeStyle = {

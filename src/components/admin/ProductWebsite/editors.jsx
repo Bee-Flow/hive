@@ -463,6 +463,12 @@ export function HeaderEditor({ data = {}, pages = [], onChange }) {
                     onChange={v => updateLogo({ src: v || '' })}
                 />
                 <TextField
+                    label="Logo link URL"
+                    value={logo.url !== undefined ? logo.url : '/'}
+                    onChange={v => updateLogo({ url: v })}
+                    placeholder="/"
+                />
+                <TextField
                     label="Brand title"
                     value={logo.text !== undefined ? logo.text : (data.logoText || '')}
                     onChange={v => updateLogo({ text: v })}
