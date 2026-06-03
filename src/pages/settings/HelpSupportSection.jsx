@@ -36,6 +36,28 @@ export default function HelpSupportSection({ user }) {
 
     useEffect(() => { fetchMine(); }, [fetchMine]);
 
+    // Deep-link: a support notification navigates here as
+    // /app/settings/help_support?thread=<id>. Open that thread directly, then
+    // strip the param so a refresh / back doesn't re-trigger it. Also re-checked
+    // on popstate in case we're already mounted when the link fires.
+    useEffect(() => {
+        const openFromUrl = () => {
+            try {
+                const params = new URLSearchParams(window.location.search);
+                const tid = params.get('thread');
+                if (!tid) return;
+                setActiveId(tid);
+                setView('detail');
+                params.delete('thread');
+                const qs = params.toString();
+                window.history.replaceState(window.history.state, '', window.location.pathname + (qs ? `?${qs}` : ''));
+            } catch (_) { /* no-op */ }
+        };
+        openFromUrl();
+        window.addEventListener('popstate', openFromUrl);
+        return () => window.removeEventListener('popstate', openFromUrl);
+    }, []);
+
     return (
         <div className="max-w-3xl mx-auto py-4">
             {/* Header */}

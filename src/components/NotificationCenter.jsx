@@ -198,6 +198,21 @@ export default function NotificationCenter({ variant = 'row' } = {}) {
         }
     };
 
+    // Notifications that carry an in-app `link` (e.g. support replies) deep-link
+    // to the relevant screen. We drive navigation through the same history +
+    // popstate path the app already uses to open overlays from the URL.
+    const navigateToLink = (n) => {
+        if (!n?.link) return;
+        if (!n.read) markRead(n.id);
+        setOpen(false);
+        try {
+            window.history.pushState({ page: 'settings' }, '', n.link);
+            window.dispatchEvent(new PopStateEvent('popstate'));
+        } catch (_) {
+            window.location.assign(n.link);
+        }
+    };
+
     const filteredNotifications = useMemo(() => (
         notifFilter === 'unread' ? notifications.filter(n => !n.read) : notifications
     ), [notifications, notifFilter]);
@@ -520,6 +535,21 @@ export default function NotificationCenter({ variant = 'row' } = {}) {
                                                     const { provider: reauthProvider, body: cleanedBody } = parseReauthToken(n.message);
                                                     return (
                                                         <>
+                                                            {n.link && (
+                                                                <div style={{ marginBottom: 10 }}>
+                                                                    <button
+                                                                        onClick={(e) => { e.stopPropagation(); navigateToLink(n); }}
+                                                                        style={{
+                                                                            display: 'inline-flex', alignItems: 'center', gap: 6,
+                                                                            padding: '6px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600,
+                                                                            border: 'none', cursor: 'pointer',
+                                                                            background: 'var(--text-primary, #0f172a)', color: 'var(--bg-primary, #fff)',
+                                                                        }}
+                                                                    >
+                                                                        Open chat
+                                                                    </button>
+                                                                </div>
+                                                            )}
                                                             {reauthProvider && (
                                                                 <div style={{ marginBottom: 10 }}>
                                                                     <button
