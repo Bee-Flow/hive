@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { ArrowLeft, Save, Trash2, Shield, CalendarPlus, Clock } from 'lucide-react';
+import { ArrowLeft, Save, Trash2, Shield, CalendarPlus, Clock, Check, Lock, FlaskConical } from 'lucide-react';
 import { Button } from '../ui/Button';
 import { IconButton } from '../ui/IconButton';
 import { Card } from '../ui/Card';
@@ -9,6 +9,7 @@ import { LimitField } from '../ui/LimitField';
 import { UsageBar } from '../ui/UsageBar';
 import { LIMIT_FIELDS } from '../constants';
 import { useToast } from '../ui/Toast';
+import { useResource } from '../hooks/useApi';
 
 export function OrgEditor({ orgSub, plans, onBack, onSave, onRemove, onStartTrial }) {
     const [form, setForm] = useState({
@@ -24,6 +25,14 @@ export function OrgEditor({ orgSub, plans, onBack, onSave, onRemove, onStartTria
     const [saving, setSaving]       = useState(false);
     const [trialBusy, setTrialBusy] = useState(false);
     const toast = useToast();
+
+    // Resolved view of which compound-gated features actually work for this org
+    // under its current plan (license ∩ beta) — mirrors what users really get.
+    const orgId = orgSub?.organization_id || null;
+    const { data: access } = useResource(
+        orgId ? `/api/subscriptions/orgs/${orgId}/effective-access` : null,
+        { enabled: !!orgId },
+    );
 
     const update = (key, val) => setForm(f => ({ ...f, [key]: val }));
     const selectedPlan = plans.find(p => p.id === form.plan_id);
@@ -75,6 +84,40 @@ export function OrgEditor({ orgSub, plans, onBack, onSave, onRemove, onStartTria
                             <UsageBar label="Messages" current={orgSub.current_usage.messages} limit={orgSub.effective_limits?.max_messages_per_month} />
                             <UsageBar label="Tokens"   current={orgSub.current_usage.tokens}   limit={orgSub.effective_limits?.max_tokens_per_month} />
                             <UsageBar label="Cost"     current={orgSub.current_usage.cost}     limit={orgSub.effective_limits?.max_cost_per_month} unit="€" />
+                        </Card>
+                    )}
+
+                    {access?.features?.length > 0 && (
+                        <Card>
+                            <div className="flex items-center gap-2 mb-1">
+                                <FlaskConical className="w-4 h-4 text-emerald-400" />
+                                <div className="text-[12px] font-bold text-[var(--text-secondary)] uppercase tracking-wider">Effective access</div>
+                            </div>
+                            <p className="text-[11px] text-[var(--text-muted)] mb-3">
+                                What works for this org under its saved plan (tier <span className="font-semibold">{access.tier}</span>). Save plan changes to refresh.
+                            </p>
+                            <div className="space-y-1.5">
+                                {access.features.map(f => {
+                                    const reason = !f.hasLicense
+                                        ? 'needs higher tier or plan grant'
+                                        : (!f.betaAllowed ? "not in plan's beta list" : null);
+                                    return (
+                                        <div key={f.id} className="flex items-center gap-2 text-[12px]">
+                                            {f.effective ? (
+                                                <Check className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                                            ) : (
+                                                <Lock className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                                            )}
+                                            <span className="text-[var(--text-primary)] font-medium">{f.name}</span>
+                                            {f.effective ? (
+                                                <span className="text-emerald-500">enabled</span>
+                                            ) : (
+                                                <span className="text-[var(--text-muted)]">blocked — {reason}</span>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
                         </Card>
                     )}
 

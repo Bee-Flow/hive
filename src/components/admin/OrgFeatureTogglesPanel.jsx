@@ -32,6 +32,9 @@ const OrgFeatureTogglesPanel = ({ settingsSlot = null }) => {
     const betaTierLocked = deploymentMode !== 'cloud' && !hasTier('enterprise');
     const [tab, setTab] = useState('integrations');
     const [orgId, setOrgId] = useState(null);
+    // On cloud the subscription plan governs beta access — every granted beta
+    // is on and the tab is read-only (the server reports `betaGoverned`).
+    const [betaGoverned, setBetaGoverned] = useState(false);
     const [betaAllowed, setBetaAllowed] = useState([]);
     const [betaEnabled, setBetaEnabled] = useState([]);
     const [betaRegistry, setBetaRegistry] = useState([]);
@@ -59,6 +62,7 @@ const OrgFeatureTogglesPanel = ({ settingsSlot = null }) => {
             }
             const j = await res.json();
             setOrgId(j.orgId || null);
+            setBetaGoverned(!!j.betaGoverned);
             setBetaAllowed(Array.isArray(j.allowedBetaFeatures) ? j.allowedBetaFeatures : []);
             const betaServer = Array.isArray(j.enabledBetaFeatures) ? j.enabledBetaFeatures : [];
             setBetaEnabled(betaServer);
@@ -145,6 +149,7 @@ const OrgFeatureTogglesPanel = ({ settingsSlot = null }) => {
     };
 
     const toggleBeta = (id) => {
+        if (betaGoverned) return; // read-only on cloud — subscription governs
         setBetaEnabled(prev => {
             const next = prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id];
             queueBetaSave(next);
@@ -250,18 +255,18 @@ const OrgFeatureTogglesPanel = ({ settingsSlot = null }) => {
         </div>
     );
 
-    const BetaCard = ({ item, selected, onToggle }) => (
+    const BetaCard = ({ item, selected, onToggle, readOnly = false }) => (
         <div
-            className="flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-all"
+            className={`flex items-center gap-3 p-3 rounded-xl transition-all ${readOnly ? '' : 'cursor-pointer'}`}
             style={{
                 border: `1px solid ${selected ? 'var(--accent-primary, #10b981)' : 'var(--border-subtle)'}`,
                 background: selected ? 'rgba(16, 185, 129, 0.04)' : 'var(--bg-primary)',
                 opacity: selected ? 1 : 0.85,
             }}
-            onClick={() => onToggle(item.id)}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onToggle(item.id); } }}
+            onClick={readOnly ? undefined : () => onToggle(item.id)}
+            role={readOnly ? undefined : 'button'}
+            tabIndex={readOnly ? undefined : 0}
+            onKeyDown={readOnly ? undefined : (e) => { if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); onToggle(item.id); } }}
         >
             <div
                 className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -278,10 +283,17 @@ const OrgFeatureTogglesPanel = ({ settingsSlot = null }) => {
                     <p className="text-[11px] line-clamp-2" style={{ color: 'var(--text-muted)' }}>{item.description}</p>
                 ) : null}
             </div>
-            <label className="relative inline-flex items-center cursor-pointer flex-shrink-0" onClick={e => e.stopPropagation()}>
-                <input type="checkbox" checked={selected} onChange={() => onToggle(item.id)} className="sr-only peer" />
-                <div className="w-9 h-5 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500" />
-            </label>
+            {readOnly ? (
+                <span className="inline-flex items-center gap-1 text-[11px] font-medium flex-shrink-0" style={{ color: 'var(--accent-primary, #10b981)' }}>
+                    <Check className="w-3.5 h-3.5" />
+                    Included
+                </span>
+            ) : (
+                <label className="relative inline-flex items-center cursor-pointer flex-shrink-0" onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={selected} onChange={() => onToggle(item.id)} className="sr-only peer" />
+                    <div className="w-9 h-5 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500" />
+                </label>
+            )}
         </div>
     );
 
@@ -337,7 +349,7 @@ const OrgFeatureTogglesPanel = ({ settingsSlot = null }) => {
                         <Sparkles className="w-5 h-5" style={{ color: 'var(--accent-primary, #10b981)' }} />
                         <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Beta features</h2>
                     </div>
-                    {!betaTierLocked && <SaveStatus state={betaSaveState} />}
+                    {!betaTierLocked && !betaGoverned && <SaveStatus state={betaSaveState} />}
                 </header>
                 {betaTierLocked ? (
                     <div className="rounded-xl border border-blue-500/30 bg-blue-500/5 p-5 mt-3">
@@ -363,9 +375,16 @@ const OrgFeatureTogglesPanel = ({ settingsSlot = null }) => {
                     </div>
                 ) : (
                 <>
-                <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
-                    Turn on the beta features your team should have access to. Only features granted by your platform administrator are listed here.
-                </p>
+                {betaGoverned ? (
+                    <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+                        These beta features are included with your organisation's <strong>subscription plan</strong> and
+                        are available to everyone in your organisation. To change them, update your plan.
+                    </p>
+                ) : (
+                    <p className="text-sm mb-4" style={{ color: 'var(--text-muted)' }}>
+                        Turn on the beta features your team should have access to. Only features granted by your platform administrator are listed here.
+                    </p>
+                )}
                 {betaItems.length === 0 ? (
                     <div className="text-sm py-3" style={{ color: 'var(--text-muted)' }}>
                         No beta features granted to this organisation yet.
@@ -376,8 +395,9 @@ const OrgFeatureTogglesPanel = ({ settingsSlot = null }) => {
                             <BetaCard
                                 key={f.id}
                                 item={f}
-                                selected={betaEnabled.includes(f.id)}
+                                selected={betaGoverned ? true : betaEnabled.includes(f.id)}
                                 onToggle={toggleBeta}
+                                readOnly={betaGoverned}
                             />
                         ))}
                     </div>

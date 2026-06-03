@@ -7,6 +7,14 @@ import { FeatureCardGrid } from '../../ui/FeatureCardGrid';
 import { Banner } from '../../ui/Banner';
 import { apiJson } from '../../hooks/useApi';
 
+// Integration IDs that exist in the catalog but are NOT gated by the org
+// integration system — they're gated by their beta/license feature instead,
+// so toggling them as an integration here is a no-op. We hide them from the
+// plan editor's integration list to avoid the "I toggled it but nothing
+// happened" confusion. (The catalog ID itself is left intact — it's a runtime
+// gate key referenced elsewhere — we only drop it from this option list.)
+const PLAN_HIDDEN_INTEGRATION_IDS = new Set(['webpages']);
+
 // Mirrors OrgFeatureTogglesPanel.pickBetaIcon — keyword sniff over the
 // beta's id/name. Kept locally so we don't reach into the admin panel.
 function pickBetaIcon(idOrName) {
@@ -38,11 +46,22 @@ export function FeaturesSection({ form, update }) {
     }, []);
 
     const integrationOptions = useMemo(
-        () => INTEGRATION_CATALOG.map(i => ({ id: i.id, label: i.label, description: i.description, category: i.category })),
+        () => INTEGRATION_CATALOG
+            .filter(i => !PLAN_HIDDEN_INTEGRATION_IDS.has(i.id))
+            .map(i => ({ id: i.id, label: i.label, description: i.description, category: i.category })),
         []
     );
     const betaOptions = useMemo(
-        () => betaRegistry.map(b => ({ id: b.id, label: b.name, description: b.description, category: 'Feature flags' })),
+        () => betaRegistry.map(b => ({
+            id: b.id,
+            label: b.name,
+            // Compound betas carry a license_feature — enabling the beta here
+            // also grants its paid capability, so the gate unlocks end-to-end.
+            description: b.license_feature
+                ? `${b.description} — includes its license grant (enabling this beta unlocks the paid capability too).`
+                : b.description,
+            category: 'Feature flags',
+        })),
         [betaRegistry]
     );
 
@@ -56,7 +75,7 @@ export function FeaturesSection({ form, update }) {
             <div>
                 <h4 className="text-[13px] font-semibold text-[var(--text-primary)] mb-2.5">
                     Core features
-                    <span className="ml-2 font-normal text-[11px] text-[var(--text-muted)]">— all selected = unrestricted</span>
+                    <span className="ml-2 font-normal text-[11px] text-[var(--text-muted)]">— base licensed capabilities; beta features below carry their own license grant. All selected = unrestricted</span>
                 </h4>
                 <FeatureChipGrid
                     selected={form.allowed_features}
@@ -90,8 +109,9 @@ export function FeaturesSection({ form, update }) {
                     Included beta features
                 </h4>
                 <Banner tone="info" className="mb-3">
-                    Platform-wide beta features that come with this plan (Notebooks, Skills, Voice Chat, etc.). Same
-                    cap + default-on semantics as integrations.
+                    On cloud, this list is the source of truth for beta access — it's what organizations on this plan
+                    actually get, no separate admin opt-in. Features that note "includes its license grant" also unlock
+                    their paid capability automatically.
                 </Banner>
                 <FeatureCardGrid
                     options={betaOptions}
