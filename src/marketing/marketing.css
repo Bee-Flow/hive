@@ -497,6 +497,67 @@
     align-items: center;
     gap: 16px;
 }
+/* Public language switcher — sits in the header actions, left of the CTAs. */
+.marketing-root .lang-switcher { position: relative; }
+.marketing-root .lang-switcher-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid var(--border-default, rgba(0,0,0,0.12));
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color var(--transition-fast), border-color var(--transition-fast);
+}
+.marketing-root .lang-switcher-btn:hover {
+    color: var(--text-primary);
+    border-color: var(--accent-primary);
+}
+.marketing-root .lang-switcher-menu {
+    position: absolute;
+    right: 0;
+    top: calc(100% + 6px);
+    min-width: 160px;
+    margin: 0;
+    padding: 4px;
+    list-style: none;
+    background: var(--surface, #fff);
+    border: 1px solid var(--border-default, rgba(0,0,0,0.12));
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.12);
+    z-index: 50;
+}
+.marketing-root .lang-switcher-menu li { margin: 0; }
+.marketing-root .lang-switcher-menu button {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 8px 10px;
+    border: none;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--text-primary);
+    font-size: 13px;
+    cursor: pointer;
+}
+.marketing-root .lang-switcher-menu button:hover { background: var(--bg-tertiary, rgba(0,0,0,0.05)); }
+.marketing-root .lang-switcher-menu button.active { color: var(--accent-primary); font-weight: 600; }
+.marketing-root .lang-switcher-menu .lang-code { color: var(--text-muted); }
+
+/* Translation-list → preview highlight flash. */
+.marketing-root .cms-block-flash {
+    animation: cmsBlockFlash 1.2s ease-out;
+    border-radius: 8px;
+}
+@keyframes cmsBlockFlash {
+    0%   { box-shadow: 0 0 0 3px var(--accent-primary); }
+    100% { box-shadow: 0 0 0 3px transparent; }
+}
+
 .marketing-root .hamburger {
     display: none;
     width: 32px; height: 32px;

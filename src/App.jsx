@@ -310,7 +310,13 @@ function RootPathGate() {
     React.useEffect(() => {
         let cancelled = false;
         const params = new URLSearchParams(window.location.search);
-        const locale = (params.get('locale') || (navigator.language || 'en').split('-')[0]).toLowerCase();
+        // Locale precedence: explicit ?locale= → the visitor's stored choice
+        // (shared with the app i18n picker) → browser language → English. The
+        // stored key lets the marketing language switcher persist across
+        // page-to-page navigation, where nav links carry no ?locale.
+        let storedLocale = null;
+        try { storedLocale = localStorage.getItem('beeflow_locale'); } catch { /* ignore */ }
+        const locale = (params.get('locale') || storedLocale || (navigator.language || 'en').split('-')[0]).toLowerCase();
         // Path-based routing: `/about` → slug "about", `/` → empty (homepage).
         // The legacy `?slug=` query param still wins if present so old links
         // keep working during the cutover.

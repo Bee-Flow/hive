@@ -453,6 +453,16 @@ export default function ProductWebsite({ content: initialContent }) {
                 if ('design' in e.data) setDesign(e.data.design || null);
                 if ('previewMode' in e.data) setPreviewMode(e.data.previewMode || null);
             }
+            // Translation list → scroll the matching block into view and flash
+            // a highlight so the admin sees which block a row belongs to.
+            if (e.data?.type === 'cms-scroll' && typeof e.data.blockId === 'string') {
+                const el = rootRef.current?.querySelector(`[data-cms-block-id="${e.data.blockId.replace(/"/g, '')}"]`);
+                if (el) {
+                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    el.classList.add('cms-block-flash');
+                    setTimeout(() => el.classList.remove('cms-block-flash'), 1200);
+                }
+            }
         };
         window.addEventListener('message', onMessage);
         // Mark the root with a class so CSS can adapt (e.g., un-fix the header).

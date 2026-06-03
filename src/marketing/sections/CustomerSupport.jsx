@@ -1,24 +1,32 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { ArrowRight, CheckCircle2, Bot, AlertTriangle, Loader2 } from 'lucide-react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowRight, CheckCircle2, Bot, User, AlertTriangle, Loader2, Send } from 'lucide-react';
 import { API_BASE } from '../../utils/helpers';
 import EditableText from '../components/EditableText';
 import SectionFrame from '../components/SectionFrame';
 
 /**
- * Customer Support — a public, CMS-placeable support form. Submits to the
- * same backend that powers the in-app support inbox (`POST /api/support/threads`,
- * `source: 'marketing'`), so a message from a logged-out visitor lands in the
- * admin "Customer Support" inbox exactly like an in-app question does. The AI
- * replies first (polled inline below) and a human takes over on escalation.
+ * Customer Support — a public, CMS-placeable support widget that mirrors the
+ * in-app "Help & Support" experience for logged-out website visitors.
+ *
+ * Flow (same as the app's HelpSupportSection → ThreadDetail):
+ *   1. First contact form (name/email/subject/message) → POST /api/support/threads
+ *      with source 'marketing'. The backend's honeypot + rate limits apply.
+ *   2. We get back { threadId, accessToken } and switch to an inline, live
+ *      CONVERSATION: the Bee Flow AI agent replies first, and the visitor can
+ *      keep replying. A human takes over on escalation (shown via status +
+ *      system/staff messages). View/reply use the per-thread HMAC token, so no
+ *      login is needed:
+ *        GET  /api/support/threads/:id?token=…           (poll)
+ *        POST /api/support/threads/:id/messages?token=…  (reply → re-triggers AI)
  *
  * Two call shapes:
- *   • CMS block      — ProductWebsite renders <CustomerSupport data={...} />
- *                      where `data` is the block content (editable copy +
- *                      backgroundVariant). Title/intro are inline-editable in
- *                      ?preview=1; the rest is panel-editable.
- *   • Legacy wrapper — sections/ContactSection.jsx renders this with the
- *                      default content + a custom sectionId, so HomePage and
- *                      PricingPage keep their #contact anchor and copy.
+ *   • CMS block      — ProductWebsite renders <CustomerSupport data={...} />.
+ *                      Title/intro are inline-editable in ?preview=1; the rest
+ *                      (labels, button, confirmation copy, background) is panel-
+ *                      editable.
+ *   • Legacy wrapper — sections/ContactSection.jsx renders this with the default
+ *                      content + a custom sectionId (#contact anchor) so HomePage
+ *                      and PricingPage keep working.
  *
  * Styling is self-contained (inline) but reads the marketing design tokens
  * (--brand-*, --border-subtle, --radius-base) with hard fallbacks, mirroring
@@ -44,7 +52,7 @@ export const SUPPORT_DEFAULT_CONTENT = {
     messagePlaceholder: "Tell us about your team, what you're trying to do, and any constraints.",
     submitLabel: 'Send to Bee Flow',
     successTitle: "Thanks — we've got your message",
-    successBody: "Our AI assistant is looking through our knowledge base right now and you'll receive an email reply within a few minutes. If it can't fully resolve your question, a Bee Flow teammate will take over.",
+    successBody: "Our AI assistant is looking through our knowledge base right now. We've also emailed you a link to this conversation so you can pick it back up any time.",
     backgroundVariant: 'surface', // 'default' | 'surface' | 'primary' | 'dark'
 };
 
@@ -52,16 +60,50 @@ const isPreviewMode = () =>
     typeof window !== 'undefined' &&
     new URLSearchParams(window.location.search).has('preview');
 
+// Public-facing status copy. Mirrors STATUS_LABELS in SupportDrawer.jsx but
+// worded for visitors (no internal jargon).
+const STATUS_TEXT = {
+    open:           'Bee Flow AI is replying…',
+    ai_responding:  'Bee Flow AI is replying…',
+    awaiting_user:  'Reply from Bee Flow',
+    awaiting_agent: 'A Bee Flow teammate is taking over',
+    resolved:       'Resolved',
+    closed:         'Closed',
+};
+
+function formatRelative(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const m = Math.round((Date.now() - d.getTime()) / 60000);
+    if (m < 1) return 'just now';
+    if (m < 60) return `${m}m ago`;
+    const h = Math.round(m / 60);
+    if (h < 24) return `${h}h ago`;
+    return d.toLocaleDateString();
+}
+
 // Design tokens with fallbacks — see component doc. Resolved once at module
 // scope as plain CSS-var strings; the browser does the actual resolution.
 const T = {
     cardBg: 'var(--brand-bg, #ffffff)',
+    surface:'var(--brand-surface, #F3F4F6)',
     text:   'var(--brand-text, #1F2937)',
     muted:  'var(--brand-text-secondary, #6B7280)',
     border: 'var(--border-subtle, #E5E7EB)',
     primary:'var(--brand-primary, #F5A623)',
     radius: 'var(--radius-base, 12px)',
 };
+
+// Per-author-kind bubble appearance. AI = blue tint, staff = green tint —
+// same hues the in-app ThreadDetail uses; requester/system = neutral surface.
+function bubbleMeta(kind) {
+    switch (kind) {
+        case 'ai':    return { bg: 'rgba(14,165,233,0.08)',  Icon: Bot,           who: 'Bee Flow AI' };
+        case 'staff': return { bg: 'rgba(16,185,129,0.08)',  Icon: User,          who: 'Bee Flow' };
+        case 'system':return { bg: T.surface,                Icon: AlertTriangle, who: 'Bee Flow' };
+        default:      return { bg: T.surface,                Icon: User,          who: 'You' };
+    }
+}
 
 const labelStyle = { display: 'block', fontSize: 12, fontWeight: 600, color: T.text, marginBottom: 4 };
 const inputStyle = {
@@ -103,6 +145,8 @@ export default function CustomerSupport({ data, sectionId }) {
     // is a plain function call, safe to compute up top.
     const preview = isPreviewMode();
     const renderedAt = useRef(Date.now());
+
+    // First-contact form fields.
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [subject, setSubject] = useState('');
@@ -110,10 +154,17 @@ export default function CustomerSupport({ data, sectionId }) {
     const [honeypot, setHoneypot] = useState(''); // bot trap
     const [submitting, setSubmitting] = useState(false);
     const [err, setErr] = useState(null);
-    const [result, setResult] = useState(null); // { threadId, threadUrl, accessToken }
-    // AI-reply polling state — populated by useEffect below.
-    const [aiReply, setAiReply] = useState(null); // { content, escalated } | null
-    const [aiPollExhausted, setAiPollExhausted] = useState(false);
+
+    // Conversation state — populated once a thread exists. `convo` carries the
+    // ids/token needed for the token-gated public view + reply endpoints.
+    const [convo, setConvo] = useState(null); // { threadId, accessToken, subject, threadUrl } | null
+    const [thread, setThread] = useState(null); // { status, subject, ... } | null
+    const [messages, setMessages] = useState([]);
+    const [reply, setReply] = useState('');
+    const [sending, setSending] = useState(false);
+    // Silent-success surface for the honeypot/spam path (no real thread) or a
+    // submission that returned no access token to converse with.
+    const [sentDone, setSentDone] = useState(null); // { threadUrl } | null
 
     const submit = async (e) => {
         e?.preventDefault?.();
@@ -148,14 +199,21 @@ export default function CustomerSupport({ data, sectionId }) {
             }
             if (payload.spam) {
                 // Silent success surface for the human path.
-                setResult({ threadId: null, threadUrl: null });
+                setSentDone({ threadUrl: null });
                 return;
             }
-            setResult({
-                threadId: payload.threadId,
-                threadUrl: payload.threadUrl,
-                accessToken: payload.accessToken || null,
-            });
+            if (payload.threadId && payload.accessToken) {
+                setConvo({
+                    threadId: payload.threadId,
+                    accessToken: payload.accessToken,
+                    subject: subject.trim(),
+                    threadUrl: payload.threadUrl || null,
+                });
+            } else {
+                // No token to converse with (shouldn't happen for marketing) —
+                // fall back to a static confirmation + link.
+                setSentDone({ threadUrl: payload.threadUrl || null });
+            }
         } catch (e) {
             setErr(e.message || 'Network error');
         } finally {
@@ -163,50 +221,55 @@ export default function CustomerSupport({ data, sectionId }) {
         }
     };
 
-    // Poll the new thread every 3s for up to ~45s after submit so the user
-    // sees the AI's reply inline instead of having to refresh email.
-    useEffect(() => {
-        if (!result?.threadId || !result?.accessToken) return;
-        if (aiReply) return;
-        let cancelled = false;
-        let attempts = 0;
-        const MAX_ATTEMPTS = 15; // 15 * 3s = ~45s
-        const tick = async () => {
-            if (cancelled) return;
-            attempts += 1;
-            try {
-                const url = `${API_BASE}/api/support/threads/${result.threadId}?token=${encodeURIComponent(result.accessToken)}`;
-                const r = await fetch(url, { credentials: 'omit' });
-                if (r.ok) {
-                    const payload = await r.json();
-                    const messages = Array.isArray(payload?.messages) ? payload.messages : [];
-                    const lastAi = [...messages].reverse().find(m => m.author_kind === 'ai');
-                    const lastSystem = [...messages].reverse().find(m => m.author_kind === 'system');
-                    if (lastAi) {
-                        if (!cancelled) setAiReply({
-                            content: lastAi.body,
-                            escalated: payload?.thread?.status === 'awaiting_agent',
-                        });
-                        return; // stop polling
-                    }
-                    if (lastSystem && payload?.thread?.status === 'awaiting_agent') {
-                        if (!cancelled) setAiReply({
-                            content: 'A Bee Flow teammate is taking a look. You\'ll get a reply by email soon.',
-                            escalated: true,
-                        });
-                        return;
-                    }
-                }
-            } catch { /* keep polling */ }
-            if (attempts >= MAX_ATTEMPTS) {
-                if (!cancelled) setAiPollExhausted(true);
-                return;
+    // Load the thread + messages via the per-thread access token (no login).
+    const loadThread = useCallback(async () => {
+        const threadId = convo?.threadId;
+        const token = convo?.accessToken;
+        if (!threadId || !token) return;
+        try {
+            const r = await fetch(
+                `${API_BASE}/api/support/threads/${threadId}?token=${encodeURIComponent(token)}`,
+                { credentials: 'omit' },
+            );
+            if (r.ok) {
+                const payload = await r.json();
+                setThread(payload?.thread || null);
+                setMessages(Array.isArray(payload?.messages) ? payload.messages : []);
             }
-            setTimeout(tick, 3000);
-        };
-        const t = setTimeout(tick, 2000); // first check after 2s
-        return () => { cancelled = true; clearTimeout(t); };
-    }, [result?.threadId, result?.accessToken, aiReply]);
+        } catch { /* keep polling */ }
+    }, [convo?.threadId, convo?.accessToken]);
+
+    // Poll the conversation every 8s (matching the app's ThreadDetail cadence,
+    // a touch faster) until it resolves/closes.
+    useEffect(() => {
+        if (!convo?.threadId || !convo?.accessToken) return;
+        loadThread();
+        const done = thread?.status === 'resolved' || thread?.status === 'closed';
+        if (done) return; // one final load above; stop polling
+        const id = setInterval(loadThread, 8000);
+        return () => clearInterval(id);
+    }, [loadThread, convo?.threadId, convo?.accessToken, thread?.status]);
+
+    const sendReply = async () => {
+        const body = reply.trim();
+        if (!body || !convo?.threadId || !convo?.accessToken) return;
+        setSending(true);
+        try {
+            const r = await fetch(
+                `${API_BASE}/api/support/threads/${convo.threadId}/messages?token=${encodeURIComponent(convo.accessToken)}`,
+                {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ body }),
+                },
+            );
+            if (r.ok) {
+                setReply('');
+                await loadThread(); // surface the new requester message immediately
+            }
+        } catch { /* swallow — next poll recovers */ }
+        finally { setSending(false); }
+    };
 
     // Hooks are all above — safe to bail now. CMS already filters disabled
     // blocks before mount, but the legacy wrapper and defensive callers rely
@@ -221,178 +284,224 @@ export default function CustomerSupport({ data, sectionId }) {
         backgroundVariant !== 'default' ? `cms-bg--${backgroundVariant}` : '',
     ].filter(Boolean).join(' ');
 
-    if (result) {
-        const waiting = !aiReply && !aiPollExhausted;
-        return (
-            <SectionFrame id="customer-support" name="Customer Support" enabled={data.enabled}>
-                <section id={id} className={sectionClass} style={{ paddingTop: 80, paddingBottom: 80 }}>
-                    <div className="container">
-                        <div style={{ maxWidth: 720, margin: '0 auto', textAlign: 'center' }}>
-                            <div style={cardStyle}>
-                                <CheckCircle2 size={40} color={T.primary} style={{ marginBottom: 12 }} aria-hidden="true" />
-                                <h2 className="headline-md" style={{ color: T.text, margin: '0 0 12px' }}>{c.successTitle}</h2>
-
-                                {waiting && (
-                                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, color: T.muted, fontSize: 14, margin: '12px 0 16px' }}>
-                                        <Loader2 size={16} className="animate-spin" aria-hidden="true" />
-                                        <span>Our AI is looking through our knowledge base…</span>
-                                    </div>
-                                )}
-
-                                {aiReply && (
-                                    <div style={{
-                                        textAlign: 'left',
-                                        background: aiReply.escalated ? '#FFF7E6' : '#F0F9FF',
-                                        border: `1px solid ${aiReply.escalated ? '#F5A623' : '#BAE6FD'}`,
-                                        borderRadius: 12,
-                                        padding: 16,
-                                        margin: '16px 0',
-                                        fontSize: 14,
-                                        lineHeight: 1.6,
-                                        color: '#1F2937',
-                                    }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, fontWeight: 600, fontSize: 12, color: '#6B7280' }}>
-                                            {aiReply.escalated
-                                                ? <><AlertTriangle size={14} /> A human is taking over</>
-                                                : <><Bot size={14} /> Bee Flow AI replied</>
-                                            }
-                                        </div>
-                                        <div style={{ whiteSpace: 'pre-wrap' }}>{aiReply.content}</div>
-                                    </div>
-                                )}
-
-                                {aiPollExhausted && !aiReply && (
-                                    <p style={{ color: T.muted, fontSize: 15, lineHeight: 1.6, margin: '0 0 16px' }}>
-                                        Our AI is still thinking. We'll email you the moment a reply is ready — no need to wait here.
-                                    </p>
-                                )}
-
-                                {!waiting && !aiReply && !aiPollExhausted && (
-                                    <p style={{ color: T.muted, fontSize: 15, lineHeight: 1.6, margin: '0 0 16px' }}>
-                                        {c.successBody}
-                                    </p>
-                                )}
-
-                                {result.threadUrl && (
-                                    <a href={result.threadUrl} style={buttonStyle}>
-                                        View the conversation
-                                        <ArrowRight size={16} aria-hidden="true" />
-                                    </a>
-                                )}
-                            </div>
-                        </div>
-                    </div>
-                </section>
-            </SectionFrame>
-        );
-    }
-
-    return (
+    // Plain function (NOT a component) so the wrapper's element types stay
+    // stable across renders. Rendering it as <Shell/> would give it a fresh
+    // component identity each render and remount the whole subtree — the form
+    // and reply inputs would lose focus on every keystroke and every poll.
+    const wrap = (children) => (
         <SectionFrame id="customer-support" name="Customer Support" enabled={data.enabled}>
             <section id={id} className={sectionClass} style={{ paddingTop: 80, paddingBottom: 80 }}>
                 <div className="container">
                     <div style={{ maxWidth: 720, margin: '0 auto', textAlign: 'center' }}>
-                        <EditableText
-                            path="customer-support.title"
-                            as="h2"
-                            className="headline-lg"
-                            placeholder="Title"
-                            style={{ color: 'inherit', margin: '0 0 12px' }}
-                        >
-                            {c.title}
-                        </EditableText>
-                        <EditableText
-                            path="customer-support.lead"
-                            as="p"
-                            multiline
-                            placeholder="Intro text"
-                            style={{ fontSize: '1.0625rem', lineHeight: 1.6, color: 'inherit', opacity: 0.85, margin: '0 0 32px' }}
-                        >
-                            {c.lead}
-                        </EditableText>
-
-                        <form style={cardStyle} onSubmit={submit} noValidate>
-                            {/* Honeypot — visually hidden but reachable by naive bots. */}
-                            <div aria-hidden="true" style={{ position: 'absolute', left: '-9999px', height: 0, overflow: 'hidden' }}>
-                                <label>Website (leave blank)
-                                    <input
-                                        type="text"
-                                        tabIndex={-1}
-                                        autoComplete="off"
-                                        value={honeypot}
-                                        onChange={e => setHoneypot(e.target.value)}
-                                    />
-                                </label>
-                            </div>
-
-                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-                                <div>
-                                    <label style={labelStyle}>{c.nameLabel}</label>
-                                    <input
-                                        style={inputStyle}
-                                        type="text"
-                                        value={name}
-                                        onChange={e => setName(e.target.value)}
-                                        placeholder={c.namePlaceholder}
-                                        maxLength={120}
-                                    />
-                                </div>
-                                <div>
-                                    <label style={labelStyle}>{c.emailLabel}</label>
-                                    <input
-                                        style={inputStyle}
-                                        type="email"
-                                        required
-                                        value={email}
-                                        onChange={e => setEmail(e.target.value)}
-                                        placeholder={c.emailPlaceholder}
-                                        maxLength={200}
-                                    />
-                                </div>
-                            </div>
-                            <div style={{ marginBottom: 12 }}>
-                                <label style={labelStyle}>{c.subjectLabel}</label>
-                                <input
-                                    style={inputStyle}
-                                    type="text"
-                                    required
-                                    value={subject}
-                                    onChange={e => setSubject(e.target.value)}
-                                    placeholder={c.subjectPlaceholder}
-                                    maxLength={200}
-                                />
-                            </div>
-                            <div style={{ marginBottom: 12 }}>
-                                <label style={labelStyle}>{c.messageLabel}</label>
-                                <textarea
-                                    style={textareaStyle}
-                                    required
-                                    value={message}
-                                    onChange={e => setMessage(e.target.value)}
-                                    placeholder={c.messagePlaceholder}
-                                    maxLength={5000}
-                                />
-                            </div>
-                            {err && <div style={errorStyle}>{err}</div>}
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, marginTop: 12 }}>
-                                <button
-                                    type="submit"
-                                    style={{ ...buttonStyle, opacity: (submitting || preview) ? 0.6 : 1, cursor: preview ? 'not-allowed' : 'pointer' }}
-                                    disabled={submitting || preview}
-                                >
-                                    {submitting ? 'Sending…' : c.submitLabel}
-                                    <ArrowRight size={16} aria-hidden="true" />
-                                </button>
-                                {preview && (
-                                    <span style={{ fontSize: 12, color: T.muted }}>
-                                        Submitting is disabled in the editor preview.
-                                    </span>
-                                )}
-                            </div>
-                        </form>
+                        {children}
                     </div>
                 </div>
             </section>
         </SectionFrame>
     );
+
+    // ── Live conversation view ──────────────────────────────────────────
+    if (convo) {
+        const status = thread?.status;
+        const statusText = STATUS_TEXT[status] || 'Sent';
+        const replyable = thread && status !== 'resolved' && status !== 'closed';
+        const hasReply = messages.some(m => m.author_kind && m.author_kind !== 'requester');
+        const waitingFirst = !hasReply;
+
+        return wrap(
+                <div style={{ ...cardStyle, textAlign: 'left' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+                        <CheckCircle2 size={22} color={T.primary} aria-hidden="true" />
+                        <div style={{ minWidth: 0 }}>
+                            <h2 className="headline-md" style={{ color: T.text, margin: 0, fontSize: 18 }}>{c.successTitle}</h2>
+                            <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>
+                                {thread?.subject || convo.subject} · {statusText}
+                            </div>
+                        </div>
+                    </div>
+
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, maxHeight: 360, overflowY: 'auto' }}>
+                        {messages.map(m => {
+                            const meta = bubbleMeta(m.author_kind);
+                            const Icon = meta.Icon;
+                            return (
+                                <div key={m.id} style={{ background: meta.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: '10px 12px', color: T.text }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: T.muted, marginBottom: 4 }}>
+                                        <Icon size={12} aria-hidden="true" />
+                                        <span>{m.author_display || meta.who}</span>
+                                        <span style={{ marginLeft: 'auto' }}>{formatRelative(m.created_at)}</span>
+                                    </div>
+                                    <div style={{ whiteSpace: 'pre-wrap', fontSize: 14, lineHeight: 1.55 }}>{m.body}</div>
+                                </div>
+                            );
+                        })}
+
+                        {waitingFirst && (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: T.muted, fontSize: 13, padding: '6px 2px' }}>
+                                <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+                                <span>Bee Flow AI is looking through our knowledge base…</span>
+                            </div>
+                        )}
+                    </div>
+
+                    {replyable ? (
+                        <div style={{ marginTop: 14 }}>
+                            <textarea
+                                rows={2}
+                                value={reply}
+                                onChange={e => setReply(e.target.value)}
+                                placeholder="Reply…"
+                                maxLength={5000}
+                                style={{ ...inputStyle, resize: 'vertical', minHeight: 56, fontFamily: 'inherit' }}
+                            />
+                            <div style={{ marginTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                                <span style={{ fontSize: 12, color: T.muted }}>Our AI replies first; a human takes over if needed.</span>
+                                <button
+                                    type="button"
+                                    onClick={sendReply}
+                                    disabled={sending || !reply.trim()}
+                                    style={{ ...buttonStyle, padding: '8px 16px', fontSize: 14, opacity: (sending || !reply.trim()) ? 0.6 : 1 }}
+                                >
+                                    <Send size={14} aria-hidden="true" /> {sending ? 'Sending…' : 'Send'}
+                                </button>
+                            </div>
+                        </div>
+                    ) : status === 'resolved' || status === 'closed' ? (
+                        <p style={{ fontSize: 13, color: T.muted, margin: '14px 0 0' }}>
+                            This conversation is {STATUS_TEXT[status].toLowerCase()}. Reply to the email we sent you to reopen it.
+                        </p>
+                    ) : null}
+
+                    {convo.threadUrl && (
+                        <div style={{ marginTop: 14 }}>
+                            <a href={convo.threadUrl} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13, color: T.primary, textDecoration: 'none', fontWeight: 600 }}>
+                                Open this conversation in its own page
+                                <ArrowRight size={14} aria-hidden="true" />
+                            </a>
+                        </div>
+                    )}
+                </div>
+        );
+    }
+
+    // ── Static confirmation (spam path / no access token) ───────────────
+    if (sentDone) {
+        return wrap(
+                <div style={cardStyle}>
+                    <CheckCircle2 size={40} color={T.primary} style={{ marginBottom: 12 }} aria-hidden="true" />
+                    <h2 className="headline-md" style={{ color: T.text, margin: '0 0 12px' }}>{c.successTitle}</h2>
+                    <p style={{ color: T.muted, fontSize: 15, lineHeight: 1.6, margin: '0 0 16px' }}>{c.successBody}</p>
+                    {sentDone.threadUrl && (
+                        <a href={sentDone.threadUrl} style={buttonStyle}>
+                            View the conversation
+                            <ArrowRight size={16} aria-hidden="true" />
+                        </a>
+                    )}
+                </div>
+        );
+    }
+
+    // ── First-contact form ──────────────────────────────────────────────
+    return wrap(
+        <>
+            <EditableText
+                path="customer-support.title"
+                as="h2"
+                className="headline-lg"
+                placeholder="Title"
+                style={{ color: 'inherit', margin: '0 0 12px' }}
+            >
+                {c.title}
+            </EditableText>
+            <EditableText
+                path="customer-support.lead"
+                as="p"
+                multiline
+                placeholder="Intro text"
+                style={{ fontSize: '1.0625rem', lineHeight: 1.6, color: 'inherit', opacity: 0.85, margin: '0 0 32px' }}
+            >
+                {c.lead}
+            </EditableText>
+
+            <form style={cardStyle} onSubmit={submit} noValidate>
+                {/* Honeypot — visually hidden but reachable by naive bots. */}
+                <div aria-hidden="true" style={{ position: 'absolute', left: '-9999px', height: 0, overflow: 'hidden' }}>
+                    <label>Website (leave blank)
+                        <input
+                            type="text"
+                            tabIndex={-1}
+                            autoComplete="off"
+                            value={honeypot}
+                            onChange={e => setHoneypot(e.target.value)}
+                        />
+                    </label>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                    <div>
+                        <label style={labelStyle}>{c.nameLabel}</label>
+                        <input
+                            style={inputStyle}
+                            type="text"
+                            value={name}
+                            onChange={e => setName(e.target.value)}
+                            placeholder={c.namePlaceholder}
+                            maxLength={120}
+                        />
+                    </div>
+                    <div>
+                        <label style={labelStyle}>{c.emailLabel}</label>
+                        <input
+                            style={inputStyle}
+                            type="email"
+                            required
+                            value={email}
+                            onChange={e => setEmail(e.target.value)}
+                            placeholder={c.emailPlaceholder}
+                            maxLength={200}
+                        />
+                    </div>
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                    <label style={labelStyle}>{c.subjectLabel}</label>
+                    <input
+                        style={inputStyle}
+                        type="text"
+                        required
+                        value={subject}
+                        onChange={e => setSubject(e.target.value)}
+                        placeholder={c.subjectPlaceholder}
+                        maxLength={200}
+                    />
+                </div>
+                <div style={{ marginBottom: 12 }}>
+                    <label style={labelStyle}>{c.messageLabel}</label>
+                    <textarea
+                        style={textareaStyle}
+                        required
+                        value={message}
+                        onChange={e => setMessage(e.target.value)}
+                        placeholder={c.messagePlaceholder}
+                        maxLength={5000}
+                    />
+                </div>
+                {err && <div style={errorStyle}>{err}</div>}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, marginTop: 12 }}>
+                    <button
+                        type="submit"
+                        style={{ ...buttonStyle, opacity: (submitting || preview) ? 0.6 : 1, cursor: preview ? 'not-allowed' : 'pointer' }}
+                        disabled={submitting || preview}
+                    >
+                        {submitting ? 'Sending…' : c.submitLabel}
+                        <ArrowRight size={16} aria-hidden="true" />
+                    </button>
+                    {preview && (
+                        <span style={{ fontSize: 12, color: T.muted }}>
+                            Submitting is disabled in the editor preview.
+                        </span>
+                    )}
+                </div>
+            </form>
+        </>
+        );
 }

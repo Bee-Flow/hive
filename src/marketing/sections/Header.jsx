@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import Button from '../components/Button';
 import EditableText from '../components/EditableText';
 import SectionFrame from '../components/SectionFrame';
+import LanguageSwitcher from '../components/LanguageSwitcher';
 import { inlineTextStyle } from './textStyle';
 
 // Resolve the dropdown shape regardless of which mode the user picked.
@@ -256,6 +257,7 @@ export default function Header({ data }) {
                         })}
                     </nav>
                     <div className="header-actions">
+                        <LanguageSwitcher />
                         {(data.ctas || []).map((cta, i) => {
                             // Per-button label styling. The Button component
                             // owns the variant background / border / radius;

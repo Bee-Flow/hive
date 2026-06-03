@@ -12,7 +12,9 @@ import SiteSwitcher from './SiteSwitcher';
 import VersionSwitcher from './VersionSwitcher';
 import DesignEditor from './DesignEditor';
 import BlockStyleEditor from './BlockStyleEditor';
+import TranslationPanel from './TranslationPanel';
 import { cmsApi } from './cmsApi';
+import { setLocalePath, mergePreviewSite, mergePreviewPage } from './localeMerge';
 
 const ACTIVE_SITE_LS_KEY = 'cms.activeSiteId';
 
@@ -156,6 +158,13 @@ export default function ProductWebsitePanel() {
     const [liveSiteId, setLiveSiteId]         = useState(null);
     const [defaultLocale, setDefaultLocale]   = useState('en');
     const [locales, setLocales]               = useState([{ code: 'en', name: 'English', isDefault: true }]);
+    // Per-locale translation overrides, mirroring getAdminPayload's
+    // `localeOverrides`. siteByLocale: { [locale]: siteOverride };
+    // pagesByLocale: { [pageId]: { [locale]: pageOverride } }. Only populated
+    // for non-default locales — the default locale lives in the base docs.
+    const [localeOverrides, setLocaleOverrides] = useState({ siteByLocale: {}, pagesByLocale: {} });
+    // AI auto-translate progress for the active page/site. null = idle.
+    const [aiStatus, setAiStatus]             = useState(null);
     const [site, setSiteDoc]                  = useState(null);   // SiteDoc
     const [pages, setPages]                   = useState([]);     // [PageDoc]
     const [saveStatus, setSaveStatus]         = useState('idle');
@@ -193,6 +202,10 @@ export default function ProductWebsitePanel() {
     // Holds the batch from the most recent failed flushSaves() so the user
     // can retry without losing their edits. Cleared when a flush succeeds.
     const failedSavesRef    = useRef(null);
+    // Live mirror of localeOverrides so the override mutators can read the
+    // latest value synchronously between rapid edits (typing in the list)
+    // without stale-closure races.
+    const localeOverridesRef = useRef({ siteByLocale: {}, pagesByLocale: {} });
 
     // ── derived ─────────────────────────────────────────────────────
 
@@ -216,6 +229,18 @@ export default function ProductWebsitePanel() {
         if (!activePage || !activeBlockId) return null;
         return activePage.blocks?.find(b => b.id === activeBlockId) || null;
     }, [activePage, activeBlockId]);
+
+    // ── translation mode ────────────────────────────────────────────
+    // Editing any non-default locale switches the panel into "translation
+    // mode": structure is authored in the default locale, so here we edit
+    // TEXT ONLY and write into sparse per-locale overrides.
+    const translationMode = activeLocale !== defaultLocale;
+    const activeSiteOverride = useMemo(
+        () => localeOverrides.siteByLocale?.[activeLocale] || null,
+        [localeOverrides, activeLocale]);
+    const activePageOverride = useMemo(
+        () => (activePage ? localeOverrides.pagesByLocale?.[activePage.id]?.[activeLocale] : null) || null,
+        [localeOverrides, activePage, activeLocale]);
 
     // Public page index — passed to LinkField pickers
     const pageIndex = useMemo(() =>
@@ -303,6 +328,7 @@ export default function ProductWebsitePanel() {
                 setLocales(data.locales || [{ code: 'en', name: 'English', isDefault: true }]);
                 setSiteDoc(data.site || null);
                 setPages(data.pages || []);
+                setLocaleOverrides(data.localeOverrides || { siteByLocale: {}, pagesByLocale: {} });
                 setPublishedAt(data.publishedAt || null);
                 setActiveLocale(data.defaultLocale || 'en');
                 const firstPageId = data.site?.pages?.[0]?.id;
@@ -354,6 +380,28 @@ export default function ProductWebsitePanel() {
         setSaveStatus('saving');
         try {
             const tasks = Object.entries(batch).map(([key, payload]) => {
+                // Per-locale translation overrides — namespaced keys so they
+                // ride the same debounce/retry machinery as base saves without
+                // colliding (real keys are 'site' or a pg_… id, never 'locale:').
+                if (key.startsWith('locale:site:')) {
+                    const locale = key.slice('locale:site:'.length);
+                    return authFetch(cmsApi.siteLocaleOverride(siteId, locale), {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ override: payload }),
+                    });
+                }
+                if (key.startsWith('locale:page:')) {
+                    const rest = key.slice('locale:page:'.length);
+                    const at = rest.lastIndexOf(':');       // pageId may contain no ':'
+                    const pageId = rest.slice(0, at);
+                    const locale = rest.slice(at + 1);
+                    return authFetch(cmsApi.pageLocaleOverride(siteId, pageId, locale), {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ override: payload }),
+                    });
+                }
                 if (key === 'site') {
                     return authFetch(cmsApi.site(siteId), {
                         method: 'PUT',
@@ -449,6 +497,98 @@ export default function ProductWebsitePanel() {
         }));
     }, [updatePage]);
 
+    // ── locale-override mutators (translation mode) ─────────────────
+    // Keep a synchronous mirror so rapid edits read the latest override.
+    useEffect(() => { localeOverridesRef.current = localeOverrides; }, [localeOverrides]);
+
+    // Write a single sparse text leaf into the active page's locale override
+    // (segs are into the override root, e.g. ['blocks', id, 'content', …] or
+    // ['seo','metaTitle']). Empty string prunes the leaf so it re-inherits the
+    // source. Saves via the namespaced 'locale:page:…' debounce key.
+    const updatePageOverride = useCallback((pageId, locale, segs, value) => {
+        const prev = localeOverridesRef.current;
+        const cur = prev.pagesByLocale?.[pageId]?.[locale] || { version: 1, blocks: {} };
+        const next = setLocalePath(cur, segs, value);
+        const updated = {
+            ...prev,
+            pagesByLocale: {
+                ...prev.pagesByLocale,
+                [pageId]: { ...(prev.pagesByLocale?.[pageId] || {}), [locale]: next },
+            },
+        };
+        localeOverridesRef.current = updated;
+        setLocaleOverrides(updated);
+        scheduleSave(`locale:page:${pageId}:${locale}`, next);
+    }, [scheduleSave]);
+
+    // Write a single sparse text leaf into the site (chrome) locale override —
+    // header/footer text by storage path, or ['pageTitles', pageId].
+    const updateSiteOverride = useCallback((locale, segs, value) => {
+        const prev = localeOverridesRef.current;
+        const cur = prev.siteByLocale?.[locale] || { version: 1 };
+        const next = setLocalePath(cur, segs, value);
+        const updated = { ...prev, siteByLocale: { ...prev.siteByLocale, [locale]: next } };
+        localeOverridesRef.current = updated;
+        setLocaleOverrides(updated);
+        scheduleSave(`locale:site:${locale}`, next);
+    }, [scheduleSave]);
+
+    // Replace a whole override in local state WITHOUT scheduling a save — used
+    // after AI translate, which has already persisted server-side.
+    const replacePageOverride = useCallback((pageId, locale, full) => {
+        const prev = localeOverridesRef.current;
+        const updated = {
+            ...prev,
+            pagesByLocale: {
+                ...prev.pagesByLocale,
+                [pageId]: { ...(prev.pagesByLocale?.[pageId] || {}), [locale]: full },
+            },
+        };
+        localeOverridesRef.current = updated;
+        setLocaleOverrides(updated);
+    }, []);
+    const replaceSiteOverride = useCallback((locale, full) => {
+        const prev = localeOverridesRef.current;
+        const updated = { ...prev, siteByLocale: { ...prev.siteByLocale, [locale]: full } };
+        localeOverridesRef.current = updated;
+        setLocaleOverrides(updated);
+    }, []);
+
+    // AI pre-fill: translate the active page ('page') or site chrome ('site')
+    // to the active locale. The server preserves existing manual translations
+    // and returns the merged override, which we fold into local state.
+    const handleAiTranslate = useCallback(async (scope) => {
+        const siteId = activeSiteIdRef.current;
+        if (!siteId || aiStatus?.state === 'running') return;
+        if (scope === 'page' && !activePage) return;
+        // Flush any pending manual edits first so the server reads them and
+        // doesn't translate over text the user just typed.
+        await drainPendingSaves();
+        setAiStatus({ state: 'running', scope });
+        try {
+            const url = scope === 'site'
+                ? cmsApi.siteAiTranslate(siteId, activeLocale)
+                : cmsApi.pageAiTranslate(siteId, activePage.id, activeLocale);
+            const res = await authFetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ modelTier: 'fast' }),
+            });
+            const data = await res.json().catch(() => ({}));
+            if (!res.ok) throw new Error(data.error || `Translate failed (${res.status})`);
+            if (scope === 'site') replaceSiteOverride(activeLocale, data.override);
+            else replacePageOverride(activePage.id, activeLocale, data.override);
+            setAiStatus({ state: 'done', scope, translated: data.translated, total: data.total });
+            showToast('success', data.message || `Translated ${data.translated || 0} fields`);
+        } catch (err) {
+            setAiStatus({ state: 'error', scope });
+            showToast('error', `AI translate failed: ${err.message}`);
+        }
+    }, [activeLocale, activePage, aiStatus, drainPendingSaves, replacePageOverride, replaceSiteOverride]);
+
+    // Reset AI status when switching page/locale so stale "done" badges clear.
+    useEffect(() => { setAiStatus(null); }, [activePageId, activeLocale]);
+
     // Inline text edit from iframe postMessage (path = "blockType.field.subfield").
     //
     // The section components in agent-hub/src/marketing/sections/ hard-code
@@ -460,6 +600,25 @@ export default function ProductWebsitePanel() {
     // absent only for site chrome (header/footer), handled by the prefix
     // branch below, and for legacy messages, where we fall back to first-of-type.
     const applyIframeEdit = useCallback((path, value, blockId = null) => {
+        // Translation mode: the edit is a TEXT translation, not a structural
+        // change — write a sparse leaf into the active locale's override
+        // instead of mutating the default-locale base doc.
+        if (translationMode) {
+            if (path.startsWith('header.') || path.startsWith('footer.')) {
+                const storagePath = chromeStoragePath(path);
+                if (storagePath) updateSiteOverride(activeLocale, storagePath, value);
+                return;
+            }
+            if (!activePage) return;
+            const parts = path.split('.');
+            const fieldPath = parts.slice(1).map(seg => /^\d+$/.test(seg) ? Number(seg) : seg);
+            const targetId = blockId
+                || activePage.blocks?.find(b => b.type === parts[0])?.id;
+            if (!targetId) return;
+            updatePageOverride(activePage.id, activeLocale, ['blocks', targetId, 'content', ...fieldPath], value);
+            return;
+        }
+
         // Site-chrome paths (header.* / footer.*) target the SiteDoc, not a
         // page block. The iframe receives chrome in a re-shaped form
         // (buildPreviewContent below) — e.g. footer.brand.blurb is the
@@ -524,7 +683,7 @@ export default function ProductWebsitePanel() {
                 }),
             };
         });
-    }, [activePage, updatePage, site, scheduleSave]);
+    }, [activePage, updatePage, site, scheduleSave, translationMode, activeLocale, updateSiteOverride, updatePageOverride]);
 
     // ── block CRUD ───────────────────────────────────────────────────
 
@@ -677,6 +836,7 @@ export default function ProductWebsitePanel() {
         setSiteDoc(data.site || null);
         setPages(data.pages || []);
         setLocales(data.locales || locales);
+        setLocaleOverrides(data.localeOverrides || { siteByLocale: {}, pagesByLocale: {} });
         if (data.publishedAt !== undefined) setPublishedAt(data.publishedAt || null);
     }, [locales]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -919,13 +1079,34 @@ export default function ProductWebsitePanel() {
         // so the iframe shows the explainer instead of an empty body.
         const isChromeView = activePageId === SITE_VIRTUAL_ID;
         const pageForPreview = isChromeView ? { blocks: [] } : previewPage;
-        const content = buildPreviewContent(site, pageForPreview);
+        // In translation mode, pre-merge the active locale's overrides so the
+        // preview renders translated text (with source fallback), matching
+        // exactly what the published site will serve at ?locale=…
+        let previewSite = site;
+        let previewPageMerged = pageForPreview;
+        if (translationMode) {
+            const siteOv = localeOverrides.siteByLocale?.[activeLocale] || null;
+            const pageOv = pageForPreview?.id
+                ? (localeOverrides.pagesByLocale?.[pageForPreview.id]?.[activeLocale] || null)
+                : null;
+            previewSite = mergePreviewSite(site, siteOv);
+            previewPageMerged = mergePreviewPage(pageForPreview, pageOv, siteOv);
+        }
+        const content = buildPreviewContent(previewSite, previewPageMerged);
         // Design flows alongside content (not nested) so the iframe can
         // apply CSS variables independently of content updates.
         const design = site?.design || null;
         const previewMode = isChromeView ? 'chrome' : 'page';
         win.postMessage({ type: 'cms-preview', content, design, previewMode }, '*');
-    }, [site, previewPage, activePageId]);
+    }, [site, previewPage, activePageId, translationMode, activeLocale, localeOverrides]);
+
+    // Select a block AND scroll the preview to it — bound to translation-row
+    // clicks so the admin sees which block a string belongs to.
+    const selectAndScrollToBlock = useCallback((blockId) => {
+        setActiveBlockId(prev => (prev === blockId ? prev : blockId));
+        const win = iframeRef.current?.contentWindow;
+        if (win && previewReadyRef.current) win.postMessage({ type: 'cms-scroll', blockId }, '*');
+    }, []);
 
     useEffect(() => {
         const onMessage = (e) => {
@@ -1474,7 +1655,37 @@ export default function ProductWebsitePanel() {
 
             {/* ── PANE B: block list + editor (280px) ── */}
             <div className="w-[300px] shrink-0 flex flex-col border-r border-[var(--border-subtle)] h-full">
-                {isSiteView ? (
+                {translationMode ? (
+                    isDesignView ? (
+                        <div className="flex-1 flex items-center justify-center text-[var(--text-muted)] text-xs p-4 text-center">
+                            Design is shared across all languages. Switch to the
+                            default language to edit it.
+                        </div>
+                    ) : (isSiteView || activePage) ? (
+                        <TranslationPanel
+                            scope={isSiteView ? 'site' : 'page'}
+                            site={site}
+                            page={activePage}
+                            localeName={locales.find(l => l.code === activeLocale)?.name || activeLocale}
+                            defaultLocaleName={locales.find(l => l.code === defaultLocale)?.name || defaultLocale}
+                            pageOverride={activePageOverride}
+                            siteOverride={activeSiteOverride}
+                            aiStatus={aiStatus}
+                            onPageLeaf={(blockId, fieldPath, value) =>
+                                activePage && updatePageOverride(activePage.id, activeLocale, ['blocks', blockId, 'content', ...fieldPath], value)}
+                            onPageSeo={(field, value) =>
+                                activePage && updatePageOverride(activePage.id, activeLocale, ['seo', field], value)}
+                            onChromeLeaf={(storagePath, value) =>
+                                updateSiteOverride(activeLocale, storagePath, value)}
+                            onSelectBlock={selectAndScrollToBlock}
+                            onAiTranslate={() => handleAiTranslate(isSiteView ? 'site' : 'page')}
+                        />
+                    ) : (
+                        <div className="flex-1 flex items-center justify-center text-[var(--text-muted)] text-sm p-4 text-center">
+                            Select a page to translate.
+                        </div>
+                    )
+                ) : isSiteView ? (
                     <SiteChromeEditor site={site} onChange={updateSiteChrome} pages={pageIndex} />
                 ) : isDesignView ? (
                     <DesignEditor design={site?.design} onChange={updateDesign} />
@@ -2015,24 +2226,27 @@ function legacyifyLinks(node, pages) {
 // path, translates the few non-passthrough keys, and returns a new SiteDoc
 // with the value applied. Returns null if the path doesn't map to anything
 // the SiteDoc owns (so the caller can ignore the edit safely).
-function applyChromeEdit(site, path, value) {
+// Maps an iframe display-shape chrome path (e.g. footer.brand.blurb,
+// header.navLinks.0.label) to the storage-shape path array the SiteDoc /
+// site-locale override uses (footer.blurb, header.nav.0.label). Returns null
+// if the path isn't a chrome path. Shared by applyChromeEdit (base doc) and
+// the translation-mode override writer.
+function chromeStoragePath(path) {
     const parts = path.split('.');
     const root = parts[0];
     if (root !== 'header' && root !== 'footer') return null;
 
-    // Translate iframe-shape segments to storage-shape segments.
-    let storagePath;
     if (root === 'footer' && parts[1] === 'brand' && parts[2] === 'logoText' && parts.length === 3) {
-        storagePath = ['footer', 'brandText'];
+        return ['footer', 'brandText'];
     } else if (root === 'footer' && parts[1] === 'brand' && parts[2] === 'blurb' && parts.length === 3) {
-        storagePath = ['footer', 'blurb'];
+        return ['footer', 'blurb'];
     } else if (root === 'header' && parts[1] === 'navLinks') {
         // header.navLinks.{i}.label                       → header.nav[i].label
         // header.navLinks.{i}.children.{j}.label          → header.nav[i].children[j].label
         // Convert numeric segments in the tail to actual numbers so setIn
         // recognises array indices (otherwise children would silently be
         // converted to a plain object keyed by numeric strings).
-        storagePath = [
+        return [
             'header',
             'nav',
             Number(parts[2]),
@@ -2042,19 +2256,22 @@ function applyChromeEdit(site, path, value) {
         // header.ctas.{i}.label → header.ctas[i].label (storage shape
         // matches display shape here, but we still need to convert the
         // index to a number for setIn).
-        storagePath = [
+        return [
             'header',
             'ctas',
             Number(parts[2]),
             ...parts.slice(3).map(seg => /^\d+$/.test(seg) ? Number(seg) : seg),
         ];
-    } else {
-        // Pass-through: header.logoText / header.logo.text / header.loginLabel /
-        // footer.copyright / footer.columns.{i}.heading /
-        // footer.columns.{i}.links.{j}.label
-        storagePath = parts.map(seg => /^\d+$/.test(seg) ? Number(seg) : seg);
     }
+    // Pass-through: header.logoText / header.logo.text / header.loginLabel /
+    // footer.copyright / footer.columns.{i}.heading /
+    // footer.columns.{i}.links.{j}.label
+    return parts.map(seg => /^\d+$/.test(seg) ? Number(seg) : seg);
+}
 
+function applyChromeEdit(site, path, value) {
+    const storagePath = chromeStoragePath(path);
+    if (!storagePath) return null;
     return setIn(site, storagePath, value);
 }
 

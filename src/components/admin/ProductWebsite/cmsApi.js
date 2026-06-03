@@ -37,6 +37,9 @@ export const cmsApi = {
     pageMeta:            (siteId, pageId)              => `${root}/sites/${siteId}/pages/${pageId}/meta`,
     pageHomepage:        (siteId, pageId)              => `${root}/sites/${siteId}/pages/${pageId}/homepage`,
     pageLocaleOverride:  (siteId, pageId, locale)      => `${root}/sites/${siteId}/pages/${pageId}/locale/${encodeURIComponent(locale)}`,
+    // AI auto-translate — pre-fills a locale override from the default-locale text.
+    pageAiTranslate:     (siteId, pageId, locale)      => `${root}/sites/${siteId}/pages/${pageId}/ai-translate/${encodeURIComponent(locale)}`,
+    siteAiTranslate:     (siteId, locale)              => `${root}/sites/${siteId}/site/ai-translate/${encodeURIComponent(locale)}`,
 
     // ── Org-wide (independent of activeSiteId) ──
     enabled:             ()                            => `${root}/admin/enabled`,

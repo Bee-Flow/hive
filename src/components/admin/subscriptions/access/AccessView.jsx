@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { ShieldCheck, Building2, Users, Clock, Save, AlertTriangle, CheckCircle, Trash2, Info } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { ShieldCheck, Building2, Users, Clock, Save, AlertTriangle, CheckCircle, Trash2, Info, Network, Globe, X } from 'lucide-react';
 import { SectionHeader } from '../ui/SectionHeader';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -10,11 +10,18 @@ import { Spinner } from '../ui/Spinner';
 import { EmptyState } from '../ui/EmptyState';
 import { useToast } from '../ui/Toast';
 import { apiJson } from '../hooks/useApi';
+import { COUNTRIES, EU_EEA, countryName, countryFlag } from './countries';
 
 const LOGIN_METHODS = [
     { id: 'password',  label: 'Username & Password' },
     { id: 'google',    label: 'Google SSO' },
     { id: 'microsoft', label: 'Microsoft SSO' },
+];
+
+const GEO_MODES = [
+    { id: 'off',       label: 'Off' },
+    { id: 'allowlist', label: 'Allowlist' },
+    { id: 'blocklist', label: 'Blocklist' },
 ];
 
 export function AccessView() {
@@ -26,6 +33,13 @@ export function AccessView() {
     const [consumerLoginMethods, setConsumerLoginMethods] = useState(['password', 'google', 'microsoft']);
     const [waitlistEnabled, setWaitlistEnabled] = useState(false);
     const [waitlistUsers, setWaitlistUsers]     = useState([]);
+    // Connector-only + geo-blocking
+    const [connectorOnly,    setConnectorOnly]    = useState(false);
+    const [geoMode,          setGeoMode]          = useState('off');
+    const [geoCountries,     setGeoCountries]     = useState([]);
+    const [geoBlockUnknown,  setGeoBlockUnknown]  = useState(false);
+    const [geoApplyConnector, setGeoApplyConnector] = useState(true);
+    const [countrySearch,    setCountrySearch]    = useState('');
 
     useEffect(() => {
         let alive = true;
@@ -37,6 +51,11 @@ export function AccessView() {
                 setAllowConsumerSignups(data.allowConsumerSignups !== false);
                 setWaitlistEnabled(!!data.waitlistEnabled);
                 if (Array.isArray(data.consumerLoginMethods)) setConsumerLoginMethods(data.consumerLoginMethods);
+                setConnectorOnly(!!data.connectorOnly);
+                if (['off', 'allowlist', 'blocklist'].includes(data.geoMode)) setGeoMode(data.geoMode);
+                if (Array.isArray(data.geoCountries)) setGeoCountries(data.geoCountries);
+                setGeoBlockUnknown(!!data.geoBlockUnknown);
+                setGeoApplyConnector(data.geoApplyConnector !== false);
             } catch (e) {
                 console.warn('Failed to fetch signup settings:', e);
             } finally {
@@ -56,7 +75,10 @@ export function AccessView() {
             await apiJson('/auth/admin/signup-settings', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ allowOrgSignups, allowConsumerSignups, waitlistEnabled, consumerLoginMethods }),
+                body: JSON.stringify({
+                    allowOrgSignups, allowConsumerSignups, waitlistEnabled, consumerLoginMethods,
+                    connectorOnly, geoMode, geoCountries, geoBlockUnknown, geoApplyConnector,
+                }),
             });
             toast.success('Signup settings saved.');
         } catch (e) {
@@ -81,6 +103,18 @@ export function AccessView() {
             toast.success(`${u.displayName || u.username} rejected.`);
         } catch (e) { toast.error('Failed to reject.'); }
     };
+
+    const addCountry    = (code) => setGeoCountries(prev => prev.includes(code) ? prev : [...prev, code]);
+    const removeCountry = (code) => setGeoCountries(prev => prev.filter(c => c !== code));
+    const addEuEea      = () => setGeoCountries(prev => [...new Set([...prev, ...EU_EEA])]);
+
+    const availableCountries = useMemo(() => {
+        const q = countrySearch.trim().toLowerCase();
+        return COUNTRIES.filter(c =>
+            !geoCountries.includes(c.code) &&
+            (!q || c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q))
+        );
+    }, [countrySearch, geoCountries]);
 
     if (loading) return <Spinner label="Loading settings…" />;
 
@@ -143,6 +177,21 @@ export function AccessView() {
                     label="Waitlist mode"
                     description="Require admin approval for new account registrations. Invited users bypass the waitlist."
                 />
+
+                <Toggle
+                    checked={connectorOnly}
+                    onChange={setConnectorOnly}
+                    icon={Network}
+                    iconClass="text-sky-400"
+                    label="Only allow signups via the Nextcloud connector"
+                    description="Block all public web signups (organization, consumer & SSO). New accounts can only be created through the Nextcloud app. Email invitations still work."
+                />
+
+                {connectorOnly && (
+                    <Banner tone="info" icon={Info}>
+                        Connector-only mode is on — the toggles above are overridden for web signups. The “Create Account” button is hidden on the login page; users get accounts by opening Bee Flow inside Nextcloud, or via an invitation.
+                    </Banner>
+                )}
             </Card>
 
             {!allowOrgSignups && !allowConsumerSignups && (
@@ -156,6 +205,124 @@ export function AccessView() {
                 These settings take effect immediately. The <strong>ALLOW_SIGNUPS</strong> environment variable acts as a global override —
                 if set to <code className="px-1 py-px rounded bg-[var(--bg-tertiary)] text-[11px]">false</code>, both toggles above are ignored.
             </Banner>
+
+            <Card className="space-y-4 !p-5 mb-4">
+                <div className="flex items-start gap-2">
+                    <Globe className="w-4 h-4 mt-0.5 text-teal-400 shrink-0" />
+                    <div>
+                        <h3 className="text-[13px] font-semibold text-[var(--text-primary)]">Geo restrictions</h3>
+                        <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
+                            Restrict which countries can create accounts, based on the signup request's IP location.
+                        </p>
+                    </div>
+                </div>
+
+                {/* Mode selector */}
+                <div className="inline-flex rounded-lg border border-[var(--border-default)] overflow-hidden">
+                    {GEO_MODES.map(m => (
+                        <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setGeoMode(m.id)}
+                            className={`px-3.5 py-1.5 text-[12px] font-semibold transition-colors ${
+                                geoMode === m.id
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-[var(--bg-tertiary)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'
+                            }`}
+                        >
+                            {m.label}
+                        </button>
+                    ))}
+                </div>
+
+                {geoMode !== 'off' && (
+                    <>
+                        <p className="text-[12px] text-[var(--text-secondary)]">
+                            {geoMode === 'allowlist'
+                                ? 'Only allow signups from these countries:'
+                                : 'Block signups from these countries:'}
+                        </p>
+
+                        {/* Selected countries */}
+                        <div className="flex flex-wrap gap-1.5">
+                            {geoCountries.length === 0 && (
+                                <span className="text-[11.5px] text-[var(--text-muted)] italic">
+                                    No countries selected{geoMode === 'allowlist' ? ' — all signups will be blocked.' : '.'}
+                                </span>
+                            )}
+                            {geoCountries.map(code => (
+                                <button
+                                    key={code}
+                                    type="button"
+                                    onClick={() => removeCountry(code)}
+                                    title="Remove"
+                                    className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11.5px] font-medium bg-[var(--bg-tertiary)] border border-[var(--border-default)] text-[var(--text-primary)] hover:border-rose-500/40 hover:text-rose-400"
+                                >
+                                    <span>{countryFlag(code)}</span>
+                                    <span>{countryName(code)}</span>
+                                    <X className="w-3 h-3" />
+                                </button>
+                            ))}
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                            <Button size="sm" variant="secondary" onClick={addEuEea}>+ EU/EEA preset</Button>
+                            {geoCountries.length > 0 && (
+                                <Button size="sm" variant="ghost" onClick={() => setGeoCountries([])}>Clear all</Button>
+                            )}
+                        </div>
+
+                        {/* Country picker */}
+                        <div>
+                            <input
+                                type="text"
+                                value={countrySearch}
+                                onChange={e => setCountrySearch(e.target.value)}
+                                placeholder="Search countries to add…"
+                                className="w-full px-3 py-2 text-[13px] rounded-lg bg-[var(--bg-tertiary)] border border-[var(--border-default)] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-blue-500/50"
+                            />
+                            <div className="mt-1.5 max-h-44 overflow-y-auto rounded-lg border border-[var(--border-default)] divide-y divide-[var(--border-default)]">
+                                {availableCountries.length === 0 ? (
+                                    <div className="px-3 py-2 text-[12px] text-[var(--text-muted)]">No matches.</div>
+                                ) : availableCountries.map(c => (
+                                    <button
+                                        key={c.code}
+                                        type="button"
+                                        onClick={() => addCountry(c.code)}
+                                        className="w-full flex items-center gap-2 px-3 py-1.5 text-[12.5px] text-left text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)]"
+                                    >
+                                        <span>{countryFlag(c.code)}</span>
+                                        <span className="flex-1">{c.name}</span>
+                                        <span className="text-[10.5px] text-[var(--text-muted)]">{c.code}</span>
+                                    </button>
+                                ))}
+                            </div>
+                        </div>
+
+                        <div className="pt-1 border-t border-[var(--border-default)]" />
+
+                        <Checkbox
+                            checked={geoBlockUnknown}
+                            onChange={setGeoBlockUnknown}
+                            accent="amber"
+                            label="Block signups when the country can't be determined"
+                        />
+
+                        <Toggle
+                            checked={geoApplyConnector}
+                            onChange={setGeoApplyConnector}
+                            icon={Network}
+                            iconClass="text-sky-400"
+                            label="Also apply to Nextcloud connector signups"
+                            description="When a new Nextcloud user is auto-provisioned, check the connecting Nextcloud server's location (not the individual user's)."
+                        />
+
+                        <Banner tone="warning" icon={AlertTriangle}>
+                            Geo-blocking is best-effort: it relies on IP geolocation, which is approximate and can be bypassed with a VPN. Use it as a guardrail, not a hard security boundary.
+                        </Banner>
+                    </>
+                )}
+            </Card>
 
             <div className="flex justify-end mb-8">
                 <Button icon={Save} onClick={handleSave} busy={saving}>
