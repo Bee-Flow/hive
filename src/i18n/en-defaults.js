@@ -1848,6 +1848,7 @@ const EN_DEFAULTS = {
     "studio.tab.ai_tasks": "Routines",
     "studio.tab.webpages": "Webpages",
     "studio.tab.tests": "Tests",
+    "studio.tab.security": "Security Scan",
     "studio.tab.meeting_notes": "Meeting Notes",
     "meeting_notes.subtitle": "Record or upload audio — get a transcript, summary and action items.",
     "meeting_notes.fallback_notice": "Your recording was too long for the on-device model — transcribed via {provider} instead.",

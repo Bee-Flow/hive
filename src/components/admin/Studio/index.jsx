@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bot, Sparkles, ListChecks, BookOpen, Globe, Bug, Mic } from 'lucide-react';
+import { Bot, Sparkles, ListChecks, BookOpen, Globe, Bug, ShieldAlert, Mic } from 'lucide-react';
 import useTranslation from '../../../hooks/useTranslation';
 import AgentStudio from '../AgentStudio';
 import AITasksDesigner from '../AITasksDesigner';
@@ -7,6 +7,7 @@ import SkillsStudio from './SkillsStudio';
 import KBsStudio from './KBsStudio';
 import WebpagesPage from '../../../pages/WebpagesPage';
 import TestsStudio from './TestsStudio';
+import SecurityStudio from './SecurityStudio';
 import MeetingNotesPage from '../../../pages/meeting-notes/MeetingNotesPage';
 import { useLicenseContext } from '../../LicenseContext';
 
@@ -49,6 +50,9 @@ export default function Studio({
     // Mirrors the canSeeWebpages pattern — playwright_tests is enterprise-tier
     // + beta-opt-in. canUseFeature already does the AND on the server side.
     const canSeeTests = hasLicenseFeature('playwright_tests') && !!(user?.canUseFeature?.playwright_tests ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('playwright_tests')));
+    // Security Scan — enterprise + beta opt-in (mirrors canSeeTests). Beta-only;
+    // the server-resolved canUseFeature is authoritative.
+    const canSeeSecurity = hasLicenseFeature('security_scan') && !!(user?.canUseFeature?.security_scan ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('security_scan')));
     // Meeting Notes is enterprise + beta opt-in (mirrors webpages/tests). We
     // intentionally rely on canUseFeature (server-resolved license × beta)
     // rather than spot-checking betaFeatures so super-admin grants flow
@@ -61,6 +65,7 @@ export default function Studio({
         { id: 'aiTasks',   label: t('studio.tab.ai_tasks'),  icon: <ListChecks size={14} /> },
         ...(canSeeWebpages ? [{ id: 'webpages', label: t('studio.tab.webpages') || 'Webpages', icon: <Globe size={14} /> }] : []),
         ...(canSeeTests ? [{ id: 'tests', label: t('studio.tab.tests') || 'Tests', icon: <Bug size={14} /> }] : []),
+        ...(canSeeSecurity ? [{ id: 'security', label: t('studio.tab.security') || 'Security Scan', icon: <ShieldAlert size={14} /> }] : []),
         ...(canSeeMeetingNotes ? [{ id: 'meetingNotes', label: t('studio.tab.meeting_notes') || 'Meeting Notes', icon: <Mic size={14} /> }] : []),
     ];
 
@@ -145,6 +150,13 @@ export default function Studio({
                 )}
                 {section === 'tests' && (
                     <TestsStudio
+                        user={user}
+                        onNavigate={onNavigate}
+                        hasPermission={hasPermission}
+                    />
+                )}
+                {section === 'security' && (
+                    <SecurityStudio
                         user={user}
                         onNavigate={onNavigate}
                         hasPermission={hasPermission}
