@@ -20,10 +20,11 @@ import CTA          from './sections/CTA';
 import CtaBanner    from './sections/CtaBanner';
 import LiveComponent from './sections/LiveComponent';
 import Pricing      from './sections/PricingSection';
+import CustomerSupport from './sections/CustomerSupport';
 import Footer       from './sections/Footer';
 // Site-wide cookie consent banner. Lives outside ./sections because it's
 // chrome (fixed-position overlay), not an in-flow page section.
-import CookieBanner from '../components/CookieBanner';
+import CookieBanner from './components/CookieBanner';
 
 import { useScrollReveal } from './components/ScrollReveal';
 import { BlockIdContext } from './components/EditableText';
@@ -59,6 +60,7 @@ const SECTION_REGISTRY = {
     'cta-banner': CtaBanner,
     'live-component': LiveComponent,
     pricing: Pricing,
+    'customer-support': CustomerSupport,
 };
 
 const isPreviewMode = () =>

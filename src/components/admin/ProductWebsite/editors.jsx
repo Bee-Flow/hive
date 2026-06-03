@@ -3074,6 +3074,60 @@ export function PricingEditor({ data = {}, onChange }) {
 // BLOCK_EDITORS     used by ProductWebsitePanel to render the active editor
 // BLOCK_DEFAULTS    used by the panel when creating a new block
 
+export function CustomerSupportEditor({ data = {}, onChange }) {
+    const setField = (key, value) => onChange(set(data, key, value));
+    return (
+        <>
+            <InlineHint>Click the title and intro in the preview to edit them inline.</InlineHint>
+
+            <FieldSelect
+                label="Background"
+                value={data.backgroundVariant || 'surface'}
+                options={[
+                    { value: 'default', label: 'Default (page bg)' },
+                    { value: 'surface', label: 'Surface (alt bg)' },
+                    { value: 'primary', label: 'Primary (brand color)' },
+                    { value: 'dark',    label: 'Dark (secondary color)' },
+                ]}
+                onChange={v => setField('backgroundVariant', v)}
+            />
+
+            <CollapsibleCard title="Text" defaultOpen={true}>
+                <TextField label="Title" value={data.title || ''} onChange={v => setField('title', v)} placeholder="Talk to us" />
+                <TextField label="Intro" value={data.lead || ''} onChange={v => setField('lead', v)} placeholder="Short intro under the title" />
+            </CollapsibleCard>
+
+            <CollapsibleCard title="Form fields" defaultOpen={false}>
+                <TextField label="Name label"          value={data.nameLabel || ''}          onChange={v => setField('nameLabel', v)}          placeholder="Your name" />
+                <TextField label="Name placeholder"    value={data.namePlaceholder || ''}    onChange={v => setField('namePlaceholder', v)}    placeholder="Jane Doe" />
+                <TextField label="Email label"         value={data.emailLabel || ''}         onChange={v => setField('emailLabel', v)}         placeholder="Email" />
+                <TextField label="Email placeholder"   value={data.emailPlaceholder || ''}   onChange={v => setField('emailPlaceholder', v)}   placeholder="you@company.com" />
+                <TextField label="Subject label"       value={data.subjectLabel || ''}       onChange={v => setField('subjectLabel', v)}       placeholder="Subject" />
+                <TextField label="Subject placeholder" value={data.subjectPlaceholder || ''} onChange={v => setField('subjectPlaceholder', v)} placeholder="How can we help?" />
+                <TextField label="Message label"       value={data.messageLabel || ''}       onChange={v => setField('messageLabel', v)}       placeholder="Message" />
+                <TextField label="Message placeholder" value={data.messagePlaceholder || ''} onChange={v => setField('messagePlaceholder', v)} placeholder="Tell us about your team…" />
+                <TextField label="Submit button"       value={data.submitLabel || ''}        onChange={v => setField('submitLabel', v)}        placeholder="Send to Bee Flow" />
+            </CollapsibleCard>
+
+            <CollapsibleCard title="Confirmation message" defaultOpen={false}>
+                <TextField
+                    label="Success title"
+                    value={data.successTitle || ''}
+                    onChange={v => setField('successTitle', v)}
+                    placeholder="Thanks — we've got your message"
+                />
+                <TextField
+                    label="Success body"
+                    value={data.successBody || ''}
+                    onChange={v => setField('successBody', v)}
+                    placeholder="What the visitor sees after submitting"
+                    hint="Shown while the AI prepares its first reply."
+                />
+            </CollapsibleCard>
+        </>
+    );
+}
+
 export const BLOCK_CATALOGUE = {
     hero:         { type: 'hero',         label: 'Hero',           icon: 'Megaphone',   category: 'Above the fold' },
     socialProof:  { type: 'socialProof',  label: 'Social proof',   icon: 'Users',       category: 'Above the fold' },
@@ -3089,6 +3143,7 @@ export const BLOCK_CATALOGUE = {
     'cta-banner': { type: 'cta-banner',   label: 'CTA Banner',     icon: 'Rocket',           category: 'Conversion' },
     'live-component': { type: 'live-component', label: 'Live Component', icon: 'Code',         category: 'Content' },
     pricing:      { type: 'pricing',      label: 'Pricing',        icon: 'CreditCard',       category: 'Conversion' },
+    'customer-support': { type: 'customer-support', label: 'Customer Support', icon: 'LifeBuoy', category: 'Conversion' },
 };
 
 export const BLOCK_EDITORS = {
@@ -3106,6 +3161,7 @@ export const BLOCK_EDITORS = {
     'cta-banner': { component: CtaBannerEditor,    label: 'CTA Banner',     icon: 'Rocket'           },
     'live-component': { component: LiveComponentEditor, label: 'Live Component', icon: 'Code'        },
     pricing:      { component: PricingEditor,      label: 'Pricing',        icon: 'CreditCard'        },
+    'customer-support': { component: CustomerSupportEditor, label: 'Customer Support', icon: 'LifeBuoy' },
 };
 
 // Brand-neutral placeholder content used when the user clicks "+ Add block"
@@ -3284,6 +3340,25 @@ export const BLOCK_DEFAULTS = {
         toggleLabelYearly: 'Jaarlijks',
         ctaLabel: 'Kies plan',
         emptyText: 'Geen plannen beschikbaar',
+    },
+    // Customer Support — public AI-first support form. Submits to
+    // POST /api/support/threads (source: 'marketing'); the AI replies inline
+    // and a human takes over on escalation. Kept in sync with cmsDefaults.js.
+    'customer-support': {
+        title: 'Talk to us',
+        lead: 'Question about pricing, custom deployments, or anything else? Send us a note — our AI assistant replies within seconds, and a human picks it up if needed.',
+        nameLabel: 'Your name',
+        namePlaceholder: 'Jane Doe',
+        emailLabel: 'Email',
+        emailPlaceholder: 'you@company.com',
+        subjectLabel: 'Subject',
+        subjectPlaceholder: 'How can we help?',
+        messageLabel: 'Message',
+        messagePlaceholder: "Tell us about your team, what you're trying to do, and any constraints.",
+        submitLabel: 'Send to Bee Flow',
+        successTitle: "Thanks — we've got your message",
+        successBody: "Our AI assistant is looking through our knowledge base right now and you'll receive an email reply within a few minutes. If it can't fully resolve your question, a Bee Flow teammate will take over.",
+        backgroundVariant: 'surface',
     },
 };
 

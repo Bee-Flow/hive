@@ -12,7 +12,9 @@ import { resolveTourSteps, TOUR_SEEN_KEY, TOUR_START_EVENT, TOUR_ENSURE_SIDEBAR_
  * Spotlights real elements (sidebar nav, settings, the agent creator), drives
  * navigation where a stop lives on another view, and runs INTERACTIVE steps that
  * wait for the user to actually do something (type / submit) before advancing.
- * Completion is stored per-user, server-side, via PUT /ai/config/user-settings.
+ * Completion is stored per-user, server-side (the database), via
+ * POST /ai/user-settings; a localStorage flag is kept only as a same-browser
+ * flash-guard so the tour doesn't briefly re-appear before the server responds.
  *
  * Reliability: the active step runs a requestAnimationFrame resolve+measure loop
  * that re-queries the selector every frame and only locks onto a node that is
@@ -85,10 +87,10 @@ export default function OnboardingTour({ user, onNavigate, currentPage }) {
         try { if (user?.id) scopedStorage.setCurrentUser(user.id); } catch (e) { /* ignore */ }
         try { scopedStorage.setItem(TOUR_SEEN_KEY, '1'); } catch (e) { /* ignore */ }
         try {
-            await authFetch(`${API_BASE}/ai/config/user-settings`, {
-                method: 'PUT',
+            await authFetch(`${API_BASE}/ai/user-settings`, {
+                method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ settings: { [TOUR_SEEN_KEY]: true } }),
+                body: JSON.stringify({ [TOUR_SEEN_KEY]: true }),
             });
         } catch (e) { /* best-effort — local guard already set */ }
         if (navigatedRef.current && onNavigate) onNavigate('agents');
@@ -120,10 +122,10 @@ export default function OnboardingTour({ user, onNavigate, currentPage }) {
 
         (async () => {
             try {
-                const res = await authFetch(`${API_BASE}/ai/config/user-settings`);
+                const res = await authFetch(`${API_BASE}/ai/user-settings`);
                 if (!res.ok || cancelled) return;
                 const data = await res.json();
-                if (data?.settings?.[TOUR_SEEN_KEY]) return;
+                if (data?.[TOUR_SEEN_KEY]) return;
                 setTimeout(() => { if (!cancelled) startTour(); }, 900);
             } catch (e) { /* don't block the app on a settings fetch */ }
         })();
