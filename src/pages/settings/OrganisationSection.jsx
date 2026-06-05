@@ -5,6 +5,7 @@ import N8nSection from './N8nSection';
 import UsageSection from './UsageSection';
 import GitHubSyncPanel from '../../components/admin/GitHubSyncPanel';
 import NextcloudSyncPanel from '../../components/admin/NextcloudSyncPanel';
+import MeetingNotesAdminPanel from '../../components/admin/MeetingNotesAdminPanel';
 import OrgNcIntegrationsPanel from '../../components/admin/OrgNcIntegrationsPanel';
 import OrgNcPairingPanel from '../../components/admin/OrgNcPairingPanel';
 import OrgFeatureTogglesPanel from '../../components/admin/OrgFeatureTogglesPanel';
@@ -223,6 +224,7 @@ const OrganisationSection = ({ user, activeSection = 'license' }) => {
                 <>
                     {(isNcOrg || isFullAdmin) && <OrgNcPairingPanel />}
                     <NextcloudSyncPanel user={user} />
+                    <MeetingNotesAdminPanel user={user} />
                 </>
             )}
         </div>

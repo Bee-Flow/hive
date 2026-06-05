@@ -1,10 +1,11 @@
 import React from 'react';
-import { Mic, Upload, ArrowLeft, X } from 'lucide-react';
+import { Mic, Upload, MessageSquare, ArrowLeft, X } from 'lucide-react';
 import Modal from '../../../components/shared/Modal';
 import IconButton from '../../../components/shared/IconButton';
 import CaptureTile from './CaptureTile';
 import RecordPanel from './RecordPanel';
 import UploadPanel from './UploadPanel';
+import TalkImportPanel from './TalkImportPanel';
 import { useCapture } from './CaptureContext';
 import { useRecorder } from '../hooks/RecorderContext';
 import useMediaQuery from '../hooks/useMediaQuery';
@@ -12,6 +13,7 @@ import useMediaQuery from '../hooks/useMediaQuery';
 const MODES = {
     record: { title: 'Record audio', description: 'Capture from your microphone.', Panel: RecordPanel },
     upload: { title: 'Upload a recording', description: 'Drop a file from your computer.', Panel: UploadPanel },
+    talk: { title: 'Import from Nextcloud Talk', description: 'Transcribe a Talk call recording.', Panel: TalkImportPanel },
 };
 
 export default function CaptureModal() {
@@ -35,9 +37,10 @@ export default function CaptureModal() {
     const body = (
         <div className="flex flex-col gap-5">
             {!mode && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                     <CaptureTile icon={Mic} title="Record audio" description="Capture live from your microphone." onClick={() => setMode('record')} accent="#ffd400" />
                     <CaptureTile icon={Upload} title="Upload a file" description="Drop a .mp3, .wav, .m4a or .mp4." onClick={() => setMode('upload')} accent="var(--accent-primary)" />
+                    <CaptureTile icon={MessageSquare} title="Nextcloud Talk" description="Transcribe a Talk call recording." onClick={() => setMode('talk')} accent="#0082C9" />
                 </div>
             )}
             {mode && ModePanel && (

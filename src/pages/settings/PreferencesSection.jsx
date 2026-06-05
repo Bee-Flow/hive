@@ -4,6 +4,7 @@ import { useTranslation } from '../../hooks/useTranslation';
 import { Check, ChevronDown } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import scopedStorage from '../../utils/scopedStorage';
+import MeetingNotesSection from './MeetingNotesSection';
 
 const ROLE_LABELS = {
     admin: 'Admin',
@@ -312,6 +313,9 @@ const PreferencesSection = ({
                     />
                 </div>
             </div>
+
+            {/* ── Nextcloud Talk Meeting Notes (self-hides when not licensed) ── */}
+            <MeetingNotesSection />
 
             {/* ── Sign out ── */}
             {onLogout && (

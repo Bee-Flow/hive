@@ -66,6 +66,17 @@ export async function listNextcloudAudioFiles(folder = '/Recordings') {
     return data.items || [];
 }
 
+/**
+ * List Nextcloud Talk call recordings grouped by conversation (room token).
+ * Pass a `folder` to override the configured Talk recordings folder.
+ * Returns `{ folder, count, rooms: [{ token, recordings: [{ name, path, size, lastModified, kind }] }] }`.
+ */
+export async function listNextcloudTalkRecordings(folder) {
+    const qs = folder ? `?folder=${encodeURIComponent(folder)}` : '';
+    const res = await authFetch(`${API_BASE}/api/transcriptions/nextcloud-talk-recordings${qs}`);
+    return jsonOrThrow(res);
+}
+
 export async function patchTranscription(id, patch) {
     const res = await authFetch(`${API_BASE}/api/transcriptions/${id}`, {
         method: 'PATCH',
