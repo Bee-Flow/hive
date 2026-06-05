@@ -18,7 +18,6 @@ export const FEATURE_OPTIONS = [
     { id: 'direct_chat',    label: 'Direct Chat' },
     { id: 'workspace',      label: 'Workspace' },
     { id: 'notebooks',      label: 'Notebooks' },
-    { id: 'web_search',     label: 'Web Search' },
     { id: 'encryption',     label: 'Encryption (PIN)' },
 ];
 

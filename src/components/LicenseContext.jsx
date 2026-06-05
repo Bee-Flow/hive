@@ -52,14 +52,6 @@ const LicenseContext = createContext({
     // it to display/manage the licence even on cloud (where it doesn't govern).
     serverLicense: null,
     upgradeUrl: 'https://beeflow.nl/pricing',
-    // Sentinel: false on the createContext default, true on the real provider
-    // value. The embed route (`/chat/<id>`) renders OUTSIDE <LicenseProvider>
-    // (see App.jsx AppRoot), so consumers there receive this default where
-    // hasFeature() always returns false. Feature gates that must degrade
-    // gracefully in the embed (e.g. the web-search composer toggle, whose real
-    // enforcement is server-side in core/integrationTools.js) check this flag
-    // so they don't hide a control just because no provider is mounted.
-    __hasProvider: false,
     // 'cloud' (Bee Flow SaaS) or 'self-hosted' (customer-run install). Drives
     // which paid-access mechanism is shown: subscriptions on cloud, license
     // keys on self-hosted. Sourced from /auth/setup-status (server env
@@ -210,7 +202,6 @@ export function LicenseProvider({ children }) {
 
     const value = useMemo(() => ({
         ...state,
-        __hasProvider: true,
         hasFeature,
         hasTier,
         reload,
