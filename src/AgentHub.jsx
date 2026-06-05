@@ -1868,6 +1868,11 @@ const AgentHub = ({
                        legacy AgentDesigner as the primary editor. The legacy form
                        (advanced settings: guardrails, embed, bubble widget, sharing)
                        is still reachable via "Advanced" inside the studio. */
+                    /* Gate the whole editor on manage_agents — the server 403s on
+                       /agents/all, so a user without the permission reaching here
+                       (via the marketplace pencil or a direct URL) just saw a broken
+                       load-error/retry loop (BFSF-181). Block the mount instead. */
+                    ((user?.permissions || []).some(p => p === 'all' || p === 'manage_agents')) ? (
                     <AgentStudio
                         user={user}
                         initialAgentId={initialDesignerAgentId}
@@ -1878,6 +1883,13 @@ const AgentHub = ({
                             return perms.includes('all') || perms.includes(perm);
                         }}
                     />
+                    ) : (
+                        <div className="flex flex-col items-center justify-center h-full gap-3 p-8 text-center">
+                            <p className="text-base font-semibold" style={{ color: 'var(--text-primary)' }}>No access to the Agent Editor</p>
+                            <p className="text-sm max-w-md" style={{ color: 'var(--text-muted)' }}>You don't have permission to edit agents. Contact an administrator if you need access.</p>
+                            <button onClick={() => onNavigate('agents')} className="px-3 py-1.5 rounded-md text-sm font-medium" style={{ background: 'var(--accent-primary)', color: 'white' }}>Back to Agents</button>
+                        </div>
+                    )
                 ) : showAgentWizard ? (
                     /* /app/agent-wizard kept as a deep link — same studio, opens in
                        wizard (chat) mode for fresh creation. */
@@ -1924,7 +1936,12 @@ const AgentHub = ({
                         onSelect={handleSelectAgent}
                         onClose={() => setShowMarketplace(false)}
                         onUnpublish={handleUnpublishAgent}
-                        onEditAgent={(agent) => { setShowMarketplace(false); onNavigate(agent ? `agentDesigner:${agent.id}` : 'agentDesigner'); }}
+                        /* Only expose the edit affordance to users who can actually
+                           manage agents — ownership alone used to reveal the pencil,
+                           routing the user into a studio that 403s (BFSF-181). */
+                        onEditAgent={((user?.permissions || []).some(p => p === 'all' || p === 'manage_agents'))
+                            ? (agent) => { setShowMarketplace(false); onNavigate(agent ? `agentDesigner:${agent.id}` : 'agentDesigner'); }
+                            : undefined}
                         user={user}
                     />
                 ) : (showKBStore && activeKBId !== null) ? (

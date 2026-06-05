@@ -637,11 +637,15 @@ export default function useChatEngine({
                 break;
 
             case 'calendar_draft': {
-                const draftKey = JSON.stringify({ summary: data.summary, start: data.start, end: data.end });
+                // Key on the real draft fields (action/title/startTime/endTime/
+                // eventId); summary/start/end are never present so the old key
+                // deduped nothing and duplicate cards stacked up (BFSF-123).
+                const calKey = (d) => JSON.stringify({ action: d?.action, title: d?.title, startTime: d?.startTime, endTime: d?.endTime, eventId: d?.eventId });
+                const draftKey = calKey(data);
                 setMessages(prev => prev.map(m => {
                     if (m.id !== assistantMsgId) return m;
                     const existing = m.calendarDrafts || [];
-                    if (existing.some(d => JSON.stringify({ summary: d.summary, start: d.start, end: d.end }) === draftKey)) return m;
+                    if (existing.some(d => calKey(d) === draftKey)) return m;
                     return { ...m, calendarDrafts: [...existing, { ...data, status: 'pending' }] };
                 }));
                 break;
@@ -1070,6 +1074,11 @@ export default function useChatEngine({
         // Mutable refs for active agent tracking
         const activeIdRef = { current: assistantMsgId };
         const contentRef = { current: '' };
+        // Tracks whether the stream produced any real work (content/tool/build
+        // events) before it ended. Used so a stream that drops AFTER work was
+        // already in flight (e.g. a long webpage/notebook build that tripped a
+        // proxy idle-timeout) isn't misreported as a hard failure (BFSF-221).
+        let producedWork = false;
 
         try {
             // Thinking-effort override from composer (persisted in scopedStorage
@@ -1205,6 +1214,17 @@ export default function useChatEngine({
                     try {
                         const data = JSON.parse(line.slice(6));
 
+                        // Note any event that represents real progress, so a
+                        // later stream drop can be reported as "interrupted"
+                        // rather than a blanket failure (BFSF-221).
+                        if ([
+                            'content', 'content_replace', 'tool_start', 'tool_end',
+                            'webpage_doc_update', 'webpage_doc_partial', 'workspace_update',
+                            'notebook_doc_update', 'image', 'calendar_draft', 'linkedin_draft',
+                        ].includes(currentEvent)) {
+                            producedWork = true;
+                        }
+
                         // Handle direct-chat specific events
                         if (isDirectMode) {
                             if (currentEvent === 'conversation_created' && data.conversationId) {
@@ -1255,9 +1275,25 @@ export default function useChatEngine({
         } catch (err) {
             if (err.name !== 'AbortError') {
                 console.error("Chat error", err);
-                setMessages(prev => prev.map(m =>
-                    m.id === assistantMsgId ? { ...m, isStreaming: false, isError: true, content: 'Error generating response.' } : m
-                ));
+                // If the stream already produced content/tool/build activity,
+                // it most likely dropped after the work was underway (e.g. a long
+                // webpage/notebook build that tripped a proxy idle-timeout) — the
+                // result may well have been saved. Surface a non-fatal "interrupted"
+                // notice instead of masquerading it as a hard failure (BFSF-221).
+                const interrupted = producedWork || !!contentRef.current?.trim();
+                setMessages(prev => prev.map(m => {
+                    if (m.id !== assistantMsgId) return m;
+                    if (interrupted) {
+                        const prior = (m.content && m.content.trim()) ? m.content.trimEnd() + '\n\n' : '';
+                        return {
+                            ...m,
+                            isStreaming: false,
+                            isInterrupted: true,
+                            content: prior + '_⚠️ The response was interrupted before it finished. Any work already started (e.g. a webpage or notebook) may have been saved — check the relevant panel, or resend if needed._',
+                        };
+                    }
+                    return { ...m, isStreaming: false, isError: true, content: 'Error generating response.' };
+                }));
                 setIsLoading(false);
             }
         } finally {

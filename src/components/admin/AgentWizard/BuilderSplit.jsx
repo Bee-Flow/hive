@@ -636,12 +636,22 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ isPublished: next, sharedGroups: groups }),
             });
-            if (!res.ok) throw new Error(await res.text());
+            if (!res.ok) {
+                // Surface the real reason in the save banner. The old path did
+                // `throw new Error(await res.text())` then `alert(err.message)`,
+                // so a bodyless proxy error (e.g. NC session-bridge failure)
+                // produced a BLANK popup and the share silently never applied
+                // (BFSF-220). parseSaveError falls back to "Save failed (<status>)".
+                const info = await parseSaveError(res);
+                setSaveErrorMsg(info.message);
+                return;  // don't flip optimistic state on failure
+            }
             setIsPublished(next);
             setSharedGroups(groups);
+            setSaveErrorMsg('');
         } catch (err) {
             console.error('Publish toggle failed:', err);
-            alert(err.message);
+            setSaveErrorMsg(String(err?.message || err || 'Failed to update publish settings').slice(0, 500));
         }
     };
     const togglePublishedToOrg = () => {

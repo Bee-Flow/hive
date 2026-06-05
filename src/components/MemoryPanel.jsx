@@ -361,7 +361,10 @@ const MemoryPanel = ({ onClose, projectId }) => {
                             All
                         </button>
                         {Object.entries(typeConfig).filter(([key]) => allowedAddTypes.includes(key)).map(([key, cfg]) => (
-                            typeTotals[key] > 0 && (
+                            // Keep the currently-selected chip visible even when its live
+                            // count is 0, so selecting a filter can never make its own chip
+                            // vanish and strand the user on "All" (BFSF-180).
+                            (typeTotals[key] > 0 || filterType === key) && (
                                 <button
                                     key={key}
                                     onClick={() => setFilterType(filterType === key ? 'all' : key)}

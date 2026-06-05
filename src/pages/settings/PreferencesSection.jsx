@@ -174,6 +174,10 @@ const PreferencesSection = ({
 
     const handleAvatarSaved = (avatar, avatarType) => {
         setLocalUser(prev => ({ ...prev, avatar, avatarType }));
+        // Lift the change to the app-level `user` so the sidebar footer avatar
+        // updates too — without this only the Settings panel reflected the new
+        // image until a hard reload (BFSF-182). Mirrors handleSimpleModeToggle.
+        if (onUpdateUser) onUpdateUser({ avatar, avatarType });
     };
 
     const effectiveRole = localUser?.orgRole || localUser?.role;

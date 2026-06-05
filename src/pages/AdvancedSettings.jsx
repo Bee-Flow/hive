@@ -388,7 +388,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
         } catch (e) { }
         try {
             const ncRes = await authFetch(`${API_BASE}/auth/app-password-status`);
-            if (ncRes.ok) { const d = await ncRes.json(); setStatuses(p => ({ ...p, hasNextcloudAppPassword: !!d.hasAppPassword, isNextcloudUser: !!d.isNextcloudUser })); }
+            if (ncRes.ok) { const d = await ncRes.json(); setStatuses(p => ({ ...p, hasNextcloudAppPassword: !!d.hasAppPassword, isNextcloudUser: !!d.isNextcloudUser, nextcloudUrl: d.nextcloudUrl || '' })); }
         } catch (e) { }
         // GitHub Sync menu item is hidden until the org-admin connects a
         // GitHub account in Settings → Integrations. The org-sync panel

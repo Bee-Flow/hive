@@ -161,12 +161,31 @@ export default function ExternalShareSection({ webpageId, webpageName }) {
         }
     }, [webpageId, fetchShares]);
 
-    const copyToClipboard = (text, id) => {
+    const copyToClipboard = async (text, id) => {
+        // The async Clipboard API silently fails inside the Nextcloud iframe when
+        // the clipboard-write permission/secure-context/user-gesture isn't all
+        // satisfied. Fall back to execCommand('copy') and only mark "Copied" on
+        // actual success, so the button never lies about having copied (BFSF-188).
+        const markCopied = () => { setCopiedId(id); setTimeout(() => setCopiedId(c => (c === id ? null : c)), 1500); };
         try {
-            navigator.clipboard.writeText(text);
-            setCopiedId(id);
-            setTimeout(() => setCopiedId(c => (c === id ? null : c)), 1500);
-        } catch { /* clipboard unavailable */ }
+            if (navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text);
+                markCopied();
+                return;
+            }
+        } catch { /* fall through to legacy copy */ }
+        try {
+            const ta = document.createElement('textarea');
+            ta.value = text;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            const ok = document.execCommand('copy');
+            document.body.removeChild(ta);
+            if (ok) markCopied();
+        } catch { /* clipboard genuinely unavailable */ }
     };
 
     return (

@@ -38,6 +38,23 @@ import {
     CheckSquare, ImageIcon, Palette, WrapText, Maximize2, Minimize2, Type,
 } from 'lucide-react';
 
+/* Convert a Markdown string to HTML using the editor's OWN markdown parser.
+ * tiptap-markdown only auto-parses markdown at editor-creation time and on paste
+ * — NOT on setContent/insertContent, which expect HTML. So markdown delivered
+ * after the editor has mounted (e.g. a chat notebook_write via workspace_update)
+ * rendered as nothing, leaving the panel empty (BFSF-208). Routing it through
+ * editor.storage.markdown.parser.parse() yields HTML the editor renders correctly.
+ * Falls back to the raw (mermaid-preprocessed) string if the parser is missing. */
+function mdToHtml(editor, md) {
+    const src = preprocessMermaidContent(md || '') || '';
+    try {
+        const parsed = editor?.storage?.markdown?.parser?.parse(src);
+        return typeof parsed === 'string' ? parsed : src;
+    } catch (_) {
+        return src;
+    }
+}
+
 /* ── AI Actions for selection bubble menu ─────────────────────── */
 const getAIActions = (t) => [
     { key: 'rewrite', icon: RefreshCw, label: t('notebooks.ai_action_rewrite') },
@@ -486,7 +503,13 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
             TableCell,
             Markdown.configure({
                 html: true, tightLists: true, tightListClass: 'tight',
-                bulletListMarker: '-', linkify: true, breaks: false,
+                // linkify:false — don't auto-link bare prose. With it on, a poem
+                // line ending "…gust." followed by "De…" collapsed to "gust.De"
+                // and was turned into a (wrong) link because ".de" is a valid TLD.
+                // Explicit [text](url) markdown links still work. breaks:true —
+                // honor single newlines as line breaks so poems/verses keep their
+                // line structure instead of running together (BFSF-208 follow-up).
+                bulletListMarker: '-', linkify: false, breaks: true,
                 transformPastedText: true, transformCopiedText: true,
             }),
 
@@ -725,8 +748,14 @@ const NotebookEditor = forwardRef(function NotebookEditorInner(
             typeof text === 'string' ? linkifyLegalCitations(text) : text
         ).run(),
         setContent: (html) => editor?.commands.setContent(linkifyLegalCitations(preprocessMermaidContent(html) || ''), false),
-        insertMarkdown: (md) => editor?.chain().focus().insertContent(linkifyLegalCitations(md || '')).run(),
-        setMarkdownContent: (md) => editor?.commands.setContent(linkifyLegalCitations(preprocessMermaidContent(md) || ''), false),
+        insertMarkdown: (md) => {
+            if (!editor) return;
+            editor.chain().focus().insertContent(linkifyLegalCitations(mdToHtml(editor, md))).run();
+        },
+        setMarkdownContent: (md) => {
+            if (!editor) return;
+            editor.commands.setContent(linkifyLegalCitations(mdToHtml(editor, md)) || '', false);
+        },
         getEditor: () => editor,
     }), [editor]);
 

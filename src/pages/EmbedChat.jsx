@@ -295,11 +295,13 @@ const EmbedChat = ({ agentId }) => {
                                     return { ...m, emailDrafts: [...existing, { ...data, status: 'pending' }] };
                                 }));
                             } else if (currentEvent === 'calendar_draft') {
-                                const draftKey = JSON.stringify({ summary: data.summary, start: data.start, end: data.end });
+                                // Key on the real draft fields (BFSF-123).
+                                const calKey = (d) => JSON.stringify({ action: d?.action, title: d?.title, startTime: d?.startTime, endTime: d?.endTime, eventId: d?.eventId });
+                                const draftKey = calKey(data);
                                 setMessages(prev => prev.map(m => {
                                     if (m.id !== assistantMsgId) return m;
                                     const existing = m.calendarDrafts || [];
-                                    if (existing.some(d => JSON.stringify({ summary: d.summary, start: d.start, end: d.end }) === draftKey)) return m;
+                                    if (existing.some(d => calKey(d) === draftKey)) return m;
                                     return { ...m, calendarDrafts: [...existing, { ...data, status: 'pending' }] };
                                 }));
                             } else if (currentEvent === 'linkedin_draft') {

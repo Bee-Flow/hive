@@ -131,14 +131,34 @@ export default function WorkspaceNotebook({
         }
     }, [content, notebookId, ensureNotebook]);
 
-    // Push external updates imperatively
+    // Push external updates imperatively. content from the chat notebook_write
+    // tool is Markdown, so apply it through the editor's markdown setter. Crucial
+    // fix: do NOT advance prevContentRef until the editor actually exists and the
+    // content has been applied — on a cold open the editor isn't mounted yet, and
+    // the old code advanced the ref then bailed, dropping the first update forever
+    // so the notebook stayed empty after a confirmed write (BFSF-208). Retry until
+    // the editor is ready.
     useEffect(() => {
         if (content === prevContentRef.current) return;
-        prevContentRef.current = content;
-        const editor = editorRef.current?.getEditor?.();
-        if (!editor) return;
-        const processed = preprocessMermaidContent(content || '');
-        editor.commands.setContent(processed, false);
+        let cancelled = false;
+        let tries = 0;
+        const apply = () => {
+            if (cancelled) return;
+            const handle = editorRef.current;
+            const editor = handle?.getEditor?.();
+            if (!editor) {
+                if (tries++ < 40) setTimeout(apply, 50); // wait up to ~2s for mount
+                return;
+            }
+            if (typeof handle.setMarkdownContent === 'function') {
+                handle.setMarkdownContent(content || '');
+            } else {
+                editor.commands.setContent(preprocessMermaidContent(content || ''), { emitUpdate: false });
+            }
+            prevContentRef.current = content; // only after a successful apply
+        };
+        apply();
+        return () => { cancelled = true; };
     }, [content]);
 
     // Extract markdown helper

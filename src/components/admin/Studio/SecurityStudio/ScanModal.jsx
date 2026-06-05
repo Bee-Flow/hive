@@ -12,6 +12,7 @@ import React, { useState } from 'react';
  * what is an active security probe against a live host.
  */
 export default function ScanModal({ onClose, onStart }) {
+    const [mode, setMode] = useState('quick');
     const [targetUrl, setTargetUrl] = useState('');
     const [useZap, setUseZap] = useState(true);
     const [zapIntensity, setZapIntensity] = useState('baseline');
@@ -43,7 +44,7 @@ export default function ScanModal({ onClose, onStart }) {
         if (useTestssl) engines.push({ engine: 'testssl' });
         setBusy(true);
         try {
-            await onStart({ targetUrl: targetUrl.trim(), engines, authorized: true });
+            await onStart({ targetUrl: targetUrl.trim(), engines, authorized: true, mode });
         } catch (e) {
             setErr(e.message || 'Failed to start scan');
         } finally {
@@ -59,6 +60,35 @@ export default function ScanModal({ onClose, onStart }) {
                     <button onClick={onClose} className="p-1 rounded hover:bg-[var(--bg-secondary)]"><X size={16} /></button>
                 </header>
                 <div className="px-5 py-4 flex flex-col gap-3">
+                    <div className="flex flex-col gap-1">
+                        <span className="text-xs text-[var(--text-secondary)]">Mode</span>
+                        <div className="grid grid-cols-2 gap-2">
+                            <button
+                                type="button"
+                                onClick={() => setMode('quick')}
+                                className={`px-2 py-1.5 text-xs rounded border text-center ${mode === 'quick'
+                                    ? 'border-[var(--accent-primary)] bg-[var(--bg-secondary)]'
+                                    : 'border-[var(--border-default)]'}`}
+                            >
+                                Quick
+                            </button>
+                            <button
+                                type="button"
+                                onClick={() => setMode('agent')}
+                                className={`px-2 py-1.5 text-xs rounded border text-center ${mode === 'agent'
+                                    ? 'border-[var(--accent-primary)] bg-[var(--bg-secondary)]'
+                                    : 'border-[var(--border-default)]'}`}
+                            >
+                                AI agent
+                            </button>
+                        </div>
+                        <span className="text-[10px] text-[var(--text-tertiary)]">
+                            {mode === 'quick'
+                                ? 'Deterministic pipeline — each selected engine runs once and produces a graded report.'
+                                : 'Claude drives the scan live: it spiders, reads alerts, runs tools (incl. a sandboxed terminal), and you watch each step in real time.'}
+                        </span>
+                    </div>
+
                     <label className="text-xs text-[var(--text-secondary)]">
                         Target URL
                         <input
@@ -71,6 +101,12 @@ export default function ScanModal({ onClose, onStart }) {
 
                     <div className="flex flex-col gap-2">
                         <label className="text-xs text-[var(--text-secondary)]">Engines</label>
+
+                        {mode === 'agent' && (
+                            <div className="text-[10px] text-[var(--text-tertiary)] rounded border border-[var(--border-default)] bg-[var(--bg-secondary)] px-2 py-1.5">
+                                ZAP runs as a daemon the agent drives; Nuclei / testssl become tools it may use.
+                            </div>
+                        )}
 
                         {/* ZAP — web app scanner, with a baseline / full intensity selector. */}
                         <div className={`flex flex-col gap-2 p-3 rounded border ${useZap

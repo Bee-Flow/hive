@@ -237,7 +237,22 @@ const ConvRow = ({
             {active && <div className={ACCENT_BAR_CONV} />}
             {conv.pinned && <Pin className="w-3 h-3 text-[var(--accent-primary)] flex-shrink-0 -rotate-45" />}
             {/* Label dots */}
-            {(() => { try { const ls = JSON.parse(conv.labels_json || '[]'); return ls.length > 0 ? <div className="flex gap-0.5 flex-shrink-0">{ls.map(lid => { const l = (conversationLabels || []).find(x => x.id === lid); return l ? <div key={lid} className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: l.color }} title={l.name} /> : null; })}</div> : null; } catch { return null; } })()}
+            {(() => { try { const ls = JSON.parse(conv.labels_json || '[]'); const applied = ls.map(lid => (conversationLabels || []).find(x => x.id === lid)).filter(Boolean); if (!applied.length) return null; return (
+                <div className="flex items-center gap-1 flex-shrink-0 max-w-[55%] overflow-hidden">
+                    {/* Show the first applied label as a readable name-pill and any
+                        extras as larger dots, so the applied state is actually
+                        visible instead of an easily-missed 8px dot (BFSF-212). */}
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-medium truncate"
+                          style={{ background: `${applied[0].color}22`, color: applied[0].color, border: `1px solid ${applied[0].color}` }}
+                          title={applied.map(l => l.name).join(', ')}>
+                        <span className="w-1.5 h-1.5 rounded-full flex-shrink-0" style={{ background: applied[0].color }} />
+                        {applied[0].name}
+                    </span>
+                    {applied.slice(1).map(l => (
+                        <span key={l.id} className="w-2.5 h-2.5 rounded-full flex-shrink-0 ring-1 ring-white/50" style={{ background: l.color }} title={l.name} />
+                    ))}
+                </div>
+            ); } catch { return null; } })()}
             {/* Agent avatar to the left */}
             {agentBadge && (
                 <div className={`w-6 h-6 rounded-md flex-shrink-0 overflow-hidden flex items-center justify-center text-[11px] font-bold ring-1 ${agentBadge.avatarUrl ? 'ring-black/8 bg-[var(--bg-tertiary)]' : 'ring-black/8 bg-gradient-to-br from-[var(--accent-primary)]/10 to-[var(--accent-primary)]/25 text-[var(--accent-primary)]'}`}>
@@ -615,8 +630,15 @@ const Sidebar = ({
     // the avatar dropdown are hidden until the user turns Simple Mode back off.
     const _simpleMode = !!user?.simpleMode;
 
+    // "New Chat" highlight must clear once any other destination takes over the
+    // main content. Previously it stayed bold (directChatMode/selectedAgent are
+    // not reset when an overlay/page opens), so two items looked active at once
+    // (BFSF-172). Gate it on the same view flags the other nav items use.
+    const _otherViewActive = showMarketplace || showSettings || showAITasks
+        || showSkillsPanel || showTicketAssistant
+        || ['studio', 'notebooks', 'legal', 'admin'].includes(currentPage);
     const coreNav = [
-        { key: 'new-chat', label: t('sidebar.new_chat') || 'New Chat', icon: PenLine, onClick: onDirectChat, active: directChatMode && !selectedAgent },
+        { key: 'new-chat', label: t('sidebar.new_chat') || 'New Chat', icon: PenLine, onClick: onDirectChat, active: directChatMode && !selectedAgent && !_otherViewActive },
         { key: 'search', label: t('sidebar.search'), icon: Search, onClick: onOpenSearch, active: false },
     ];
 

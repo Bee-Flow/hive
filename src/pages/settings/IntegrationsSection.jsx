@@ -416,14 +416,19 @@ const GitHubIntegration = ({ onSaved, last }) => {
 // WebDAV / OCS Basic auth. Manually-generated app passwords (Nextcloud
 // Settings → Security → Devices & sessions) are recommended over OAuth-minted
 // ones, which inherit the access-token TTL (~10 min).
-const NextcloudIntegration = ({ hasNextcloudAppPassword, isNextcloudUser, isConnectorUser, onSaved, last }) => {
+const NextcloudIntegration = ({ hasNextcloudAppPassword, isNextcloudUser, isConnectorUser, nextcloudUrl: savedNextcloudUrl, onSaved, last }) => {
     const { t } = useTranslation();
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
+    const [url, setUrl] = useState(savedNextcloudUrl || '');
     const [saving, setSaving] = useState(false);
     const [disconnecting, setDisconnecting] = useState(false);
     const [autoCreating, setAutoCreating] = useState(false);
     const [notice, setNotice] = useState(null);
+
+    // Keep the URL field in sync once the saved value arrives (status loads after mount)
+    // and after a save re-fetches it. Username/password stay blank — they're write-only.
+    React.useEffect(() => { setUrl(savedNextcloudUrl || ''); }, [savedNextcloudUrl]);
 
     // When the user signs into Bee Flow via the Nextcloud ExApp connector,
     // every NC call is proxied back through the connector with AppAPI
@@ -447,7 +452,7 @@ const NextcloudIntegration = ({ hasNextcloudAppPassword, isNextcloudUser, isConn
         try {
             const res = await authFetch(`${API_BASE}/auth/save-app-password`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ username: username.trim(), password: password.trim() }),
+                body: JSON.stringify({ username: username.trim(), password: password.trim(), url: url.trim() }),
             });
             if (res.ok) { onSaved(); setUsername(''); setPassword(''); }
             else { const err = await res.json().catch(() => ({})); setNotice(err.error || 'Failed to save'); }
@@ -488,6 +493,14 @@ const NextcloudIntegration = ({ hasNextcloudAppPassword, isNextcloudUser, isConn
             icon={<svg viewBox="0 0 32 32" fill="none" style={{ width: '20px', height: '20px' }}><circle cx="16" cy="16" r="16" fill="#0082C9" /><path d="M11.5 11.2c-2 0-3.7 1.4-4.2 3.3a3.5 3.5 0 1 0 0 3 4.4 4.4 0 0 0 7 1.7l1.5-1.4 1.6 1.4a4.4 4.4 0 0 0 7-1.7 3.5 3.5 0 1 0 0-3 4.4 4.4 0 0 0-7-1.7l-1.6 1.4-1.5-1.4a4.4 4.4 0 0 0-2.8-1.6zm0 2.2a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8zm9 0a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8z" fill="white" /></svg>}
         >
             <div className="space-y-2">
+                <input
+                    type="url"
+                    value={url}
+                    onChange={e => setUrl(e.target.value)}
+                    placeholder="Nextcloud URL (e.g. https://cloud.example.com)"
+                    className="w-full px-3 py-2 rounded-lg border outline-none text-[13px] focus:border-[var(--accent-primary)] transition-colors"
+                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                />
                 <input
                     type="text"
                     value={username}
@@ -617,7 +630,7 @@ const IntegrationsSection = ({ statuses, onSaved, enabledIntegrations, isOrgAdmi
                         {showYouTrack && <YouTrackIntegration hasYouTrackConfig={statuses.hasYouTrackConfig} onSaved={() => onSaved('youtrack')} last={!showSignRequest && !showGamma && !showNextcloud} />}
                         {showSignRequest && <SignRequestIntegration hasSignRequestConfig={statuses.hasSignRequestConfig} onSaved={() => onSaved('signrequest')} last={!showGamma && !showNextcloud} />}
                         {showGamma && <GammaIntegration hasGammaKey={statuses.hasGammaKey} onSaved={() => onSaved('gamma')} last={!showNextcloud} />}
-                        {showNextcloud && <NextcloudIntegration hasNextcloudAppPassword={statuses.hasNextcloudAppPassword} isNextcloudUser={statuses.isNextcloudUser} isConnectorUser={user?.provider === 'nextcloud_connector'} onSaved={() => onSaved('nextcloud')} last />}
+                        {showNextcloud && <NextcloudIntegration hasNextcloudAppPassword={statuses.hasNextcloudAppPassword} isNextcloudUser={statuses.isNextcloudUser} isConnectorUser={user?.provider === 'nextcloud_connector'} nextcloudUrl={statuses.nextcloudUrl} onSaved={() => onSaved('nextcloud')} last />}
                     </div>
                 </div>
             )}

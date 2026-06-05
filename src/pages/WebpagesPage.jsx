@@ -455,14 +455,16 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
         }
     }, [setChatMessages, onWebpageChange]);
 
-    // Deep-link: load the webpage in the URL on first list fetch
+    // Deep-link: load the webpage in the URL directly by id. Do NOT gate on it
+    // being present in the fetched (capped) accessible list — pages outside that
+    // list never opened even though the server can serve them by id, so opening
+    // another user's correctly-shared page failed (BFSF-187). loadWebpage()
+    // surfaces a visible error if the id isn't accessible.
     useEffect(() => {
         if (!initialWebpageId || didAutoSelect.current) return;
-        if (webpages.find(w => w.id === initialWebpageId)) {
-            didAutoSelect.current = true;
-            loadWebpage(initialWebpageId);
-        }
-    }, [initialWebpageId, webpages, loadWebpage]);
+        didAutoSelect.current = true;
+        loadWebpage(initialWebpageId);
+    }, [initialWebpageId, loadWebpage]);
 
     /* ── Save (debounced) ────────────────────────────────────── */
     const persist = useCallback(async () => {
@@ -1081,6 +1083,7 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
                         js={js}
                         extraFiles={extraFiles}
                         extraContents={extraContents}
+                        isStreaming={chatLoading}
                     />
                 ) : (
                 <div ref={idePaneRef} className="h-full">

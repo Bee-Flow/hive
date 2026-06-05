@@ -50,11 +50,11 @@ export default function SecurityStudio({ user, onNavigate, hasPermission }) {
         }
     };
 
-    const startScan = async ({ targetUrl, engines, authorized }) => {
+    const startScan = async ({ targetUrl, engines, authorized, mode }) => {
         const res = await authFetch(`${API_BASE}/api/security/scans`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ targetUrl, engines, authorized }),
+            body: JSON.stringify({ targetUrl, engines, authorized, mode }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.message || data?.error || 'failed_to_start');

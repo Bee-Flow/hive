@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bot, Sparkles, ListChecks, BookOpen, Globe, Bug, ShieldAlert, Mic } from 'lucide-react';
+import { Bot, Sparkles, ListChecks, BookOpen, Globe, Bug, ShieldAlert, Mic, LifeBuoy } from 'lucide-react';
 import useTranslation from '../../../hooks/useTranslation';
 import AgentStudio from '../AgentStudio';
 import AITasksDesigner from '../AITasksDesigner';
@@ -8,6 +8,7 @@ import KBsStudio from './KBsStudio';
 import WebpagesPage from '../../../pages/WebpagesPage';
 import TestsStudio from './TestsStudio';
 import SecurityStudio from './SecurityStudio';
+import SupportStudio from './SupportStudio';
 import MeetingNotesPage from '../../../pages/meeting-notes/MeetingNotesPage';
 import { useLicenseContext } from '../../LicenseContext';
 
@@ -58,6 +59,12 @@ export default function Studio({
     // rather than spot-checking betaFeatures so super-admin grants flow
     // correctly down to ordinary org members.
     const canSeeMeetingNotes = hasLicenseFeature('meeting_notes') && !!(user?.canUseFeature?.meeting_notes ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('meeting_notes')));
+    // Support Studio — enterprise + beta opt-in (license × beta via canUseFeature)
+    // AND the org-level support_inbox permission (the inbox is gated per member,
+    // not just per org). hasPermission resolves the user's effective permissions.
+    const canSeeSupport = hasLicenseFeature('support_inbox')
+        && !!(user?.canUseFeature?.support_inbox ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('support_inbox')))
+        && (hasPermission('support_inbox') || hasPermission('all'));
     const tabs = [
         { id: 'agents',    label: t('studio.tab.agents'),    icon: <Bot size={14} /> },
         { id: 'skills',    label: t('studio.tab.skills'),    icon: <Sparkles size={14} /> },
@@ -66,6 +73,7 @@ export default function Studio({
         ...(canSeeWebpages ? [{ id: 'webpages', label: t('studio.tab.webpages') || 'Webpages', icon: <Globe size={14} /> }] : []),
         ...(canSeeTests ? [{ id: 'tests', label: t('studio.tab.tests') || 'Tests', icon: <Bug size={14} /> }] : []),
         ...(canSeeSecurity ? [{ id: 'security', label: t('studio.tab.security') || 'Security Scan', icon: <ShieldAlert size={14} /> }] : []),
+        ...(canSeeSupport ? [{ id: 'support', label: t('studio.tab.support') || 'Support', icon: <LifeBuoy size={14} /> }] : []),
         ...(canSeeMeetingNotes ? [{ id: 'meetingNotes', label: t('studio.tab.meeting_notes') || 'Meeting Notes', icon: <Mic size={14} /> }] : []),
     ];
 
@@ -157,6 +165,13 @@ export default function Studio({
                 )}
                 {section === 'security' && (
                     <SecurityStudio
+                        user={user}
+                        onNavigate={onNavigate}
+                        hasPermission={hasPermission}
+                    />
+                )}
+                {section === 'support' && (
+                    <SupportStudio
                         user={user}
                         onNavigate={onNavigate}
                         hasPermission={hasPermission}

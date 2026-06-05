@@ -4,7 +4,8 @@ import { API_BASE } from '../../../../utils/helpers';
 /**
  * Subscribe to /api/security/scans/:id/events via SSE.
  *
- * Returns { status, progressLines, reportJson, severitySummary, reportWebpageId, error, closed }.
+ * Returns { status, progressLines, reportJson, severitySummary, reportWebpageId, error, closed,
+ *           actionLog, currentAction, scanStat, terminalLines }.
  *
  * Event flow:
  *   - snapshot — initial state (late-subscriber catch-up)
@@ -12,9 +13,10 @@ import { API_BASE } from '../../../../utils/helpers';
  *   - progress — single console line
  *   - done     — final state + report + severity summary + report webpage id
  *
- * Unlike the Tests stream there are no frame/action events — security scans
- * run headless engines in isolated containers, so there is no live browser
- * view or structured agent action log to relay.
+ * Agent-mode scans additionally relay live structured events:
+ *   - action   — { step, tool, input, summary }: pushed onto a structured action log
+ *   - scanstat — { phase, crawledUrls?, alerts?, current? }: shallow-merged live stats
+ *   - terminal — { command? | chunk? | done? }: sandboxed terminal stream
  */
 export default function useScanRunEvents(scanId) {
     const [state, setState] = useState({
@@ -25,6 +27,10 @@ export default function useScanRunEvents(scanId) {
         reportWebpageId: null,
         error: null,
         closed: false,
+        actionLog: [],
+        currentAction: null,
+        scanStat: null,
+        terminalLines: [],
     });
 
     useEffect(() => {
@@ -56,6 +62,38 @@ export default function useScanRunEvents(scanId) {
                 setState(s => ({ ...s, progressLines: [...s.progressLines, d.line].slice(-200) }));
             } catch (_) {}
         };
+        const handleAction = (e) => {
+            try {
+                const d = JSON.parse(e.data);
+                const entry = { step: d.step, tool: d.tool, input: d.input, summary: d.summary };
+                setState(s => ({
+                    ...s,
+                    actionLog: [...s.actionLog, entry].slice(-60),
+                    currentAction: entry,
+                }));
+            } catch (_) {}
+        };
+        const handleScanStat = (e) => {
+            try {
+                const d = JSON.parse(e.data);
+                setState(s => ({ ...s, scanStat: { ...(s.scanStat || {}), ...d } }));
+            } catch (_) {}
+        };
+        const handleTerminal = (e) => {
+            try {
+                const d = JSON.parse(e.data);
+                let entry = null;
+                if (d.command !== undefined && d.command !== null) {
+                    entry = { kind: 'command', command: d.command };
+                } else if (d.chunk !== undefined && d.chunk !== null) {
+                    entry = { kind: 'output', chunk: d.chunk, stream: d.stream || 'stdout' };
+                } else if (d.done) {
+                    entry = { kind: 'exit', exitCode: d.exitCode };
+                }
+                if (!entry) return;
+                setState(s => ({ ...s, terminalLines: [...s.terminalLines, entry].slice(-400) }));
+            } catch (_) {}
+        };
         const handleDone = (e) => {
             try {
                 const d = JSON.parse(e.data);
@@ -79,6 +117,9 @@ export default function useScanRunEvents(scanId) {
         es.addEventListener('snapshot', handleSnapshot);
         es.addEventListener('status', handleStatus);
         es.addEventListener('progress', handleProgress);
+        es.addEventListener('action', handleAction);
+        es.addEventListener('scanstat', handleScanStat);
+        es.addEventListener('terminal', handleTerminal);
         es.addEventListener('done', handleDone);
         es.addEventListener('close', handleDone);
         es.onerror = handleError;

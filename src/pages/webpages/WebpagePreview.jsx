@@ -24,7 +24,7 @@ import { API_BASE, authFetch } from '../../utils/helpers';
  * into the iframe document, and the injected `window.beeflowDB` shim sends
  * it on every call to /api/webpages-preview/:id/db/...
  */
-export default function WebpagePreview({ webpageId, html, css, js, extraFiles = [], extraContents = {}, onSelectionAttach }) {
+export default function WebpagePreview({ webpageId, html, css, js, extraFiles = [], extraContents = {}, onSelectionAttach, isStreaming = false }) {
     const [refreshKey, setRefreshKey] = useState(0);
     const [dbToken, setDbToken] = useState(null);
     const [dbTokenExpiresAt, setDbTokenExpiresAt] = useState(0);
@@ -203,7 +203,7 @@ export default function WebpagePreview({ webpageId, html, css, js, extraFiles = 
                     </button>
                 </div>
             </div>
-            <div className="flex-1 min-h-0">
+            <div className="flex-1 min-h-0 relative">
                 <iframe
                     key={refreshKey}
                     title="Webpage preview"
@@ -212,6 +212,16 @@ export default function WebpagePreview({ webpageId, html, css, js, extraFiles = 
                     referrerPolicy="no-referrer"
                     style={{ width: '100%', height: '100%', border: 0, background: '#fff' }}
                 />
+                {/* While the page is still being generated and nothing has been
+                    painted yet, show a clear in-progress state instead of a blank
+                    white iframe that looks broken (BFSF-178). */}
+                {isStreaming && !(html && html.trim()) && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none"
+                         style={{ background: '#fff', color: '#475569' }}>
+                        <RefreshCw className="w-5 h-5 animate-spin" />
+                        <span className="text-sm">Generating preview…</span>
+                    </div>
+                )}
             </div>
         </div>
     );

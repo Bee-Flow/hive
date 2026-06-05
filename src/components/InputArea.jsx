@@ -43,6 +43,7 @@ const APP_DEFS = [
     { id: 'google-contacts', label: 'Google Contacts', description: 'Search, create & update contacts',       requiresGoogle: true,    iconSvg: (s = 'w-5 h-5') => renderAppLogo('google-contacts', s) },
     { id: 'google-keep',     label: 'Google Keep',     description: 'List, create & delete notes',            requiresGoogle: true,    iconSvg: (s = 'w-5 h-5') => renderAppLogo('google-keep', s) },
     { id: 'outlook',         label: 'Outlook',         description: 'Send & read emails',                     requiresMicrosoft: true, iconSvg: (s = 'w-5 h-5') => renderAppLogo('outlook', s) },
+    { id: 'outlook-readonly', label: 'Outlook Read-Only', description: 'Search and read emails',               requiresMicrosoft: true, iconSvg: (s = 'w-5 h-5') => renderAppLogo('outlook-readonly', s) },
     { id: 'ms-calendar',     label: 'MS Calendar',     description: 'Manage your schedule',                   requiresMicrosoft: true, iconSvg: (s = 'w-5 h-5') => renderAppLogo('ms-calendar', s) },
     { id: 'onedrive',        label: 'OneDrive',        description: 'Access files & folders',                 requiresMicrosoft: true, iconSvg: (s = 'w-5 h-5') => renderAppLogo('onedrive', s) },
     { id: 'ms-contacts',     label: 'MS Contacts',     description: 'Search & manage contacts',               requiresMicrosoft: true, iconSvg: (s = 'w-5 h-5') => renderAppLogo('ms-contacts', s) },
@@ -1157,6 +1158,7 @@ const InputArea = ({
                                                         case 'youtrack': setInput('Search my YouTrack issues'); break;
                                                         case 'gamma': setInput('Create a presentation about '); break;
                                                         case 'outlook': setInput('Show my recent Outlook emails'); break;
+                                                        case 'outlook-readonly': setInput('Show my recent Outlook emails'); break;
                                                         case 'ms-calendar': setInput("What's on my calendar this week?"); break;
                                                         case 'onedrive': setInput('List my OneDrive files'); break;
                                                         case 'ms-contacts': setInput('Search my contacts for '); break;

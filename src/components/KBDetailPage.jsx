@@ -246,7 +246,11 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                     setKb(prev => ({ ...prev, ...updated }));
                     onSaved?.(updated);
                 } else {
-                    alert(t('kb_detail.save_settings_failed'));
+                    // Surface the real server error instead of a generic "Failed to
+                    // save settings" that hid the cause — most often a 403 from
+                    // canAccessKB for a non-owner assigning a category (BFSF-214).
+                    const err = await res.json().catch(() => ({}));
+                    alert(t('kb_detail.save_failed', { message: err.error || `${res.status}` }));
                 }
             }
         } catch (e) { alert(t('kb_detail.save_failed', { message: e.message })); }
@@ -309,7 +313,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ content: textContent, title: textTitle || 'Text' }),
             });
-            if (res.ok) { setTextContent(''); setTextTitle(''); setIngestStatus(''); refreshDocs(); }
+            if (res.ok) { setTextContent(''); setTextTitle(''); refreshDocs(); setIngestStatus(t('kb_docs.ingest_success')); setTimeout(() => setIngestStatus(''), 4000); }
             else { const err = await res.json().catch(() => ({})); alert(t('kb_docs.ingest_error', { error: err.error || res.status })); setIngestStatus(''); }
         } catch (e) { setIngestStatus(''); alert(t('kb_docs.ingest_failed', { message: e.message })); }
         finally { setIngesting(false); }
@@ -328,7 +332,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body),
             });
-            if (res.ok) { setUrlInput(''); setIngestStatus(''); refreshDocs(); }
+            if (res.ok) { setUrlInput(''); refreshDocs(); setIngestStatus(t('kb_docs.ingest_success')); setTimeout(() => setIngestStatus(''), 4000); }
             else { const err = await res.json().catch(() => ({})); alert(t('kb_docs.ingest_error', { error: err.error || res.status })); setIngestStatus(''); }
         } catch (e) { setIngestStatus(''); alert(t('kb_docs.ingest_failed', { message: e.message })); }
         finally { setIngesting(false); }
@@ -342,7 +346,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
         formData.append('file', file);
         try {
             const res = await authFetch(`${API_BASE}/api/kb/${kbId}/ingest/file`, { method: 'POST', body: formData });
-            if (res.ok) { setIngestStatus(''); refreshDocs(); }
+            if (res.ok) { refreshDocs(); setIngestStatus(t('kb_docs.ingest_success')); setTimeout(() => setIngestStatus(''), 4000); }
             else { const err = await res.json().catch(() => ({})); alert(t('kb_docs.ingest_error', { error: err.error || res.status })); setIngestStatus(''); }
         } catch (e2) { setIngestStatus(''); alert(t('kb_docs.ingest_failed', { message: e2.message })); }
         finally { setIngesting(false); e.target.value = ''; }
@@ -528,7 +532,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                             </h1>
                             {!isCreateMode && (
                                 <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                                    {t('kb_detail.documents_chunks', { docs: (kb?.document_count ?? docs.length) || 0, chunks: kb?.total_chunks || 0 })}
+                                    {t('kb_detail.documents_chunks', { docs: (kb?.document_count ?? docs.length) || 0, chunks: (kb?.total_chunks ?? docs.reduce((s, d) => s + (d.chunk_count || 0), 0)) || 0 })}
                                 </p>
                             )}
                         </div>

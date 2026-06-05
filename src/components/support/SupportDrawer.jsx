@@ -75,11 +75,16 @@ export function NewThreadForm({ onCreated, onCancel }) {
                 rows={6}
                 value={message}
                 onChange={e => setMessage(e.target.value)}
+                // Auto-grow up to a cap so a long message isn't cramped in a
+                // fixed box, plus a visible counter — the box reads as "not
+                // resizable / limit unclear" otherwise (BFSF-198).
+                onInput={e => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 360) + 'px'; }}
                 placeholder="Describe what you need help with. The Bee Flow AI assistant will reply first and hand off to a human if needed."
-                maxLength={5000}
+                maxLength={10000}
                 className="w-full px-3 py-2 rounded-md border text-sm resize-y"
-                style={{ background: 'var(--bg-card)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                style={{ background: 'var(--bg-card)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', maxHeight: 360 }}
             />
+            <div className="text-[10px] text-right" style={{ color: 'var(--text-muted)' }}>{message.length} / 10000</div>
             {err && <div className="text-xs" style={{ color: '#dc2626' }}>{err}</div>}
             <div className="flex justify-end gap-2">
                 <button onClick={onCancel} className="px-3 py-1.5 rounded-md text-sm border" style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}>Cancel</button>
@@ -167,13 +172,18 @@ export function ThreadDetail({ threadId, onBack, onChanged }) {
             {thread.status !== 'resolved' && thread.status !== 'closed' && (
                 <div className="border-t p-2" style={{ borderColor: 'var(--border-default)' }}>
                     <textarea
-                        rows={2}
+                        rows={4}
                         value={reply}
                         onChange={e => setReply(e.target.value)}
+                        // Auto-grow + explicit cap so over-limit input is prevented
+                        // client-side instead of silently failing the server cap (BFSF-198).
+                        onInput={e => { e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 240) + 'px'; }}
                         placeholder="Reply…"
+                        maxLength={10000}
                         className="w-full px-2 py-1.5 rounded-md border text-sm resize-y"
-                        style={{ background: 'var(--bg-card)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                        style={{ background: 'var(--bg-card)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', maxHeight: 240 }}
                     />
+                    {reply.length > 0 && <div className="text-[10px] text-right mt-0.5" style={{ color: 'var(--text-muted)' }}>{reply.length} / 10000</div>}
                     <div className="mt-1.5 flex justify-end">
                         <button onClick={send} disabled={sending || !reply.trim()} className="px-3 py-1.5 rounded-md text-xs font-medium flex items-center gap-1.5 disabled:opacity-50" style={{ background: 'var(--accent-primary)', color: 'white' }}>
                             <Send className="w-3 h-3" /> {sending ? 'Sending…' : 'Send'}

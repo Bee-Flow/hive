@@ -194,6 +194,7 @@ function parseStudioUrl(pathname) {
         : seg === 'webpages' ? 'webpages'
         : seg === 'tests' ? 'tests'
         : seg === 'security' ? 'security'
+        : seg === 'support' ? 'support'
         : seg === 'meeting-notes' ? 'meetingNotes'
         : 'agents';
     return { section, id };
@@ -670,6 +671,7 @@ function App() {
                 : sectionRaw === 'webpages' ? 'webpages'
                 : sectionRaw === 'tests' ? 'tests'
                 : sectionRaw === 'security' ? 'security'
+                : sectionRaw === 'support' ? 'support'
                 : (sectionRaw === 'meeting-notes' || sectionRaw === 'meetingNotes') ? 'meetingNotes'
                 : 'agents';
             const pathSegment = section === 'aiTasks' ? 'routines'
