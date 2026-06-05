@@ -310,6 +310,10 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
     const [orgAuthLocked, setOrgAuthLocked] = useState(false);
     const orgSubItems = useMemo(() => {
         const items = BASE_ORG_SUB_ITEMS.filter(s => {
+            // Self-hosted: licensing is governed server-wide from the admin
+            // dashboard ("Server licence"), not per-org. Drop the per-org
+            // "License & Usage" entry entirely.
+            if (s.id === 'license' && isSelfHosted) return false;
             if (s.id === 'org_users') return canManageUsers;
             // Always show Integrations to org admins — the panel inside
             // displays empty states for orgs without grants, and beta-feature
@@ -341,6 +345,16 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
         }
         return items;
     }, [canSeeOrg, canManageUsers, isSelfHosted, hasOrgIntegrations, isNcConnectorUser, isNcOrg, isSuperAdmin, showNcSync, statuses.githubConnected, orgAuthLocked]);
+
+    // The per-org "License & Usage" section is hidden on self-hosted (see the
+    // orgSubItems filter above). A default/deep-link can still resolve activeTab
+    // to 'license', so bounce it to the first visible org section. Placed after
+    // orgSubItems so the dependency array can reference it without a TDZ error.
+    useEffect(() => {
+        if (isSelfHosted && activeTab === 'license') {
+            setActiveTab(orgSubItems[0]?.id || 'org_usage');
+        }
+    }, [isSelfHosted, activeTab, orgSubItems, setActiveTab]);
 
     // User-scoped: these are personal "which agent do I start on?" preferences.
     const [defaultAgentMode, setDefaultAgentMode] = useState(() => scopedStorage.getItem('defaultAgentMode') || 'last-used');
@@ -430,7 +444,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
             case 'memory': return <MemorySection memoryStats={memoryStats} onOpenMemory={() => setShowMemoryPanel(true)} onImported={fetchMemoryStats} />;
             case 'integrations': return <IntegrationsSection statuses={statuses} onSaved={handleIntegrationSaved} enabledIntegrations={user?.enabledIntegrations} isOrgAdmin={canSeeOrg} user={user} showOrgIntegrations={isConsumerAccount} />;
             case 'help_support': return <HelpSupportSection user={user} />;
-            case 'organisation': return canSeeOrg ? <OrganisationSection user={user} activeSection="license" /> : null;
+            case 'organisation': return canSeeOrg ? <OrganisationSection user={user} activeSection={isSelfHosted ? 'auth' : 'license'} /> : null;
             default: return null;
         }
     };

@@ -347,6 +347,18 @@ function RootPathGate() {
             .catch(() => ({ enabled: false }))
             .then(data => {
                 if (cancelled) return;
+                // Self-hosted: no public marketing site. The server flags this
+                // via `appOnly` (RootPathGate runs outside LicenseProvider so it
+                // can't read deployment mode itself). Rewrite "/" — and any
+                // single-segment slug — to /app so visitors land on the app
+                // shell, never the static HomePage.
+                if (data?.appOnly) {
+                    if (window.location.pathname !== '/app') {
+                        window.history.replaceState(null, '', '/app');
+                    }
+                    setCms(false);
+                    return;
+                }
                 if (!data?.enabled) {
                     // No live CMS site. For "/" we render the static public
                     // HomePage (handled in the render branch below) so that

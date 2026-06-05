@@ -3,6 +3,8 @@ import OrgInfoPanel, { SECTIONS as INFO_SECTIONS } from '../../components/admin/
 import OrgUsersPanel from '../../components/admin/OrgUsersPanel';
 import N8nSection from './N8nSection';
 import UsageSection from './UsageSection';
+import MonitoringPanel from '../../components/admin/MonitoringPanel';
+import { useDeploymentMode } from '../../hooks/useDeploymentMode';
 import GitHubSyncPanel from '../../components/admin/GitHubSyncPanel';
 import NextcloudSyncPanel from '../../components/admin/NextcloudSyncPanel';
 import OrgNcIntegrationsPanel from '../../components/admin/OrgNcIntegrationsPanel';
@@ -101,7 +103,13 @@ const GoogleMapsRow = () => {
 // Possible values: 'license' | 'auth' | 'privacy' | 'info' | 'users' | 'integrations'
 const OrganisationSection = ({ user, activeSection = 'license' }) => {
     const { t } = useTranslation();
+    const { isSelfHosted } = useDeploymentMode();
     const [orgState, setOrgState] = useState({ hasChanges: false, saving: false, message: null, handleSave: null });
+    // Self-hosted "Usage & Monitoring" embeds the full admin MonitoringPanel.
+    // Its sub-nav navigates via onNavigate('admin/monitoring/<id>') — here we
+    // intercept that to local state so it works in place, with no coupling to
+    // the /app/admin router.
+    const [monSection, setMonSection] = useState('overview');
 
     const perms = user?.permissions || [];
     const isFullAdmin = perms.includes('all') || perms.some(p => p.startsWith('admin_'));
@@ -161,9 +169,25 @@ const OrganisationSection = ({ user, activeSection = 'license' }) => {
                 <OrgUsersPanel user={user} />
             )}
 
-            {/* Usage & Monitoring */}
+            {/* Usage & Monitoring — self-hosted gets the full detailed admin
+                panel (per-model/agent/user tokens); cloud keeps the cost-only
+                customer view. MonitoringPanel's container is height:100%, so it
+                needs a bounded-height wrapper inside the scroll-based settings
+                pane. */}
             {activeSection === 'usage' && (
-                <UsageSection />
+                isSelfHosted ? (
+                    <div style={{ height: 'calc(100vh - 140px)', minHeight: '600px' }}>
+                        <MonitoringPanel
+                            activeSection={monSection}
+                            onNavigate={(p) => {
+                                const m = /^admin\/monitoring\/(.+)$/.exec(p || '');
+                                if (m) setMonSection(m[1]);
+                            }}
+                        />
+                    </div>
+                ) : (
+                    <UsageSection />
+                )
             )}
 
             {/* Integrations */}

@@ -53,7 +53,9 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
         { id: 'security', label: t('admin.tab_security'), perm: ['admin_security'], superAdminOnly: false },
         { id: 'integrations', label: t('admin.tab_integrations'), perm: ['admin_security'], superAdminOnly: true },
         { id: 'monitoring', label: t('admin.tab_monitoring'), perm: ['admin_monitoring'], superAdminOnly: false, minTier: 'enterprise' },
-        { id: 'compliance', label: t('admin.tab_compliance'), perm: ['admin_compliance'], superAdminOnly: false, minTier: 'enterprise' },
+        // Compliance Hub is a Bee Flow Cloud governance surface. Self-hosted
+        // installs manage their own compliance posture, so the tab is hidden.
+        { id: 'compliance', label: t('admin.tab_compliance'), perm: ['admin_compliance'], superAdminOnly: false, minTier: 'enterprise', cloudOnly: true },
         // Bee Flow customer-support inbox. Visible to any super-admin (or a
         // user with the `admin_support` permission), on cloud and self-hosted
         // alike — outbound email + AI reply are best-effort and degrade
@@ -68,8 +70,10 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
         { id: 'licenses', label: t('admin.tab_server_license') || 'Server licence', perm: ['all'], superAdminOnly: true },
         { id: 'appearance', label: t('admin.tab_appearance'), perm: ['admin_ai_config'], superAdminOnly: true, minTier: 'enterprise' },
         { id: 'languages', label: t('admin.tab_languages'), perm: ['admin_ai_config'], superAdminOnly: true },
-        // Product website builder — Bee Flow Cloud / self-hosted, Enterprise+.
-        { id: 'product-website', label: t('admin.tab_product_website'), perm: ['admin_ai_config'], superAdminOnly: true, minTier: 'enterprise' },
+        // Product website builder — a Bee Flow Cloud marketing surface. On a
+        // self-hosted install the public site is disabled (root goes straight
+        // to /app), so the editor tab is hidden too.
+        { id: 'product-website', label: t('admin.tab_product_website'), perm: ['admin_ai_config'], superAdminOnly: true, minTier: 'enterprise', cloudOnly: true },
     ];
 
     // If current tab isn't allowed, fall back to the first tab the user has access to
