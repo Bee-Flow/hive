@@ -4,7 +4,7 @@ import {
     Activity, BarChart3, RefreshCw, DollarSign, Bot,
     ChevronRight, MessageSquare, ThumbsUp, Clock, Calendar, AlertTriangle
 } from 'lucide-react';
-import { COLORS, fmt, fmtCost } from './shared';
+import { COLORS, fmt, fmtCost, rowCost } from './shared';
 import { OverviewPage } from './OverviewPage';
 import { UsageExplorerPage } from './UsageExplorerPage';
 import { FeedbackPage } from './FeedbackPage';
@@ -201,22 +201,18 @@ export default function MonitoringPanel({ activeSection = '', onNavigate }) {
         return () => clearInterval(iv);
     }, [fetchData]);
 
-    // Computed costs per model
+    // Computed costs per model (cache-aware — see rowCost in shared.jsx)
     const totalCost = useMemo(() => byModel.reduce((sum, m) => {
         const c = modelCosts[m.model];
         if (!c) return sum;
-        return sum + ((m.prompt_tokens || 0) / 1e6) * (c.input || 0)
-            + ((m.completion_tokens || 0) / 1e6) * (c.output || 0);
+        return sum + rowCost(m, c);
     }, 0), [byModel, modelCosts]);
 
     const costPerModel = useMemo(() => {
         const map = {};
         byModel.forEach(m => {
             const c = modelCosts[m.model];
-            if (c) {
-                map[m.model] = ((m.prompt_tokens || 0) / 1e6) * (c.input || 0)
-                    + ((m.completion_tokens || 0) / 1e6) * (c.output || 0);
-            }
+            if (c) map[m.model] = rowCost(m, c);
         });
         return map;
     }, [byModel, modelCosts]);

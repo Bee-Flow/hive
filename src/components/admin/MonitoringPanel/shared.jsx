@@ -21,6 +21,23 @@ export function fmtCost(n) {
     return '$' + n.toFixed(6);
 }
 
+// Cache-aware provider cost (USD) for a usage row, given its rate entry `c`
+// ({ input, output, cacheRead } per 1M tokens from the model-costs map).
+// Cached input tokens are billed at the cached rate, not the full input rate —
+// matches the backend computeCost. Falls back gracefully when cacheRead or
+// cached_tokens are absent (e.g. redacted non-admin rows → cached defaults 0).
+export function rowCost(row, c) {
+    if (!c) return null;
+    const prompt = row?.prompt_tokens || 0;
+    const completion = row?.completion_tokens || 0;
+    const cached = row?.cached_tokens || 0;
+    const uncached = Math.max(0, prompt - cached);
+    const cacheRate = c.cacheRead > 0 ? c.cacheRead : (c.input || 0);
+    return (uncached / 1e6) * (c.input || 0)
+        + (cached / 1e6) * cacheRate
+        + (completion / 1e6) * (c.output || 0);
+}
+
 export function fmtDuration(ms) {
     if (!ms) return '—';
     if (ms < 1000) return `${Math.round(ms)}ms`;

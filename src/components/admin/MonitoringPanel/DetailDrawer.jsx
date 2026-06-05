@@ -27,6 +27,7 @@ import {
   fmtCost,
   fmtDuration,
   fmtTime,
+  rowCost,
   COLORS,
   AGENT_COLORS,
   getAgentStyle,
@@ -400,10 +401,7 @@ export function DetailDrawer({
             >
               {relatedCalls.map((r, i) => {
                 const c = modelCosts[r.model];
-                const cost = c
-                  ? ((r.prompt_tokens || 0) / 1e6) * (c.input || 0) +
-                    ((r.completion_tokens || 0) / 1e6) * (c.output || 0)
-                  : null;
+                const cost = rowCost(r, c);
                 return (
                   <div
                     key={i}
