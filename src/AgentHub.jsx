@@ -106,9 +106,14 @@ const AgentHub = ({
     // hides the panel + buttons until the user turns Simple Mode back off.
     // `hasLicenseFeature('notebooks')` mirrors the sidebar + the `/api/notebooks*`
     // licence gate so the workspace notebook buttons / panel / open-in-notebook
-    // wiring all disappear when the org's plan doesn't grant notebooks.
+    // wiring all disappear when the org's plan doesn't grant notebooks. The
+    // `use_notebooks` RBAC permission check ALSO mirrors the sidebar
+    // (Sidebar.jsx) and the server router guard (requirePermission) so a user
+    // whose role lacks the permission doesn't see the in-chat notebook entry
+    // points either — previously these buttons showed without that check.
     const { hasFeature: hasLicenseFeature } = useLicenseContext();
-    const notebooksEnabled = !user?.simpleMode && user?.featureFlags?.notebooks !== false && hasLicenseFeature('notebooks');
+    const canUseNotebooksPerm = !!(user?.permissions?.includes('all') || user?.permissions?.includes('use_notebooks'));
+    const notebooksEnabled = !user?.simpleMode && user?.featureFlags?.notebooks !== false && hasLicenseFeature('notebooks') && canUseNotebooksPerm;
     const projectsEnabled = user?.featureFlags?.projects !== false;
 
     // Core State

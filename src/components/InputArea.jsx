@@ -106,9 +106,13 @@ const InputArea = ({
     const _simpleMode = !!user?.simpleMode;
     // Web Search is a licensed feature — mirror the backend tool gate
     // (core/integrationTools.js) so the composer toggle only appears when the
-    // org's plan/tier grants `web_search`.
-    const { hasFeature: hasLicenseFeature } = useLicenseContext();
-    const canUseWebSearch = hasLicenseFeature('web_search');
+    // org's plan/tier grants `web_search`. In the embed route (`/chat/<id>`,
+    // used by the Nextcloud connector + chat bubbles) there is no
+    // <LicenseProvider>, so `__hasProvider` is false; there we DON'T hide the
+    // toggle on a false default — the server still enforces entitlement when it
+    // decides whether to inject the search tool.
+    const licenseCtx = useLicenseContext();
+    const canUseWebSearch = licenseCtx.__hasProvider ? licenseCtx.hasFeature('web_search') : true;
     const [attachments, setAttachments] = useState([]);
     const [isDragOver, setIsDragOver] = useState(false);
     const [drivePickerOpen, setDrivePickerOpen] = useState(false);
