@@ -4,7 +4,7 @@ import {
     Activity, BarChart3, RefreshCw, DollarSign, Bot,
     ChevronRight, MessageSquare, ThumbsUp, Clock, Calendar, AlertTriangle
 } from 'lucide-react';
-import { COLORS, fmt, fmtCost, rowCost } from './shared';
+import { COLORS, rowCost } from './shared';
 import { OverviewPage } from './OverviewPage';
 import { UsageExplorerPage } from './UsageExplorerPage';
 import { FeedbackPage } from './FeedbackPage';
