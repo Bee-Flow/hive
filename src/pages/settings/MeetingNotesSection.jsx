@@ -46,7 +46,7 @@ export default function MeetingNotesSection() {
         (async () => {
             try {
                 const res = await authFetch(`${API_BASE}/api/talk-notes-settings/user/me`);
-                if (res.ok) setCfg(prev => ({ ...prev, ...(await res.json()) }));
+                if (res.ok) { const data = await res.json(); setCfg(prev => ({ ...prev, ...data })); }
                 else setAvailable(false); // 403/404 → feature not licensed for this account
             } catch (_) { setAvailable(false); } finally { setLoading(false); }
         })();

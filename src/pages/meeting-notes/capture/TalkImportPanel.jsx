@@ -39,7 +39,7 @@ export default function TalkImportPanel({ onComplete }) {
         }
     };
 
-    useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
+    useEffect(() => { load(); }, []);
 
     const handleImport = async (rec) => {
         clearError();

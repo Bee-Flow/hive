@@ -45,7 +45,7 @@ export default function MeetingNotesAdminPanel({ user }) {
         (async () => {
             try {
                 const res = await authFetch(`${API_BASE}/api/talk-notes-settings/${orgId}`);
-                if (res.ok) setCfg(prev => ({ ...prev, ...(await res.json()) }));
+                if (res.ok) { const data = await res.json(); setCfg(prev => ({ ...prev, ...data })); }
             } catch (_) { /* ignore */ } finally { setLoading(false); }
         })();
     }, [orgId]);
