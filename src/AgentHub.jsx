@@ -6,7 +6,7 @@ import { v4 as uuidv4 } from 'uuid';
 // These components are on the main chat path; deferring them costs more
 // in flicker than they save in bundle size.
 import Sidebar from './components/Sidebar';
-import { RequireTier } from './components/LicenseContext';
+import { RequireTier, useLicenseContext } from './components/LicenseContext';
 import InputArea from './components/InputArea';
 import WelcomeScreen from './components/WelcomeScreen';
 import MessageItem from './components/chat/MessageItem';
@@ -104,7 +104,11 @@ const AgentHub = ({
     // Feature flags
     // Simple Mode also forces notebooks off — the toggle in /settings/simple-mode
     // hides the panel + buttons until the user turns Simple Mode back off.
-    const notebooksEnabled = !user?.simpleMode && user?.featureFlags?.notebooks !== false;
+    // `hasLicenseFeature('notebooks')` mirrors the sidebar + the `/api/notebooks*`
+    // licence gate so the workspace notebook buttons / panel / open-in-notebook
+    // wiring all disappear when the org's plan doesn't grant notebooks.
+    const { hasFeature: hasLicenseFeature } = useLicenseContext();
+    const notebooksEnabled = !user?.simpleMode && user?.featureFlags?.notebooks !== false && hasLicenseFeature('notebooks');
     const projectsEnabled = user?.featureFlags?.projects !== false;
 
     // Core State
@@ -1831,16 +1835,16 @@ const AgentHub = ({
                 ) : showNotebooks ? (
                     /* Notebooks rendered inline in conversation area (same slot as
                        Settings / Agent Designer) so the app sidebar stays visible.
-                       Wrapped in RequireTier so community installs see the upgrade
-                       panel instead of a runtime 403 from /api/notebooks. */
-                    <RequireTier feature="notebooks">
-                        <NotebooksPage
-                            user={user}
-                            onBack={onCloseNotebooks}
-                            initialNotebookId={initialNotebookId}
-                            onNotebookChange={onNotebookChange}
-                        />
-                    </RequireTier>
+                       NotebooksPage self-gates on the `notebooks` licence feature:
+                       when the org's plan/tier doesn't grant it, the page renders
+                       nothing and redirects back via onBack (onCloseNotebooks)
+                       rather than showing an upgrade panel. */
+                    <NotebooksPage
+                        user={user}
+                        onBack={onCloseNotebooks}
+                        initialNotebookId={initialNotebookId}
+                        onNotebookChange={onNotebookChange}
+                    />
                 ) : showSettings ? (
                     /* Settings rendered inline in conversation area — Open WebUI style */
                     <AdvancedSettings onBack={null} onNavigate={onNavigate} onLogout={onLogout} user={user} onUpdateUser={onUpdateUser} onClose={onCloseSettings} />

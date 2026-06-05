@@ -16,6 +16,7 @@ import VoiceCallButton from './chat/Voice/VoiceCallButton';
 import VoiceInlinePanel from './chat/Voice/VoiceInlinePanel';
 import { getIntegrationLogo } from '../utils/integrationLogos';
 import { resizeImageForUpload, readAsDataUrl } from '../utils/imageResize';
+import { useLicenseContext } from './LicenseContext';
 
 // Tailwind w-N h-N → pixel dimensions for the chat sidebar's iconSvg
 // callers (Tailwind defaults: w-4=16, w-5=20, w-6=24).
@@ -103,6 +104,11 @@ const InputArea = ({
     // Model tier defaults to 'auto' (server resolves) and the secondary icons
     // (memory, KB, voice, skills, apps) are hidden until the user turns it off.
     const _simpleMode = !!user?.simpleMode;
+    // Web Search is a licensed feature — mirror the backend tool gate
+    // (core/integrationTools.js) so the composer toggle only appears when the
+    // org's plan/tier grants `web_search`.
+    const { hasFeature: hasLicenseFeature } = useLicenseContext();
+    const canUseWebSearch = hasLicenseFeature('web_search');
     const [attachments, setAttachments] = useState([]);
     const [isDragOver, setIsDragOver] = useState(false);
     const [drivePickerOpen, setDrivePickerOpen] = useState(false);
@@ -881,8 +887,8 @@ const InputArea = ({
                                         </div>
                                     );
                                 })()}
-                                {/* Web Search Toggle (gated by org settings for agent-search + agent disableExternalTools) */}
-                                {!selectedAgent?.config?.disableExternalTools && searchProviderConfig !== 'disabled' && (!orgEnabledIntegrations || orgEnabledIntegrations.includes('agent-search')) && (
+                                {/* Web Search Toggle (gated by the `web_search` licence feature, org settings for agent-search + agent disableExternalTools) */}
+                                {canUseWebSearch && !selectedAgent?.config?.disableExternalTools && searchProviderConfig !== 'disabled' && (!orgEnabledIntegrations || orgEnabledIntegrations.includes('agent-search')) && (
                                 <button
                                     onClick={() => {
                                         if (orgDisableSearchOnUpload && attachments.length > 0) return;

@@ -20,6 +20,7 @@ import SendForSigningModal from './notebooks/SendForSigningModal';
 import { preprocessMermaidContent } from './notebooks/MermaidExtension';
 import { renderMermaidToSVG, svgToPngDataUrl } from './notebooks/MermaidBlock';
 import { embedImagesAsBase64 } from '../utils/imageEmbedding';
+import { useLicenseContext } from '../components/LicenseContext';
 
 /* ── Time helper ──────────────────────────────────────────────── */
 function timeAgo(dateStr) {
@@ -89,6 +90,14 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     // The result is used near the end of the component so hook order isn't disturbed.
     const canUseNotebooks = !!(user?.permissions?.includes('all') || user?.permissions?.includes('use_notebooks'));
 
+    // Subscription/licence gate — matches the `notebooks` licence-feature gate on
+    // the `/api/notebooks*` mounts (server/index.js) and the sidebar menu item.
+    // When the org's plan/tier doesn't grant notebooks we hide the page and
+    // redirect back to the app rather than render a broken shell that 403s on
+    // every API call.
+    const { hasFeature: hasLicenseFeature } = useLicenseContext();
+    const licensedForNotebooks = hasLicenseFeature('notebooks');
+
     const [notebooks, setNotebooks] = useState([]);
     const [selected, setSelected] = useState(null);
     const [sources, setSources] = useState([]);
@@ -124,6 +133,13 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     // stops the server from burning tokens on a generation nobody will see.
     const generationAbortRef = useRef(null);
     useEffect(() => () => { generationAbortRef.current?.abort?.(); }, []);
+
+    // Redirect away when the plan doesn't grant notebooks (covers direct nav /
+    // stale bookmarks to /app/notebooks). The render gate below returns null in
+    // the same condition so nothing flashes before the redirect lands.
+    useEffect(() => {
+        if (!licensedForNotebooks) onBack?.();
+    }, [licensedForNotebooks, onBack]);
 
     // Table of Contents state (populated by the TipTap TableOfContents extension)
     const [tocItems, setTocItems] = useState([]);
@@ -919,6 +935,8 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
     /* ── Permission gate — must come before any render ─────── */
     /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
+    // Not entitled by plan/tier → render nothing; the effect above redirects.
+    if (!licensedForNotebooks) return null;
     if (!canUseNotebooks) {
         return (
             <div className="h-full flex items-center justify-center" style={{ background: 'var(--bg-primary)' }}>
