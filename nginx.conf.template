@@ -51,6 +51,29 @@ server {
         add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com data:; img-src 'self' data: blob: https:; connect-src 'self' https: wss:; base-uri 'self'; form-action 'self'" always;
     }
 
+    # ── Embedded SPA shell for the Nextcloud connector ───────────────────────
+    # The connector proxies its embedded SPA shell here (instead of baking its
+    # own copy) so a frontend deploy reaches the embedded view without a
+    # connector release. This is the `dist-embed` build (Vite --base +
+    # VITE_API_URL = NC's signed-proxy path). `^~` makes these prefixes win
+    # over `location /`; longest-prefix picks /embed/assets/ over /embed/.
+    # Uses the server-level `root`, so /embed/<x> → <root>/embed/<x> 1:1 —
+    # avoiding the alias+try_files pitfalls.
+    location ^~ /embed/assets/ {
+        expires 1y;
+        add_header Cache-Control "public, immutable" always;
+        add_header X-Content-Type-Options  "nosniff" always;
+        add_header Referrer-Policy         "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy      "camera=(), microphone=(self), geolocation=(), clipboard-read=(self), clipboard-write=(self)" always;
+    }
+    location ^~ /embed/ {
+        try_files $uri $uri/ /embed/index.html;
+        add_header Cache-Control "no-store, no-cache, must-revalidate" always;
+        add_header X-Content-Type-Options  "nosniff" always;
+        add_header Referrer-Policy         "strict-origin-when-cross-origin" always;
+        add_header Permissions-Policy      "camera=(), microphone=(self), geolocation=(), clipboard-read=(self), clipboard-write=(self)" always;
+    }
+
     # Handle SPA routing - redirect all non-file requests to index.html
     # NOTE: add_header in a location block overrides all server-level add_header
     # directives, so security headers must be re-declared here.

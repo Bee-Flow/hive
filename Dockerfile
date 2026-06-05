@@ -26,6 +26,34 @@ ENV VITE_BUILD_SHA=$VITE_BUILD_SHA
 ENV NODE_OPTIONS=--max-old-space-size=4096
 RUN npm run build
 
+# ── Embed-flavored second build (Nextcloud connector shell) ──────────────────
+# The NC connector proxies its embedded SPA shell from this build at /embed/
+# instead of baking its own copy, so a frontend deploy reaches the embedded
+# view without a connector release. Build flags MUST match what the connector
+# Dockerfile used to bake: VITE_API_URL + --base point at NC's signed-proxy
+# path so every asset/API URL routes back through NC → connector. APP_ID is
+# stable (bee_flow), so one build serves all tenants. Costs a second Vite
+# build (~minutes) in CI.
+ARG APP_ID=bee_flow
+
+# Hardcoded absolute asset paths (e.g. <img src="/bee-flow-logo.svg" />) bypass
+# Vite's --base rewrite. Strip the leading slash so they resolve relative to the
+# <base href> Vite injects (which routes through NC's proxy). Done AFTER the
+# main build so it can't affect it.
+RUN find . -path ./node_modules -prune -o \( -name '*.jsx' -o -name '*.js' -o -name '*.html' \) -print \
+    | xargs sed -i \
+        -e 's|src="/bee-flow-logo|src="bee-flow-logo|g' \
+        -e 's|src="/BeeFlow-logo|src="BeeFlow-logo|g' \
+        -e 's|href="/bee-flow-logo|href="bee-flow-logo|g' \
+        -e 's|href="/BeeFlow-logo|href="BeeFlow-logo|g' \
+        -e "s|'/bee-flow-logo|'bee-flow-logo|g" \
+        -e "s|'/BeeFlow-logo|'BeeFlow-logo|g"
+
+# Build into a SEPARATE outDir so the main dist/ (copied to the nginx root
+# below) stays intact.
+RUN VITE_API_URL=/index.php/apps/app_api/proxy/${APP_ID} \
+    npm run build -- --base=/index.php/apps/app_api/proxy/${APP_ID}/ --outDir dist-embed
+
 # Sourcemaps export stage — CI extracts .map files from here as a build
 # artifact for decoding minified stack traces. Maps never reach the nginx image.
 FROM scratch AS sourcemaps
@@ -36,6 +64,9 @@ FROM nginx:alpine
 
 # Copy built assets and strip sourcemaps so they are never served to clients.
 COPY --from=build /app/dist /usr/share/nginx/html
+# Embed-flavored shell for the Nextcloud connector, served at /embed/ (see
+# nginx.conf.template). The connector proxies its embedded SPA shell here.
+COPY --from=build /app/dist-embed /usr/share/nginx/html/embed
 RUN find /usr/share/nginx/html -name '*.map' -type f -delete
 
 # Copy custom nginx config template
