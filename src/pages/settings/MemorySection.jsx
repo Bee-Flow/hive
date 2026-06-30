@@ -61,6 +61,7 @@ const MemorySection = ({ memoryStats, onOpenMemory, onImported }) => {
                     {/* Manage row */}
                     <button
                         onClick={onOpenMemory}
+                        data-tour="memory-manage"
                         className="w-full flex items-center px-5 py-3.5 text-left transition-colors gap-3"
                         style={{ background: 'var(--bg-secondary)' }}
                         onMouseEnter={e => e.currentTarget.style.background = 'var(--bg-tertiary)'}

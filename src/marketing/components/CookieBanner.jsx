@@ -83,6 +83,14 @@ export default function CookieBanner({
         } catch {
             /* storage blocked — the in-memory choice still hides the banner */
         }
+        // Notify same-tab listeners (e.g. AnalyticsTracker in cookie mode) that
+        // consent changed — the `storage` event only fires in OTHER tabs, so a
+        // dedicated event is needed for the tab the visitor clicked in.
+        try {
+            window.dispatchEvent(new CustomEvent('bf-cookie-consent', { detail: value }));
+        } catch {
+            /* CustomEvent unsupported — non-fatal, tracker reconciles on reload */
+        }
     };
 
     const reopen = () => setConsent(null);

@@ -2,7 +2,7 @@ import React from 'react';
 import { AlertCircle, ArrowLeft, ArrowRight } from 'lucide-react';
 import { useTranslation } from '../../hooks/useTranslation';
 
-const SignupStepAuth = ({ signupData, setSignupData, handleSignupNext, setSignupStep, setError, allowedMethods = null }) => {
+const SignupStepAuth = ({ signupData, setSignupData, handleSignupNext, setSignupStep, setError, allowedMethods = null, embedded = false }) => {
     const { t } = useTranslation();
 
     const allMethods = [{
@@ -15,7 +15,7 @@ const SignupStepAuth = ({ signupData, setSignupData, handleSignupNext, setSignup
                 <path d="M7 11V7a5 5 0 0 1 10 0v4" />
             </svg>
         ),
-        color: '#6366f1',
+        color: '#f59e0b',
     }, {
         id: 'google',
         name: t('org.google_auth'),
@@ -93,14 +93,19 @@ const SignupStepAuth = ({ signupData, setSignupData, handleSignupNext, setSignup
                 <span><strong>{t('signup.choose_auth_carefully')}</strong> {t('signup.choose_auth_carefully_desc')}</span>
             </div>
 
-            <button type="button" onClick={handleNext}
-                className="w-full py-3 bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-base shadow-lg mt-2">
-                {t('signup.continue')} <ArrowRight className="w-5 h-5" />
-            </button>
-            <button type="button" onClick={() => { setSignupStep(1); setError(''); }}
-                className="w-full py-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm">
-                <ArrowLeft className="w-4 h-4" /> {t('signup.back')}
-            </button>
+            {/* Footer buttons — only standalone (legacy). Wizard shell owns nav. */}
+            {!embedded && (
+                <>
+                    <button type="button" onClick={handleNext}
+                        className="w-full py-3 bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-base shadow-lg mt-2">
+                        {t('signup.continue')} <ArrowRight className="w-5 h-5" />
+                    </button>
+                    <button type="button" onClick={() => { setSignupStep(1); setError(''); }}
+                        className="w-full py-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm">
+                        <ArrowLeft className="w-4 h-4" /> {t('signup.back')}
+                    </button>
+                </>
+            )}
         </div>
     );
 };

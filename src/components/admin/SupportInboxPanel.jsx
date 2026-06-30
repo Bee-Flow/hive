@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Inbox, Send, CheckCircle2, AlertTriangle, RefreshCw, Bot, User, Settings as SettingsIcon, Shield, ChevronDown, ChevronRight, History } from 'lucide-react';
 import { authFetch, API_BASE } from '../../utils/helpers';
 import SupportAIConfig from './SupportAIConfig';
+import EmailHtmlBody from './EmailHtmlBody';
 
 // Mirrors server/auth/permissions.js OrgRoles for display purposes.
 const ROLE_LABELS = {
@@ -623,7 +624,13 @@ export default function SupportInboxPanel({ focusThreadId = null }) {
                                                 {m.internal_note && <span className="px-1.5 py-0.5 rounded" style={{ background: 'rgba(245,158,11,0.2)', color: '#b45309' }}>internal note</span>}
                                                 <span className="ml-auto">{formatRelative(m.created_at)}</span>
                                             </div>
-                                            <div className="whitespace-pre-wrap">{m.body}</div>
+                                            {m.body_html ? (
+                                                <div className="rounded-md overflow-hidden border bg-white" style={{ borderColor: 'var(--border-default)' }}>
+                                                    <EmailHtmlBody html={m.body_html} />
+                                                </div>
+                                            ) : (
+                                                <div className="whitespace-pre-wrap">{m.body}</div>
+                                            )}
                                             {Array.isArray(m.kb_citations) && m.kb_citations.length > 0 && (
                                                 <div className="mt-2 pt-2 border-t text-xs" style={{ borderColor: 'var(--border-default)', color: 'var(--text-muted)' }}>
                                                     Cited: {m.kb_citations.map(c => c.title).filter(Boolean).join(' · ')}

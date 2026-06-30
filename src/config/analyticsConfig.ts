@@ -64,3 +64,73 @@ export const OPERATOR_COLORS: Record<string, string> = {
 export function operatorColor(name: string | null | undefined): string {
     return (name && OPERATOR_COLORS[name]) || '#64748b';
 }
+
+/**
+ * Shared semantic colours for the monitoring dashboards. Deliberately
+ * excludes purple/violet/indigo (project styling rule) — the old per-file
+ * `C` palettes (including the latent indigo `#6366f1`) are replaced by this.
+ */
+export const SEMANTIC = {
+    in: '#3b82f6',      // input tokens / sent
+    out: '#f59e0b',     // output tokens / received-ish
+    eu: '#10b981',      // EU/EEA
+    local: '#14b8a6',   // on-prem / local
+    nonEu: '#f59e0b',   // non-EU egress
+    ok: '#10b981',
+    good: '#84cc16',
+    watch: '#f59e0b',
+    risk: '#f97316',
+    crit: '#ef4444',
+    blue: '#3b82f6',
+    green: '#10b981',
+    amber: '#f59e0b',
+    orange: '#f97316',
+    rose: '#f43f5e',
+    cyan: '#06b6d4',
+    sky: '#0ea5e9',
+    teal: '#14b8a6',
+    pink: '#ec4899',
+    slate: '#64748b',
+    muted: '#94a3b8',
+} as const;
+
+/**
+ * 5-band score → colour, higher-is-better. Shared by the Integrations
+ * sovereignty hero and SovereigntyRow (previously redefined identically in
+ * both). Other heroes with different semantics (feedback positive-rate,
+ * terminations clean-completion) use `pickBand` with their own thresholds.
+ */
+export function scoreColor(score: number): string {
+    if (score >= 80) return SEMANTIC.ok;
+    if (score >= 60) return SEMANTIC.good;
+    if (score >= 40) return SEMANTIC.watch;
+    if (score >= 20) return SEMANTIC.risk;
+    return SEMANTIC.crit;
+}
+
+export function scoreLabel(score: number): string {
+    if (score >= 80) return 'Excellent';
+    if (score >= 60) return 'Good';
+    if (score >= 40) return 'Watch';
+    if (score >= 20) return 'Risky';
+    return 'Critical';
+}
+
+export interface ScoreBand {
+    min: number;
+    color: string;
+    label: string;
+}
+
+/**
+ * Generic descending-threshold band picker. `bands` must be sorted high→low
+ * by `min`; returns the first band whose `min` the value meets, else the last.
+ * Lets feedback/terminations express their own thresholds without re-deriving
+ * colour ladders inline.
+ */
+export function pickBand(value: number | null | undefined, bands: ScoreBand[]): ScoreBand {
+    if (value != null) {
+        for (const b of bands) if (value >= b.min) return b;
+    }
+    return bands[bands.length - 1];
+}

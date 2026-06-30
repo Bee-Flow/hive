@@ -1,11 +1,15 @@
 /**
- * ExternalShareSection — owner-only UI for creating, listing, and revoking
- * external (public) share links on a webpage.
+ * ExternalShareSection — UI for creating, listing, and revoking external
+ * (public) share links on a webpage.
  *
  * Mounted inside the PublishMenu popover below the existing Personal / Org /
- * Groups picker. Shares are managed via the /api/webpages/:id/public-shares
- * endpoints; the raw URL is shown to the user exactly once at creation
- * (the server only stores its hash).
+ * Groups picker (owner), and inside ShareLinksMenu with `readOnly` for
+ * non-owners who can read the page (BFSF-188). Shares are managed via the
+ * /api/webpages/:id/public-shares endpoints; the GET returns a per-share
+ * `url` when the token is recoverable (encrypted at rest), so links stay
+ * copyable after creation. Legacy shares (no url) fall back to "ask the
+ * owner". readOnly hides every mutating control — create/refresh/revoke
+ * stay owner-only server-side regardless.
  */
 
 import { ExternalLink, Globe, Lock, Mail, Copy, Check, Trash2, Plus, RefreshCw } from 'lucide-react';
@@ -38,7 +42,7 @@ function formatExpiry(iso) {
     return `Expires ${d.toLocaleDateString()}`;
 }
 
-export default function ExternalShareSection({ webpageId, webpageName }) {
+export default function ExternalShareSection({ webpageId, webpageName, readOnly = false }) {
     const [shares, setShares] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -194,7 +198,7 @@ export default function ExternalShareSection({ webpageId, webpageName }) {
                 <div className="text-[11px] uppercase tracking-wide text-[var(--text-tertiary)]">
                     External link
                 </div>
-                {!showForm && (
+                {!readOnly && !showForm && (
                     <button
                         type="button"
                         onClick={() => { setShowForm(true); setJustCreated(null); }}
@@ -209,7 +213,7 @@ export default function ExternalShareSection({ webpageId, webpageName }) {
             {justCreated && (
                 <div className="mx-3 mb-2 p-3 rounded-lg bg-emerald-500/10 ring-1 ring-emerald-500/30">
                     <div className="text-xs font-medium text-emerald-700 dark:text-emerald-400 mb-1">
-                        Share link created — copy it now, this is shown once.
+                        Share link created.
                     </div>
                     <div className="flex items-center gap-2">
                         <input
@@ -319,29 +323,51 @@ export default function ExternalShareSection({ webpageId, webpageName }) {
                                 <div className="text-xs font-medium text-[var(--text-primary)] truncate flex-1">
                                     {s.accessMode === 'unlisted' && 'Anyone with the link'}
                                     {s.accessMode === 'password' && 'Password-protected'}
-                                    {s.accessMode === 'email' && `Email-gated (${(s.allowedEmails || []).length})`}
+                                    {/* Non-owners get allowedEmails stripped server-side — omit the count rather than show a bogus (0). */}
+                                    {s.accessMode === 'email' && `Email-gated${Array.isArray(s.allowedEmails) ? ` (${s.allowedEmails.length})` : ''}`}
                                 </div>
-                                <button
-                                    type="button"
-                                    onClick={() => handleRefresh(s.id)}
-                                    title="Re-snapshot — update the public copy to match current edits"
-                                    className="p-1 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)]"
-                                >
-                                    <RefreshCw size={12} />
-                                </button>
-                                <button
-                                    type="button"
-                                    onClick={() => handleRevoke(s.id)}
-                                    title="Revoke link"
-                                    className="p-1 rounded hover:bg-red-500/10 text-red-500"
-                                >
-                                    <Trash2 size={12} />
-                                </button>
+                                {s.url && (
+                                    <button
+                                        type="button"
+                                        onClick={() => copyToClipboard(s.url, s.id)}
+                                        title="Copy link"
+                                        className="p-1 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)]"
+                                    >
+                                        {copiedId === s.id ? <Check size={12} /> : <Copy size={12} />}
+                                    </button>
+                                )}
+                                {!readOnly && (
+                                    <>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRefresh(s.id)}
+                                            title="Re-snapshot — update the public copy to match current edits"
+                                            className="p-1 rounded hover:bg-[var(--bg-secondary)] text-[var(--text-secondary)]"
+                                        >
+                                            <RefreshCw size={12} />
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleRevoke(s.id)}
+                                            title="Revoke link"
+                                            className="p-1 rounded hover:bg-red-500/10 text-red-500"
+                                        >
+                                            <Trash2 size={12} />
+                                        </button>
+                                    </>
+                                )}
                             </div>
                             <div className="text-[11px] text-[var(--text-tertiary)] flex items-center gap-2">
                                 <span>{formatExpiry(s.expiresAt)}</span>
                                 <span>·</span>
                                 <span>{s.viewCount} view{s.viewCount === 1 ? '' : 's'}</span>
+                                {/* Legacy shares predate the recoverable token — only the owner ever saw the URL. */}
+                                {readOnly && !s.url && (
+                                    <>
+                                        <span>·</span>
+                                        <span>Link held by owner — ask them for the URL</span>
+                                    </>
+                                )}
                             </div>
                         </div>
                     ))}
@@ -349,7 +375,9 @@ export default function ExternalShareSection({ webpageId, webpageName }) {
             )}
             {!loading && activeShares.length === 0 && !showForm && !justCreated && (
                 <div className="px-4 pb-3 text-xs text-[var(--text-tertiary)]">
-                    No external links yet. <ExternalLink size={10} className="inline" /> Anyone with a published link can view a read-only snapshot — no Bee Flow account needed.
+                    {readOnly
+                        ? <>The owner hasn&apos;t created any external links for this page.</>
+                        : <>No external links yet. <ExternalLink size={10} className="inline" /> Anyone with a published link can view a read-only snapshot — no Bee Flow account needed.</>}
                 </div>
             )}
         </div>

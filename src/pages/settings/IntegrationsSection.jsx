@@ -1,7 +1,13 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
+import { useEntitlements } from '../../components/EntitlementsContext';
 import N8nSection from './N8nSection';
+import ConnectionsManager from './ConnectionsManager';
+
+// Named connections + lending UI — hidden for now (feature paused, may return).
+// Flip to true to restore the Connections panel at the top of this section.
+const SHOW_NAMED_CONNECTIONS = false;
 
 // ── Shared UI helpers ─────────────────────────────────────────────────────────
 // Pull translations from the hook directly so parents don't have to thread `t`
@@ -28,7 +34,7 @@ const IntegrationRow = ({ icon, name, description, connected, badge, children, l
     const [expanded, setExpanded] = useState(false);
 
     return (
-        <div style={{ borderBottom: last ? 'none' : '1px solid var(--border-subtle)' }}>
+        <div data-tour="integration-card" style={{ borderBottom: last ? 'none' : '1px solid var(--border-subtle)' }}>
             <button
                 className="w-full flex items-center gap-3 px-5 py-3.5 text-left transition-colors"
                 style={{ background: 'var(--bg-secondary)' }}
@@ -65,7 +71,7 @@ const IntegrationRow = ({ icon, name, description, connected, badge, children, l
 };
 
 // ── Field helpers ─────────────────────────────────────────────────────────────
-const ApiKeyField = ({ placeholder, value, onChange, onSave, saving, hint, t }) => (
+const ApiKeyField = ({ placeholder, value, onChange, onSave, saving, hint, t, canSave }) => (
     <div>
         <div className="flex gap-2">
             <input
@@ -75,11 +81,11 @@ const ApiKeyField = ({ placeholder, value, onChange, onSave, saving, hint, t }) 
                 placeholder={placeholder}
                 className="flex-1 px-3 py-2 rounded-lg border outline-none text-[13px] focus:border-[var(--accent-primary)] transition-colors"
                 style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
-                onKeyDown={e => e.key === 'Enter' && value.trim() && onSave()}
+                onKeyDown={e => e.key === 'Enter' && (canSave ?? value.trim()) && onSave()}
             />
             <button
                 onClick={onSave}
-                disabled={saving || !value.trim()}
+                disabled={saving || !(canSave ?? value.trim())}
                 className="px-4 py-2 rounded-lg text-[13px] font-medium text-white disabled:opacity-40 transition-opacity"
                 style={{ background: 'var(--accent-primary)' }}
             >
@@ -305,6 +311,199 @@ const GammaIntegration = ({ hasGammaKey, onSaved, last }) => {
                 hint={<>Get key from <a href="https://gamma.app/settings" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }} className="underline">gamma.app/settings</a> → API Tokens</>}
             />
             {hasGammaKey && <DisconnectButton onDisconnect={handleDisconnect} disconnecting={disconnecting} />}
+        </IntegrationRow>
+    );
+};
+
+// ── AFAS Profit ───────────────────────────────────────────────────────────────
+// Read-only ERP access via an AFAS AppConnector token. The member number forms
+// the API subdomain ({nr}.rest.afas.online) — digits only, validated server-side.
+const AFASIntegration = ({ hasAfasConfig, onSaved, last }) => {
+    const { t } = useTranslation();
+    const [memberNumber, setMemberNumber] = useState('');
+    const [token, setToken] = useState('');
+    const [envType, setEnvType] = useState('production');
+    const [envTouched, setEnvTouched] = useState(false);
+    const [saving, setSaving] = useState(false);
+    const [disconnecting, setDisconnecting] = useState(false);
+    const [error, setError] = useState(null);
+    const save = async () => {
+        if (!memberNumber.trim() && !token.trim() && !envTouched) return;
+        // First connect needs both secrets — a token-only save would store a
+        // half-configured integration that still shows as disconnected.
+        if (!hasAfasConfig && (!memberNumber.trim() || !token.trim())) {
+            setError(t('integ.afas_need_both'));
+            return;
+        }
+        setSaving(true); setError(null);
+        try {
+            const body = {};
+            if (memberNumber.trim()) body.afasMemberNumber = memberNumber.trim();
+            if (token.trim()) body.afasToken = token.trim();
+            // Only send the environment when first connecting or explicitly
+            // changed — otherwise a token-only update would silently reset a
+            // saved test/accept environment back to the select's default.
+            if (!hasAfasConfig || envTouched) body.afasEnvType = envType;
+            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (res.ok) { onSaved(); setMemberNumber(''); setToken(''); setEnvTouched(false); }
+            else { const err = await res.json().catch(() => ({})); setError(err.error || 'Failed to save'); }
+        } catch (e) { console.error(e); setError(e.message); }
+        setSaving(false);
+    };
+    const handleDisconnect = async () => {
+        setDisconnecting(true); setError(null);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ afasMemberNumber: '', afasToken: '', afasEnvType: '' }),
+            });
+            if (res.ok) { onSaved(); setMemberNumber(''); setToken(''); setEnvType('production'); setEnvTouched(false); }
+        } catch (e) { console.error(e); }
+        setDisconnecting(false);
+    };
+    return (
+        <IntegrationRow
+            last={last}
+            connected={hasAfasConfig}
+            name="AFAS Profit"
+            description={hasAfasConfig ? t('integ.afas_connected') : t('integ.afas_desc')}
+            icon={<svg viewBox="0 0 24 24" fill="none" style={{ width: '20px', height: '20px' }}><rect x="2" y="2" width="20" height="20" rx="4" fill="#E30613" /><path d="M12 6.5L7 17.5h2.3l1-2.4h3.4l1 2.4H17L12 6.5zm0 4.1l1 2.5h-2l1-2.5z" fill="white" /></svg>}
+        >
+            <div className="space-y-2">
+                <ol className="list-decimal pl-4 space-y-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    <li>{t('integ.afas_step1')}</li>
+                    <li>{t('integ.afas_step2')}</li>
+                    <li>{t('integ.afas_step3')}</li>
+                </ol>
+                <div className="flex gap-2">
+                    <input type="text" inputMode="numeric" value={memberNumber}
+                        onChange={e => setMemberNumber(e.target.value.replace(/\D/g, ''))}
+                        placeholder={hasAfasConfig ? '••••••' : t('integ.afas_member_placeholder')}
+                        aria-label={t('integ.afas_member_label')}
+                        className="flex-1 px-3 py-2 rounded-lg border outline-none text-[13px] focus:border-[var(--accent-primary)] transition-colors"
+                        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }} />
+                    <select value={envType}
+                        onChange={e => { setEnvType(e.target.value); setEnvTouched(true); }}
+                        aria-label={t('integ.afas_env_label')}
+                        className="px-3 py-2 rounded-lg border outline-none text-[13px]"
+                        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}>
+                        <option value="production">{t('integ.afas_env_production')}</option>
+                        <option value="test">{t('integ.afas_env_test')}</option>
+                        <option value="accept">{t('integ.afas_env_accept')}</option>
+                    </select>
+                </div>
+                <ApiKeyField
+                    placeholder={hasAfasConfig ? '••••••••••••••••' : t('integ.afas_token_placeholder')}
+                    value={token} onChange={e => setToken(e.target.value)} onSave={save} saving={saving}
+                    canSave={!!(token.trim() || memberNumber.trim() || envTouched)}
+                    hint={<>AFAS Help: <a href="https://help.afas.nl/help/NL/SE/App_Cnr_Rest_Token.htm" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }} className="underline">App connector &amp; token aanmaken</a></>}
+                />
+                {error && <p className="text-[11px]" style={{ color: '#dc2626' }}>{error}</p>}
+                {hasAfasConfig && <DisconnectButton onDisconnect={handleDisconnect} disconnecting={disconnecting} />}
+            </div>
+        </IntegrationRow>
+    );
+};
+
+// ── NMBRS ───────────────────────────────────────────────────────────────────
+// Read-only payroll/HR access. Supports both NMBRS APIs: SOAP (login email +
+// token) and REST (Bearer token). The subdomain is the tenant; non-secret
+// fields pre-fill from the saved config, the token is never returned.
+const NMBRSIntegration = ({ hasNmbrsConfig, apiMode: initialMode, subdomain: initialSub, email: initialEmail, env: initialEnv, onSaved, last }) => {
+    const { t } = useTranslation();
+    const [apiMode, setApiMode] = useState(initialMode || 'soap');
+    const [subdomain, setSubdomain] = useState(initialSub || '');
+    const [email, setEmail] = useState(initialEmail || '');
+    const [token, setToken] = useState('');
+    const [env, setEnv] = useState(initialEnv || 'production');
+    const [saving, setSaving] = useState(false);
+    const [disconnecting, setDisconnecting] = useState(false);
+    const [error, setError] = useState(null);
+    const save = async () => {
+        // First connect needs subdomain + token (+ login email for the SOAP API);
+        // a partial save would store a half-configured integration.
+        if (!hasNmbrsConfig && (!subdomain.trim() || !token.trim() || (apiMode === 'soap' && !email.trim()))) {
+            setError(t('integ.nmbrs_need_fields'));
+            return;
+        }
+        setSaving(true); setError(null);
+        try {
+            const body = { nmbrsApiMode: apiMode, nmbrsEnv: env };
+            if (subdomain.trim()) body.nmbrsSubdomain = subdomain.trim();
+            if (email.trim()) body.nmbrsEmail = email.trim();
+            if (token.trim()) body.nmbrsToken = token.trim();
+            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (res.ok) { onSaved(); setToken(''); }
+            else { const err = await res.json().catch(() => ({})); setError(err.error || 'Failed to save'); }
+        } catch (e) { console.error(e); setError(e.message); }
+        setSaving(false);
+    };
+    const handleDisconnect = async () => {
+        setDisconnecting(true); setError(null);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/user-settings`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ nmbrsApiMode: '', nmbrsSubdomain: '', nmbrsEmail: '', nmbrsToken: '', nmbrsEnv: '' }),
+            });
+            if (res.ok) { onSaved(); setSubdomain(''); setEmail(''); setToken(''); setApiMode('soap'); setEnv('production'); }
+        } catch (e) { console.error(e); }
+        setDisconnecting(false);
+    };
+    const inputCls = "flex-1 px-3 py-2 rounded-lg border outline-none text-[13px] focus:border-[var(--accent-primary)] transition-colors";
+    const inputStyle = { background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' };
+    return (
+        <IntegrationRow
+            last={last}
+            connected={hasNmbrsConfig}
+            name="NMBRS"
+            description={hasNmbrsConfig ? t('integ.nmbrs_connected') : t('integ.nmbrs_desc')}
+            icon={<svg viewBox="0 0 24 24" fill="none" style={{ width: '20px', height: '20px' }}><rect x="2" y="2" width="20" height="20" rx="4" fill="#00C389" /><path d="M7 16.5v-9h1.9v1.1c.45-.8 1.3-1.3 2.4-1.3 1.05 0 1.85.42 2.3 1.2.5-.78 1.4-1.2 2.45-1.2 1.95 0 2.95 1.2 2.95 3.2v6H19v-5.6c0-1-.35-1.75-1.4-1.75-1 0-1.5.78-1.5 1.8v5.55h-2v-5.6c0-1-.35-1.75-1.4-1.75-1 0-1.5.78-1.5 1.8v5.55H7z" fill="white" /></svg>}
+        >
+            <div className="space-y-2">
+                <ol className="list-decimal pl-4 space-y-1 text-[11px]" style={{ color: 'var(--text-muted)' }}>
+                    <li>{t('integ.nmbrs_step1')}</li>
+                    <li>{t('integ.nmbrs_step2')}</li>
+                    <li>{t('integ.nmbrs_step3')}</li>
+                </ol>
+                <div className="flex gap-2">
+                    <select value={apiMode} onChange={e => setApiMode(e.target.value)} aria-label={t('integ.nmbrs_mode_label')}
+                        className="px-3 py-2 rounded-lg border outline-none text-[13px]" style={inputStyle}>
+                        <option value="soap">{t('integ.nmbrs_mode_soap')}</option>
+                        <option value="rest">{t('integ.nmbrs_mode_rest')}</option>
+                    </select>
+                    <select value={env} onChange={e => setEnv(e.target.value)} aria-label={t('integ.nmbrs_env_label')}
+                        className="px-3 py-2 rounded-lg border outline-none text-[13px]" style={inputStyle}>
+                        <option value="production">{t('integ.nmbrs_env_production')}</option>
+                        <option value="sandbox">{t('integ.nmbrs_env_sandbox')}</option>
+                    </select>
+                </div>
+                <input type="text" value={subdomain}
+                    onChange={e => setSubdomain(e.target.value.trim())}
+                    placeholder={t('integ.nmbrs_subdomain_placeholder')}
+                    aria-label={t('integ.nmbrs_subdomain_label')}
+                    className={inputCls} style={inputStyle} />
+                {apiMode === 'soap' && (
+                    <input type="email" value={email}
+                        onChange={e => setEmail(e.target.value)}
+                        placeholder={t('integ.nmbrs_email_placeholder')}
+                        aria-label={t('integ.nmbrs_email_label')}
+                        className={inputCls} style={inputStyle} />
+                )}
+                <ApiKeyField
+                    placeholder={hasNmbrsConfig ? '••••••••••••••••' : t('integ.nmbrs_token_placeholder')}
+                    value={token} onChange={e => setToken(e.target.value)} onSave={save} saving={saving}
+                    canSave={!!(token.trim() || subdomain.trim() || email.trim())}
+                    hint={<>NMBRS Help: <a href="https://support.nmbrs.nl/hc/nl/articles/360010686800-Connect-Nmbrs-with-an-API-token" target="_blank" rel="noopener noreferrer" style={{ color: 'var(--accent-primary)' }} className="underline">API-token aanmaken</a></>}
+                />
+                {error && <p className="text-[11px]" style={{ color: '#dc2626' }}>{error}</p>}
+                {hasNmbrsConfig && <DisconnectButton onDisconnect={handleDisconnect} disconnecting={disconnecting} />}
+            </div>
         </IntegrationRow>
     );
 };
@@ -602,34 +801,64 @@ const McpCredentialsSection = ({ onSaved }) => {
 };
 
 // ── IntegrationsSection ───────────────────────────────────────────────────────
-const IntegrationsSection = ({ statuses, onSaved, enabledIntegrations, isOrgAdmin, user, showOrgIntegrations = false }) => {
+const IntegrationsSection = ({ statuses, onSaved, isOrgAdmin, user, showOrgIntegrations = false }) => {
     const { t } = useTranslation();
-    const isEnabled = (id) => !enabledIntegrations || enabledIntegrations.includes(id);
+    // Only list integrations the user's organisation actually has access to: the
+    // plan-trimmed EFFECTIVE entitlement set (subscription-included AND granted in
+    // org settings), not the plan-agnostic org allow-list. While the snapshot is
+    // still loading — or if it failed to load — fall back to showing everything so
+    // the page never flashes (or stays) empty.
+    const { effective, loading, error } = useEntitlements() || {};
+    const effectiveIntegrations = useMemo(() => new Set(effective?.integration || []), [effective]);
+    const isEnabled = (id) => loading || error || effectiveIntegrations.has(id);
 
     const showFireflies = isEnabled('fireflies');
     const showYouTrack = isEnabled('youtrack');
     const showSignRequest = isEnabled('signrequest');
     const showGamma = isEnabled('gamma');
+    const showAfas = isEnabled('afas-profit');
+    const showNmbrs = isEnabled('nmbrs');
     const showLinkedIn = isEnabled('linkedin');
     const showGitHub = isEnabled('github');
-    const showNextcloud = isEnabled('nextcloud');
-    const showMcp = !enabledIntegrations || enabledIntegrations.some(id => id.startsWith('mcp:'));
+    // Nextcloud-bound users always see the card so they can manage their link.
+    // `provider` (login payload) covers connector + OAuth NC users synchronously,
+    // so the card never depends on the async app-password-status fetch, which can
+    // fail-closed; `statuses.isNextcloudUser` is just a belt-and-braces fallback.
+    const isNcUser = user?.provider === 'nextcloud_connector' || user?.provider === 'nextcloud'
+        || !!user?.ncOrg?.instanceId || !!statuses?.isNextcloudUser;
+    // For everyone else, only show it when the org actually enables Nextcloud.
+    // Nextcloud is org-exempt in the resolver (granted to all via the
+    // isNcCapability bypass), so effective.integration / isEnabled('nextcloud')
+    // is always true and can't tell enabled from disabled. Gate on the org's
+    // enabled-integrations allow-list from the login payload instead: null/absent
+    // = unrestricted (show it); a list must contain 'nextcloud'.
+    const orgEnabledIntegrations = user?.enabledIntegrations;
+    const orgEnablesNextcloud = !Array.isArray(orgEnabledIntegrations) || orgEnabledIntegrations.includes('nextcloud');
+    const showNextcloud = isNcUser || orgEnablesNextcloud;
+    // MCP servers are opt-in per plan; show the per-server credentials section
+    // only when the effective set includes at least one installed server.
+    const showMcp = loading || error || (effective?.integration || []).some(id => id.startsWith('mcp:'));
 
-    const productivityItems = [showFireflies, showYouTrack, showSignRequest, showGamma, showNextcloud].filter(Boolean).length;
+    const productivityItems = [showFireflies, showYouTrack, showSignRequest, showGamma, showAfas, showNmbrs, showNextcloud].filter(Boolean).length;
     const socialItems = [showLinkedIn].filter(Boolean).length;
     const devItems = [showGitHub].filter(Boolean).length;
 
     return (
         <div className="space-y-6">
+            {/* Named connections + sharing (bring-your-own vs lend) — hidden for now */}
+            {SHOW_NAMED_CONNECTIONS && <ConnectionsManager />}
+
             {/* Productivity */}
             {productivityItems > 0 && (
                 <div className="space-y-1.5">
                     <GroupLabel>{t('settings.integrations_productivity')}</GroupLabel>
                     <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
-                        {showFireflies && <FirefliesIntegration hasFirefliesKey={statuses.hasFirefliesKey} onSaved={() => onSaved('fireflies')} last={!showYouTrack && !showSignRequest && !showGamma && !showNextcloud} />}
-                        {showYouTrack && <YouTrackIntegration hasYouTrackConfig={statuses.hasYouTrackConfig} onSaved={() => onSaved('youtrack')} last={!showSignRequest && !showGamma && !showNextcloud} />}
-                        {showSignRequest && <SignRequestIntegration hasSignRequestConfig={statuses.hasSignRequestConfig} onSaved={() => onSaved('signrequest')} last={!showGamma && !showNextcloud} />}
-                        {showGamma && <GammaIntegration hasGammaKey={statuses.hasGammaKey} onSaved={() => onSaved('gamma')} last={!showNextcloud} />}
+                        {showFireflies && <FirefliesIntegration hasFirefliesKey={statuses.hasFirefliesKey} onSaved={() => onSaved('fireflies')} last={!showYouTrack && !showSignRequest && !showGamma && !showAfas && !showNmbrs && !showNextcloud} />}
+                        {showYouTrack && <YouTrackIntegration hasYouTrackConfig={statuses.hasYouTrackConfig} onSaved={() => onSaved('youtrack')} last={!showSignRequest && !showGamma && !showAfas && !showNmbrs && !showNextcloud} />}
+                        {showSignRequest && <SignRequestIntegration hasSignRequestConfig={statuses.hasSignRequestConfig} onSaved={() => onSaved('signrequest')} last={!showGamma && !showAfas && !showNmbrs && !showNextcloud} />}
+                        {showGamma && <GammaIntegration hasGammaKey={statuses.hasGammaKey} onSaved={() => onSaved('gamma')} last={!showAfas && !showNmbrs && !showNextcloud} />}
+                        {showAfas && <AFASIntegration hasAfasConfig={statuses.hasAfasConfig} onSaved={() => onSaved('afas-profit')} last={!showNmbrs && !showNextcloud} />}
+                        {showNmbrs && <NMBRSIntegration hasNmbrsConfig={statuses.hasNmbrsConfig} apiMode={statuses.nmbrsApiMode} subdomain={statuses.nmbrsSubdomain} email={statuses.nmbrsEmail} env={statuses.nmbrsEnv} onSaved={() => onSaved('nmbrs')} last={!showNextcloud} />}
                         {showNextcloud && <NextcloudIntegration hasNextcloudAppPassword={statuses.hasNextcloudAppPassword} isNextcloudUser={statuses.isNextcloudUser} isConnectorUser={user?.provider === 'nextcloud_connector'} nextcloudUrl={statuses.nextcloudUrl} onSaved={() => onSaved('nextcloud')} last />}
                     </div>
                 </div>

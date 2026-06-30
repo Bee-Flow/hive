@@ -1,10 +1,9 @@
 import React from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
-import { Shield, KeyRound, Users, Sparkles } from 'lucide-react';
+import { Shield, KeyRound, Users } from 'lucide-react';
 import GuardrailsPanel from './GuardrailsPanel';
 import SSOConfigPanel from './SSOConfigPanel';
 import UserManagement from './UserManagement';
-import BetaFeaturesPanel from './BetaFeaturesPanel';
 import { useLicenseContext } from '../LicenseContext';
 
 /**
@@ -13,14 +12,15 @@ import { useLicenseContext } from '../LicenseContext';
  *
  * `enterpriseOnly` sections are hidden on Community installs (the resolved
  * tier is the REAL tier — LicenseContext.hasTier has no super-admin
- * elevation — so the operator's own UI hides them too). Beta features are an
- * Enterprise capability, so the Beta section is enterprise-gated.
+ * elevation — so the operator's own UI hides them too).
+ *
+ * Beta features are no longer configured here — they moved to the unified
+ * Access & Permissions hub (Admin → Access → Ceiling / Grants).
  */
 const SECTIONS = [
     { id: 'users', labelKey: 'admin.sec_users', icon: Users, color: '#3b82f6' },
     { id: 'guardrails', labelKey: 'admin.sec_guardrails', icon: Shield, color: '#ef4444', enterpriseOnly: true },
     { id: 'sso', labelKey: 'admin.sec_sso', icon: KeyRound, color: '#f59e0b' },
-    { id: 'beta', labelKey: 'admin.sec_beta', icon: Sparkles, color: '#8b5cf6', superAdminOnly: true, enterpriseOnly: true },
 ];
 
 const SecurityHub = ({ activeSection: activeProp = 'users', userSection = '', onNavigate, user }) => {
@@ -110,11 +110,6 @@ const SecurityHub = ({ activeSection: activeProp = 'users', userSection = '', on
                 {active === 'sso' && (
                     <div style={{ position: 'absolute', inset: 0, overflow: 'auto', padding: '1.5rem' }}>
                         <SSOConfigPanel />
-                    </div>
-                )}
-                {active === 'beta' && (
-                    <div style={{ position: 'absolute', inset: 0, overflow: 'auto' }}>
-                        <BetaFeaturesPanel />
                     </div>
                 )}
             </div>

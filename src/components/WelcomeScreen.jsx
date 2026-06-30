@@ -40,13 +40,13 @@ const WelcomeScreen = ({ agent, onSendMessage, children, user, onNavigate }) => 
             )}
 
             {starterPrompts.length > 0 ? (
-                <div className="w-full flex flex-wrap justify-center gap-2 mb-8">
+                <div className="w-full flex flex-col sm:flex-row sm:flex-wrap sm:justify-center gap-2 mb-8">
                     {starterPrompts.map((prompt, idx) => (
                         <button
                             key={idx}
                             onClick={() => onSendMessage?.(prompt)}
                             data-surface="subtle"
-                            className="text-left px-3.5 py-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-card)] hover:bg-[var(--bg-secondary)] transition-all flex items-center gap-2 group whitespace-nowrap"
+                            className="text-left px-3.5 py-2 sm:py-1.5 rounded-2xl sm:rounded-full border border-[var(--border-subtle)] bg-[var(--bg-card)] hover:bg-[var(--bg-secondary)] transition-all flex items-center gap-2 group w-full sm:w-auto sm:max-w-full whitespace-normal sm:whitespace-nowrap"
                         >
                             <span className="text-[12.5px] font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors">
                                 {prompt}

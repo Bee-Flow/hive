@@ -628,7 +628,9 @@ const Sidebar = ({
     // Simple Mode strips the sidebar to: New Chat, Search, Agents, Chat History.
     // Anything past `agents` in secondaryNav and the admin/appearance items in
     // the avatar dropdown are hidden until the user turns Simple Mode back off.
-    const _simpleMode = !!user?.simpleMode;
+    // Phone-sized screens (isMobile) always run the simplified surface — see
+    // AgentHub's `simpleMode` derivation — regardless of the stored preference.
+    const _simpleMode = !!user?.simpleMode || isMobile;
 
     // "New Chat" highlight must clear once any other destination takes over the
     // main content. Previously it stayed bold (directChatMode/selectedAgent are
@@ -1051,20 +1053,21 @@ const Sidebar = ({
                                 </NavLink>
                             )}
 
-                            {!isMobile && (
-                                <NavLink
-                                    href="/settings"
-                                    onClick={() => setShowProfileMenu(false)}
-                                    onNavigate={() => { setShowProfileMenu(false); onNavigate('settings'); }}
-                                    className={`w-full flex items-center gap-3 px-3 h-10 rounded-lg transition-all duration-150 text-left relative ${showSettings ? 'bg-[var(--item-active-bg)]' : 'hover:bg-[var(--item-hover-bg)]'}`}
-                                    style={{ textDecoration: 'none', color: 'inherit' }}
-                                    data-testid="profile-menu-settings"
-                                >
-                                    {showSettings && <div className={ACCENT_BAR} />}
-                                    <Settings className={`w-4 h-4 ${showSettings ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
-                                    <span className={`text-[13px] ${showSettings ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.settings')}</span>
-                                </NavLink>
-                            )}
+                            {/* Settings is an allowed mobile page (user settings only —
+                                trimmed inside AdvancedSettings), so show it on phones too.
+                                Admin Dashboard above stays desktop-only. */}
+                            <NavLink
+                                href="/settings"
+                                onClick={() => setShowProfileMenu(false)}
+                                onNavigate={() => { setShowProfileMenu(false); onNavigate('settings'); }}
+                                className={`w-full flex items-center gap-3 px-3 h-10 rounded-lg transition-all duration-150 text-left relative ${showSettings ? 'bg-[var(--item-active-bg)]' : 'hover:bg-[var(--item-hover-bg)]'}`}
+                                style={{ textDecoration: 'none', color: 'inherit' }}
+                                data-testid="profile-menu-settings"
+                            >
+                                {showSettings && <div className={ACCENT_BAR} />}
+                                <Settings className={`w-4 h-4 ${showSettings ? ICON_ACTIVE : ICON_IDLE}`} strokeWidth={1.75} />
+                                <span className={`text-[13px] ${showSettings ? TEXT_ACTIVE : TEXT_IDLE}`}>{t('sidebar.settings')}</span>
+                            </NavLink>
 
                         </div>
 

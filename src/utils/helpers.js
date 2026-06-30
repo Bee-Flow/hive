@@ -109,6 +109,18 @@ export const authFetch = async (url, options = {}) => {
     return response;
 };
 
+// Parse a non-OK fetch Response into { message, code, resource }. Tolerates
+// both JSON ({error,code,resource}) and plain-text error bodies.
+export const parseSaveError = async (res) => {
+    let body = '';
+    try { body = await res.text(); } catch (_) { /* ignore */ }
+    let info = {};
+    try { info = JSON.parse(body); } catch (_) { info = { error: body }; }
+    const message = info.error || info.message || `Save failed (${res.status})`;
+    const isLimit = res.status === 403 && (info.code === 'limit_reached' || /reached (its|the) limit|seat limit/i.test(message));
+    return { message, code: info.code, resource: info.resource, isLimit };
+};
+
 export const getAgentInitials = (name) => {
     if (!name) return '?';
     return name

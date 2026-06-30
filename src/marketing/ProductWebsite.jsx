@@ -25,6 +25,10 @@ import Footer       from './sections/Footer';
 // Site-wide cookie consent banner. Lives outside ./sections because it's
 // chrome (fixed-position overlay), not an in-flow page section.
 import CookieBanner from './components/CookieBanner';
+// Injects the (cookieless-by-default) Umami usage tracker on the live public
+// site. Renders nothing; only active when the server passes an `analytics`
+// config and we're not in the admin preview iframe.
+import AnalyticsTracker from './components/AnalyticsTracker';
 
 import { useScrollReveal } from './components/ScrollReveal';
 import { BlockIdContext } from './components/EditableText';
@@ -393,7 +397,7 @@ function resolveAssetUrl(urlOrKey) {
  *     toolbar for quick actions (focus settings, toggle visibility) which
  *     post `cms-section-action` events.
  */
-export default function ProductWebsite({ content: initialContent }) {
+export default function ProductWebsite({ content: initialContent, analytics = null }) {
     const rootRef = useRef(null);
     const [content, setContent] = useState(initialContent || {});
     // Design comes from one of three sources, in order of priority:
@@ -579,6 +583,10 @@ export default function ProductWebsite({ content: initialContent }) {
                 language={resolveCookieLang()}
                 text={content.cookieBanner?.text}
             />
+            {/* Usage tracker — renders nothing; injects a deferred, same-origin-
+                agnostic <script> only on the live public site (gated server-side
+                and by visitor consent in cookie mode). Off in preview. */}
+            {analytics ? <AnalyticsTracker {...analytics} /> : null}
         </div>
     );
 }

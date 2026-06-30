@@ -1,31 +1,83 @@
-import { Plus, ShieldCheck, StopCircle, Eye, Loader2 } from 'lucide-react';
-import React, { useEffect, useState, useCallback } from 'react';
+import { Plus, ShieldCheck, StopCircle, Loader2, Bot } from 'lucide-react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import ScanModal from './ScanModal';
 import ScanResults from './ScanResults';
+import { SeverityChips } from './severity';
 import useTranslation from '../../../../hooks/useTranslation';
 import { API_BASE, authFetch } from '../../../../utils/helpers';
 import StudioShell from '../../../shared/StudioShell';
 import { StatusDot } from '../TestsStudio/InsightsDashboard';
 
 /**
- * SecurityStudio — Studio tab for active security scans (ZAP / Nuclei /
- * testssl) run inside isolated containers.
+ * SecurityStudio — Studio tab for AI-agent security scans. The agent (on the
+ * selected model tier) drives a full pentest toolbox inside one isolated
+ * container; this surface starts scans,
+ * lists them, and renders the live run + report.
  *
  * Backend contract: /api/security/* (gated by security_scan license + beta).
  */
-export default function SecurityStudio({ user, onNavigate, hasPermission }) {
+export default function SecurityStudio({ user, onNavigate, hasPermission, modelTiers: modelTiersProp = {} }) {
     const { t } = useTranslation();
 
     const [activeScans, setActiveScans] = useState([]);
+    const [finishedScans, setFinishedScans] = useState([]); // client-retained history
     const [showScanModal, setShowScanModal] = useState(false);
     const [activeScanId, setActiveScanId] = useState(null);
+    const [modelTiers, setModelTiers] = useState(modelTiersProp);
+    const [policy, setPolicy] = useState(null);
+    const prevActiveIds = useRef(new Set());
+
+    // Tiers: prefer the prop; otherwise self-fetch (mirrors AgentEditorUI).
+    useEffect(() => {
+        if (modelTiersProp && Object.keys(modelTiersProp).length) { setModelTiers(modelTiersProp); return; }
+        let alive = true;
+        (async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/ai/config/tiers-for-user?taskType=direct_chat`);
+                if (res.ok && alive) {
+                    setModelTiers((await res.json()) || {});
+                }
+            } catch (_) { /* selector falls back to the default model */ }
+        })();
+        return () => { alive = false; };
+    }, [modelTiersProp]);
+
+    // Aggression policy (levels + ceiling) so the wizard can lock above-ceiling levels.
+    useEffect(() => {
+        let alive = true;
+        (async () => {
+            try {
+                const res = await authFetch(`${API_BASE}/api/security/scans/policy`);
+                if (res.ok && alive) setPolicy(await res.json());
+            } catch (_) { /* wizard falls back to defaults */ }
+        })();
+        return () => { alive = false; };
+    }, []);
 
     const fetchActiveScans = useCallback(async () => {
         try {
             const res = await authFetch(`${API_BASE}/api/security/scans/active`);
-            if (res.ok) {
-                const data = await res.json();
-                setActiveScans(data.scans || (data.scan ? [data.scan] : []));
+            if (!res.ok) return;
+            const data = await res.json();
+            const scans = data.scans || (data.scan ? [data.scan] : []);
+            setActiveScans(scans);
+
+            // Any scan that dropped out of the active set since the last poll has
+            // gone terminal — fetch it once and keep it in client-side history
+            // (there is no finished-scan list endpoint yet).
+            const nowIds = new Set(scans.map((s) => s.id));
+            const vanished = [...prevActiveIds.current].filter((id) => !nowIds.has(id));
+            prevActiveIds.current = nowIds;
+            for (const id of vanished) {
+                authFetch(`${API_BASE}/api/security/scans/${encodeURIComponent(id)}`)
+                    .then((r) => (r.ok ? r.json() : null))
+                    .then((d) => {
+                        const s = d?.scan;
+                        if (s && ['completed', 'error', 'cancelled'].includes(s.status)) {
+                            setFinishedScans((prev) => [s, ...prev.filter((p) => p.id !== s.id)].slice(0, 30));
+                        }
+                    })
+                    .catch(() => {});
             }
         } catch (_) { /* ignore */ }
     }, []);
@@ -50,11 +102,15 @@ export default function SecurityStudio({ user, onNavigate, hasPermission }) {
         }
     };
 
-    const startScan = async ({ targetUrl, engines, authorized, mode }) => {
+    const startScan = async ({ targetUrl, engines, authorized, modelTier, aggression, stepBudget, prewarmId }) => {
         const res = await authFetch(`${API_BASE}/api/security/scans`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ targetUrl, engines, authorized, mode }),
+            body: JSON.stringify({
+                targetUrl, engines, authorized,
+                modelTier, aggression, prewarmId,
+                metadata: Number.isFinite(stepBudget) ? { stepBudget } : undefined,
+            }),
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data?.message || data?.error || 'failed_to_start');
@@ -63,10 +119,12 @@ export default function SecurityStudio({ user, onNavigate, hasPermission }) {
         fetchActiveScans();
     };
 
-    const running = activeScans.filter(r => r.status === 'running');
-    const queued = activeScans.filter(r => r.status === 'queued');
-
-    const engineLabel = (scan) => (scan.engines || []).map(e => e.engine).join(', ') || 'scan';
+    const running = activeScans.filter((r) => r.status === 'running');
+    const queued = activeScans.filter((r) => r.status === 'queued');
+    const inProgress = [...running, ...queued];
+    // History excludes anything still in the active list.
+    const activeIds = new Set(activeScans.map((s) => s.id));
+    const history = finishedScans.filter((s) => !activeIds.has(s.id));
 
     return (
         <>
@@ -87,7 +145,7 @@ export default function SecurityStudio({ user, onNavigate, hasPermission }) {
                     </button>
                 )}
                 sidebar={(
-                    <div className="flex flex-col gap-2 p-3">
+                    <div className="flex flex-col gap-3 p-3">
                         <button
                             onClick={() => setShowScanModal(true)}
                             className="flex items-center gap-2 text-xs px-3 py-2 rounded border border-dashed border-[var(--border-default)] hover:border-[var(--accent-primary)] text-[var(--text-secondary)]"
@@ -95,55 +153,43 @@ export default function SecurityStudio({ user, onNavigate, hasPermission }) {
                             <Plus size={12} /> New scan
                         </button>
 
-                        {(running.length > 0 || queued.length > 0) && (
-                            <div className="text-[11px] rounded border border-amber-500/40 bg-amber-500/10 p-2 flex flex-col gap-1.5">
-                                <div className="flex items-center gap-1.5 text-amber-600 dark:text-amber-400 font-semibold">
-                                    <Loader2 className="animate-spin" size={11} />
-                                    {running.length} running{queued.length > 0 ? ` · ${queued.length} queued` : ''}
+                        {inProgress.length > 0 && (
+                            <div>
+                                <SectionHeader label={`In progress${queued.length ? ` · ${queued.length} queued` : ''}`} spinning />
+                                <div className="flex flex-col gap-1.5">
+                                    {inProgress.map((scan) => (
+                                        <ScanCard
+                                            key={scan.id}
+                                            scan={scan}
+                                            selected={activeScanId === scan.id}
+                                            onSelect={() => setActiveScanId(scan.id)}
+                                            onCancel={() => cancelScan(scan)}
+                                        />
+                                    ))}
                                 </div>
                             </div>
                         )}
 
-                        <h4 className="text-[10px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mt-1 px-1">
-                            Scans
-                        </h4>
-                        {activeScans.length === 0 && (
-                            <div className="text-xs text-[var(--text-tertiary)] italic px-1">
-                                {t('security_studio.no_scans') || 'No scans yet — start one with the + button.'}
-                            </div>
-                        )}
-                        <div className="flex flex-col gap-1">
-                            {activeScans.map(scan => {
-                                const inFlight = scan.status === 'running' || scan.status === 'queued';
-                                return (
-                                    <button
-                                        key={scan.id}
-                                        onClick={() => setActiveScanId(scan.id)}
-                                        className={`text-left text-xs px-3 py-2 rounded border ${activeScanId === scan.id
-                                            ? 'border-[var(--accent-primary)] bg-[var(--bg-secondary)]'
-                                            : 'border-transparent hover:bg-[var(--bg-secondary)]'}`}
-                                    >
-                                        <div className="flex items-center gap-1.5">
-                                            <StatusDot status={scan.status} />
-                                            <span className="font-mono text-[10px] truncate text-[var(--text-secondary)] flex-1">
-                                                {scan.id.slice(0, 8)} · {engineLabel(scan)}
-                                            </span>
-                                            {inFlight && (
-                                                <span
-                                                    onClick={(e) => { e.stopPropagation(); cancelScan(scan); }}
-                                                    className="p-0.5 rounded text-red-500 hover:bg-red-500/10"
-                                                    title="Cancel scan"
-                                                >
-                                                    <StopCircle size={11} />
-                                                </span>
-                                            )}
-                                        </div>
-                                        <div className="text-[var(--text-tertiary)] truncate mt-0.5">
-                                            {scan.targetUrl}
-                                        </div>
-                                    </button>
-                                );
-                            })}
+                        <div>
+                            <SectionHeader label="History" />
+                            {history.length === 0 && inProgress.length === 0 ? (
+                                <div className="text-xs text-[var(--text-tertiary)] italic px-1">
+                                    {t('security_studio.no_scans') || 'No scans yet — start one with the + button.'}
+                                </div>
+                            ) : history.length === 0 ? (
+                                <div className="text-[11px] text-[var(--text-tertiary)] italic px-1">Finished scans appear here.</div>
+                            ) : (
+                                <div className="flex flex-col gap-1.5">
+                                    {history.map((scan) => (
+                                        <ScanCard
+                                            key={scan.id}
+                                            scan={scan}
+                                            selected={activeScanId === scan.id}
+                                            onSelect={() => setActiveScanId(scan.id)}
+                                        />
+                                    ))}
+                                </div>
+                            )}
                         </div>
                     </div>
                 )}
@@ -163,9 +209,73 @@ export default function SecurityStudio({ user, onNavigate, hasPermission }) {
                 <ScanModal
                     onClose={() => setShowScanModal(false)}
                     onStart={startScan}
+                    modelTiers={modelTiers}
+                    policy={policy}
                 />
             )}
         </>
+    );
+}
+
+function SectionHeader({ label, spinning }) {
+    return (
+        <h4 className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--text-tertiary)] mb-1.5 px-1">
+            {spinning && <Loader2 className="animate-spin" size={10} />}
+            {label}
+        </h4>
+    );
+}
+
+function hostnameOf(url) {
+    try { return new URL(url).hostname; } catch { return url || 'scan'; }
+}
+
+function relativeTime(iso) {
+    if (!iso) return '';
+    const then = new Date(iso).getTime();
+    if (!Number.isFinite(then)) return '';
+    const s = Math.max(0, Math.round((Date.now() - then) / 1000));
+    if (s < 60) return `${s}s`;
+    const m = Math.round(s / 60);
+    if (m < 60) return `${m}m`;
+    const h = Math.round(m / 60);
+    if (h < 24) return `${h}h`;
+    return `${Math.round(h / 24)}d`;
+}
+
+function ScanCard({ scan, selected, onSelect, onCancel }) {
+    const inFlight = scan.status === 'running' || scan.status === 'queued';
+    const when = scan.finishedAt || scan.createdAt;
+    return (
+        <button
+            onClick={onSelect}
+            className={`text-left text-xs px-3 py-2 rounded border ${selected
+                ? 'border-[var(--accent-primary)] bg-[var(--bg-secondary)]'
+                : 'border-transparent hover:bg-[var(--bg-secondary)]'}`}
+        >
+            <div className="flex items-center gap-1.5">
+                <StatusDot status={scan.status} />
+                <span className="font-medium truncate flex-1 text-[var(--text-primary)]">{hostnameOf(scan.targetUrl)}</span>
+                <span className="text-[9px] uppercase tracking-wider px-1 py-px rounded bg-[var(--bg-tertiary)] text-[var(--text-tertiary)] flex items-center gap-0.5">
+                    <Bot size={9} /> Agent
+                </span>
+                {inFlight && onCancel && (
+                    <span
+                        onClick={(e) => { e.stopPropagation(); onCancel(); }}
+                        className="p-0.5 rounded text-red-500 hover:bg-red-500/10"
+                        title="Cancel scan"
+                    >
+                        <StopCircle size={11} />
+                    </span>
+                )}
+            </div>
+            <div className="flex items-center justify-between gap-2 mt-1">
+                {scan.status === 'completed'
+                    ? <SeverityChips summary={scan.severitySummary} />
+                    : <span className="text-[10px] text-[var(--text-tertiary)] capitalize">{scan.status}</span>}
+                <span className="text-[10px] text-[var(--text-tertiary)] flex-shrink-0">{relativeTime(when)}</span>
+            </div>
+        </button>
     );
 }
 
@@ -175,8 +285,8 @@ function EmptyState({ onCreate }) {
             <ShieldCheck size={32} className="text-[var(--text-tertiary)]" />
             <div className="text-sm font-semibold text-[var(--text-secondary)]">No scan selected</div>
             <div className="text-xs text-[var(--text-tertiary)] max-w-sm">
-                Start an authorized security scan against a target URL. Engines run in isolated
-                containers and produce a severity-graded report when they finish.
+                Start an authorized security scan against a target URL. An AI agent drives a full
+                pentest toolbox inside one isolated container and produces a severity-graded report.
             </div>
             <button
                 onClick={onCreate}

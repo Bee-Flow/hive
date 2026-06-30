@@ -113,12 +113,12 @@ export default function SourcePicker({ onClose, onConfirm, onRunAgent }) {
                 {onRunAgent && (
                     <div className="border-t border-[var(--border-default)] px-5 py-3 flex flex-col gap-2 bg-[var(--bg-secondary)]/40">
                         <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--text-secondary)]">
-                            <Sparkles size={12} /> Or run live with Claude
+                            <Sparkles size={12} /> Or run live with the AI
                         </div>
                         <div className="text-[11px] text-[var(--text-tertiary)]">
                             {agentSource
-                                ? <>Claude will use: <span className="font-medium text-[var(--text-secondary)]">{describeSource(agentSource)}</span>. It drives a real browser against the target URL — watch live.</>
-                                : <>Enter a YouTrack ID, GitHub issue, or free text above. Claude reads it and drives a real browser against the target URL.</>
+                                ? <>The AI will use: <span className="font-medium text-[var(--text-secondary)]">{describeSource(agentSource)}</span>. It drives a real browser against the target URL — watch live.</>
+                                : <>Enter a YouTrack ID, GitHub issue, or free text above. The AI reads it and drives a real browser against the target URL.</>
                             }
                         </div>
                         <div className="flex gap-2">

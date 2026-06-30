@@ -1,15 +1,16 @@
 import { AlertCircle, Copy as CopyIcon } from 'lucide-react';
 import React from 'react';
-import JsonTree from './JsonTree';
+import OutputView from '../OutputView';
 
 /**
- * Output sub-tab of the Run view. Renders the most recent run's output
- * with the same JsonTree the inputs tab uses, so leaves can be copied
- * straight into a downstream binding (paths are emitted relative to
- * `steps.<stepId>.output`).
+ * Output sub-tab of the Run view. Renders the most recent run's output with
+ * the same friendly Table/JSON view the dry-run preview uses: arrays of
+ * objects become real tables, objects become labelled fields, and a per-step
+ * toggle flips to the collapsible JSON tree. In JSON mode each leaf still
+ * carries a hover "copy path" button (paths relative to
+ * `steps.<stepId>.output`) so it can be dropped straight into a binding.
  *
- * Errors are surfaced inline above the output tree — same place a user
- * would expect to find them.
+ * Errors are surfaced inline above the output — same place a user expects.
  *
  * Props:
  *   stepId        — current step id (used as basePath for leaf paths)
@@ -36,15 +37,18 @@ export default function StepOutputTab({ stepId, liveOutput, error, remediation, 
                     </div>
                 </div>
             )}
-            <JsonTree
-                value={liveOutput}
-                basePath={basePath}
-                onCopyPath={onCopyPath}
-                emptyMessage="No output recorded yet. Run or dry-run this step to capture one."
-            />
+            <div className="flex-1 min-h-0 flex flex-col px-2 py-2">
+                <OutputView
+                    fill
+                    value={liveOutput}
+                    basePath={basePath}
+                    onCopyPath={onCopyPath}
+                    emptyMessage="No output recorded yet. Run or dry-run this step to capture one."
+                />
+            </div>
             <footer className="px-3 py-1.5 border-t border-[var(--border-default)] text-[10px] text-[var(--text-tertiary)] flex items-center gap-1.5">
                 <CopyIcon size={10} />
-                Hover any field to copy its binding path.
+                Switch to JSON to see the raw data.
             </footer>
         </div>
     );

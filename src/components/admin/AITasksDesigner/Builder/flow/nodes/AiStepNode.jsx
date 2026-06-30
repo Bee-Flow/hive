@@ -1,6 +1,6 @@
 import React from 'react';
 import { Sparkles, Hammer } from 'lucide-react';
-import StepNodeBase, { NodeChip, renderInputsPreview } from './StepNodeBase';
+import StepNodeBase, { NodeChip, renderInputsPreview, ForEachBadge } from './StepNodeBase';
 
 export default function AiStepNode({ id, data }) {
     const { step, runStep, issues, onAddAfter } = data;
@@ -24,6 +24,7 @@ export default function AiStepNode({ id, data }) {
 
     const badges = (
         <>
+            <ForEachBadge step={step} />
             <NodeChip tone="accent" title={`Model tier: ${tier}`}>{tier}</NodeChip>
             {allowTools && (
                 <NodeChip tone="warn" title={`Can call ${toolCount || 'all permitted'} tool(s)`}>

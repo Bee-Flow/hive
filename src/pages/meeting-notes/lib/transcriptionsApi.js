@@ -77,6 +77,25 @@ export async function listNextcloudTalkRecordings(folder) {
     return jsonOrThrow(res);
 }
 
+/**
+ * The user's upcoming Talk meetings (from their calendar), each with record
+ * status. Returns `{ recordingEnabled, autoRecord, autoRecordScope, recordingMode, meetings: [...] }`.
+ */
+export async function listTalkMeetings() {
+    const res = await authFetch(`${API_BASE}/api/transcriptions/talk-meetings`);
+    return jsonOrThrow(res);
+}
+
+/** Toggle auto-record for a single meeting (by room token; eventUid optional). */
+export async function setMeetingRecord(token, record, eventUid) {
+    const res = await authFetch(`${API_BASE}/api/transcriptions/talk-meetings/${encodeURIComponent(token)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ record, eventUid }),
+    });
+    return jsonOrThrow(res);
+}
+
 export async function patchTranscription(id, patch) {
     const res = await authFetch(`${API_BASE}/api/transcriptions/${id}`, {
         method: 'PATCH',

@@ -26,6 +26,7 @@ export default function useAgentState() {
     const [isPublished, setIsPublished] = useState(false);
     const [sharedGroups, setSharedGroups] = useState([]);
     const [showPublishMenu, setShowPublishMenu] = useState(false);
+    const [publishError, setPublishError] = useState('');
     const [organizations, setOrganizations] = useState([]);
     const [orgGroups, setOrgGroups] = useState([]);
     const [availableModels, setAvailableModels] = useState([]);
@@ -115,7 +116,8 @@ export default function useAgentState() {
         systemPrompt, setSystemPrompt, selectedTools, setSelectedTools,
         toolParams, setToolParams, model, setModel,
         isPublished, setIsPublished, sharedGroups, setSharedGroups,
-        showPublishMenu, setShowPublishMenu, organizations, setOrganizations,
+        showPublishMenu, setShowPublishMenu, publishError, setPublishError,
+        organizations, setOrganizations,
         orgGroups, setOrgGroups, availableModels, setAvailableModels,
         modelTiers, setModelTiers, starterPrompts, setStarterPrompts,
         avatar, setAvatar, showEmojiPicker, setShowEmojiPicker,

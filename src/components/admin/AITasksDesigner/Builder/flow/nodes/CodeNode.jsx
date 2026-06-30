@@ -1,6 +1,6 @@
 import React from 'react';
 import { Code2, Lock } from 'lucide-react';
-import StepNodeBase, { NodeChip } from './StepNodeBase';
+import StepNodeBase, { NodeChip, ForEachBadge } from './StepNodeBase';
 
 export default function CodeNode({ id, data }) {
     const { step, runStep, issues, onAddAfter } = data;
@@ -18,9 +18,12 @@ export default function CodeNode({ id, data }) {
     );
 
     const badges = (
-        <NodeChip title="Sandboxed isolated-vm — no Node bindings, HTTPS-only fetch.">
-            <Lock size={10} />
-        </NodeChip>
+        <>
+            <ForEachBadge step={step} />
+            <NodeChip title="Sandboxed isolated-vm — no Node bindings, HTTPS-only fetch.">
+                <Lock size={10} />
+            </NodeChip>
+        </>
     );
 
     const hoverDetail = (

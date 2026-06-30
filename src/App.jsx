@@ -2,13 +2,17 @@ import React, { Suspense, useState, useEffect, useRef, useCallback } from 'react
 import { lazy } from './utils/lazyWithReload';
 import AgentHub from './AgentHub';
 import LoginPage from './pages/LoginPage';
+import MfaSetupGate from './pages/login/MfaSetupGate';
+import ReconsentGate from './pages/login/ReconsentGate';
 import EncryptionSetup from './pages/EncryptionSetup';
 import EmbedChat from './pages/EmbedChat';
 import DlpPreviewModal from './components/DlpPreviewModal';
 import OnboardingTour from './components/onboarding/OnboardingTour';
+import LessonPlayerHost from './components/onboarding/LessonPlayerHost';
 import ErrorBoundary from './components/ErrorBoundary';
 import { LicenseProvider, RequireTier, useLicenseContext } from './components/LicenseContext';
 import { SubscriptionProvider, useSubscriptionContext } from './components/SubscriptionContext';
+import { EntitlementsProvider } from './components/EntitlementsContext';
 import NcOnboardingWizard from './components/NcOnboardingWizard';
 import NcOnboardingPending from './components/NcOnboardingPending';
 import NcBindingApprovalModal from './components/NcBindingApprovalModal';
@@ -55,8 +59,12 @@ import { LogOut, User, Shield, Settings, ChevronDown } from 'lucide-react';
 
 import { API_BASE, authFetch, setSessionToken } from './utils/helpers';
 import scopedStorage from './utils/scopedStorage';
+import { queryClient } from './api/queryClient';
+import { identityKey, shouldResetCache } from './utils/identityCache';
 import { logger } from './utils/logger';
 import { useTranslation } from './hooks/useTranslation';
+import { useViewport } from './hooks/useViewport';
+import { useAppHeight } from './hooks/useAppHeight';
 
 // ── Route mapping ──────────────────────────────────────────────
 const PAGE_ROUTES = {
@@ -89,6 +97,26 @@ const PAGE_ROUTES = {
 const LEGACY_PAGE_ALIASES = {
     emailKB: 'ticketAssistant',
 };
+
+// ── Mobile access control ──────────────────────────────────────
+// Phones (<768px) are a focused view/chat-only surface. Only these page keys
+// are allowed; everything else (studio, admin, org settings, the agent
+// editors/wizard, notebooks, legal, etc.) redirects to /app. Deny-by-default
+// so new desktop-only pages are blocked automatically. 'agents' already covers
+// /app, /app/a/:id (agent chat) and /app/d/:id (direct chat).
+export const MOBILE_ALLOWED_PAGES = new Set(['agents', 'settings']);
+const isPageAllowedOnMobile = (page) => MOBILE_ALLOWED_PAGES.has(page);
+
+// Reduce a navigateToPage() argument (which may be a bare key, a 'studio/agents'
+// path form, or an 'agentDesigner:<id>' form) to the canonical page key used by
+// MOBILE_ALLOWED_PAGES. Mirrors the alias handling inside navigateToPage().
+function mobilePageKey(page) {
+    if (!page || page === '/' || page === 'home') return 'agents';
+    const head = String(page).split(/[/:]/)[0];
+    if (head === 'webpages' || head === 'meetingNotes' || head === 'meeting-notes') return 'studio';
+    if (head === 'emailKB') return 'ticketAssistant';
+    return head;
+}
 
 // Reverse lookup: path → page key
 const PATH_TO_PAGE = Object.fromEntries(
@@ -185,9 +213,19 @@ function parseStudioUrl(pathname) {
     // Legacy /app/meeting-notes[/<id>] paths route into Studio's Meeting Notes section.
     const mn = pathname.match(/^\/app\/meeting-notes(?:\/([^/]+))?/);
     if (mn) return { section: 'meetingNotes', id: mn[1] || null };
-    const m = pathname.match(/^\/app\/studio(?:\/([^/]+))?(?:\/([^/]+))?/);
+    const m = pathname.match(/^\/app\/studio(?:\/([^/]+))?(?:\/([^/]+))?(?:\/([^/]+))?(?:\/([^/]+))?/);
     const seg = m?.[1] || 'agents';
-    const id = m?.[2] || null;
+    let id = m?.[2] || null;
+    // Third path segment — Routines uses it for a flowlet (layer) key.
+    let sub = m?.[3] || null;
+    // Reusable Steps live under /studio/routines/steps/<id>[/<flowletKey>].
+    // The literal "steps" id segment is reserved (no automation can use it).
+    let routineKind = null;
+    if ((seg === 'routines' || seg === 'ai-tasks') && id === 'steps') {
+        routineKind = 'step';
+        id = m?.[3] || null;
+        sub = m?.[4] || null;
+    }
     const section = (seg === 'routines' || seg === 'ai-tasks') ? 'aiTasks'
         : seg === 'skills' ? 'skills'
         : seg === 'knowledge' ? 'knowledge'
@@ -195,9 +233,10 @@ function parseStudioUrl(pathname) {
         : seg === 'tests' ? 'tests'
         : seg === 'security' ? 'security'
         : seg === 'support' ? 'support'
+        : seg === 'lead-studio' ? 'leadStudio'
         : seg === 'meeting-notes' ? 'meetingNotes'
         : 'agents';
-    return { section, id };
+    return { section, id, sub, routineKind };
 }
 
 // Parse the task id out of /app/routines/{taskId} or legacy /app/ai-tasks/{taskId}.
@@ -245,7 +284,7 @@ const RESERVED_TOP_LEVEL = new Set([
     'dashboard', 'settings', 'embed', 'oauth', 'callback',
     'chat', 'd', 'a', 'agent',
     'org-settings', 'email-kb', 'ticket-assistant',
-    'privacy', 'terms', 'pricing',
+    'privacy', 'terms', 'pricing', 'legal',
     '__cms_preview__',
 ]);
 
@@ -259,6 +298,24 @@ function isCmsPathCandidate(pathname) {
     const seg = m[1].toLowerCase();
     if (RESERVED_TOP_LEVEL.has(seg)) return false;
     return /^[a-z0-9][a-z0-9-]*$/.test(seg);
+}
+
+// The authenticated app, wrapped in its capability/licence providers.
+// EntitlementsProvider wraps LicenseProvider so LicenseContext.hasFeature can
+// delegate to the unified resolver snapshot (the same one the API's
+// requireCapability enforces) — page-render and API-allow can no longer diverge.
+//
+// MUST be used everywhere <App/> is rendered. There are two entry paths:
+//   • /app and other reserved paths → AppRoot renders this directly.
+//   • "/" and single-segment paths → RootPathGate renders this on fall-through.
+// SSO/OAuth lands on "/" (the origin), which RootPathGate rewrites to /app
+// WITHOUT a reload, so AppRoot's branch never runs for that navigation. A bare
+// <App/> there left useLicenseContext/useEntitlements on their defaults
+// (deploymentMode='cloud', hasFeature => false), hiding self-hosted branding and
+// every capability-gated sidebar item (Notebooks, etc.) until a manual refresh
+// of /app re-entered the provider-wrapped branch.
+function AuthedApp() {
+    return <EntitlementsProvider><LicenseProvider><App /></LicenseProvider></EntitlementsProvider>;
 }
 
 // Root wrapper — handles embed route before App's hooks
@@ -275,11 +332,31 @@ function AppRoot() {
     }
     // Static public legal pages. Served from in-repo markdown so they remain
     // stable URLs for Google's OAuth consent screen regardless of CMS state.
+    // LegalPage fetches the localized version (English-authoritative) by docId,
+    // falling back to the bundled English ?raw source if the API is unreachable.
     if (window.location.pathname === '/privacy') {
-        return <LegalPage title="Privacy Policy" source={privacyMd} />;
+        return <LegalPage docId="privacy" title="Privacy Policy" source={privacyMd} />;
     }
     if (window.location.pathname === '/terms') {
-        return <LegalPage title="Terms of Service" source={termsMd} />;
+        return <LegalPage docId="terms" title="Terms of Service" source={termsMd} />;
+    }
+    // Additional public legal documents (DPA, AUP, Cookie Statement, Imprint,
+    // Sub-processor list). No bundled ?raw source — these fetch from the public
+    // legal endpoint (English fallback served by the API).
+    {
+        const legalMatch = window.location.pathname.match(/^\/legal\/(dpa|aup|cookies|imprint|subprocessors)\/?$/);
+        if (legalMatch) {
+            const seg = legalMatch[1];
+            const docId = seg === 'cookies' ? 'cookie-statement' : seg;
+            const titles = {
+                dpa: 'Data Processing Agreement',
+                aup: 'Acceptable Use Policy',
+                'cookie-statement': 'Cookie Statement',
+                imprint: 'Legal Notice',
+                subprocessors: 'Sub-processor List',
+            };
+            return <LegalPage docId={docId} title={titles[docId]} />;
+        }
     }
     if (window.location.pathname === '/pricing') {
         return <PricingPage />;
@@ -291,7 +368,10 @@ function AppRoot() {
     if (isCmsPathCandidate(window.location.pathname)) {
         return <RootPathGate />;
     }
-    return <LicenseProvider><App /></LicenseProvider>;
+    // Mounted ONLY on this authenticated branch: the embed / CMS / legal /
+    // pricing early-returns above stay provider-free (a bare /chat/<id> embed
+    // intentionally has no entitlements context → can()/hasFeature() ⇒ false).
+    return <AuthedApp />;
 }
 
 // Isolated host for the CMS preview iframe. Renders ProductWebsite with empty
@@ -397,7 +477,7 @@ function RootPathGate() {
                         );
                     }
                 }
-                setCms({ content: data.content || {} });
+                setCms({ content: data.content || {}, analytics: data.analytics || null });
             });
         return () => { cancelled = true; };
     }, []); // eslint-disable-line react-hooks/exhaustive-deps
@@ -411,14 +491,26 @@ function RootPathGate() {
         // there's a no-login landing for users (and Google's OAuth verifier).
         // Anywhere else, fall through to the auth-gated app shell.
         if (window.location.pathname === '/') return <HomePage />;
-        return <App />;
+        // Provider-wrapped — SSO/OAuth lands here (origin "/" rewritten to /app
+        // without a reload), so a bare <App/> would run without the licence /
+        // entitlements context. See AuthedApp.
+        return <AuthedApp />;
     }
-    return <ProductWebsite content={cms.content} />;
+    return <ProductWebsite content={cms.content} analytics={cms.analytics} />;
 }
 
 
 function App() {
     const { t } = useTranslation();
+    // Keep --app-height / --keyboard-inset live for the whole app (mounted before
+    // any early return so the rules of hooks hold and the vars update on the
+    // auth/splash screens too).
+    useAppHeight();
+    // Drive mobile access control. navigateToPage is a useCallback([]) and can't
+    // read this directly, so we mirror it into a ref kept current by an effect.
+    const { isMobile } = useViewport();
+    const isMobileRef = useRef(isMobile);
+    useEffect(() => { isMobileRef.current = isMobile; }, [isMobile]);
     const [currentPage, setCurrentPage] = useState(() => pageFromPath(window.location.pathname));
     const [adminPath, setAdminPath] = useState(() => parseAdminPath(window.location.pathname));
     const [orgSettingsPath, setOrgSettingsPath] = useState(() => parseOrgSettingsPath(window.location.pathname));
@@ -430,9 +522,19 @@ function App() {
     // Keep scopedStorage pinned to the current user. When user logs out the
     // scope clears — subsequent reads return null until the next login. On
     // login, existing legacy global keys are migrated lazily on first read.
+    const _prevIdentityRef = useRef(null);
     useEffect(() => {
         scopedStorage.setCurrentUser(user?.id || null);
-    }, [user?.id]);
+        // Reset all cached server data when the IDENTITY (user + active org)
+        // changes from one signed-in identity to a DIFFERENT one — an account
+        // switch or org switch that doesn't go through handleLogout. React Query
+        // keys are not tenant-scoped, so stale lists from the previous identity
+        // must not bleed through. Skip the initial null→X set and benign profile
+        // patches (same identity). Logout (X→null) is handled in handleLogout.
+        const identity = identityKey(user);
+        if (shouldResetCache(_prevIdentityRef.current, identity)) queryClient.clear();
+        _prevIdentityRef.current = identity;
+    }, [user?.id, user?.organizationId, user?.orgId]);
 
     const [isLoading, setIsLoading] = useState(true);
     const [deploymentMode, setDeploymentMode] = useState('cloud');
@@ -461,6 +563,10 @@ function App() {
     const [encryptionState, setEncryptionState] = useState(null); // null | 'setup' | 'pin' | { recoveryKey: string }
     const [noOrganization, setNoOrganization] = useState(false);
     const [pendingApproval, setPendingApproval] = useState(false);
+    // Forced TOTP enrollment for username/password accounts (admin-required).
+    const [mfaSetupRequired, setMfaSetupRequired] = useState(false);
+    const [needsReconsent, setNeedsReconsent] = useState(false);
+    const [reconsentDocs, setReconsentDocs] = useState([]);
     // NC App Store onboarding gate: 'admin' renders the 4-step wizard,
     // 'pending' shows the "Setup in progress" screen, null lets the SPA
     // mount normally.
@@ -481,6 +587,52 @@ function App() {
     // Parse initial agent/conversation from URL
     const initialUrlRef = useRef(parseAgentUrl(window.location.pathname));
     const initialDirectConvRef = useRef(parseDirectChatUrl(window.location.pathname));
+
+    // Apply the authenticated session from the authoritative /auth/user +
+    // /auth/my-permissions responses. Shared by checkAuth (page refresh) and
+    // handleLogin (in-app login) so BOTH paths populate identical state —
+    // featureFlags, org branding, capability gates, encryption/MFA/reconsent/NC
+    // gates. Previously handleLogin built a thin `user` from the login response
+    // (no featureFlags, no fresh org) and skipped these gates, so the sidebar
+    // and branding showed a stale subset until the next full page refresh.
+    const applyAuthSession = useCallback((data, permsData) => {
+        // Deployment mode (drives self-hosted white-label branding)
+        if (data.featureFlags?.deploymentMode) {
+            setDeploymentMode(data.featureFlags.deploymentMode);
+        }
+        // Post-auth org branding overrides the pre-auth guess
+        if (data.organization?.logo) {
+            setOrgLogo(`${API_BASE}${data.organization.logo}`);
+        }
+        // SSO encryption setup needs (only if encryption is enabled)
+        if (data.encryptionEnabled !== false) {
+            if (data.needsEncryptionSetup) setEncryptionState('setup');
+            else if (data.needsEncryptionPin) setEncryptionState('pin');
+        }
+        if (data.noOrganization) setNoOrganization(true);
+        if (data.pendingApproval) setPendingApproval(true);
+        // Forced MFA enrollment (live from server; self-clears on enrol)
+        setMfaSetupRequired(!!data.mfaSetupRequired);
+        // Re-consent to updated legal terms (live + self-clearing)
+        setNeedsReconsent(!!data.needsReconsent);
+        setReconsentDocs(data.reconsentDocs || []);
+        // NC App Store onboarding wizard gate
+        if (data.ncOnboardingNeeded) setNcOnboardingState('admin');
+        else if (data.ncOnboardingPending) setNcOnboardingState('pending');
+        else setNcOnboardingState(null);
+        if (data.organizationName) setNcOrgName(data.organizationName);
+        setPendingNcBinding(data.pendingNcBinding || null);
+
+        const permissions = permsData?.permissions || [];
+        const userGroups = permsData?.groups || [];
+        const userOrgs = permsData?.organizations || [];
+        const allowedAgentTypes = permsData?.allowedAgentTypes || [];
+        const betaFeatures = permsData?.betaFeatures || [];
+        const canUseFeature = permsData?.canUseFeature || {};
+        const canManageUsers = permissions.includes('all') || permissions.includes('manage_users');
+        setUser({ ...data.user, permissions, groups: userGroups, organizations: userOrgs, allowedAgentTypes, betaFeatures, canUseFeature, featureFlags: data.featureFlags || {}, enabledIntegrations: data.enabledIntegrations || null, canManageUsers: canManageUsers || data.user.isAdmin, encryptionEnabled: data.encryptionEnabled !== false, isConsumerAccount: !!data.isConsumerAccount, ncOrg: data.ncOrg || null, organization: data.organization || null });
+        setIsAuthenticated(true);
+    }, []);
 
     // Check auth status on mount
     useEffect(() => {
@@ -528,65 +680,18 @@ function App() {
                 if (res.ok) {
                     const data = await res.json();
                     if (data.authenticated && data.user) {
-                        // Update deployment mode from authenticated response too
-                        if (data.featureFlags?.deploymentMode) {
-                            setDeploymentMode(data.featureFlags.deploymentMode);
-                        }
-                        // Post-auth org branding overrides the pre-auth guess
-                        if (data.organization?.logo) {
-                            setOrgLogo(`${API_BASE}${data.organization.logo}`);
-                        }
-                        // Check for SSO encryption setup needs (only if encryption feature is enabled)
-                        if (data.encryptionEnabled !== false) {
-                            if (data.needsEncryptionSetup) {
-                                setEncryptionState('setup');
-                            } else if (data.needsEncryptionPin) {
-                                setEncryptionState('pin');
-                            }
-                        }
-                        // Check if SSO user has no organisation
-                        if (data.noOrganization) {
-                            setNoOrganization(true);
-                        }
-                        // Check if SSO user is pending approval
-                        if (data.pendingApproval) {
-                            setPendingApproval(true);
-                        }
-                        // NC App Store onboarding wizard. Admin sees the
-                        // wizard, others see "Setup in progress" — until
-                        // the admin's POST /auth/admin/.../nc-onboarding/complete
-                        // flips the flag.
                         logger.debug('[NcOnboarding] /auth/user flags:', {
                             needed: data.ncOnboardingNeeded,
                             pending: data.ncOnboardingPending,
                             isOrgAdmin: data.isOrgAdmin,
                             orgName: data.organizationName,
                         });
-                        if (data.ncOnboardingNeeded) setNcOnboardingState('admin');
-                        else if (data.ncOnboardingPending) setNcOnboardingState('pending');
-                        else setNcOnboardingState(null);
-                        if (data.organizationName) setNcOrgName(data.organizationName);
-                        setPendingNcBinding(data.pendingNcBinding || null);
-                        // Also fetch dynamic permissions
+                        // Fetch dynamic permissions, then apply the full session
+                        // through the shared applier so refresh and login populate
+                        // identical state.
                         const permsRes = await authFetch(`${API_BASE}/auth/my-permissions`);
-                        let permissions = [];
-                        let userGroups = [];
-                        let userOrgs = [];
-                        let allowedAgentTypes = [];
-                        let betaFeatures = [];
-                        let canUseFeature = {};
-                        if (permsRes.ok) {
-                            const permsData = await permsRes.json();
-                            permissions = permsData.permissions || [];
-                            userGroups = permsData.groups || [];
-                            userOrgs = permsData.organizations || [];
-                            allowedAgentTypes = permsData.allowedAgentTypes || [];
-                            betaFeatures = permsData.betaFeatures || [];
-                            canUseFeature = permsData.canUseFeature || {};
-                        }
-                        const canManageUsers = permissions.includes('all') || permissions.includes('manage_users');
-                        setUser({ ...data.user, permissions, groups: userGroups, organizations: userOrgs, allowedAgentTypes, betaFeatures, canUseFeature, featureFlags: data.featureFlags || {}, enabledIntegrations: data.enabledIntegrations || null, canManageUsers: canManageUsers || data.user.isAdmin, encryptionEnabled: data.encryptionEnabled !== false, isConsumerAccount: !!data.isConsumerAccount, ncOrg: data.ncOrg || null, organization: data.organization || null });
-                        setIsAuthenticated(true);
+                        const permsData = permsRes.ok ? await permsRes.json() : null;
+                        applyAuthSession(data, permsData);
                     } else {
                         // Not authenticated. In the embedded connector this can
                         // mean bootstrap hasn't finished (no tenant key yet) —
@@ -607,7 +712,7 @@ function App() {
             }
         };
         checkAuth();
-    }, []);
+    }, [applyAuthSession]);
 
     // Handle browser back/forward
     useEffect(() => {
@@ -647,6 +752,27 @@ function App() {
     }, []);
 
     const navigateToPage = useCallback((page) => {
+        // Mobile access control: on phones, any destination that isn't chat or
+        // user-settings bounces to the app home. Belt-and-suspenders with
+        // MobileRouteGuard (which catches deep-links/refresh + resize). Close
+        // every overlay so a panel that was already open doesn't linger.
+        if (isMobileRef.current && !isPageAllowedOnMobile(mobilePageKey(page))) {
+            setShowStudio(false);
+            setShowSettings(false);
+            setShowAgentDesigner(false);
+            setShowAgentWizard(false);
+            setShowAITasks(false);
+            setShowSkillsPanel(false);
+            setShowEmailKB(false);
+            setShowNotebooks(false);
+            setShowLegal(false);
+            setShowProfileMenu(false);
+            setCurrentPage('agents');
+            if (window.location.pathname !== '/app') {
+                window.history.pushState({ page: 'agents' }, '', '/app');
+            }
+            return;
+        }
         // Close the Legal Studio panel whenever we navigate elsewhere. The panel
         // is rendered first in AgentHub's ternary, so it must be reset here for
         // any non-legal destination (mirrors how showNotebooks is managed).
@@ -677,6 +803,9 @@ function App() {
             const parts = raw.split(/[/:]/).filter(Boolean);
             const sectionRaw = parts[0] || 'agents';
             const id = parts[1] || null;
+            // Third segment — currently only Routines uses it, to address a
+            // flowlet (layer) inside an automation: studio/routines/<id>/<flowlet>.
+            const sub = parts[2] || null;
             const section = (sectionRaw === 'routines' || sectionRaw === 'ai-tasks') ? 'aiTasks'
                 : sectionRaw === 'skills' ? 'skills'
                 : sectionRaw === 'knowledge' ? 'knowledge'
@@ -684,13 +813,17 @@ function App() {
                 : sectionRaw === 'tests' ? 'tests'
                 : sectionRaw === 'security' ? 'security'
                 : sectionRaw === 'support' ? 'support'
+                : (sectionRaw === 'lead-studio' || sectionRaw === 'leadStudio') ? 'leadStudio'
                 : (sectionRaw === 'meeting-notes' || sectionRaw === 'meetingNotes') ? 'meetingNotes'
                 : 'agents';
             const pathSegment = section === 'aiTasks' ? 'routines'
                 : section === 'meetingNotes' ? 'meeting-notes'
+                : section === 'leadStudio' ? 'lead-studio'
                 : section;
-            const path = id ? `/app/studio/${pathSegment}/${id}` : `/app/studio/${pathSegment}`;
-            setStudioRoute({ section, id });
+            const path = id
+                ? (sub ? `/app/studio/${pathSegment}/${id}/${sub}` : `/app/studio/${pathSegment}/${id}`)
+                : `/app/studio/${pathSegment}`;
+            setStudioRoute({ section, id, sub });
             setShowStudio(true);
             setShowAgentDesigner(false);
             setShowAgentWizard(false);
@@ -878,52 +1011,65 @@ function App() {
         }
         setCurrentPage(page);
         setShowProfileMenu(false);
+        // Landing on a top-level page (agents/home, admin, …) closes any open
+        // overlay panel. Without this, an overlay flag initialised from a deep
+        // link (e.g. showAgentDesigner from /app/agent-designer) would keep the
+        // panel mounted after a redirect to /app — notably the MobileRouteGuard
+        // bounce on phones.
         setShowStudio(false);
+        setShowSettings(false);
+        setShowAgentDesigner(false);
+        setShowAgentWizard(false);
+        setShowAITasks(false);
+        setShowSkillsPanel(false);
+        setShowEmailKB(false);
+        setShowNotebooks(false);
+        setShowLegal(false);
         const path = PAGE_ROUTES[page] || '/';
         window.history.pushState({ page }, '', path);
     }, []);
 
+    // Tell the (above-auth-boundary) EntitlementsProvider to re-resolve whenever
+    // auth flips — login/logout/bootstrap all run through setIsAuthenticated, so
+    // one effect keyed on it covers every transition. Without this the provider's
+    // pre-login snapshot (401 → empty) persists and every capability-gated UI
+    // (Studio Webpages tab, etc.) stays hidden after login.
+    useEffect(() => {
+        window.dispatchEvent(new Event('beeflow:auth-changed'));
+    }, [isAuthenticated]);
+
     const handleLogin = async (userData, recoveryKey) => {
-        // Fetch dynamic permissions just like checkAuth does on refresh
+        // Hydrate from /auth/user + /auth/my-permissions exactly like a page
+        // refresh (checkAuth) via the shared applier, so the sidebar, org
+        // branding, feature flags and capability gates reflect the user's real
+        // permissions immediately. The thin login response (`userData`) lacks
+        // the freshly-computed featureFlags / org / capability data, which is
+        // why login previously showed a stale subset until a manual refresh.
         try {
-            const permsRes = await authFetch(`${API_BASE}/auth/my-permissions`);
-            let permissions = [];
-            let userGroups = [];
-            let userOrgs = [];
-            let allowedAgentTypes = [];
-            let betaFeatures = [];
-            let canUseFeature = {};
-            if (permsRes.ok) {
-                const permsData = await permsRes.json();
-                permissions = permsData.permissions || [];
-                userGroups = permsData.groups || [];
-                userOrgs = permsData.organizations || [];
-                allowedAgentTypes = permsData.allowedAgentTypes || [];
-                betaFeatures = permsData.betaFeatures || [];
-                canUseFeature = permsData.canUseFeature || {};
+            const userRes = await authFetch(`${API_BASE}/auth/user`, { cache: 'no-store' });
+            const data = userRes.ok ? await userRes.json() : null;
+            if (data?.authenticated && data.user) {
+                const permsRes = await authFetch(`${API_BASE}/auth/my-permissions`);
+                const permsData = permsRes.ok ? await permsRes.json() : null;
+                applyAuthSession(data, permsData);
+            } else {
+                // /auth/user unavailable right after login (rare — the session
+                // is already established). Fall back to the thin login payload
+                // so the user isn't blocked; a later refresh reconciles.
+                setUser(userData);
+                setIsAuthenticated(true);
             }
-            const canManageUsers = permissions.includes('all') || permissions.includes('manage_users');
-            // Pull `organization` (logo/name) from /auth/user — handleLogin's
-            // userData payload doesn't include it, so the sidebar would
-            // otherwise miss the org logo until the next full page refresh.
-            let organization = null;
-            try {
-                const userRes = await authFetch(`${API_BASE}/auth/user`, { cache: 'no-store' });
-                if (userRes.ok) {
-                    const userJson = await userRes.json();
-                    if (userJson?.organization) organization = userJson.organization;
-                }
-            } catch (_) { /* non-fatal */ }
-            setUser({ ...userData, permissions, groups: userGroups, organizations: userOrgs, allowedAgentTypes, betaFeatures, canUseFeature, canManageUsers: canManageUsers || userData.isAdmin, isConsumerAccount: !!userData.isConsumerAccount, organization });
         } catch (err) {
-            console.error('Failed to fetch permissions after login:', err);
+            console.error('Failed to hydrate session after login:', err);
             setUser(userData);
+            setIsAuthenticated(true);
         }
-        setIsAuthenticated(true);
         // Reset to main app view after login (currentPage may still be a homepage route)
         setCurrentPage('agents');
         window.history.pushState({ page: 'agents' }, '', '/app');
-        // Show recovery key if one was generated (new user or migration)
+        // Show recovery key if one was generated (new user or migration).
+        // Set last so it takes precedence over any encryption-setup state the
+        // applier may have derived from /auth/user.
         if (recoveryKey) {
             setEncryptionState({ recoveryKey });
         }
@@ -943,6 +1089,11 @@ function App() {
         // Device-level keys (theme, locale) are not touched.
         if (prevUserId) scopedStorage.clearUser(prevUserId);
         scopedStorage.setCurrentUser(null);
+        // Drop ALL cached server data. React Query keys are not tenant-scoped
+        // (e.g. ['agents','list']), so without this a second account logging in
+        // on the same browser could read the previous user's cached lists for
+        // up to gcTime (5min). clear() removes every query + mutation cache.
+        queryClient.clear();
         // Drop the embedded-iframe pickup token so a logged-out iframe doesn't
         // keep replaying it on subsequent requests.
         setSessionToken(null);
@@ -1220,6 +1371,49 @@ function App() {
         );
     }
 
+    // Forced MFA enrollment gate — password (non-SSO) accounts must set up
+    // two-factor auth before using the app when the admin requires it. The
+    // server derives this live, so completing enrollment + re-fetch clears it.
+    if (mfaSetupRequired) {
+        return (
+            <MfaSetupGate
+                onLogout={handleLogout}
+                onDone={async () => {
+                    setMfaSetupRequired(false);
+                    try {
+                        const res = await authFetch(`${API_BASE}/auth/user`, { cache: 'no-store' });
+                        if (res.ok) {
+                            const data = await res.json();
+                            setMfaSetupRequired(!!data.mfaSetupRequired);
+                        }
+                    } catch (_) { /* leave cleared */ }
+                }}
+            />
+        );
+    }
+
+    // Re-consent gate — blocks the app until the user accepts updated legal
+    // documents. Same gate row as MfaSetupGate; server-derived + self-clearing.
+    if (needsReconsent) {
+        return (
+            <ReconsentGate
+                docs={reconsentDocs}
+                onLogout={handleLogout}
+                onDone={async () => {
+                    setNeedsReconsent(false);
+                    try {
+                        const res = await authFetch(`${API_BASE}/auth/user`, { cache: 'no-store' });
+                        if (res.ok) {
+                            const data = await res.json();
+                            setNeedsReconsent(!!data.needsReconsent);
+                            setReconsentDocs(data.reconsentDocs || []);
+                        }
+                    } catch (_) { /* leave cleared */ }
+                }}
+            />
+        );
+    }
+
     // Per-route wrapper — a crash inside one panel surfaces only its own
     // boundary, leaving the rest of the app usable. Each lazy() chunk is
     // also wrapped so a network failure during code-split download falls
@@ -1345,7 +1539,7 @@ function App() {
         <SubscriptionProvider user={user}>
         <RecorderProvider>
         <CaptureProvider>
-        <div className="h-screen flex flex-col">
+        <div className="flex flex-col" style={{ height: 'var(--app-height)' }}>
 
             {/* No-subscription gate: org users without an active plan can
                 only reach the License & Usage page so they can subscribe. */}
@@ -1354,6 +1548,17 @@ function App() {
                     user={user}
                     currentPage={currentPage}
                     deploymentMode={deploymentMode}
+                    navigateToPage={navigateToPage}
+                />
+            )}
+
+            {/* Mobile access control: bounce disallowed pages to /app on phones.
+                Catches hard deep-links/refresh and viewport resize/rotate (the
+                cases navigateToPage's own gate can't see). */}
+            {isAuthenticated && (
+                <MobileRouteGuard
+                    isMobile={isMobile}
+                    currentPage={currentPage}
                     navigateToPage={navigateToPage}
                 />
             )}
@@ -1375,6 +1580,10 @@ function App() {
                 from Settings → Help & Support. Mounted here so it floats above
                 the app shell and can drive navigation via navigateToPage. */}
             {isAuthenticated && <OnboardingTour user={user} onNavigate={navigateToPage} currentPage={currentPage} />}
+
+            {/* Learning Center — focused player for rich (slide/quiz/exercise)
+                lessons. Pure-tour lessons are routed back to OnboardingTour. */}
+            {isAuthenticated && <LessonPlayerHost user={user} />}
 
             {/* The floating customer-support drawer was retired — the user-side
                 support inbox now lives at /app/settings → Help & Support. */}
@@ -1416,6 +1625,21 @@ function App() {
  * Usage page so the admin can buy one. Skips for the hardcoded platform
  * operator and for consumer accounts (no orgId).
  */
+// Null-rendering guard (same pattern as SubscriptionGate) that enforces the
+// mobile allow-list for cases navigateToPage can't intercept: a hard deep-link
+// or refresh onto a disallowed URL, and the viewport becoming mobile (resize/
+// rotate) while sitting on a disallowed page. Idempotent — once it lands on
+// 'agents' the condition is false. Mounted only under isAuthenticated, so it
+// never runs for the embed/CMS/legal/pricing routes that return earlier.
+function MobileRouteGuard({ isMobile, currentPage, navigateToPage }) {
+    useEffect(() => {
+        if (isMobile && !MOBILE_ALLOWED_PAGES.has(currentPage)) {
+            navigateToPage('agents');
+        }
+    }, [isMobile, currentPage, navigateToPage]);
+    return null;
+}
+
 function SubscriptionGate({ user, currentPage, deploymentMode, navigateToPage }) {
     const { hasActiveSub, loading } = useSubscriptionContext();
     const { serverOverride, loading: licLoading } = useLicenseContext();

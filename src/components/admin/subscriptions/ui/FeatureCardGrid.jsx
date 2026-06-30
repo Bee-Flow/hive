@@ -14,13 +14,17 @@ import { Toggle } from './Toggle';
  * grouping.
  *
  * Props:
- *   options       - [{ id, label, description?, category? }]
- *   value         - null | string[]   (tri-state, see above)
- *   onChange      - (next: null | string[]) => void
- *   renderIcon    - (id) => ReactNode   for the 32×32 leading icon
- *   grouped       - bool, group cards by `category`
- *   emptyHint     - shown when options.length === 0
- *   restrictLabel - copy for the master toggle (default below)
+ *   options        - [{ id, label, description?, category?, isMcp? }]
+ *   value          - null | string[]   (tri-state, see above)
+ *   onChange       - (next: null | string[]) => void
+ *   renderIcon     - (id) => ReactNode   for the 32×32 leading icon
+ *   grouped        - bool, group cards by `category`
+ *   emptyHint      - shown when options.length === 0
+ *   restrictLabel  - copy for the master toggle (default below)
+ *
+ * Options tagged `isMcp:true` are opt-in: they are NEVER part of the unrestricted
+ * (null) set — an unrestricted plan covers the catalog only. In unrestricted mode
+ * MCP cards render disabled with a hint to switch to "restrict" mode to add them.
  */
 export function FeatureCardGrid({
     options,
@@ -33,9 +37,12 @@ export function FeatureCardGrid({
     restrictDescription = 'When off, every option is included automatically.',
 }) {
     const restricted = Array.isArray(value);
+    const arrValue = Array.isArray(value) ? value : [];
     const selected = useMemo(
-        () => new Set(restricted ? value : options.map(o => o.id)),
-        [restricted, value, options]
+        // Unrestricted (null) = all CATALOG options included; MCP servers excluded
+        // (they are opt-in and only count when explicitly listed in restricted mode).
+        () => new Set(restricted ? arrValue : options.filter(o => !o.isMcp).map(o => o.id)),
+        [restricted, arrValue, options]
     );
 
     const grouping = useMemo(() => {
@@ -55,7 +62,7 @@ export function FeatureCardGrid({
     };
     const toggleOne = id => {
         if (!restricted) return;
-        onChange(selected.has(id) ? value.filter(x => x !== id) : [...value, id]);
+        onChange(selected.has(id) ? arrValue.filter(x => x !== id) : [...arrValue, id]);
     };
 
     if (options.length === 0 && emptyHint) {
@@ -77,7 +84,7 @@ export function FeatureCardGrid({
                 />
                 {restricted && (
                     <div className="mt-2 flex items-center justify-between text-[11px] text-[var(--text-muted)]">
-                        <span>{value.length} of {options.length} included in this plan.</span>
+                        <span>{arrValue.length} of {options.length} included in this plan.</span>
                         <div className="flex gap-2">
                             <button
                                 type="button"
@@ -114,6 +121,7 @@ export function FeatureCardGrid({
                                     item={o}
                                     selected={selected.has(o.id)}
                                     disabled={!restricted}
+                                    lockedHint={!restricted && o.isMcp ? 'Restrict to add' : null}
                                     icon={renderIcon ? renderIcon(o.id, o) : null}
                                     onToggle={() => toggleOne(o.id)}
                                 />
@@ -126,7 +134,7 @@ export function FeatureCardGrid({
     );
 }
 
-function FeatureCard({ item, selected, disabled, icon, onToggle }) {
+function FeatureCard({ item, selected, disabled, icon, onToggle, lockedHint }) {
     const interactive = !disabled;
     return (
         <div
@@ -157,19 +165,23 @@ function FeatureCard({ item, selected, disabled, icon, onToggle }) {
                     <p className="text-[11px] text-[var(--text-muted)] line-clamp-2 leading-snug">{item.description}</p>
                 )}
             </div>
-            <label
-                className={`relative inline-flex items-center shrink-0 ${interactive ? 'cursor-pointer' : 'cursor-not-allowed'}`}
-                onClick={e => e.stopPropagation()}
-            >
-                <input
-                    type="checkbox"
-                    className="sr-only peer"
-                    checked={selected}
-                    disabled={disabled}
-                    onChange={() => interactive && onToggle()}
-                />
-                <div className="w-9 h-5 bg-gray-500/40 rounded-full peer peer-checked:bg-emerald-500 peer-focus:outline-none after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white peer-disabled:opacity-60" />
-            </label>
+            {lockedHint ? (
+                <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide text-[var(--text-muted)] whitespace-nowrap">{lockedHint}</span>
+            ) : (
+                <label
+                    className={`relative inline-flex items-center shrink-0 ${interactive ? 'cursor-pointer' : 'cursor-not-allowed'}`}
+                    onClick={e => e.stopPropagation()}
+                >
+                    <input
+                        type="checkbox"
+                        className="sr-only peer"
+                        checked={selected}
+                        disabled={disabled}
+                        onChange={() => interactive && onToggle()}
+                    />
+                    <div className="w-9 h-5 bg-gray-500/40 rounded-full peer peer-checked:bg-emerald-500 peer-focus:outline-none after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:after:translate-x-full peer-checked:after:border-white peer-disabled:opacity-60" />
+                </label>
+            )}
         </div>
     );
 }

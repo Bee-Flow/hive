@@ -27,5 +27,8 @@ export function useLicenseStatus() {
     return useQuery<LicenseStatus | null, Error>({
         queryKey: licenseKeys.status(),
         queryFn: ({ signal }) => apiClient.get<LicenseStatus>('/api/license/status', { signal }),
+        // Gated capabilities hang off this. Keep it fresher than the 30s global
+        // default so a plan/license/grant change isn't masked by a stale cache.
+        staleTime: 10_000,
     });
 }

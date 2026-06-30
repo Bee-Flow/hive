@@ -1,6 +1,6 @@
 import React, { useState, useRef, useCallback, useEffect, useMemo } from 'react';
 import './vscode-theme.css';
-import { FileImage, AlertCircle } from 'lucide-react';
+import { FileImage, AlertCircle, Code2, Upload, Download, History } from 'lucide-react';
 import ActivityBar from './ActivityBar';
 import FileExplorer from './FileExplorer';
 import EditorTabs from './EditorTabs';
@@ -150,6 +150,7 @@ export default function WebpageIDE({
     dirtyFiles: dirtyFilesProp = {},
     extraFiles = [], extraContents = {},
     onExtraChange,     // (path, newContent) => void  — text-only extras
+    onCreateFile, onRenameFile, onDeleteFile, onUploadAsset,  // manual file/asset management
     sources, onSourcesChange,
     // Chat
     chatMessages, chatLoading,
@@ -166,18 +167,36 @@ export default function WebpageIDE({
     onVersionsClick,
     // Download
     onDownload,
-    // User (unused here but kept for API symmetry)
-    user, // eslint-disable-line no-unused-vars
+    // User — used for the owner gate (file management is owner-only).
+    user,
 }) {
-    // Theme — persisted via scopedStorage (already namespaced by current user).
-    // Defaults to light so the IDE blends with the host app's light theme.
-    const [theme, setTheme] = useState(() => {
-        try { return scopedStorage.getItem('webpages_theme') || 'light'; } catch { return 'light'; }
+    // Night mode removed — the webpages IDE is light-only (blends with the host
+    // app's light theme; Monaco uses 'vs').
+    const theme = 'light';
+
+    // No-code-by-default: the simplified surface (preview + chat + upload) is the
+    // default; the "</> Code" toggle reveals the full IDE (explorer, editor,
+    // tabs, status bar). Persisted per user.
+    const [devMode, setDevMode] = useState(() => {
+        try { return scopedStorage.getItem('webpages_dev_mode') === 'true'; } catch { return false; }
     });
-    const toggleTheme = () => {
-        const next = theme === 'dark' ? 'light' : 'dark';
-        setTheme(next);
-        try { scopedStorage.setItem('webpages_theme', next); } catch {}
+    const toggleDevMode = () => {
+        const next = !devMode;
+        setDevMode(next);
+        try { scopedStorage.setItem('webpages_dev_mode', String(next)); } catch {}
+    };
+
+    // Owner gate — only the page owner can mutate files / upload assets. Viewers
+    // (org-shared pages) get a read-only explorer and no upload affordances.
+    const isOwner = !!(selected && user && selected.userId === user.id);
+
+    // Top-bar "Add image" upload (reachable in the simplified surface where the
+    // file explorer is hidden).
+    const topUploadRef = useRef(null);
+    const onTopUploadPicked = (e) => {
+        const files = Array.from(e.target.files || []);
+        files.forEach(f => onUploadAsset?.(f, 'assets'));
+        e.target.value = '';
     };
 
     // Active pane in sidebar — starts null so the sidebar is collapsed and the
@@ -304,15 +323,45 @@ export default function WebpageIDE({
             className="flex flex-col"
             style={{ height: '100%', width: '100%', overflow: 'hidden' }}
         >
+            <input ref={topUploadRef} type="file" multiple accept="image/*,.svg,.woff,.woff2,.ttf,.otf,.ico,.mp3,.mp4,.webm" style={{ display: 'none' }} onChange={onTopUploadPicked} />
+
+            {/* Slim top bar — always present. Holds the code/dev toggle, and (in
+                the simplified surface where the status bar is hidden) the
+                upload / download / history / theme controls. */}
+            <div className="flex items-center justify-between px-3 py-1.5 shrink-0"
+                 style={{ borderBottom: '1px solid var(--vsc-border)', background: 'var(--vsc-sidebar-bg)' }}>
+                <span className="text-[11px]" style={{ color: 'var(--vsc-fg-muted)' }}>
+                    {devMode ? 'Developer view' : 'Preview'}
+                </span>
+                <div className="flex items-center gap-1">
+                    {!devMode && (
+                        <>
+                            {isOwner && onUploadAsset && (
+                                <IdeBarButton Icon={Upload} label="Add image" onClick={() => topUploadRef.current?.click()} />
+                            )}
+                            <IdeBarButton Icon={Download} label="ZIP" onClick={onDownload} />
+                            <IdeBarButton Icon={History} label="History" onClick={onVersionsClick} />
+                        </>
+                    )}
+                    <IdeBarButton
+                        Icon={Code2}
+                        label={devMode ? 'Hide code' : 'Code'}
+                        onClick={toggleDevMode}
+                        active={devMode}
+                        title={devMode ? 'Back to the simple preview' : 'Show the code editor'}
+                    />
+                </div>
+            </div>
+
             {/* Main body: activity bar + sidebar + center + chat */}
             <div className="flex flex-1 min-h-0">
 
-                {/* Activity bar */}
-                <ActivityBar active={sidebarPane} onSelect={handleActivityBarSelect} />
+                {/* Activity bar — developer view only */}
+                {devMode && <ActivityBar active={sidebarPane} onSelect={handleActivityBarSelect} />}
 
-                {/* Sidebar — only mounted when a pane is selected. Click the
-                    same activity-bar icon again to collapse. */}
-                {sidebarOpen && (
+                {/* Sidebar — only mounted when a pane is selected (dev view).
+                    Click the same activity-bar icon again to collapse. */}
+                {devMode && sidebarOpen && (
                     <>
                         <div
                             className="flex flex-col shrink-0 overflow-hidden"
@@ -324,6 +373,12 @@ export default function WebpageIDE({
                                     onFileSelect={handleExplorerSelect}
                                     dirtyFiles={dirtyFiles}
                                     extraFiles={extraFiles}
+                                    framework={selected?.settings?.framework}
+                                    onCreateFile={onCreateFile}
+                                    onRename={onRenameFile}
+                                    onDelete={onDeleteFile}
+                                    onUploadAsset={onUploadAsset}
+                                    readOnly={!isOwner}
                                 />
                             )}
                             {sidebarPane === 'database' && (
@@ -363,8 +418,8 @@ export default function WebpageIDE({
 
                 {/* Center: editor + preview stacked */}
                 <div className="flex flex-col flex-1 min-w-0 min-h-0" ref={centerRef}>
-                    {/* Tabs only render when at least one tab is open. */}
-                    {editorOpen && (
+                    {/* Tabs only render when at least one tab is open (dev view). */}
+                    {devMode && editorOpen && (
                         <EditorTabs
                             openFiles={openFiles}
                             activeKey={activeKey}
@@ -374,7 +429,7 @@ export default function WebpageIDE({
                         />
                     )}
 
-                    {editorOpen && activeView && (
+                    {devMode && editorOpen && activeView && (
                         <>
                             <div style={{ flex: `0 0 ${editorPct}%`, minHeight: 0, overflow: 'hidden' }}>
                                 {activeView.kind === 'text' ? (
@@ -418,6 +473,9 @@ export default function WebpageIDE({
                             extraFiles={extraFiles}
                             extraContents={extraContents}
                             onSelectionAttach={onSelectionAttach}
+                            framework={selected?.settings?.framework}
+                            runtime={selected?.settings?.runtime}
+                            isStreaming={chatLoading}
                         />
                     </div>
                 </div>
@@ -455,18 +513,37 @@ export default function WebpageIDE({
                 </div>
             </div>
 
-            {/* Status bar */}
-            <StatusBar
-                theme={theme}
-                onThemeToggle={toggleTheme}
-                activeFile={statusActiveFile}
-                cursor={cursor}
-                fileSize={fileSize}
-                saveState={saveState}
-                lastSavedAt={lastSavedAt}
-                onDownload={onDownload}
-                onVersions={onVersionsClick}
-            />
+            {/* Status bar — developer view only (its controls live in the top
+                bar in the simplified surface). */}
+            {devMode && (
+                <StatusBar
+                    activeFile={statusActiveFile}
+                    cursor={cursor}
+                    fileSize={fileSize}
+                    saveState={saveState}
+                    lastSavedAt={lastSavedAt}
+                    onDownload={onDownload}
+                    onVersions={onVersionsClick}
+                />
+            )}
         </div>
+    );
+}
+
+/** Slim button used in the IDE top bar. */
+function IdeBarButton({ Icon, label, onClick, active, title }) {
+    return (
+        <button
+            type="button"
+            onClick={onClick}
+            title={title || label}
+            className="px-2 py-1 rounded text-[11px] flex items-center gap-1 transition-colors"
+            style={{ color: active ? 'var(--vsc-fg)' : 'var(--vsc-fg-muted)', background: active ? 'var(--vsc-hover-bg)' : 'transparent' }}
+            onMouseEnter={(e) => (e.currentTarget.style.background = 'var(--vsc-hover-bg)')}
+            onMouseLeave={(e) => (e.currentTarget.style.background = active ? 'var(--vsc-hover-bg)' : 'transparent')}
+        >
+            <Icon size={13} />
+            {label && <span>{label}</span>}
+        </button>
     );
 }

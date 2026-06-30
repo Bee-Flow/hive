@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import AvatarPicker from './AvatarPicker';
 import { useTranslation } from '../../hooks/useTranslation';
+import { useViewport } from '../../hooks/useViewport';
 import { Check, ChevronDown } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import scopedStorage from '../../utils/scopedStorage';
@@ -18,7 +19,7 @@ const ROLE_LABELS = {
 // ── Generic list row used in the General container ───────────────────────────
 const Row = ({ label, description, right, first }) => (
     <div
-        className="flex items-center gap-4 px-5 py-3.5"
+        className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-5 py-3.5"
         style={{
             borderTop: first ? 'none' : '1px solid var(--border-subtle)',
         }}
@@ -29,7 +30,7 @@ const Row = ({ label, description, right, first }) => (
                 <p className="text-[11px] mt-0.5" style={{ color: 'var(--text-muted)' }}>{description}</p>
             )}
         </div>
-        <div className="flex-shrink-0">{right}</div>
+        <div className="flex-shrink-0 w-full sm:w-auto">{right}</div>
     </div>
 );
 
@@ -66,7 +67,7 @@ const Dropdown = ({ value, options, onChange }) => {
             </button>
             {open && (
                 <div
-                    className="absolute right-0 top-full mt-1 min-w-44 rounded-lg border shadow-xl py-1 z-50"
+                    className="absolute left-0 sm:left-auto sm:right-0 top-full mt-1 min-w-44 max-w-[calc(100vw-2.5rem)] rounded-lg border shadow-xl py-1 z-50"
                     style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}
                 >
                     {options.map(o => (
@@ -132,6 +133,11 @@ const PreferencesSection = ({
     useEffect(() => { if (user) setLocalUser(user); }, [user]);
 
     const isSimpleMode = !!localUser?.simpleMode;
+    // Phone-sized screens force Simple Mode on (see AgentHub's `simpleMode`
+    // derivation). The stored preference is still what we read/write here, but
+    // the toggle is shown on + locked so it matches the simplified surface the
+    // user actually sees and doesn't look like a no-op.
+    const { isMobile } = useViewport();
     const showAgentSelect = defaultAgentMode === 'specific';
 
     // Chat history — user-scoped, broadcast for live sidebar updates.
@@ -281,7 +287,7 @@ const PreferencesSection = ({
                     )}
                     {showStartup && showAgentSelect && (
                         <div
-                            className="flex items-center gap-4 px-5 py-3.5"
+                            className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-5 py-3.5"
                             style={{ borderTop: '1px solid var(--border-subtle)' }}
                         >
                             <p className="text-[13px] font-medium flex-1 min-w-0" style={{ color: 'var(--text-primary)' }}>
@@ -290,12 +296,11 @@ const PreferencesSection = ({
                             <select
                                 value={defaultAgentId}
                                 onChange={e => setDefaultAgentId(e.target.value)}
-                                className="px-3 py-1.5 rounded-lg border outline-none focus:border-[var(--accent-primary)] transition-colors text-[13px]"
+                                className="w-full sm:w-auto sm:min-w-[180px] px-3 py-1.5 rounded-lg border outline-none focus:border-[var(--accent-primary)] transition-colors text-[13px]"
                                 style={{
                                     borderColor: 'var(--border-default)',
                                     color: 'var(--text-primary)',
                                     background: 'var(--bg-primary)',
-                                    minWidth: '180px',
                                 }}
                             >
                                 <option value="">{t('settings.select_agent')}</option>
@@ -308,8 +313,8 @@ const PreferencesSection = ({
                     <Row
                         first={!hasLanguageRow && !showChatHistory && !showStartup}
                         label={t('settings.simple_mode_toggle') || 'Simple Mode'}
-                        description={t('settings.simple_mode_desc') || 'Show only New Chat, Search, Agents and your chat history. Hides Studio, Meeting Notes, Notebooks, Webpages and other settings.'}
-                        right={<Toggle on={isSimpleMode} onClick={handleSimpleModeToggle} disabled={simpleSaving} />}
+                        description={`${t('settings.simple_mode_desc') || 'Show only New Chat, Search, Agents and your chat history. Hides Studio, Meeting Notes, Notebooks, Webpages and other settings.'}${isMobile ? ` ${t('settings.simple_mode_mobile_note') || 'Always on for small screens.'}` : ''}`}
+                        right={<Toggle on={isSimpleMode || isMobile} onClick={handleSimpleModeToggle} disabled={simpleSaving || isMobile} />}
                     />
                 </div>
             </div>

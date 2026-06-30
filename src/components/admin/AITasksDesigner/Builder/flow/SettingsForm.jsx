@@ -1,12 +1,32 @@
+import { Save, RotateCcw, Plus, Trash2, Sparkles, Repeat, ChevronUp, ChevronDown, X } from 'lucide-react';
 import React, { useEffect, useMemo, useRef, useState } from 'react';
-import { Save, RotateCcw, Plus, Trash2 } from 'lucide-react';
-import { tierLabel } from '../../../../tierMeta';
+import AccordionSection from './AccordionSection';
+import CollapsibleSection from './CollapsibleSection';
+import FieldHint from './FieldHint';
+import { getLayerContract } from './flowletScope';
+import ScheduleBuilder from './ScheduleBuilder';
+import ToolPicker from './ToolPicker';
+import { sectionsWithErrors } from './sectionForIssue';
+import { IconPicker } from './stepIcons';
+import { paramsToSchema, schemaToParams } from './triggerSchemaUtils';
 import useAutomationApi from '../../../../../hooks/useAutomationApi';
-import ToolInputForm from '../mapping/ToolInputForm';
+import { tierLabel, configuredTierKeys } from '../../../../tierMeta';
+import { autoMapInputs } from '../mapping/autoMapInputs';
+import { humanizeToolName } from './displayHelpers';
+import BindingField from '../mapping/BindingField';
 import ConditionBuilder from '../mapping/ConditionBuilder';
 import LoopOverPicker from '../mapping/LoopOverPicker';
 import TemplateField from '../mapping/TemplateField';
-import ScheduleBuilder from './ScheduleBuilder';
+import ToolInputForm from '../mapping/ToolInputForm';
+import { inputClass, textareaClass, FormRow, ValidationLine } from './settings/formPrimitives';
+import { convertValue, defaultLabelPlaceholder, extractFormState, buildPatch, deepEqual, OUTPUT_FIELD_TYPES, COLUMN_TYPES } from './settings/formState';
+export { schemaToFields, fieldsToSchema } from './settings/formState';
+import {
+    GmailFilterFields, GmailLabelFilterFields, CalendarChangedFilterFields,
+    CalendarUpcomingFilterFields, DriveFileNewFilterFields, NextcloudFileFilterFields,
+    NextcloudShareFilterFields, NextcloudActivityFilterFields, NextcloudNotificationFilterFields,
+    TicketAssistantTicketFilterFields, TicketAssistantSyncFilterFields,
+} from './settings/triggerFilters';
 
 /**
  * Per-step-type form-based editor. Each subcomponent owns its own draft
@@ -29,6 +49,14 @@ import ScheduleBuilder from './ScheduleBuilder';
 export default function SettingsForm({
     step, modelTiers, stepIssues, saving, saveError, onPatch,
     onFocusField = null, previewSample = null, catalog = null, groups = [],
+    // Whole automation document (incl. the root-only `layers` map).
+    // Needed by CallLayerFields to derive a flowlet's live contract — the
+    // scoped `definition` the inspector binds against has no layers map.
+    rootDefinition = null,
+    // Published Steps catalog [{id,title,params,outputFields}] — CallStepFields
+    // derives an external Step's contract from this (the Step lives in another
+    // row, so there's no local layers entry to read).
+    blocksCatalog = [],
 }) {
     // Baseline ref tracks "what the server has". We diverge from baseline
     // when the user edits; we resync whenever the parent passes back step
@@ -50,6 +78,11 @@ export default function SettingsForm({
     useEffect(() => { onPatchRef.current = onPatch; stepRef.current = step; draftRef.current = draft; });
 
     const dirty = useMemo(() => !deepEqual(draft, baseline), [draft, baseline]);
+
+    // Which accordion sections hold a validation error — those are forced
+    // open so an error is never hidden behind a collapsed section. Cheap
+    // enough to compute each render (the React Compiler memoizes it).
+    const errorSections = sectionsWithErrors(step, stepIssues);
 
     // Same-id content sync: when the parent re-renders with new step
     // content (e.g. server confirmed our last save, or chat updated the
@@ -111,12 +144,12 @@ export default function SettingsForm({
         const delay = saveError ? 5000 : 600;
         const t = setTimeout(() => { flushNow(); }, delay);
         return () => clearTimeout(t);
-    }, [draft, dirty, saving, saveError]); // eslint-disable-line react-hooks/exhaustive-deps
+    }, [draft, dirty, saving, saveError]);  
 
     // Flush on unmount — covers step change (parent re-keys us), panel
     // close, page navigation. Without this, clicking another node within
     // 600ms of typing would silently discard the edit.
-    useEffect(() => () => { flushNow(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+    useEffect(() => () => { flushNow(); }, []);  
 
     return (
         <div className="flex-1 min-h-0 flex flex-col">
@@ -127,98 +160,122 @@ export default function SettingsForm({
                 </div>
             )}
 
-            <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-4">
-                <FormRow label="Label">
-                    <input
-                        type="text"
-                        value={draft.label || ''}
-                        onChange={(e) => set('label', e.target.value)}
-                        placeholder={defaultLabelPlaceholder(step)}
-                        className={inputClass()}
-                    />
+            <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
+                <FormRow label="Label" hint="A name and an optional symbol for this step, shown on its node.">
+                    <div className="flex items-center gap-2">
+                        <IconPicker
+                            value={draft.icon || ''}
+                            onChange={(name) => set('icon', name)}
+                            title="Choose a symbol for this step"
+                        />
+                        <input
+                            type="text"
+                            value={draft.label || ''}
+                            onChange={(e) => set('label', e.target.value)}
+                            placeholder={defaultLabelPlaceholder(step)}
+                            className={inputClass() + ' flex-1'}
+                        />
+                    </div>
                 </FormRow>
 
                 {step.type === 'trigger' && (
-                    <TriggerFields draft={draft} set={set} setNested={setNested} />
+                    <TriggerFields draft={draft} set={set} setNested={setNested} errorSections={errorSections} />
                 )}
 
                 {step.type === 'ai_step' && (
                     <AiStepFields
                         draft={draft} set={set} modelTiers={modelTiers}
+                        catalog={catalog} groups={groups}
                         onFocusField={onFocusField} previewSample={previewSample}
+                        errorSections={errorSections}
                     />
                 )}
 
                 {step.type === 'integration_action' && (
                     <IntegrationActionFields
                         step={step} draft={draft} set={set}
-                        catalog={catalog}
+                        catalog={catalog} groups={groups}
                         onFocusField={onFocusField} previewSample={previewSample}
+                        errorSections={errorSections}
                     />
                 )}
 
                 {step.type === 'condition' && (
-                    <FormRow label="Expression" hint="Pick a field, an operator, and a value — or write a raw restricted-JS expression.">
-                        <ConditionBuilder
-                            value={draft.expr || ''}
-                            onChange={(next) => set('expr', next)}
-                            onFocusField={onFocusField}
-                            previewSample={previewSample}
-                        />
-                    </FormRow>
+                    <AccordionSection stepType="condition" sectionKey="condition" title="Condition" defaultOpen forceOpen={errorSections.has('condition')}>
+                        <FormRow label="Condition" hint="Pick a field, an operator, and a value — or switch to Advanced to write your own expression.">
+                            <ConditionBuilder
+                                value={draft.expr || ''}
+                                onChange={(next) => set('expr', next)}
+                                onFocusField={onFocusField}
+                                previewSample={previewSample}
+                            />
+                        </FormRow>
+                    </AccordionSection>
                 )}
 
                 {step.type === 'loop' && (
                     <LoopFields
                         draft={draft} set={set}
                         groups={groups} onFocusField={onFocusField}
+                        errorSections={errorSections}
                     />
                 )}
 
                 {step.type === 'code' && (
-                    <CodeFields draft={draft} set={set} />
+                    <CodeFields draft={draft} set={set} errorSections={errorSections} />
                 )}
 
                 {step.type === 'notification' && (
                     <NotificationFields
                         draft={draft} set={set}
                         onFocusField={onFocusField} previewSample={previewSample}
+                        errorSections={errorSections}
                     />
                 )}
 
+                {step.type === 'call_layer' && (
+                    <CallLayerFields step={step} draft={draft} set={set} groups={groups} onFocusField={onFocusField} previewSample={previewSample} rootDefinition={rootDefinition} errorSections={errorSections} />
+                )}
+                {step.type === 'call_block' && (
+                    <CallStepFields step={step} draft={draft} set={set} groups={groups} onFocusField={onFocusField} previewSample={previewSample} blocksCatalog={blocksCatalog} errorSections={errorSections} />
+                )}
+                {step.type === 'layer_output' && (
+                    <LayerOutputFields draft={draft} set={set} onFocusField={onFocusField} previewSample={previewSample} errorSections={errorSections} />
+                )}
+
                 {step.type === 'set' && (
-                    <SetFields draft={draft} set={set} onFocusField={onFocusField} previewSample={previewSample} />
+                    <SetFields draft={draft} set={set} onFocusField={onFocusField} previewSample={previewSample} errorSections={errorSections} />
                 )}
                 {step.type === 'datetime' && (
-                    <DateTimeFields draft={draft} set={set} groups={groups} />
+                    <DateTimeFields draft={draft} set={set} groups={groups} errorSections={errorSections} />
                 )}
                 {step.type === 'wait' && (
-                    <WaitFields draft={draft} set={set} />
+                    <WaitFields draft={draft} set={set} errorSections={errorSections} />
                 )}
                 {step.type === 'stop_error' && (
-                    <StopErrorFields draft={draft} set={set} onFocusField={onFocusField} previewSample={previewSample} />
+                    <StopErrorFields draft={draft} set={set} onFocusField={onFocusField} previewSample={previewSample} errorSections={errorSections} />
                 )}
                 {step.type === 'switch' && (
-                    <SwitchFields draft={draft} set={set} onFocusField={onFocusField} previewSample={previewSample} />
+                    <SwitchFields draft={draft} set={set} onFocusField={onFocusField} previewSample={previewSample} errorSections={errorSections} />
                 )}
                 {step.type === 'filter' && (
-                    <FilterFields draft={draft} set={set} groups={groups} onFocusField={onFocusField} previewSample={previewSample} />
+                    <FilterFields draft={draft} set={set} groups={groups} onFocusField={onFocusField} previewSample={previewSample} errorSections={errorSections} />
                 )}
                 {step.type === 'limit' && (
-                    <LimitFields draft={draft} set={set} groups={groups} onFocusField={onFocusField} />
+                    <LimitFields draft={draft} set={set} groups={groups} onFocusField={onFocusField} errorSections={errorSections} />
                 )}
                 {step.type === 'dedupe' && (
-                    <DedupeFields draft={draft} set={set} groups={groups} onFocusField={onFocusField} />
+                    <DedupeFields draft={draft} set={set} groups={groups} onFocusField={onFocusField} errorSections={errorSections} />
                 )}
                 {step.type === 'aggregate' && (
-                    <AggregateFields draft={draft} set={set} groups={groups} onFocusField={onFocusField} />
+                    <AggregateFields draft={draft} set={set} groups={groups} onFocusField={onFocusField} errorSections={errorSections} />
                 )}
                 {step.type === 'summarize' && (
-                    <SummarizeFields draft={draft} set={set} groups={groups} onFocusField={onFocusField} />
+                    <SummarizeFields draft={draft} set={set} groups={groups} onFocusField={onFocusField} errorSections={errorSections} />
                 )}
 
                 <div className="text-[11px] text-[var(--text-tertiary)]">
-                    Anything not on this form lives in the JSON tab.
+                    Advanced options are available in the JSON view.
                 </div>
             </div>
 
@@ -249,8 +306,19 @@ export default function SettingsForm({
 
 // ── Per-type field groups ──────────────────────────────────────────────
 
-function TriggerFields({ draft, set, setNested }) {
+function TriggerFields({ draft, set, setNested, errorSections = new Set() }) {
     const kind = draft.kind || 'manual';
+    // A flowlet's trigger declares its input contract instead of firing — no
+    // schedule/manual/webhook switch, just the params editor.
+    if (kind === 'layer_input') {
+        return (
+            <AccordionSection stepType="trigger" sectionKey="inputs" title="Inputs" defaultOpen forceOpen={errorSections.has('config')}>
+                <LayerInputFields draft={draft} set={set} />
+            </AccordionSection>
+        );
+    }
+    const hasKindForm = kind === 'agent_call' || kind === 'schedule' || kind === 'app_event';
+    const kindTitle = kind === 'agent_call' ? 'Agent tool' : kind === 'schedule' ? 'Schedule' : 'Event';
     return (
         <>
             <FormRow label="Trigger kind">
@@ -263,20 +331,28 @@ function TriggerFields({ draft, set, setNested }) {
                     <option value="schedule">Schedule — cron timer</option>
                     <option value="webhook">Webhook — inbound HTTPS POST</option>
                     <option value="app_event">App event — e.g. new Gmail email</option>
+                    <option value="agent_call">Agent — callable from chat</option>
                 </select>
             </FormRow>
-            {kind === 'schedule' && (
-                <ScheduleBuilder
-                    cron={draft.scheduleCron || ''}
-                    tz={draft.scheduleTz || 'Europe/Amsterdam'}
-                    onChange={({ cron, tz }) => {
-                        set('scheduleCron', cron);
-                        set('scheduleTz', tz);
-                    }}
-                />
-            )}
-            {kind === 'app_event' && (
-                <AppEventFields draft={draft} set={set} setNested={setNested} />
+            {hasKindForm && (
+                <AccordionSection stepType="trigger" sectionKey="config" title={kindTitle} defaultOpen forceOpen={errorSections.has('config') || errorSections.has('event')}>
+                    {kind === 'agent_call' && (
+                        <AgentCallFields draft={draft} set={set} />
+                    )}
+                    {kind === 'schedule' && (
+                        <ScheduleBuilder
+                            cron={draft.scheduleCron || ''}
+                            tz={draft.scheduleTz || 'Europe/Amsterdam'}
+                            onChange={({ cron, tz }) => {
+                                set('scheduleCron', cron);
+                                set('scheduleTz', tz);
+                            }}
+                        />
+                    )}
+                    {kind === 'app_event' && (
+                        <AppEventFields draft={draft} set={set} setNested={setNested} />
+                    )}
+                </AccordionSection>
             )}
         </>
     );
@@ -394,489 +470,351 @@ const EVENTS_BY_PROVIDER = {
     ],
 };
 
-function GmailFilterFields({ filter, setFilter }) {
-    return (
-        <div className="rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] p-3 space-y-3">
-            <div className="text-[11px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)]">Gmail filter (all optional, AND across keys)</div>
-            <FormRow label="From contains">
-                <input type="text" value={filter.from || ''} onChange={(e) => setFilter('from', e.target.value || undefined)}
-                    placeholder="boss@example.com" className={inputClass()} />
-            </FormRow>
-            <FormRow label="To contains">
-                <input type="text" value={filter.to || ''} onChange={(e) => setFilter('to', e.target.value || undefined)} className={inputClass()} />
-            </FormRow>
-            <FormRow label="Subject contains">
-                <input type="text" value={filter.subjectContains || ''} onChange={(e) => setFilter('subjectContains', e.target.value || undefined)} className={inputClass()} />
-            </FormRow>
-            <FormRow label="Subject regex" hint="JS regex. Capped at 200 chars; invalid patterns fail closed.">
-                <input type="text" value={filter.subjectRegex || ''} onChange={(e) => setFilter('subjectRegex', e.target.value || undefined)} className={inputClass() + ' font-mono'} />
-            </FormRow>
-            <FormRow label="Has attachment">
-                <label className="inline-flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={filter.hasAttachment === true} onChange={(e) => setFilter('hasAttachment', e.target.checked || undefined)} />
-                    Only emails with attachments
-                </label>
-            </FormRow>
-            <FormRow label="Exclude self-sent">
-                <label className="inline-flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={filter.excludeFromSelf === true} onChange={(e) => setFilter('excludeFromSelf', e.target.checked || undefined)} />
-                    Skip emails I sent
-                </label>
-            </FormRow>
-            <FormRow label="Max age (minutes)" hint="Drop messages older than this. Useful so a long-paused poller doesn't flood with backlog on resume.">
-                <input
-                    type="number"
-                    value={filter.maxAgeMinutes ?? ''}
-                    min={1}
-                    onChange={(e) => setFilter('maxAgeMinutes', e.target.value === '' ? undefined : Number(e.target.value))}
-                    className={inputClass()}
-                />
-            </FormRow>
-        </div>
-    );
-}
-
-// ── Trigger filter sub-forms (one per (provider, event)) ───────────────
-//
-// All filters reuse FilterShell as chrome and the standard input/textarea
-// helpers — keeps the visual language consistent with the Gmail filter
-// users already know. Each field's onChange clears its key when the
-// input is empty (`undefined`) so the persisted filter object stays
-// minimal and the matcher's "if filter.X is set" checks short-circuit.
-
-function FilterShell({ title, children }) {
-    return (
-        <div className="rounded-md border border-[var(--border-default)] bg-[var(--bg-secondary)] p-3 space-y-3">
-            <div className="text-[11px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)]">{title}</div>
-            {children}
-        </div>
-    );
-}
-
-function GmailLabelFilterFields({ filter, setFilter }) {
-    return (
-        <FilterShell title="Gmail label.added filter (labelId is required)">
-            <FormRow label="Label id" hint="Gmail label ids look like Label_3 or system ids like IMPORTANT / STARRED. Use a gmail_search step once to find the id if needed.">
-                <input type="text" value={filter.labelId || ''} onChange={(e) => setFilter('labelId', e.target.value || undefined)}
-                    placeholder="Label_3" className={inputClass()} />
-            </FormRow>
-            <FormRow label="From contains">
-                <input type="text" value={filter.from || ''} onChange={(e) => setFilter('from', e.target.value || undefined)} className={inputClass()} />
-            </FormRow>
-            <FormRow label="Subject contains">
-                <input type="text" value={filter.subjectContains || ''} onChange={(e) => setFilter('subjectContains', e.target.value || undefined)} className={inputClass()} />
-            </FormRow>
-            <FormRow label="Exclude labels (comma-separated)" hint="Drops messages that already carry any of these labels.">
-                <input
-                    type="text"
-                    value={Array.isArray(filter.excludeLabelIds) ? filter.excludeLabelIds.join(',') : ''}
-                    onChange={(e) => {
-                        const arr = e.target.value.split(',').map(s => s.trim()).filter(Boolean);
-                        setFilter('excludeLabelIds', arr.length ? arr : undefined);
-                    }}
-                    className={inputClass() + ' font-mono'}
-                />
-            </FormRow>
-        </FilterShell>
-    );
-}
-
-function CalendarChangedFilterFields({ filter, setFilter }) {
-    return (
-        <FilterShell title="Calendar event.changed filter (all optional)">
-            <FormRow label="Calendar id" hint="Default 'primary'. Use a different calendar id if you've connected secondary calendars.">
-                <input type="text" value={filter.calendarId || ''} onChange={(e) => setFilter('calendarId', e.target.value || undefined)}
-                    placeholder="primary" className={inputClass() + ' font-mono'} />
-            </FormRow>
-            <FormRow label="Status">
-                <select
-                    value={filter.statusEquals || ''}
-                    onChange={(e) => setFilter('statusEquals', e.target.value || undefined)}
-                    className={inputClass()}
-                >
-                    <option value="">Any</option>
-                    <option value="confirmed">confirmed</option>
-                    <option value="cancelled">cancelled</option>
-                    <option value="tentative">tentative</option>
-                </select>
-            </FormRow>
-            <FormRow label="Attendee email contains">
-                <input type="text" value={filter.attendeeEmailContains || ''} onChange={(e) => setFilter('attendeeEmailContains', e.target.value || undefined)}
-                    className={inputClass()} />
-            </FormRow>
-        </FilterShell>
-    );
-}
-
-function CalendarUpcomingFilterFields({ filter, setFilter }) {
-    return (
-        <FilterShell title="Calendar event.upcoming filter">
-            <FormRow label="Lead minutes" hint="Fire this many minutes before the event starts. Default 15.">
-                <input
-                    type="number"
-                    min={1}
-                    max={240}
-                    value={filter.leadMinutes ?? 15}
-                    onChange={(e) => setFilter('leadMinutes', e.target.value === '' ? undefined : Number(e.target.value))}
-                    className={inputClass()}
-                />
-            </FormRow>
-            <FormRow label="Calendar id">
-                <input type="text" value={filter.calendarId || ''} onChange={(e) => setFilter('calendarId', e.target.value || undefined)}
-                    placeholder="primary" className={inputClass() + ' font-mono'} />
-            </FormRow>
-            <FormRow label="Include all-day events">
-                <label className="inline-flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={filter.includeAllDay === true} onChange={(e) => setFilter('includeAllDay', e.target.checked || undefined)} />
-                    Yes — fire on all-day events too
-                </label>
-            </FormRow>
-            <FormRow label="Attendee email contains">
-                <input type="text" value={filter.attendeeEmailContains || ''} onChange={(e) => setFilter('attendeeEmailContains', e.target.value || undefined)}
-                    className={inputClass()} />
-            </FormRow>
-        </FilterShell>
-    );
-}
-
-function DriveFileNewFilterFields({ filter, setFilter }) {
-    return (
-        <FilterShell title="Drive file.new filter (all optional)">
-            <FormRow label="Folder id" hint="Drive folder id. Find via drive_search or by copying from the URL: drive.google.com/drive/folders/<id>.">
-                <input type="text" value={filter.folderId || ''} onChange={(e) => setFilter('folderId', e.target.value || undefined)}
-                    className={inputClass() + ' font-mono'} />
-            </FormRow>
-            <FormRow label="MIME type" hint="e.g. application/pdf, image/jpeg, application/vnd.google-apps.document.">
-                <input type="text" value={filter.mimeType || ''} onChange={(e) => setFilter('mimeType', e.target.value || undefined)}
-                    placeholder="application/pdf" className={inputClass() + ' font-mono'} />
-            </FormRow>
-            <FormRow label="Name contains">
-                <input type="text" value={filter.nameContains || ''} onChange={(e) => setFilter('nameContains', e.target.value || undefined)}
-                    className={inputClass()} />
-            </FormRow>
-            <FormRow label="Exclude my own uploads">
-                <label className="inline-flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={filter.excludeOwnUploads === true} onChange={(e) => setFilter('excludeOwnUploads', e.target.checked || undefined)} />
-                    Skip files I uploaded
-                </label>
-            </FormRow>
-        </FilterShell>
-    );
-}
-
-function NextcloudFileFilterFields({ filter, setFilter }) {
-    return (
-        <FilterShell title="Nextcloud file filter (all optional)">
-            <FormRow label="In folder" hint="Path prefix, e.g. /Invoices. Files outside this folder are skipped.">
-                <input type="text" value={filter.inFolder || ''} onChange={(e) => setFilter('inFolder', e.target.value || undefined)}
-                    placeholder="/Invoices" className={inputClass() + ' font-mono'} />
-            </FormRow>
-            <FormRow label="Extension" hint="Without dot, e.g. pdf.">
-                <input type="text" value={filter.extension || ''} onChange={(e) => setFilter('extension', e.target.value || undefined)}
-                    placeholder="pdf" className={inputClass() + ' font-mono'} />
-            </FormRow>
-            <FormRow label="Name contains">
-                <input type="text" value={filter.nameContains || ''} onChange={(e) => setFilter('nameContains', e.target.value || undefined)}
-                    className={inputClass()} />
-            </FormRow>
-            <FormRow label="Exclude my own actions">
-                <label className="inline-flex items-center gap-2 text-sm">
-                    <input type="checkbox" checked={filter.excludeOwnUploads === true} onChange={(e) => setFilter('excludeOwnUploads', e.target.checked || undefined)} />
-                    Skip files I created/edited
-                </label>
-            </FormRow>
-            <div className="text-[11px] text-[var(--text-tertiary)] leading-snug">
-                Manual runs use a <code>null</code> trigger payload — set a sample under Settings → Manual trigger payload to test bindings.
-            </div>
-        </FilterShell>
-    );
-}
-
-function NextcloudShareFilterFields({ filter, setFilter }) {
-    return (
-        <FilterShell title="Nextcloud share.received filter">
-            <FormRow label="Sharer (actor) equals" hint="Nextcloud username (uid) of the person who shared the item.">
-                <input type="text" value={filter.actorEquals || ''} onChange={(e) => setFilter('actorEquals', e.target.value || undefined)}
-                    className={inputClass() + ' font-mono'} />
-            </FormRow>
-            <FormRow label="Kind">
-                <select
-                    value={filter.kindEquals || ''}
-                    onChange={(e) => setFilter('kindEquals', e.target.value || undefined)}
-                    className={inputClass()}
-                >
-                    <option value="">Any (file or folder)</option>
-                    <option value="file">file</option>
-                    <option value="folder">folder</option>
-                </select>
-            </FormRow>
-            <FormRow label="Name contains">
-                <input type="text" value={filter.nameContains || ''} onChange={(e) => setFilter('nameContains', e.target.value || undefined)}
-                    className={inputClass()} />
-            </FormRow>
-        </FilterShell>
-    );
-}
-
-function NextcloudActivityFilterFields({ filter, setFilter }) {
-    return (
-        <FilterShell title="Nextcloud activity filter (advanced)">
-            <FormRow label="Activity type" hint="Raw activity slug (e.g. file_created, comments, deck). Leave empty to match every type — and prefer file.new / file.changed / share.received as dedicated triggers.">
-                <input type="text" value={filter.type || ''} onChange={(e) => setFilter('type', e.target.value || undefined)}
-                    placeholder="comments" className={inputClass() + ' font-mono'} />
-            </FormRow>
-            <FormRow label="Object name contains">
-                <input type="text" value={filter.objectNameContains || ''} onChange={(e) => setFilter('objectNameContains', e.target.value || undefined)}
-                    className={inputClass()} />
-            </FormRow>
-            <FormRow label="Actor equals">
-                <input type="text" value={filter.actorEquals || ''} onChange={(e) => setFilter('actorEquals', e.target.value || undefined)}
-                    className={inputClass() + ' font-mono'} />
-            </FormRow>
-        </FilterShell>
-    );
-}
-
-function NextcloudNotificationFilterFields({ filter, setFilter }) {
-    return (
-        <FilterShell title="Nextcloud notification filter">
-            <FormRow label="App" hint="Source app id (e.g. spreed, files_sharing, dav, updatenotification).">
-                <input type="text" value={filter.app || ''} onChange={(e) => setFilter('app', e.target.value || undefined)}
-                    placeholder="spreed" className={inputClass() + ' font-mono'} />
-            </FormRow>
-            <FormRow label="Subject contains">
-                <input type="text" value={filter.subjectContains || ''} onChange={(e) => setFilter('subjectContains', e.target.value || undefined)}
-                    className={inputClass()} />
-            </FormRow>
-        </FilterShell>
-    );
-}
-
-/**
- * Picker for the org's Ticket Assistant connections — lazy-loads the
- * list once on mount via `useAutomationApi.listTicketAssistantConnections`.
- * Falls back to a free-text input on fetch error so the user can still
- * paste a connectionId they know.
- */
-function TicketAssistantConnectionPicker({ value, onChange }) {
-    const api = useAutomationApi();
-    const [conns, setConns] = useState(null); // null = loading; [] = loaded empty; array = loaded
-    const [error, setError] = useState(null);
-
-    useEffect(() => {
-        let alive = true;
-        api.listTicketAssistantConnections()
-            .then(d => { if (alive) setConns(d.connections || []); })
-            .catch(e => { if (alive) setError(e.message || 'Failed to load connections'); })
-            // eslint-disable-next-line no-unused-vars
-            .finally(() => {});
-        return () => { alive = false; };
-    }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-    if (error) {
-        return (
-            <input
-                type="text"
-                value={value || ''}
-                onChange={(e) => onChange(e.target.value || undefined)}
-                placeholder="connection id"
-                className={inputClass() + ' font-mono'}
-            />
-        );
-    }
-    if (conns === null) {
-        return <div className="text-xs text-[var(--text-tertiary)] py-1.5">Loading connections…</div>;
-    }
-    return (
-        <select
-            value={value || ''}
-            onChange={(e) => onChange(e.target.value || undefined)}
-            className={inputClass()}
-        >
-            <option value="">Any connection</option>
-            {conns.map(c => (
-                <option key={c.id} value={c.id}>
-                    {c.display_name || c.email_address} ({c.provider})
-                </option>
-            ))}
-        </select>
-    );
-}
-
-function TicketAssistantTicketFilterFields({ filter, setFilter }) {
-    return (
-        <FilterShell title="Ticket Assistant ticket.new filter">
-            <FormRow label="Connection" hint="Restrict to one of the org's Ticket Assistant connections.">
-                <TicketAssistantConnectionPicker
-                    value={filter.connectionId}
-                    onChange={(v) => setFilter('connectionId', v)}
-                />
-            </FormRow>
-            <FormRow label="Provider">
-                <select
-                    value={filter.provider || ''}
-                    onChange={(e) => setFilter('provider', e.target.value || undefined)}
-                    className={inputClass()}
-                >
-                    <option value="">Any provider</option>
-                    <option value="gmail">Gmail</option>
-                    <option value="outlook">Outlook</option>
-                    <option value="jira">Jira</option>
-                    <option value="servicenow">ServiceNow</option>
-                    <option value="zendesk">Zendesk</option>
-                    <option value="freshservice">Freshservice</option>
-                    <option value="topdesk">TopDesk</option>
-                </select>
-            </FormRow>
-            <FormRow label="Subject contains">
-                <input type="text" value={filter.subjectContains || ''} onChange={(e) => setFilter('subjectContains', e.target.value || undefined)}
-                    className={inputClass()} />
-            </FormRow>
-            <FormRow label="Body contains">
-                <input type="text" value={filter.bodyContains || ''} onChange={(e) => setFilter('bodyContains', e.target.value || undefined)}
-                    className={inputClass()} />
-            </FormRow>
-            <FormRow label="Category equals" hint="The AI-classified category (post-summarise). Free text — no enum yet.">
-                <input type="text" value={filter.categoryEquals || ''} onChange={(e) => setFilter('categoryEquals', e.target.value || undefined)}
-                    className={inputClass()} />
-            </FormRow>
-            <FormRow label="Priority equals">
-                <select
-                    value={filter.priorityEquals || ''}
-                    onChange={(e) => setFilter('priorityEquals', e.target.value || undefined)}
-                    className={inputClass()}
-                >
-                    <option value="">Any</option>
-                    <option value="low">low</option>
-                    <option value="medium">medium</option>
-                    <option value="high">high</option>
-                    <option value="urgent">urgent</option>
-                </select>
-            </FormRow>
-            <FormRow label="Status equals" hint="Provider-native status (e.g. 'Open', 'In Progress') OR a normalised bucket: open / pending / resolved / closed.">
-                <input type="text" value={filter.statusEquals || ''} onChange={(e) => setFilter('statusEquals', e.target.value || undefined)}
-                    className={inputClass()} />
-            </FormRow>
-            <div className="text-[11px] text-[var(--text-tertiary)] leading-snug">
-                Manual runs of this trigger use a <code>null</code> payload — set a sample under Settings → Manual trigger payload to test bindings before activating.
-            </div>
-        </FilterShell>
-    );
-}
-
-function TicketAssistantSyncFilterFields({ filter, setFilter }) {
-    return (
-        <FilterShell title="Ticket Assistant sync.completed filter">
-            <FormRow label="Connection">
-                <TicketAssistantConnectionPicker
-                    value={filter.connectionId}
-                    onChange={(v) => setFilter('connectionId', v)}
-                />
-            </FormRow>
-            <FormRow label="Outcome">
-                <select
-                    value={filter.outcomeEquals || ''}
-                    onChange={(e) => setFilter('outcomeEquals', e.target.value || undefined)}
-                    className={inputClass()}
-                >
-                    <option value="">Any outcome</option>
-                    <option value="success">success</option>
-                    <option value="partial">partial (some errors)</option>
-                    <option value="error">error</option>
-                </select>
-            </FormRow>
-        </FilterShell>
-    );
-}
-
-function AiStepFields({ draft, set, modelTiers, onFocusField, previewSample }) {
+function AiStepFields({ draft, set, modelTiers, catalog = null, groups = [], onFocusField, previewSample, errorSections }) {
+    const hasInputs = Object.keys(draft.inputs || {}).length > 0;
+    const hasOutput = (draft.outputFields || []).length > 0;
     return (
         <>
-            <FormRow label="Prompt" hint="The instruction the AI runs. Insert variables with the panel on the right — they become {{path}} references.">
+            <FormRow label="Prompt" hint="What the AI should do. Drag data from the Input panel (or use the {} button) to drop in a value from a previous step — it's filled in with the real value when the step runs.">
                 <TemplateField
                     value={draft.prompt || ''}
                     onChange={(next) => set('prompt', next)}
-                    rows={6}
+                    rows={4}
                     onFocusField={onFocusField}
                     previewSample={previewSample}
                     placeholder="Summarise this email and decide if it needs an urgent reply."
                 />
             </FormRow>
-            <FormRow label="System prompt" hint="Optional. Overrides the default 'You are a step inside a no-code automation' framing — set a tone, role, or domain.">
-                <textarea rows={3} value={draft.systemPrompt || ''} onChange={(e) => set('systemPrompt', e.target.value)} placeholder="(default: a generic automation-step system prompt)" className={textareaClass()} />
-            </FormRow>
-            <FormRow label="Model tier">
-                <select value={draft.modelTier || 'auto'} onChange={(e) => set('modelTier', e.target.value)} className={inputClass()}>
-                    {Object.keys(modelTiers || {}).length === 0 && (
-                        <option value={draft.modelTier || 'auto'}>{draft.modelTier || 'auto'}</option>
-                    )}
-                    {Object.entries(modelTiers || {}).map(([id, meta]) => (
-                        <option key={id} value={id}>{meta?.label || tierLabel(id) || id}</option>
-                    ))}
-                </select>
-            </FormRow>
-            <FormRow label="Allow tool use" hint="When on, the AI can call integrations the user has rights to (Gmail, Drive, web search…) during this step.">
-                <label className="inline-flex items-center gap-2 text-sm cursor-pointer">
-                    <input type="checkbox" checked={!!draft.allowTools} onChange={(e) => set('allowTools', e.target.checked)} />
-                    {draft.allowTools ? 'Tools enabled' : 'Tools disabled'}
-                </label>
-            </FormRow>
-            <FormRow label="Inputs" hint="Named values the AI can read alongside the prompt. Reference them in the prompt as {{name}}.">
-                <ToolInputForm
-                    inputs={draft.inputs || {}}
-                    onChange={(next) => set('inputs', next)}
-                    inputSchema={null}
-                    onFocusField={onFocusField}
-                    previewSample={previewSample}
-                />
-            </FormRow>
-            <FormRow label="Structured output" hint="Define the JSON fields the AI should return. Downstream steps can then reference them via steps.<id>.output.<field>. Leave empty for free-form text.">
-                <StructuredOutputFields
-                    fields={draft.outputFields || []}
-                    onChange={(next) => set('outputFields', next)}
-                />
-            </FormRow>
+            {/* Keep the existing `aiStep.advanced` key so current users' Advanced
+                preference isn't reset by the new inspector.* scheme. */}
+            <CollapsibleSection title="Advanced" persistKey="aiStep.advanced">
+                <FormRow label="System prompt" hint="Optional. Overrides the default 'You are a step inside a no-code automation' framing — set a tone, role, or domain.">
+                    <textarea rows={3} value={draft.systemPrompt || ''} onChange={(e) => set('systemPrompt', e.target.value)} placeholder="(default: a generic automation-step system prompt)" className={textareaClass()} />
+                </FormRow>
+                <FormRow label="Model tier">
+                    {(() => {
+                        // Only list the tiers the chat actually offers — same
+                        // configured-tier filter the ModelTierSelector uses, so
+                        // the two pickers never drift apart.
+                        const keys = configuredTierKeys(modelTiers || {});
+                        const current = draft.modelTier || 'auto';
+                        // Keep a previously-saved tier selectable even if it's no
+                        // longer offered (e.g. beta revoked) so we don't silently
+                        // change the step's model on open.
+                        const options = keys.includes(current) ? keys : [current, ...keys];
+                        return (
+                            <select value={current} onChange={(e) => set('modelTier', e.target.value)} className={inputClass()}>
+                                {options.length === 0 && (
+                                    <option value={current}>{current}</option>
+                                )}
+                                {options.map((id) => (
+                                    <option key={id} value={id}>{modelTiers?.[id]?.label || tierLabel(id, modelTiers) || id}</option>
+                                ))}
+                            </select>
+                        );
+                    })()}
+                </FormRow>
+                <FormRow label="Tools" hint="Choose which tools the AI may call during this step. Only tools you have permission for are listed. Leave empty for a pure text answer.">
+                    <AiStepToolSelect draft={draft} set={set} catalog={catalog} />
+                </FormRow>
+                <FormRow label="Iteration" hint="Off by default: the AI runs once and sees all mapped data at once. Turn on to run the prompt once per item of an upstream list (then reference {{loop.item…}}).">
+                    <ForEachSection draft={draft} set={set} groups={groups} onFocusField={onFocusField} />
+                </FormRow>
+            </CollapsibleSection>
+            <AccordionSection stepType="ai_step" sectionKey="inputs" title="Inputs" defaultOpen={hasInputs} forceOpen={errorSections.has('inputs')}>
+                <FormRow label="Inputs" hint="Named values the AI can read alongside the prompt. Mention a name in the prompt to use it.">
+                    <ToolInputForm
+                        inputs={draft.inputs || {}}
+                        onChange={(next) => set('inputs', next)}
+                        inputSchema={null}
+                        onFocusField={onFocusField}
+                        previewSample={previewSample}
+                    />
+                </FormRow>
+            </AccordionSection>
+            <AccordionSection stepType="ai_step" sectionKey="output" title="Structured output" defaultOpen={hasOutput} forceOpen={errorSections.has('output')}>
+                <FormRow label="Structured output" hint="Define the JSON fields the AI should return. Downstream steps can then reference them by name. Leave empty for free-form text.">
+                    <StructuredOutputFields
+                        fields={draft.outputFields || []}
+                        onChange={(next) => set('outputFields', next)}
+                    />
+                </FormRow>
+            </AccordionSection>
         </>
     );
 }
 
-function IntegrationActionFields({ step, draft, set, catalog, onFocusField, previewSample }) {
-    const inputSchema = useMemo(
-        () => findInputSchemaForTool(catalog, step.tool),
-        [catalog, step.tool],
+/**
+ * Tool selector for the AI step. Mirrors the agent editor's app picker but at
+ * per-tool granularity: the user picks individual catalog actions, stored as
+ * `tools` (function names). `allowTools` is derived from the selection.
+ *
+ * Legacy steps carry `allowTools: true` with no `tools` array — that means
+ * "every permitted tool". We surface that as an "All available tools" state and
+ * only convert it to an explicit list once the user opens the picker.
+ */
+function AiStepToolSelect({ draft, set, catalog }) {
+    const [open, setOpen] = useState(false);
+
+    // Apps the user can actually use (catalog is already permission-gated
+    // server-side; `available === false` means hidden/not entitled).
+    const apps = useMemo(
+        () => (catalog?.apps || []).filter(a => a.available !== false && (a.actions || []).length > 0),
+        [catalog],
     );
+    // Flat lookup: function name -> { action, app } for chip labels.
+    const actionIndex = useMemo(() => {
+        const m = new Map();
+        for (const app of apps) for (const a of (app.actions || [])) m.set(a.name, { action: a, app });
+        return m;
+    }, [apps]);
+    const allNames = useMemo(() => apps.flatMap(a => (a.actions || []).map(x => x.name)), [apps]);
+
+    // null/undefined `tools` + allowTools on = legacy "all tools".
+    const isExplicit = Array.isArray(draft.tools);
+    const legacyAll = !isExplicit && !!draft.allowTools;
+    const selected = isExplicit ? draft.tools : [];
+
+    const setSelected = (next) => set('tools', next);
+    const toggleTool = (name) => {
+        const base = isExplicit ? draft.tools : [];
+        setSelected(base.includes(name) ? base.filter(n => n !== name) : [...base, name]);
+    };
+    const toggleApp = (app, on) => {
+        const names = (app.actions || []).map(a => a.name);
+        const base = new Set(isExplicit ? draft.tools : []);
+        if (on) names.forEach(n => base.add(n)); else names.forEach(n => base.delete(n));
+        setSelected([...base]);
+    };
+    // Converting legacy "all" → explicit: start from every available tool so the
+    // current behaviour is preserved and the user can untick what they don't need.
+    const chooseSpecific = () => { setSelected([...allNames]); setOpen(true); };
+
+    const chipLabel = (name) => {
+        const hit = actionIndex.get(name);
+        if (!hit) return humanizeToolName(name);
+        const app = hit.app.label || hit.action.integrationLabel || '';
+        const act = hit.action.label || humanizeToolName(name);
+        return app ? `${app}: ${act}` : act;
+    };
+
+    if (legacyAll) {
+        return (
+            <div className="space-y-2">
+                <div className="flex items-center gap-2 text-sm text-[var(--text-secondary)]">
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-[var(--bg-secondary)] border border-[var(--border-default)] px-2.5 py-1 text-xs">
+                        <Sparkles size={12} className="text-[var(--accent)]" />
+                        All available tools
+                    </span>
+                </div>
+                <button
+                    type="button"
+                    onClick={chooseSpecific}
+                    className="text-xs font-medium text-[var(--accent)] hover:underline"
+                >
+                    Choose specific tools…
+                </button>
+                {open && (
+                    <ToolPicker
+                        apps={apps}
+                        selected={selected}
+                        onToggleTool={toggleTool}
+                        onToggleApp={toggleApp}
+                        onClose={() => setOpen(false)}
+                    />
+                )}
+            </div>
+        );
+    }
+
+    return (
+        <div className="space-y-2">
+            <button
+                type="button"
+                onClick={() => setOpen(true)}
+                className="inline-flex items-center gap-2 rounded-full border border-[var(--border-default)] bg-[var(--bg-secondary)] px-3 py-1.5 text-sm text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] transition"
+            >
+                <Plus size={14} />
+                Browse tools
+            </button>
+            {selected.length === 0 ? (
+                <p className="text-xs text-[var(--text-tertiary)]">No tools — the AI step answers from its prompt only.</p>
+            ) : (
+                <div className="flex flex-wrap gap-1.5">
+                    {selected.map((name) => (
+                        <span
+                            key={name}
+                            className="inline-flex items-center gap-1 rounded-full bg-[var(--bg-secondary)] border border-[var(--border-default)] pl-2.5 pr-1 py-0.5 text-xs text-[var(--text-primary)]"
+                        >
+                            <span className="truncate max-w-[180px]">{chipLabel(name)}</span>
+                            <button
+                                type="button"
+                                onClick={() => toggleTool(name)}
+                                className="text-[var(--text-tertiary)] hover:text-[var(--text-primary)]"
+                                aria-label={`Remove ${chipLabel(name)}`}
+                            >
+                                <X size={12} />
+                            </button>
+                        </span>
+                    ))}
+                </div>
+            )}
+            {open && (
+                <ToolPicker
+                    apps={apps}
+                    selected={selected}
+                    onToggleTool={toggleTool}
+                    onToggleApp={toggleApp}
+                    onClose={() => setOpen(false)}
+                />
+            )}
+        </div>
+    );
+}
+
+function IntegrationActionFields({ step, draft, set, catalog, groups = [], onFocusField, previewSample, errorSections = new Set() }) {
+    // Track the live tool from the draft so switching operation updates the
+    // inputs form immediately (before the patch round-trips and step.tool
+    // catches up).
+    const currentTool = draft.tool || step.tool;
+    const { action, siblings } = useMemo(
+        () => findActionAndSiblings(catalog, currentTool, draft.appId || step.appId),
+        [catalog, currentTool, draft.appId, step.appId],
+    );
+    const inputSchema = action?.inputSchema || null;
+    const onAutoMap = () => {
+        const patch = autoMapInputs(inputSchema, draft.inputs || {}, groups || []);
+        if (Object.keys(patch).length) set('inputs', { ...(draft.inputs || {}), ...patch });
+    };
+    // Same app = one node with a switchable operation (n8n-style). Keep the
+    // inputs that also exist in the new operation; drop the rest.
+    const onChangeOperation = (e) => {
+        const newTool = e.target.value;
+        if (!newTool || newTool === currentTool) return;
+        const next = siblings.find(a => a.name === newTool);
+        const allowed = next?.inputSchema?.properties ? new Set(Object.keys(next.inputSchema.properties)) : null;
+        const prevInputs = draft.inputs || {};
+        const keptInputs = allowed
+            ? Object.fromEntries(Object.entries(prevInputs).filter(([k]) => allowed.has(k)))
+            : prevInputs;
+        set('tool', newTool);
+        set('label', next?.label || humanizeToolName(newTool));
+        set('inputs', keptInputs);
+        if (next?.sideEffect != null) set('sideEffect', next.sideEffect);
+    };
+    const canSwitch = siblings.length > 1;
     return (
         <>
-            <FormRow label="Tool" hint="To switch tool, remove this step and add a new one — different tools have different inputs.">
-                <div className="text-sm font-mono text-[var(--text-primary)] bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded px-2 py-1.5">
-                    {step.tool || '—'}
-                </div>
-            </FormRow>
-            <FormRow label="Inputs" hint={inputSchema ? 'Field values passed to the tool. Pick a variable from the right panel to bind upstream output.' : 'No schema found for this tool — using generic key/value rows.'}>
-                <ToolInputForm
-                    inputs={draft.inputs || {}}
-                    onChange={(next) => set('inputs', next)}
-                    inputSchema={inputSchema}
-                    onFocusField={onFocusField}
-                    previewSample={previewSample}
-                />
-            </FormRow>
+            <AccordionSection stepType="integration_action" sectionKey="basics" title="Basics" defaultOpen forceOpen={errorSections.has('basics')}>
+                <FormRow label="Operation" hint={canSwitch ? 'Switch which action this node runs. Inputs shared with the new operation are kept.' : 'The action this node runs.'}>
+                    {canSwitch ? (
+                        <select value={currentTool} onChange={onChangeOperation} className={inputClass()}>
+                            {siblings.map(a => (
+                                <option key={a.name} value={a.name}>{a.label || humanizeToolName(a.name)}</option>
+                            ))}
+                        </select>
+                    ) : (
+                        <div className="text-sm font-mono text-[var(--text-primary)] bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded px-2 py-1.5">
+                            {currentTool || '—'}
+                        </div>
+                    )}
+                </FormRow>
+            </AccordionSection>
+            <AccordionSection stepType="integration_action" sectionKey="inputs" title="Inputs" defaultOpen forceOpen={errorSections.has('inputs')}>
+                <FormRow label="Inputs" hint={inputSchema ? 'Field values passed to the tool. Pick a variable from the right panel to bind upstream output.' : 'No schema found for this tool — using generic key/value rows.'}>
+                    <ToolInputForm
+                        inputs={draft.inputs || {}}
+                        onChange={(next) => set('inputs', next)}
+                        inputSchema={inputSchema}
+                        onFocusField={onFocusField}
+                        previewSample={previewSample}
+                        autoMappedKeys={step.autoMapped || []}
+                        onAutoMap={onAutoMap}
+                        // Only let the user add ad-hoc fields when the tool can
+                        // actually accept them: a fixed schema (gmail_search etc.)
+                        // doesn't, so hide "Add custom field"; a tool with no
+                        // schema needs the generic key/value rows.
+                        allowExtraFields={inputSchema ? inputSchema.additionalProperties === true : true}
+                    />
+                </FormRow>
+            </AccordionSection>
+            <AccordionSection stepType="integration_action" sectionKey="advanced" title="Advanced" defaultOpen={!!draft.forEach} forceOpen={errorSections.has('advanced')}>
+                <ForEachSection draft={draft} set={set} groups={groups} onFocusField={onFocusField} />
+            </AccordionSection>
         </>
     );
 }
 
-function findInputSchemaForTool(catalog, toolName) {
-    if (!catalog?.apps || !toolName) return null;
+/**
+ * "Run once per item" — turns a step into a per-item iterator over an
+ * upstream array (`step.forEach`). The runner runs the step once per
+ * element with `loop.<itemVar>` bound; auto-map sets this up automatically
+ * when you wire an array source into a step whose inputs match the elements.
+ */
+function ForEachSection({ draft, set, groups, onFocusField }) {
+    const fe = draft.forEach || null;
+    const enabled = !!fe;
+    const toggle = (on) => set('forEach', on
+        ? { overRef: fe?.overRef || '', itemVar: fe?.itemVar || 'item', maxIterations: fe?.maxIterations ?? 100 }
+        : null);
+    return (
+        <div className="rounded-lg border border-[var(--border-default)] p-3 space-y-2">
+            <label className="flex items-center gap-2 text-sm cursor-pointer">
+                <input type="checkbox" checked={enabled} onChange={(e) => toggle(e.target.checked)} />
+                <span className="inline-flex items-center gap-1.5 font-medium text-[var(--text-primary)]">
+                    <Repeat size={13} /> Run once per item
+                </span>
+            </label>
+            <p className="text-[11px] text-[var(--text-tertiary)]">
+                Iterate over an upstream array — this step runs once per element. Reference each one as{' '}
+                <code className="font-mono">loop.{fe?.itemVar || 'item'}</code>.
+            </p>
+            {enabled && (
+                <div className="space-y-3 pt-1">
+                    <LoopOverPicker
+                        overRef={fe.overRef || ''}
+                        itemVar={fe.itemVar || 'item'}
+                        onChange={(patch) => set('forEach', { ...fe, ...patch })}
+                        groups={groups}
+                        onFocusField={onFocusField}
+                    />
+                    <FormRow label="Max iterations" hint="Safety cap. 1–1000.">
+                        <input
+                            type="number" min={1} max={1000}
+                            value={fe.maxIterations ?? 100}
+                            onChange={(e) => set('forEach', { ...fe, maxIterations: Number(e.target.value) })}
+                            className={inputClass()}
+                        />
+                    </FormRow>
+                </div>
+            )}
+        </div>
+    );
+}
+
+/**
+ * Locate the catalog action for `toolName` and all sibling actions of the
+ * same app (used by the operation switcher). Falls back to `appId` when the
+ * tool itself isn't in the catalog (e.g. the app isn't connected) so the
+ * operation list still renders.
+ */
+function findActionAndSiblings(catalog, toolName, appId) {
+    if (!catalog?.apps) return { action: null, siblings: [] };
     for (const app of catalog.apps) {
         const action = (app.actions || []).find(a => a.name === toolName);
-        if (action) return action.inputSchema || null;
+        if (action) return { action, siblings: app.actions || [] };
     }
-    return null;
+    if (appId) {
+        const app = catalog.apps.find(a => a.id === appId
+            || (a.actions || []).some(x => (x.integrationId || a.id) === appId));
+        if (app) return { action: null, siblings: app.actions || [] };
+    }
+    return { action: null, siblings: [] };
 }
 
-function LoopFields({ draft, set, groups, onFocusField }) {
+function LoopFields({ draft, set, groups, onFocusField, errorSections = new Set() }) {
     return (
-        <>
+        <AccordionSection stepType="loop" sectionKey="loop" title="Loop" defaultOpen forceOpen={errorSections.has('loop')}>
             <LoopOverPicker
                 overRef={draft.overRef || ''}
                 itemVar={draft.itemVar || 'item'}
@@ -890,27 +828,29 @@ function LoopFields({ draft, set, groups, onFocusField }) {
             <FormRow label="Max iterations" hint="Safety cap. 1–1000.">
                 <input type="number" min={1} max={1000} value={draft.maxIterations ?? 100} onChange={(e) => set('maxIterations', Number(e.target.value))} className={inputClass()} />
             </FormRow>
-        </>
+        </AccordionSection>
     );
 }
 
-function CodeFields({ draft, set }) {
+function CodeFields({ draft, set, errorSections = new Set() }) {
     return (
-        <FormRow label="JavaScript code" hint="Define `async function main(inputs, ctx) { ... return result; }`. Sandboxed.">
-            <textarea
-                rows={14}
-                value={draft.code || ''}
-                onChange={(e) => set('code', e.target.value)}
-                className={textareaClass() + ' font-mono'}
-                spellCheck={false}
-            />
-        </FormRow>
+        <AccordionSection stepType="code" sectionKey="code" title="Code" defaultOpen forceOpen={errorSections.has('code')}>
+            <FormRow label="JavaScript code" hint="Define `async function main(inputs, ctx) { ... return result; }`. Sandboxed.">
+                <textarea
+                    rows={14}
+                    value={draft.code || ''}
+                    onChange={(e) => set('code', e.target.value)}
+                    className={textareaClass() + ' font-mono'}
+                    spellCheck={false}
+                />
+            </FormRow>
+        </AccordionSection>
     );
 }
 
-function NotificationFields({ draft, set, onFocusField, previewSample }) {
+function NotificationFields({ draft, set, onFocusField, previewSample, errorSections = new Set() }) {
     return (
-        <>
+        <AccordionSection stepType="notification" sectionKey="message" title="Message" defaultOpen forceOpen={errorSections.has('message')}>
             <FormRow label="Title">
                 <TemplateField
                     value={draft.title || ''}
@@ -921,7 +861,7 @@ function NotificationFields({ draft, set, onFocusField, previewSample }) {
                     placeholder="New invoice received"
                 />
             </FormRow>
-            <FormRow label="Body" hint="Click a variable in the right panel to insert {{path}}.">
+            <FormRow label="Body" hint="Click a value in the right panel to insert it.">
                 <TemplateField
                     value={draft.body || ''}
                     onChange={(next) => set('body', next)}
@@ -931,33 +871,359 @@ function NotificationFields({ draft, set, onFocusField, previewSample }) {
                     placeholder="From: {{trigger.output.from}}\nSubject: {{trigger.output.subject}}"
                 />
             </FormRow>
-        </>
+        </AccordionSection>
     );
 }
 
 // ── n8n-style utility node forms ──────────────────────────────────────
 
-function SetFields({ draft, set, onFocusField, previewSample }) {
+function SetFields({ draft, set, onFocusField, previewSample, errorSections = new Set() }) {
     return (
-        <FormRow label="Fields" hint="Build the output object from explicit field bindings.">
-            <ToolInputForm
-                inputs={draft.fields || {}}
-                onChange={(next) => set('fields', next)}
-                inputSchema={null}
-                onFocusField={onFocusField}
-                previewSample={previewSample}
-            />
+        <AccordionSection stepType="set" sectionKey="fields" title="Fields" defaultOpen forceOpen={errorSections.has('fields')}>
+            <FormRow label="Fields" hint="Build the output object from explicit field bindings.">
+                <ToolInputForm
+                    inputs={draft.fields || {}}
+                    onChange={(next) => set('fields', next)}
+                    inputSchema={null}
+                    keepEmptyFields
+                    onFocusField={onFocusField}
+                    previewSample={previewSample}
+                />
+            </FormRow>
+        </AccordionSection>
+    );
+}
+
+// ── Flowlets ──────────────────────────────────────────────────────────────
+
+/**
+ * Editor for a call_layer step. The flowlet's contract derives LIVE from
+ * `rootDefinition.layers[step.layerKey]` (params from the layer_input
+ * trigger, returns from the layer_output fields) — editing the flowlet
+ * immediately updates this form. The user edits the input mapping (one
+ * BindingField per declared param).
+ */
+function CallLayerFields({ step, draft, set, groups, onFocusField, previewSample, rootDefinition = null, errorSections = new Set() }) {
+    const { params: contract, outputFields } = getLayerContract(rootDefinition, step.layerKey);
+    const layerTitle = rootDefinition?.layers?.[step.layerKey]?.title || null;
+    const inputs = draft.inputs || {};
+    const autoMapped = Array.isArray(step.autoMapped) ? step.autoMapped : [];
+
+    const setInput = (name, binding) => {
+        const next = { ...inputs };
+        if (!binding || (binding.kind === 'literal' && (binding.value === '' || binding.value == null))) delete next[name];
+        else next[name] = binding;
+        set('inputs', next);
+    };
+    const onAutoMap = () => {
+        const schema = {
+            properties: Object.fromEntries(contract.map(p => [p.name, { type: p.type }])),
+            required: contract.filter(p => p.required).map(p => p.name),
+        };
+        const patch = autoMapInputs(schema, inputs, groups || []);
+        if (Object.keys(patch).length) set('inputs', { ...inputs, ...patch });
+    };
+
+    return (
+        <>
+            <AccordionSection stepType="call_layer" sectionKey="flowlet" title="Flowlet" defaultOpen forceOpen={errorSections.has('flowlet')}>
+                <FormRow label="Flowlet">
+                    <div className="text-sm font-medium text-[var(--text-primary)] bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded px-2 py-1.5 truncate">
+                        {layerTitle || step.layerKey || '—'}
+                    </div>
+                    {!layerTitle && step.layerKey && (
+                        <div className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+                            Flowlet “{step.layerKey}” was not found in this automation.
+                        </div>
+                    )}
+                </FormRow>
+            </AccordionSection>
+            <AccordionSection stepType="call_layer" sectionKey="inputs" title="Inputs" defaultOpen={contract.length > 0} forceOpen={errorSections.has('inputs')}>
+                <FormRow label="Inputs" hint="Map each flowlet parameter to an upstream value.">
+                    {contract.length === 0 ? (
+                        <div className="text-[11px] text-[var(--text-tertiary)] italic">This flowlet has no declared inputs.</div>
+                    ) : (
+                        <div className="space-y-3">
+                            {groups && groups.length > 0 && (
+                                <div className="flex justify-end">
+                                    <button
+                                        type="button"
+                                        onClick={onAutoMap}
+                                        className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] transition"
+                                    >
+                                        <Sparkles size={12} /> Auto-map
+                                    </button>
+                                </div>
+                            )}
+                            {contract.map(p => (
+                                <BindingField
+                                    key={p.name}
+                                    label={p.name}
+                                    required={!!p.required}
+                                    hint={p.description}
+                                    value={inputs[p.name] ?? null}
+                                    onChange={(b) => setInput(p.name, b)}
+                                    onFocusField={onFocusField}
+                                    previewSample={previewSample}
+                                    autoMapped={autoMapped.includes(p.name)}
+                                />
+                            ))}
+                        </div>
+                    )}
+                </FormRow>
+            </AccordionSection>
+            {outputFields.length > 0 && (
+                <AccordionSection stepType="call_layer" sectionKey="returns" title="Returns">
+                    <FormRow label="Returns" hint="These fields are available to downstream steps by name.">
+                        <div className="text-[11px] text-[var(--text-secondary)] font-mono">{outputFields.join(', ')}</div>
+                    </FormRow>
+                </AccordionSection>
+            )}
+        </>
+    );
+}
+
+/**
+ * Editor for a call_block step. The Step's contract comes from the published
+ * Steps catalog (the Step is a separate row), not the local layers map.
+ * The user maps each declared param to an upstream value.
+ */
+function CallStepFields({ step, draft, set, groups, onFocusField, previewSample, blocksCatalog = [], errorSections = new Set() }) {
+    const block = (blocksCatalog || []).find(b => b.id === step.blockId) || null;
+    const contract = block?.params || [];
+    const outputFields = block?.outputFields || [];
+    const blockTitle = block?.title || null;
+    const inputs = draft.inputs || {};
+    const autoMapped = Array.isArray(step.autoMapped) ? step.autoMapped : [];
+
+    const setInput = (name, binding) => {
+        const next = { ...inputs };
+        if (!binding || (binding.kind === 'literal' && (binding.value === '' || binding.value == null))) delete next[name];
+        else next[name] = binding;
+        set('inputs', next);
+    };
+    const onAutoMap = () => {
+        const schema = {
+            properties: Object.fromEntries(contract.map(p => [p.name, { type: p.type }])),
+            required: contract.filter(p => p.required).map(p => p.name),
+        };
+        const patch = autoMapInputs(schema, inputs, groups || []);
+        if (Object.keys(patch).length) set('inputs', { ...inputs, ...patch });
+    };
+
+    return (
+        <>
+            <AccordionSection stepType="call_block" sectionKey="step" title="Step" defaultOpen forceOpen={errorSections.has('step')}>
+                <FormRow label="Step">
+                    <div className="text-sm font-medium text-[var(--text-primary)] bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded px-2 py-1.5 truncate">
+                        {blockTitle || step.label || step.blockId || '—'}
+                    </div>
+                    {!block && step.blockId && (
+                        <div className="mt-1 text-[11px] text-amber-600 dark:text-amber-400">
+                            This Step is unpublished, deleted, or not shared with you.
+                        </div>
+                    )}
+                </FormRow>
+            </AccordionSection>
+            <AccordionSection stepType="call_block" sectionKey="inputs" title="Inputs" defaultOpen={contract.length > 0} forceOpen={errorSections.has('inputs')}>
+                <FormRow label="Inputs" hint="Map each Step input to an upstream value.">
+                    {contract.length === 0 ? (
+                        <div className="text-[11px] text-[var(--text-tertiary)] italic">This Step has no declared inputs.</div>
+                    ) : (
+                        <div className="space-y-3">
+                            {groups && groups.length > 0 && (
+                                <div className="flex justify-end">
+                                    <button
+                                        type="button"
+                                        onClick={onAutoMap}
+                                        className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] transition"
+                                    >
+                                        <Sparkles size={12} /> Auto-map
+                                    </button>
+                                </div>
+                            )}
+                            {contract.map(p => (
+                                <BindingField
+                                    key={p.name}
+                                    label={p.name}
+                                    required={!!p.required}
+                                    hint={p.description}
+                                    value={inputs[p.name] ?? null}
+                                    onChange={(b) => setInput(p.name, b)}
+                                    onFocusField={onFocusField}
+                                    previewSample={previewSample}
+                                    autoMapped={autoMapped.includes(p.name)}
+                                />
+                            ))}
+                        </div>
+                    )}
+                </FormRow>
+            </AccordionSection>
+            {outputFields.length > 0 && (
+                <AccordionSection stepType="call_block" sectionKey="returns" title="Returns">
+                    <FormRow label="Returns" hint="These fields are available to downstream steps by name.">
+                        <div className="text-[11px] text-[var(--text-secondary)] font-mono">{outputFields.join(', ')}</div>
+                    </FormRow>
+                </AccordionSection>
+            )}
+        </>
+    );
+}
+
+/** Editor for a layer_output step — the object the flowlet returns. */
+function LayerOutputFields({ draft, set, onFocusField, previewSample, errorSections = new Set() }) {
+    return (
+        <AccordionSection stepType="layer_output" sectionKey="fields" title="Return fields" defaultOpen forceOpen={errorSections.has('fields')}>
+            <FormRow label="Return fields" hint="The object this flowlet returns to its caller. Bind each field to a value produced inside the flowlet.">
+                <ToolInputForm
+                    inputs={draft.fields || {}}
+                    onChange={(next) => set('fields', next)}
+                    inputSchema={null}
+                    keepEmptyFields
+                    onFocusField={onFocusField}
+                    previewSample={previewSample}
+                />
+            </FormRow>
+        </AccordionSection>
+    );
+}
+
+/** Editor for a flowlet's input contract (trigger kind 'layer_input'). */
+function LayerInputFields({ draft, set }) {
+    const params = Array.isArray(draft.params) ? draft.params : [];
+    const update = (i, patch) => { const next = params.slice(); next[i] = { ...next[i], ...patch }; set('params', next); };
+    const add = () => set('params', [...params, { name: `input${params.length + 1}`, type: 'string', required: false }]);
+    const remove = (i) => set('params', params.filter((_, idx) => idx !== i));
+    return (
+        <FormRow label="Flowlet inputs" hint="Parameters this flowlet accepts. Inside the flowlet, bind to them as trigger.output.<name>.">
+            <div className="space-y-2">
+                {params.length === 0 && <div className="text-[11px] text-[var(--text-tertiary)] italic">No inputs yet — the flowlet will receive an empty payload.</div>}
+                {params.map((p, i) => (
+                    <div key={i} className="rounded border border-[var(--border-default)] bg-[var(--bg-primary)] p-2 space-y-1.5">
+                        <div className="flex items-center gap-1">
+                            <input
+                                type="text"
+                                value={p.name || ''}
+                                onChange={(e) => update(i, { name: e.target.value })}
+                                placeholder="name"
+                                className="flex-1 min-w-0 px-2 py-1 text-xs font-mono rounded border border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+                            />
+                            <select
+                                value={p.type || 'string'}
+                                onChange={(e) => update(i, { type: e.target.value })}
+                                className="px-1.5 py-1 text-xs rounded border border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-primary)]"
+                            >
+                                <option value="string">string</option>
+                                <option value="number">number</option>
+                                <option value="boolean">boolean</option>
+                                <option value="object">object</option>
+                                <option value="array">array</option>
+                            </select>
+                            <button type="button" onClick={() => remove(i)} aria-label="Remove input" className="shrink-0 p-1 rounded text-[var(--text-tertiary)] hover:text-red-500 hover:bg-[var(--bg-secondary)]">
+                                <Trash2 size={12} />
+                            </button>
+                        </div>
+                        <label className="inline-flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)] cursor-pointer">
+                            <input type="checkbox" checked={!!p.required} onChange={(e) => update(i, { required: e.target.checked })} /> required
+                        </label>
+                    </div>
+                ))}
+                <button type="button" onClick={add} className="flex items-center gap-1 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+                    <Plus size={12} /> Add input
+                </button>
+            </div>
         </FormRow>
     );
 }
 
-function DateTimeFields({ draft, set, groups }) {
+/**
+ * Agent trigger — the routine is exposed to the model as a function tool
+ * (trigger.kind === 'agent_call'). The author declares the tool name, a
+ * description the model reads to decide when to call it, and the input
+ * parameters (rendered with the same row editor as flowlet inputs, plus an
+ * optional per-param description).
+ */
+function AgentCallFields({ draft, set }) {
+    const params = Array.isArray(draft.params) ? draft.params : [];
+    const update = (i, patch) => { const next = params.slice(); next[i] = { ...next[i], ...patch }; set('params', next); };
+    const add = () => set('params', [...params, { name: `arg${params.length + 1}`, type: 'string', required: false, description: '' }]);
+    const remove = (i) => set('params', params.filter((_, idx) => idx !== i));
+    return (
+        <>
+            <FormRow label="Tool name" hint="What the agent calls. Lowercased & sanitized; blank → automation_<id>.">
+                <input
+                    type="text"
+                    value={draft.toolName || ''}
+                    onChange={(e) => set('toolName', e.target.value)}
+                    placeholder="summarise_inbox"
+                    className={inputClass() + ' font-mono'}
+                />
+            </FormRow>
+            <FormRow label="Description" hint="The agent reads this to decide when to call the routine.">
+                <textarea
+                    value={draft.description || ''}
+                    onChange={(e) => set('description', e.target.value)}
+                    rows={2}
+                    placeholder="Summarise the user's unread email and return the highlights."
+                    className={inputClass()}
+                />
+            </FormRow>
+            <FormRow label="Input parameters" hint="Arguments the agent passes. Bind to them in steps as trigger.output.<name>.">
+                <div className="space-y-2">
+                    {params.length === 0 && <div className="text-[11px] text-[var(--text-tertiary)] italic">No inputs — the agent calls it with no arguments.</div>}
+                    {params.map((p, i) => (
+                        <div key={i} className="rounded border border-[var(--border-default)] bg-[var(--bg-primary)] p-2 space-y-1.5">
+                            <div className="flex items-center gap-1">
+                                <input
+                                    type="text"
+                                    value={p.name || ''}
+                                    onChange={(e) => update(i, { name: e.target.value })}
+                                    placeholder="name"
+                                    className="flex-1 min-w-0 px-2 py-1 text-xs font-mono rounded border border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+                                />
+                                <select
+                                    value={p.type || 'string'}
+                                    onChange={(e) => update(i, { type: e.target.value })}
+                                    className="px-1.5 py-1 text-xs rounded border border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-primary)]"
+                                >
+                                    <option value="string">string</option>
+                                    <option value="number">number</option>
+                                    <option value="boolean">boolean</option>
+                                    <option value="object">object</option>
+                                    <option value="array">array</option>
+                                </select>
+                                <button type="button" onClick={() => remove(i)} aria-label="Remove parameter" className="shrink-0 p-1 rounded text-[var(--text-tertiary)] hover:text-red-500 hover:bg-[var(--bg-secondary)]">
+                                    <Trash2 size={12} />
+                                </button>
+                            </div>
+                            <input
+                                type="text"
+                                value={p.description || ''}
+                                onChange={(e) => update(i, { description: e.target.value })}
+                                placeholder="description (helps the agent fill this in)"
+                                className="w-full px-2 py-1 text-xs rounded border border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+                            />
+                            <label className="inline-flex items-center gap-1.5 text-[11px] text-[var(--text-secondary)] cursor-pointer">
+                                <input type="checkbox" checked={!!p.required} onChange={(e) => update(i, { required: e.target.checked })} /> required
+                            </label>
+                        </div>
+                    ))}
+                    <button type="button" onClick={add} className="flex items-center gap-1 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]">
+                        <Plus size={12} /> Add parameter
+                    </button>
+                </div>
+            </FormRow>
+        </>
+    );
+}
+
+function DateTimeFields({ draft, set, groups, errorSections = new Set() }) {
     const op = draft.op || 'now';
     const needsInput = op !== 'now';
     const needsInput2 = op === 'diff';
     const needsAmount = op === 'addDays' || op === 'addHours' || op === 'addMinutes';
     return (
-        <>
+        <AccordionSection stepType="datetime" sectionKey="config" title="Configuration" defaultOpen forceOpen={errorSections.has('config')}>
             <FormRow label="Operation">
                 <select value={op} onChange={(e) => set('op', e.target.value)} className={inputClass()}>
                     <option value="now">Now (current time)</option>
@@ -1013,41 +1279,45 @@ function DateTimeFields({ draft, set, groups }) {
                     </select>
                 </FormRow>
             )}
-        </>
+        </AccordionSection>
     );
 }
 
-function WaitFields({ draft, set }) {
+function WaitFields({ draft, set, errorSections = new Set() }) {
     return (
-        <FormRow label="Seconds" hint="1..86400 (24h max). Dry-run skips the wait.">
-            <input
-                type="number"
-                min={1}
-                max={86400}
-                value={draft.seconds ?? 5}
-                onChange={(e) => set('seconds', Number(e.target.value))}
-                className={inputClass()}
-            />
-        </FormRow>
+        <AccordionSection stepType="wait" sectionKey="config" title="Configuration" defaultOpen forceOpen={errorSections.has('config')}>
+            <FormRow label="Seconds" hint="1..86400 (24h max). Dry-run skips the wait.">
+                <input
+                    type="number"
+                    min={1}
+                    max={86400}
+                    value={draft.seconds ?? 5}
+                    onChange={(e) => set('seconds', Number(e.target.value))}
+                    className={inputClass()}
+                />
+            </FormRow>
+        </AccordionSection>
     );
 }
 
-function StopErrorFields({ draft, set, onFocusField, previewSample }) {
+function StopErrorFields({ draft, set, onFocusField, previewSample, errorSections = new Set() }) {
     return (
-        <FormRow label="Error message" hint="Surfaced as the run error. Template-interpolated.">
-            <TemplateField
-                value={draft.message || ''}
-                onChange={(next) => set('message', next)}
-                rows={3}
-                onFocusField={onFocusField}
-                previewSample={previewSample}
-                placeholder="Budget exceeded by {{steps.calc.output.delta}}"
-            />
-        </FormRow>
+        <AccordionSection stepType="stop_error" sectionKey="config" title="Configuration" defaultOpen forceOpen={errorSections.has('config')}>
+            <FormRow label="Error message" hint="Surfaced as the run error. Template-interpolated.">
+                <TemplateField
+                    value={draft.message || ''}
+                    onChange={(next) => set('message', next)}
+                    rows={3}
+                    onFocusField={onFocusField}
+                    previewSample={previewSample}
+                    placeholder="Budget exceeded by {{steps.calc.output.delta}}"
+                />
+            </FormRow>
+        </AccordionSection>
     );
 }
 
-function SwitchFields({ draft, set, onFocusField, previewSample }) {
+function SwitchFields({ draft, set, onFocusField, previewSample, errorSections = new Set() }) {
     const cases = Array.isArray(draft.cases) ? draft.cases : [];
     const addCase = () => set('cases', [...cases, { name: `case${cases.length + 1}`, value: '' }]);
     const updateCase = (i, patch) => {
@@ -1062,14 +1332,17 @@ function SwitchFields({ draft, set, onFocusField, previewSample }) {
     };
     return (
         <>
-            <FormRow label="Expression" hint="Evaluated once; the value is matched against each case below (loose equality).">
-                <ConditionBuilder
-                    value={draft.expr || ''}
-                    onChange={(next) => set('expr', next)}
-                    onFocusField={onFocusField}
-                    previewSample={previewSample}
-                />
-            </FormRow>
+            <AccordionSection stepType="switch" sectionKey="basics" title="Basics" defaultOpen forceOpen={errorSections.has('basics')}>
+                <FormRow label="Expression" hint="Evaluated once; the value is matched against each case below (loose equality).">
+                    <ConditionBuilder
+                        value={draft.expr || ''}
+                        onChange={(next) => set('expr', next)}
+                        onFocusField={onFocusField}
+                        previewSample={previewSample}
+                    />
+                </FormRow>
+            </AccordionSection>
+            <AccordionSection stepType="switch" sectionKey="cases" title="Cases" defaultOpen={cases.length > 0} forceOpen={errorSections.has('cases')}>
             <FormRow label="Cases" hint="First matching case wins. Wire each case's outgoing edge in the canvas.">
                 <div className="space-y-2">
                     {cases.length === 0 && (
@@ -1112,9 +1385,12 @@ function SwitchFields({ draft, set, onFocusField, previewSample }) {
                     </button>
                 </div>
             </FormRow>
-            <FormRow label="Default branch" hint="Optional case name to route to when no other case matches.">
-                <input type="text" value={draft.defaultBranch || ''} onChange={(e) => set('defaultBranch', e.target.value)} placeholder="(no default — unmatched dead-ends)" className={inputClass() + ' font-mono'} />
-            </FormRow>
+            </AccordionSection>
+            <AccordionSection stepType="switch" sectionKey="advanced" title="Advanced" forceOpen={errorSections.has('advanced')}>
+                <FormRow label="Default branch" hint="Optional case name to route to when no other case matches.">
+                    <input type="text" value={draft.defaultBranch || ''} onChange={(e) => set('defaultBranch', e.target.value)} placeholder="(no default — unmatched dead-ends)" className={inputClass() + ' font-mono'} />
+                </FormRow>
+            </AccordionSection>
         </>
     );
 }
@@ -1165,9 +1441,9 @@ function CollectionArrayRefField({ draft, set, groups }) {
     );
 }
 
-function FilterFields({ draft, set, groups, onFocusField, previewSample }) {
+function FilterFields({ draft, set, groups, onFocusField, previewSample, errorSections = new Set() }) {
     return (
-        <>
+        <AccordionSection stepType="filter" sectionKey="config" title="Configuration" defaultOpen forceOpen={errorSections.has('config')}>
             <CollectionArrayRefField draft={draft} set={set} groups={groups} />
             <FormRow label="Keep when" hint="Restricted expression. The current element is bound as `item`, e.g. `item.amount > 1000`.">
                 <ConditionBuilder
@@ -1177,13 +1453,13 @@ function FilterFields({ draft, set, groups, onFocusField, previewSample }) {
                     previewSample={previewSample}
                 />
             </FormRow>
-        </>
+        </AccordionSection>
     );
 }
 
-function LimitFields({ draft, set, groups }) {
+function LimitFields({ draft, set, groups, errorSections = new Set() }) {
     return (
-        <>
+        <AccordionSection stepType="limit" sectionKey="config" title="Configuration" defaultOpen forceOpen={errorSections.has('config')}>
             <CollectionArrayRefField draft={draft} set={set} groups={groups} />
             <FormRow label="Count">
                 <input type="number" min={0} value={draft.count ?? 10} onChange={(e) => set('count', Number(e.target.value))} className={inputClass()} />
@@ -1194,35 +1470,35 @@ function LimitFields({ draft, set, groups }) {
                     <option value="last">Last N items</option>
                 </select>
             </FormRow>
-        </>
+        </AccordionSection>
     );
 }
 
-function DedupeFields({ draft, set, groups }) {
+function DedupeFields({ draft, set, groups, errorSections = new Set() }) {
     return (
-        <>
+        <AccordionSection stepType="dedupe" sectionKey="config" title="Configuration" defaultOpen forceOpen={errorSections.has('config')}>
             <CollectionArrayRefField draft={draft} set={set} groups={groups} />
             <FormRow label="Key field" hint="Optional. Without it, items are compared by deep equality.">
                 <input type="text" value={draft.keyField || ''} onChange={(e) => set('keyField', e.target.value)} placeholder="id" className={inputClass() + ' font-mono'} />
             </FormRow>
-        </>
+        </AccordionSection>
     );
 }
 
-function AggregateFields({ draft, set, groups }) {
+function AggregateFields({ draft, set, groups, errorSections = new Set() }) {
     return (
-        <>
+        <AccordionSection stepType="aggregate" sectionKey="config" title="Configuration" defaultOpen forceOpen={errorSections.has('config')}>
             <CollectionArrayRefField draft={draft} set={set} groups={groups} />
             <FormRow label="Field" hint="Field to read from every item — output.values is the flat list.">
                 <input type="text" value={draft.field || ''} onChange={(e) => set('field', e.target.value)} placeholder="email" className={inputClass() + ' font-mono'} />
             </FormRow>
-        </>
+        </AccordionSection>
     );
 }
 
-function SummarizeFields({ draft, set, groups }) {
+function SummarizeFields({ draft, set, groups, errorSections = new Set() }) {
     return (
-        <>
+        <AccordionSection stepType="summarize" sectionKey="config" title="Configuration" defaultOpen forceOpen={errorSections.has('config')}>
             <CollectionArrayRefField draft={draft} set={set} groups={groups} />
             <FormRow label="Field">
                 <input type="text" value={draft.field || ''} onChange={(e) => set('field', e.target.value)} placeholder="amount" className={inputClass() + ' font-mono'} />
@@ -1236,7 +1512,7 @@ function SummarizeFields({ draft, set, groups }) {
                     <option value="max">max</option>
                 </select>
             </FormRow>
-        </>
+        </AccordionSection>
     );
 }
 
@@ -1401,306 +1677,6 @@ function BindingRow({ bindingKey, binding, onRename, onChange, onRemove }) {
     );
 }
 
-/** Move the previous binding's value into the new shape so the user
- *  doesn't lose what they typed when toggling kind. */
-function convertValue(binding, fromKind, toKind) {
-    if (!binding) return {};
-    if (fromKind === toKind) return {};
-    const carry = binding.value ?? binding.path ?? '';
-    if (toKind === 'literal')  return { value: typeof carry === 'string' ? carry : String(carry), path: undefined };
-    if (toKind === 'ref')      return { path: typeof carry === 'string' ? carry : '', value: undefined };
-    if (toKind === 'template') return { value: typeof carry === 'string' ? carry : '', path: undefined };
-    if (toKind === 'expr')     return { value: typeof carry === 'string' ? carry : '', path: undefined };
-    return {};
-}
-
-// ── Chrome helpers ─────────────────────────────────────────────────────
-
-function FormRow({ label, hint, children }) {
-    return (
-        <div>
-            <div className="text-[11px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)] mb-1">{label}</div>
-            {children}
-            {hint && <div className="text-[11px] text-[var(--text-tertiary)] mt-1 leading-snug">{hint}</div>}
-        </div>
-    );
-}
-
-function ValidationLine({ record }) {
-    const isErr = record.severity === 'error';
-    return (
-        <div className={`text-xs ${isErr ? 'text-red-600 dark:text-red-400' : 'text-amber-600 dark:text-amber-400'} mb-1`}>
-            <span className="font-mono text-[10px] mr-1.5 opacity-70">{record.code}</span>
-            {record.message}
-            {record.hint && <div className="text-[var(--text-tertiary)] mt-0.5">→ {record.hint}</div>}
-        </div>
-    );
-}
-
-function inputClass() {
-    return 'w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]';
-}
-function textareaClass() {
-    return 'w-full bg-[var(--bg-secondary)] border border-[var(--border-default)] rounded px-2 py-1.5 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] resize-y';
-}
-
-// ── Form ↔ step shape helpers ──────────────────────────────────────────
-
-function defaultLabelPlaceholder(step) {
-    if (step.type === 'integration_action') return step.tool || step.type;
-    if (step.type === 'trigger') return 'Trigger';
-    return step.type;
-}
-
-function extractFormState(step) {
-    if (!step) return {};
-    const base = { label: step.label || '' };
-    if (step.type === 'trigger') {
-        return {
-            ...base,
-            kind: step.kind || 'manual',
-            scheduleCron: step.schedule?.cron || '',
-            scheduleTz:   step.schedule?.tz || 'Europe/Amsterdam',
-            appProvider:  step.appEvent?.provider || 'gmail',
-            appEventName: step.appEvent?.event || 'mail.new',
-            filter:       step.appEvent?.filter || {},
-        };
-    }
-    if (step.type === 'ai_step') {
-        return {
-            ...base,
-            prompt: step.prompt || '',
-            systemPrompt: step.systemPrompt || '',
-            modelTier: step.modelTier || 'auto',
-            allowTools: !!step.allowTools,
-            inputs: step.inputs || {},
-            outputFields: schemaToFields(step.outputSchema),
-        };
-    }
-    if (step.type === 'integration_action') {
-        return { ...base, inputs: step.inputs || {} };
-    }
-    if (step.type === 'condition')    return { ...base, expr: step.expr || '' };
-    if (step.type === 'loop')         return { ...base, overRef: step.overRef || '', itemVar: step.itemVar || '', maxIterations: step.maxIterations ?? 100 };
-    if (step.type === 'code')         return { ...base, code: step.code || '' };
-    if (step.type === 'notification') return { ...base, title: step.title || '', body: step.body || '' };
-    // n8n-style utility nodes
-    if (step.type === 'set')          return { ...base, fields: step.fields || {} };
-    if (step.type === 'datetime')     return {
-        ...base,
-        op: step.op || 'now',
-        input: step.input || '',
-        input2: step.input2 || '',
-        amount: typeof step.amount === 'number' ? step.amount : 0,
-        format: step.format || 'yyyy-MM-dd HH:mm',
-        part: step.part || 'year',
-        unit: step.unit || 'days',
-    };
-    if (step.type === 'wait')         return { ...base, seconds: typeof step.seconds === 'number' ? step.seconds : 5 };
-    if (step.type === 'stop_error')   return { ...base, message: step.message || '' };
-    if (step.type === 'switch')       return {
-        ...base,
-        expr: step.expr || '',
-        cases: Array.isArray(step.cases) ? step.cases : [],
-        defaultBranch: step.defaultBranch || '',
-    };
-    if (step.type === 'filter')       return { ...base, arrayRef: step.arrayRef || '', expr: step.expr || '' };
-    if (step.type === 'limit')        return { ...base, arrayRef: step.arrayRef || '', count: typeof step.count === 'number' ? step.count : 10, mode: step.mode || 'first' };
-    if (step.type === 'dedupe')       return { ...base, arrayRef: step.arrayRef || '', keyField: step.keyField || '' };
-    if (step.type === 'aggregate')    return { ...base, arrayRef: step.arrayRef || '', field: step.field || '' };
-    if (step.type === 'summarize')    return { ...base, arrayRef: step.arrayRef || '', field: step.field || '', op: step.op || 'sum' };
-    return base;
-}
-
-/**
- * Translate the form draft back into the persisted-step shape. We only
- * include keys that this form actually edits — everything else (id,
- * outputSchema, side-effect flag, etc.) is preserved by the inspector's
- * patch-merge.
- */
-function buildPatch(step, draft) {
-    const patch = { label: draft.label || null };
-
-    if (step.type === 'trigger') {
-        patch.kind = draft.kind || 'manual';
-        // Preserve any existing schedule/appEvent objects so we don't
-        // wipe sibling fields the form doesn't know about.
-        if (draft.kind === 'schedule') {
-            patch.schedule = { ...(step.schedule || {}), cron: draft.scheduleCron || '', tz: draft.scheduleTz || 'Europe/Amsterdam' };
-            patch.appEvent = null;
-        } else if (draft.kind === 'app_event') {
-            const cleanedFilter = stripUndefined(draft.filter || {});
-            patch.appEvent = {
-                ...(step.appEvent || {}),
-                provider: draft.appProvider || 'gmail',
-                event: draft.appEventName || 'mail.new',
-                filter: Object.keys(cleanedFilter).length ? cleanedFilter : null,
-            };
-            patch.schedule = null;
-        } else {
-            patch.schedule = null;
-            patch.appEvent = null;
-        }
-    }
-
-    if (step.type === 'ai_step') {
-        patch.prompt = draft.prompt || '';
-        patch.systemPrompt = draft.systemPrompt?.trim() ? draft.systemPrompt.trim() : null;
-        patch.modelTier = draft.modelTier || 'auto';
-        patch.allowTools = !!draft.allowTools;
-        patch.inputs = sanitizeInputs(draft.inputs || {});
-        patch.outputSchema = fieldsToSchema(draft.outputFields || []);
-    }
-    if (step.type === 'integration_action') {
-        patch.inputs = sanitizeInputs(draft.inputs || {});
-    }
-    if (step.type === 'condition')    patch.expr = draft.expr || '';
-    if (step.type === 'loop') {
-        patch.overRef = draft.overRef || '';
-        patch.itemVar = draft.itemVar || '';
-        patch.maxIterations = clamp(Number(draft.maxIterations) || 100, 1, 1000);
-    }
-    if (step.type === 'code')         patch.code = draft.code || '';
-    if (step.type === 'notification') {
-        patch.title = draft.title || '';
-        patch.body = draft.body || '';
-    }
-    // n8n-style utility nodes
-    if (step.type === 'set') {
-        patch.fields = sanitizeInputs(draft.fields || {});
-    }
-    if (step.type === 'datetime') {
-        patch.op = draft.op || 'now';
-        patch.input = draft.input || undefined;
-        patch.input2 = draft.input2 || undefined;
-        patch.amount = typeof draft.amount === 'number' ? draft.amount : undefined;
-        patch.format = draft.format || undefined;
-        patch.part = draft.part || undefined;
-        patch.unit = draft.unit || undefined;
-    }
-    if (step.type === 'wait')       patch.seconds = clamp(Number(draft.seconds) || 1, 1, 86400);
-    if (step.type === 'stop_error') patch.message = draft.message || '';
-    if (step.type === 'switch') {
-        patch.expr = draft.expr || '';
-        patch.cases = Array.isArray(draft.cases) ? draft.cases.filter(c => c && c.name) : [];
-        patch.defaultBranch = draft.defaultBranch?.trim() ? draft.defaultBranch.trim() : null;
-    }
-    if (step.type === 'filter') {
-        patch.arrayRef = draft.arrayRef || '';
-        patch.expr = draft.expr || '';
-    }
-    if (step.type === 'limit') {
-        patch.arrayRef = draft.arrayRef || '';
-        patch.count = Math.max(0, Math.floor(Number(draft.count) || 0));
-        patch.mode = draft.mode === 'last' ? 'last' : 'first';
-    }
-    if (step.type === 'dedupe') {
-        patch.arrayRef = draft.arrayRef || '';
-        patch.keyField = draft.keyField?.trim() ? draft.keyField.trim() : undefined;
-    }
-    if (step.type === 'aggregate') {
-        patch.arrayRef = draft.arrayRef || '';
-        patch.field = draft.field || '';
-    }
-    if (step.type === 'summarize') {
-        patch.arrayRef = draft.arrayRef || '';
-        patch.field = draft.field || '';
-        patch.op = draft.op || 'sum';
-    }
-    return patch;
-}
-
-/** Drop bindings that have neither a value nor a path so we don't
- *  persist a half-edited row that fails validation. */
-function sanitizeInputs(inputs) {
-    const out = {};
-    for (const [k, v] of Object.entries(inputs || {})) {
-        if (!v || typeof v !== 'object') continue;
-        if (v.kind === 'literal' && (v.value === '' || v.value == null)) continue;
-        if (v.kind === 'ref' && !v.path) continue;
-        if ((v.kind === 'template' || v.kind === 'expr') && !v.value) continue;
-        out[k] = v;
-    }
-    return out;
-}
-
-function stripUndefined(obj) {
-    const out = {};
-    for (const [k, v] of Object.entries(obj || {})) {
-        if (v !== undefined && v !== null && v !== '') out[k] = v;
-    }
-    return out;
-}
-
-function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
-
-/**
- * Structural deep-equal for plain JSON values. Replaces JSON.stringify
- * comparisons whose key-order instability could either claim dirty=false
- * for real changes (Save button greys out) or dirty=true after a no-op
- * baseline update (autosave loop).
- */
-function deepEqual(a, b) {
-    if (a === b) return true;
-    if (a == null || b == null) return a === b;
-    if (typeof a !== 'object' || typeof b !== 'object') return false;
-    if (Array.isArray(a) !== Array.isArray(b)) return false;
-    if (Array.isArray(a)) {
-        if (a.length !== b.length) return false;
-        for (let i = 0; i < a.length; i++) if (!deepEqual(a[i], b[i])) return false;
-        return true;
-    }
-    const ka = Object.keys(a);
-    const kb = Object.keys(b);
-    if (ka.length !== kb.length) return false;
-    for (const k of ka) if (!deepEqual(a[k], b[k])) return false;
-    return true;
-}
-
-// ── AI step structured-output helpers ──────────────────────────────────
-//
-// We support two shapes the runtime accepts (server/core/automationRunner.js
-// stringifies `effectiveSchema` verbatim and tells the model "match this"):
-//   1. JSON Schema:   { type:'object', properties:{ name:{type:'string'} } }
-//   2. Flat:          { name:'string' }
-// On read we accept both; on write we always emit shape #1 so the AI builder
-// and templates (templates.js uses JSON Schema) round-trip cleanly.
-
-const OUTPUT_FIELD_TYPES = ['string', 'number', 'boolean', 'object', 'array'];
-
-function schemaToFields(schema) {
-    if (!schema || typeof schema !== 'object') return [];
-    const props = schema.properties && typeof schema.properties === 'object'
-        ? schema.properties
-        : schema;
-    const out = [];
-    for (const [key, spec] of Object.entries(props || {})) {
-        if (!key) continue;
-        if (typeof spec === 'string') {
-            out.push({ key, type: OUTPUT_FIELD_TYPES.includes(spec) ? spec : 'string', description: '' });
-        } else if (spec && typeof spec === 'object') {
-            out.push({
-                key,
-                type: OUTPUT_FIELD_TYPES.includes(spec.type) ? spec.type : 'string',
-                description: typeof spec.description === 'string' ? spec.description : '',
-            });
-        }
-    }
-    return out;
-}
-
-function fieldsToSchema(fields) {
-    const valid = (fields || []).filter(f => f && typeof f.key === 'string' && f.key.trim());
-    if (valid.length === 0) return null;
-    const properties = {};
-    for (const f of valid) {
-        const spec = { type: OUTPUT_FIELD_TYPES.includes(f.type) ? f.type : 'string' };
-        if (f.description && f.description.trim()) spec.description = f.description.trim();
-        properties[f.key.trim()] = spec;
-    }
-    return { type: 'object', properties };
-}
-
 function StructuredOutputFields({ fields, onChange }) {
     const update = (i, partial) => {
         const next = fields.slice();
@@ -1760,6 +1736,12 @@ function StructuredOutputFields({ fields, onChange }) {
                         placeholder="Description (optional) — guides the model on what to put here"
                         className="w-full bg-[var(--bg-primary)] border border-[var(--border-default)] rounded px-2 py-1 text-xs text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
                     />
+                    {f.type === 'array' && (
+                        <ColumnsEditor
+                            columns={f.columns || []}
+                            onChange={(next) => update(i, { columns: next })}
+                        />
+                    )}
                 </div>
             ))}
             <button
@@ -1768,6 +1750,106 @@ function StructuredOutputFields({ fields, onChange }) {
                 className="flex items-center gap-1 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] px-2 py-1 rounded transition"
             >
                 <Plus size={12} /> Add output field
+            </button>
+        </div>
+    );
+}
+
+// Column editor for a table (array-of-objects) output field. Each column is a
+// { key, type } pair; together they become the array item's typed properties,
+// so the model returns rows the Output panel renders as a real table. With no
+// columns the array stays free-form (the model infers the shape).
+function ColumnsEditor({ columns, onChange }) {
+    const update = (i, partial) => {
+        const next = columns.slice();
+        next[i] = { ...next[i], ...partial };
+        onChange(next);
+    };
+    const remove = (i) => {
+        const next = columns.slice();
+        next.splice(i, 1);
+        onChange(next);
+    };
+    const add = () => {
+        const taken = new Set(columns.map(c => c.key));
+        let name = 'column', i = 1;
+        while (taken.has(name)) name = `column${++i}`;
+        onChange([...columns, { key: name, type: 'string' }]);
+    };
+    // Reorder a column — the schema (and therefore the output table) follows
+    // this order, so up/down lets the user arrange the headers.
+    const move = (i, dir) => {
+        const j = i + dir;
+        if (j < 0 || j >= columns.length) return;
+        const next = columns.slice();
+        [next[i], next[j]] = [next[j], next[i]];
+        onChange(next);
+    };
+
+    return (
+        <div className="mt-1 rounded border border-dashed border-[var(--border-default)] p-2 space-y-1.5">
+            <div className="text-[10px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)]">
+                Columns
+            </div>
+            {columns.length === 0 && (
+                <div className="text-[11px] text-[var(--text-tertiary)] italic">
+                    No columns — the AI infers the table shape. Add columns to fix the headers, their types, and order.
+                </div>
+            )}
+            {columns.map((c, i) => (
+                <div key={i} className="flex items-center gap-1.5">
+                    <div className="flex flex-col -my-0.5">
+                        <button
+                            type="button"
+                            onClick={() => move(i, -1)}
+                            disabled={i === 0}
+                            className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="Move up"
+                            aria-label="Move column up"
+                        >
+                            <ChevronUp size={11} />
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => move(i, 1)}
+                            disabled={i === columns.length - 1}
+                            className="p-0.5 rounded text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] disabled:opacity-30 disabled:cursor-not-allowed"
+                            title="Move down"
+                            aria-label="Move column down"
+                        >
+                            <ChevronDown size={11} />
+                        </button>
+                    </div>
+                    <input
+                        type="text"
+                        value={c.key || ''}
+                        onChange={(e) => update(i, { key: e.target.value })}
+                        placeholder="columnName"
+                        className="flex-1 min-w-0 bg-[var(--bg-primary)] border border-[var(--border-default)] rounded px-2 py-1 text-xs font-mono text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
+                    />
+                    <select
+                        value={c.type || 'string'}
+                        onChange={(e) => update(i, { type: e.target.value })}
+                        className="bg-[var(--bg-primary)] border border-[var(--border-default)] rounded px-1.5 py-1 text-xs text-[var(--text-primary)] focus:outline-none"
+                    >
+                        {COLUMN_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                    <button
+                        type="button"
+                        onClick={() => remove(i)}
+                        className="p-1 rounded text-[var(--text-tertiary)] hover:text-red-500 hover:bg-red-500/10"
+                        title="Remove column"
+                    >
+                        <Trash2 size={12} />
+                    </button>
+                </div>
+            ))}
+            <button
+                type="button"
+                onClick={add}
+                className="flex items-center gap-1 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-tertiary)] px-2 py-1 rounded transition"
+            >
+                <Plus size={12} /> Add column
             </button>
         </div>
     );

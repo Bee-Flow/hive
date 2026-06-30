@@ -47,6 +47,10 @@ We collect the following categories of personal data:
 
 Where we rely on legitimate interest, we have balanced that interest against your rights and freedoms and concluded that our processing does not override them. You have the right to object — see Section 8.
 
+**Whether you must provide data.** Providing account data (such as a username and, where applicable, an email address and password) is necessary to enter into and perform the contract for the Service; without it we cannot create your account or provide the Service. Other data is optional, and you can choose whether to provide it.
+
+**Automated decision-making.** We do **not** subject you to decisions based solely on automated processing, including profiling, that produce legal effects concerning you or similarly significantly affect you within the meaning of Article 22 of the GDPR. AI features generate output at your direction, but Bee Flow does not use them to make such decisions about you.
+
 ## 4. Use of Google user data
 
 When you sign in with Google or connect a Google service, Bee Flow's use of information received from Google APIs adheres to the [Google API Services User Data Policy](https://developers.google.com/terms/api-services-user-data-policy), including the Limited Use requirements.
@@ -77,8 +81,8 @@ We do not sell personal data, and we do not share personal data with third parti
 
 Some of our processors are established outside the European Economic Area, in particular in the United States. Where personal data is transferred outside the EEA, we rely on one or more of the following safeguards to ensure an essentially equivalent level of protection:
 
-- **EU-US Data Privacy Framework (DPF).** Where a US-based processor is self-certified under the [EU-US Data Privacy Framework](https://www.dataprivacyframework.gov/) (and, where relevant, the UK Extension and Swiss-US DPF), we rely on the European Commission's adequacy decision of 10 July 2023 (C(2023) 4745). The major US providers we use — including Google LLC, Anthropic PBC, OpenAI OpCo LLC, Microsoft Corporation and Stripe, Inc. — participate in the DPF; their current certification status can be verified on the [public DPF list](https://www.dataprivacyframework.gov/list).
-- **Standard Contractual Clauses (SCCs).** Where a processor is not DPF-certified, or as a complementary safeguard, we rely on the European Commission's Standard Contractual Clauses (Commission Implementing Decision (EU) 2021/914) together with supplementary technical and organisational measures such as encryption in transit, access controls and contractual data-handling commitments.
+- **EU-US Data Privacy Framework (DPF).** Where a US-based processor is self-certified under the [EU-US Data Privacy Framework](https://www.dataprivacyframework.gov/) (and, where relevant, the UK Extension and Swiss-US DPF), we rely on the European Commission's adequacy decision of 10 July 2023 (C(2023) 4745). Several of the US providers we use — including Google LLC, OpenAI OpCo LLC, Microsoft Corporation and Stripe, Inc. — participate in the DPF; their current certification status can be verified on the [public DPF list](https://www.dataprivacyframework.gov/list).
+- **Standard Contractual Clauses (SCCs).** Where a processor is not DPF-certified, or as a complementary safeguard, we rely on the European Commission's Standard Contractual Clauses (Commission Implementing Decision (EU) 2021/914) together with supplementary technical and organisational measures such as encryption in transit, access controls and contractual data-handling commitments. In particular, **Anthropic, PBC is not certified under the EU-US Data Privacy Framework**, so transfers of personal data to Anthropic rely on the SCCs and supplementary measures rather than on the DPF adequacy decision.
 - **Adequacy decisions.** For processors in other countries covered by an EU adequacy decision, we rely on that decision.
 
 Some of our processors — including Scaleway S.A.S. (France), Mistral AI (France) and Stripe Payments Europe, Limited (Ireland) — are established in the EU/EEA, so no additional transfer safeguards beyond the GDPR are required. Our primary cloud infrastructure is hosted with Scaleway in EU data centres, which means personal data is processed and stored within the EEA by default.

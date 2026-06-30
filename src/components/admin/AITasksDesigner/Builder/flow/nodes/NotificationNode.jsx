@@ -1,6 +1,6 @@
 import React from 'react';
 import { Bell } from 'lucide-react';
-import StepNodeBase, { NodeChip } from './StepNodeBase';
+import StepNodeBase, { NodeChip, ForEachBadge } from './StepNodeBase';
 import { humanizeExpression } from '../displayHelpers';
 
 export default function NotificationNode({ id, data }) {
@@ -26,6 +26,7 @@ export default function NotificationNode({ id, data }) {
 
     const badges = (
         <>
+            <ForEachBadge step={step} />
             {channels.slice(0, 3).map(c => <NodeChip key={c}>{c}</NodeChip>)}
         </>
     );

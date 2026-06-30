@@ -36,6 +36,13 @@
 [data-theme="sepia"]           { --user-bubble-bg: #e8dcc4;                 --user-bubble-fg: #44322c; }
 
 :root {
+    /* Visible-viewport layout vars — kept live by useAppHeight(). Defaults are
+       correct before JS runs / if JS is disabled. --app-height tracks the real
+       visible height (use instead of 100vh/100dvh); --keyboard-inset is how much
+       the on-screen keyboard covers at the bottom. */
+    --app-height: 100dvh;
+    --keyboard-inset: 0px;
+
     /* Color Palette - Dark Professional Theme */
     --bg-primary: #0f0f13;
     --bg-secondary: #16161d;
@@ -1136,12 +1143,18 @@ html,
 body,
 #root {
     height: 100%;
-    height: 100dvh;
+    /* Match the *visible* viewport (browser chrome + on-screen keyboard) rather
+       than 100vh, which includes area behind the mobile browser UI. Falls back
+       to the :root 100dvh default before useAppHeight() runs. */
+    height: var(--app-height);
     margin: 0;
     font-family: var(--font-sans);
     background: var(--bg-primary);
     color: var(--text-primary);
-    /* Safe area for mobile devices with notch/gesture bar */
+    /* Safe area for mobile devices with notch/gesture bar. The on-screen
+       keyboard is handled by --app-height tracking visualViewport.height (the
+       shell shrinks to the visible region above the keyboard), so the keyboard
+       inset must NOT be added here too — that would double-count on iOS. */
     padding-bottom: env(safe-area-inset-bottom, 0px);
 }
 
@@ -1671,6 +1684,19 @@ pre.hljs {
         padding: 0.35rem 0.55rem;
         font-size: 0.85rem;
     }
+}
+
+/* ── BeeEditor (from-scratch) — kill the contenteditable focus box ── */
+.bf-content,
+.bf-content:focus,
+.bf-content:focus-visible {
+    outline: none !important;
+    box-shadow: none !important;
+    border: none !important;
+}
+.bf-content :focus,
+.bf-content :focus-visible {
+    outline: none;
 }
 
 /* ── Notebook TipTap Editor Styles ─────────────────── */

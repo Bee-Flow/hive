@@ -245,6 +245,20 @@ const GammaLogo = (p) => (
     </Wrap>
 );
 
+const AfasLogo = (p) => (
+    <Wrap {...p} viewBox="0 0 24 24">
+        <rect x="2" y="2" width="20" height="20" rx="4" fill="#E30613" />
+        <path d="M12 6.5L7 17.5h2.3l1-2.4h3.4l1 2.4H17L12 6.5zm0 4.1l1 2.5h-2l1-2.5z" fill="#fff" fillOpacity="0.95" />
+    </Wrap>
+);
+
+const NmbrsLogo = (p) => (
+    <Wrap {...p} viewBox="0 0 24 24">
+        <rect x="2" y="2" width="20" height="20" rx="4" fill="#00C389" />
+        <path d="M7 16.5v-9h1.9v1.1c.45-.8 1.3-1.3 2.4-1.3 1.05 0 1.85.42 2.3 1.2.5-.78 1.4-1.2 2.45-1.2 1.95 0 2.95 1.2 2.95 3.2v6H19v-5.6c0-1-.35-1.75-1.4-1.75-1 0-1.5.78-1.5 1.8v5.55h-2v-5.6c0-1-.35-1.75-1.4-1.75-1 0-1.5.78-1.5 1.8v5.55H7z" fill="#fff" fillOpacity="0.95" />
+    </Wrap>
+);
+
 const LinkedInLogo = (p) => (
     <Wrap {...p} viewBox="0 0 24 24">
         <rect width="24" height="24" rx="3" fill="#0A66C2" />
@@ -373,6 +387,7 @@ export const INTEGRATION_LOGOS = {
 
     // Microsoft
     outlook: OutlookLogo,
+    outlook_readonly: OutlookLogo, // 'outlook-readonly' catalog id — read-only variant shares the Outlook brand mark
     ms_calendar: MsCalendarLogo,
     onedrive: OneDriveLogo,
     ms_contacts: MsContactsLogo,
@@ -395,6 +410,8 @@ export const INTEGRATION_LOGOS = {
     fireflies: FirefliesLogo,
     youtrack: YouTrackLogo,
     gamma: GammaLogo,
+    afas_profit: AfasLogo,
+    nmbrs: NmbrsLogo,
     linkedin: LinkedInLogo,
     github: GitHubLogo,
     signrequest: SignRequestLogo,

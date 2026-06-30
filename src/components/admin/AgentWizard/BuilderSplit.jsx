@@ -1,6 +1,6 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Plus, Sparkles, Upload, AppWindow, ArrowLeft, X, ArrowUp, Check, Clock, Settings2, Loader2 } from 'lucide-react';
-import { API_BASE, authFetch } from '../../../utils/helpers';
+import { API_BASE, authFetch, parseSaveError } from '../../../utils/helpers';
 import { pickAgentAvatar, DEFAULT_AGENT_EMOJI } from '../../../utils/agentAvatar';
 import useTranslation from '../../../hooks/useTranslation';
 import beeFlowIcon from '../../../assets/BeeFlow-logo-Icon-2026.svg';
@@ -10,6 +10,7 @@ import { INTEGRATION_CATALOG } from '../AgentDesigner/integrations';
 import PlanCard from './PlanCard';
 import { computeRoutineNextRun } from '../../../utils/routineSchedule';
 import { useAgentEditorBootstrap } from './AgentEditorBootstrapContext';
+import { useCan } from '../../Gate';
 import { RoutinesPicker, RoutineModal } from './pickers/RoutinePickers';
 import AvatarPicker from './pickers/AvatarPicker';
 import PublishMenu from './pickers/PublishMenu';
@@ -103,18 +104,6 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     // error — so the user understands why the save was blocked.
     const [limitWarning, setLimitWarning] = useState(null);
 
-    // Parse a non-OK fetch Response into { message, code, resource }. Tolerates
-    // both JSON ({error,code,resource}) and plain-text error bodies.
-    const parseSaveError = async (res) => {
-        let body = '';
-        try { body = await res.text(); } catch (_) { /* ignore */ }
-        let info = {};
-        try { info = JSON.parse(body); } catch (_) { info = { error: body }; }
-        const message = info.error || info.message || `Save failed (${res.status})`;
-        const isLimit = res.status === 403 && (info.code === 'limit_reached' || /reached (its|the) limit|seat limit/i.test(message));
-        return { message, code: info.code, resource: info.resource, isLimit };
-    };
-
     // Section open/closed state for the inline accordion.
     const [openSection, setOpenSection] = useState(null); // 'identity'|'model'|'knowledge'|'behavior'|'publishing'|'guardrails'|'embed'|null
     const toggleSection = (s) => setOpenSection(prev => prev === s ? null : s);
@@ -171,7 +160,10 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
     const updateBubblePosition = (v) => { setBubblePosition(v); patchConfig({ bubblePosition: v }); };
     const updateBubbleIcon = (v) => { setBubbleIcon(v); patchConfig({ bubbleIcon: v }); };
 
-    const routinesAllowed = Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('agent_routines');
+    // Unified entitlements check (false while the snapshot loads — the
+    // routines panel pops in once it resolves; refreshAgentRoutines re-fires
+    // via its dependency when the flag flips true).
+    const routinesAllowed = useCan('agent_routines');
     const refreshAgentRoutines = useCallback(async () => {
         if (!routinesAllowed || !agent?.id) return;
         try {
@@ -748,6 +740,43 @@ export default function BuilderSplit({ agent: initialAgent, plan, history, tier,
                 wizard: { capabilities: updated.capabilities, suggestedSkills: updated.suggestedSkills },
             };
             queueSave();
+
+            // Apply the remaining plan fields the AI filled in. Previously only
+            // name/avatar/description/instructions landed on the form, leaving
+            // Apps, Skills and the model tier empty even though the AI proposed
+            // them (BFSF-201).
+            if (Array.isArray(updated.enabledIntegrations)) {
+                const apps = updated.enabledIntegrations.filter(id => availableIntegrations.some(a => a.id === id));
+                setEnabledIntegrations(apps);
+                patchConfig({ enabledIntegrations: apps });
+            }
+            if (typeof updated.model === 'string' && ['fast', 'smart', 'thinking'].includes(updated.model)) {
+                updateModel(updated.model);
+            }
+            if (Array.isArray(updated.skills) && updated.skills.length > 0) {
+                try {
+                    const attach = new Set(attachedSkillIds);
+                    for (const s of updated.skills) {
+                        if (s.id && (allSkills || []).some(x => x.id === s.id)) {
+                            attach.add(s.id); // reuse an existing skill
+                        } else if (!s.id && s.name) {
+                            const sres = await authFetch(`${API_BASE}/api/skills`, {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({ name: s.name, description: s.description || '', instructions: s.instructions || '', isShared: false, dynamicActivation: false, automationId: null }),
+                            });
+                            if (sres.ok) {
+                                const created = await sres.json();
+                                if (created?.id) { setAllSkills(prev => [...(prev || []), created]); attach.add(created.id); }
+                            }
+                        }
+                    }
+                    const nextSkills = Array.from(attach);
+                    setAttachedSkillIds(nextSkills);
+                    patchConfig({ attachedSkillIds: nextSkills });
+                } catch (_) { /* non-fatal — partial skill application is acceptable */ }
+            }
+
             setChat(prev => [...prev, { role: 'plan', plan: updated }]);
 
             // Routine action: when the LLM detected a clear scheduling intent

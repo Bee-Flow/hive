@@ -3,7 +3,8 @@ import { CreditCard, Settings, Shield, Euro, ExternalLink, CheckCircle, Loader2 
 import { SectionHeader } from '../ui/SectionHeader';
 import { Card, CardHeader } from '../ui/Card';
 import { Toggle } from '../ui/Toggle';
-import { Field, Select } from '../ui/Input';
+import { Field, Select, Input } from '../ui/Input';
+import { Button } from '../ui/Button';
 import { Banner } from '../ui/Banner';
 import { Badge, Dot } from '../ui/Badge';
 import { Spinner } from '../ui/Spinner';
@@ -35,10 +36,12 @@ export function StripeView() {
         stripeEnabled: false,
         stripeTaxEnabled: false,
         stripeTaxCountry: 'NL',
+        subscriptionNotifyEmail: '',
     });
     const [secretKey, setSecretKey]         = useState('');
     const [webhookSecret, setWebhookSecret] = useState('');
     const [publishableKey, setPublishableKey] = useState('');
+    const [notifyEmail, setNotifyEmail]     = useState('');
 
     const load = async () => {
         try {
@@ -50,8 +53,10 @@ export function StripeView() {
                 stripeEnabled:          !!data.stripeEnabled,
                 stripeTaxEnabled:       !!data.stripeTaxEnabled,
                 stripeTaxCountry:       data.stripeTaxCountry || 'NL',
+                subscriptionNotifyEmail: data.subscriptionNotifyEmail || '',
             });
             setPublishableKey(data.stripePublishableKey || '');
+            setNotifyEmail(data.subscriptionNotifyEmail || '');
         } catch (e) { /* ignore */ }
         finally { setLoading(false); }
     };
@@ -211,6 +216,36 @@ export function StripeView() {
                         </Select>
                     </Field>
                 </div>
+            </Card>
+
+            {/* Notifications */}
+            <Card className="mb-4">
+                <CardHeader
+                    icon={CreditCard}
+                    iconClass="text-amber-400"
+                    title="Subscription notifications"
+                    subtitle="Get an email whenever a customer starts a new subscription."
+                />
+                <Field
+                    label="Notify this email on new subscriptions"
+                    hint="Leave empty to turn notifications off. One email is sent per new subscription."
+                >
+                    <div className="flex items-center gap-2 max-w-md">
+                        <Input
+                            type="email"
+                            value={notifyEmail}
+                            onChange={e => setNotifyEmail(e.target.value)}
+                            placeholder="billing@yourcompany.com"
+                        />
+                        <Button
+                            onClick={() => saveField({ subscriptionNotifyEmail: notifyEmail })}
+                            busy={saving}
+                            disabled={notifyEmail.trim() === (config.subscriptionNotifyEmail || '')}
+                        >
+                            Save
+                        </Button>
+                    </div>
+                </Field>
             </Card>
 
             {/* Setup checklist */}

@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Bot, Sparkles, ListChecks, BookOpen, Globe, Bug, ShieldAlert, Mic, LifeBuoy } from 'lucide-react';
+import { Bot, Sparkles, ListChecks, BookOpen, Globe, Bug, ShieldAlert, Mic, LifeBuoy, Target } from 'lucide-react';
 import useTranslation from '../../../hooks/useTranslation';
 import AgentStudio from '../AgentStudio';
 import AITasksDesigner from '../AITasksDesigner';
@@ -9,6 +9,7 @@ import WebpagesPage from '../../../pages/WebpagesPage';
 import TestsStudio from './TestsStudio';
 import SecurityStudio from './SecurityStudio';
 import SupportStudio from './SupportStudio';
+import LeadStudio from './LeadStudio';
 import MeetingNotesPage from '../../../pages/meeting-notes/MeetingNotesPage';
 import { useLicenseContext } from '../../LicenseContext';
 
@@ -21,6 +22,8 @@ export default function Studio({
     initialSkillId = null,
     initialKbId = null,
     initialTaskId = null,
+    initialStepId = null,
+    initialFlowletKey = null,
     initialWebpageId = null,
     onClose,
     onNavigate,
@@ -65,15 +68,31 @@ export default function Studio({
     const canSeeSupport = hasLicenseFeature('support_inbox')
         && !!(user?.canUseFeature?.support_inbox ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('support_inbox')))
         && (hasPermission('support_inbox') || hasPermission('all'));
+    // Lead Studio — enterprise + beta opt-in (license × beta via canUseFeature).
+    // Gated purely on license × beta like Security/Tests/Webpages — NO separate
+    // per-member permission (enabling the beta for the org is enough to see it).
+    const canSeeLeadStudio = hasLicenseFeature('lead_studio')
+        && !!(user?.canUseFeature?.lead_studio ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('lead_studio')));
+    // BFSF-226: the AI Tasks tab (Routines + Automations) was previously shown
+    // unconditionally, so restricted/Free-tier orgs saw a feature the backend
+    // 403s and the admin panel flags as "Blocked". Gate it like the siblings:
+    // visible when the plan grants *either* routines or automations. The
+    // canUseFeature map is the server-resolved licence × beta intersection;
+    // hasLicenseFeature re-checks the licence so a stale session can't keep the
+    // tab after a downgrade. AITasksDesigner keeps its own internal guards.
+    const canUse = (id) => !!(user?.canUseFeature?.[id] ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes(id)));
+    const canSeeRoutines = (hasLicenseFeature('agent_routines') && canUse('agent_routines'))
+        || (hasLicenseFeature('automations') && canUse('automations'));
     const tabs = [
         { id: 'agents',    label: t('studio.tab.agents'),    icon: <Bot size={14} /> },
         { id: 'skills',    label: t('studio.tab.skills'),    icon: <Sparkles size={14} /> },
         { id: 'knowledge', label: t('studio.tab.knowledge'), icon: <BookOpen size={14} /> },
-        { id: 'aiTasks',   label: t('studio.tab.ai_tasks'),  icon: <ListChecks size={14} /> },
+        ...(canSeeRoutines ? [{ id: 'aiTasks', label: t('studio.tab.ai_tasks'), icon: <ListChecks size={14} /> }] : []),
         ...(canSeeWebpages ? [{ id: 'webpages', label: t('studio.tab.webpages') || 'Webpages', icon: <Globe size={14} /> }] : []),
         ...(canSeeTests ? [{ id: 'tests', label: t('studio.tab.tests') || 'Tests', icon: <Bug size={14} /> }] : []),
         ...(canSeeSecurity ? [{ id: 'security', label: t('studio.tab.security') || 'Security Scan', icon: <ShieldAlert size={14} /> }] : []),
         ...(canSeeSupport ? [{ id: 'support', label: t('studio.tab.support') || 'Support', icon: <LifeBuoy size={14} /> }] : []),
+        ...(canSeeLeadStudio ? [{ id: 'leadStudio', label: t('studio.tab.lead_studio') || 'Lead Studio', icon: <Target size={14} /> }] : []),
         ...(canSeeMeetingNotes ? [{ id: 'meetingNotes', label: t('studio.tab.meeting_notes') || 'Meeting Notes', icon: <Mic size={14} /> }] : []),
     ];
 
@@ -81,6 +100,7 @@ export default function Studio({
         if (!onNavigate) return;
         const seg = id === 'aiTasks' ? 'routines'
             : id === 'meetingNotes' ? 'meeting-notes'
+            : id === 'leadStudio' ? 'lead-studio'
             : id;
         onNavigate(`studio/${seg}`);
     };
@@ -148,6 +168,8 @@ export default function Studio({
                 {section === 'aiTasks' && (
                     <AITasksDesigner
                         initialTaskId={initialTaskId}
+                        initialStepId={initialStepId}
+                        initialFlowletKey={initialFlowletKey}
                         onClose={onClose}
                         onNavigate={onNavigate}
                         modelTiers={modelTiers}
@@ -168,6 +190,7 @@ export default function Studio({
                         user={user}
                         onNavigate={onNavigate}
                         hasPermission={hasPermission}
+                        modelTiers={modelTiers}
                     />
                 )}
                 {section === 'support' && (
@@ -175,6 +198,14 @@ export default function Studio({
                         user={user}
                         onNavigate={onNavigate}
                         hasPermission={hasPermission}
+                    />
+                )}
+                {section === 'leadStudio' && (
+                    <LeadStudio
+                        user={user}
+                        onNavigate={onNavigate}
+                        hasPermission={hasPermission}
+                        modelTiers={modelTiers}
                     />
                 )}
                 {section === 'meetingNotes' && (

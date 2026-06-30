@@ -4,6 +4,7 @@ import { API_BASE, authFetch } from '../../utils/helpers';
 import { INTEGRATION_CATALOG, NEXTCLOUD_INTEGRATION_IDS, orderCategories } from '../../config/integrationCatalog';
 import { getIntegrationIcon } from '../../config/integrationIcons';
 import { useLicenseContext } from '../LicenseContext';
+import GroupAccessMatrix from './GroupAccessMatrix';
 
 const SAVE_DEBOUNCE_MS = 400;
 const SAVED_FLASH_MS = 1500;
@@ -300,6 +301,7 @@ const OrgFeatureTogglesPanel = ({ settingsSlot = null }) => {
     const tabs = [
         { id: 'integrations', label: 'Integrations', icon: <Settings size={14} /> },
         { id: 'beta', label: 'Beta features', icon: <Sparkles size={14} /> },
+        { id: 'groups', label: 'Per group', icon: <SlidersHorizontal size={14} /> },
         ...(settingsSlot ? [{ id: 'settings', label: 'Integration settings', icon: <SlidersHorizontal size={14} /> }] : []),
     ];
 
@@ -445,6 +447,9 @@ const OrgFeatureTogglesPanel = ({ settingsSlot = null }) => {
                 )}
             </section>
             )}
+
+            {/* ── Per-group Access & Permissions matrix ─────────────── */}
+            {tab === 'groups' && <GroupAccessMatrix />}
 
             {/* ── Integration settings (slot) ──────────────────────── */}
             {tab === 'settings' && settingsSlot}

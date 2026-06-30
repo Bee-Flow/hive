@@ -1,6 +1,25 @@
-import { ChevronDown, ChevronRight, Database, MousePointer2, Clock, Webhook, Zap, Sparkles, GitBranch, Repeat, Code, Bell, Workflow } from 'lucide-react';
+import { ChevronDown, ChevronRight, Database, MousePointer2, Clock, Webhook, Zap, Sparkles, GitBranch, Repeat, Code, Bell, Workflow, GripVertical } from 'lucide-react';
 import React, { useState } from 'react';
-import { previewValue } from '../../../../../utils/bindingHelpers';
+import { previewValue, walkPath } from '../../../../../utils/bindingHelpers';
+
+// Resolve the value to SHOW for a path: prefer the real last-run / pinned
+// value (from previewSample) so the user sees actual data, falling back to the
+// typed sample placeholder when there's no run yet.
+function shownValue(path, sample, previewSample) {
+    if (previewSample) {
+        const v = walkPath(path, previewSample);
+        if (v !== undefined) return v;
+    }
+    return sample;
+}
+
+// Start an HTML5 drag carrying a binding path — dropped onto a BindingField /
+// TemplateField it inserts the reference (whole-node output or a leaf field).
+function startPathDrag(e, path) {
+    e.dataTransfer.setData('text/plain', path);
+    e.dataTransfer.setData('application/x-binding-path', path);
+    e.dataTransfer.effectAllowed = 'copy';
+}
 
 /**
  * Right-side variable browser inside the StepInspector. Lists all
@@ -15,7 +34,7 @@ import { previewValue } from '../../../../../utils/bindingHelpers';
  *   activeFieldLabel — optional string shown at the top so the user knows
  *                     which field the insert will target
  */
-export default function VariableTree({ groups = [], onInsert, activeFieldLabel = null }) {
+export default function VariableTree({ groups = [], onInsert, activeFieldLabel = null, previewSample = null }) {
     if (!groups || groups.length === 0) {
         return (
             <div className="h-full flex flex-col">
@@ -29,13 +48,13 @@ export default function VariableTree({ groups = [], onInsert, activeFieldLabel =
     return (
         <div className="h-full flex flex-col">
             <TreeHeader activeFieldLabel={activeFieldLabel} />
-            <div className="flex-1 overflow-y-auto custom-scrollbar py-1">
+            <div className="flex-1 overflow-auto custom-scrollbar py-1">
                 {groups.map(group => (
-                    <GroupNode key={group.id} group={group} onInsert={onInsert} />
+                    <GroupNode key={group.id} group={group} onInsert={onInsert} previewSample={previewSample} />
                 ))}
             </div>
             <div className="px-3 py-2 border-t border-[var(--border-default)] text-[10px] text-[var(--text-tertiary)]">
-                Click a value to insert it. Sample values are placeholders, not real run data.
+                Click a value to insert it, or drag it into a field. Drag a step's row to use its whole output.
             </div>
         </div>
     );
@@ -75,27 +94,45 @@ function triggerIcon(group) {
     return <Workflow size={12} />;
 }
 
-function GroupNode({ group, onInsert }) {
+/**
+ * The group label already names the step; the caption is just a hint of the
+ * base path. Strip the `steps.<id>.` prefix so the cryptic id never shows
+ * (e.g. `steps.ai_87e358.output` → `output`); trigger/loop bases are kept.
+ * Full id-bearing path stays available via the element `title`.
+ */
+function friendlyBasePath(basePath) {
+    return String(basePath || '').replace(/^steps\.[^.]+\./, '');
+}
+
+function GroupNode({ group, onInsert, previewSample }) {
     const [open, setOpen] = useState(true);
     const Icon = KIND_ICON[group.kind] ? KIND_ICON[group.kind](group) : <Workflow size={12} />;
+    // Drag the whole node row to reference its ENTIRE output (e.g.
+    // steps.<id>.output); click toggles the field list.
     return (
-        <div className="border-b border-[var(--border-default)] last:border-b-0">
-            <button
-                type="button"
+        <div className="border-b border-[var(--border-default)] last:border-b-0 group/grp">
+            <div
+                draggable
+                onDragStart={(e) => startPathDrag(e, group.basePath)}
                 onClick={() => setOpen(o => !o)}
-                className="w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-[var(--bg-secondary)]"
+                role="button"
+                tabIndex={0}
+                onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setOpen(o => !o); } }}
+                title={`Drag to use the whole output (${group.basePath})`}
+                className="w-full flex items-center gap-1.5 px-2 py-1.5 text-xs hover:bg-[var(--bg-secondary)] cursor-grab active:cursor-grabbing select-none"
             >
-                {open ? <ChevronDown size={12} className="text-[var(--text-tertiary)]" /> : <ChevronRight size={12} className="text-[var(--text-tertiary)]" />}
+                <GripVertical size={11} className="shrink-0 text-[var(--text-tertiary)] opacity-0 group-hover/grp:opacity-60" />
+                {open ? <ChevronDown size={12} className="shrink-0 text-[var(--text-tertiary)]" /> : <ChevronRight size={12} className="shrink-0 text-[var(--text-tertiary)]" />}
                 <span className="text-[var(--text-secondary)]">{Icon}</span>
                 <span className="text-[var(--text-primary)] font-medium truncate">{group.label}</span>
-                <span className="ml-auto text-[10px] text-[var(--text-tertiary)] font-mono truncate max-w-[140px]" title={group.basePath}>
-                    {group.basePath}
+                <span className="ml-auto text-[10px] text-[var(--text-tertiary)] font-mono truncate max-w-[120px]" title={group.basePath}>
+                    {friendlyBasePath(group.basePath)}
                 </span>
-            </button>
+            </div>
             {open && (
                 <div className="pb-1">
                     {(group.fields || []).map(f => (
-                        <FieldLeaf key={f.path} field={f} onInsert={onInsert} depth={1} />
+                        <FieldLeaf key={f.path} field={f} onInsert={onInsert} depth={1} previewSample={previewSample} />
                     ))}
                     {(group.fields || []).length === 0 && (
                         <div className="px-6 py-1 text-[11px] text-[var(--text-tertiary)] italic">No fields</div>
@@ -106,7 +143,7 @@ function GroupNode({ group, onInsert }) {
     );
 }
 
-function FieldLeaf({ field, onInsert, depth }) {
+function FieldLeaf({ field, onInsert, depth, previewSample }) {
     const [open, setOpen] = useState(false);
     const indent = 12 + depth * 14;
     const hasChildren = Array.isArray(field.children) && field.children.length > 0;
@@ -121,24 +158,20 @@ function FieldLeaf({ field, onInsert, depth }) {
         onInsert?.(field.path);
     };
 
-    const handleDragStart = (e) => {
-        e.dataTransfer.setData('text/plain', field.path);
-        e.dataTransfer.setData('application/x-binding-path', field.path);
-        e.dataTransfer.effectAllowed = 'copy';
-    };
+    const value = shownValue(field.path, field.sample, previewSample);
 
     return (
         <div>
             <div
                 draggable
-                onDragStart={handleDragStart}
+                onDragStart={(e) => startPathDrag(e, field.path)}
                 onClick={onClick}
                 role="button"
                 tabIndex={0}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onInsert?.(field.path); } }}
-                className="group flex items-center gap-2 py-1 text-[11px] cursor-pointer select-none hover:bg-[var(--bg-secondary)] focus:bg-[var(--bg-secondary)] focus:outline-none"
+                className="group flex items-center gap-2 py-1 text-[11px] cursor-grab active:cursor-grabbing select-none hover:bg-[var(--bg-secondary)] focus:bg-[var(--bg-secondary)] focus:outline-none"
                 style={{ paddingLeft: indent, paddingRight: 8 }}
-                title={field.path}
+                title={typeof value === 'string' ? `${field.path}\n${value}` : field.path}
             >
                 {hasChildren ? (
                     <button
@@ -153,12 +186,12 @@ function FieldLeaf({ field, onInsert, depth }) {
                     <span className="shrink-0 w-3" />
                 )}
                 <span className="text-[var(--text-primary)] truncate min-w-0">{field.key}</span>
-                <span className="ml-auto text-[10px] text-[var(--text-tertiary)] truncate max-w-[140px] font-mono">
-                    {previewValue(field.sample, 30)}
+                <span className="ml-auto text-[10px] text-[var(--text-secondary)] truncate max-w-[150px] font-mono">
+                    {previewValue(value, 40)}
                 </span>
             </div>
             {hasChildren && open && field.children.map(c => (
-                <FieldLeaf key={c.path} field={c} onInsert={onInsert} depth={depth + 1} />
+                <FieldLeaf key={c.path} field={c} onInsert={onInsert} depth={depth + 1} previewSample={previewSample} />
             ))}
         </div>
     );

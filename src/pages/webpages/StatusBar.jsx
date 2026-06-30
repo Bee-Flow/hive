@@ -1,5 +1,5 @@
 import React from 'react';
-import { Sun, Moon, Download, History, AlertCircle, Loader2, Check } from 'lucide-react';
+import { Download, History, AlertCircle, Loader2, Check } from 'lucide-react';
 
 const LANG_LABELS = { html: 'HTML', css: 'CSS', js: 'JavaScript' };
 
@@ -39,7 +39,6 @@ function fmtTime(date) {
 }
 
 export default function StatusBar({
-    theme, onThemeToggle,
     activeFile,
     cursor,          // { line, col }
     fileSize,        // bytes
@@ -91,15 +90,6 @@ export default function StatusBar({
                 title="Download as ZIP"
             >
                 <Download size={12} /> ZIP
-            </button>
-
-            {/* Theme toggle */}
-            <button
-                onClick={onThemeToggle}
-                className="flex items-center gap-1 opacity-80 hover:opacity-100 transition-opacity"
-                title={theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme'}
-            >
-                {theme === 'dark' ? <Sun size={12} /> : <Moon size={12} />}
             </button>
         </div>
     );

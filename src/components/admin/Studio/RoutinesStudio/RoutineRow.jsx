@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Trash2, Copy, Code2, Hash, Pause, Play, Mail, Clock, Webhook, Bot, MousePointer2 } from 'lucide-react';
+import { Trash2, Copy, Code2, Hash, Pause, Play, Mail, Clock, Webhook, Bot, MousePointer2, History } from 'lucide-react';
 import ContextMenu from './ContextMenu';
 
 /**
@@ -24,6 +24,7 @@ export default function RoutineRow({
     onCopyId,
     onDelete,
     onToggleActive,
+    onOpenRuns,
     canManage = true,
     liveRunning = false,
 }) {
@@ -59,10 +60,10 @@ export default function RoutineRow({
     // Single source of truth for "can the user mutate this routine". Both the
     // context-menu opener and the hover-delete button honor it so users see
     // a consistent permission story regardless of how they try to act.
-    const canMutate = canManage && (
+    const canMutate = !!onOpenRuns || (canManage && (
         (isAutomation && !!onToggleActive)
         || !!onDuplicate || !!onExportJson || !!onCopyId || !!onDelete
-    );
+    ));
 
     const onContextMenu = (e) => {
         if (!canMutate) return;
@@ -78,6 +79,7 @@ export default function RoutineRow({
             onClick: onToggleActive,
         });
     }
+    if (onOpenRuns) menuItems.push({ label: 'View executions', icon: <History size={13} />, onClick: onOpenRuns });
     if (onDuplicate) menuItems.push({ label: 'Duplicate', icon: <Copy size={13} />, onClick: onDuplicate });
     if (onExportJson) menuItems.push({ label: 'Export JSON', icon: <Code2 size={13} />, onClick: onExportJson });
     if (onCopyId) menuItems.push({ label: 'Copy ID', icon: <Hash size={13} />, onClick: onCopyId });

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
-import { Globe, Plus, Trash2, Download, Upload, Search, ChevronRight, Check, X, Copy, FileText, Languages, AlertCircle, Star } from 'lucide-react';
+import { Globe, Plus, Trash2, Download, Upload, Search, ChevronRight, Check, X, Copy, FileText, Languages, AlertCircle, Star, Mail, Send, RotateCcw } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 
 const API = `${API_BASE}/api/languages`;
@@ -176,6 +176,7 @@ const LanguagesPanel = () => {
                                 {[
                                     { id: 'gui', label: 'GUI Translations', icon: Languages },
                                     { id: 'prompts', label: 'System Prompts', icon: FileText },
+                                    { id: 'emails', label: 'Email Templates', icon: Mail },
                                 ].map(({ id, label, icon: Icon }) => (
                                     <button
                                         key={id}
@@ -196,10 +197,14 @@ const LanguagesPanel = () => {
                             </div>
 
                             <div className="flex-1 overflow-hidden">
-                                {activeSection === 'gui' ? (
+                                {activeSection === 'gui' && (
                                     <GUIStringEditor locale={selectedLocale} key={`gui-${selectedLocale}`} />
-                                ) : (
+                                )}
+                                {activeSection === 'prompts' && (
                                     <PromptEditor locale={selectedLocale} key={`prompts-${selectedLocale}`} />
+                                )}
+                                {activeSection === 'emails' && (
+                                    <EmailTemplateEditor locale={selectedLocale} key={`emails-${selectedLocale}`} />
                                 )}
                             </div>
                         </>
@@ -752,6 +757,294 @@ const PromptEditor = ({ locale }) => {
                         <p className="text-sm">Select a prompt to translate</p>
                     </div>
                 )}
+            </div>
+        </div>
+    );
+};
+
+// ─── Email Template Editor ───────────────────────────────────────
+// Structured-field editor for the verification + welcome emails, per locale.
+// Fields are plain text rendered into the branded shell; a live preview shows
+// exactly what recipients will see. Empty field = fall back to the English
+// default.
+const FIELD_META = {
+    subject: { label: 'Subject', type: 'input' },
+    title: { label: 'Title (header)', type: 'input' },
+    intro: { label: 'Intro / greeting', type: 'input' },
+    body: { label: 'Body', type: 'textarea' },
+    ctaLabel: { label: 'Button label', type: 'input' },
+};
+
+const EmailTemplateEditor = ({ locale }) => {
+    const [data, setData] = useState(null);
+    const [selected, setSelected] = useState('verification');
+    const [fields, setFields] = useState({});
+    const [saving, setSaving] = useState(false);
+    const [saved, setSaved] = useState(false);
+    const [previewHtml, setPreviewHtml] = useState('');
+    const [testRecipient, setTestRecipient] = useState('');
+    const [testing, setTesting] = useState(false);
+    const [testResult, setTestResult] = useState(null);
+    const [aiTranslating, setAiTranslating] = useState(false);
+    const [aiTier, setAiTier] = useState('fast');
+    const [aiResult, setAiResult] = useState(null);
+
+    const fetchData = useCallback(() => {
+        authFetch(`${API}/${locale}/email-templates`)
+            .then(r => r.json())
+            .then(d => {
+                setData(d);
+                // Prefill with this locale's raw overrides; empty = use default (shown as placeholder).
+                setFields({ ...(d.templates?.[selected] || {}) });
+            })
+            .catch(() => { });
+    }, [locale]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    useEffect(() => { fetchData(); }, [locale]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // When switching template, repopulate from the loaded overrides.
+    useEffect(() => {
+        if (data) setFields({ ...(data.templates?.[selected] || {}) });
+        setSaved(false);
+        setTestResult(null);
+    }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
+
+    // Debounced live preview reflecting current (unsaved) edits.
+    useEffect(() => {
+        if (!data) return;
+        const t = setTimeout(() => {
+            authFetch(`${API}/${locale}/email-templates/${selected}/preview`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fields }),
+            })
+                .then(r => r.json())
+                .then(d => { if (d.html) setPreviewHtml(d.html); })
+                .catch(() => { });
+        }, 400);
+        return () => clearTimeout(t);
+    }, [fields, selected, locale, data]);
+
+    const handleSave = async () => {
+        setSaving(true);
+        try {
+            const res = await authFetch(`${API}/${locale}/email-templates`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ templateId: selected, fields }),
+            });
+            if (res.ok) {
+                const d = await res.json();
+                setData(prev => ({ ...prev, templates: d.templates }));
+                setSaved(true);
+                setTimeout(() => setSaved(false), 2000);
+            }
+        } catch { /* ignore */ }
+        setSaving(false);
+    };
+
+    const handleAiTranslate = useCallback(async () => {
+        setAiTranslating(true);
+        setAiResult(null);
+        try {
+            const res = await authFetch(`${API}/${locale}/ai-translate-emails`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ modelTier: aiTier }),
+            });
+            const result = await res.json();
+            if (result.success) {
+                setAiResult(result);
+                fetchData();
+                setTimeout(() => setAiResult(null), 8000);
+            } else {
+                setAiResult({ error: result.error || 'Translation failed' });
+            }
+        } catch (err) {
+            setAiResult({ error: err.message });
+        }
+        setAiTranslating(false);
+    }, [locale, aiTier, fetchData]);
+
+    const handleTest = async () => {
+        if (!testRecipient.trim()) return;
+        setTesting(true);
+        setTestResult(null);
+        try {
+            const res = await authFetch(`${API}/${locale}/email-templates/${selected}/test`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ testRecipient: testRecipient.trim() }),
+            });
+            const d = await res.json();
+            setTestResult(res.ok ? { ok: true } : { error: d.error || 'Failed to send' });
+        } catch (err) {
+            setTestResult({ error: err.message });
+        }
+        setTesting(false);
+    };
+
+    if (!data) return <div className="flex items-center justify-center h-full" style={{ color: 'var(--text-muted)' }}>Loading...</div>;
+
+    const defaults = data.defaults?.[selected] || {};
+    const labels = data.labels || {};
+    const variables = data.variables?.[selected] || [];
+    const setField = (key, val) => setFields(prev => ({ ...prev, [key]: val }));
+
+    return (
+        <div className="h-full flex flex-col overflow-hidden p-4">
+            {/* Top bar: template selector + AI translate */}
+            <div className="flex items-center gap-2 mb-3 shrink-0 flex-wrap">
+                {(data.templateIds || []).map(id => (
+                    <button
+                        key={id}
+                        onClick={() => setSelected(id)}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${selected === id ? 'bg-[var(--accent-primary)] text-white' : 'text-[var(--text-secondary)] border hover:bg-[var(--bg-tertiary)]'}`}
+                        style={selected === id ? {} : { borderColor: 'var(--border-default)' }}
+                    >
+                        {labels[id] || id}
+                    </button>
+                ))}
+                {locale !== 'en' && (
+                    <div className="ml-auto flex items-center gap-1.5">
+                        <select
+                            value={aiTier}
+                            onChange={e => setAiTier(e.target.value)}
+                            disabled={aiTranslating}
+                            className="px-2 py-1 rounded-lg text-xs border bg-[var(--bg-secondary)]"
+                            style={{ borderColor: 'var(--border-default)', color: 'var(--text-primary)', outline: 'none' }}
+                        >
+                            <option value="fast">⚡ Fast</option>
+                            <option value="thinking">🧠 Thinking</option>
+                            <option value="writer">✍️ Writer</option>
+                            <option value="pro">🔬 Pro</option>
+                        </select>
+                        <button
+                            onClick={handleAiTranslate}
+                            disabled={aiTranslating}
+                            className="px-3 py-1 rounded-lg text-xs font-medium text-white flex items-center gap-1.5 disabled:opacity-40 transition-opacity"
+                            style={{ background: 'var(--accent-primary)' }}
+                        >
+                            {aiTranslating ? (
+                                <><span className="inline-block w-3 h-3 border-2 border-white/30 border-t-white rounded-full animate-spin" /> Translating...</>
+                            ) : (
+                                <><Languages className="w-3.5 h-3.5" /> AI Translate</>
+                            )}
+                        </button>
+                    </div>
+                )}
+            </div>
+            {aiResult && (
+                <div className="mb-3 px-3 py-2 rounded-lg text-xs flex items-center gap-2" style={{
+                    background: aiResult.error ? 'rgba(239,68,68,0.1)' : 'rgba(34,197,94,0.1)',
+                    color: aiResult.error ? '#ef4444' : '#22c55e',
+                }}>
+                    {aiResult.error ? (<><AlertCircle className="w-3.5 h-3.5 shrink-0" /> {aiResult.error}</>) : (<><Check className="w-3.5 h-3.5 shrink-0" /> {aiResult.message}</>)}
+                </div>
+            )}
+
+            <div className="flex-1 flex gap-4 overflow-hidden min-h-0">
+                {/* Left: fields form */}
+                <div className="flex-1 flex flex-col overflow-y-auto pr-1 min-w-0" style={{ scrollbarWidth: 'thin' }}>
+                    {/* Variable hint chips */}
+                    {variables.length > 0 && (
+                        <div className="flex items-center gap-1.5 flex-wrap mb-3">
+                            <span className="text-[11px]" style={{ color: 'var(--text-muted)' }}>Variables:</span>
+                            {variables.map(v => (
+                                <code key={v} className="text-[11px] px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>{`{{${v}}}`}</code>
+                            ))}
+                        </div>
+                    )}
+                    {(data.fields || []).map(key => {
+                        const meta = FIELD_META[key] || { label: key, type: 'input' };
+                        const val = fields[key] ?? '';
+                        return (
+                            <div key={key} className="mb-3">
+                                <div className="flex items-center justify-between mb-1">
+                                    <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>{meta.label}</label>
+                                    {val && (
+                                        <button onClick={() => setField(key, '')} className="text-[10px] flex items-center gap-1 opacity-60 hover:opacity-100" style={{ color: 'var(--text-muted)' }} title="Reset to default">
+                                            <RotateCcw className="w-3 h-3" /> Reset
+                                        </button>
+                                    )}
+                                </div>
+                                {meta.type === 'textarea' ? (
+                                    <textarea
+                                        value={val}
+                                        onChange={e => setField(key, e.target.value)}
+                                        placeholder={defaults[key] || ''}
+                                        rows={5}
+                                        className="w-full px-3 py-2 rounded-lg border text-sm resize-y focus:border-[var(--accent-primary)]"
+                                        style={{ borderColor: 'var(--border-default)', background: 'var(--bg-primary)', color: 'var(--text-primary)', outline: 'none' }}
+                                    />
+                                ) : (
+                                    <input
+                                        value={val}
+                                        onChange={e => setField(key, e.target.value)}
+                                        placeholder={defaults[key] || ''}
+                                        className="w-full px-3 py-2 rounded-lg border text-sm focus:border-[var(--accent-primary)]"
+                                        style={{ borderColor: 'var(--border-default)', background: 'var(--bg-primary)', color: 'var(--text-primary)', outline: 'none' }}
+                                    />
+                                )}
+                            </div>
+                        );
+                    })}
+
+                    {/* Save + send test */}
+                    <div className="flex items-center gap-2 mt-1 mb-3 flex-wrap">
+                        <button
+                            onClick={handleSave}
+                            disabled={saving}
+                            className="px-4 py-1.5 rounded-lg text-sm font-medium text-white disabled:opacity-50 transition-opacity"
+                            style={{ background: 'var(--accent-primary)' }}
+                        >
+                            {saving ? 'Saving...' : 'Save'}
+                        </button>
+                        {saved && <span className="text-xs text-green-500 flex items-center gap-1"><Check className="w-3.5 h-3.5" /> Saved</span>}
+                    </div>
+
+                    <div className="border-t pt-3" style={{ borderColor: 'var(--border-default)' }}>
+                        <label className="text-xs font-medium block mb-1.5" style={{ color: 'var(--text-secondary)' }}>Send a test email</label>
+                        <div className="flex items-center gap-2">
+                            <input
+                                type="email"
+                                value={testRecipient}
+                                onChange={e => setTestRecipient(e.target.value)}
+                                placeholder="you@example.com"
+                                className="flex-1 px-3 py-1.5 rounded-lg border text-sm focus:border-[var(--accent-primary)]"
+                                style={{ borderColor: 'var(--border-default)', background: 'var(--bg-primary)', color: 'var(--text-primary)', outline: 'none' }}
+                            />
+                            <button
+                                onClick={handleTest}
+                                disabled={testing || !testRecipient.trim()}
+                                className="px-3 py-1.5 rounded-lg text-sm font-medium flex items-center gap-1.5 border disabled:opacity-40 hover:bg-[var(--bg-tertiary)] transition-colors"
+                                style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)' }}
+                            >
+                                {testing ? <span className="inline-block w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" /> : <Send className="w-3.5 h-3.5" />}
+                                Send test
+                            </button>
+                        </div>
+                        {testResult && (
+                            <div className="mt-2 text-xs flex items-center gap-1.5" style={{ color: testResult.error ? '#ef4444' : '#22c55e' }}>
+                                {testResult.error ? (<><AlertCircle className="w-3.5 h-3.5" /> {testResult.error}</>) : (<><Check className="w-3.5 h-3.5" /> Test email sent</>)}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Right: live preview */}
+                <div className="flex-1 flex flex-col overflow-hidden min-w-0">
+                    <div className="text-[10px] font-semibold uppercase tracking-wider mb-1.5 px-1" style={{ color: 'var(--text-muted)' }}>Live preview</div>
+                    <div className="flex-1 rounded-xl border overflow-hidden" style={{ borderColor: 'var(--border-default)', background: '#f5f5f5' }}>
+                        <iframe
+                            title="Email preview"
+                            srcDoc={previewHtml}
+                            sandbox=""
+                            className="w-full h-full"
+                            style={{ border: 'none', background: '#f5f5f5' }}
+                        />
+                    </div>
+                </div>
             </div>
         </div>
     );

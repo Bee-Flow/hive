@@ -140,6 +140,8 @@ export const EMOJI_CATEGORIES = [
             { id: 'integration.fireflies',               label: 'Fireflies',                   defaultEmoji: '🎙️' },
             { id: 'integration.signrequest',             label: 'SignRequest',                 defaultEmoji: '✍️' },
             { id: 'integration.gamma',                   label: 'Gamma',                       defaultEmoji: '📊' },
+            { id: 'integration.afas_profit',             label: 'AFAS Profit',                 defaultEmoji: '📒' },
+            { id: 'integration.nmbrs',                   label: 'NMBRS',                       defaultEmoji: '💶' },
             { id: 'integration.n8n',                     label: 'n8n',                         defaultEmoji: '🔁' },
             { id: 'integration.maps',                    label: 'Google Maps',                 defaultEmoji: '🗺️' },
             { id: 'integration.web_search',              label: 'Web Search',                  defaultEmoji: '🌐' },

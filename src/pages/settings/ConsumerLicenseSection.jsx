@@ -3,6 +3,7 @@ import { CreditCard, Zap, DollarSign, Bot, Database, BarChart3, ArrowUpRight, Ch
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 import { useDeploymentMode } from '../../hooks/useDeploymentMode';
+import InvoicesPanel from '../../components/billing/InvoicesPanel';
 
 /* ── Usage bar (matches OrgInfoPanel style) ─────────────────────────────── */
 const UsageBar = ({ label, icon: Icon, used, limit, unit, color = '#3b82f6', percentOnly = false }) => {
@@ -82,6 +83,7 @@ const ConsumerLicenseSection = ({ user }) => {
     const [checkoutLoading, setCheckoutLoading] = useState(null); // planId being loaded
     const [portalLoading, setPortalLoading] = useState(false);
     const [checkoutMessage, setCheckoutMessage] = useState(null); // success/cancel banner
+    const [waiverAccepted, setWaiverAccepted] = useState({}); // planId → withdrawal-waiver tick
 
     // Check URL params for checkout result
     useEffect(() => {
@@ -129,13 +131,25 @@ const ConsumerLicenseSection = ({ user }) => {
 
     useEffect(() => { fetchData(); }, [fetchData]);
 
-    const handleCheckout = async (planId) => {
+    const handleCheckout = async (plan) => {
+        const planId = plan.id;
+        const isPaid = Number(plan.price) > 0 || plan.billing_model === 'metered';
+        // Paid digital service started immediately → consumer must have waived
+        // the 14-day right of withdrawal (CRD art. 16(m) / BW 6:230p).
+        if (isPaid && !waiverAccepted[planId]) {
+            setCheckoutMessage({ type: 'error', text: t('checkout.withdrawal_waiver_required', 'Please confirm the waiver to start your paid plan immediately.') });
+            return;
+        }
         setCheckoutLoading(planId);
         try {
             const res = await authFetch(`${API_BASE}/api/stripe/checkout`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ planId, origin: window.location.origin }),
+                body: JSON.stringify({
+                    planId,
+                    origin: window.location.origin,
+                    ...(isPaid ? { withdrawalWaiver: { accepted: true } } : {}),
+                }),
             });
             const result = await res.json();
             if (res.ok && result.url) {
@@ -188,6 +202,12 @@ const ConsumerLicenseSection = ({ user }) => {
     const daysLeft = periodEnd ? Math.max(0, Math.ceil((periodEnd - new Date()) / (1000 * 60 * 60 * 24))) : null;
     const hasActiveSub = subscription && ['active', 'trialing'].includes(subscription.status);
     const hasBilling = subscription?.stripe_customer_id;
+    // BFSF-241: the Stripe Customer Portal only makes sense for a real paying
+    // relationship. Free/trial/no-invoice users got an empty portal showing
+    // global payment methods (Pix/Kakao/Amazon) that don't match our checkout,
+    // so we hide "Manage Billing" until they've actually paid. Previously-paid
+    // states (paused/disputed) keep access; trialing/free stay hidden.
+    const hasPaidBilling = hasBilling && ['paid', 'past_due', 'paused', 'disputed'].includes(subscription?.payment_status);
 
     // Customer-facing: marked-up AI usage cost is the only AI figure shown.
     // Backend already applies markup_percent on `total_billed_cost`.
@@ -259,16 +279,16 @@ const ConsumerLicenseSection = ({ user }) => {
                                 </p>
                             </div>
                         </div>
-                        {/* Manage Billing button */}
-                        {hasBilling && (
+                        {/* Manage Billing button — only for paying customers (BFSF-241) */}
+                        {hasPaidBilling && (
                             <button
                                 onClick={handlePortal}
                                 disabled={portalLoading}
                                 className="flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition-colors"
                                 style={{
-                                    color: '#635bff',
-                                    borderColor: 'rgba(99,91,255,0.3)',
-                                    background: 'rgba(99,91,255,0.05)',
+                                    color: '#3b82f6',
+                                    borderColor: 'rgba(59,130,246,0.3)',
+                                    background: 'rgba(59,130,246,0.05)',
                                 }}
                             >
                                 {portalLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ExternalLink className="w-3.5 h-3.5" />}
@@ -304,6 +324,19 @@ const ConsumerLicenseSection = ({ user }) => {
                         Upgrade plan
                     </button>
                 </div>
+            )}
+
+            {/* Invoices — in-app list with Stripe PDF downloads */}
+            {hasBilling && (
+                <InvoicesPanel
+                    fetcher={async () => {
+                        const res = await authFetch(`${API_BASE}/api/stripe/invoices`);
+                        if (!res.ok) throw new Error('Failed to load invoices');
+                        const data = await res.json();
+                        return data.invoices || [];
+                    }}
+                    pdfFetcher={(invoiceId) => authFetch(`${API_BASE}/api/stripe/invoices/${invoiceId}/pdf`)}
+                />
             )}
 
             {/* Usage Bars — AI usage cost only */}
@@ -350,6 +383,14 @@ const ConsumerLicenseSection = ({ user }) => {
                         <h3 className="text-sm font-semibold text-[var(--text-primary)]">
                             {hasActiveSub ? 'Change Plan' : 'Upgrade Your Plan'}
                         </h3>
+                    </div>
+
+                    {/* BFSF-243: recurring-billing (automatische incasso) disclosure */}
+                    <div className="flex items-start gap-2 mb-4 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+                        <CreditCard className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
+                        <p className="text-[11.5px] leading-snug text-[var(--text-secondary)]">
+                            {t('billing.recurring_notice', 'This is a recurring monthly subscription. Your selected payment method is charged automatically each billing period (automatische incasso) until you cancel.')}
+                        </p>
                     </div>
 
                     <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${Math.min(plans.length, 3)}, 1fr)` }}>
@@ -423,24 +464,43 @@ const ConsumerLicenseSection = ({ user }) => {
                                             >
                                                 <Check className="w-3.5 h-3.5 inline mr-1" /> Active Plan
                                             </button>
-                                        ) : (
-                                            <button
-                                                onClick={() => handleCheckout(plan.id)}
-                                                disabled={!!checkoutLoading}
-                                                className="w-full py-2.5 rounded-lg text-xs font-bold text-white transition-all duration-200 flex items-center justify-center gap-1.5"
-                                                style={{
-                                                    background: '#3b82f6',
-                                                    opacity: checkoutLoading && checkoutLoading !== plan.id ? 0.5 : 1,
-                                                    cursor: checkoutLoading ? 'wait' : 'pointer',
-                                                }}
-                                            >
-                                                {checkoutLoading === plan.id ? (
-                                                    <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Redirecting...</>
-                                                ) : (
-                                                    <><ArrowUpRight className="w-3.5 h-3.5" /> {hasActiveSub ? 'Switch Plan' : 'Subscribe'}</>
+                                        ) : (() => {
+                                            const isPaid = Number(plan.price) > 0 || plan.billing_model === 'metered';
+                                            return (
+                                            <>
+                                                {isPaid && (
+                                                    <label className="flex items-start gap-2 mb-2 cursor-pointer select-none">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={!!waiverAccepted[plan.id]}
+                                                            onChange={e => setWaiverAccepted(prev => ({ ...prev, [plan.id]: e.target.checked }))}
+                                                            className="mt-0.5 w-3.5 h-3.5 shrink-0"
+                                                            style={{ accentColor: 'var(--accent-primary)' }}
+                                                        />
+                                                        <span className="text-[10px] leading-snug text-[var(--text-muted)]">
+                                                            {t('checkout.withdrawal_waiver_label', 'I request that the service start immediately and acknowledge that I lose my 14-day right of withdrawal once the service has been fully performed.')}
+                                                        </span>
+                                                    </label>
                                                 )}
-                                            </button>
-                                        )}
+                                                <button
+                                                    onClick={() => handleCheckout(plan)}
+                                                    disabled={!!checkoutLoading || (isPaid && !waiverAccepted[plan.id])}
+                                                    className="w-full py-2.5 rounded-lg text-xs font-bold text-white transition-all duration-200 flex items-center justify-center gap-1.5 disabled:opacity-50"
+                                                    style={{
+                                                        background: '#3b82f6',
+                                                        opacity: checkoutLoading && checkoutLoading !== plan.id ? 0.5 : 1,
+                                                        cursor: checkoutLoading ? 'wait' : 'pointer',
+                                                    }}
+                                                >
+                                                    {checkoutLoading === plan.id ? (
+                                                        <><Loader2 className="w-3.5 h-3.5 animate-spin" /> Redirecting...</>
+                                                    ) : (
+                                                        <><ArrowUpRight className="w-3.5 h-3.5" /> {isPaid ? t('checkout.order_with_obligation', 'Order with obligation to pay') : (hasActiveSub ? 'Switch Plan' : 'Subscribe')}</>
+                                                    )}
+                                                </button>
+                                            </>
+                                            );
+                                        })()}
                                     </div>
                                 </div>
                             );

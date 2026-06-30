@@ -1,5 +1,7 @@
-import { Braces, FunctionSquare, Type } from 'lucide-react';
+import { Braces, FunctionSquare, Type, MoreHorizontal } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
+import RefChips from './RefChips';
+import { hasRefTokens } from './refTokens';
 import useVariablePicker from './useVariablePicker';
 import VariablePicker from './VariablePicker';
 import { useVariablePickerContext } from './VariablePickerContext';
@@ -11,6 +13,7 @@ import {
     walkPath,
     previewValue,
 } from '../../../../../utils/bindingHelpers';
+import FieldHint from '../flow/FieldHint';
 
 /**
  * Single mapping-aware field. The user sees one input and one mode
@@ -46,15 +49,20 @@ export default function BindingField({
     onFocusField,
     previewSample = null,
     multiline = false,
+    autoMapped = false,
 }) {
     const seed = inputFromBinding(value);
     const [mode, setMode] = useState(seed.mode);
     const [text, setText] = useState(seed.text);
+    const [focused, setFocused] = useState(false);
+    // Power-user expression toggle is hidden by default; the "⋯" reveals it.
+    const [showAdvanced, setShowAdvanced] = useState(false);
     const inputRef = useRef(null);
     const picker = useVariablePicker();
     const pickerCtx = useVariablePickerContext();
     const effectivePreviewSample = previewSample ?? pickerCtx.previewSample;
     const pickerGroups = pickerCtx.groups;
+    const stepLabelById = pickerCtx.stepLabelById;
 
     // Sync from outside (AI patch / undo / load). Intentional setState
     // from useEffect — we're syncing local UI state with the controlled
@@ -99,11 +107,13 @@ export default function BindingField({
         });
     };
 
-    const onFocus = () => broadcast();
+    const onFocus = () => { setFocused(true); broadcast(); };
     const onBlurDelayed = () => {
         // Don't drop the focused-field handle immediately — clicks on the
         // VariableTree blur the input first. Parent's own click handlers
-        // will null it out when needed.
+        // will null it out when needed. Defer the focused flag flip so
+        // VariableTree click-to-insert still lands (preview is cosmetic).
+        setTimeout(() => setFocused(false), 150);
     };
 
     // Drag-drop a path from the VariableTree onto the field.
@@ -139,70 +149,108 @@ export default function BindingField({
 
     const inputClass = `w-full px-2 py-1.5 text-xs rounded border border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] ${mode === 'expression' ? 'font-mono' : ''}`;
 
+    // While blurred, render references as name chips over an (invisible but
+    // still mounted/focusable) input. Clicking falls through to the input,
+    // which focuses and reveals the raw text for editing.
+    const showChips = !focused && hasRefTokens(text, mode);
+
     return (
         <div className="space-y-1">
             {label && (
-                <div className="flex items-baseline gap-1">
+                <div className="flex items-center gap-1">
                     <label className="text-[11px] font-medium text-[var(--text-secondary)]">{label}</label>
-                    {required && <span className="text-[10px] text-red-500">required</span>}
+                    {required && <span className="text-red-500 text-[12px] leading-none" title="Required">*</span>}
+                    <FieldHint title={label}>{hint}</FieldHint>
+                    {autoMapped && (
+                        <span
+                            className="ml-auto text-[9px] px-1.5 py-0.5 rounded-full bg-[var(--accent)]/15 text-[var(--accent)] uppercase tracking-wide"
+                            title="Auto-mapped from an upstream step — edit to override"
+                        >
+                            auto
+                        </span>
+                    )}
                 </div>
             )}
-            <div className="flex items-stretch gap-1">
-                {multiline ? (
-                    <textarea
-                        ref={inputRef}
-                        rows={3}
-                        value={text}
-                        onChange={onTextChange}
-                        onFocus={onFocus}
-                        onBlur={onBlurDelayed}
-                        onDragOver={onDragOver}
-                        onDrop={onDrop}
-                        placeholder={placeholder}
-                        className={inputClass}
-                    />
-                ) : (
-                    <input
-                        ref={inputRef}
-                        type="text"
-                        value={text}
-                        onChange={onTextChange}
-                        onFocus={onFocus}
-                        onBlur={onBlurDelayed}
-                        onDragOver={onDragOver}
-                        onDrop={onDrop}
-                        placeholder={placeholder}
-                        className={inputClass}
-                    />
-                )}
-                <button
-                    type="button"
-                    onClick={toggleMode}
-                    title={mode === 'expression' ? 'Switch to fixed text' : 'Switch to expression (=)'}
-                    aria-label={mode === 'expression' ? 'Switch to fixed text' : 'Switch to expression'}
-                    className={`shrink-0 px-2 rounded border text-[11px] font-mono flex items-center justify-center
-                        ${mode === 'expression'
-                            ? 'border-[var(--accent)] text-[var(--accent)] bg-[var(--accent)]/10'
-                            : 'border-[var(--border-default)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]'}`}
-                >
-                    {mode === 'expression' ? <FunctionSquare size={12} /> : <Type size={12} />}
-                </button>
+            <div className="group flex items-stretch gap-1">
+                <div className="relative flex-1 min-w-0">
+                    {multiline ? (
+                        <textarea
+                            ref={inputRef}
+                            rows={3}
+                            value={text}
+                            onChange={onTextChange}
+                            onFocus={onFocus}
+                            onBlur={onBlurDelayed}
+                            onDragOver={onDragOver}
+                            onDrop={onDrop}
+                            placeholder={placeholder}
+                            className={`${inputClass} ${showChips ? 'opacity-0' : ''}`}
+                        />
+                    ) : (
+                        <input
+                            ref={inputRef}
+                            type="text"
+                            value={text}
+                            onChange={onTextChange}
+                            onFocus={onFocus}
+                            onBlur={onBlurDelayed}
+                            onDragOver={onDragOver}
+                            onDrop={onDrop}
+                            placeholder={placeholder}
+                            className={`${inputClass} ${showChips ? 'opacity-0' : ''}`}
+                        />
+                    )}
+                    {showChips && (
+                        <RefChips
+                            text={text}
+                            mode={mode}
+                            stepLabelById={stepLabelById}
+                            className="absolute inset-0 px-2 py-1.5 text-xs overflow-hidden pointer-events-none"
+                        />
+                    )}
+                </div>
                 <button
                     type="button"
                     onClick={(e) => picker.openPicker(e.currentTarget)}
-                    title="Insert variable from upstream"
+                    title="Insert data from a previous step"
                     aria-label="Insert variable"
                     aria-haspopup="dialog"
                     aria-expanded={picker.open}
-                    className="shrink-0 px-2 rounded border border-[var(--border-default)] text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] flex items-center justify-center"
+                    className="shrink-0 px-2 rounded border border-[var(--border-default)] text-[11px] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] flex items-center justify-center opacity-60 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
                 >
                     <Braces size={12} />
                 </button>
+                {/* Expression mode is a power-user option: hidden behind "⋯"
+                    unless the field is already an expression. */}
+                {(showAdvanced || mode === 'expression') && (
+                    <button
+                        type="button"
+                        onClick={toggleMode}
+                        title={mode === 'expression' ? 'Switch back to plain text' : 'Use an expression'}
+                        aria-label={mode === 'expression' ? 'Switch to fixed text' : 'Switch to expression'}
+                        className={`shrink-0 px-2 rounded border text-[11px] font-mono flex items-center justify-center transition-opacity
+                            ${mode === 'expression'
+                                ? 'border-[var(--accent)] text-[var(--accent)] bg-[var(--accent)]/10'
+                                : 'border-[var(--border-default)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)]'}`}
+                    >
+                        {mode === 'expression' ? <FunctionSquare size={12} /> : <Type size={12} />}
+                    </button>
+                )}
+                {mode !== 'expression' && (
+                    <button
+                        type="button"
+                        onClick={() => setShowAdvanced(a => !a)}
+                        title="Advanced — use an expression"
+                        aria-label="Advanced options"
+                        className="shrink-0 px-1.5 rounded border border-[var(--border-default)] text-[var(--text-tertiary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] flex items-center justify-center opacity-60 group-hover:opacity-100 group-focus-within:opacity-100 transition-opacity"
+                    >
+                        <MoreHorizontal size={12} />
+                    </button>
+                )}
             </div>
-            {hint && <div className="text-[10px] text-[var(--text-tertiary)]">{hint}</div>}
-            {preview != null && (
+            {preview != null && (focused || binding.kind !== 'literal') && (
                 <div className="text-[10px] text-[var(--text-tertiary)] flex items-center gap-1.5">
-                    <span className="uppercase tracking-wide">preview</span>
+                    <span className="uppercase tracking-wide">example</span>
                     <span className="font-mono text-[var(--text-secondary)] truncate">{preview}</span>
                 </div>
             )}

@@ -24,7 +24,16 @@ import { API_BASE, authFetch } from '../../utils/helpers';
  * into the iframe document, and the injected `window.beeflowDB` shim sends
  * it on every call to /api/webpages-preview/:id/db/...
  */
-export default function WebpagePreview({ webpageId, html, css, js, extraFiles = [], extraContents = {}, onSelectionAttach, isStreaming = false }) {
+/** Friendly placeholder for a React project stranded in vanilla (plain-HTML) mode. */
+function strandedReactDoc() {
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"></head>
+<body style="margin:0;height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:32px;text-align:center;background:#fff;color:#475569;font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif">
+  <div style="font-size:16px;font-weight:600;color:#334155">This looks like a React project</div>
+  <div style="font-size:13.5px;margin-top:8px;max-width:400px;line-height:1.55">It has React source files (<code style="background:#f1f5f9;padding:1px 4px;border-radius:4px">src/main.jsx</code>) but the project is in plain-HTML mode, so nothing renders. Ask the assistant to "switch this to React + Material UI" and the preview will build.</div>
+</body></html>`;
+}
+
+export default function WebpagePreview({ webpageId, html, css, js, extraFiles = [], extraContents = {}, onSelectionAttach, isStreaming = false, framework = 'vanilla', runtime = 'light' }) {
     const [refreshKey, setRefreshKey] = useState(0);
     const [dbToken, setDbToken] = useState(null);
     const [dbTokenExpiresAt, setDbTokenExpiresAt] = useState(0);
@@ -88,19 +97,74 @@ export default function WebpagePreview({ webpageId, html, css, js, extraFiles = 
             : { path: f.path, isText: f.isText, mimeType: f.mimeType };
     }), [extraFiles, extraContents]);
 
-    const srcDoc = useMemo(
-        () => composeWebpageDocument(
-            { html, css, js },
-            {
-                selectionBridge: bridgeOn,
-                extraFiles: extras,
-                dbToken,
-                dbApiBase,
-                dbWebpageId: webpageId,
-            }
-        ),
-        [html, css, js, extras, bridgeOn, dbToken, dbApiBase, webpageId]
+    const isReact = framework === 'react-mui';
+
+    // A project can hold React source (src/main.jsx) while its framework is still
+    // 'vanilla' (e.g. created before react-mui became the default, or the flag
+    // didn't propagate). The vanilla composer would inline an index.html whose
+    // <div id="root"> is never filled → blank. Detect it and show a clear hint.
+    const hasReactSource = useMemo(
+        () => extraFiles.some(f => f.path === 'src/main.jsx' || /^src\/.+\.(jsx|tsx)$/.test(f.path || '')),
+        [extraFiles]
     );
+    const stranded = !isReact && hasReactSource;
+
+    // Vanilla: synchronous inline compose (unchanged). Only computed for vanilla
+    // projects so react-mui pages don't pay for it.
+    const vanillaSrcDoc = useMemo(
+        () => {
+            if (isReact) return '';
+            if (stranded) return strandedReactDoc();
+            return composeWebpageDocument(
+                { html, css, js },
+                {
+                    selectionBridge: bridgeOn,
+                    extraFiles: extras,
+                    dbToken,
+                    dbApiBase,
+                    dbWebpageId: webpageId,
+                }
+            );
+        },
+        [isReact, stranded, html, css, js, extras, bridgeOn, dbToken, dbApiBase, webpageId]
+    );
+
+    // React-mui: bundle asynchronously in the browser via esbuild-wasm. The
+    // builder module (and the ~3MB wasm) is dynamically imported so it never
+    // loads for vanilla pages or the rest of the app. Debounced so streaming
+    // edits don't trigger a rebuild storm; cancel-guarded against races.
+    const [reactDoc, setReactDoc] = useState('');
+    const [building, setBuilding] = useState(false);
+    useEffect(() => {
+        if (!isReact) return;
+        let cancelled = false;
+        setBuilding(true);
+        // While the AI is streaming files, intermediate states have missing
+        // imports — debounce longer and suppress build errors (composeReactPreview
+        // shows a "Building…" state instead of a scary red panel mid-generation).
+        const delay = isStreaming ? 600 : 200;
+        const timer = setTimeout(async () => {
+            try {
+                const mod = await import('../../utils/buildWebpagePreview');
+                const doc = await mod.composeReactPreview(
+                    { html, css, js },
+                    { selectionBridge: bridgeOn, extraFiles: extras, dbToken, dbApiBase, dbWebpageId: webpageId, runtime, isStreaming }
+                );
+                if (!cancelled) setReactDoc(doc);
+            } catch (err) {
+                if (!cancelled) {
+                    console.error('[WebpagePreview] react preview build failed:', err);
+                    const msg = String(err?.message || err).replace(/[<>&]/g, '');
+                    setReactDoc(`<!DOCTYPE html><html><body style="font:13px/1.5 ui-monospace,monospace;color:#b91c1c;padding:24px">Preview build failed: ${msg}</body></html>`);
+                }
+            } finally {
+                if (!cancelled) setBuilding(false);
+            }
+        }, delay);
+        return () => { cancelled = true; clearTimeout(timer); };
+    }, [isReact, html, css, js, extras, bridgeOn, dbToken, dbApiBase, webpageId, runtime, refreshKey, isStreaming]);
+
+    const srcDoc = isReact ? reactDoc : vanillaSrcDoc;
 
     useEffect(() => {
         if (!bridgeOn) return;
@@ -214,12 +278,13 @@ export default function WebpagePreview({ webpageId, html, css, js, extraFiles = 
                 />
                 {/* While the page is still being generated and nothing has been
                     painted yet, show a clear in-progress state instead of a blank
-                    white iframe that looks broken (BFSF-178). */}
-                {isStreaming && !(html && html.trim()) && (
+                    white iframe that looks broken (BFSF-178). For react-mui this
+                    is the first in-browser bundle (no doc yet). */}
+                {((isStreaming && !isReact && !(html && html.trim())) || (isReact && building && !reactDoc)) && (
                     <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 pointer-events-none"
                          style={{ background: '#fff', color: '#475569' }}>
                         <RefreshCw className="w-5 h-5 animate-spin" />
-                        <span className="text-sm">Generating preview…</span>
+                        <span className="text-sm">{isReact ? 'Building React preview…' : 'Generating preview…'}</span>
                     </div>
                 )}
             </div>

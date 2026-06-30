@@ -4,7 +4,10 @@ import { X, ArrowLeft, ArrowRight, Check } from 'lucide-react';
 import { useTranslation } from '../../hooks/useTranslation';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import scopedStorage from '../../utils/scopedStorage';
-import { resolveTourSteps, TOUR_SEEN_KEY, TOUR_START_EVENT, TOUR_ENSURE_SIDEBAR_EVENT } from './tourSteps';
+import { TOUR_SEEN_KEY, TOUR_START_EVENT, TOUR_ENSURE_SIDEBAR_EVENT, TOUR_OPEN_DESIGNER_SECTION } from './tourSteps';
+import { resolveLessonSteps, DEFAULT_LESSON_ID, LESSON_COMPLETE_EVENT } from './lessons';
+import { markLessonComplete } from './learningProgress';
+import { revealForTarget } from './tourAnchors';
 
 /**
  * OnboardingTour — a lightweight, dependency-free guided tour for new users.
@@ -64,13 +67,23 @@ export default function OnboardingTour({ user, onNavigate, currentPage }) {
     const targetElRef = useRef(null);
     const navigatedRef = useRef(false);     // did we drive navigation this run?
     const agentCreatedRef = useRef(false);  // did the user actually create an agent?
+    const activeLessonRef = useRef(DEFAULT_LESSON_ID); // which lesson is running
+    const runningRef = useRef(false);       // re-entrancy guard (mirrors `active`)
     const cardRef = useRef(null);
 
     const step = steps[stepIndex] || null;
 
-    const startTour = useCallback(() => {
-        const resolved = resolveTourSteps(user);
+    // Run a lesson by id. No id → the getting-started lesson (the original intro
+    // tour), so existing detail-less callers behave exactly as before.
+    const startTour = useCallback((lessonId = DEFAULT_LESSON_ID) => {
+        // Ignore a start while a lesson is already running (e.g. a double-click on
+        // a Learning Center card) so step arrays can't stack.
+        if (runningRef.current) return;
+        const id = lessonId || DEFAULT_LESSON_ID;
+        const resolved = resolveLessonSteps(id, user);
         if (!resolved.length) return;
+        activeLessonRef.current = id;
+        runningRef.current = true;
         navigatedRef.current = false;
         agentCreatedRef.current = false;
         setSteps(resolved);
@@ -81,21 +94,39 @@ export default function OnboardingTour({ user, onNavigate, currentPage }) {
 
     // ── Persist + close ───────────────────────────────────────────────
     const finish = useCallback(async () => {
+        const lessonId = activeLessonRef.current || DEFAULT_LESSON_ID;
+        const isIntro = lessonId === DEFAULT_LESSON_ID;
         setActive(false);
+        runningRef.current = false;
         setRect(null);
         targetElRef.current = null;
         try { if (user?.id) scopedStorage.setCurrentUser(user.id); } catch (e) { /* ignore */ }
-        try { scopedStorage.setItem(TOUR_SEEN_KEY, '1'); } catch (e) { /* ignore */ }
-        try {
-            await authFetch(`${API_BASE}/ai/user-settings`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ [TOUR_SEEN_KEY]: true }),
-            });
-        } catch (e) { /* best-effort — local guard already set */ }
-        if (navigatedRef.current && onNavigate) onNavigate('agents');
+
+        // Legacy intro path — unchanged so the first-login auto-start never
+        // re-fires and the user lands back on chat.
+        if (isIntro) {
+            try { scopedStorage.setItem(TOUR_SEEN_KEY, '1'); } catch (e) { /* ignore */ }
+            try {
+                await authFetch(`${API_BASE}/ai/user-settings`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ [TOUR_SEEN_KEY]: true }),
+                });
+            } catch (e) { /* best-effort — local guard already set */ }
+        }
+
+        // Per-lesson completion for the Learning Center (also recorded for the
+        // intro lesson so its card shows a checkmark).
+        try { await markLessonComplete(user, lessonId); } catch (e) { /* best-effort */ }
+
+        // The home-jump is intro-tour behaviour only; other lessons leave the
+        // user wherever the lesson ended.
+        if (isIntro && navigatedRef.current && onNavigate) onNavigate('agents');
         navigatedRef.current = false;
-    }, [onNavigate, user?.id]);
+
+        // Let an open Learning Center flip this lesson's card to "Replay".
+        try { window.dispatchEvent(new CustomEvent(LESSON_COMPLETE_EVENT, { detail: { lessonId } })); } catch (e) { /* ignore */ }
+    }, [onNavigate, user]);
 
     const goNext = useCallback(() => {
         setStepIndex((i) => {
@@ -132,9 +163,9 @@ export default function OnboardingTour({ user, onNavigate, currentPage }) {
         return () => { cancelled = true; };
     }, [user?.id, currentPage, startTour]);
 
-    // ── Replay on demand ───────────────────────────────────────────────
+    // ── Replay on demand (intro tour or a specific Learning Center lesson) ──
     useEffect(() => {
-        const onStart = () => startTour();
+        const onStart = (e) => startTour(e?.detail?.lessonId);
         window.addEventListener(TOUR_START_EVENT, onStart);
         return () => window.removeEventListener(TOUR_START_EVENT, onStart);
     }, [startTour]);
@@ -145,8 +176,20 @@ export default function OnboardingTour({ user, onNavigate, currentPage }) {
 
         // Steps that need a precondition.
         if (step.requiresAgentCreated && !agentCreatedRef.current) { goNext(); return undefined; }
-        if (step.ensureSidebarOpen) {
+
+        // Reveal the context an anchor needs BEFORE we try to target it. The
+        // registry knows which Designer section / sidebar each anchor lives in, so
+        // a step pointing at e.g. [data-tour="agent-system-prompt"] auto-opens the
+        // Identity section first (the core reliability fix). An explicit
+        // step.revealSection / ensureSidebarOpen still works for ad-hoc anchors.
+        const reveal = revealForTarget(step.target) || {};
+        const wantSidebar = step.ensureSidebarOpen || reveal.sidebar;
+        const wantSection = step.revealSection || reveal.designerSection;
+        if (wantSidebar) {
             try { window.dispatchEvent(new CustomEvent(TOUR_ENSURE_SIDEBAR_EVENT)); } catch (e) { /* ignore */ }
+        }
+        if (wantSection) {
+            try { window.dispatchEvent(new CustomEvent(TOUR_OPEN_DESIGNER_SECTION, { detail: { section: wantSection } })); } catch (e) { /* ignore */ }
         }
         if (step.navigateTo && onNavigate) { navigatedRef.current = true; onNavigate(step.navigateTo); }
 

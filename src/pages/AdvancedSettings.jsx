@@ -4,6 +4,9 @@ import { API_BASE, authFetch } from '../utils/helpers';
 import scopedStorage from '../utils/scopedStorage';
 import { formatVersion, formatVersionWithDate } from '../utils/appVersion';
 import { useTranslation } from '../hooks/useTranslation';
+import { useViewport } from '../hooks/useViewport';
+import { useSubscriptionContext } from '../components/SubscriptionContext';
+import { useCan } from '../components/Gate';
 import PreferencesSection from './settings/PreferencesSection';
 import MemorySection from './settings/MemorySection';
 import IntegrationsSection from './settings/IntegrationsSection';
@@ -14,16 +17,20 @@ import ConsumerUsageSection from './settings/ConsumerUsageSection';
 import ConsumerIntegrationsSection from './settings/ConsumerIntegrationsSection';
 import ConsumerBetaFeaturesSection from './settings/ConsumerBetaFeaturesSection';
 import AppearanceSection from './settings/AppearanceSection';
+import SecuritySection from './settings/SecuritySection';
 import HelpSupportSection from './settings/HelpSupportSection';
+import LegalConsentSection from './settings/LegalConsentSection';
+import LearningCenterSection from './settings/LearningCenterSection';
 import { SECTIONS as ORG_SECTIONS } from '../components/admin/OrgInfoPanel';
 import OrgAzureConfigPanel from '../components/admin/OrgAzureConfigPanel';
-import { Users, Link2, BarChart2, Cloud, CreditCard, Shield, FolderGit2, Palette, Sparkles, LifeBuoy } from 'lucide-react';
+import { Users, Link2, BarChart2, Cloud, CreditCard, Shield, FolderGit2, Palette, Sparkles, LifeBuoy, GraduationCap, ArrowLeft } from 'lucide-react';
 
 /* ── Org sub-items (use labelKey for i18n) ────────────────────────────────── */
 const BASE_ORG_SUB_ITEMS = [
     ...ORG_SECTIONS,                                            // license, auth, privacy, info — already use labelKey
     { id: 'org_usage', labelKey: 'settings.usage_monitoring', icon: BarChart2, color: '#f59e0b' },
     { id: 'org_users', labelKey: 'settings.users_groups', icon: Users, color: '#3b82f6' },
+    { id: 'org_academy', labelKey: 'settings.academy', icon: GraduationCap, color: '#059669' },
     { id: 'org_integrations', labelKey: 'settings.integrations', icon: Link2, color: '#0ea5e9' },
     { id: 'org_github_sync', labelKey: 'settings.github_sync', icon: FolderGit2, color: '#8b5cf6' },
     { id: 'org_nextcloud_sync', labelKey: 'settings.nextcloud_sync', icon: Cloud, color: '#0082C9' },
@@ -37,7 +44,7 @@ const AZURE_SUB_ITEM = { id: 'org_azure', labelKey: 'settings.azure_config', ico
  * friendlier URL names (`users`, `license`) — disambiguated by the parent
  * path segment.
  */
-const TOP_LEVEL_TAB_IDS = ['preferences', 'appearance', 'memory', 'integrations', 'help_support'];
+const TOP_LEVEL_TAB_IDS = ['preferences', 'appearance', 'memory', 'integrations', 'learning', 'help_support', 'legal_consent'];
 const TOP_LEVEL_ID_TO_URL = {};
 const TOP_LEVEL_URL_TO_ID = Object.fromEntries(Object.entries(TOP_LEVEL_ID_TO_URL).map(([id, url]) => [url, id]));
 // Legacy URL: Simple Mode used to live at /app/settings/simple-mode. It now
@@ -61,6 +68,7 @@ const ORG_ID_TO_URL = {
     info: 'info',
     org_usage: 'usage',
     org_users: 'users',
+    org_academy: 'academy',
     org_integrations: 'integrations',
     org_github_sync: 'github-sync',
     org_nextcloud_sync: 'nextcloud-sync',
@@ -125,6 +133,14 @@ export const AvatarDisplay = ({ user, size = 40, className = '' }) => {
     );
 };
 
+/* On phones the settings surface is trimmed to user-only sections: Connections
+ * (integrations), Learning Center (learning) and the whole Organisation section
+ * are hidden. These are the top-level NAV_ITEMS ids that stay visible on mobile.
+ * Derived from the NAV_ITEMS ids below (NOT TOP_LEVEL_TAB_IDS, which omits
+ * 'security'). */
+const MOBILE_VISIBLE_TOP_TABS = ['preferences', 'appearance', 'security', 'memory', 'help_support', 'legal_consent'];
+const MOBILE_VISIBLE_TAB_SET = new Set(MOBILE_VISIBLE_TOP_TABS);
+
 /* ── Nav items (use labelKey for i18n) ────────────────────────────────────── */
 const NAV_ITEMS = [
     {
@@ -136,6 +152,10 @@ const NAV_ITEMS = [
         icon: <Palette width="15" height="15" strokeWidth={1.75} />,
     },
     {
+        id: 'security', labelKey: 'settings.security',
+        icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" /></svg>,
+    },
+    {
         id: 'memory', labelKey: 'settings.memory',
         icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>,
     },
@@ -144,8 +164,16 @@ const NAV_ITEMS = [
         icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1" /></svg>,
     },
     {
+        id: 'learning', labelKey: 'settings.learning_center',
+        icon: <GraduationCap width="15" height="15" strokeWidth={1.75} />,
+    },
+    {
         id: 'help_support', labelKey: 'settings.help_support',
         icon: <LifeBuoy width="15" height="15" strokeWidth={1.75} />,
+    },
+    {
+        id: 'legal_consent', labelKey: 'settings.legal_consent',
+        icon: <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="15" height="15"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>,
     },
 ];
 
@@ -218,6 +246,11 @@ const OrgSubItem = ({ section, label, isActive, onClick }) => {
 /* ── Main component ──────────────────────────────────────────────────────── */
 const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, onClose }) => {
     const { t } = useTranslation();
+    // Phones show a trimmed, user-only settings surface (see MOBILE_VISIBLE_TOP_TABS).
+    const { isMobile } = useViewport();
+    // Orgs with no active plan are routed to the License tab by SubscriptionGate —
+    // keep that one reachable on mobile so they can still subscribe.
+    const { hasActiveSub } = useSubscriptionContext();
     // activeTab can be a top-level id OR an org sub-item id (e.g. 'license', 'org_users')
     // State is kept in sync with the URL: /app/settings/{section} or
     // /app/settings/organisation/{sub}. Back/forward buttons just work.
@@ -244,6 +277,10 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
 
     const perms = user?.permissions || [];
     const canSeeOrg = perms.includes('all') || perms.includes('org_admin') || user?.orgRole === 'admin' || user?.orgRole === 'org_admin';
+    // Learning Center is toggleable per subscription plan (capability
+    // `learning_center`). Hide its nav item + page when the org's plan doesn't
+    // include it; the /ai/learning API is gated server-side too.
+    const canUseLearning = useCan('learning_center');
 
     const canManageUsers = perms.includes('all') || perms.includes('manage_users') || user?.orgRole === 'admin' || user?.orgRole === 'org_admin';
     const deploymentMode = user?.featureFlags?.deploymentMode || 'cloud';
@@ -285,6 +322,29 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
         }
     }, [isSimpleMode, activeTab, setActiveTab]);
 
+    // Legal & Consent and Help & Support are hidden on self-hosted — bounce a
+    // deep-link/hard-refresh that lands on either (the nav items are filtered
+    // out, but the routes still exist).
+    useEffect(() => {
+        if (isSelfHosted && (activeTab === 'legal_consent' || activeTab === 'help_support')) {
+            setActiveTab('preferences');
+        }
+    }, [isSelfHosted, activeTab, setActiveTab]);
+
+    // Mobile: bounce hidden tabs (Connections, Learning Center, org/account
+    // sub-tabs) to Preferences. Covers deep-links/hard-refresh to e.g.
+    // /app/settings/connections or /app/settings/organisation/* and a resize
+    // that crosses the breakpoint while sitting on a now-hidden tab. The License
+    // tab is exempt when the org has no active plan so SubscriptionGate's
+    // subscribe redirect still lands somewhere usable.
+    useEffect(() => {
+        if (!isMobile) return;
+        if (activeTab === 'license' && !hasActiveSub) return;
+        if (!MOBILE_VISIBLE_TAB_SET.has(activeTab)) {
+            setActiveTab('preferences');
+        }
+    }, [isMobile, activeTab, hasActiveSub, setActiveTab]);
+
     // orgSubItems is computed below — it depends on `statuses.githubConnected`
     // which is hydrated in fetchSettingsStatuses() and the `statuses` state
     // declared further down. The actual filter lives in the useMemo block
@@ -299,7 +359,8 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
     const [memoryStats, setMemoryStats] = useState(null);
     const [agents, setAgents] = useState([]);
     const [statuses, setStatuses] = useState({
-        hasFirefliesKey: false, hasYouTrackConfig: false, hasGammaKey: false,
+        hasFirefliesKey: false, hasYouTrackConfig: false, hasGammaKey: false, hasAfasConfig: false,
+        hasNmbrsConfig: false, nmbrsApiMode: 'soap', nmbrsSubdomain: '', nmbrsEmail: '', nmbrsEnv: 'production',
         hasN8nConfig: false, linkedInConnected: false, linkedInName: null, hasLinkedInConfig: false,
         hasNextcloudAppPassword: false, isNextcloudUser: false,
         githubConnected: false,
@@ -315,6 +376,9 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
             // "License & Usage" entry entirely.
             if (s.id === 'license' && isSelfHosted) return false;
             if (s.id === 'org_users') return canManageUsers;
+            // Academy overview only makes sense when the plan carries the
+            // Learning Center at all (entitlements-gated like the member tab).
+            if (s.id === 'org_academy') return canSeeOrg && canUseLearning;
             // Always show Integrations to org admins — the panel inside
             // displays empty states for orgs without grants, and beta-feature
             // toggling lives here too (not just integrations).
@@ -344,7 +408,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
             items.push(AZURE_SUB_ITEM);
         }
         return items;
-    }, [canSeeOrg, canManageUsers, isSelfHosted, hasOrgIntegrations, isNcConnectorUser, isNcOrg, isSuperAdmin, showNcSync, statuses.githubConnected, orgAuthLocked]);
+    }, [canSeeOrg, canManageUsers, canUseLearning, isSelfHosted, hasOrgIntegrations, isNcConnectorUser, isNcOrg, isSuperAdmin, showNcSync, statuses.githubConnected, orgAuthLocked]);
 
     // The per-org "License & Usage" section is hidden on self-hosted (see the
     // orgSubItems filter above). A default/deep-link can still resolve activeTab
@@ -393,7 +457,7 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
             const res = await authFetch(`${API_BASE}/ai/user-settings`);
             if (res.ok) {
                 const data = await res.json();
-                setStatuses({ hasFirefliesKey: !!data.hasFirefliesKey, hasYouTrackConfig: !!data.hasYouTrackConfig, hasGammaKey: !!data.hasGammaKey, hasN8nConfig: !!data.hasN8nConfig, hasLinkedInConfig: !!data.hasLinkedInConfig });
+                setStatuses({ hasFirefliesKey: !!data.hasFirefliesKey, hasYouTrackConfig: !!data.hasYouTrackConfig, hasGammaKey: !!data.hasGammaKey, hasAfasConfig: !!data.hasAfasConfig, hasNmbrsConfig: !!data.hasNmbrsConfig, nmbrsApiMode: data.nmbrsApiMode || 'soap', nmbrsSubdomain: data.nmbrsSubdomain || '', nmbrsEmail: data.nmbrsEmail || '', nmbrsEnv: data.nmbrsEnv || 'production', hasN8nConfig: !!data.hasN8nConfig, hasLinkedInConfig: !!data.hasLinkedInConfig });
             }
         } catch (e) { console.error(e); }
         try {
@@ -416,6 +480,11 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
     const handleIntegrationSaved = (key) => {
         const keyMap = { fireflies: 'hasFirefliesKey', youtrack: 'hasYouTrackConfig', gamma: 'hasGammaKey' };
         if (keyMap[key]) setStatuses(p => ({ ...p, [keyMap[key]]: true }));
+        // AFAS fires onSaved for connect AND disconnect — re-fetch instead of
+        // optimistically forcing true (which would show "Connected" after a
+        // disconnect, or after a token-only save that isn't fully configured).
+        if (key === 'afas-profit') fetchSettingsStatuses();
+        if (key === 'nmbrs') fetchSettingsStatuses();
         if (key === 'linkedin') fetchSettingsStatuses();
         if (key === 'nextcloud') fetchSettingsStatuses();
     };
@@ -426,10 +495,16 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
 
     // Map org sub-tab ids to the activeSection prop OrganisationSection expects
     const orgActiveSection = isOrgSubTab
-        ? (activeTab === 'org_users' ? 'users' : activeTab === 'org_integrations' ? 'integrations' : activeTab === 'org_usage' ? 'usage' : activeTab === 'org_azure' ? 'azure' : activeTab === 'org_github_sync' ? 'github_sync' : activeTab === 'org_nextcloud_sync' ? 'nextcloud_sync' : activeTab)
+        ? (activeTab === 'org_users' ? 'users' : activeTab === 'org_academy' ? 'academy' : activeTab === 'org_integrations' ? 'integrations' : activeTab === 'org_usage' ? 'usage' : activeTab === 'org_azure' ? 'azure' : activeTab === 'org_github_sync' ? 'github_sync' : activeTab === 'org_nextcloud_sync' ? 'nextcloud_sync' : activeTab)
         : 'license';
 
     const renderContent = () => {
+        // Mobile: never render a hidden section's panel (covers the one frame
+        // before the bounce effect moves activeTab to Preferences). License stays
+        // renderable for no-plan orgs so they can subscribe.
+        if (isMobile && !MOBILE_VISIBLE_TAB_SET.has(activeTab) && !(activeTab === 'license' && !hasActiveSub)) {
+            return null;
+        }
         if (activeTab === 'org_azure' && canSeeOrg) return <OrgAzureConfigPanel user={user} />;
         if (isOrgSubTab && canSeeOrg) return <OrganisationSection user={user} activeSection={orgActiveSection} />;
         // Consumer account tabs
@@ -441,13 +516,26 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
         switch (activeTab) {
             case 'preferences': return <PreferencesSection defaultAgentMode={defaultAgentMode} setDefaultAgentMode={setDefaultAgentMode} defaultAgentId={defaultAgentId} setDefaultAgentId={setDefaultAgentId} agents={agents} onLogout={onLogout} user={user} onUpdateUser={onUpdateUser} />;
             case 'appearance': return <AppearanceSection />;
+            case 'security': return <SecuritySection />;
             case 'memory': return <MemorySection memoryStats={memoryStats} onOpenMemory={() => setShowMemoryPanel(true)} onImported={fetchMemoryStats} />;
-            case 'integrations': return <IntegrationsSection statuses={statuses} onSaved={handleIntegrationSaved} enabledIntegrations={user?.enabledIntegrations} isOrgAdmin={canSeeOrg} user={user} showOrgIntegrations={isConsumerAccount} />;
-            case 'help_support': return <HelpSupportSection user={user} />;
+            case 'integrations': return <IntegrationsSection statuses={statuses} onSaved={handleIntegrationSaved} isOrgAdmin={canSeeOrg} user={user} showOrgIntegrations={isConsumerAccount} />;
+            case 'learning': return canUseLearning ? <LearningCenterSection user={user} /> : null;
+            case 'help_support': return isSelfHosted ? null : <HelpSupportSection user={user} />;
+            case 'legal_consent': return isSelfHosted ? null : <LegalConsentSection user={user} />;
             case 'organisation': return canSeeOrg ? <OrganisationSection user={user} activeSection={isSelfHosted ? 'auth' : 'license'} /> : null;
             default: return null;
         }
     };
+
+    // Mobile master–detail: the section menu ('list') and a single section's
+    // content ('detail') are shown one at a time on phones. Desktop shows both
+    // side by side and ignores this flag.
+    const [mobileDetail, setMobileDetail] = useState(false);
+    // SubscriptionGate routes a no-plan org to the License tab; surface it
+    // directly on mobile so they can still subscribe (the org menu is hidden).
+    useEffect(() => {
+        if (isMobile && activeTab === 'license' && !hasActiveSub) setMobileDetail(true);
+    }, [isMobile, activeTab, hasActiveSub]);
 
     const handleNavClick = (id) => {
         if (id === 'organisation') {
@@ -465,32 +553,56 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
             }
         } else {
             setActiveTab(id);
+            if (isMobile) setMobileDetail(true);   // drill into the section
         }
     };
+
+    // Phone title bar shows the section name while in detail view.
+    const activeNavItem = NAV_ITEMS.find(i => i.id === activeTab);
+    const mobileInDetail = isMobile && mobileDetail;
+    const titleLabel = mobileInDetail
+        ? (activeNavItem ? t(activeNavItem.labelKey) : t('settings.title'))
+        : t('settings.title');
 
     return (
         <div className="h-full flex flex-col" style={{ background: 'var(--bg-primary)', position: 'relative' }}>
             {/* ── Title bar ── */}
             <div
-                className="flex-shrink-0 flex items-center px-5"
+                className="flex-shrink-0 flex items-center gap-2 px-5"
                 style={{ height: '48px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-subtle)' }}
             >
-                <span className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>{t('settings.title')}</span>
+                {/* Phone back button. In a section (detail) it returns to the
+                    section list; on the list it exits Settings back to chat —
+                    phones have no persistent sidebar while Settings is open.
+                    Desktop keeps the sidebar, so the button is hidden there. */}
+                <button
+                    onClick={() => { if (mobileInDetail) setMobileDetail(false); else handleClose(); }}
+                    className="md:hidden -ml-2 mr-0.5 p-1.5 rounded-lg"
+                    style={{ color: 'var(--text-secondary)' }}
+                    aria-label={t('common.back') || 'Back'}
+                >
+                    <ArrowLeft className="w-5 h-5" />
+                </button>
+                <span className="text-[15px] font-semibold" style={{ color: 'var(--text-primary)' }}>{titleLabel}</span>
             </div>
 
             {/* ── Body ── */}
+            {/* Desktop: nav + content side by side. Phone: master–detail — the
+                nav list and a section's content are shown one at a time. */}
             <div className="flex-1 flex overflow-hidden">
 
                 {/* ── Sidebar ── */}
                 {/* 180px on laptops <1280, 220px on larger screens — keeps enough room
-                    for the settings content area without forcing horizontal scroll. */}
+                    for the settings content area without forcing horizontal scroll.
+                    On phones it's the full-screen section list; once a section is
+                    opened it's hidden in favour of the content panel. */}
                 <div
-                    className="flex-shrink-0 flex flex-col w-[180px] xl:w-[220px]"
+                    className={`flex-shrink-0 flex-col w-full md:w-[180px] xl:w-[220px] ${mobileDetail ? 'hidden md:flex' : 'flex'}`}
                     style={{ background: 'var(--bg-secondary)', borderRight: '1px solid var(--border-subtle)' }}
                 >
                     {/* User mini-card */}
                     <button
-                        onClick={() => setActiveTab('preferences')}
+                        onClick={() => { setActiveTab('preferences'); if (isMobile) setMobileDetail(true); }}
                         className="flex items-center gap-3 px-4 py-3.5 transition-colors text-left w-full flex-shrink-0"
                         onMouseEnter={e => e.currentTarget.style.background = 'rgba(0,0,0,0.04)'}
                         onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
@@ -538,7 +650,17 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
                                 onClick={handleNavClick}
                             />
                         ) : (
-                            NAV_ITEMS.map(item => (
+                            NAV_ITEMS.filter(item => {
+                                if (item.id === 'learning' && !canUseLearning) return false;
+                                // Legal & Consent and Help & Support are Bee Flow Cloud
+                                // surfaces (the support inbox talks to the Bee Flow team) —
+                                // hidden on self-hosted, where neither applies.
+                                if (item.id === 'legal_consent' && isSelfHosted) return false;
+                                if (item.id === 'help_support' && isSelfHosted) return false;
+                                // Mobile hides Connections + Learning Center.
+                                if (isMobile && !MOBILE_VISIBLE_TAB_SET.has(item.id)) return false;
+                                return true;
+                            }).map(item => (
                                 <NavItem
                                     key={item.id}
                                     {...item}
@@ -549,8 +671,9 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
                             ))
                         )}
 
-                        {/* Organisation accordion — only if permitted */}
-                        {!isSimpleMode && canSeeOrg && (
+                        {/* Organisation accordion — only if permitted. Hidden on
+                            mobile: phones show user settings only. */}
+                        {!isSimpleMode && !isMobile && canSeeOrg && (
                             <>
                                 <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '6px 8px' }} />
                                 <p className="text-[9px] font-semibold uppercase tracking-widest px-3 pb-1 pt-1" style={{ color: 'var(--text-muted)' }}>
@@ -588,8 +711,9 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
                             </>
                         )}
 
-                        {/* Consumer Account section — for org-less cloud users */}
-                        {!isSimpleMode && isConsumerAccount && !canSeeOrg && (
+                        {/* Consumer Account section — for org-less cloud users.
+                            Hidden on mobile (user settings only). */}
+                        {!isSimpleMode && !isMobile && isConsumerAccount && !canSeeOrg && (
                             <>
                                 <div style={{ height: '1px', background: 'var(--border-subtle)', margin: '6px 8px' }} />
                                 <p className="text-[9px] font-semibold uppercase tracking-widest px-3 pb-1 pt-1" style={{ color: 'var(--text-muted)' }}>
@@ -647,9 +771,9 @@ const AdvancedSettings = ({ onBack, onNavigate, onLogout, user, onUpdateUser, on
                 </div>
 
                 {/* ── Content panel ── */}
-                <div className="flex-1 overflow-auto" style={{ background: 'var(--bg-primary)' }}>
+                <div className={`flex-1 overflow-auto ${mobileDetail ? 'block' : 'hidden md:block'}`} style={{ background: 'var(--bg-primary)' }}>
                     <div
-                        className={`mx-auto py-8 ${(isOrgSubTab || activeTab === 'consumer_usage' || activeTab === 'consumer_integrations') ? 'max-w-5xl px-8' : 'max-w-[640px] px-8'}`}
+                        className={`mx-auto py-6 md:py-8 px-4 md:px-8 ${(isOrgSubTab || activeTab === 'consumer_usage' || activeTab === 'consumer_integrations') ? 'max-w-5xl' : 'max-w-[640px]'}`}
                         style={activeTab === 'org_usage' ? { maxWidth: '100%', padding: '24px 32px 32px' } : undefined}
                     >
                         {renderContent()}

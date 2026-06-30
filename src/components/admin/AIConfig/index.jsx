@@ -6,6 +6,7 @@ import { getModelMeta, CAT_COLORS } from './modelMeta';
 import DirectChatConfig from './DirectChatConfig';
 import TicketAssistantTiersConfig from './TicketAssistantTiersConfig';
 import WebSearchInferenceConfig from './WebSearchInferenceConfig';
+import LeadEnrichmentConfig from './LeadEnrichmentConfig';
 import LimitsConfig from './LimitsConfig';
 import EmbeddingsConfig from './EmbeddingsConfig';
 
@@ -109,6 +110,7 @@ const AIConfigPanel = () => {
         { id: 'directChat', label: t('admin.ai_direct_chat'), icon: '💬' },
         { id: 'ticketAssistantTiers', label: t('admin.ai_ticket_assistant_tiers', 'Ticket Assistant Models'), icon: '🎫' },
         { id: 'webSearchInference', label: t('admin.ai_web_search_inference', 'Web Search Inference'), icon: '🌐' },
+        { id: 'leadEnrichment', label: t('admin.ai_lead_enrichment', 'Lead Enrichment'), icon: '🎯' },
         { id: 'limits', label: t('admin.ai_limits', 'Limits & Self-host'), icon: '⚙️' },
 
     ];
@@ -249,6 +251,11 @@ const AIConfigPanel = () => {
                 {/* Web Search Inference Tab — embed inherits global, rerank method-only, cleanup uses chat-model picker */}
                 {activeTab === 'webSearchInference' && (
                     <WebSearchInferenceConfig allModels={allModels} onNavigateToTab={setActiveTab} />
+                )}
+
+                {/* Lead Enrichment Tab — Lead Studio data-source API keys (KvK/Hunter/Apollo/Apify) */}
+                {activeTab === 'leadEnrichment' && (
+                    <LeadEnrichmentConfig onMessage={setMessage} />
                 )}
 
                 {/* Limits Tab — runtime caps applied to chat surfaces */}

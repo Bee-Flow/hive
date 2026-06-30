@@ -324,7 +324,7 @@ const KnowledgeBasesSection = ({ isReadonly }) => {
     };
 
     return (
-        <div className="space-y-6 animate-fadeIn" data-testid="kb-manager">
+        <div className="space-y-6 animate-fadeIn" data-testid="kb-manager" data-tour="agent-knowledge">
             {/* Google Drive Picker Modal */}
             <GoogleDrivePicker
                 isOpen={drivePickerOpen}

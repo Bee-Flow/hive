@@ -291,6 +291,7 @@ export const IdentitySection = ({
                                                                     onChange={(e) => setSystemPrompt(e.target.value)}
                                                                     className="input w-full font-mono text-sm leading-relaxed"
                                                                     rows={12}
+                                                                    data-tour="agent-system-prompt"
                                                                     placeholder="You are a helpful assistant..."
                                                                     style={{ minHeight: '200px' }}
                                                                 />

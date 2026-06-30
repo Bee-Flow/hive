@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, BookOpen, Trash2, FileText, Globe, Paperclip, Settings as SettingsIcon, Loader2, Plus, X, RefreshCcw, Building2, Check, ChevronDown, ChevronRight, Search as SearchIcon, Lock, Users } from 'lucide-react';
+import { ArrowLeft, BookOpen, Trash2, FileText, Globe, Paperclip, Settings as SettingsIcon, Loader2, Plus, X, RefreshCcw, Building2, Check, ChevronDown, ChevronRight, Search as SearchIcon, Lock, Users, Copy } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { useTranslation } from '../hooks/useTranslation';
 import { formatDate } from '../utils/dateFormatters';
@@ -302,6 +302,21 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
             if (res.ok) { onSaved?.(null); onClose?.(); }
             else { alert(t('kb_detail.delete_failed')); }
         } catch (e) { alert(`${t('kb_detail.delete_failed')}: ${e.message}`); }
+    }
+
+    // BFSF-217 — duplicate the KB's structure (name/settings/category) into a
+    // new KB. Documents aren't copied (the user adds/swaps sources). Returns to
+    // the list where the new "Copy of …" KB appears.
+    const [duplicating, setDuplicating] = useState(false);
+    async function handleDuplicateKB() {
+        if (!kbId || duplicating) return;
+        setDuplicating(true);
+        try {
+            const res = await authFetch(`${API_BASE}/api/kb/${kbId}/duplicate`, { method: 'POST' });
+            if (res.ok) { const copy = await res.json(); onSaved?.(copy); onClose?.(); }
+            else { const e = await res.json().catch(() => ({})); alert(e.error || t('kb_detail.duplicate_failed', 'Failed to duplicate knowledge base')); }
+        } catch (e) { alert(`${t('kb_detail.duplicate_failed', 'Failed to duplicate knowledge base')}: ${e.message}`); }
+        finally { setDuplicating(false); }
     }
 
     async function ingestText() {
@@ -832,28 +847,41 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                         </div>
                                     )}
 
-                                    <div className="flex justify-end items-center gap-2">
-                                        {ingestStatus && (
-                                            <span className="text-[11px] flex items-center gap-1" style={{ color: 'var(--accent-primary)' }}>
-                                                <Loader2 className="w-3 h-3 animate-spin" />
-                                                {ingestStatus}
-                                            </span>
-                                        )}
-                                        {ingestMode !== 'n8n' && (
-                                            <>
-                                                <label className="cursor-pointer px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 hover:bg-[var(--bg-tertiary)]" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}>
-                                                    <input type="file" accept=".pdf,.txt,.md,.docx,.csv" className="hidden" onChange={ingestFile} disabled={ingesting} />
-                                                    <Paperclip className="w-3.5 h-3.5" /> {t('kb_docs.upload_file')}
-                                                </label>
-                                                <button
-                                                    onClick={ingestMode === 'url' ? ingestUrl : ingestText}
-                                                    disabled={ingesting || (ingestMode === 'text' ? !textContent.trim() : !urlInput.trim())}
-                                                    className="px-3 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-50 hover:brightness-110"
-                                                    style={{ background: 'var(--accent-primary)' }}
-                                                >{ingesting ? t('kb_docs.processing') : t('kb_docs.add')}</button>
-                                            </>
-                                        )}
-                                    </div>
+                                    {/* Add (manual Text/URL entry) + ingest status. The Add button
+                                        and the Title/Content fields belong ONLY to this manual flow. */}
+                                    {ingestMode !== 'n8n' && (
+                                        <div className="flex justify-end items-center gap-2">
+                                            {ingestStatus && (
+                                                <span className="text-[11px] flex items-center gap-1" style={{ color: ingesting ? 'var(--accent-primary)' : '#16a34a' }}>
+                                                    {ingesting ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />}
+                                                    {ingestStatus}
+                                                </span>
+                                            )}
+                                            <button
+                                                onClick={ingestMode === 'url' ? ingestUrl : ingestText}
+                                                disabled={ingesting || (ingestMode === 'text' ? !textContent.trim() : !urlInput.trim())}
+                                                className="px-3 py-1.5 rounded-lg text-xs font-medium text-white disabled:opacity-50 hover:brightness-110"
+                                                style={{ background: 'var(--accent-primary)' }}
+                                            >{ingesting ? t('kb_docs.processing') : t('kb_docs.add')}</button>
+                                        </div>
+                                    )}
+
+                                    {/* Upload a file — a self-contained source, visually separated from
+                                        the Text/URL form above so it's clear the Title/Content fields and
+                                        the Add button do NOT apply to file uploads (BFSF-211). Upload runs
+                                        immediately on file pick and shows its own success status above. */}
+                                    {ingestMode !== 'n8n' && (
+                                        <div className="mt-1 pt-3 flex items-center justify-between gap-3 border-t border-dashed" style={{ borderColor: 'var(--border-subtle)' }}>
+                                            <div className="min-w-0">
+                                                <div className="text-[11px] font-semibold" style={{ color: 'var(--text-secondary)' }}>{t('kb_docs.upload_file_section', 'Or upload a file')}</div>
+                                                <div className="text-[10px]" style={{ color: 'var(--text-muted)' }}>{t('kb_docs.upload_file_hint', 'PDF, Word, txt, md or csv — added directly, no title needed.')}</div>
+                                            </div>
+                                            <label className="cursor-pointer px-3 py-1.5 rounded-lg text-xs font-medium border flex items-center gap-1.5 hover:bg-[var(--bg-tertiary)] flex-shrink-0" style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}>
+                                                <input type="file" accept=".pdf,.txt,.md,.docx,.csv" className="hidden" onChange={ingestFile} disabled={ingesting} />
+                                                <Paperclip className="w-3.5 h-3.5" /> {t('kb_docs.upload_file')}
+                                            </label>
+                                        </div>
+                                    )}
                                 </div>
                             )}
 
@@ -1222,6 +1250,7 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
                                         </>
                                     )}
                                 </div>
+                                <p className="text-[11px] mt-1.5" style={{ color: 'var(--text-muted)' }}>{t('kb_detail.category_hint')}</p>
                             </div>
 
                             {/* Sharing summary */}
@@ -1244,12 +1273,22 @@ export default function KBDetailPage({ kbId: initialKbId, onClose, onSaved, user
 
                             <div className="flex items-center justify-between pt-2">
                                 {!isCreateMode && canManage && (
-                                    <button
-                                        onClick={handleDeleteKB}
-                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-500 hover:bg-red-500/10"
-                                    >
-                                        <Trash2 className="w-3.5 h-3.5" /> {t('kb_detail.delete_kb')}
-                                    </button>
+                                    <div className="flex items-center gap-1">
+                                        <button
+                                            onClick={handleDeleteKB}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-red-500 hover:bg-red-500/10"
+                                        >
+                                            <Trash2 className="w-3.5 h-3.5" /> {t('kb_detail.delete_kb')}
+                                        </button>
+                                        <button
+                                            onClick={handleDuplicateKB}
+                                            disabled={duplicating}
+                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium hover:bg-[var(--bg-tertiary)] disabled:opacity-50"
+                                            style={{ color: 'var(--text-secondary)' }}
+                                        >
+                                            {duplicating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Copy className="w-3.5 h-3.5" />} {t('kb_detail.duplicate_kb', 'Duplicate')}
+                                        </button>
+                                    </div>
                                 )}
                                 <div className="ml-auto flex gap-2">
                                     {onClose && (

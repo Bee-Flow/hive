@@ -29,13 +29,23 @@ const Row = ({ title, desc, children }) => (
     </div>
 );
 
+const Select = ({ value, onChange, disabled, options }) => (
+    <select
+        value={value} onChange={onChange} disabled={disabled}
+        className="w-40 px-3 py-1.5 rounded-lg border outline-none text-[13px]"
+        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+    >
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+);
+
 /**
  * Org-level Nextcloud Talk → Meeting Notes settings. Mirrors the privacy-shield
  * admin pattern. Org values take precedence over each member's own settings.
  */
 export default function MeetingNotesAdminPanel({ user }) {
     const orgId = user?.organizationId;
-    const [cfg, setCfg] = useState({ autoTranscribe: false, postSummaryBack: false, recordingFolder: '/Talk', language: 'nl' });
+    const [cfg, setCfg] = useState({ autoTranscribe: false, postSummaryBack: false, recordingFolder: '/Talk', language: 'nl', autoRecord: false, autoRecordScope: 'calendar', recordingMode: 'audio' });
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState(null);
@@ -85,6 +95,24 @@ export default function MeetingNotesAdminPanel({ user }) {
             ) : (
                 <>
                     <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
+                        <Row title="Auto-record Talk meetings" desc="Automatically start recording calls members moderate (requires the Nextcloud recording backend).">
+                            <Toggle on={cfg.autoRecord} onClick={() => setCfg(c => ({ ...c, autoRecord: !c.autoRecord }))} disabled={saving} />
+                        </Row>
+                        {cfg.autoRecord && (
+                            <>
+                                <div style={{ height: 1, background: 'var(--border-subtle)' }} />
+                                <Row title="Which calls" desc="Record only scheduled calendar meetings, or every call a member moderates.">
+                                    <Select value={cfg.autoRecordScope} disabled={saving} onChange={e => setCfg(c => ({ ...c, autoRecordScope: e.target.value }))}
+                                        options={[{ value: 'calendar', label: 'Calendar meetings' }, { value: 'all', label: 'Any moderated call' }]} />
+                                </Row>
+                                <div style={{ height: 1, background: 'var(--border-subtle)' }} />
+                                <Row title="Recording quality" desc="Audio-only is smaller and faster to transcribe.">
+                                    <Select value={cfg.recordingMode} disabled={saving} onChange={e => setCfg(c => ({ ...c, recordingMode: e.target.value }))}
+                                        options={[{ value: 'audio', label: 'Audio-only' }, { value: 'video', label: 'Video' }]} />
+                                </Row>
+                            </>
+                        )}
+                        <div style={{ height: 1, background: 'var(--border-subtle)' }} />
                         <Row title="Auto-transcribe Talk recordings" desc="When a new Talk recording appears, create a Meeting Note automatically.">
                             <Toggle on={cfg.autoTranscribe} onClick={() => setCfg(c => ({ ...c, autoTranscribe: !c.autoTranscribe }))} disabled={saving} />
                         </Row>

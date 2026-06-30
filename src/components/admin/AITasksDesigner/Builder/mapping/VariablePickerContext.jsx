@@ -10,12 +10,18 @@ import React, { createContext, useContext } from 'react';
  * Default empty so the fields render a graceful "no upstream variables
  * yet" message when used outside a provider.
  */
-const VariablePickerContext = createContext({ groups: [], previewSample: null });
+const VariablePickerContext = createContext({ groups: [], previewSample: null, stepLabelById: new Map() });
 
-export function VariablePickerProvider({ groups, previewSample, children }) {
+export function VariablePickerProvider({ groups, previewSample, stepLabelById, children }) {
     const value = React.useMemo(
-        () => ({ groups: groups || [], previewSample: previewSample || null }),
-        [groups, previewSample],
+        () => ({
+            groups: groups || [],
+            previewSample: previewSample || null,
+            // id → human label map, so BindingField/TemplateField can render
+            // refs as chips showing the step name instead of the raw id.
+            stepLabelById: stepLabelById || new Map(),
+        }),
+        [groups, previewSample, stepLabelById],
     );
     return (
         <VariablePickerContext.Provider value={value}>

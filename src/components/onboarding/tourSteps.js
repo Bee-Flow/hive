@@ -175,7 +175,7 @@ export const TOUR_STEPS = [
         titleKey: 'tour.done.title',
         titleFallback: "You're all set",
         bodyKey: 'tour.done.body',
-        bodyFallback: 'That covers the basics. You can replay this tour anytime from Settings → Help & Support.',
+        bodyFallback: 'That covers the basics — and it counts as your first lesson. Keep going in Settings → Learning Center: short hands-on courses with badges and certificates.',
     },
 ];
 
@@ -194,10 +194,16 @@ export function canUseStudio(user) {
     );
 }
 
-// Steps actually shown to this user (drops Studio-gated stops — including the
-// whole create-an-agent sequence — for members who can't reach Studio).
+// Drops Studio-gated steps (e.g. the create-an-agent sequence) for members who
+// can't reach Studio. Shared by the intro tour and every Learning Center lesson
+// (see lessons.js) so step-level gating stays in one place.
+export function filterStepsForUser(steps, user) {
+    return (steps || []).filter((s) => !(s.requiresStudio && !canUseStudio(user)));
+}
+
+// Steps actually shown to this user for the intro tour.
 export function resolveTourSteps(user) {
-    return TOUR_STEPS.filter((s) => !(s.requiresStudio && !canUseStudio(user)));
+    return filterStepsForUser(TOUR_STEPS, user);
 }
 
 // Per-user completion flag (server user-settings blob + local guard).
@@ -206,3 +212,7 @@ export const TOUR_SEEN_KEY = 'hasSeenIntroTour';
 // Window events.
 export const TOUR_START_EVENT = 'beeflow:start-tour';
 export const TOUR_ENSURE_SIDEBAR_EVENT = 'beeflow:tour-ensure-sidebar-open';
+// Ask the Agent Designer to switch to a given section ('identity'|'tools'|
+// 'knowledge'|'behavior') so a spotlight anchor that only renders in that section
+// actually exists in the DOM before the engine tries to target it.
+export const TOUR_OPEN_DESIGNER_SECTION = 'beeflow:tour-open-designer-section';

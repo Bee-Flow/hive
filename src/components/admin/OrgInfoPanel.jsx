@@ -2,14 +2,27 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Building2, Save, Upload, Palette, FileText, Check, Lock, KeyRound, AlertTriangle, CreditCard, BarChart3, Zap, MessageSquare, DollarSign, Users, Bot, Database, Shield, Info, Globe, X, Plus, ExternalLink, Loader2, ArrowRight, Sparkles, Clock } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { cloudFetch } from '../../utils/cloudFetch';
+import InvoicesPanel from '../billing/InvoicesPanel';
 import { useTranslation } from '../../hooks/useTranslation';
 import GuardrailsPanel from './GuardrailsPanel';
 import LicenseKeyActivation from './LicenseKeyActivation';
 import { useLicenseContext } from '../LicenseContext';
 import { useDeploymentMode } from '../../hooks/useDeploymentMode';
+import { COUNTRIES } from './subscriptions/access/countries';
 
 // Map a 3-letter currency code to its glyph for inline display.
 const currencySym = (c) => ({ EUR: '€', USD: '$', GBP: '£' }[String(c || 'EUR').toUpperCase()] || (c || '€'));
+
+// Labelled form field wrapper. Defined at module scope (not inside the panel's
+// render) so its component identity is stable across renders — otherwise React
+// remounts the wrapped input on every keystroke and the field loses focus.
+const Field = ({ label, hint, children }) => (
+    <div>
+        <label className="block text-sm font-medium mb-1.5 text-[var(--text-primary)]">{label}</label>
+        {hint && <p className="text-[11px] text-[var(--text-muted)] mb-1.5">{hint}</p>}
+        {children}
+    </div>
+);
 
 // Skeleton loader
 const Skeleton = () => (
@@ -434,6 +447,10 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                     description: myOrg.description || '',
                     tagline: myOrg.tagline || '',
                     address: myOrg.address || '',
+                    billingLine2: myOrg.billingLine2 || '',
+                    billingPostalCode: myOrg.billingPostalCode || '',
+                    billingCity: myOrg.billingCity || '',
+                    billingCountry: myOrg.billingCountry || '',
                     email: myOrg.email || '',
                     phone: myOrg.phone || '',
                     website: myOrg.website || '',
@@ -723,6 +740,20 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
         }
     };
 
+    // BFSF-251: jump to the org Users panel where seats are added (inviting a
+    // user is what adds a billed seat on per-seat plans). Mirrors the app's own
+    // back/forward routing — pushState the canonical settings URL, then fire a
+    // popstate so the AdvancedSettings shell switches to the Users sub-tab.
+    const goToUsersPanel = () => {
+        const url = '/app/settings/organisation/users';
+        try {
+            if (window.location.pathname !== url) window.history.pushState({}, '', url);
+            window.dispatchEvent(new PopStateEvent('popstate'));
+        } catch {
+            window.location.href = url;
+        }
+    };
+
     useEffect(() => {
         if (orgData && originalDataRef.current) {
             setHasChanges(JSON.stringify(orgData) !== originalDataRef.current);
@@ -812,14 +843,6 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
             </div>
         );
     }
-
-    const Field = ({ label, hint, children }) => (
-        <div>
-            <label className="block text-sm font-medium mb-1.5 text-[var(--text-primary)]">{label}</label>
-            {hint && <p className="text-[11px] text-[var(--text-muted)] mb-1.5">{hint}</p>}
-            {children}
-        </div>
-    );
 
     const inputClass = "w-full px-3 py-2.5 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-primary)] text-[var(--text-primary)] text-sm outline-none focus:border-[var(--accent-primary)] transition-colors";
 
@@ -1026,12 +1049,18 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                                     : t('org.change_plan', 'Change plan')}
                                             </button>
                                         )}
-                                        {sub.stripe_customer_id && (
+                                        {/* BFSF-241: only show the Stripe Customer Portal link for a real
+                                            paying relationship. Free/trial/no-invoice customers got an
+                                            empty "no invoice history" portal showing global payment
+                                            methods (Pix/Kakao/Amazon) that don't match our checkout.
+                                            Includes previously-paid states (paused/disputed) so paying
+                                            customers keep portal access; excludes trialing/free. */}
+                                        {sub.stripe_customer_id && ['paid', 'past_due', 'paused', 'disputed'].includes(sub.payment_status) && (
                                             <button
                                                 onClick={handleManageBilling}
                                                 disabled={portalLoading}
                                                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-all hover:opacity-80"
-                                                style={{ borderColor: 'rgba(99,91,255,0.3)', color: '#635bff', background: 'rgba(99,91,255,0.05)' }}
+                                                style={{ borderColor: 'rgba(59,130,246,0.3)', color: '#3b82f6', background: 'rgba(59,130,246,0.05)' }}
                                             >
                                                 {portalLoading ? <Loader2 className="w-3 h-3 animate-spin" /> : <ExternalLink className="w-3 h-3" />}
                                                 {t('org.manage_billing', 'Manage Billing')}
@@ -1061,6 +1090,19 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                         </div>
                                     </div>
                                 </div>
+
+                                {/* Invoices — in-app list with Stripe PDF downloads */}
+                                {sub.stripe_customer_id && (
+                                    <InvoicesPanel
+                                        fetcher={async () => {
+                                            const res = await cloudFetch(deploymentMode, `${API_BASE}/api/stripe/invoices`);
+                                            if (!res.ok) throw new Error('Failed to load invoices');
+                                            const data = await res.json();
+                                            return data.invoices || [];
+                                        }}
+                                        pdfFetcher={(invoiceId) => cloudFetch(deploymentMode, `${API_BASE}/api/stripe/invoices/${invoiceId}/pdf`)}
+                                    />
+                                )}
 
                                 {/* Inline Change Plan picker. Drives the in-app plan-change endpoint
                                     — no new Stripe Checkout session. Server provides changeable_plans
@@ -1171,6 +1213,13 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                         <p className="text-[11px] text-[var(--text-muted)] leading-relaxed">
                                             {t('org.upgrade_to_paid_hint', "You're on a free plan. Subscribe to unlock higher usage and more features — you'll be taken to secure Stripe checkout.")}
                                         </p>
+                                        {/* BFSF-243: recurring-billing (automatische incasso) disclosure */}
+                                        <div className="flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+                                            <CreditCard className="w-4 h-4 mt-0.5 shrink-0 text-amber-500" />
+                                            <p className="text-[11px] leading-snug text-[var(--text-secondary)]">
+                                                {t('billing.recurring_notice', 'This is a recurring monthly subscription. Your selected payment method is charged automatically each billing period (automatische incasso) until you cancel.')}
+                                            </p>
+                                        </div>
                                         <div className="grid gap-3">
                                             {availablePlans.map(plan => {
                                                 const sym = (plan.currency || 'eur').toUpperCase() === 'EUR' ? '€' : (plan.currency || 'eur').toUpperCase() === 'GBP' ? '£' : '$';
@@ -1318,9 +1367,9 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                     and the whole card collapses when no limits are set and there are no notes. */}
                                 {(() => {
                                     const limitItems = [
-                                        { label: t('org.users'), icon: Users, val: limits.max_users, color: '#3b82f6' },
-                                        { label: t('org.agents'), icon: Bot, val: limits.max_agents, color: '#f59e0b' },
-                                        { label: t('org.knowledge_sources'), icon: Database, val: limits.max_knowledge_sources, color: '#10b981' },
+                                        { key: 'users', label: t('org.users'), icon: Users, val: limits.max_users, color: '#3b82f6' },
+                                        { key: 'agents', label: t('org.agents'), icon: Bot, val: limits.max_agents, color: '#f59e0b' },
+                                        { key: 'knowledge', label: t('org.knowledge_sources'), icon: Database, val: limits.max_knowledge_sources, color: '#10b981' },
                                     ].filter(it => it.val !== null && it.val !== undefined && it.val !== -1);
                                     if (limitItems.length === 0 && !sub.notes) return null;
                                     return (
@@ -1341,9 +1390,28 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                                                     </div>
                                                                     <div className="text-[10px] text-[var(--text-muted)]">{item.label}</div>
                                                                 </div>
+                                                                {/* BFSF-251: direct seat/user add from the Gebruikers card */}
+                                                                {item.key === 'users' && (
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={goToUsersPanel}
+                                                                        className="ml-auto inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-semibold border transition-all hover:opacity-80"
+                                                                        style={{ borderColor: 'rgba(59,130,246,0.3)', color: '#3b82f6', background: 'rgba(59,130,246,0.05)' }}
+                                                                    >
+                                                                        <Plus className="w-3 h-3" /> {t('org.add_user', 'Add user')}
+                                                                    </button>
+                                                                )}
                                                             </div>
                                                         );
                                                     })}
+                                                </div>
+                                            )}
+                                            {/* BFSF-251: per-seat plans bill each invited user; surface how the
+                                                proration works so adding a seat isn't a surprise on the invoice. */}
+                                            {sub.billing?.per_seat && (
+                                                <div className="mt-3 flex items-start gap-2 text-[11px] text-[var(--text-muted)]">
+                                                    <Info className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                                                    <span>{t('org.add_user_hint', 'Inviting a user adds a seat to your plan. Extra seats are billed per user per month and prorated for the current period.')} {t('org.seats_proration_note', 'Stripe prorates the difference on your next invoice.')}</span>
                                                 </div>
                                             )}
                                             {sub.notes && (
@@ -1657,8 +1725,27 @@ const OrgInfoPanel = ({ user, activeSection, onSave: parentOnSave, onStateChange
                                         <h2 className="text-lg font-bold text-[var(--text-primary)]">{t('org.legal_invoicing')}</h2>
                                         <p className="text-sm text-[var(--text-muted)] mt-0.5">{t('org.legal_subtitle')}</p>
                                     </div>
-                                    <Field label={t('org.address')}>
-                                        <input type="text" value={orgData.address} onChange={e => setOrgData(p => ({ ...p, address: e.target.value }))} className={inputClass} placeholder={t('org.placeholder_address')} />
+                                    <Field label={t('org.street')} hint={t('org.billing_address_hint')}>
+                                        <input type="text" value={orgData.address} onChange={e => setOrgData(p => ({ ...p, address: e.target.value }))} className={inputClass} placeholder={t('org.placeholder_street')} />
+                                    </Field>
+                                    <Field label={t('org.address_line2')}>
+                                        <input type="text" value={orgData.billingLine2} onChange={e => setOrgData(p => ({ ...p, billingLine2: e.target.value }))} className={inputClass} placeholder={t('org.placeholder_line2')} />
+                                    </Field>
+                                    <div className="grid grid-cols-2 gap-4">
+                                        <Field label={t('org.postal_code')}>
+                                            <input type="text" value={orgData.billingPostalCode} onChange={e => setOrgData(p => ({ ...p, billingPostalCode: e.target.value }))} className={inputClass} placeholder={t('org.placeholder_postal_code')} />
+                                        </Field>
+                                        <Field label={t('org.city')}>
+                                            <input type="text" value={orgData.billingCity} onChange={e => setOrgData(p => ({ ...p, billingCity: e.target.value }))} className={inputClass} placeholder={t('org.placeholder_city')} />
+                                        </Field>
+                                    </div>
+                                    <Field label={t('org.country')}>
+                                        <select value={orgData.billingCountry} onChange={e => setOrgData(p => ({ ...p, billingCountry: e.target.value }))} className={inputClass}>
+                                            <option value="">{t('org.select_country')}</option>
+                                            {COUNTRIES.map(c => (
+                                                <option key={c.code} value={c.code}>{c.name}</option>
+                                            ))}
+                                        </select>
                                     </Field>
                                     <div className="grid grid-cols-2 gap-4">
                                         <Field label={t('org.kvk')}>

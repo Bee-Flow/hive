@@ -13,7 +13,64 @@ import JSZip from 'jszip';
  *   Text files come as a string; binary files come as a base64 data URL we
  *   decode back to bytes for the zip.
  */
-export async function downloadWebpageZip({ name, html, css, js, extraFiles = [], extraContents = {} }) {
+/** Add every extra file to the zip at its declared path (text or decoded binary). */
+function addExtras(zip, extraFiles, extraContents) {
+    for (const meta of extraFiles) {
+        const c = extraContents[meta.path];
+        if (!c) continue;
+        if (c.isText && typeof c.content === 'string') {
+            zip.file(meta.path, c.content);
+        } else if (c.dataUrl && typeof c.dataUrl === 'string') {
+            const commaIdx = c.dataUrl.indexOf(',');
+            if (commaIdx > 0) zip.file(meta.path, c.dataUrl.slice(commaIdx + 1), { base64: true });
+        }
+    }
+}
+
+function triggerDownload(blob, name) {
+    const safeName = (name || 'webpage').replace(/[^a-zA-Z0-9.\-_ ]/g, '_').trim() || 'webpage';
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `${safeName}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+}
+
+export async function downloadWebpageZip({ name, html, css, js, extraFiles = [], extraContents = {}, framework = 'vanilla' }) {
+    // React + Material UI: ship a self-contained built index.html (the same
+    // esbuild-bundled module + esm.sh import map the preview uses) plus the
+    // original src/ files. The build needs no local toolchain; the index.html
+    // loads React/MUI from esm.sh, so serve it over http(s) with a connection.
+    if (framework === 'react-mui') {
+        const zip = new JSZip();
+        const { composeReactPreview } = await import('./buildWebpagePreview');
+        const extras = extraFiles.map(meta => {
+            const c = extraContents[meta.path];
+            return c
+                ? { path: meta.path, isText: c.isText, mimeType: c.mimeType, content: c.content, dataUrl: c.dataUrl }
+                : { path: meta.path };
+        });
+        let indexHtml;
+        try {
+            indexHtml = await composeReactPreview({}, { extraFiles: extras });
+        } catch (err) {
+            indexHtml = `<!DOCTYPE html><html><body><pre>Build failed: ${String(err?.message || err)}</pre></body></html>`;
+        }
+        zip.file('index.html', indexHtml);
+        addExtras(zip, extraFiles, extraContents);
+        zip.file('README.txt',
+            'React + Material UI app exported from Bee Flow.\n\n' +
+            'index.html is a self-contained build that loads React and Material UI from the\n' +
+            'esm.sh CDN — open it via a static server with internet access (e.g. `npx serve`),\n' +
+            'not directly from file://. The src/ folder holds the original source files.\n');
+        const blob = await zip.generateAsync({ type: 'blob' });
+        triggerDownload(blob, name);
+        return;
+    }
+
     const zip = new JSZip();
 
     let outHtml = html && html.trim()
@@ -43,32 +100,10 @@ export async function downloadWebpageZip({ name, html, css, js, extraFiles = [],
     if (js) zip.file('script.js', js);
 
     // Add every extra file at its declared path. JSZip auto-creates folders.
-    for (const meta of extraFiles) {
-        const c = extraContents[meta.path];
-        if (!c) continue;
-        if (c.isText && typeof c.content === 'string') {
-            zip.file(meta.path, c.content);
-        } else if (c.dataUrl && typeof c.dataUrl === 'string') {
-            // Strip the "data:<mime>;base64," prefix and decode.
-            const commaIdx = c.dataUrl.indexOf(',');
-            if (commaIdx > 0) {
-                const base64 = c.dataUrl.slice(commaIdx + 1);
-                zip.file(meta.path, base64, { base64: true });
-            }
-        }
-    }
+    addExtras(zip, extraFiles, extraContents);
 
     const blob = await zip.generateAsync({ type: 'blob' });
-
-    const safeName = (name || 'webpage').replace(/[^a-zA-Z0-9.\-_ ]/g, '_').trim() || 'webpage';
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `${safeName}.zip`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
+    triggerDownload(blob, name);
 }
 
 export default downloadWebpageZip;

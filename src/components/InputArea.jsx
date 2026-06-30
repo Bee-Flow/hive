@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Send, Paperclip, X, StopCircle, MessageCircle, FileText, Image, File as FileIcon, FileSpreadsheet, ArrowUp, Sparkles, LayoutGrid, Globe, BookOpen, Brain } from 'lucide-react';
+import { Send, Paperclip, X, StopCircle, MessageCircle, FileText, Image, File as FileIcon, FileSpreadsheet, ArrowUp, Sparkles, LayoutGrid, Globe, BookOpen, Brain, Box as BoxIcon, ChevronRight, ChevronDown } from 'lucide-react';
 import ModelTierSelector from './ModelTierSelector';
 import EffortSelector from './EffortSelector';
 import GoogleDrivePicker from './chat/GoogleDrivePicker';
@@ -16,6 +16,7 @@ import VoiceCallButton from './chat/Voice/VoiceCallButton';
 import VoiceInlinePanel from './chat/Voice/VoiceInlinePanel';
 import { getIntegrationLogo } from '../utils/integrationLogos';
 import { resizeImageForUpload, readAsDataUrl } from '../utils/imageResize';
+import { StepIcon } from './admin/AITasksDesigner/Builder/flow/stepIcons';
 
 // Tailwind w-N h-N → pixel dimensions for the chat sidebar's iconSvg
 // callers (Tailwind defaults: w-4=16, w-5=20, w-6=24).
@@ -50,6 +51,8 @@ const APP_DEFS = [
     { id: 'fireflies',       label: 'Fireflies.ai',    description: 'Meeting transcripts',                    requiresFireflies: true, iconSvg: (s = 'w-5 h-5') => renderAppLogo('fireflies', s) },
     { id: 'youtrack',        label: 'YouTrack',        description: 'Issues and projects',                    requiresYouTrack: true,  iconSvg: (s = 'w-5 h-5') => renderAppLogo('youtrack', s) },
     { id: 'gamma',           label: 'Gamma',           description: 'AI presentations',                       requiresGamma: true,     iconSvg: (s = 'w-5 h-5') => renderAppLogo('gamma', s) },
+    { id: 'afas-profit',     label: 'AFAS Profit',     description: 'Query AFAS data (read-only)',            requiresAfas: true,      iconSvg: (s = 'w-5 h-5') => renderAppLogo('afas-profit', s) },
+    { id: 'nmbrs',           label: 'NMBRS',           description: 'Read payroll & HR data (read-only)',     requiresNmbrs: true,     iconSvg: (s = 'w-5 h-5') => renderAppLogo('nmbrs', s) },
     { id: 'web-search',      label: 'Web Search',      description: 'Search the web',                         requiresNone: true,      iconSvg: (s = 'w-5 h-5') => renderAppLogo('web-search', s) },
     { id: 'google-maps',     label: 'Google Maps',     description: 'Directions, routes & places',            requiresNone: true,      iconSvg: (s = 'w-5 h-5') => renderAppLogo('google-maps', s) },
     { id: 'image-gen',       label: 'Image Generation', description: 'AI image creation settings',            requiresNone: true,      iconSvg: (s = 'w-5 h-5') => renderAppLogo('image-gen', s) },
@@ -102,7 +105,9 @@ const InputArea = ({
     // Simple Mode strips the composer toolbar to attachment + web search.
     // Model tier defaults to 'auto' (server resolves) and the secondary icons
     // (memory, KB, voice, skills, apps) are hidden until the user turns it off.
-    const _simpleMode = !!user?.simpleMode;
+    // Phone-sized screens (isMobile) always run the simplified surface — see
+    // AgentHub's `simpleMode` derivation — regardless of the stored preference.
+    const _simpleMode = !!user?.simpleMode || isMobile;
     const [attachments, setAttachments] = useState([]);
     const [isDragOver, setIsDragOver] = useState(false);
     const [drivePickerOpen, setDrivePickerOpen] = useState(false);
@@ -163,6 +168,8 @@ const InputArea = ({
     const [hasElevenLabsKey, setHasElevenLabsKey] = useState(false);
     const [hasYouTrackConfig, setHasYouTrackConfig] = useState(false);
     const [hasGammaKey, setHasGammaKey] = useState(false);
+    const [hasAfasConfig, setHasAfasConfig] = useState(false);
+    const [hasNmbrsConfig, setHasNmbrsConfig] = useState(false);
     const [n8nWorkflows, setN8nWorkflows] = useState([]);
     const [mcpServers, setMcpServers] = useState([]);
 
@@ -198,6 +205,11 @@ const InputArea = ({
 
     // Apps enable/disable state (loaded from server, synced on change)
     const [enabledApps, setEnabledApps] = useState(null); // null = all enabled
+    // Reusable Steps the user published + marked "In chat" — shown in the Apps
+    // picker so they're discoverable (the agent already gets them as tools).
+    const [exposedSteps, setExposedSteps] = useState([]);
+    // Collapsed category sections in the Apps overlay (keyed by category name).
+    const [collapsedAppCats, setCollapsedAppCats] = useState({});
 
     // Save enabled apps to server
     const toggleApp = (appId) => {
@@ -251,6 +263,8 @@ const InputArea = ({
                     setHasFirefliesKey(!!data.hasFirefliesKey);
                     setHasYouTrackConfig(!!data.hasYouTrackConfig);
                     setHasGammaKey(!!data.hasGammaKey);
+                    setHasAfasConfig(!!data.hasAfasConfig);
+                    setHasNmbrsConfig(!!data.hasNmbrsConfig);
 
                     setIsGoogleUser(!!data.isGoogleUser);
                     setIsMicrosoftUser(!!data.isMicrosoftUser);
@@ -280,6 +294,12 @@ const InputArea = ({
                     setMcpServers(data.servers.filter(s => s.toolCount > 0));
                 }
             })
+            .catch(() => { });
+        // Fetch the user's "In chat" Steps for the apps menu (best-effort —
+        // 403/404 when the automations beta is off just yields none).
+        authFetch(`${API_BASE}/api/step/chat-tools`)
+            .then(r => r.ok ? r.json() : null)
+            .then(data => { if (Array.isArray(data?.tools)) setExposedSteps(data.tools); })
             .catch(() => { });
     }, []);
 
@@ -736,7 +756,7 @@ const InputArea = ({
                             isMobile={isMobile}
                         />
                     ) : (
-                    <div role="form" aria-label="Chat message input" data-testid="chat-input-form" className={`chat-composer relative flex flex-col rounded-2xl transition-all focus-within:ring-2 focus-within:ring-[var(--accent-primary)]/35 ${(activeThreadParent || attachments.length > 0 || activeSkillIds.length > 0 || agentAttachedSkillIds.length > 0) ? 'rounded-t-none' : ''} ${isDragOver ? 'ring-2 ring-[var(--accent-primary)]' : ''}`}>
+                    <div role="form" aria-label="Chat message input" data-testid="chat-input-form" data-tour="chat-composer" className={`chat-composer relative flex flex-col rounded-2xl transition-all focus-within:ring-2 focus-within:ring-[var(--accent-primary)]/35 ${(activeThreadParent || attachments.length > 0 || activeSkillIds.length > 0 || agentAttachedSkillIds.length > 0) ? 'rounded-t-none' : ''} ${isDragOver ? 'ring-2 ring-[var(--accent-primary)]' : ''}`}>
 
                         {/* Hidden file input */}
                         <input
@@ -1099,14 +1119,33 @@ const InputArea = ({
                                         mcpConfigured: srv.allConfigured,
                                         requiresNone: false,
                                     }));
-                                    const allAppDefs = [...APP_DEFS, ...n8nAppDefs, ...mcpAppDefs];
+                                    const stepAppDefs = exposedSteps.map(s => ({
+                                        id: `step_${s.id}`,
+                                        stepId: s.id,
+                                        label: s.title || 'Step',
+                                        description: s.description || 'Reusable Step',
+                                        stepCategory: (s.category && s.category.trim()) || 'Steps',
+                                        iconSvg: (sz = 'w-5 h-5') => (
+                                            <span className={`${sz} flex items-center justify-center text-[var(--text-secondary)]`}>
+                                                <StepIcon name={s.icon} size={18} fallback={<BoxIcon size={18} />} />
+                                            </span>
+                                        ),
+                                        isStep: true,
+                                        requiresNone: false,
+                                    }));
+                                    const allAppDefs = [...APP_DEFS, ...n8nAppDefs, ...mcpAppDefs, ...stepAppDefs];
                                     const availableApps = allAppDefs.filter(app => {
+                                        // Reusable Steps are gated by the Step's own "In chat" toggle
+                                        // (server-side); always show the ones the user exposed.
+                                        if (app.isStep) return true;
                                         // Base availability checks
                                         if (app.requiresGoogle && !isGoogleUser) return false;
                                         if (app.requiresMicrosoft && !isMicrosoftUser) return false;
                                         if (app.requiresFireflies && !hasFirefliesKey) return false;
                                         if (app.requiresYouTrack && !hasYouTrackConfig) return false;
                                         if (app.requiresGamma && !hasGammaKey) return false;
+                                        if (app.requiresAfas && !hasAfasConfig) return false;
+                                        if (app.requiresNmbrs && !hasNmbrsConfig) return false;
                                         // Org-level gating — gate ALL apps (matching backend ORG_EXEMPT_APPS logic)
                                         if (orgEnabledIntegrations) {
                                             if (app.isMcp) {
@@ -1142,6 +1181,26 @@ const InputArea = ({
                                                 const filtered = appSearch.trim()
                                                     ? availableApps.filter(a => a.label.toLowerCase().includes(appSearch.toLowerCase()) || a.description.toLowerCase().includes(appSearch.toLowerCase()))
                                                     : availableApps;
+                                                // Group entries into category sections (Google / Microsoft /
+                                                // per-Step category / MCP / n8n / Other) for the redesigned menu.
+                                                const appCategory = (app) => {
+                                                    if (app.isStep) return app.stepCategory || 'Steps';
+                                                    if (app.isMcp) return 'MCP servers';
+                                                    if (app.isN8n) return 'n8n';
+                                                    if (app.requiresGoogle) return 'Google';
+                                                    if (app.requiresMicrosoft) return 'Microsoft';
+                                                    return 'Other';
+                                                };
+                                                // Fixed priority for the integration buckets; step categories
+                                                // (priority 50) sort alphabetically between them and MCP/n8n.
+                                                const CAT_PRIORITY = { Google: 0, Microsoft: 1, Other: 2, 'MCP servers': 100, n8n: 101 };
+                                                const byCat = {};
+                                                for (const app of filtered) { const c = appCategory(app); (byCat[c] = byCat[c] || []).push(app); }
+                                                const orderedCats = Object.keys(byCat).sort((a, b) => {
+                                                    const pa = CAT_PRIORITY[a] ?? 50;
+                                                    const pb = CAT_PRIORITY[b] ?? 50;
+                                                    return pa !== pb ? pa - pb : a.localeCompare(b);
+                                                });
                                                 const handleAppClick = (app) => {
                                                     if (!isAppEnabled(app.id)) return;
                                                     setAppsOverlayOpen(false);
@@ -1157,6 +1216,8 @@ const InputArea = ({
                                                         case 'fireflies': setInput('List my recent meeting transcripts'); break;
                                                         case 'youtrack': setInput('Search my YouTrack issues'); break;
                                                         case 'gamma': setInput('Create a presentation about '); break;
+                                                        case 'afas-profit': setInput('Which AFAS data can you access?'); break;
+                                                        case 'nmbrs': setInput('List my NMBRS companies'); break;
                                                         case 'outlook': setInput('Show my recent Outlook emails'); break;
                                                         case 'outlook-readonly': setInput('Show my recent Outlook emails'); break;
                                                         case 'ms-calendar': setInput("What's on my calendar this week?"); break;
@@ -1167,6 +1228,8 @@ const InputArea = ({
                                                                 setInput(`Run the ${app.label} workflow `);
                                                             } else if (app.isMcp) {
                                                                 setInput(`Use ${app.label} to `);
+                                                            } else if (app.isStep) {
+                                                                setInput(`Use the "${app.label}" step to `);
                                                             }
                                                             break;
 
@@ -1182,7 +1245,7 @@ const InputArea = ({
                                                             <div className="flex items-center justify-between mb-1">
                                                                 <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Apps</h3>
                                                                 <span className="text-[11px] px-2 py-0.5 rounded-full" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>
-                                                                    {availableApps.filter(a => isAppEnabled(a.id)).length}/{availableApps.length} active
+                                                                    {availableApps.filter(a => a.isStep || isAppEnabled(a.id)).length}/{availableApps.length} active
                                                                 </span>
                                                             </div>
                                                             <p className="text-[11px] mb-2.5" style={{ color: 'var(--text-tertiary)' }}>Click to use · Toggle to enable/disable</p>
@@ -1201,25 +1264,49 @@ const InputArea = ({
                                                         <div className="p-1.5 max-h-72 overflow-y-auto">
                                                             {filtered.length === 0 ? (
                                                                 <div className="text-center py-6 text-sm" style={{ color: 'var(--text-tertiary)' }}>No apps found</div>
-                                                            ) : filtered.map(app => {
-                                                                const enabled = isAppEnabled(app.id);
+                                                            ) : orderedCats.map(cat => {
+                                                                // Search auto-expands; otherwise honour the collapsed state.
+                                                                const collapsed = !appSearch.trim() && !!collapsedAppCats[cat];
                                                                 return (
-                                                                    <div
-                                                                        key={app.id}
-                                                                        className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group ${enabled ? 'cursor-pointer hover:bg-[var(--bg-tertiary)]' : 'opacity-50'}`}
-                                                                        onClick={() => handleAppClick(app)}
-                                                                    >
-                                                                        <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-[var(--bg-tertiary)]">
-                                                                            {app.iconSvg('w-5 h-5')}
-                                                                        </div>
-                                                                        <div className="flex-1 min-w-0">
-                                                                            <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{app.label}</div>
-                                                                            <div className="text-[11px] truncate" style={{ color: 'var(--text-tertiary)' }}>{app.description}</div>
-                                                                        </div>
-                                                                        <label className="relative inline-flex items-center cursor-pointer flex-shrink-0" onClick={e => e.stopPropagation()}>
-                                                                            <input type="checkbox" checked={enabled} onChange={() => toggleApp(app.id)} className="sr-only peer" />
-                                                                            <div className="w-9 h-5 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
-                                                                        </label>
+                                                                    <div key={cat} className="mb-0.5">
+                                                                        <button
+                                                                            type="button"
+                                                                            onClick={() => setCollapsedAppCats(prev => ({ ...prev, [cat]: !prev[cat] }))}
+                                                                            className="w-full flex items-center gap-1.5 px-3 pt-2 pb-1 text-[10px] font-semibold uppercase tracking-wide hover:opacity-80"
+                                                                            style={{ color: 'var(--text-tertiary)' }}
+                                                                        >
+                                                                            {collapsed ? <ChevronRight className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                                                                            <span className="truncate">{cat}</span>
+                                                                            <span className="ml-auto tabular-nums opacity-70">{byCat[cat].length}</span>
+                                                                        </button>
+                                                                        {!collapsed && byCat[cat].map(app => {
+                                                                            // Steps are always on (gated by the Step's own "In chat"
+                                                                            // toggle in the builder) — show a static badge, not a switch.
+                                                                            const enabled = app.isStep ? true : isAppEnabled(app.id);
+                                                                            return (
+                                                                                <div
+                                                                                    key={app.id}
+                                                                                    className={`flex items-center gap-3 px-3 py-2.5 rounded-lg transition-colors group ${enabled ? 'cursor-pointer hover:bg-[var(--bg-tertiary)]' : 'opacity-50'}`}
+                                                                                    onClick={() => handleAppClick(app)}
+                                                                                >
+                                                                                    <div className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 bg-[var(--bg-tertiary)]">
+                                                                                        {app.iconSvg('w-5 h-5')}
+                                                                                    </div>
+                                                                                    <div className="flex-1 min-w-0">
+                                                                                        <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{app.label}</div>
+                                                                                        <div className="text-[11px] truncate" style={{ color: 'var(--text-tertiary)' }}>{app.description}</div>
+                                                                                    </div>
+                                                                                    {app.isStep ? (
+                                                                                        <span className="flex-shrink-0 text-[10px] px-2 py-0.5 rounded-full" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-secondary)' }}>Step</span>
+                                                                                    ) : (
+                                                                                        <label className="relative inline-flex items-center cursor-pointer flex-shrink-0" onClick={e => e.stopPropagation()}>
+                                                                                            <input type="checkbox" checked={enabled} onChange={() => toggleApp(app.id)} className="sr-only peer" />
+                                                                                            <div className="w-9 h-5 bg-gray-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-emerald-500"></div>
+                                                                                        </label>
+                                                                                    )}
+                                                                                </div>
+                                                                            );
+                                                                        })}
                                                                     </div>
                                                                 );
                                                             })}

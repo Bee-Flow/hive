@@ -7,10 +7,12 @@ import useAutomationApi from '../../../../hooks/useAutomationApi';
  * who just want to copy the full definition or send it to support — but
  * power users can switch to edit mode and PUT a hand-edited definition.
  *
- * Edit mode is gated by `editable` (only set in expert mode) AND only
- * allowed when the automation is not currently active. Active automations
- * stay read-only because a malformed save here would leave the live
- * trigger pointing at a broken graph until the next deactivate/save cycle.
+ * Edit mode is gated by `editable` AND only allowed when the automation
+ * is not currently active. Active automations stay read-only because a
+ * malformed save here would leave the live trigger pointing at a broken
+ * graph until the next deactivate/save cycle. `disabled` additionally
+ * blocks editing while the AI builder turn is mid-flight — a raw save
+ * racing the SSE patch loop would tear the draft.
  *
  * Server-side `validateDefinition` is the single source of truth for
  * whether a save is accepted; we surface the returned errors inline.
@@ -18,7 +20,7 @@ import useAutomationApi from '../../../../hooks/useAutomationApi';
  * Lazy Monaco; falls back to a `<textarea>` when the editor module fails
  * to load (offline, blocking extension, or in tests).
  */
-export default function JsonTab({ automation, editable = false, onSaved }) {
+export default function JsonTab({ automation, editable = false, disabled = false, onSaved }) {
     const api = useAutomationApi();
 
     const [Monaco, setMonaco] = useState(null);
@@ -51,7 +53,7 @@ export default function JsonTab({ automation, editable = false, onSaved }) {
     }, [initialText, editing]);
 
     const isActive = !!automation?.isActive;
-    const canEdit = editable && !isActive;
+    const canEdit = editable && !isActive && !disabled;
 
     const onCopy = async () => {
         try {
@@ -134,7 +136,9 @@ export default function JsonTab({ automation, editable = false, onSaved }) {
                             ? 'Read-only. Click "Edit" to make raw changes.'
                             : isActive
                                 ? 'Read-only. Deactivate the automation to edit raw JSON.'
-                                : 'Read-only. Edit via the chat or per-step inspector.'}
+                                : disabled
+                                    ? 'Read-only while the AI builder is working.'
+                                    : 'Read-only. Edit via the chat or per-step inspector.'}
                 </div>
                 {saveOk && (
                     <span className="text-[11px] text-emerald-600 flex items-center gap-1">

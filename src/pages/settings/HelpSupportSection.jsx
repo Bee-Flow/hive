@@ -1,7 +1,6 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { LifeBuoy, Plus, ArrowLeft, Compass } from 'lucide-react';
+import { LifeBuoy, Plus, ArrowLeft, GraduationCap } from 'lucide-react';
 import { authFetch, API_BASE } from '../../utils/helpers';
-import { TOUR_START_EVENT } from '../../components/onboarding/tourSteps';
 import {
     NewThreadForm,
     ThreadDetail,
@@ -60,11 +59,11 @@ export default function HelpSupportSection({ user }) {
 
     return (
         <div className="max-w-3xl mx-auto py-4">
-            {/* Header */}
-            <div className="mb-4 flex items-start justify-between gap-4">
+            {/* Header — stacks on phones so the action buttons don't overflow. */}
+            <div className="mb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3 sm:gap-4">
                 <div>
                     <div className="flex items-center gap-2 mb-1">
-                        <LifeBuoy className="w-5 h-5" style={{ color: 'var(--accent-primary)' }} />
+                        <LifeBuoy className="w-5 h-5 flex-shrink-0" style={{ color: 'var(--accent-primary)' }} />
                         <h2 className="text-lg font-semibold" style={{ color: 'var(--text-primary)' }}>Help & Support</h2>
                     </div>
                     <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
@@ -72,14 +71,15 @@ export default function HelpSupportSection({ user }) {
                     </p>
                 </div>
                 {view === 'list' && (
-                    <div className="flex items-center gap-2 flex-shrink-0">
+                    <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                        {/* Self-serve first: hands-on courses often answer the question. */}
                         <button
-                            onClick={() => window.dispatchEvent(new CustomEvent(TOUR_START_EVENT))}
-                            className="px-3 py-1.5 rounded-md text-sm font-medium flex items-center gap-1.5 border transition-colors hover:bg-[var(--bg-tertiary)]"
+                            onClick={() => { window.history.pushState({}, '', '/app/settings/learning'); window.dispatchEvent(new PopStateEvent('popstate')); }}
+                            className="px-3 py-1.5 rounded-md text-sm font-medium flex items-center gap-1.5 border hover:bg-[var(--bg-tertiary)] transition-colors"
                             style={{ borderColor: 'var(--border-default)', color: 'var(--text-secondary)', background: 'transparent' }}
-                            title="Replay the welcome tour"
+                            title="Hands-on courses in the Learning Center"
                         >
-                            <Compass className="w-3.5 h-3.5" /> Take the tour
+                            <GraduationCap className="w-3.5 h-3.5" /> Learning Center
                         </button>
                         <button
                             onClick={() => setView('new')}

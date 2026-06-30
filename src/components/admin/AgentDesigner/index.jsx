@@ -9,6 +9,7 @@ import { API_BASE, authFetch } from "../../../utils/helpers";
 import { isImageAvatar, resolveAvatarSrc, pickAgentAvatar } from "../../../utils/agentAvatar";
 import { CAPABILITIES } from "./constants";
 import { INTEGRATION_CATALOG } from "./integrations";
+import { TOUR_OPEN_DESIGNER_SECTION } from "../../onboarding/tourSteps";
 
 // Extracted hooks
 import useAgentState from "./hooks/useAgentState";
@@ -54,6 +55,8 @@ const AgentDesigner = ({
     setSharedGroups,
     showPublishMenu,
     setShowPublishMenu,
+    publishError,
+    setPublishError,
     orgGroups,
     availableModels,
     modelTiers,
@@ -161,6 +164,19 @@ const AgentDesigner = ({
 
   // Capabilities
   const { checkCapability, toggleCapability } = useCapabilities(state);
+
+  // Learning Center tours: when a lesson spotlights an anchor that only renders in
+  // a specific Designer section (e.g. the system prompt, tools, or knowledge), the
+  // tour engine asks us to open that section first so the anchor actually exists.
+  useEffect(() => {
+    const KNOWN = new Set(['identity', 'knowledge', 'tools', 'behavior']);
+    const onOpenSection = (e) => {
+      const section = e?.detail?.section;
+      if (section && KNOWN.has(section)) setActiveSection(section);
+    };
+    window.addEventListener(TOUR_OPEN_DESIGNER_SECTION, onOpenSection);
+    return () => window.removeEventListener(TOUR_OPEN_DESIGNER_SECTION, onOpenSection);
+  }, [setActiveSection]);
 
   // Close emoji picker on click outside
   useEffect(() => {
@@ -391,7 +407,7 @@ const AgentDesigner = ({
                         <div className="relative">
                           {!isReadonly && (
                             <button
-                              onClick={() => setShowPublishMenu(!showPublishMenu)}
+                              onClick={() => { setShowPublishMenu(!showPublishMenu); setPublishError(''); }}
                               className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all flex items-center gap-1.5 border ${
                                 isPublished ? "bg-emerald-500 text-white border-emerald-500 hover:bg-emerald-600" : "text-[var(--text-secondary)] bg-[var(--bg-secondary)] hover:bg-[var(--bg-tertiary)]"
                               }`}
@@ -583,6 +599,18 @@ const AgentDesigner = ({
                               </div>
                             )}
 
+                            {/* Inline publish error (BFSF-220) — replaces
+                                alert(), which sandboxed iframes suppress */}
+                            {publishError && (
+                              <div
+                                role="alert"
+                                className="px-3 py-2 border-t text-xs text-red-500 bg-red-500/10"
+                                style={{ borderColor: "var(--border-subtle)" }}
+                              >
+                                {publishError}
+                              </div>
+                            )}
+
                             {/* Cancel */}
                             <div
                               className="p-2 border-t"
@@ -639,6 +667,7 @@ const AgentDesigner = ({
                         if (item.id === 'fireflies') return !!integrationStatus.hasFirefliesKey;
                         if (item.id === 'youtrack') return !!integrationStatus.hasYouTrackConfig;
                         if (item.id === 'gamma') return !!integrationStatus.hasGammaKey;
+                        if (item.id === 'afas-profit') return !!integrationStatus.hasAfasConfig;
                         if (item.id === 'n8n') return !!integrationStatus.hasN8nConfig;
                         if (item.id === 'linkedin') return !!integrationStatus.hasLinkedInConfig || !!integrationStatus.linkedInConnected;
                         return true;

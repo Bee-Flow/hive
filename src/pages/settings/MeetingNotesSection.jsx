@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { MessageSquare, Loader2 } from 'lucide-react';
+import { MessageSquare } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 
 const NC_BLUE = '#0082C9';
@@ -35,9 +35,21 @@ const Row = ({ title, desc, children }) => (
  * feature isn't licensed (the API returns a non-OK status). Org-level settings,
  * when present, take precedence over these per field.
  */
+const Select = ({ value, onChange, disabled, options }) => (
+    <select
+        value={value} onChange={onChange} disabled={disabled}
+        className="w-40 px-3 py-1.5 rounded-lg border outline-none text-[13px]"
+        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+    >
+        {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+    </select>
+);
+
 export default function MeetingNotesSection() {
-    const [cfg, setCfg] = useState({ autoTranscribe: false, postSummaryBack: false, recordingFolder: '/Talk', language: 'nl' });
+    const [cfg, setCfg] = useState({ autoTranscribe: false, postSummaryBack: false, recordingFolder: '/Talk', language: 'nl', autoRecord: false, autoRecordScope: 'calendar', recordingMode: 'audio' });
     const [available, setAvailable] = useState(true);
+    const [connected, setConnected] = useState(false);
+    const [recordingEnabled, setRecordingEnabled] = useState(false);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState(null);
@@ -46,8 +58,12 @@ export default function MeetingNotesSection() {
         (async () => {
             try {
                 const res = await authFetch(`${API_BASE}/api/talk-notes-settings/user/me`);
-                if (res.ok) { const data = await res.json(); setCfg(prev => ({ ...prev, ...data })); }
-                else setAvailable(false); // 403/404 → feature not licensed for this account
+                if (res.ok) {
+                    const data = await res.json();
+                    setConnected(!!data.nextcloudConnected);
+                    setRecordingEnabled(!!data.recordingEnabled);
+                    setCfg(prev => ({ ...prev, ...data }));
+                } else setAvailable(false); // 403/404 → feature not licensed for this account
             } catch (_) { setAvailable(false); } finally { setLoading(false); }
         })();
     }, []);
@@ -64,15 +80,10 @@ export default function MeetingNotesSection() {
         finally { setSaving(false); }
     };
 
-    if (loading) {
-        return (
-            <div className="flex items-center gap-2 px-5 py-4 rounded-xl" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}>
-                <Loader2 className="w-4 h-4 animate-spin" style={{ color: NC_BLUE }} />
-                <span className="text-[13px]" style={{ color: 'var(--text-muted)' }}>Loading…</span>
-            </div>
-        );
-    }
-    if (!available) return null;
+    // Render nothing until we know — avoids flashing the section for accounts
+    // that turn out to lack the feature or a Nextcloud connection.
+    if (loading) return null;
+    if (!available || !connected) return null;
 
     return (
         <div>
@@ -88,6 +99,24 @@ export default function MeetingNotesSection() {
             </p>
 
             <div className="rounded-xl overflow-hidden" style={{ border: '1px solid var(--border-subtle)' }}>
+                <Row title="Auto-record my Talk meetings" desc={recordingEnabled ? 'Automatically start recording calls you moderate, then transcribe them.' : 'Unavailable — the Nextcloud recording backend is not configured.'}>
+                    <Toggle on={cfg.autoRecord && recordingEnabled} onClick={() => setCfg(c => ({ ...c, autoRecord: !c.autoRecord }))} disabled={saving || !recordingEnabled} />
+                </Row>
+                {cfg.autoRecord && recordingEnabled && (
+                    <>
+                        <div style={{ height: 1, background: 'var(--border-subtle)' }} />
+                        <Row title="Which calls" desc="Record only scheduled calendar meetings, or every call you moderate.">
+                            <Select value={cfg.autoRecordScope} disabled={saving} onChange={e => setCfg(c => ({ ...c, autoRecordScope: e.target.value }))}
+                                options={[{ value: 'calendar', label: 'Calendar meetings' }, { value: 'all', label: 'Any call I moderate' }]} />
+                        </Row>
+                        <div style={{ height: 1, background: 'var(--border-subtle)' }} />
+                        <Row title="Recording quality" desc="Audio-only is smaller and faster to transcribe.">
+                            <Select value={cfg.recordingMode} disabled={saving} onChange={e => setCfg(c => ({ ...c, recordingMode: e.target.value }))}
+                                options={[{ value: 'audio', label: 'Audio-only' }, { value: 'video', label: 'Video' }]} />
+                        </Row>
+                    </>
+                )}
+                <div style={{ height: 1, background: 'var(--border-subtle)' }} />
                 <Row title="Auto-transcribe my Talk recordings" desc="When a new Talk recording appears, create a Meeting Note automatically.">
                     <Toggle on={cfg.autoTranscribe} onClick={() => setCfg(c => ({ ...c, autoTranscribe: !c.autoTranscribe }))} disabled={saving} />
                 </Row>

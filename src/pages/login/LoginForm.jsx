@@ -90,7 +90,7 @@ const LoginForm = ({
     setupMode, isLoading, handleSubmit,
     handleOAuthLogin, handleGoogleLogin, handleMicrosoftLogin,
     isOAuthConfigured, isGoogleConfigured, isMicrosoftConfigured,
-    setSignupMode, setError,
+    setSignupMode, setError, onForgotPassword,
     allowSignups = true, allowPasswordLogin = true,
     inputClass, labelClass
 }) => {
@@ -145,10 +145,10 @@ const LoginForm = ({
                 {preferredMethod === 'password' && allowPasswordLogin && (
                     <form onSubmit={handlePasswordLogin} className="space-y-5" aria-label="Login form">
                         <div>
-                            <label htmlFor="username" className={labelClass}>{t('login.username')}</label>
+                            <label htmlFor="username" className={labelClass}>{t('login.email', 'Email address')}</label>
                             <div className="relative">
                                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-tertiary)]" />
-                                <input id="username" name="username" type="text" value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} placeholder={t('login.enter_username')} aria-label={t('login.username')} data-testid="username" autoComplete="username" required />
+                                <input id="username" name="username" type="text" inputMode="email" value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} placeholder={t('login.enter_email', 'you@example.com')} aria-label={t('login.email', 'Email address')} data-testid="username" autoComplete="email" required />
                             </div>
                         </div>
                         <PasswordInput id="password" value={password} onChange={(e) => setPassword(e.target.value)} inputClass={inputClass} labelClass={labelClass} label={t('login.password')} placeholder={t('login.enter_password')} />
@@ -158,6 +158,12 @@ const LoginForm = ({
                             className="w-full py-3 bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-600 hover:to-orange-600 text-white rounded-xl font-semibold transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-base shadow-lg shadow-amber-500/20 mt-2">
                             {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><LogIn className="w-5 h-5" /> {t('login.sign_in_btn')}</>}
                         </button>
+                        {onForgotPassword && (
+                            <button type="button" onClick={onForgotPassword}
+                                className="block w-full text-center text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
+                                {t('login.forgot_password', 'Forgot password?')}
+                            </button>
+                        )}
                     </form>
                 )}
 
@@ -211,10 +217,10 @@ const LoginForm = ({
                 <form onSubmit={handlePasswordLogin} className="space-y-5" aria-label="Login form">
                     {!setupMode && (
                         <div>
-                            <label htmlFor="username" className={labelClass}>{t('login.username')}</label>
+                            <label htmlFor="username" className={labelClass}>{t('login.email', 'Email address')}</label>
                             <div className="relative">
                                 <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-tertiary)]" />
-                                <input id="username" name="username" type="text" value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} placeholder={t('login.enter_username')} aria-label={t('login.username')} data-testid="username" autoComplete="username" required />
+                                <input id="username" name="username" type="text" inputMode="email" value={username} onChange={(e) => setUsername(e.target.value)} className={inputClass} placeholder={t('login.enter_email', 'you@example.com')} aria-label={t('login.email', 'Email address')} data-testid="username" autoComplete="email" required />
                             </div>
                         </div>
                     )}
@@ -252,6 +258,12 @@ const LoginForm = ({
                             {setupMode ? t('login.initialize_system') : t('login.sign_in_btn')}
                         </>}
                     </button>
+                    {!setupMode && onForgotPassword && (
+                        <button type="button" onClick={onForgotPassword}
+                            className="block w-full text-center text-xs text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors">
+                            {t('login.forgot_password', 'Forgot password?')}
+                        </button>
+                    )}
                 </form>
             )}
 

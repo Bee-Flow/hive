@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { ShieldCheck, Building2, Users, Clock, Save, AlertTriangle, CheckCircle, Trash2, Info, Network, Globe, X } from 'lucide-react';
+import { ShieldCheck, Building2, Users, Clock, Save, AlertTriangle, CheckCircle, Trash2, Info, Network, Globe, X, MailCheck } from 'lucide-react';
 import { SectionHeader } from '../ui/SectionHeader';
 import { Button } from '../ui/Button';
 import { Card } from '../ui/Card';
@@ -32,7 +32,12 @@ export function AccessView() {
     const [allowConsumerSignups, setAllowConsumerSignups] = useState(true);
     const [consumerLoginMethods, setConsumerLoginMethods] = useState(['password', 'google', 'microsoft']);
     const [waitlistEnabled, setWaitlistEnabled] = useState(false);
+    const [emailVerificationEnabled, setEmailVerificationEnabled] = useState(false);
+    const [serviceEmailConfigured, setServiceEmailConfigured] = useState(true);
+    const [requireMfaForPasswordAccounts, setRequireMfaForPasswordAccounts] = useState(true);
     const [waitlistUsers, setWaitlistUsers]     = useState([]);
+    // Effective state after global overrides (ALLOW_SIGNUPS env + connector-only).
+    const [allowSignupsEnv, setAllowSignupsEnv] = useState(true);
     // Connector-only + geo-blocking
     const [connectorOnly,    setConnectorOnly]    = useState(false);
     const [geoMode,          setGeoMode]          = useState('off');
@@ -50,8 +55,12 @@ export function AccessView() {
                 setAllowOrgSignups(data.allowOrgSignups !== false);
                 setAllowConsumerSignups(data.allowConsumerSignups !== false);
                 setWaitlistEnabled(!!data.waitlistEnabled);
+                setEmailVerificationEnabled(!!data.emailVerificationEnabled);
+                setServiceEmailConfigured(data.serviceEmailConfigured !== false);
+                setRequireMfaForPasswordAccounts(data.requireMfaForPasswordAccounts !== false);
                 if (Array.isArray(data.consumerLoginMethods)) setConsumerLoginMethods(data.consumerLoginMethods);
                 setConnectorOnly(!!data.connectorOnly);
+                setAllowSignupsEnv(data.allowSignupsEnv !== false);
                 if (['off', 'allowlist', 'blocklist'].includes(data.geoMode)) setGeoMode(data.geoMode);
                 if (Array.isArray(data.geoCountries)) setGeoCountries(data.geoCountries);
                 setGeoBlockUnknown(!!data.geoBlockUnknown);
@@ -76,7 +85,7 @@ export function AccessView() {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
-                    allowOrgSignups, allowConsumerSignups, waitlistEnabled, consumerLoginMethods,
+                    allowOrgSignups, allowConsumerSignups, waitlistEnabled, emailVerificationEnabled, requireMfaForPasswordAccounts, consumerLoginMethods,
                     connectorOnly, geoMode, geoCountries, geoBlockUnknown, geoApplyConnector,
                 }),
             });
@@ -115,6 +124,10 @@ export function AccessView() {
             (!q || c.name.toLowerCase().includes(q) || c.code.toLowerCase().includes(q))
         );
     }, [countrySearch, geoCountries]);
+
+    // Net result the login page will actually see, recomputed live from the
+    // current toggles so the admin sees the effect of every override at a glance.
+    const effectiveAllowSignups = (allowOrgSignups || allowConsumerSignups) && !connectorOnly && allowSignupsEnv;
 
     if (loading) return <Spinner label="Loading settings…" />;
 
@@ -178,6 +191,33 @@ export function AccessView() {
                     description="Require admin approval for new account registrations. Invited users bypass the waitlist."
                 />
 
+                <div className="rounded-lg overflow-hidden">
+                    <Toggle
+                        checked={emailVerificationEnabled}
+                        onChange={setEmailVerificationEnabled}
+                        icon={MailCheck}
+                        iconClass="text-blue-400"
+                        label="Require email verification"
+                        description="New password signups must confirm their email address via a link before they can log in. Invited and SSO users (already trusted) are exempt. The verification & welcome email text is configured under Languages → Email Templates."
+                    />
+                    {emailVerificationEnabled && !serviceEmailConfigured && (
+                        <div className="-mt-1 pt-1">
+                            <Banner tone="warning" icon={AlertTriangle}>
+                                Service Email is not configured, so verification can't be enforced — new accounts are created active until you set up a sender under <strong>Integrations → Email</strong>.
+                            </Banner>
+                        </div>
+                    )}
+                </div>
+
+                <Toggle
+                    checked={requireMfaForPasswordAccounts}
+                    onChange={setRequireMfaForPasswordAccounts}
+                    icon={ShieldCheck}
+                    iconClass="text-teal-400"
+                    label="Require MFA for password accounts"
+                    description="Force username/password accounts to set up two-factor authentication before they can use the platform. Google/Microsoft SSO accounts are exempt (their provider handles MFA)."
+                />
+
                 <Toggle
                     checked={connectorOnly}
                     onChange={setConnectorOnly}
@@ -194,17 +234,30 @@ export function AccessView() {
                 )}
             </Card>
 
-            {!allowOrgSignups && !allowConsumerSignups && (
+            {!allowSignupsEnv && (
+                <Banner tone="danger" icon={AlertTriangle} title="Signups are forced off by the environment" className="mb-4">
+                    The <strong>ALLOW_SIGNUPS</strong> environment variable is set to{' '}
+                    <code className="px-1 py-px rounded bg-[var(--bg-tertiary)] text-[11px]">false</code> in this deployment, which
+                    overrides the toggles above. <strong>No “Create Account” button will appear on the login page</strong> regardless
+                    of these settings. Remove the variable (or set it to <code className="px-1 py-px rounded bg-[var(--bg-tertiary)] text-[11px]">true</code>)
+                    to enable web signups — note it defaults to <code className="px-1 py-px rounded bg-[var(--bg-tertiary)] text-[11px]">false</code> on
+                    self-hosted installs. Email invitations still work.
+                </Banner>
+            )}
+
+            {allowSignupsEnv && !allowOrgSignups && !allowConsumerSignups && (
                 <Banner tone="danger" icon={AlertTriangle} title="All signups are disabled" className="mb-4">
                     No new users will be able to create accounts. The “Create Account” button will be hidden from the login
                     page. Invited users can still join existing organizations.
                 </Banner>
             )}
 
-            <Banner tone="info" icon={Info} className="mb-5">
-                These settings take effect immediately. The <strong>ALLOW_SIGNUPS</strong> environment variable acts as a global override —
-                if set to <code className="px-1 py-px rounded bg-[var(--bg-tertiary)] text-[11px]">false</code>, both toggles above are ignored.
-            </Banner>
+            {allowSignupsEnv && (
+                <Banner tone="info" icon={Info} className="mb-5">
+                    These settings take effect immediately. The <strong>ALLOW_SIGNUPS</strong> environment variable acts as a global override —
+                    if set to <code className="px-1 py-px rounded bg-[var(--bg-tertiary)] text-[11px]">false</code>, both toggles above are ignored.
+                </Banner>
+            )}
 
             <Card className="space-y-4 !p-5 mb-4">
                 <div className="flex items-start gap-2">
@@ -324,7 +377,19 @@ export function AccessView() {
                 )}
             </Card>
 
-            <div className="flex justify-end mb-8">
+            <div className="flex items-center justify-between gap-4 mb-8">
+                <span className="inline-flex items-center gap-1.5 text-[12px] font-medium">
+                    <span className={`w-2 h-2 rounded-full ${effectiveAllowSignups ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                    <span className="text-[var(--text-muted)]">Create Account button:</span>
+                    <span className={effectiveAllowSignups ? 'text-emerald-400' : 'text-rose-400'}>
+                        {effectiveAllowSignups ? 'visible on the login page' : 'hidden'}
+                    </span>
+                    {!effectiveAllowSignups && (allowOrgSignups || allowConsumerSignups) && (
+                        <span className="text-[var(--text-muted)]">
+                            ({!allowSignupsEnv ? 'ALLOW_SIGNUPS=false' : connectorOnly ? 'connector-only mode' : 'overridden'})
+                        </span>
+                    )}
+                </span>
                 <Button icon={Save} onClick={handleSave} busy={saving}>
                     {saving ? 'Saving…' : 'Save changes'}
                 </Button>

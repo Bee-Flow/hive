@@ -1,5 +1,6 @@
 import React from 'react';
 import { INTEGRATION_CATALOG } from '../integrations';
+import ConnectionPolicyPicker from '../../../shared/ConnectionPolicyPicker';
 
 export const ToolsSection = ({
   selectedAgent, name, setName, description, setDescription,
@@ -26,7 +27,7 @@ export const ToolsSection = ({
   return (
                                                 <div className="space-y-6 animate-fadeIn">
                                                     <div>
-                                                        <h2 className="text-base font-semibold text-primary">Capabilities & Integrations</h2>
+                                                        <h2 data-tour="agent-tools" className="text-base font-semibold text-primary">Capabilities & Integrations</h2>
                                                         <p className="text-xs text-muted mt-0.5">Select which integrations this agent can use. Only integrations you have access to are shown.</p>
                                                     </div>
 
@@ -42,6 +43,8 @@ export const ToolsSection = ({
                                                             if (item.id === 'fireflies') return !!integrationStatus.hasFirefliesKey;
                                                             if (item.id === 'youtrack') return !!integrationStatus.hasYouTrackConfig;
                                                             if (item.id === 'gamma') return !!integrationStatus.hasGammaKey;
+                                                            if (item.id === 'afas-profit') return !!integrationStatus.hasAfasConfig;
+                                                            if (item.id === 'nmbrs') return !!integrationStatus.hasNmbrsConfig;
                                                             if (item.id === 'n8n') return !!integrationStatus.hasN8nConfig;
                                                             if (item.id === 'linkedin') return !!integrationStatus.hasLinkedInConfig || !!integrationStatus.linkedInConnected;
                                                             return true;
@@ -112,7 +115,13 @@ export const ToolsSection = ({
                                                         );
                                                     })()}
 
-
+                                                    {/* Connection lending (gated): owner lends a named connection for
+                                                        this agent, or recipients bring their own (default). */}
+                                                    <ConnectionPolicyPicker
+                                                        resourceType="agent"
+                                                        resourceId={selectedAgent?.id || null}
+                                                        providers={enabledIntegrations || INTEGRATION_CATALOG.map(i => i.id)}
+                                                    />
                                                 </div>
   );
 };

@@ -56,6 +56,16 @@ const MessageItem = ({
         window.addEventListener('beeflow:simpleModeChanged', handler);
         return () => window.removeEventListener('beeflow:simpleModeChanged', handler);
     }, []);
+    // The reasoning / chain-of-thought panel is an admin/debug surface only
+    // (BFSF-253). AgentHub sets window.__beeflowShowReasoning + dispatches
+    // `beeflow:showReasoningChanged`; we subscribe so end users never see the
+    // model's internal reasoning in chat.
+    const [showReasoning, setShowReasoning] = useState(() => typeof window !== 'undefined' && !!window.__beeflowShowReasoning);
+    useEffect(() => {
+        const handler = (e) => setShowReasoning(!!e?.detail);
+        window.addEventListener('beeflow:showReasoningChanged', handler);
+        return () => window.removeEventListener('beeflow:showReasoningChanged', handler);
+    }, []);
     const isUser = msg.role === 'user';
     const isTool = msg.role === 'tool';
     const [copied, setCopied] = useState(false);
@@ -526,8 +536,9 @@ const MessageItem = ({
                 {/* Sequential Thinking — always at the top */}
                 {!isUser && !isTool && msg.thinkingSteps?.length > 0 && <SequentialThinking msg={msg} />}
 
-                {/* Model Thinking / Reasoning — streams inline, auto-collapses to "Thought for Ns" after */}
-                {!isUser && !isTool && <ThinkingPanel msg={msg} />}
+                {/* Model Thinking / Reasoning — admin/debug only (BFSF-253); end
+                    users never see the model's internal chain-of-thought. */}
+                {!isUser && !isTool && showReasoning && <ThinkingPanel msg={msg} />}
 
                 {!isUser && !isTool && renderToolCall()}
 

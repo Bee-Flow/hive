@@ -3,7 +3,11 @@
 
 <head>
   <meta charset="UTF-8" />
-  <link rel="icon" type="image/svg+xml" href="/BeeFlow-logo-Icon-2026.svg" />
+  <!-- Favicon must point at a file in public/ (served verbatim at the root).
+       The brand icon in src/assets is content-hashed by Vite, so the old
+       /BeeFlow-logo-Icon-2026.svg reference 404'd → no tab icon (BFSF-242).
+       public/app-icon.svg is byte-identical to that brand icon. -->
+  <link rel="icon" type="image/svg+xml" href="/app-icon.svg" />
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Merriweather:wght@400;700&family=Playfair+Display:wght@400;700&family=Lora:wght@400;700&family=Source+Sans+3:wght@400;600;700&family=Nunito:wght@400;600;700&family=Poppins:wght@400;500;600&family=Roboto+Mono:wght@400;500&family=Fira+Code:wght@400;500&display=swap" rel="stylesheet">

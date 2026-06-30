@@ -2,25 +2,33 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
     ArrowLeft, Plus, FileText, Trash2,
     BookOpen, Loader2, AlertCircle, CheckCircle2, Search,
-    X, ChevronRight, Pencil, Download, HelpCircle,
+    X, ChevronRight, Pencil,
     ClipboardList, ListChecks, PanelLeft, History
 } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
+import { notebookApi as api, uploadSourceFile } from './notebooks/hooks/notebookApi';
+import useModelTiers from './notebooks/hooks/useModelTiers';
+import useExportTargets from './notebooks/hooks/useExportTargets';
+import useSourcesPolling from './notebooks/hooks/useSourcesPolling';
+import useDocumentAutosave from './notebooks/hooks/useDocumentAutosave';
 import useChatEngine from '../hooks/useChatEngine';
-import NotebookEditor from './notebooks/NotebookEditor';
+import RichTextEditor from '../editor/react/RichTextEditor.jsx';
+import { shouldUseNewEditor } from '../editor/react/useNewEditor.js';
 import NotebookChat from './notebooks/NotebookChat';
-import NotebookStudio from './notebooks/NotebookStudio';
+import ExportMenu from './notebooks/ExportMenu';
 import NotebookSources from './notebooks/NotebookSources';
+import NotebookWorkspace from './notebooks/NotebookWorkspace';
 import NotebookTOC from './notebooks/NotebookTOC';
 import NotebookVersions from './notebooks/NotebookVersions';
 import CitationOverlay from './notebooks/CitationOverlay';
 
-import GenerationOverlay from './notebooks/GenerationOverlay';
 import SendForSigningModal from './notebooks/SendForSigningModal';
 import { preprocessMermaidContent } from './notebooks/MermaidExtension';
 import { renderMermaidToSVG, svgToPngDataUrl } from './notebooks/MermaidBlock';
 import { embedImagesAsBase64 } from '../utils/imageEmbedding';
 import { useLicenseContext } from '../components/LicenseContext';
+import { toast } from '../components/shared/Toast';
+import useTranslation from '../hooks/useTranslation';
 
 /* ── Time helper ──────────────────────────────────────────────── */
 function timeAgo(dateStr) {
@@ -55,33 +63,7 @@ const STATUS_CONFIG = {
     error:      { bg: 'linear-gradient(135deg, #fecaca, #fca5a5)', text: '#991b1b', icon: AlertCircle, anim: '', label: 'Error' },
 };
 
-/* ── API helpers ──────────────────────────────────────────────── */
-async function api(path, opts = {}) {
-    const url = `${API_BASE}/api/notebooks${path === '/' ? '' : path}`;
-    const res = await authFetch(url, {
-        headers: { 'Content-Type': 'application/json', ...opts.headers },
-        ...opts,
-    });
-    if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        console.error('[Notebooks] API error:', res.status, data);
-        throw new Error(data.error || `API ${res.status}`);
-    }
-    return res.json();
-}
-
-async function uploadSourceFile(notebookId, file) {
-    const form = new FormData();
-    form.append('file', file);
-    const res = await authFetch(`${API_BASE}/api/notebooks/${notebookId}/sources/file`, {
-        method: 'POST',
-        body: form,
-    });
-    if (!res.ok) throw new Error('Upload failed');
-    return res.json();
-}
-
-
+/* API helpers (`api`, `uploadSourceFile`) now live in ./notebooks/hooks/notebookApi */
 
 /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
 
@@ -97,10 +79,10 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     // every API call.
     const { hasFeature: hasLicenseFeature } = useLicenseContext();
     const licensedForNotebooks = hasLicenseFeature('notebooks');
+    const { t } = useTranslation();
 
     const [notebooks, setNotebooks] = useState([]);
     const [selected, setSelected] = useState(null);
-    const [sources, setSources] = useState([]);
     const [loading, setLoading] = useState(true);
     const [creating, setCreating] = useState(false);
 
@@ -116,23 +98,15 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     // SignRequest modal state
     const [signModalOpen, setSignModalOpen] = useState(false);
     const [signSending, setSignSending] = useState(false);
-    const [signRequestConfigured, setSignRequestConfigured] = useState(false);
+
+    // External export targets (SignRequest / Nextcloud) — shared hook
+    const { signRequestConfigured, nextcloudConfigured } = useExportTargets();
 
     // Nextcloud export state
-    const [nextcloudConfigured, setNextcloudConfigured] = useState(false);
     const [nextcloudExporting, setNextcloudExporting] = useState(false);
     const [nextcloudToast, setNextcloudToast] = useState(null);
 
-    // Layout states
-    const [leftPanelOpen, setLeftPanelOpen] = useState(true);
-    const [rightPanelWidth, setRightPanelWidth] = useState(320);
-    const rightPanelDragRef = useRef(false);
-
-    // Aborts the current Studio generation SSE when the user navigates away
-    // or clicks "Cancel". Prevents state updates on an unmounted component and
-    // stops the server from burning tokens on a generation nobody will see.
-    const generationAbortRef = useRef(null);
-    useEffect(() => () => { generationAbortRef.current?.abort?.(); }, []);
+    // Layout (drawer open/width) is now owned by NotebookWorkspace.
 
     // Redirect away when the plan doesn't grant notebooks (covers direct nav /
     // stale bookmarks to /app/notebooks). The render gate below returns null in
@@ -145,46 +119,33 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     const [tocItems, setTocItems] = useState([]);
     const [tocOpen, setTocOpen] = useState(false);
 
-    useEffect(() => {
-        const handleMouseMove = (e) => {
-            if (!rightPanelDragRef.current) return;
-            // The right panel is bounded by the right edge of the screen
-            const newWidth = document.body.clientWidth - e.clientX;
-            setRightPanelWidth(Math.max(250, Math.min(newWidth, 800)));
-        };
-        const handleMouseUp = () => {
-            if (rightPanelDragRef.current) {
-                rightPanelDragRef.current = false;
-                document.body.style.cursor = 'default';
-                document.body.style.userSelect = 'auto';
-            }
-        };
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
-        return () => {
-            document.removeEventListener('mousemove', handleMouseMove);
-            document.removeEventListener('mouseup', handleMouseUp);
-        };
-    }, []);
+    // Sources list + add/delete/retry + processing-poll — shared hook.
+    // `onChanged` refreshes the notebook list counts; routed through a ref so the
+    // hook can be declared before `fetchNotebooks` (which it depends on).
+    const fetchNotebooksRef = useRef(null);
+    const onSourcesChanged = useCallback(() => fetchNotebooksRef.current?.(), []);
+    const {
+        sources, setSources, refreshSources, readySources, totalWords,
+        handleFileUpload, handleAddUrl, handleAddText, handleAddMeeting,
+        handleDeleteSource, handleRetrySource, handleCancelSource,
+        handleRenameSource, handleReorderSources, handleBulkDelete, fetchSourceContent,
+    } = useSourcesPolling({ entityId: selected?.id, onError: setError, onChanged: onSourcesChanged });
 
+    // Right-panel resize is now handled inside NotebookWorkspace (useResizableWidth).
 
-    // Chat + model tier state (matches direct chat pattern)
-    const [selectedTier, setSelectedTier] = useState('auto');
-    const [modelTiers, setModelTiers] = useState({});
+    // Chat + model tier state (matches direct chat pattern) — shared hook
+    const { modelTiers, selectedTier, setSelectedTier } = useModelTiers();
     const [chatInput, setChatInput] = useState('');
     const chatEndRef = useRef(null);
     const chatContainerRef = useRef(null);
 
-    // Document editor state
-    const [documentContent, setDocumentContent] = useState('');
-    const [docSaving, setDocSaving] = useState(false);
-    // Three save states: 'idle' (nothing pending), 'saving' (PUT in flight),
-    // 'error' (last PUT failed — retry scheduled or waiting for user).
-    const [saveState, setSaveState] = useState('idle');
-    const [lastSavedAt, setLastSavedAt] = useState(null);
-    const pendingContentRef = useRef(null);
-    const retryTimerRef = useRef(null);
-    const editorRef = useRef(null);
+    // Document editor state + save lifecycle — shared hook
+    const {
+        documentContent, setDocumentContent,
+        docSaving, saveState, lastSavedAt,
+        handleDocSave, retrySave,
+        editorRef,
+    } = useDocumentAutosave({ entityId: selected?.id });
 
     // Citation overlay
     const [citationSource, setCitationSource] = useState(null);
@@ -192,16 +153,7 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     // Version history panel
     const [versionsOpen, setVersionsOpen] = useState(false);
 
-    // Studio generation state
-    const [generating, setGenerating] = useState(null);
     const [aiFilling, setAiFilling] = useState(false);
-
-    // Last generated content for export
-    const [lastGeneratedContent, setLastGeneratedContent] = useState('');
-
-    // Generation overlay & history
-    const [generationHistory, setGenerationHistory] = useState([]);
-    const [activeGeneration, setActiveGeneration] = useState(null);
 
     // Pending selection passed alongside the next chat request. Set by
     // `handleEditorAIAction` right before `sendChatMessage`. The useChatEngine
@@ -247,6 +199,20 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
             // Add the new source to the sources list
             setSources(prev => [...prev, source]);
         }, []),
+        // Auto-recover a dropped chat stream: refetch the persisted notebook
+        // conversation so the saved AI reply replaces the "interrupted" notice
+        // without a manual refresh (mirrors the rehydrate loader below).
+        reloadConversation: useCallback(async () => {
+            if (!selected?.id) return null;
+            const conv = await api(`/${selected.id}/conversation`);
+            const hist = Array.isArray(conv?.messages) ? conv.messages : [];
+            return hist.map((m, i) => ({
+                ...m, // keep tokenisationInfo / pii badge / modelId so the privacy panel survives reload
+                id: m.id || `nb-${selected.id}-${i}`,
+                role: m.role,
+                content: typeof m.content === 'string' ? m.content : String(m.content ?? ''),
+            }));
+        }, [selected?.id]),
     });
 
     // Auto-scroll chat
@@ -284,29 +250,7 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
         chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }, [chatMessages]);
 
-    /* ── Load model tiers ────────────────────────────────────── */
-    useEffect(() => {
-        authFetch(`${API_BASE}/ai/config/chat-models`)
-            .then(r => r.ok ? r.json() : {})
-            .then(data => setModelTiers(data))
-            .catch(e => console.warn('[NotebooksPage] load model tiers failed', e));
-    }, []);
-
-    /* ── Check SignRequest config ────────────────────────────── */
-    useEffect(() => {
-        authFetch(`${API_BASE}/ai/user-settings`)
-            .then(r => r.ok ? r.json() : {})
-            .then(data => setSignRequestConfigured(!!data.hasSignRequestConfig))
-            .catch(e => console.warn('[NotebooksPage] SignRequest config probe failed', e));
-    }, []);
-
-    /* ── Check Nextcloud config ──────────────────────────────── */
-    useEffect(() => {
-        authFetch(`${API_BASE}/auth/app-password-status`)
-            .then(r => r.ok ? r.json() : {})
-            .then(data => setNextcloudConfigured(!!data.hasAppPassword))
-            .catch(e => console.warn('[NotebooksPage] Nextcloud config probe failed', e));
-    }, []);
+    /* Model tiers + SignRequest/Nextcloud probes moved to useModelTiers / useExportTargets */
 
     /* ── Fetch notebooks ─────────────────────────────────────── */
     const didAutoSelect = useRef(false);
@@ -327,6 +271,9 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
         finally { setLoading(false); }
     }, [initialNotebookId]);
 
+    // Keep the ref current so source-mutation handlers can refresh list counts.
+    fetchNotebooksRef.current = fetchNotebooks;
+
     useEffect(() => { fetchNotebooks(); }, [fetchNotebooks]);
 
     /* ── Select notebook ─────────────────────────────────────── */
@@ -338,25 +285,26 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
             // Preprocess mermaid code blocks so they render as diagrams
             const rawContent = data.notebook?.documentContent || '';
             setDocumentContent(preprocessMermaidContent(rawContent));
-            setChatMessages([]);
-            setLastGeneratedContent('');
+            // Rehydrate the persistent in-notebook chat history so it survives a
+            // notebook switch / page refresh (was previously cleared to []).
+            // Falls back to an empty thread if there's none yet or the load fails.
+            try {
+                const conv = await api(`/${nb.id}/conversation`);
+                const hist = Array.isArray(conv?.messages) ? conv.messages : [];
+                setChatMessages(hist.map((m, i) => ({
+                    ...m, // keep tokenisationInfo / pii badge / modelId so the privacy panel survives reload
+                    id: m.id || `nb-${nb.id}-${i}`,
+                    role: m.role,
+                    content: typeof m.content === 'string' ? m.content : String(m.content ?? ''),
+                })));
+            } catch (_) {
+                setChatMessages([]);
+            }
             onNotebookChange?.(nb.id);
         } catch (e) { setError(e.message); }
     }, [setChatMessages, onNotebookChange]);
 
-    /* ── Poll processing sources ─────────────────────────────── */
-    useEffect(() => {
-        if (!selected) return;
-        const hasProcessing = sources.some(s => s.status === 'processing');
-        if (!hasProcessing) return;
-        const interval = setInterval(async () => {
-            try {
-                const data = await api(`/${selected.id}/sources`);
-                setSources(data.sources || []);
-            } catch {}
-        }, 3000);
-        return () => clearInterval(interval);
-    }, [selected, sources]);
+    /* Source polling now lives in useSourcesPolling */
 
     /* ── Send chat message ───────────────────────────────────── */
     const handleSendMessage = useCallback((text, attachments) => {
@@ -364,54 +312,8 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
         sendChatMessage(text, attachments);
     }, [sendChatMessage]);
 
-    /* ── Save document content ───────────────────────────────── */
-    // Tracks three states and retries once on failure. A second failure leaves
-    // the indicator in 'error' and the user can click Retry.
-    const handleDocSave = useCallback(async (html, { isRetry = false } = {}) => {
-        if (!selected) return;
-        pendingContentRef.current = html;
-        if (retryTimerRef.current) { clearTimeout(retryTimerRef.current); retryTimerRef.current = null; }
-        setDocSaving(true);
-        setSaveState('saving');
-        try {
-            await api(`/${selected.id}`, { method: 'PUT', body: JSON.stringify({ documentContent: html }) });
-            pendingContentRef.current = null;
-            setSaveState('idle');
-            setLastSavedAt(Date.now());
-        } catch (e) {
-            console.error('[Notebooks] Doc save failed:', e);
-            setSaveState('error');
-            if (!isRetry) {
-                retryTimerRef.current = setTimeout(() => {
-                    if (pendingContentRef.current !== null) handleDocSave(pendingContentRef.current, { isRetry: true });
-                }, 5000);
-            }
-        } finally {
-            setDocSaving(false);
-        }
-    }, [selected]);
-
-    // Warn the user before closing the tab if a save is still pending.
-    useEffect(() => {
-        if (saveState === 'idle') return;
-        const onBeforeUnload = (e) => { e.preventDefault(); e.returnValue = ''; };
-        window.addEventListener('beforeunload', onBeforeUnload);
-        return () => window.removeEventListener('beforeunload', onBeforeUnload);
-    }, [saveState]);
-
-    // Cmd/Ctrl+S bypasses the editor's 2s debounce and saves immediately.
-    useEffect(() => {
-        const onKey = (e) => {
-            const metaS = (e.metaKey || e.ctrlKey) && (e.key === 's' || e.key === 'S');
-            if (!metaS || !selected) return;
-            e.preventDefault();
-            const editor = editorRef.current?.getEditor?.();
-            const html = editor?.getHTML?.() ?? documentContent;
-            handleDocSave(html);
-        };
-        window.addEventListener('keydown', onKey);
-        return () => window.removeEventListener('keydown', onKey);
-    }, [selected, documentContent, handleDocSave]);
+    /* Document save lifecycle (handleDocSave, retrySave, beforeunload, Ctrl+S)
+       now lives in useDocumentAutosave */
 
     /* ── Editor AI action (from TipTap bubble menu) ──────────── */
     const handleEditorAIAction = useCallback((actionKey, selectedText, range, customQuery) => {
@@ -529,141 +431,14 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
         // Convert plain text to simple HTML paragraphs
         const html = content.split('\n').filter(l => l.trim()).map(l => `<p>${l}</p>`).join('');
         setDocumentContent(prev => prev + html);
-    }, []);
+    }, [setDocumentContent]);
 
-    /* ── Studio: Generate content → inject into TipTap document ── */
-    const handleGenerate = useCallback(async (type) => {
-        if (!selected || generating) return;
-        setGenerating(type);
-        setLastGeneratedContent('');
-
-        // Add a user message and a placeholder assistant response in chat
-        const label = type.split('_').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-        const userMsg = { id: `gen-user-${Date.now()}`, role: 'user', content: `Generate ${label} from my sources` };
-        const assistantMsg = { id: `gen-asst-${Date.now()}`, role: 'assistant', content: `⏳ Generating ${label}...` };
-        setChatMessages(prev => [...prev, userMsg, assistantMsg]);
-
-        generationAbortRef.current?.abort?.();
-        const abortController = new AbortController();
-        generationAbortRef.current = abortController;
-        try {
-            const res = await authFetch(`${API_BASE}/api/notebooks/${selected.id}/generate/${type}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ modelTier: selectedTier, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
-                signal: abortController.signal,
-            });
-
-            if (!res.ok) {
-                const err = await res.json().catch(() => ({}));
-                throw new Error(err.error || 'Generation failed');
-            }
-
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '';
-            let content = '';
-            let currentEvent = '';
-            let audioFiles = [];
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || '';
-
-                for (const line of lines) {
-                    if (line.startsWith('event: ')) {
-                        currentEvent = line.slice(7).trim();
-                    } else if (line.startsWith('data: ')) {
-                        try {
-                            const data = JSON.parse(line.slice(6));
-                            if (currentEvent === 'content' && data.text) {
-                                content += data.text;
-                                // Don't update chat during streaming to prevent flickering
-                            } else if (currentEvent === 'audio' && data.url) {
-                                // Collect audio files to render via AudioPlayer in chat
-                                audioFiles.push({
-                                    url: data.url,
-                                    mimeType: data.mimeType || 'audio/mpeg',
-                                    source: data.source || 'elevenlabs_tts',
-                                });
-                            } else if (currentEvent === 'error') {
-                                throw new Error(data.error || 'Generation error');
-                            }
-                        } catch (e) {
-                            if (e.message.includes('Generation') || e.message.includes('error')) throw e;
-                        }
-                    }
-                }
-            }
-            setLastGeneratedContent(content);
-
-            // Update chat with final content. Study-aid types (flashcards, studyGuide,
-            // quiz) were removed — all remaining types insert into the document.
-            setChatMessages(prev => prev.map(m =>
-                m.id === assistantMsg.id ? {
-                    ...m,
-                    content: `✅ ${label} generated and inserted into the document.`,
-                } : m
-            ));
-
-            // Save to generation history and open overlay
-            const genEntry = {
-                id: `gen-${Date.now()}`,
-                type,
-                label,
-                content,
-                audioFiles: audioFiles.length > 0 ? audioFiles : undefined,
-                timestamp: new Date().toISOString(),
-            };
-            setGenerationHistory(prev => [...prev, genEntry]);
-            setActiveGeneration(genEntry);
-
-            // Preprocess mermaid content and insert into the TipTap editor
-            // Skip insertion for study aid types — they only show in the overlay
-            if (content && editorRef.current && !isStudyAid) {
-                const processed = preprocessMermaidContent(content);
-                editorRef.current.setContent(processed);
-                // Trigger a save of the new document content
-                const editor = editorRef.current.getEditor?.();
-                if (editor) {
-                    const html = editor.getHTML();
-                    setDocumentContent(html);
-                    handleDocSave(html);
-                }
-            }
-        } catch (e) {
-            // Silently swallow aborts — the user cancelled or navigated away.
-            if (e.name === 'AbortError') {
-                setChatMessages(prev => prev.map(m =>
-                    m.id?.startsWith('gen-asst-') && m.content?.startsWith('⏳') ? { ...m, content: `⏹️ Generation cancelled.` } : m
-                ));
-            } else {
-                setError(e.message);
-                setChatMessages(prev => prev.map(m =>
-                    m.id?.startsWith('gen-asst-') && m.content?.startsWith('⏳') ? { ...m, content: `❌ Generation failed: ${e.message}` } : m
-                ));
-            }
-        } finally {
-            setGenerating(null);
-            if (generationAbortRef.current === abortController) generationAbortRef.current = null;
-        }
-    }, [selected, generating, selectedTier, setChatMessages, handleDocSave]);
-
-    const cancelGeneration = useCallback(() => {
-        generationAbortRef.current?.abort?.();
-    }, []);
-
-    /* ── Export (PDF/Word) — uses document content or last generated ── */
+    /* ── Export (PDF/Word) — uses document content or last chat answer ── */
     const getExportContent = useCallback(() => {
         if (documentContent) return documentContent;
-        if (lastGeneratedContent) return lastGeneratedContent;
         const lastAssistant = [...chatMessages].reverse().find(m => m.role === 'assistant' && m.content);
         return lastAssistant?.content || '';
-    }, [documentContent, lastGeneratedContent, chatMessages]);
+    }, [documentContent, chatMessages]);
 
     const [exporting, setExporting] = useState(null); // 'pdf' | 'docx' | null
 
@@ -675,7 +450,8 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
             // Render mermaid diagrams to images for export
             const mermaidDivRegex = /<div[^>]*data-type="mermaid-diagram"[^>]*data-code="([^"]*?)"[^>]*>.*?<\/div>/gi;
             const mermaidMatches = [...content.matchAll(mermaidDivRegex)];
-            
+            let mermaidFailures = 0;
+
             for (const match of mermaidMatches) {
                 let mermaidCode;
                 try {
@@ -699,7 +475,16 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                     }
                 } catch (err) {
                     console.error('[Notebooks] Mermaid export render failed:', err);
+                    mermaidFailures += 1;
                 }
+            }
+
+            // Surface diagrams that silently dropped out of the export instead of
+            // leaving the user to discover a missing diagram in the PDF/DOCX.
+            if (mermaidFailures > 0) {
+                toast.error(t('notebooks.export_mermaid_failed',
+                    `Exported, but ${mermaidFailures} diagram(s) couldn't be rendered and were skipped.`,
+                    { count: mermaidFailures }));
             }
 
             // Embed all images as base64 data URIs so they export with the document
@@ -852,84 +637,12 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
         setRenamingId(null);
     };
 
-    /* ── Add sources ─────────────────────────────────────────── */
-    const handleFileUpload = async (files) => {
-        if (!files?.length || !selected) return;
-        for (const file of files) {
-            try { await uploadSourceFile(selected.id, file); }
-            catch (err) { setError(`Failed to upload ${file.name}: ${err.message}`); }
-        }
-        const data = await api(`/${selected.id}/sources`);
-        setSources(data.sources || []);
-        fetchNotebooks();
-    };
-
-    const handleAddUrl = async (url) => {
-        if (!url?.trim() || !selected) return;
-        try {
-            await api(`/${selected.id}/sources/url`, { method: 'POST', body: JSON.stringify({ url: url.trim() }) });
-            const data = await api(`/${selected.id}/sources`);
-            setSources(data.sources || []);
-            fetchNotebooks();
-        } catch (e) { setError(e.message); }
-    };
-
-    const handleAddText = async (text, name) => {
-        if (!text?.trim() || !selected) return;
-        try {
-            await api(`/${selected.id}/sources/text`, { method: 'POST', body: JSON.stringify({ text: text.trim(), name: name?.trim() || undefined }) });
-            const data = await api(`/${selected.id}/sources`);
-            setSources(data.sources || []);
-            fetchNotebooks();
-        } catch (e) { setError(e.message); }
-    };
-
-    const handleAddMeeting = async (meetingId, opts = {}) => {
-        if (!meetingId || !selected) return;
-        const mode = opts.mode === 'summary' ? 'summary' : 'full';
-        try {
-            await api(`/${selected.id}/sources/meeting`, { method: 'POST', body: JSON.stringify({ meetingId, mode }) });
-            const data = await api(`/${selected.id}/sources`);
-            setSources(data.sources || []);
-            fetchNotebooks();
-        } catch (e) { setError(e.message); }
-    };
-
-    const handleDeleteSource = async (sid) => {
-        if (!selected) return;
-        try {
-            await api(`/${selected.id}/sources/${sid}`, { method: 'DELETE' });
-            setSources(prev => prev.filter(s => s.id !== sid));
-            fetchNotebooks();
-        } catch (e) { setError(e.message); }
-    };
-
-    // Retry re-runs server-side ingestion. The row immediately flips back to
-    // "processing" so the UI shows the shimmer without waiting for the next poll.
-    const handleRetrySource = async (sid) => {
-        if (!selected) return;
-        try {
-            await api(`/${selected.id}/sources/${sid}/retry`, { method: 'POST' });
-            setSources(prev => prev.map(s => s.id === sid ? { ...s, status: 'processing', error: null } : s));
-        } catch (e) { setError(e.message); }
-    };
-
-    // Cancel marks a stuck `processing` row as errored so the user can delete
-    // it (or retry) without waiting for the 10-min server watchdog to fire.
-    const handleCancelSource = async (sid) => {
-        if (!selected) return;
-        try {
-            await api(`/${selected.id}/sources/${sid}/cancel`, { method: 'POST' });
-            setSources(prev => prev.map(s => s.id === sid ? { ...s, status: 'error', error: 'Cancelled by user' } : s));
-        } catch (e) { setError(e.message); }
-    };
+    /* Source add/delete/retry/cancel handlers now live in useSourcesPolling */
 
     /* ── Filtered notebooks ──────────────────────────────────── */
     const filtered = notebooks.filter(nb =>
         nb.name.toLowerCase().includes(search.toLowerCase())
     );
-    const readySources = sources.filter(s => s.status === 'ready');
-    const totalWords = sources.reduce((s, src) => s + (src.wordCount || 0), 0);
     const hasExportContent = !!getExportContent();
 
     /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
@@ -956,145 +669,56 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
     /* ── NOTEBOOK DETAIL VIEW (3-panel: Sources + Editor + Studio/Chat) */
     /* ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ */
     if (selected) {
+        const showMeetingNotes = user?.featureFlags?.meeting_notes !== false && (user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('meeting_notes')));
+        const detailMeta = `${sources.length} ${sources.length !== 1 ? t('notebooks.sources', 'Sources').toLowerCase() : 'source'} · ${totalWords.toLocaleString()} ${t('notebooks.words', 'words').toLowerCase()} · ${t('notebooks.created', 'Created')} ${timeAgo(selected.createdAt)}`;
+        const commandContext = {
+            editorRef,
+            onExport: handleExport,
+            hasExportContent,
+            signRequestConfigured,
+            onSign: () => setSignModalOpen(true),
+            nextcloudConfigured,
+            onNextcloud: handleNextcloudExport,
+            onVersions: () => setVersionsOpen(true),
+        };
         return (
-            <div className="h-full flex flex-col" style={{ background: 'var(--bg-primary)' }}>
-                <input 
-                    type="file" 
-                    ref={fileInputRef} 
-                    className="hidden" 
-                    onChange={handleImportFile} 
-                    accept=".pdf,.doc,.docx,.txt,.md,.csv,.xlsx" 
+            <>
+                <input
+                    type="file"
+                    ref={fileInputRef}
+                    className="hidden"
+                    onChange={handleImportFile}
+                    accept=".pdf,.doc,.docx,.txt,.md,.csv,.xlsx"
                 />
-                
-                {/* ── Header (Studio-aligned: icon tile + title + subtitle + status) ── */}
-                <div className="shrink-0 flex items-center gap-3 px-5 py-3 border-b" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
-                    {/* Back */}
-                    <button
-                        onClick={() => { setSelected(null); setSources([]); setChatMessages([]); setDocumentContent(''); }}
-                        className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors shrink-0"
-                        title="Back to Notebooks"
-                    >
-                        <ArrowLeft className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
-                    </button>
-
-                    {/* Icon tile (Studio pattern) */}
-                    <div
-                        className="w-10 h-10 rounded-xl border-[1.5px] flex items-center justify-center shrink-0"
-                        style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)' }}
-                    >
-                        <BookOpen className="w-5 h-5" style={{ color: 'var(--brand-primary)' }} />
-                    </div>
-
-                    {/* Title + meta */}
-                    <div className="flex-1 min-w-0">
-                        <h2 className="text-base font-bold truncate" style={{ color: 'var(--text-primary)' }} title={selected.name}>
-                            {selected.name}
-                        </h2>
-                        <p className="text-[11px] truncate mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                            {sources.length} source{sources.length !== 1 ? 's' : ''} · {totalWords.toLocaleString()} words · Created {timeAgo(selected.createdAt)}
-                        </p>
-                    </div>
-
-                    {/* Save state */}
-                    <div className="shrink-0 flex items-center">
-                        {saveState === 'saving' && (
-                            <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                                <Loader2 className="w-3 h-3 animate-spin" />Saving…
-                            </span>
-                        )}
-                        {saveState === 'error' && (
-                            <button
-                                onClick={() => pendingContentRef.current && handleDocSave(pendingContentRef.current)}
-                                className="flex items-center gap-1 text-xs text-red-500 hover:underline"
-                                title="Click to retry"
-                            >
-                                <AlertCircle className="w-3 h-3" />Save failed — retry
-                            </button>
-                        )}
-                        {saveState === 'idle' && lastSavedAt && (Date.now() - lastSavedAt < 4000) && (
-                            <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-tertiary)' }}>
-                                <CheckCircle2 className="w-3 h-3" />Saved
-                            </span>
-                        )}
-                    </div>
-
-                    {/* Layout toggles */}
-                    <div className="flex items-center gap-0.5 shrink-0 pl-2 ml-1 border-l" style={{ borderColor: 'var(--border-subtle)' }}>
-                        <button
-                            onClick={() => setLeftPanelOpen(p => !p)}
-                            className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors"
-                            title="Toggle Sources"
-                            style={{ background: leftPanelOpen ? 'var(--bg-tertiary)' : 'transparent' }}
-                        >
-                            <PanelLeft className="w-4 h-4" style={{ color: leftPanelOpen ? 'var(--accent-primary)' : 'var(--text-secondary)' }} />
-                        </button>
-                        <button
-                            onClick={() => setTocOpen(p => !p)}
-                            className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors"
-                            title={tocItems.length > 0 ? 'Toggle Table of Contents' : 'Add headings to enable Table of Contents'}
-                            style={{ background: tocOpen ? 'var(--bg-tertiary)' : 'transparent' }}
-                        >
-                            <BookOpen className="w-4 h-4" style={{ color: tocOpen ? 'var(--accent-primary)' : tocItems.length > 0 ? 'var(--text-secondary)' : 'var(--text-tertiary)' }} />
-                        </button>
-                        <button
-                            onClick={() => setVersionsOpen(p => !p)}
-                            className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] transition-colors"
-                            title="Version History"
-                            style={{ background: versionsOpen ? 'var(--bg-tertiary)' : 'transparent' }}
-                        >
-                            <History className="w-4 h-4" style={{ color: versionsOpen ? 'var(--accent-primary)' : 'var(--text-secondary)' }} />
-                        </button>
-                    </div>
-
-                    <NotebookStudio
-                        onGenerate={handleGenerate}
-                        generating={generating}
-                        onExport={handleExport}
-                        exporting={exporting}
-                        hasContent={hasExportContent}
-                        readySourceCount={readySources.length}
-                        generationCount={generationHistory.length}
-                        onHistoryClick={() => {
-                            if (generationHistory.length > 0) {
-                                setActiveGeneration(generationHistory[generationHistory.length - 1]);
-                            }
-                        }}
-                        signRequestConfigured={signRequestConfigured}
-                        onSignRequest={() => setSignModalOpen(true)}
-                        nextcloudConfigured={nextcloudConfigured}
-                        onNextcloudExport={handleNextcloudExport}
-                        nextcloudExporting={nextcloudExporting}
-                    />
-                </div>
-
-                {/* ── Error toast ── */}
-                {error && (
-                    <div className="mx-4 mt-2 flex items-center gap-2 px-3 py-2 rounded-xl border bg-red-50 border-red-200 text-red-700 text-xs" style={{ animation: 'slideDown .2s ease-out' }}>
-                        <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                        <span className="flex-1">{error}</span>
-                        <button onClick={() => setError(null)} className="font-bold text-sm leading-none">&times;</button>
-                    </div>
-                )}
-
-                {/* ── Nextcloud success toast ── */}
-                {nextcloudToast && (
-                    <div className="mx-4 mt-2 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs"
-                        style={{ background: 'rgba(0,130,201,0.08)', borderColor: 'rgba(0,130,201,0.25)', color: '#0082C9', animation: 'slideDown .2s ease-out' }}>
-                        <span className="flex-1">{nextcloudToast.message}</span>
-                        {nextcloudToast.folderUrl && (
-                            <a href={nextcloudToast.folderUrl} target="_blank" rel="noopener noreferrer" className="underline font-medium">Open folder</a>
-                        )}
-                        <button onClick={() => setNextcloudToast(null)} className="font-bold text-sm leading-none">&times;</button>
-                    </div>
-                )}
-
-                {/* ── 3-Panel Layout: Sources | Editor | Studio+Chat ── */}
-                <div className="flex-1 flex overflow-hidden">
-
-                    {/* ═══ LEFT: Sources Panel ═══ */}
-                    {leftPanelOpen && (
-                    <div className="w-[180px] xl:w-[240px] shrink-0 border-r flex flex-col overflow-hidden" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
-                        <NotebookSources
+                <NotebookWorkspace
+                    variant="notebook"
+                    icon={BookOpen}
+                    title={selected.name}
+                    meta={detailMeta}
+                    onBack={() => { setSelected(null); setSources([]); setChatMessages([]); setDocumentContent(''); }}
+                    saveState={saveState}
+                    lastSavedAt={lastSavedAt}
+                    onRetrySave={retrySave}
+                    headerExtras={[
+                        { id: 'toc', icon: BookOpen, label: tocItems.length > 0 ? t('notebooks.toggle_toc', 'Toggle Table of Contents') : t('notebooks.toc_hint', 'Add headings to enable Table of Contents'), active: tocOpen, disabled: tocItems.length === 0, onClick: () => setTocOpen(p => !p) },
+                        { id: 'versions', icon: History, label: t('notebooks.version_history', 'Version history'), active: versionsOpen, onClick: () => setVersionsOpen(p => !p) },
+                    ]}
+                    headerActions={
+                        <ExportMenu
+                            onExport={handleExport}
+                            exporting={exporting}
+                            hasContent={hasExportContent}
+                            signRequestConfigured={signRequestConfigured}
+                            onSignRequest={() => setSignModalOpen(true)}
+                            nextcloudConfigured={nextcloudConfigured}
+                            onNextcloudExport={handleNextcloudExport}
+                            nextcloudExporting={nextcloudExporting}
+                        />
+                    }
+                    leftDrawer={{
+                        label: t('notebooks.sources', 'Sources'),
+                        node: (
+                            <NotebookSources
                                 sources={sources}
                                 onFileUpload={(files) => handleFileUpload(Array.from(files))}
                                 onAddUrl={(url) => { if (url?.trim()) handleAddUrl(url); }}
@@ -1103,58 +727,26 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                                 onDeleteSource={handleDeleteSource}
                                 onRetrySource={handleRetrySource}
                                 onCancelSource={handleCancelSource}
+                                onRenameSource={handleRenameSource}
+                                onReorderSources={handleReorderSources}
+                                onBulkDelete={handleBulkDelete}
+                                onPreviewSource={fetchSourceContent}
                                 dragOver={dragOver}
                                 setDragOver={setDragOver}
                                 totalWords={totalWords}
                                 readyCount={readySources.length}
-                                showMeetingNotes={user?.featureFlags?.meeting_notes !== false && (user?.isAdmin || user?.permissions?.includes('all') || (Array.isArray(user?.betaFeatures) && user.betaFeatures.includes('meeting_notes')))}
+                                showMeetingNotes={showMeetingNotes}
                             />
-
-                    </div>
-                    )}
-
-                    {/* ═══ TOC Panel (collapsible, between sources and editor) ═══ */}
-                    {tocOpen && (
-                        <div
-                            className="w-[200px] shrink-0 border-r flex flex-col overflow-hidden"
-                            style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}
-                        >
+                        ),
+                    }}
+                    secondaryLeft={tocOpen && (
+                        <div className="w-[200px] shrink-0 border-r flex flex-col overflow-hidden" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
                             <NotebookTOC items={tocItems} onClose={() => setTocOpen(false)} />
                         </div>
                     )}
-
-                    {/* ═══ CENTER: Document Editor (TipTap) ═══ */}
-                    <div className="flex-1 flex flex-col min-w-0" style={{ background: 'var(--bg-primary)' }}>
-                        <NotebookEditor
-                            ref={editorRef}
-                            onImportClick={() => fileInputRef.current?.click()}
-                            content={documentContent}
-                            onChange={setDocumentContent}
-                            onSave={handleDocSave}
-                            onAIAction={handleEditorAIAction}
-                            onAIFill={handleAIFill}
-                            aiFilling={aiFilling}
-                            saving={docSaving}
-                            generating={generating}
-                            onTocUpdate={setTocItems}
-                            notebookId={selected?.id}
-                        />
-                    </div>
-
-                    {/* ═══ RIGHT: Studio (top) + AI Chat (bottom) ═══ */}
-                    <div 
-                        className="w-[4px] hover:bg-[var(--accent-primary)] cursor-col-resize transition-colors shrink-0 z-10 -ml-[2px]"
-                        style={{ borderLeft: '1px solid var(--border-subtle)' }}
-                        onMouseDown={(e) => {
-                            e.preventDefault();
-                            rightPanelDragRef.current = true;
-                            document.body.style.cursor = 'col-resize';
-                            document.body.style.userSelect = 'none';
-                        }}
-                    />
-                    <div className="shrink-0 flex flex-col overflow-hidden" style={{ width: rightPanelWidth, background: 'var(--bg-primary)' }}>
-                        {/* Chat section */}
-                        <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+                    rightDrawer={{
+                        label: t('notebooks.ai_chat', 'AI Chat'),
+                        node: (
                             <NotebookChat
                                 messages={chatMessages}
                                 isLoading={chatLoading}
@@ -1168,64 +760,71 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                                 onInsertToDocument={handleInsertToDocument}
                                 onCitationClick={(source) => setCitationSource(source)}
                             />
-                        </div>
-                    </div>
-                </div>
-
-                {/* Citation overlay */}
-                <CitationOverlay source={citationSource} onClose={() => setCitationSource(null)} />
-
-                {/* Generation overlay */}
-                <GenerationOverlay
-                    generation={activeGeneration}
-                    history={generationHistory}
-                    onClose={() => setActiveGeneration(null)}
-                    onSelectHistory={(item) => setActiveGeneration(item)}
-                    onSourceClick={(sourceName) => {
-                        // Close overlay and try to highlight the matching source in sidebar
-                        setActiveGeneration(null);
-                        // Flash the source in the sources panel — find by partial name match
-                        const matchingSource = sources.find(s =>
-                            s.name?.toLowerCase().includes(sourceName.toLowerCase()) ||
-                            sourceName.toLowerCase().includes(s.name?.toLowerCase())
-                        );
-                        if (matchingSource) {
-                            // Scroll to the source element in the sidebar
-                            setTimeout(() => {
-                                const el = document.querySelector(`[data-source-id="${matchingSource.id}"]`);
-                                if (el) {
-                                    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                                    el.style.transition = 'background 0.3s';
-                                    el.style.background = 'var(--accent-primary)';
-                                    el.style.opacity = '0.15';
-                                    setTimeout(() => { el.style.background = ''; el.style.opacity = ''; }, 2000);
-                                }
-                            }, 300);
-                        }
+                        ),
                     }}
-                    onInsertToDocument={(content) => {
-                        if (editorRef.current) {
-                            const processed = preprocessMermaidContent(content);
-                            editorRef.current.setContent(processed);
-                            const editor = editorRef.current.getEditor?.();
-                            if (editor) {
-                                const html = editor.getHTML();
-                                setDocumentContent(html);
-                                handleDocSave(html);
-                            }
-                        }
-                    }}
-                />
-
-                {/* SignRequest Modal */}
-                <SendForSigningModal
-                    open={signModalOpen}
-                    onClose={() => setSignModalOpen(false)}
-                    onSend={handleSendForSigning}
-                    sending={signSending}
-                    notebookTitle={selected?.name}
-                />
-            </div>
+                    commandContext={commandContext}
+                    banners={
+                        <>
+                            {error && (
+                                <div className="mx-4 mt-2 flex items-center gap-2 px-3 py-2 rounded-xl border bg-red-50 border-red-200 text-red-700 text-xs" style={{ animation: 'slideDown .2s ease-out' }}>
+                                    <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                    <span className="flex-1">{error}</span>
+                                    <button onClick={() => setError(null)} className="font-bold text-sm leading-none">&times;</button>
+                                </div>
+                            )}
+                            {nextcloudToast && (
+                                <div className="mx-4 mt-2 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs"
+                                    style={{ background: 'rgba(0,130,201,0.08)', borderColor: 'rgba(0,130,201,0.25)', color: '#0082C9', animation: 'slideDown .2s ease-out' }}>
+                                    <span className="flex-1">{nextcloudToast.message}</span>
+                                    {nextcloudToast.folderUrl && (
+                                        <a href={nextcloudToast.folderUrl} target="_blank" rel="noopener noreferrer" className="underline font-medium">Open folder</a>
+                                    )}
+                                    <button onClick={() => setNextcloudToast(null)} className="font-bold text-sm leading-none">&times;</button>
+                                </div>
+                            )}
+                        </>
+                    }
+                    overlays={
+                        <>
+                            <CitationOverlay source={citationSource} onClose={() => setCitationSource(null)} />
+                            <SendForSigningModal
+                                open={signModalOpen}
+                                onClose={() => setSignModalOpen(false)}
+                                onSend={handleSendForSigning}
+                                sending={signSending}
+                                notebookTitle={selected?.name}
+                            />
+                            {versionsOpen && selected && (
+                                <NotebookVersions
+                                    notebookId={selected.id}
+                                    currentContent={documentContent}
+                                    onRestore={(content) => {
+                                        if (editorRef.current?.setContent) editorRef.current.setContent(content);
+                                        setDocumentContent(content);
+                                        handleDocSave(content);
+                                    }}
+                                    onClose={() => setVersionsOpen(false)}
+                                />
+                            )}
+                        </>
+                    }
+                >
+                    <RichTextEditor
+                        engine={shouldUseNewEditor(user, 'notebooks') ? 'bf' : 'tiptap'}
+                        ref={editorRef}
+                        onImportClick={() => fileInputRef.current?.click()}
+                        content={documentContent}
+                        onChange={setDocumentContent}
+                        onSave={handleDocSave}
+                        onAIAction={handleEditorAIAction}
+                        onAIFill={handleAIFill}
+                        aiFilling={aiFilling}
+                        saving={docSaving}
+                        onTocUpdate={setTocItems}
+                        notebookId={selected?.id}
+                    />
+                </NotebookWorkspace>
+            </>
         );
     }
 
@@ -1558,22 +1157,8 @@ export default function NotebooksPage({ user, onBack, initialNotebookId, onNoteb
                 </div>
             )}
 
-            {/* ═══ Version History Overlay ═══ */}
-            {versionsOpen && selected && (
-                <NotebookVersions
-                    notebookId={selected.id}
-                    currentContent={documentContent}
-                    onRestore={(content) => {
-                        if (editorRef.current?.setContent) {
-                            editorRef.current.setContent(content);
-                        }
-                        setDocumentContent(content);
-                        handleDocSave(content);
-                    }}
-                    onClose={() => setVersionsOpen(false)}
-                />
-            )}
-
+            {/* Version history overlay is rendered by NotebookWorkspace in the
+                detail view (where versionsOpen is actually toggled). */}
 
         </div>
     );

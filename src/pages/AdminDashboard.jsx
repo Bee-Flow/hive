@@ -10,10 +10,13 @@ import MonitoringPanel from '../components/admin/MonitoringPanel';
 import ComplianceHub from '../components/admin/ComplianceHub';
 import SubscriptionsPanel from '../components/admin/subscriptions';
 import LanguagesPanel from '../components/admin/LanguagesPanel';
+import LegalDocsPanel from '../components/admin/LegalDocsPanel';
 import AppearancePanel from '../components/admin/appearance-studio/AppearancePanel';
 import ProductWebsitePanel from '../components/admin/ProductWebsite/ProductWebsitePanel';
+import AnalyticsPanel from '../components/admin/ProductWebsite/AnalyticsPanel';
 import ServerLicensePanel from '../components/admin/ServerLicensePanel';
 import SupportInboxPanel from '../components/admin/SupportInboxPanel';
+import AccessPermissionsPanel from '../components/admin/AccessPermissionsPanel';
 import { useDeploymentMode } from '../hooks/useDeploymentMode';
 import { useLicenseContext, TIER_RANK } from '../components/LicenseContext';
 
@@ -52,6 +55,10 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
         { id: 'ai-config', label: t('admin.tab_ai_config'), perm: ['admin_ai_config'], superAdminOnly: true },
         { id: 'security', label: t('admin.tab_security'), perm: ['admin_security'], superAdminOnly: false },
         { id: 'integrations', label: t('admin.tab_integrations'), perm: ['admin_security'], superAdminOnly: true },
+        // Access & Permissions — grant features/integrations to All members or
+        // per group, within the plan/license ceiling. Available to org-admins
+        // too (they manage their own org); super-admins get an org picker.
+        { id: 'access', label: t('admin.tab_access') || 'Access', perm: ['admin_security', 'org_admin', 'manage_users'], superAdminOnly: false },
         { id: 'monitoring', label: t('admin.tab_monitoring'), perm: ['admin_monitoring'], superAdminOnly: false, minTier: 'enterprise' },
         // Compliance Hub is a Bee Flow Cloud governance surface. Self-hosted
         // installs manage their own compliance posture, so the tab is hidden.
@@ -70,10 +77,19 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
         { id: 'licenses', label: t('admin.tab_server_license') || 'Server licence', perm: ['all'], superAdminOnly: true },
         { id: 'appearance', label: t('admin.tab_appearance'), perm: ['admin_ai_config'], superAdminOnly: true, minTier: 'enterprise' },
         { id: 'languages', label: t('admin.tab_languages'), perm: ['admin_ai_config'], superAdminOnly: true },
+        // Legal — platform admin edits the legal documents (content + version +
+        // which require consent) and manages optional (marketing) consents.
+        // Legal & Consent is a Bee Flow Cloud surface; self-hosted installs are
+        // governed by their licence agreement, so the tab is hidden there.
+        { id: 'legal', label: t('admin.tab_legal') || 'Legal', perm: ['admin_ai_config'], superAdminOnly: true, cloudOnly: true },
         // Product website builder — a Bee Flow Cloud marketing surface. On a
         // self-hosted install the public site is disabled (root goes straight
         // to /app), so the editor tab is hidden too.
         { id: 'product-website', label: t('admin.tab_product_website'), perm: ['admin_ai_config'], superAdminOnly: true, minTier: 'enterprise', cloudOnly: true },
+        // Website analytics — self-hosted usage tracking for the CMS site.
+        // Gated identically to product-website so it only surfaces when the
+        // Website CMS product is active (super-admin, Enterprise, cloud).
+        { id: 'website-analytics', label: t('admin.tab_website_analytics') || 'Website Analytics', perm: ['admin_ai_config'], superAdminOnly: true, minTier: 'enterprise', cloudOnly: true },
     ];
 
     // If current tab isn't allowed, fall back to the first tab the user has access to
@@ -215,6 +231,10 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                         <div className="absolute inset-0">
                             <IntegrationsAdminPanel activeSection={adminPath.seg2} onNavigate={onNavigate} />
                         </div>
+                    ) : activeTab === 'access' ? (
+                        <div className="absolute inset-0">
+                            <AccessPermissionsPanel user={user} activeSection={adminPath.seg2} onNavigate={onNavigate} />
+                        </div>
                     ) : activeTab === 'monitoring' ? (
                         <div className="absolute inset-0">
                             <MonitoringPanel activeSection={adminPath.seg2} onNavigate={onNavigate} />
@@ -245,9 +265,17 @@ const AdminDashboard = ({ user, onBack, adminPath = {}, onNavigate }) => {
                         <div className="absolute inset-0 overflow-hidden">
                             <LanguagesPanel />
                         </div>
+                    ) : activeTab === 'legal' ? (
+                        <div className="absolute inset-0 overflow-auto">
+                            <LegalDocsPanel />
+                        </div>
                     ) : activeTab === 'product-website' ? (
                         <div className="absolute inset-0">
                             <ProductWebsitePanel />
+                        </div>
+                    ) : activeTab === 'website-analytics' ? (
+                        <div className="absolute inset-0">
+                            <AnalyticsPanel />
                         </div>
                     ) : null}
             </div>

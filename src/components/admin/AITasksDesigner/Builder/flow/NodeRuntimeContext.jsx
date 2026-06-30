@@ -12,6 +12,9 @@ import { createContext, useContext } from 'react';
  *   - runInFlight     : boolean — a global dry/full run is going
  *   - runIndexById    : Map<stepId, number> — 1-based completion ordinal
  *   - runTotal        : number|null — total dispatched steps in run
+ *   - onOpenLayer     : (layerKey) => void — drill into an inline flowlet
+ *   - layerSummaries  : Record<layerKey, string> — AI/human one-liners,
+ *                       so a call_layer node can show what the flowlet does
  *
  * Defaults give read-only inspector contexts (executions drawer) sane
  * behaviour without provider wiring.
@@ -24,6 +27,8 @@ export const NodeRuntimeContext = createContext({
     runInFlight: false,
     runIndexById: new Map(),
     runTotal: null,
+    onOpenLayer: null,
+    layerSummaries: {},
 });
 
 export function useNodeRuntime() {

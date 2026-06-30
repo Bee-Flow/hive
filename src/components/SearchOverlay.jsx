@@ -46,7 +46,7 @@ const SearchOverlay = ({ isOpen, onClose, onSelectResult, agents = [] }) => {
     const [source, setSource] = useState('all'); // all, agent, direct
     const [selectedAgent, setSelectedAgent] = useState('all');
     const [dateRange, setDateRange] = useState('all');
-    const [sortBy, setSortBy] = useState('relevance');
+    const [sortBy, setSortBy] = useState('date');
 
     const inputRef = useRef(null);
     const listRef = useRef(null);

@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import useTranslation from '../../hooks/useTranslation';
+import ConfirmDialog from '../../components/shared/ConfirmDialog';
 
 /* ── Diff engine ──────────────────────────────────────────────── */
 
@@ -100,6 +101,9 @@ export default function NotebookVersions({
     const [loadError, setLoadError] = useState(null);
     const [restoreError, setRestoreError] = useState(null);
     const [restoring, setRestoring] = useState(false);
+    // Confirmation dialogs (replace the no-confirm restore + the native confirm()).
+    const [pendingRestore, setPendingRestore] = useState(false);
+    const [pendingDeleteId, setPendingDeleteId] = useState(null);
 
     // Fetch versions
     const fetchVersions = useCallback(async () => {
@@ -196,10 +200,8 @@ export default function NotebookVersions({
         finally { setCreating(false); }
     }, [notebookId, snapshotName, fetchVersions]);
 
-    // Delete
-    const handleDelete = useCallback(async (versionId, e) => {
-        e.stopPropagation();
-        if (!confirm(t('notebooks.confirm_delete_version'))) return;
+    // Delete — confirmed via <ConfirmDialog/> (pendingDeleteId), not window.confirm.
+    const performDelete = useCallback(async (versionId) => {
         try {
             await authFetch(`${API_BASE}/api/notebooks/${notebookId}/versions/${versionId}`, { method: 'DELETE' });
             if (selectedVersion?.id === versionId) {
@@ -393,9 +395,9 @@ export default function NotebookVersions({
 
                                             {/* Delete */}
                                             <button
-                                                onClick={(e) => handleDelete(v.id, e)}
+                                                onClick={(e) => { e.stopPropagation(); setPendingDeleteId(v.id); }}
                                                 className="p-1 rounded-md opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-500/10"
-                                                title="Delete version"
+                                                title={t('notebooks.delete', 'Delete')}
                                             >
                                                 <Trash2 className="w-3 h-3" style={{ color: 'rgb(239, 68, 68)' }} />
                                             </button>
@@ -462,13 +464,13 @@ export default function NotebookVersions({
 
                                     {/* Restore */}
                                     <button
-                                        onClick={handleRestore}
+                                        onClick={() => setPendingRestore(true)}
                                         disabled={loadingContent || restoring}
                                         className="px-4 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-all hover:scale-[1.02] active:scale-[0.98] disabled:opacity-50"
                                         style={{ background: 'rgb(34, 197, 94)', color: 'white' }}
                                     >
                                         {restoring ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RotateCcw className="w-3.5 h-3.5" />}
-                                        Restore this version
+                                        {t('notebooks.restore_this_version', 'Restore this version')}
                                     </button>
                                 </div>
                                 {restoreError && (
@@ -606,6 +608,29 @@ export default function NotebookVersions({
                     to { opacity: 1; transform: translateY(0) scale(1); }
                 }
             `}</style>
+
+            {/* Restore confirmation — overwrites the current document */}
+            <ConfirmDialog
+                open={pendingRestore}
+                title={t('notebooks.confirm_restore_title', 'Restore this version?')}
+                description={t('notebooks.confirm_restore_body', 'This replaces the current document with the selected version. A snapshot of the current document is saved first, so you can undo it.')}
+                confirmLabel={t('notebooks.restore', 'Restore')}
+                cancelLabel={t('notebooks.cancel', 'Cancel')}
+                onConfirm={async () => { await handleRestore(); setPendingRestore(false); }}
+                onCancel={() => setPendingRestore(false)}
+            />
+
+            {/* Delete-version confirmation */}
+            <ConfirmDialog
+                open={pendingDeleteId != null}
+                title={t('notebooks.confirm_delete_version_title', 'Delete version?')}
+                description={t('notebooks.confirm_delete_version_body', "This permanently removes the snapshot. This can't be undone.")}
+                confirmLabel={t('notebooks.delete', 'Delete')}
+                cancelLabel={t('notebooks.cancel', 'Cancel')}
+                destructive
+                onConfirm={async () => { const id = pendingDeleteId; setPendingDeleteId(null); await performDelete(id); }}
+                onCancel={() => setPendingDeleteId(null)}
+            />
         </div>
     );
 }

@@ -103,6 +103,11 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
     const [groupAssignOpenFor, setGroupAssignOpenFor] = useState(null);
     const [groupAssignSearch, setGroupAssignSearch] = useState('');
     const groupAssignRef = useRef(null);
+    // BFSF-219: add/remove members directly from the group view (the reciprocal
+    // of the user→group flow on the Users tab).
+    const [memberAddGroupId, setMemberAddGroupId] = useState(null);
+    const [memberAddSearch, setMemberAddSearch] = useState('');
+    const [memberBusy, setMemberBusy] = useState(false);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -482,6 +487,30 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
             const uGroups = Array.isArray(u.groups) ? u.groups : [];
             return uGroups.includes(groupId);
         });
+    };
+
+    const addGroupMember = async (groupId, userId) => {
+        setMemberBusy(true);
+        try {
+            const res = await authFetch(`${API_BASE}/auth/groups/${groupId}/members`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId }),
+            });
+            if (!res.ok) { const e = await res.json().catch(() => ({})); alert(e.error || 'Failed to add member'); }
+            else { setMemberAddSearch(''); await fetchData(); }
+        } catch (e) { alert(e.message); }
+        finally { setMemberBusy(false); }
+    };
+
+    const removeGroupMember = async (groupId, userId) => {
+        setMemberBusy(true);
+        try {
+            const res = await authFetch(`${API_BASE}/auth/groups/${groupId}/members/${userId}`, { method: 'DELETE' });
+            if (!res.ok) { const e = await res.json().catch(() => ({})); alert(e.error || 'Failed to remove member'); }
+            else { await fetchData(); }
+        } catch (e) { alert(e.message); }
+        finally { setMemberBusy(false); }
     };
 
     const getRoleBadge = (role) => {
@@ -1263,6 +1292,54 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
                                                     })()}
                                                 </div>
 
+                                                {/* Add member directly from the group view (BFSF-219). */}
+                                                <div className="mb-3">
+                                                    {memberAddGroupId === group.id ? (
+                                                        <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-primary)] p-2">
+                                                            <input
+                                                                autoFocus
+                                                                value={memberAddSearch}
+                                                                onChange={e => setMemberAddSearch(e.target.value)}
+                                                                placeholder={t('admin.org_group_add_member_search', 'Search users to add…')}
+                                                                className="w-full px-2.5 py-1.5 rounded-md border text-xs outline-none mb-1.5"
+                                                                style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)', color: 'var(--text-primary)' }}
+                                                            />
+                                                            <div className="max-h-40 overflow-y-auto space-y-1">
+                                                                {(() => {
+                                                                    const candidates = orgUsers
+                                                                        .filter(u => !(Array.isArray(u.groups) ? u.groups : []).includes(group.id))
+                                                                        .filter(u => group.organizationId ? u.organizationId === group.organizationId : true);
+                                                                    const q = memberAddSearch.trim().toLowerCase();
+                                                                    const shown = candidates.filter(u => !q
+                                                                        || (u.displayName || '').toLowerCase().includes(q)
+                                                                        || (u.username || '').toLowerCase().includes(q)
+                                                                        || (u.email || '').toLowerCase().includes(q)).slice(0, 20);
+                                                                    if (candidates.length === 0) {
+                                                                        return <p className="text-[11px] text-[var(--text-muted)] text-center py-1.5">{t('admin.org_group_all_added', 'Everyone is already a member')}</p>;
+                                                                    }
+                                                                    return shown.map(u => (
+                                                                        <button key={u.id} disabled={memberBusy} onClick={() => addGroupMember(group.id, u.id)}
+                                                                            className="w-full flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-[var(--bg-tertiary)] text-left disabled:opacity-50">
+                                                                            <span className="text-xs font-medium text-[var(--text-primary)] truncate">{u.displayName || u.username}</span>
+                                                                            {u.email && <span className="text-[10px] text-[var(--text-muted)] truncate">{u.email}</span>}
+                                                                            <Plus className="w-3 h-3 ml-auto text-[var(--text-muted)] shrink-0" />
+                                                                        </button>
+                                                                    ));
+                                                                })()}
+                                                            </div>
+                                                            <button onClick={() => { setMemberAddGroupId(null); setMemberAddSearch(''); }} className="mt-1.5 text-[11px] text-[var(--text-muted)] hover:text-[var(--text-primary)]">
+                                                                {t('common.close', 'Close')}
+                                                            </button>
+                                                        </div>
+                                                    ) : (
+                                                        <button onClick={() => { setMemberAddGroupId(group.id); setMemberAddSearch(''); }}
+                                                            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-dashed hover:bg-[var(--bg-tertiary)]"
+                                                            style={{ borderColor: 'var(--border-subtle)', color: 'var(--text-secondary)' }}>
+                                                            <Plus className="w-3.5 h-3.5" /> {t('admin.org_group_add_member', 'Add member')}
+                                                        </button>
+                                                    )}
+                                                </div>
+
                                                 {/* Members list */}
                                                 {(() => {
                                                     const members = getGroupMembers(group.id);
@@ -1296,6 +1373,14 @@ const OrgUsersPanel = ({ user, initialSection: _initialSection }) => {
                                                                     <div className="shrink-0">
                                                                         {getRoleBadge(group.orgRole || m.role || m.orgRole)}
                                                                     </div>
+                                                                    <button
+                                                                        disabled={memberBusy}
+                                                                        onClick={() => removeGroupMember(group.id, m.id)}
+                                                                        title={t('admin.org_group_remove_member', 'Remove from group')}
+                                                                        className="shrink-0 p-1 rounded-md text-[var(--text-muted)] hover:text-red-500 hover:bg-[var(--bg-tertiary)] disabled:opacity-50"
+                                                                    >
+                                                                        <X className="w-3.5 h-3.5" />
+                                                                    </button>
                                                                 </div>
                                                             ))}
                                                         </div>

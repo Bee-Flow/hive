@@ -94,7 +94,10 @@ export default function VariablePicker({
     return createPortal(
         <div
             data-variable-picker
-            className="fixed z-[60] w-[320px] max-h-[420px] flex flex-col bg-[var(--bg-primary)] border border-[var(--border-default)] rounded-md shadow-lg"
+            // z-[1200] keeps the picker ABOVE the Node Detail View overlay
+            // (z-[1000]) — it's portaled to <body>, so a lower z renders behind
+            // the NDV and the {} button appears to "do nothing".
+            className="fixed z-[1200] w-[320px] max-h-[420px] flex flex-col bg-[var(--bg-primary)] border border-[var(--border-default)] rounded-md shadow-lg"
             style={{ left: position.left, top: position.top }}
             role="dialog"
             aria-label={title}

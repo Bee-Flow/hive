@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import { Bell, Check, CheckCheck, Info, AlertTriangle, AlertCircle, X, BellOff, Bot } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
+import { useViewport } from '../hooks/useViewport';
 import MarkdownRenderer from './MarkdownRenderer';
 
 const CATEGORY_CONFIG = {
-    info: { icon: Info, color: '#6366f1', bg: 'rgba(99, 102, 241, 0.08)', label: 'Info' },
+    info: { icon: Info, color: '#3b82f6', bg: 'rgba(59, 130, 246, 0.08)', label: 'Info' },
     heads_up: { icon: AlertTriangle, color: '#f59e0b', bg: 'rgba(245, 158, 11, 0.08)', label: 'Heads Up' },
     urgent: { icon: AlertCircle, color: '#ef4444', bg: 'rgba(239, 68, 68, 0.08)', label: 'Urgent' },
     ai_task: { icon: Bot, color: '#0f172a', bg: 'rgba(15, 23, 42, 0.06)', label: 'Routine' },
@@ -54,6 +55,7 @@ const TIME_GROUP_LABELS = {
  *                       trigger sits in a top bar.
  */
 export default function NotificationCenter({ variant = 'row' } = {}) {
+    const { isMobile } = useViewport();
     const [open, setOpen] = useState(false);
     const [notifications, setNotifications] = useState([]);
     const [unreadCount, setUnreadCount] = useState(0);
@@ -296,12 +298,20 @@ export default function NotificationCenter({ variant = 'row' } = {}) {
             {/* Dropdown panel */}
             {open && (
                 <div data-surface="opaque" style={{
-                    position: 'absolute',
-                    ...(isIcon
-                        ? { top: '100%', left: 0, marginTop: 8 }
-                        : { bottom: '100%', left: 0, marginBottom: 8 }),
-                    width: 520,
-                    maxHeight: 680,
+                    // Phones: a near-full-width sheet anchored to the viewport so
+                    // the 520px popover can't spill off the right edge. (The mobile
+                    // drawer's slide-in transform has reverted by the time the user
+                    // taps the bell, so position:fixed anchors to the viewport.)
+                    ...(isMobile
+                        ? { position: 'fixed', top: 60, left: 12, right: 12, maxHeight: 'calc(100dvh - 80px)' }
+                        : {
+                            position: 'absolute',
+                            ...(isIcon
+                                ? { top: '100%', left: 0, marginTop: 8 }
+                                : { bottom: '100%', left: 0, marginBottom: 8 }),
+                            width: 520,
+                            maxHeight: 680,
+                        }),
                     background: 'var(--bg-card, #ffffff)',
                     border: '1px solid var(--border-subtle, rgba(0,0,0,0.06))',
                     borderRadius: 16,
@@ -320,12 +330,12 @@ export default function NotificationCenter({ variant = 'row' } = {}) {
                     }}>
                         <div style={{
                             width: 32, height: 32, borderRadius: 9,
-                            background: 'rgba(99,102,241,0.08)',
+                            background: 'rgba(59,130,246,0.08)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center',
-                            border: '1px solid rgba(99,102,241,0.15)',
+                            border: '1px solid rgba(59,130,246,0.15)',
                             flexShrink: 0,
                         }}>
-                            <Bell style={{ width: 15, height: 15, color: '#6366f1' }} />
+                            <Bell style={{ width: 15, height: 15, color: '#3b82f6' }} />
                         </div>
                         <div style={{ flex: 1, fontSize: 14, fontWeight: 700, color: 'var(--text-primary, #0f172a)' }}>
                             Notifications
@@ -353,7 +363,7 @@ export default function NotificationCenter({ variant = 'row' } = {}) {
                                         border: 'none', cursor: 'pointer',
                                         fontSize: 11, fontWeight: 600,
                                         padding: '4px 10px', borderRadius: 6,
-                                        color: notifFilter === f.id ? '#6366f1' : 'var(--text-muted, #94a3b8)',
+                                        color: notifFilter === f.id ? '#3b82f6' : 'var(--text-muted, #94a3b8)',
                                         transition: 'all 0.15s',
                                         boxShadow: notifFilter === f.id ? '0 1px 3px rgba(0,0,0,0.06)' : 'none',
                                     }}
@@ -365,7 +375,7 @@ export default function NotificationCenter({ variant = 'row' } = {}) {
                                 onClick={markAllRead}
                                 style={{
                                     background: 'none', border: 'none', cursor: 'pointer',
-                                    fontSize: 11, color: '#6366f1', fontWeight: 500,
+                                    fontSize: 11, color: '#3b82f6', fontWeight: 500,
                                     display: 'flex', alignItems: 'center', gap: 4,
                                     padding: '4px 8px', borderRadius: 6,
                                 }}
@@ -385,8 +395,8 @@ export default function NotificationCenter({ variant = 'row' } = {}) {
                             }}>
                                 <div style={{
                                     width: 28, height: 28, margin: '0 auto 10px',
-                                    border: '2px solid rgba(99,102,241,0.2)',
-                                    borderTopColor: '#6366f1',
+                                    border: '2px solid rgba(59,130,246,0.2)',
+                                    borderTopColor: '#3b82f6',
                                     borderRadius: '50%',
                                     animation: 'notifSpin 0.8s linear infinite',
                                 }} />
@@ -400,11 +410,11 @@ export default function NotificationCenter({ variant = 'row' } = {}) {
                                 <div style={{
                                     width: 52, height: 52, margin: '0 auto 14px',
                                     borderRadius: 16, display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                    background: 'rgba(99,102,241,0.06)',
+                                    background: 'rgba(59,130,246,0.06)',
                                 }}>
                                     {notifFilter === 'unread'
                                         ? <Check style={{ width: 24, height: 24, color: '#22c55e', opacity: 0.6 }} />
-                                        : <BellOff style={{ width: 24, height: 24, color: '#6366f1', opacity: 0.4 }} />
+                                        : <BellOff style={{ width: 24, height: 24, color: '#3b82f6', opacity: 0.4 }} />
                                     }
                                 </div>
                                 <p style={{ margin: '0 0 4px', fontSize: 14, fontWeight: 600, color: 'var(--text-secondary, #64748b)' }}>
@@ -446,15 +456,15 @@ export default function NotificationCenter({ variant = 'row' } = {}) {
                                             padding: '10px 16px',
                                             cursor: 'pointer',
                                             background: isExpanded
-                                                ? 'rgba(99, 102, 241, 0.04)'
-                                                : n.read ? 'transparent' : 'rgba(99, 102, 241, 0.025)',
+                                                ? 'rgba(59, 130, 246, 0.04)'
+                                                : n.read ? 'transparent' : 'rgba(59, 130, 246, 0.025)',
                                             borderLeft: n.read ? '3px solid transparent' : `3px solid ${cat.color}`,
                                             transition: 'all 0.2s ease',
                                             borderBottom: '1px solid var(--border-subtle, rgba(0,0,0,0.04))',
                                             animation: `notifFadeIn 0.2s ease ${index * 0.02}s both`,
                                         }}
                                         onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(0,0,0,0.018)'; }}
-                                        onMouseLeave={(e) => { e.currentTarget.style.background = isExpanded ? 'rgba(99, 102, 241, 0.04)' : (n.read ? 'transparent' : 'rgba(99, 102, 241, 0.025)'); }}
+                                        onMouseLeave={(e) => { e.currentTarget.style.background = isExpanded ? 'rgba(59, 130, 246, 0.04)' : (n.read ? 'transparent' : 'rgba(59, 130, 246, 0.025)'); }}
                                         onClick={() => toggleExpand(n)}
                                     >
                                         <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start' }}>

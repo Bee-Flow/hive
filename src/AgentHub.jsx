@@ -92,6 +92,17 @@ const AgentHub = ({
     //   isDesktop >=1280  — full split-pane layout
     const { isMobile, isCompact } = useViewport();
 
+    // Auto-enable Simple Mode on phone-sized screens (<768px). We do NOT persist
+    // this: the stored per-user preference (user.simpleMode) is the desktop
+    // choice and stays untouched — on mobile we force the simplified surface on
+    // top of it so Studio / Notebooks / Webpages / model-tier controls (cramped
+    // or unusable on a phone) stay hidden. Sidebar + InputArea derive the same
+    // value from the `isMobile` prop they already receive, and the broadcast
+    // effect below propagates it to deep descendants (e.g. MessageItem). The
+    // Settings toggle keeps reading the raw `user.simpleMode` so it still
+    // reflects the real saved preference.
+    const simpleMode = !!user?.simpleMode || isMobile;
+
     // Notebook layout: split-pane sibling column at every breakpoint above
     // mobile. On compact (13" laptops) it takes a fixed ~420 px width so the
     // chat keeps usable room; on desktop it splits 50/50 with the chat. No
@@ -113,7 +124,7 @@ const AgentHub = ({
     // points either — previously these buttons showed without that check.
     const { hasFeature: hasLicenseFeature } = useLicenseContext();
     const canUseNotebooksPerm = !!(user?.permissions?.includes('all') || user?.permissions?.includes('use_notebooks'));
-    const notebooksEnabled = !user?.simpleMode && user?.featureFlags?.notebooks !== false && hasLicenseFeature('notebooks') && canUseNotebooksPerm;
+    const notebooksEnabled = !simpleMode && user?.featureFlags?.notebooks !== false && hasLicenseFeature('notebooks') && canUseNotebooksPerm;
     const projectsEnabled = user?.featureFlags?.projects !== false;
 
     // Core State
@@ -174,7 +185,9 @@ const AgentHub = ({
     const [webpagePickerOpen, setWebpagePickerOpen] = useState(false);
     const webpageButtonRef = useRef(null);
     const webpageButtonRefDirect = useRef(null);
-    const canUseWebpagesSide = !user?.simpleMode && !!(user?.canUseFeature?.webpages ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('webpages')));
+    // Same unified entitlements snapshot as the /api/webpages gate (hasLicenseFeature
+    // now delegates to EntitlementsContext.can) — mirrors the notebooks gate above.
+    const canUseWebpagesSide = !simpleMode && hasLicenseFeature('webpages');
 
     const toggleNotebookPanel = useCallback(() => {
         setShowNotebook(prev => {
@@ -244,7 +257,7 @@ const AgentHub = ({
     // panel orphaned on screen with no way to close it. Also force the model
     // tier back to 'auto' since the selector is hidden.
     useEffect(() => {
-        const on = !!user?.simpleMode;
+        const on = simpleMode;
         // Broadcast so deep descendants (e.g. MessageItem) can hide
         // surface-level features like the "How I got this answer" panel
         // without prop-drilling. Mirrors the chatHistoryMode pattern.
@@ -259,7 +272,20 @@ const AgentHub = ({
             setSidePanelWebpage(null);
             setSelectedTier('auto');
         }
-    }, [user?.simpleMode]);
+    }, [simpleMode]);
+
+    // The model's chain-of-thought / "reasoning" panel is an admin/debug surface,
+    // not something end users should see in chat (BFSF-253). Broadcast visibility
+    // the same way as Simple Mode so MessageItem can gate the ThinkingPanel without
+    // prop-drilling. Shown for admins, or when a debug flag is set in localStorage.
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        let dbg = false;
+        try { dbg = localStorage.getItem('bf_show_reasoning') === '1'; } catch (_) { /* ignore */ }
+        const show = !!(user?.isAdmin || (user?.permissions || []).includes('all') || dbg);
+        window.__beeflowShowReasoning = show;
+        window.dispatchEvent(new CustomEvent('beeflow:showReasoningChanged', { detail: show }));
+    }, [user]);
 
     // Direct Chat State
     const [directChatMode, setDirectChatMode] = useState(() => window.innerWidth < 768);
@@ -376,14 +402,16 @@ const AgentHub = ({
             }
         }, [selectedAgent]),
         getNotebookPayload: useCallback(() => {
-            // `notebookspaceAvailable: true` flags that the Notebook panel exists
-            // in this UI even when it's currently closed — so the model can call
+            // `notebookspaceAvailable` flags that the Notebook panel exists in
+            // this UI even when it's currently closed — so the model can call
             // notebook_write to start a memo and the panel auto-opens via the
-            // workspace_update SSE event. `notebookspaceContent` is only sent
-            // when the panel is open (server treats `undefined` as "no notebook
-            // currently rendered", `""` as "open but blank").
+            // workspace_update SSE event. Gated on notebooksEnabled (BFSF-207)
+            // so non-entitled clients stop advertising a notebook surface.
+            // `notebookspaceContent` is only sent when the panel is open
+            // (server treats `undefined` as "no notebook currently rendered",
+            // `""` as "open but blank").
             return {
-                notebookspaceAvailable: true,
+                notebookspaceAvailable: notebooksEnabled,
                 ...(showNotebook ? {
                     notebookspaceContent: notebookContent || '',
                     notebookspaceSelection: notebookSelection || '',
@@ -399,14 +427,18 @@ const AgentHub = ({
                     },
                 } : {}),
             };
-        }, [notebookContent, notebookSelection, showNotebook, sidePanelWebpageId, sidePanelWebpage]),
+        }, [notebookContent, notebookSelection, showNotebook, sidePanelWebpageId, sidePanelWebpage, notebooksEnabled]),
         onNotebookUpdate: useCallback((content) => {
+            // BFSF-207: never open the notebook panel for users without the
+            // notebooks entitlement (server withholds the tools, this guards
+            // stale/replayed SSE events too).
+            if (!notebooksEnabled) return;
             // On mobile, silently ignore notebook writes from AI
             if (window.innerWidth < 768) return;
             setShowGammaPreview(false);
             setNotebookContent(content);
             if (content && content.trim()) setShowNotebook(true);
-        }, []),
+        }, [notebooksEnabled]),
         onGammaPreview: useCallback((preview) => {
             if (window.innerWidth < 768) return;
             setGammaPreview(prev => ({ ...(prev || {}), ...preview }));
@@ -1384,6 +1416,9 @@ const AgentHub = ({
         setActiveKBId(null);
         setShowProjectsStore(false);
         setActiveProjectId(null);
+        // On phones the sidebar is a full-screen drawer; any navigation/overlay
+        // action must dismiss it, otherwise the destination opens behind it.
+        if (isMobile) setSidebarOpen(false);
     };
 
     const handleDirectChat = () => {
@@ -1723,7 +1758,7 @@ const AgentHub = ({
                 hasPermission={hasPermission}
                 user={user}
                 onLogout={onLogout}
-                onNavigate={onNavigate}
+                onNavigate={(page) => { if (isMobile) setSidebarOpen(false); onNavigate(page); }}
                 currentPage={currentPage}
                 studioRoute={studioRoute}
                 showSettings={showSettings}
@@ -1861,7 +1896,9 @@ const AgentHub = ({
                         initialAgentId={studioRoute.section === 'agents' ? studioRoute.id : null}
                         initialSkillId={studioRoute.section === 'skills' ? studioRoute.id : null}
                         initialKbId={studioRoute.section === 'knowledge' ? studioRoute.id : null}
-                        initialTaskId={studioRoute.section === 'aiTasks' ? studioRoute.id : null}
+                        initialTaskId={studioRoute.section === 'aiTasks' && studioRoute.routineKind !== 'step' ? studioRoute.id : null}
+                        initialStepId={studioRoute.section === 'aiTasks' && studioRoute.routineKind === 'step' ? studioRoute.id : null}
+                        initialFlowletKey={studioRoute.section === 'aiTasks' ? (studioRoute.sub || null) : null}
                         initialWebpageId={studioRoute.section === 'webpages' ? studioRoute.id : null}
                         onClose={onCloseStudio}
                         onNavigate={onNavigate}
@@ -1947,8 +1984,10 @@ const AgentHub = ({
                         onUnpublish={handleUnpublishAgent}
                         /* Only expose the edit affordance to users who can actually
                            manage agents — ownership alone used to reveal the pencil,
-                           routing the user into a studio that 403s (BFSF-181). */
-                        onEditAgent={((user?.permissions || []).some(p => p === 'all' || p === 'manage_agents'))
+                           routing the user into a studio that 403s (BFSF-181).
+                           Hidden on mobile entirely: phones are view/chat-only, the
+                           agent editor route is blocked there. */
+                        onEditAgent={(!isMobile && (user?.permissions || []).some(p => p === 'all' || p === 'manage_agents'))
                             ? (agent) => { setShowMarketplace(false); onNavigate(agent ? `agentDesigner:${agent.id}` : 'agentDesigner'); }
                             : undefined}
                         user={user}
@@ -2059,6 +2098,7 @@ const AgentHub = ({
                                                 </button>
                                                 {(selectedAgent.owner_id === user?.id || user?.isAdmin || (user?.permissions || []).includes('all')) && (
                                                     <>
+                                                        {!isMobile && (
                                                         <button
                                                             onClick={() => { setShowAgentMenu(false); onNavigate(`agentDesigner:${selectedAgent.id}`); }}
                                                             className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-[var(--bg-secondary)] transition-colors text-left"
@@ -2067,6 +2107,7 @@ const AgentHub = ({
                                                             <Pencil className="w-4 h-4" />
                                                             Edit Agent
                                                         </button>
+                                                        )}
                                                         <button
                                                             onClick={() => { handleUnpublishAgent(selectedAgent.id); setShowAgentMenu(false); }}
                                                             className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-[var(--bg-secondary)] transition-colors text-left"

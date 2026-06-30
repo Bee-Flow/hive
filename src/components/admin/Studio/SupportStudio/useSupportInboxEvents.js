@@ -18,6 +18,8 @@ export default function useSupportInboxEvents(onEvent) {
         };
         es.addEventListener('thread_created', handle);
         es.addEventListener('thread_updated', handle);
+        es.addEventListener('scan_progress', handle);
+        es.addEventListener('scan_done', handle);
         // EventSource auto-reconnects on transient errors; nothing to do here.
         es.onerror = () => {};
         return () => { try { es.close(); } catch (_) {} };

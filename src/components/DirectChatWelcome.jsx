@@ -32,17 +32,19 @@ const DirectChatWelcome = ({ tiers, selectedTier, onTierChange, onPromptClick, c
                 </div>
             )}
 
-            <div className="w-full flex flex-wrap justify-center gap-2 mb-8">
+            {/* Phones: full-width rows whose text wraps (long prompts no longer
+                clip off the right edge). Desktop: inline single-line pills. */}
+            <div className="w-full flex flex-col sm:flex-row sm:flex-wrap sm:justify-center gap-2 mb-8">
                 {prompts.map((prompt, i) => (
                     <button
                         key={i}
-                        onClick={() => onPromptClick && onPromptClick(t(prompt.i18nKey))}
+                        onClick={() => onPromptClick && onPromptClick(t(prompt.i18nKey, prompt.text))}
                         data-surface="subtle"
-                        className="text-left px-3.5 py-1.5 rounded-full border border-[var(--border-subtle)] bg-[var(--bg-card)] hover:bg-[var(--bg-secondary)] transition-all flex items-center gap-2 group whitespace-nowrap"
+                        className="text-left px-3.5 py-2 sm:py-1.5 rounded-2xl sm:rounded-full border border-[var(--border-subtle)] bg-[var(--bg-card)] hover:bg-[var(--bg-secondary)] transition-all flex items-start sm:items-center gap-2 group w-full sm:w-auto sm:max-w-full whitespace-normal sm:whitespace-nowrap"
                     >
-                        <span className="text-sm group-hover:scale-110 transition-transform">{prompt.icon}</span>
+                        <span className="text-sm leading-5 group-hover:scale-110 transition-transform flex-shrink-0">{prompt.icon}</span>
                         <span className="text-[12.5px] font-medium text-[var(--text-secondary)] group-hover:text-[var(--text-primary)] transition-colors">
-                            {t(prompt.i18nKey)}
+                            {t(prompt.i18nKey, prompt.text)}
                         </span>
                     </button>
                 ))}

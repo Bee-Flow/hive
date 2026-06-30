@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import OrgInfoPanel, { SECTIONS as INFO_SECTIONS } from '../../components/admin/OrgInfoPanel';
 import OrgUsersPanel from '../../components/admin/OrgUsersPanel';
+import OrgAcademyPanel from './OrgAcademyPanel';
 import N8nSection from './N8nSection';
 import UsageSection from './UsageSection';
 import GitHubSyncPanel from '../../components/admin/GitHubSyncPanel';
@@ -8,7 +9,8 @@ import NextcloudSyncPanel from '../../components/admin/NextcloudSyncPanel';
 import MeetingNotesAdminPanel from '../../components/admin/MeetingNotesAdminPanel';
 import OrgNcIntegrationsPanel from '../../components/admin/OrgNcIntegrationsPanel';
 import OrgNcPairingPanel from '../../components/admin/OrgNcPairingPanel';
-import OrgFeatureTogglesPanel from '../../components/admin/OrgFeatureTogglesPanel';
+import GroupAccessMatrix from '../../components/admin/GroupAccessMatrix';
+import Tabs from '../../components/shared/Tabs';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
 
@@ -103,6 +105,8 @@ const GoogleMapsRow = () => {
 const OrganisationSection = ({ user, activeSection = 'license' }) => {
     const { t } = useTranslation();
     const [orgState, setOrgState] = useState({ hasChanges: false, saving: false, message: null, handleSave: null });
+    // Integrations sub-tab: 'access' (who can use which integration) | 'settings' (provider credentials / instance URLs)
+    const [intTab, setIntTab] = useState('access');
 
     const perms = user?.permissions || [];
     const isFullAdmin = perms.includes('all') || perms.some(p => p.startsWith('admin_'));
@@ -162,6 +166,11 @@ const OrganisationSection = ({ user, activeSection = 'license' }) => {
                 <OrgUsersPanel user={user} />
             )}
 
+            {/* Academy — org learning overview */}
+            {activeSection === 'academy' && isOrgAdmin && (
+                <OrgAcademyPanel user={user} />
+            )}
+
             {/* Usage & Monitoring */}
             {activeSection === 'usage' && (
                 <UsageSection />
@@ -178,9 +187,43 @@ const OrganisationSection = ({ user, activeSection = 'license' }) => {
                             {t('org.integ_subtitle')}
                         </p>
                     </div>
-                    <OrgFeatureTogglesPanel
-                        user={user}
-                        settingsSlot={(
+                    <Tabs
+                        value={intTab}
+                        onChange={setIntTab}
+                        ariaLabel={t('org.integ_title')}
+                        items={[
+                            { id: 'access', label: t('org.integ_tab_access') },
+                            { id: 'settings', label: t('org.integ_tab_settings') },
+                        ]}
+                    />
+
+                    {/* Integration access — the integrations the subscription
+                        enables (MCP servers included as ordinary integrations).
+                        The org-admin grants each to the whole organisation or a
+                        specific group right here. */}
+                    {intTab === 'access' && (
+                        <GroupAccessMatrix
+                            kinds={['integration']}
+                            hideLocked
+                            heading="Integration access"
+                            subtitle="Give an integration to your whole organisation or to a specific group. These are the integrations your subscription includes."
+                        />
+                    )}
+
+                    {/* Integration settings — configure the integrations
+                        themselves (credentials, instance URLs, workflows). */}
+                    {intTab === 'settings' && (
+                        <div className="space-y-4">
+                            <div className="rounded-xl px-5 py-3 flex items-start gap-3" style={{ background: 'var(--bg-secondary)', border: '1px solid var(--border-subtle)' }}>
+                                <svg className="flex-shrink-0 mt-0.5" style={{ width: 16, height: 16, color: '#3b82f6' }} fill="none" stroke="currentColor" viewBox="0 0 24 24" strokeWidth={2}>
+                                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                                </svg>
+                                <p className="text-[12px]" style={{ color: 'var(--text-muted)' }}>
+                                    Configure the integrations themselves — credentials, instance URLs and workflows.
+                                </p>
+                            </div>
+
+                            {/* Provider configuration (Nextcloud, n8n, Google Maps) */}
                             <div className="space-y-4">
                                 {isNcOrg && <OrgNcIntegrationsPanel user={user} />}
                                 {!showN8n && !showGoogleMaps && !isNcOrg ? (
@@ -209,8 +252,8 @@ const OrganisationSection = ({ user, activeSection = 'license' }) => {
                                     </div>
                                 )}
                             </div>
-                        )}
-                    />
+                        </div>
+                    )}
                 </div>
             )}
 

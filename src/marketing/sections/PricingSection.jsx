@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import SectionFrame from '../components/SectionFrame';
 import { inlineTextStyle } from './textStyle';
+import { featureLabel } from '../../shared/featureCatalog';
 
 /**
  * Pricing block — dynamic. Fetches published subscription plans from
@@ -189,7 +190,7 @@ function PlanCard({ plan, ctaLabel }) {
                             }}
                         >
                             <span aria-hidden="true" style={{ color: 'var(--accent, #F5A623)', flex: 'none' }}>✓</span>
-                            <span>{String(f)}</span>
+                            <span>{featureLabel(f)}</span>
                         </li>
                     ))}
                 </ul>

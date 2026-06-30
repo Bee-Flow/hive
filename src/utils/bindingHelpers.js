@@ -7,7 +7,9 @@
  * `insertAtCursor` which mutates a DOM input/textarea.
  */
 
-const TEMPLATE_RE = /\{\{[^}]+\}\}/;
+// Exported so the chip/token layer (mapping/refTokens.js) shares the exact
+// same notion of "contains an interpolation" — keep this the single source.
+export const TEMPLATE_RE = /\{\{[^}]+\}\}/;
 const SIMPLE_PATH_RE = /^[a-zA-Z_$][\w$.[\]]*$/;
 const VALID_REF_ROOTS = ['trigger', 'steps', 'vars', 'secrets', 'loop'];
 
@@ -189,28 +191,73 @@ function renderRightSide(b) {
     return JSON.stringify(b);
 }
 
+// §WS4.1 — canonical path tokeniser/resolver, ported to match the SERVER runtime
+// (server/automation/bind.js tokenizePath/resolveTokens) byte-for-byte in
+// semantics. The previous FE walker split on '.' and only understood `[N]`
+// numeric indices — so any path containing a `[*]` wildcard (e.g. a forEach
+// `…results[*].output.field` shape) resolved to undefined in the design-time
+// preview while the live runtime resolved it. Keeping the two in lock-step is
+// what makes the VariableTree preview match what the automation actually sees.
+function tokenizePath(path) {
+    const tokens = [];
+    let i = 0;
+    let buf = '';
+    const flush = () => { if (buf.length) { tokens.push({ type: 'prop', key: buf }); buf = ''; } };
+    while (i < path.length) {
+        const c = path[i];
+        if (c === '.') { flush(); i++; continue; }
+        if (c === '[') {
+            flush();
+            const close = path.indexOf(']', i);
+            if (close < 0) return null;
+            const raw = path.slice(i + 1, close);
+            if (raw === '*') tokens.push({ type: 'wild' });
+            else if (raw.startsWith('"') && raw.endsWith('"')) tokens.push({ type: 'prop', key: raw.slice(1, -1) });
+            else if (raw.startsWith("'") && raw.endsWith("'")) tokens.push({ type: 'prop', key: raw.slice(1, -1) });
+            else tokens.push({ type: 'prop', key: parseInt(raw, 10) });
+            i = close + 1;
+            continue;
+        }
+        buf += c;
+        i++;
+    }
+    flush();
+    return tokens;
+}
+
+function resolveTokens(tokens, cur) {
+    for (let t = 0; t < tokens.length; t++) {
+        const tok = tokens[t];
+        if (tok.type === 'wild') {
+            if (!Array.isArray(cur)) return undefined;
+            const rest = tokens.slice(t + 1);
+            const out = [];
+            for (const el of cur) {
+                const m = resolveTokens(rest, el);
+                if (m === undefined) continue;
+                if (Array.isArray(m)) out.push(...m);
+                else out.push(m);
+            }
+            return out;
+        }
+        if (cur == null) return undefined;
+        cur = cur[tok.key];
+    }
+    return cur;
+}
+
 /**
- * Walk a dotted path on an object (`steps.s1.output.results[0].subject`).
- * Returns undefined if any segment is missing — never throws. Used by
- * the VariableTree to resolve a sample value to display next to a leaf.
+ * Walk a dotted/bracketed path on an object
+ * (`steps.s1.output.results[0].subject`, `…results[*].output.field`,
+ * `obj["quoted key"]`). Returns undefined if any segment is missing — never
+ * throws. Supports `[*]` wildcard flatten with the same semantics as the server
+ * runtime. Used by the VariableTree to resolve a sample value to display.
  */
 export function walkPath(path, root) {
     if (!path || root == null) return undefined;
-    const parts = String(path).split('.');
-    let cur = root;
-    for (const raw of parts) {
-        if (cur == null) return undefined;
-        const m = raw.match(/^([^[]+)((?:\[\d+\])*)$/);
-        if (!m) return undefined;
-        const key = m[1];
-        cur = cur[key];
-        const idxs = m[2] ? m[2].match(/\d+/g) : null;
-        if (idxs) for (const i of idxs) {
-            if (cur == null) return undefined;
-            cur = cur[Number(i)];
-        }
-    }
-    return cur;
+    const tokens = tokenizePath(String(path));
+    if (!tokens) return undefined;
+    return resolveTokens(tokens, root);
 }
 
 /**

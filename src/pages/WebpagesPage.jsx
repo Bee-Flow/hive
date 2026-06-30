@@ -4,6 +4,7 @@ import {
     X, Pencil, Globe, FileCode2, Check, Copy,
 } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
+import { resizeImageForUpload } from '../utils/imageResize';
 import useChatEngine from '../hooks/useChatEngine';
 import WebpageIDE from './webpages/WebpageIDE';
 import WebpagePreview from './webpages/WebpagePreview';
@@ -12,8 +13,10 @@ import computeWebpageDiff from '../utils/computeWebpageDiff';
 import scopedStorage from '../utils/scopedStorage';
 import PublishMenu from '../components/admin/AgentWizard/pickers/PublishMenu';
 import ExternalShareSection from '../components/admin/AgentWizard/pickers/ExternalShareSection';
+import ShareLinksMenu from '../components/admin/AgentWizard/pickers/ShareLinksMenu';
 import useTranslation from '../hooks/useTranslation';
 import { RequireTier } from '../components/LicenseContext';
+import { useCan } from '../components/Gate';
 
 // Deterministic accent fallback when the AI hasn't set one yet — keeps every
 // card distinguishable from neighbours without saving anything to the DB.
@@ -36,6 +39,20 @@ function timeAgo(dateStr) {
     return d.toLocaleDateString();
 }
 
+// Map an (possibly resize-converted) MIME type back to a file extension so the
+// stored asset path matches its bytes — the server derives MIME from the path.
+function extForMime(mime, name) {
+    const map = {
+        'image/jpeg': 'jpg', 'image/png': 'png', 'image/gif': 'gif', 'image/webp': 'webp',
+        'image/svg+xml': 'svg', 'image/x-icon': 'ico', 'image/vnd.microsoft.icon': 'ico',
+        'font/woff': 'woff', 'font/woff2': 'woff2', 'font/ttf': 'ttf', 'font/otf': 'otf',
+        'audio/mpeg': 'mp3', 'video/mp4': 'mp4', 'video/webm': 'webm', 'application/pdf': 'pdf',
+    };
+    if (map[mime]) return map[mime];
+    const fromName = (name.split('.').pop() || '').toLowerCase();
+    return /^[a-z0-9]{1,5}$/.test(fromName) ? fromName : 'bin';
+}
+
 async function api(path, opts = {}) {
     const url = `${API_BASE}/api/webpages${path === '/' ? '' : path}`;
     const res = await authFetch(url, {
@@ -50,13 +67,10 @@ async function api(path, opts = {}) {
 }
 
 function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, embedded = false }) {
-    // Drive UI gating from the same `(license + beta)` resolution the server uses
-    // (see /auth/my-permissions). Falls back to the legacy beta/permission check
-    // for sessions established before the field was wired up.
-    const canUseWebpages = !!(
-        user?.canUseFeature?.webpages
-        ?? (user?.permissions?.includes('all') || user?.betaFeatures?.includes('webpages'))
-    );
+    // Drive UI gating from the SAME unified entitlements snapshot the server's
+    // requireCapability('webpages') enforces (EntitlementsContext) — so this
+    // inner gate, the outer RequireTier, and the /api/webpages API never diverge.
+    const canUseWebpages = useCan('webpages');
     const { t } = useTranslation();
     const [orgGroups, setOrgGroups] = useState([]);
     const [publishMenuOpen, setPublishMenuOpen] = useState(false);
@@ -402,6 +416,28 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
 
     useEffect(() => { if (canUseWebpages) fetchWebpages(); }, [fetchWebpages, canUseWebpages]);
 
+    // Live framework/runtime switches from the AI (emitted as SSE → DOM events by
+    // useChatEngine). Update the selected webpage's settings so the preview
+    // recomposes into the new mode (e.g. vanilla → react-mui) without a reload.
+    useEffect(() => {
+        const onFramework = (e) => {
+            const framework = e?.detail?.framework;
+            if (!framework) return;
+            setSelected(prev => prev ? { ...prev, settings: { ...(prev.settings || {}), framework } } : prev);
+        };
+        const onRuntime = (e) => {
+            const runtime = e?.detail?.runtime;
+            if (!runtime) return;
+            setSelected(prev => prev ? { ...prev, settings: { ...(prev.settings || {}), runtime } } : prev);
+        };
+        window.addEventListener('webpage_framework_changed', onFramework);
+        window.addEventListener('webpage_runtime_changed', onRuntime);
+        return () => {
+            window.removeEventListener('webpage_framework_changed', onFramework);
+            window.removeEventListener('webpage_runtime_changed', onRuntime);
+        };
+    }, []);
+
     /* ── Load a webpage (deep-link or click) ─────────────────── */
     const loadWebpage = useCallback(async (id, { edit = false } = {}) => {
         try {
@@ -602,6 +638,76 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
             persist();
         }, 1500);
     }, [persist, selected?.id]);
+
+    /* ── Manual file / asset management (owner-only; mirrors the AI tools) ── */
+
+    // Merge an extra-file meta + content entry into local state (shared by the
+    // create/upload/rename handlers; same shape as the onWebpageExtraUpdate SSE).
+    const mergeExtra = useCallback((meta, contentEntry) => {
+        setExtraFiles(prev => {
+            const idx = prev.findIndex(f => f.path === meta.path);
+            if (idx >= 0) { const next = [...prev]; next[idx] = { ...prev[idx], ...meta }; return next; }
+            return [...prev, meta];
+        });
+        if (contentEntry) setExtraContents(prev => ({ ...prev, [meta.path]: contentEntry }));
+    }, []);
+
+    const handleCreateFile = useCallback(async (path) => {
+        if (!selected?.id || !path) return;
+        try {
+            const r = await api(`/${selected.id}/files`, { method: 'PUT', body: JSON.stringify({ path, content: '' }) });
+            mergeExtra(r.file, { mimeType: r.file.mimeType, isText: true, content: '' });
+        } catch (err) { setError(err.message); }
+    }, [selected?.id, mergeExtra]);
+
+    const handleDeleteFile = useCallback(async (path) => {
+        if (!selected?.id || !path) return;
+        try {
+            await api(`/${selected.id}/files?path=${encodeURIComponent(path)}`, { method: 'DELETE' });
+            setExtraFiles(prev => prev.filter(f => f.path !== path));
+            setExtraContents(prev => { const n = { ...prev }; delete n[path]; return n; });
+        } catch (err) { setError(err.message); }
+    }, [selected?.id]);
+
+    const handleRenameFile = useCallback(async (oldPath, newPath) => {
+        if (!selected?.id || !oldPath || !newPath || oldPath === newPath) return;
+        try {
+            const res = await authFetch(`${API_BASE}/api/webpages/${selected.id}/assets/move`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ from: oldPath, to: newPath }),
+            });
+            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Rename ${res.status}`); }
+            const { file: meta } = await res.json();
+            setExtraFiles(prev => prev.filter(f => f.path !== oldPath).concat(meta));
+            setExtraContents(prev => { const n = { ...prev }; const c = n[oldPath]; delete n[oldPath]; if (c) n[meta.path] = c; return n; });
+        } catch (err) { setError(err.message); }
+    }, [selected?.id]);
+
+    const handleAssetUpload = useCallback(async (file, folder = 'assets') => {
+        if (!selected?.id || !file) return;
+        try {
+            let blob = file;
+            let mimeType = file.type || 'application/octet-stream';
+            if (file.type && file.type.startsWith('image/')) {
+                const r = await resizeImageForUpload(file);
+                blob = r.blob; mimeType = r.mimeType;
+            }
+            const ext = extForMime(mimeType, file.name || 'asset');
+            const stem = (file.name || 'asset').replace(/\.[^.]+$/, '').replace(/[^A-Za-z0-9_-]/g, '_') || 'asset';
+            let path = `${folder}/${stem}.${ext}`;
+            const taken = new Set(extraFiles.map(f => f.path));
+            let n = 1;
+            while (taken.has(path)) { path = `${folder}/${stem}-${n}.${ext}`; n++; }
+
+            const form = new FormData();
+            form.append('file', blob, path.split('/').pop());
+            form.append('path', path);
+            const res = await authFetch(`${API_BASE}/api/webpages/${selected.id}/assets`, { method: 'POST', body: form });
+            if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d.error || `Upload ${res.status}`); }
+            const { file: meta, contentBase64 } = await res.json();
+            mergeExtra(meta, { mimeType: meta.mimeType, isText: false, dataUrl: `data:${meta.mimeType};base64,${contentBase64}` });
+            return meta.path;
+        } catch (err) { setError(err.message); }
+    }, [selected?.id, extraFiles, mergeExtra]);
 
     // Cmd/Ctrl+S → flush. Only intercept the browser's native save when the
     // user is actually inside the IDE pane (Monaco editor, chat input, etc.).
@@ -814,6 +920,7 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
             html, css, js,
             extraFiles,
             extraContents,
+            framework: selected.settings?.framework,
         });
     }, [selected, html, css, js, extraFiles, extraContents, persist]);
 
@@ -920,7 +1027,7 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
                                 {search ? 'No matches' : 'No webpages yet'}
                             </h3>
                             <p className="text-sm max-w-sm" style={{ color: 'var(--text-secondary)' }}>
-                                {search ? 'Try a different search.' : 'Create your first webpage above and let Claude build it for you.'}
+                                {search ? 'Try a different search.' : 'Create your first webpage above and let the AI build it for you.'}
                             </p>
                         </div>
                     ) : (
@@ -1071,6 +1178,11 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
                         }
                     />
                 )}
+                {/* Non-owners get a read-only popover to see/copy the owner's
+                    external share links (BFSF-188). */}
+                {selected.userId !== user?.id && (
+                    <ShareLinksMenu webpageId={selected.id} webpageName={selected.name} />
+                )}
             </div>
 
             {/* Body: sandboxed preview (view mode) OR full IDE (edit mode). */}
@@ -1084,6 +1196,8 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
                         extraFiles={extraFiles}
                         extraContents={extraContents}
                         isStreaming={chatLoading}
+                        framework={selected.settings?.framework}
+                        runtime={selected.settings?.runtime}
                     />
                 ) : (
                 <div ref={idePaneRef} className="h-full">
@@ -1097,6 +1211,10 @@ function WebpagesPageInner({ user, onBack, initialWebpageId, onWebpageChange, em
                     extraFiles={extraFiles}
                     extraContents={extraContents}
                     onExtraChange={handleExtraChange}
+                    onCreateFile={handleCreateFile}
+                    onRenameFile={handleRenameFile}
+                    onDeleteFile={handleDeleteFile}
+                    onUploadAsset={handleAssetUpload}
                     sources={sources}
                     onSourcesChange={setSources}
                     chatMessages={chatMessages}

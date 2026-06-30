@@ -1,6 +1,8 @@
-import { Plus, Trash2 } from 'lucide-react';
-import React from 'react';
+import { Plus, Trash2, Sparkles } from 'lucide-react';
+import React, { useMemo, useRef, useState } from 'react';
 import BindingField from './BindingField';
+import { partitionInputs, isEmptyBinding } from './partitionInputs';
+import CollapsibleSection from '../flow/CollapsibleSection';
 
 /**
  * Schema-driven inputs editor for a step's `inputs` map.
@@ -8,13 +10,17 @@ import BindingField from './BindingField';
  * Two modes:
  *   1. Schema-driven — when `inputSchema?.properties` is provided
  *      (sourced from the catalog's per-tool function definition).
- *      Each property becomes a labelled BindingField; required flag,
- *      description, and example placeholder come from the schema.
+ *      Essential fields (required / populated / common) show by default;
+ *      the rest collapse behind a "Show N more options" disclosure.
  *   2. Generic key/value rows — when no schema is available (custom
  *      tools, AI step user-defined inputs). User adds rows manually.
  *
  * Both modes emit the same `inputs` object the runtime resolver
  * expects: `{ [key]: bindingObject }`.
+ *
+ * Auto-mapping: `autoMappedKeys` marks fields filled by the connect-time
+ * auto-mapper so a small "auto" pill is shown; `onAutoMap` (when given)
+ * renders a one-click wand button to (re)run mapping over empty fields.
  */
 export default function ToolInputForm({
     inputs = {},
@@ -23,16 +29,78 @@ export default function ToolInputForm({
     onFocusField,
     previewSample = null,
     allowExtraFields = true,
+    autoMappedKeys = [],
+    onAutoMap = null,
+    // When true, a row whose value is cleared is KEPT (with an empty literal)
+    // instead of being deleted. Used by the Set / layer_output editors, where
+    // the keys are the user's own named fields — emptying a value must not
+    // remove the field. Tool-param editors leave this off so clearing a value
+    // omits the param.
+    keepEmptyFields = false,
 }) {
     const properties = inputSchema?.properties || null;
-    const required = new Set(inputSchema?.required || []);
+    const required = useMemo(() => new Set(inputSchema?.required || []), [inputSchema]);
+
+    // Locally suppress the "auto" pill once the user edits that field. Resets
+    // when the step changes (SettingsForm re-keys this subtree by step.id).
+    const [consumed, setConsumed] = useState(() => new Set());
+    const isAuto = (key) => autoMappedKeys.includes(key) && !consumed.has(key);
+
+    // Newly-added custom rows are held LOCALLY until they have a name + value.
+    // For tool/AI inputs (keepEmptyFields=false) `buildPatch`'s sanitizeInputs
+    // strips empty bindings on autosave, so an empty row written straight into
+    // `inputs` would flash and vanish on the next save round-trip. Keeping it
+    // local until it's non-empty fixes that. (Set / layer_output use
+    // keepEmptyFields and persist empty named fields, so they add directly.)
+    const [pending, setPending] = useState([]); // [{ id, key, binding }]
+    const pidRef = useRef(0);
+    const uniqueKey = (base = 'field') => {
+        const taken = new Set([...Object.keys(inputs || {}), ...pending.map(p => p.key)]);
+        let k = base, n = 1;
+        while (taken.has(k)) k = `${base}${++n}`;
+        return k;
+    };
+    const updatePending = (id, patch) => setPending(p => p.map(r => (r.id === id ? { ...r, ...patch } : r)));
+    const removePending = (id) => setPending(p => p.filter(r => r.id !== id));
+    // Commit a local row into `inputs` once it has a key + a non-empty value.
+    // Called on blur (focus left the row) so we never remount mid-edit.
+    const commitPending = (id) => {
+        const row = pending.find(r => r.id === id);
+        if (!row) return;
+        const key = (row.key || '').trim();
+        if (!key || isEmptyBinding(row.binding)) return; // not ready — keep editing
+        let finalKey = key, n = 1;
+        const taken = new Set(Object.keys(inputs || {}));
+        while (taken.has(finalKey)) finalKey = `${key}${++n}`;
+        onChange?.({ ...(inputs || {}), [finalKey]: row.binding });
+        removePending(id);
+    };
+    const renderPendingRows = () => pending.map(row => (
+        <div
+            key={`pending-${row.id}`}
+            onBlur={(e) => { if (!e.currentTarget.contains(e.relatedTarget)) commitPending(row.id); }}
+        >
+            <GenericRow
+                fieldKey={row.key}
+                value={row.binding}
+                onChange={(b) => updatePending(row.id, { binding: b })}
+                onRename={(k) => updatePending(row.id, { key: k })}
+                onRemove={() => removePending(row.id)}
+                onFocusField={onFocusField}
+                previewSample={previewSample}
+            />
+        </div>
+    ));
 
     const updateField = (key, binding) => {
+        if (autoMappedKeys.includes(key)) setConsumed(s => new Set(s).add(key));
         const next = { ...(inputs || {}) };
-        if (isEmptyBinding(binding)) {
+        if (isEmptyBinding(binding) && !keepEmptyFields) {
             delete next[key];
         } else {
-            next[key] = binding;
+            // Keep the user's named field even when empty (Set / layer_output):
+            // normalise to an empty literal so it persists through save.
+            next[key] = binding || { kind: 'literal', value: '' };
         }
         onChange?.(next);
     };
@@ -54,34 +122,64 @@ export default function ToolInputForm({
     };
 
     const addField = () => {
-        const next = { ...(inputs || {}) };
-        let k = 'field';
-        let n = 1;
-        while (k in next) { k = `field${++n}`; }
-        next[k] = { kind: 'literal', value: '' };
-        onChange?.(next);
+        if (keepEmptyFields) {
+            // Set / layer_output: empty NAMED fields are valid and persist.
+            const next = { ...(inputs || {}) };
+            next[uniqueKey()] = { kind: 'literal', value: '' };
+            onChange?.(next);
+            return;
+        }
+        // Tool / AI inputs: hold the new row locally until it has a value, so
+        // the autosave's empty-strip can't make it flash-and-vanish.
+        setPending(p => [...p, { id: ++pidRef.current, key: uniqueKey(), binding: { kind: 'literal', value: '' } }]);
     };
 
+    const WandButton = onAutoMap ? (
+        <button
+            type="button"
+            onClick={onAutoMap}
+            title="Auto-map empty inputs from upstream steps"
+            className="inline-flex items-center gap-1 text-[11px] px-2 py-1 rounded border border-[var(--border-default)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-secondary)] transition"
+        >
+            <Sparkles size={12} /> Auto-map
+        </button>
+    ) : null;
+
     if (properties) {
+        const { essentialKeys, advancedKeys } = partitionInputs(properties, required, inputs);
         const knownKeys = new Set(Object.keys(properties));
         const extras = Object.keys(inputs || {}).filter(k => !knownKeys.has(k));
+        const advAutoCount = advancedKeys.filter(isAuto).length;
+
+        const renderField = (key) => (
+            <BindingField
+                key={key}
+                label={properties[key]?.title || key}
+                hint={properties[key]?.description}
+                required={required.has(key)}
+                placeholder={describeExample(properties[key])}
+                value={(inputs || {})[key] ?? null}
+                onChange={(b) => updateField(key, b)}
+                onFocusField={onFocusField}
+                previewSample={previewSample}
+                multiline={isMultilineProp(properties[key])}
+                autoMapped={isAuto(key)}
+            />
+        );
+
         return (
             <div className="space-y-3">
-                {Object.entries(properties).map(([key, prop]) => (
-                    <BindingField
-                        key={key}
-                        label={prop.title || key}
-                        hint={prop.description}
-                        required={required.has(key)}
-                        placeholder={describeExample(prop)}
-                        value={(inputs || {})[key] ?? null}
-                        onChange={(b) => updateField(key, b)}
-                        onFocusField={onFocusField}
-                        previewSample={previewSample}
-                        multiline={isMultilineProp(prop)}
-                    />
-                ))}
-                {extras.length > 0 && (
+                {WandButton && <div className="flex justify-end">{WandButton}</div>}
+                {essentialKeys.map(renderField)}
+                {advancedKeys.length > 0 && (
+                    <CollapsibleSection
+                        count={advancedKeys.length}
+                        badge={advAutoCount > 0 ? `${advAutoCount} auto` : null}
+                    >
+                        {advancedKeys.map(renderField)}
+                    </CollapsibleSection>
+                )}
+                {(extras.length > 0 || pending.length > 0) && (
                     <div className="pt-2 border-t border-[var(--border-default)] space-y-2">
                         <div className="text-[10px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)]">
                             Extra inputs (not in tool schema)
@@ -98,6 +196,7 @@ export default function ToolInputForm({
                                 previewSample={previewSample}
                             />
                         ))}
+                        {renderPendingRows()}
                     </div>
                 )}
                 {allowExtraFields && (
@@ -117,7 +216,8 @@ export default function ToolInputForm({
     const entries = Object.entries(inputs || {});
     return (
         <div className="space-y-2">
-            {entries.length === 0 && (
+            {WandButton && <div className="flex justify-end">{WandButton}</div>}
+            {entries.length === 0 && pending.length === 0 && (
                 <div className="text-[11px] text-[var(--text-tertiary)] italic">
                     No inputs yet. Add a field below.
                 </div>
@@ -132,20 +232,24 @@ export default function ToolInputForm({
                     onRemove={() => removeField(k)}
                     onFocusField={onFocusField}
                     previewSample={previewSample}
+                    autoMapped={isAuto(k)}
                 />
             ))}
-            <button
-                type="button"
-                onClick={addField}
-                className="flex items-center gap-1 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
-            >
-                <Plus size={12} /> Add field
-            </button>
+            {renderPendingRows()}
+            {allowExtraFields && (
+                <button
+                    type="button"
+                    onClick={addField}
+                    className="flex items-center gap-1 text-[11px] text-[var(--text-secondary)] hover:text-[var(--text-primary)]"
+                >
+                    <Plus size={12} /> Add field
+                </button>
+            )}
         </div>
     );
 }
 
-function GenericRow({ fieldKey, value, onChange, onRename, onRemove, onFocusField, previewSample }) {
+function GenericRow({ fieldKey, value, onChange, onRename, onRemove, onFocusField, previewSample, autoMapped = false }) {
     return (
         <div className="rounded border border-[var(--border-default)] bg-[var(--bg-primary)] p-2 space-y-1.5">
             <div className="flex items-center gap-1">
@@ -156,6 +260,9 @@ function GenericRow({ fieldKey, value, onChange, onRename, onRemove, onFocusFiel
                     placeholder="field name"
                     className="flex-1 min-w-0 px-2 py-1 text-xs font-mono rounded border border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
                 />
+                {autoMapped && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-[var(--accent)]/15 text-[var(--accent)] uppercase tracking-wide" title="Auto-mapped">auto</span>
+                )}
                 <button
                     type="button"
                     onClick={onRemove}
@@ -175,13 +282,6 @@ function GenericRow({ fieldKey, value, onChange, onRename, onRemove, onFocusFiel
             />
         </div>
     );
-}
-
-function isEmptyBinding(b) {
-    if (b == null) return true;
-    if (typeof b !== 'object') return false;
-    if (b.kind === 'literal' && (b.value == null || b.value === '')) return true;
-    return false;
 }
 
 function describeExample(prop) {

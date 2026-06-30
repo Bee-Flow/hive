@@ -1,29 +1,20 @@
-import { CheckCircle2, Clock, XCircle, Loader2 } from 'lucide-react';
-import React, { useCallback, useState } from 'react';
-import StepInputsTab from './StepInputsTab';
-import StepLogsTab from './StepLogsTab';
+import { CheckCircle2, Clock, XCircle, Loader2, Pin } from 'lucide-react';
+import React, { useCallback } from 'react';
 import StepOutputTab from './StepOutputTab';
-import useStepDebug from './useStepDebug';
 
 /**
- * Run-view container for the StepInspector. Hosts three sub-tabs:
- *   - Inputs  — resolved input from the most recent run + pin-as-sample
- *   - Output  — output from the most recent run with copy-path-as-binding
- *   - Logs    — Phase 2 placeholder for the streaming SSE log feed
- *
- * The compact status strip above the sub-tabs gives at-a-glance run
- * health (status badge + duration + error preview) so users don't have
- * to switch tabs just to see whether the last run succeeded.
+ * Run-view container for the StepInspector. Shows the most recent run's
+ * OUTPUT directly — a compact status strip (status badge + duration + retry
+ * count) above the friendly Table/JSON output. Inputs and Logs are
+ * intentionally omitted: after an execute the user wants the result, not
+ * the plumbing.
  *
  * Props:
  *   step    — the active step (uses .id for path generation)
  *   runStep — the most recent run record for this step (or null)
- *             expected shape: { status, input, output, error, durationMs }
+ *             expected shape: { status, output, error, durationMs }
  */
 export default function RunTabContainer({ step, runStep }) {
-    const [subTab, setSubTab] = useState('inputs');
-    const { pinnedInput, pinInput, clearPinned } = useStepDebug(step?.id);
-
     const copyPath = useCallback((path) => {
         if (!path) return;
         try {
@@ -34,44 +25,34 @@ export default function RunTabContainer({ step, runStep }) {
         }
     }, []);
 
-    if (!runStep) {
+    // No live run record yet. If the step's output is PINNED, that pinned
+    // value is exactly what downstream steps will receive at run-time, so
+    // show it here (badged "Pinned") instead of the empty state.
+    const isPinned = step?.pinnedOutput !== undefined && step?.pinnedOutput !== null;
+    const effectiveRun = runStep || (isPinned
+        ? { status: 'pinned', output: step.pinnedOutput }
+        : null);
+
+    if (!effectiveRun) {
         return (
             <div className="flex flex-col h-full min-h-0 items-center justify-center px-6 py-12 text-[11px] text-[var(--text-tertiary)] text-center gap-2">
                 <Clock size={18} className="opacity-60" />
-                <div>No run output for this step yet — try a dry-run.</div>
+                <div>No run output for this step yet — run or dry-run it.</div>
             </div>
         );
     }
 
     return (
         <div className="flex flex-col h-full min-h-0">
-            <StatusStrip runStep={runStep} />
-            <div className="flex items-center gap-1 px-2 pt-1 border-b border-[var(--border-default)]">
-                <SubTab active={subTab === 'inputs'} onClick={() => setSubTab('inputs')}>Inputs</SubTab>
-                <SubTab active={subTab === 'output'} onClick={() => setSubTab('output')}>Output</SubTab>
-                <SubTab active={subTab === 'logs'} onClick={() => setSubTab('logs')}>Logs</SubTab>
-            </div>
+            <StatusStrip runStep={effectiveRun} />
             <div className="flex-1 min-h-0">
-                {subTab === 'inputs' && (
-                    <StepInputsTab
-                        stepId={step?.id}
-                        liveInput={runStep.input ?? null}
-                        pinnedInput={pinnedInput}
-                        onPin={pinInput}
-                        onClearPin={clearPinned}
-                        onCopyPath={copyPath}
-                    />
-                )}
-                {subTab === 'output' && (
-                    <StepOutputTab
-                        stepId={step?.id}
-                        liveOutput={runStep.output ?? null}
-                        error={runStep.error}
-                        remediation={runStep.errorRemediation}
-                        onCopyPath={copyPath}
-                    />
-                )}
-                {subTab === 'logs' && <StepLogsTab />}
+                <StepOutputTab
+                    stepId={step?.id}
+                    liveOutput={effectiveRun.output ?? null}
+                    error={effectiveRun.error}
+                    remediation={effectiveRun.errorRemediation}
+                    onCopyPath={copyPath}
+                />
             </div>
         </div>
     );
@@ -103,6 +84,8 @@ function statusFor(status) {
             return { Icon: XCircle, color: 'text-red-600 dark:text-red-400', label: 'Error' };
         case 'running':
             return { Icon: Loader2, color: 'text-amber-600 dark:text-amber-400 animate-spin', label: 'Running' };
+        case 'pinned':
+            return { Icon: Pin, color: 'text-cyan-600 dark:text-cyan-400', label: 'Pinned' };
         default:
             return { Icon: Clock, color: 'text-[var(--text-tertiary)]', label: status || 'Unknown' };
     }
@@ -114,18 +97,4 @@ function formatDuration(ms) {
     const mins = Math.floor(ms / 60_000);
     const secs = Math.floor((ms % 60_000) / 1000);
     return `${mins}m ${secs}s`;
-}
-
-function SubTab({ active, onClick, children }) {
-    return (
-        <button
-            type="button"
-            onClick={onClick}
-            className={`px-2.5 py-1 text-[11px] transition ${active
-                ? 'border-b-2 border-[var(--accent)] text-[var(--text-primary)] -mb-px'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
-        >
-            {children}
-        </button>
-    );
 }

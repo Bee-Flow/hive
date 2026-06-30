@@ -68,6 +68,7 @@ export default function SkillsGrid({
                         <div className="flex gap-2 items-center">
                             <button
                                 onClick={onCreate}
+                                data-tour="skill-create"
                                 className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-[13px] font-semibold text-white shadow-md transition-opacity hover:opacity-90"
                                 style={{ background: 'var(--accent-primary)' }}
                             >

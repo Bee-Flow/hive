@@ -121,6 +121,12 @@ export function OrgEditor({ orgSub, plans, onBack, onSave, onRemove, onStartTria
                         </Card>
                     )}
 
+                    {!form.plan_id && (
+                        <Banner tone="warning" title="No plan assigned">
+                            This organization has no subscription plan: usage caps are NOT enforced and feature gating falls back to the community floor. Assign a plan (e.g. Free) to enforce limits.
+                        </Banner>
+                    )}
+
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
                         <Field label="Plan">
                             <Select value={form.plan_id} onChange={e => update('plan_id', e.target.value)}>

@@ -4,6 +4,105 @@ import scopedStorage from '../utils/scopedStorage';
 import { logger } from '../utils/logger';
 import useTranslation from './useTranslation';
 
+// rAF helpers with a setTimeout fallback for non-browser environments. Resolved
+// at call time (not module load) so they pick up the real/mocked global.
+const _raf = (cb) => (typeof requestAnimationFrame === 'function')
+    ? requestAnimationFrame(cb)
+    : setTimeout(() => cb(Date.now()), 16);
+const _caf = (id) => (typeof cancelAnimationFrame === 'function')
+    ? cancelAnimationFrame(id)
+    : clearTimeout(id);
+
+/**
+ * Per-stream content flusher. Coalesces high-frequency 'content' tokens into at
+ * most one setMessages per animation frame (~60fps) instead of one per token,
+ * which previously re-rendered the whole message list on every token.
+ *
+ * The accumulated text lives in `contentRef` (always current — appended
+ * synchronously by the caller); the flusher only controls WHEN that text is
+ * committed to React state. Callers MUST flushNow() before any handler that
+ * reads committed content (done/finalize/interrupt) and cancel() on abort so a
+ * late frame can't resurrect text after the stream ended.
+ */
+export function createContentFlusher(setMessages, activeIdRef, contentRef) {
+    let rafId = null;
+    let pending = false;
+    let latestName;
+    let latestAvatar;
+
+    const flush = () => {
+        rafId = null;
+        if (!pending) return;
+        pending = false;
+        const content = contentRef.current;
+        setMessages(prev => prev.map(m =>
+            m.id === activeIdRef.current ? {
+                ...m,
+                content,
+                // First content settles the pre-LLM phase indicator (mirrors the
+                // original per-token behaviour).
+                currentPhase: m.currentPhase ? null : m.currentPhase,
+                respondingAgentName: latestName ?? m.respondingAgentName,
+                respondingAgentAvatar: latestAvatar ?? m.respondingAgentAvatar,
+            } : m
+        ));
+    };
+
+    return {
+        // Mark new content available and ensure a frame is scheduled. `name`/
+        // `avatar` carry the last-seen responder identity into the coalesced flush.
+        schedule(name, avatar) {
+            if (name) latestName = name;
+            if (avatar) latestAvatar = avatar;
+            pending = true;
+            if (rafId == null) rafId = _raf(flush);
+        },
+        // Commit any buffered content synchronously (call before terminal events).
+        flushNow() {
+            if (rafId != null) { _caf(rafId); rafId = null; }
+            if (pending) flush();
+        },
+        // Drop any buffered content + scheduled frame (call on replace/abort).
+        cancel() {
+            if (rafId != null) { _caf(rafId); rafId = null; }
+            pending = false;
+        },
+    };
+}
+
+// SSE events that carry a concrete work item, mapped to the user-facing kind
+// used by the interrupted/error success summaries (BFSF-221). 'notebook' is
+// the agent workspace panel (workspace_update), which the server persists
+// BEFORE emitting the event.
+const WORK_EVENT_KINDS = {
+    webpage_doc_update: 'webpage',
+    webpage_extra_update: 'webpage',
+    notebook_doc_update: 'document',
+    slides_deck_update: 'document',
+    sheet_update: 'document',
+    workspace_update: 'notebook',
+};
+
+/**
+ * First markdown heading in `md` (trimmed, max 80 chars), or null. Used to
+ * derive a title for workspace_update payloads, which carry no explicit title.
+ */
+export function extractMdHeading(md) {
+    if (!md) return null;
+    const m = /^#{1,6}\s+(.+)$/m.exec(md);
+    return m ? m[1].trim().slice(0, 80) : null;
+}
+
+/**
+ * One-line "what was created" summary for a tracked work item ({ kind, title }),
+ * or null when nothing was tracked. `t` is the translation function.
+ */
+export function summarizeWorkItem(t, wi) {
+    if (!wi?.kind) return null;
+    const key = wi.title ? `chat.work_summary.${wi.kind}` : `chat.work_summary.${wi.kind}_untitled`;
+    return t(key, wi.title ? { title: wi.title } : undefined);
+}
+
 /**
  * Custom hook that encapsulates the chat messaging engine.
  *
@@ -39,6 +138,11 @@ export default function useChatEngine({
     onGammaPreview,
     activeSkillIds,
     onSessionSkillsChanged,
+    // Optional: async () => messages[] — refetch the persisted conversation so a
+    // dropped stream can auto-recover the saved reply (the server persists the
+    // finished message even when the SSE connection drops mid/post-stream). When
+    // omitted, the interrupted notice is shown as before (no behaviour change).
+    reloadConversation,
 }) {
     const [messages, setMessages] = useState([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -46,6 +150,9 @@ export default function useChatEngine({
     // can synchronously read+abort the previous controller in the same tick,
     // and so changes don't recreate `sendMessage`/`stopGenerating`.
     const abortControllerRef = useRef(null);
+    // The current stream's content flusher (rAF coalescer). Held in a ref so
+    // stopGenerating / unmount can cancel a pending frame from outside sendMessage.
+    const activeFlusherRef = useRef(null);
 
     // Keep a ref in sync with messages so `sendMessage` can read the current
     // conversation without listing `messages` in its dep array. With `messages`
@@ -59,6 +166,11 @@ export default function useChatEngine({
     const { t } = useTranslation();
     const tRef = useRef(t);
     useEffect(() => { tRef.current = t; }, [t]);
+
+    // Keep the recovery loader current without recreating sendMessage (it's read
+    // in the interrupted catch-branch). Mirrors tRef/handleSSEEventRef.
+    const reloadConversationRef = useRef(reloadConversation);
+    useEffect(() => { reloadConversationRef.current = reloadConversation; }, [reloadConversation]);
 
     // Stable refs so SSE handlers always call the latest callback
     // (avoids stale closure when parent re-renders change the callback identity)
@@ -116,37 +228,38 @@ export default function useChatEngine({
                 c.abort();
                 abortControllerRef.current = null;
             }
+            // Cancel any scheduled content frame so it can't fire post-unmount.
+            activeFlusherRef.current?.cancel();
+            activeFlusherRef.current = null;
         };
     }, []);
 
     // --- SSE Event Handlers ---
 
     const handleSSEEvent = useCallback((event, data, ids) => {
-        const { assistantMsgId, userMsgId, activeIdRef, contentRef } = ids;
+        const { assistantMsgId, userMsgId, activeIdRef, contentRef, flusher, workRef } = ids;
 
         // DEBUG: log non-content events to help debug LinkedIn draft issue
-        if (event !== 'content' && event !== 'thinking') {
+        if (event !== 'content' && event !== 'thinking' && event !== 'ping') {
             logger.debug('[SSE Event]', event, data);
         }
 
         switch (event) {
+            case 'ping':
+                // SSE keepalive heartbeat (see server startSseHeartbeat). No-op —
+                // its only job is to keep the connection warm through proxies so a
+                // long, silent tool loop isn't idle-timed-out.
+                break;
+
             case 'content':
                 if (data.text) {
+                    // Append synchronously to the ref (always current), but defer
+                    // the React state commit to the next animation frame so a fast
+                    // token stream re-renders at ~60fps instead of per-token. The
+                    // flush settles the pre-LLM phase indicator and carries the
+                    // last-seen responder name/avatar — see createContentFlusher.
                     contentRef.current += data.text;
-                    const content = contentRef.current;
-                    setMessages(prev => prev.map(m =>
-                        m.id === activeIdRef.current ? {
-                            ...m,
-                            content,
-                            // First content token arrived — clear any lingering
-                            // pre-LLM phase indicator. The server's
-                            // `streaming_start` phase already does this, but we
-                            // belt-and-suspenders here in case it was lost.
-                            currentPhase: m.currentPhase ? null : m.currentPhase,
-                            respondingAgentName: data.respondingAgentName || m.respondingAgentName,
-                            respondingAgentAvatar: data.respondingAgentAvatar || m.respondingAgentAvatar
-                        } : m
-                    ));
+                    flusher.schedule(data.respondingAgentName, data.respondingAgentAvatar);
                 }
                 break;
 
@@ -240,6 +353,9 @@ export default function useChatEngine({
             case 'content_replace':
                 // Allow empty string to clear content (e.g. clearing intermediate tool-call planning text)
                 if (data.text !== undefined) {
+                    // Drop any pending append flush — the replace is authoritative
+                    // and must not be clobbered by a late frame carrying old text.
+                    flusher.cancel();
                     contentRef.current = data.text;
                     setMessages(prev => prev.map(m =>
                         m.id === assistantMsgId ? { ...m, content: data.text } : m
@@ -787,6 +903,16 @@ export default function useChatEngine({
                 try { window.dispatchEvent(new CustomEvent('webpage_db_update')); } catch (_) {}
                 break;
 
+            // The AI switched this project's framework / runtime tier. Re-broadcast
+            // as a DOM event so the page can update settings + recompose the
+            // preview without drilling a callback through the prop chain.
+            case 'webpage_framework_changed':
+                try { window.dispatchEvent(new CustomEvent('webpage_framework_changed', { detail: { framework: data.framework } })); } catch (_) {}
+                break;
+            case 'webpage_runtime_changed':
+                try { window.dispatchEvent(new CustomEvent('webpage_runtime_changed', { detail: { runtime: data.runtime } })); } catch (_) {}
+                break;
+
             // Webpage plan proposal — attach to the in-flight assistant message
             // so the chat can render an approval card. The user will click
             // Approve/Reject and the plan card flips status; on Approve a new
@@ -829,6 +955,9 @@ export default function useChatEngine({
                 break;
 
             case 'done':
+                // Commit any buffered tokens before finalizing — 'done' preserves
+                // m.content, so a not-yet-flushed tail would otherwise be lost.
+                flusher.flushNow();
                 setMessages(prev => prev.map(m => {
                     if (m.id === activeIdRef.current) {
                         const update = { ...m, isStreaming: false, toolCall: null };
@@ -852,9 +981,21 @@ export default function useChatEngine({
                 break;
 
             case 'error': {
+                // Drop any pending append so it can't overwrite the error message.
+                flusher.cancel();
                 const errMsg = typeof data.error === 'string' ? data.error : (data.error?.message || JSON.stringify(data.error) || 'An error occurred');
+                // If work was already produced before the error, lead with what
+                // was created so the error doesn't read as "nothing happened"
+                // and trigger a duplicate retry (BFSF-221).
+                const summary = summarizeWorkItem(tRef.current, workRef?.current);
                 setMessages(prev => prev.map(m =>
-                    m.id === assistantMsgId ? { ...m, content: errMsg, isStreaming: false, isError: true } : m
+                    m.id === assistantMsgId ? {
+                        ...m,
+                        content: summary ? summary + '\n\n' + errMsg : errMsg,
+                        isStreaming: false,
+                        isError: true,
+                        ...(summary ? { workItem: workRef.current } : {}),
+                    } : m
                 ));
                 break;
             }
@@ -1010,6 +1151,8 @@ export default function useChatEngine({
             }
 
             case 'guardrail_blocked': {
+                // Drop any pending append — the canned response is authoritative.
+                flusher.cancel();
                 // Compose translated canned response using i18n keys
                 const title = tRef.current('chat.guardrail_blocked_title', { violation: data.violation || 'Policy Violation' });
                 const body = tRef.current('chat.guardrail_blocked_body');
@@ -1074,11 +1217,17 @@ export default function useChatEngine({
         // Mutable refs for active agent tracking
         const activeIdRef = { current: assistantMsgId };
         const contentRef = { current: '' };
+        // Per-stream rAF coalescer for 'content' tokens (see createContentFlusher).
+        const flusher = createContentFlusher(setMessages, activeIdRef, contentRef);
+        activeFlusherRef.current = flusher;
         // Tracks whether the stream produced any real work (content/tool/build
         // events) before it ended. Used so a stream that drops AFTER work was
         // already in flight (e.g. a long webpage/notebook build that tripped a
         // proxy idle-timeout) isn't misreported as a hard failure (BFSF-221).
         let producedWork = false;
+        // Last work item ({ kind, title }) seen on this stream, so the
+        // interrupted/error notices can say WHAT was produced (BFSF-221).
+        const workRef = { current: null };
 
         try {
             // Thinking-effort override from composer (persisted in scopedStorage
@@ -1219,10 +1368,23 @@ export default function useChatEngine({
                         // rather than a blanket failure (BFSF-221).
                         if ([
                             'content', 'content_replace', 'tool_start', 'tool_end',
-                            'webpage_doc_update', 'webpage_doc_partial', 'workspace_update',
-                            'notebook_doc_update', 'image', 'calendar_draft', 'linkedin_draft',
+                            'webpage_doc_update', 'webpage_doc_partial', 'webpage_extra_update',
+                            'workspace_update', 'notebook_doc_update', 'slides_deck_update',
+                            'sheet_update', 'image', 'calendar_draft', 'linkedin_draft',
                         ].includes(currentEvent)) {
                             producedWork = true;
+                        }
+
+                        // Capture WHAT was produced (kind + best-known title) so the
+                        // interrupted/error notices can name it. Latest event wins; a
+                        // titleless follow-up of the same kind keeps the earlier title.
+                        const kind = WORK_EVENT_KINDS[currentEvent];
+                        if (kind) {
+                            const prev = workRef.current;
+                            const title = data.title
+                                || (currentEvent === 'workspace_update' ? extractMdHeading(data.content) : null)
+                                || (prev?.kind === kind ? prev.title : null);
+                            workRef.current = { kind, title };
                         }
 
                         // Handle direct-chat specific events
@@ -1238,7 +1400,9 @@ export default function useChatEngine({
                             assistantMsgId,
                             userMsgId: msgId,
                             activeIdRef,
-                            contentRef
+                            contentRef,
+                            flusher,
+                            workRef
                         });
                     } catch (e) {
                         console.debug('[useChatEngine] SSE event parse skipped', currentEvent, e);
@@ -1267,12 +1431,18 @@ export default function useChatEngine({
                 for (const line of buffer.split('\n')) processLine(line);
             }
 
+            // Commit any final buffered tokens if the stream ended without a
+            // terminal 'done' event (it preserves m.content otherwise).
+            flusher.flushNow();
             setIsLoading(false);
             setMessages(prev => prev.map(m =>
                 m.id === assistantMsgId ? { ...m, isStreaming: false } : m
             ));
 
         } catch (err) {
+            // Commit buffered tokens before the interrupt/error branch reads
+            // m.content, so the prior content prepended to the notice is complete.
+            flusher.flushNow();
             if (err.name !== 'AbortError') {
                 console.error("Chat error", err);
                 // If the stream already produced content/tool/build activity,
@@ -1285,16 +1455,55 @@ export default function useChatEngine({
                     if (m.id !== assistantMsgId) return m;
                     if (interrupted) {
                         const prior = (m.content && m.content.trim()) ? m.content.trimEnd() + '\n\n' : '';
+                        // When we know WHAT was produced, lead with an explicit
+                        // success confirmation so users don't retry and duplicate.
+                        const wi = workRef.current;
+                        const summary = summarizeWorkItem(tRef.current, wi);
+                        const notice = summary
+                            ? tRef.current('chat.interrupted_with_work', { workSummary: summary })
+                            : tRef.current('chat.interrupted_generic');
                         return {
                             ...m,
                             isStreaming: false,
                             isInterrupted: true,
-                            content: prior + '_⚠️ The response was interrupted before it finished. Any work already started (e.g. a webpage or notebook) may have been saved — check the relevant panel, or resend if needed._',
+                            workItem: wi || null,
+                            content: prior + notice,
                         };
                     }
                     return { ...m, isStreaming: false, isError: true, content: 'Error generating response.' };
                 }));
                 setIsLoading(false);
+
+                // Auto-recover: the server persists the finished reply even when
+                // the SSE connection drops mid/post-stream (confirmed — the saved
+                // message appears on a manual refresh). Poll the persisted
+                // conversation and swap the real reply in so the user doesn't have
+                // to refresh. Bounded (~60s); bails if the user moved on; the
+                // interrupted notice stays if recovery never yields a saved reply.
+                const _reload = reloadConversationRef.current;
+                if (interrupted && typeof _reload === 'function') {
+                    (async () => {
+                        const stillOurs = () => {
+                            const c = messagesRef.current;
+                            const l = c[c.length - 1];
+                            return !!(l && l.id === assistantMsgId && l.isInterrupted);
+                        };
+                        // Quick first attempt, then every 4s up to ~60s total.
+                        const delays = [1200, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 4000, 4000];
+                        for (const d of delays) {
+                            await new Promise(r => setTimeout(r, d));
+                            if (!stillOurs()) return;
+                            let reloaded;
+                            try { reloaded = await _reload(); } catch { continue; }
+                            if (!Array.isArray(reloaded) || reloaded.length === 0) continue;
+                            const lastReload = reloaded[reloaded.length - 1];
+                            if (lastReload && lastReload.role === 'assistant' && String(lastReload.content || '').trim()) {
+                                if (stillOurs()) setMessages(reloaded);
+                                return;
+                            }
+                        }
+                    })();
+                }
             }
         } finally {
             // Release the controller once the stream is done (success, error, or
@@ -1302,6 +1511,12 @@ export default function useChatEngine({
             // .abort() on an already-finished controller.
             if (abortControllerRef.current === controller) {
                 abortControllerRef.current = null;
+            }
+            // Drop the flusher reference (guard against a newer concurrent stream
+            // having replaced it) so stopGenerating can't act on a dead stream.
+            flusher.cancel();
+            if (activeFlusherRef.current === flusher) {
+                activeFlusherRef.current = null;
             }
         }
         // Deliberately NOT in deps: `messages` (read via messagesRef), `handleSSEEvent`
@@ -1314,6 +1529,9 @@ export default function useChatEngine({
             abortControllerRef.current.abort();
             abortControllerRef.current = null;
         }
+        // Cancel any pending content frame so a late flush can't resurrect
+        // streaming text after the user stopped generation.
+        activeFlusherRef.current?.cancel();
         setIsLoading(false);
         setMessages(prev => prev.map(m =>
             m.isStreaming ? { ...m, isStreaming: false } : m

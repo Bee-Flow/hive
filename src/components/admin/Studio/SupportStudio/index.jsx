@@ -1,12 +1,17 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { Plus, Settings, Inbox, LifeBuoy, Sparkles, Send, RefreshCw, CheckCircle2, Loader2 } from 'lucide-react';
+import { Plus, Settings, Inbox, LifeBuoy, Sparkles, Send, RefreshCw, CheckCircle2, Loader2, Search, BarChart3, Flag, Tag as TagIcon, Users, MessageSquareText, EyeOff, RotateCcw, Clock, Star, AlertTriangle } from 'lucide-react';
 import useTranslation from '../../../../hooks/useTranslation';
 import { API_BASE, authFetch } from '../../../../utils/helpers';
 import StudioShell from '../../../shared/StudioShell';
-import SettingsPanel from './SettingsPanel';
+import EmailHtmlBody from '../../EmailHtmlBody';
+import SupportSettings from './SupportSettings';
+import InsightsPanel from './InsightsPanel';
+import TicketTimeline from './TicketTimeline';
 import useSupportInboxEvents from './useSupportInboxEvents';
 
+const NOT_SUPPORT_TAG = 'not-support';
 const STATUS_IDS = ['open', 'ai_responding', 'awaiting_user', 'awaiting_agent', 'resolved', 'closed'];
+const PRIORITY_IDS = ['low', 'normal', 'high', 'urgent'];
 const STATUS_COLORS = {
     open: 'text-blue-500',
     ai_responding: 'text-amber-500',
@@ -15,13 +20,20 @@ const STATUS_COLORS = {
     resolved: 'text-green-500',
     closed: 'text-[var(--text-tertiary)]',
 };
-const FILTER_IDS = ['awaiting_agent', 'awaiting_user', 'resolved', ''];
+// Status tabs + a tag-based "Not support" pseudo-tab.
+const FILTER_IDS = ['awaiting_agent', 'awaiting_user', 'resolved', '', 'not_support'];
 
-const statusLabel = (t, s) => (s === '' ? t('support.filter.all', 'All') : t(`support.status.${s}`, s));
+const statusLabel = (t, s) => {
+    if (s === '') return t('support.filter.all', 'All');
+    if (s === 'not_support') return t('support.filter.not_support', 'Not support');
+    return t(`support.status.${s}`, s);
+};
 
 function Dot({ status }) {
     return <span className={`inline-block w-2 h-2 rounded-full ${STATUS_COLORS[status] || 'text-[var(--text-tertiary)]'}`} style={{ backgroundColor: 'currentColor' }} />;
 }
+
+const slaBreached = (th) => !!(th && (th.sla_first_response_breached_at || th.sla_resolution_breached_at));
 
 /**
  * SupportStudio — tenant customer-support inbox inside the Studio.
@@ -32,10 +44,12 @@ export default function SupportStudio({ user }) {
     const [inboxes, setInboxes] = useState([]);
     const [activeInbox, setActiveInbox] = useState('all');
     const [statusFilter, setStatusFilter] = useState('awaiting_agent');
+    const [search, setSearch] = useState('');
     const [threads, setThreads] = useState([]);
     const [counts, setCounts] = useState({});
     const [activeThreadId, setActiveThreadId] = useState(null);
-    const [view, setView] = useState('inbox'); // 'inbox' | 'settings'
+    const [view, setView] = useState('inbox'); // 'inbox' | 'settings' | 'insights'
+    const [limit, setLimit] = useState(100);
 
     const fetchInboxes = useCallback(async () => {
         try {
@@ -48,14 +62,20 @@ export default function SupportStudio({ user }) {
         try {
             const params = new URLSearchParams();
             if (activeInbox && activeInbox !== 'all') params.set('inbox', activeInbox);
-            if (statusFilter) params.set('status', statusFilter);
+            if (statusFilter === 'not_support') params.set('tag', NOT_SUPPORT_TAG);
+            else if (statusFilter) params.set('status', statusFilter);
+            if (search.trim()) params.set('q', search.trim());
+            params.set('limit', String(limit));
             const res = await authFetch(`${API_BASE}/api/support-inbox/threads?${params.toString()}`);
             if (res.ok) { const d = await res.json(); setThreads(d.threads || []); setCounts(d.counts || {}); }
         } catch (_) {}
-    }, [activeInbox, statusFilter]);
+    }, [activeInbox, statusFilter, search, limit]);
 
     useEffect(() => { fetchInboxes(); }, [fetchInboxes]);
-    useEffect(() => { fetchThreads(); }, [fetchThreads]);
+    useEffect(() => {
+        const id = setTimeout(fetchThreads, search ? 250 : 0); // debounce search typing
+        return () => clearTimeout(id);
+    }, [fetchThreads, search]);
 
     // Live updates: refresh the ticket list on any inbox event. The open ticket
     // refreshes via its own Refresh control / re-open.
@@ -63,6 +83,7 @@ export default function SupportStudio({ user }) {
     useSupportInboxEvents(onEvent);
 
     const hasConnected = inboxes.some(i => i.connected);
+    const filterCount = (id) => (id === 'not_support' ? counts.not_support : counts[id]);
 
     return (
         <StudioShell
@@ -73,11 +94,18 @@ export default function SupportStudio({ user }) {
                 </span>
             )}
             sidebarActions={(
-                <button onClick={() => setView(v => v === 'settings' ? 'inbox' : 'settings')}
-                    className={`p-1 rounded hover:bg-[var(--bg-secondary)] ${view === 'settings' ? 'text-[var(--accent-primary)]' : ''}`}
-                    title={t('support.nav.settings', 'Settings')}>
-                    <Settings size={14} />
-                </button>
+                <span className="flex items-center gap-1">
+                    <button onClick={() => setView(v => v === 'insights' ? 'inbox' : 'insights')}
+                        className={`p-1 rounded hover:bg-[var(--bg-secondary)] ${view === 'insights' ? 'text-[var(--accent-primary)]' : ''}`}
+                        title={t('support.nav.insights', 'Insights')}>
+                        <BarChart3 size={14} />
+                    </button>
+                    <button onClick={() => setView(v => v === 'settings' ? 'inbox' : 'settings')}
+                        className={`p-1 rounded hover:bg-[var(--bg-secondary)] ${view === 'settings' ? 'text-[var(--accent-primary)]' : ''}`}
+                        title={t('support.nav.settings', 'Settings')}>
+                        <Settings size={14} />
+                    </button>
+                </span>
             )}
             sidebar={(
                 <div className="flex flex-col gap-2 p-3">
@@ -87,13 +115,20 @@ export default function SupportStudio({ user }) {
                         {inboxes.map(i => <option key={i.id} value={i.id}>{i.email_address || i.display_name || i.provider}</option>)}
                     </select>
 
+                    <div className="relative">
+                        <Search size={13} className="absolute left-2 top-1/2 -translate-y-1/2 text-[var(--text-tertiary)]" />
+                        <input value={search} onChange={e => setSearch(e.target.value)}
+                            placeholder={t('support.ticket.search', 'Search tickets…')}
+                            className="w-full text-sm rounded border border-[var(--border-default)] bg-[var(--bg-primary)] pl-7 pr-2 py-1.5" />
+                    </div>
+
                     <div className="flex flex-wrap gap-1">
                         {FILTER_IDS.map(id => (
                             <button key={id || 'all'} onClick={() => setStatusFilter(id)}
                                 className={`text-[11px] px-2 py-1 rounded border ${statusFilter === id
                                     ? 'border-[var(--accent-primary)] bg-[var(--bg-secondary)] text-[var(--text-primary)]'
                                     : 'border-transparent text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}>
-                                {statusLabel(t, id)}{counts[id] ? ` (${counts[id]})` : ''}
+                                {statusLabel(t, id)}{filterCount(id) ? ` (${filterCount(id)})` : ''}
                             </button>
                         ))}
                     </div>
@@ -105,7 +140,9 @@ export default function SupportStudio({ user }) {
 
                     {threads.length === 0 && (
                         <div className="text-xs text-[var(--text-tertiary)] italic px-1">
-                            {hasConnected ? t('support.empty.no_tickets', 'No tickets in this view.') : t('support.empty.connect_first', 'Connect a mailbox via Settings first.')}
+                            {statusFilter === 'not_support'
+                                ? t('support.empty.no_not_support', 'No non-support email here.')
+                                : hasConnected ? t('support.empty.no_tickets', 'No tickets in this view.') : t('support.empty.connect_first', 'Connect a mailbox via Settings first.')}
                         </div>
                     )}
                     <div className="flex flex-col gap-1">
@@ -117,19 +154,31 @@ export default function SupportStudio({ user }) {
                                 <div className="flex items-center gap-1.5">
                                     <Dot status={th.status} />
                                     <span className="font-medium truncate flex-1 text-[var(--text-primary)]">{th.subject || t('support.thread.no_subject', '(no subject)')}</span>
+                                    {slaBreached(th) && <AlertTriangle size={11} className="text-rose-500" title={t('support.ticket.sla_breached', 'SLA breached')} />}
+                                    {th.priority && th.priority !== 'normal' && <Flag size={11} className={th.priority === 'urgent' || th.priority === 'high' ? 'text-rose-500' : 'text-[var(--text-tertiary)]'} />}
                                 </div>
                                 <div className="text-[var(--text-tertiary)] truncate mt-0.5">{th.requester_email}</div>
                             </button>
                         ))}
                     </div>
+                    {threads.length >= limit && (
+                        <button onClick={() => setLimit(l => l + 100)}
+                            className="text-[11px] px-2 py-1 rounded border border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]">
+                            {t('support.nav.load_more', 'Load more')}
+                        </button>
+                    )}
                 </div>
             )}
         >
             {view === 'settings'
-                ? <SettingsPanel inboxes={inboxes} onChanged={() => { fetchInboxes(); fetchThreads(); }} />
-                : activeThreadId
-                    ? <TicketDetail key={activeThreadId} threadId={activeThreadId} user={user} onChanged={fetchThreads} />
-                    : <EmptyState hasConnected={hasConnected} onSettings={() => setView('settings')} />}
+                ? <SupportSettings inboxes={inboxes} user={user}
+                    onChanged={() => { fetchInboxes(); fetchThreads(); }}
+                    onOpenThread={(id) => { setActiveThreadId(id); setView('inbox'); }} />
+                : view === 'insights'
+                    ? <InsightsPanel inboxes={inboxes} activeInbox={activeInbox} onChanged={() => { fetchInboxes(); fetchThreads(); }} />
+                    : activeThreadId
+                        ? <TicketDetail key={activeThreadId} threadId={activeThreadId} user={user} onChanged={fetchThreads} />
+                        : <EmptyState hasConnected={hasConnected} onSettings={() => setView('settings')} />}
         </StudioShell>
     );
 }
@@ -164,12 +213,34 @@ function TicketDetail({ threadId, user, onChanged }) {
     const [internal, setInternal] = useState(false);
     const [busy, setBusy] = useState(false);
     const [drafting, setDrafting] = useState(false);
+    const [teammates, setTeammates] = useState([]);
+    const [tagPalette, setTagPalette] = useState([]);
+    const [canned, setCanned] = useState([]);
+    const [showCanned, setShowCanned] = useState(false);
+    const [showActivity, setShowActivity] = useState(false);
+    const [context, setContext] = useState(null);
+    const [showContext, setShowContext] = useState(false);
 
     const load = useCallback(async () => {
         const res = await authFetch(`${API_BASE}/api/support-inbox/threads/${threadId}`);
         if (res.ok) { const d = await res.json(); setThread(d.thread); setMessages(d.messages || []); }
     }, [threadId]);
     useEffect(() => { load(); }, [load]);
+
+    const toggleActivity = () => setShowActivity(v => !v);
+
+    const loadContext = useCallback(async () => {
+        const res = await authFetch(`${API_BASE}/api/support-inbox/threads/${threadId}/context`);
+        if (res.ok) setContext(await res.json());
+    }, [threadId]);
+    const toggleContext = () => setShowContext(v => { const nv = !v; if (nv && !context) loadContext(); return nv; });
+
+    // Reference data for the ticket controls (fetched once).
+    useEffect(() => {
+        authFetch(`${API_BASE}/api/support-inbox/teammates`).then(r => r.ok ? r.json() : { teammates: [] }).then(d => setTeammates(d.teammates || [])).catch(() => {});
+        authFetch(`${API_BASE}/api/support-inbox/tags`).then(r => r.ok ? r.json() : { tags: [] }).then(d => setTagPalette(d.tags || [])).catch(() => {});
+        authFetch(`${API_BASE}/api/support-inbox/canned`).then(r => r.ok ? r.json() : { canned: [] }).then(d => setCanned(d.canned || [])).catch(() => {});
+    }, []);
 
     const draftWithAi = async () => {
         setDrafting(true);
@@ -205,6 +276,15 @@ function TicketDetail({ threadId, user, onChanged }) {
 
     if (!thread) return <div className="p-8 text-sm text-[var(--text-tertiary)]">{t('support.common.loading', 'Loading…')}</div>;
 
+    const tags = Array.isArray(thread.tags) ? thread.tags : [];
+    const isNotSupport = tags.includes(NOT_SUPPORT_TAG);
+    const editableTags = tags.filter(tg => tg !== NOT_SUPPORT_TAG);
+    const toggleTag = (name) => {
+        const next = editableTags.includes(name) ? editableTags.filter(x => x !== name) : [...editableTags, name];
+        // Preserve the reserved tag if present.
+        patch({ tags: isNotSupport ? [...next, NOT_SUPPORT_TAG] : next });
+    };
+
     return (
         <div className="flex flex-col h-full">
             <header className="px-5 py-3 border-b border-[var(--border-default)] flex items-center justify-between gap-3">
@@ -223,14 +303,100 @@ function TicketDetail({ threadId, user, onChanged }) {
                             <CheckCircle2 size={12} /> {t('support.ticket.resolve', 'Resolve')}
                         </button>
                     )}
-                    {user?.id && thread.assignee_user_id !== user.id && (
-                        <button onClick={() => patch({ assignee_user_id: user.id })}
-                            className="px-2.5 py-1 text-xs rounded border border-[var(--border-default)] hover:bg-[var(--bg-secondary)]">
-                            {t('support.ticket.assign_me', 'Assign to me')}
-                        </button>
-                    )}
                 </div>
             </header>
+
+            {/* Meta controls: priority · assignee · tags · non-support */}
+            <div className="px-5 py-2 border-b border-[var(--border-default)] flex flex-wrap items-center gap-x-4 gap-y-2 text-xs">
+                <label className="flex items-center gap-1.5 text-[var(--text-secondary)]">
+                    <Flag size={12} className="text-[var(--text-tertiary)]" />
+                    <select value={thread.priority || 'normal'} onChange={e => patch({ priority: e.target.value })}
+                        className="text-xs rounded border border-[var(--border-default)] bg-[var(--bg-primary)] px-1.5 py-1">
+                        {PRIORITY_IDS.map(p => <option key={p} value={p}>{t(`support.priority.${p}`, p)}</option>)}
+                    </select>
+                </label>
+
+                <label className="flex items-center gap-1.5 text-[var(--text-secondary)]">
+                    <Users size={12} className="text-[var(--text-tertiary)]" />
+                    <select value={thread.assignee_user_id || ''} onChange={e => patch({ assignee_user_id: e.target.value || null })}
+                        className="text-xs rounded border border-[var(--border-default)] bg-[var(--bg-primary)] px-1.5 py-1 max-w-[160px]">
+                        <option value="">{t('support.ticket.unassigned', 'Unassigned')}</option>
+                        {user?.id && !teammates.some(tm => tm.id === user.id) && <option value={user.id}>{t('support.ticket.assign_me', 'Assign to me')}</option>}
+                        {teammates.map(tm => <option key={tm.id} value={tm.id}>{tm.name || tm.email || tm.id}{tm.id === user?.id ? ` (${t('support.ticket.you', 'you')})` : ''}</option>)}
+                    </select>
+                </label>
+
+                {tagPalette.length > 0 && (
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                        <TagIcon size={12} className="text-[var(--text-tertiary)]" />
+                        {tagPalette.filter(tg => tg.name !== NOT_SUPPORT_TAG).map(tg => (
+                            <button key={tg.id || tg.name} onClick={() => toggleTag(tg.name)}
+                                className={`px-1.5 py-0.5 rounded border text-[11px] ${editableTags.includes(tg.name)
+                                    ? 'border-[var(--accent-primary)] bg-[var(--bg-secondary)] text-[var(--text-primary)]'
+                                    : 'border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]'}`}>
+                                {tg.name}
+                            </button>
+                        ))}
+                    </div>
+                )}
+
+                <div className="flex items-center gap-2 ml-auto">
+                    {slaBreached(thread) && (
+                        <span className="flex items-center gap-1 text-[11px] text-rose-500" title={t('support.ticket.sla_breached', 'SLA breached')}>
+                            <AlertTriangle size={12} /> {t('support.ticket.sla_breached', 'SLA breached')}
+                        </span>
+                    )}
+                    {thread.csat_score != null && (
+                        <span className="flex items-center gap-1 text-[11px] text-amber-500" title={thread.csat_comment || ''}>
+                            <Star size={12} /> {thread.csat_score}/5
+                        </span>
+                    )}
+                    <button onClick={toggleContext}
+                        className={`flex items-center gap-1 px-2 py-1 rounded border text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] ${showContext ? 'border-[var(--accent-primary)]' : 'border-[var(--border-default)]'}`}>
+                        <Users size={12} /> {t('support.ticket.customer', 'Customer')}
+                    </button>
+                    <button onClick={toggleActivity}
+                        className={`flex items-center gap-1 px-2 py-1 rounded border text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)] ${showActivity ? 'border-[var(--accent-primary)]' : 'border-[var(--border-default)]'}`}>
+                        <Clock size={12} /> {t('support.ticket.activity', 'Activity')}
+                    </button>
+                    <button onClick={() => patch(isNotSupport ? { unfilter: true } : { markNotSupport: true })}
+                        className="flex items-center gap-1 px-2 py-1 rounded border border-[var(--border-default)] text-[var(--text-secondary)] hover:bg-[var(--bg-secondary)]">
+                        {isNotSupport ? <><RotateCcw size={12} /> {t('support.ticket.is_support', 'This is support')}</> : <><EyeOff size={12} /> {t('support.ticket.mark_not_support', 'Not support')}</>}
+                    </button>
+                </div>
+            </div>
+
+            {showContext && (
+                <div className="px-5 py-2 border-b border-[var(--border-default)] text-[11px] text-[var(--text-secondary)] flex flex-col gap-1">
+                    {!context ? <span className="italic text-[var(--text-tertiary)]">{t('support.common.loading', 'Loading…')}</span> : (
+                        <>
+                            {context.profile && (
+                                <div className="flex flex-wrap gap-x-4 gap-y-0.5">
+                                    <span><span className="text-[var(--text-tertiary)]">{t('support.context.name', 'Name')}:</span> {context.profile.name || '—'}</span>
+                                    <span><span className="text-[var(--text-tertiary)]">{t('support.context.org', 'Organization')}:</span> {context.profile.organizationName || '—'}</span>
+                                    <span><span className="text-[var(--text-tertiary)]">{t('support.context.role', 'Role')}:</span> {context.profile.orgRole || '—'}</span>
+                                    <span><span className="text-[var(--text-tertiary)]">{t('support.context.logged_in', 'Logged in')}:</span> {context.profile.loggedIn ? '✓' : '—'}</span>
+                                </div>
+                            )}
+                            {context.subscription && context.subscription.status && (
+                                <div><span className="text-[var(--text-tertiary)]">{t('support.context.plan', 'Plan')}:</span> {context.subscription.planName || context.subscription.planTier || '—'} · {context.subscription.status}</div>
+                            )}
+                            {Array.isArray(context.recentThreads) && context.recentThreads.length > 0 && (
+                                <div>
+                                    <span className="text-[var(--text-tertiary)]">{t('support.context.recent', 'Recent tickets')}:</span>{' '}
+                                    {context.recentThreads.map((rt, i) => <span key={i}>{i > 0 ? ', ' : ''}{rt.subject || '(no subject)'} ({statusLabel(t, rt.status)})</span>)}
+                                </div>
+                            )}
+                        </>
+                    )}
+                </div>
+            )}
+
+            {showActivity && (
+                <div className="px-5 py-2 border-b border-[var(--border-default)] max-h-56 overflow-y-auto">
+                    <TicketTimeline threadId={threadId} teammates={teammates} />
+                </div>
+            )}
 
             <div className="flex-1 overflow-y-auto px-5 py-4 flex flex-col gap-3">
                 {messages.map(m => <MessageBubble key={m.id} m={m} t={t} />)}
@@ -245,6 +411,25 @@ function TicketDetail({ threadId, user, onChanged }) {
                         <input type="checkbox" checked={internal} onChange={e => setInternal(e.target.checked)} /> {t('support.composer.internal_note', 'Internal note')}
                     </label>
                     <div className="flex items-center gap-2">
+                        {canned.length > 0 && (
+                            <div className="relative">
+                                <button onClick={() => setShowCanned(v => !v)}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border border-[var(--border-default)] hover:bg-[var(--bg-secondary)]">
+                                    <MessageSquareText size={13} /> {t('support.composer.insert_canned', 'Canned reply')}
+                                </button>
+                                {showCanned && (
+                                    <div className="absolute bottom-full mb-1 right-0 w-64 max-h-60 overflow-y-auto rounded border border-[var(--border-default)] bg-[var(--bg-card)] shadow-lg z-10">
+                                        {canned.map(c => (
+                                            <button key={c.id || c.shortcut || c.title} onClick={() => { setReply(r => (r ? `${r}\n\n` : '') + (c.body || '')); setShowCanned(false); }}
+                                                className="block w-full text-left px-3 py-2 text-xs hover:bg-[var(--bg-secondary)] border-b border-[var(--border-default)] last:border-0">
+                                                <div className="font-medium text-[var(--text-primary)] truncate">{c.title}{c.shortcut ? ` · ${c.shortcut}` : ''}</div>
+                                                <div className="text-[var(--text-tertiary)] truncate">{c.body}</div>
+                                            </button>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        )}
                         <button onClick={draftWithAi} disabled={drafting}
                             className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border border-[var(--border-default)] hover:bg-[var(--bg-secondary)] disabled:opacity-60">
                             {drafting ? <Loader2 size={13} className="animate-spin" /> : <Sparkles size={13} />} {t('support.composer.ai_draft', 'AI draft')}
@@ -283,10 +468,25 @@ function MessageBubble({ m, t }) {
                 {isDraft && ` · ${t('support.message.draft_unsent', 'draft (not sent)')}`}
                 {m.email_send_status && m.email_send_status.ok === false && ` · ${t('support.message.send_failed', '⚠ send failed')}`}
             </div>
-            <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${bubble}`}
-                style={!isReq && !isInternal ? { background: 'var(--accent-primary)' } : undefined}>
-                {m.body}
-            </div>
+            {m.body_html ? (
+                <div className="w-full max-w-[680px] rounded-lg overflow-hidden border border-[var(--border-default)] bg-white">
+                    <EmailHtmlBody html={m.body_html} />
+                </div>
+            ) : (
+                <div className={`max-w-[80%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${bubble}`}
+                    style={!isReq && !isInternal ? { background: 'var(--accent-primary)' } : undefined}>
+                    {m.body}
+                </div>
+            )}
+            {Array.isArray(m.attachments) && m.attachments.length > 0 && (
+                <div className="flex flex-wrap gap-1 mt-1 px-1 max-w-[80%]">
+                    {m.attachments.map((a, i) => (
+                        <span key={i} className="text-[10px] px-1.5 py-0.5 rounded bg-[var(--bg-secondary)] text-[var(--text-tertiary)]" title={a.mimeType || ''}>
+                            📎 {a.filename || t('support.message.attachment', 'attachment')}
+                        </span>
+                    ))}
+                </div>
+            )}
             {Array.isArray(m.kb_citations) && m.kb_citations.length > 0 && (
                 <div className="flex flex-wrap gap-1 mt-1 px-1 max-w-[80%]">
                     {m.kb_citations.map((c, i) => (

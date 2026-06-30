@@ -475,7 +475,7 @@ const KnowledgePanel = ({ agentId, API_BASE, strictKnowledge = false, onStrictKn
     };
 
     return (
-        <div className="flex flex-col h-full space-y-4" data-testid="knowledge-panel">
+        <div className="flex flex-col h-full space-y-4" data-testid="knowledge-panel" data-tour="agent-knowledge">
             {/* Google Drive Picker Modal */}
             <GoogleDrivePicker
                 isOpen={drivePickerOpen}

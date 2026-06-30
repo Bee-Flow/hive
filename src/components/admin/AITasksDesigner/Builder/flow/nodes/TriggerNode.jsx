@@ -1,7 +1,7 @@
 import {
     Clock, Zap, Webhook, MousePointer2, Mail, Calendar,
     Tag, BellRing, FileUp, FilePlus, FilePen, Share2, Activity, Bell,
-    Ticket, RefreshCw, Stethoscope,
+    Ticket, RefreshCw, Stethoscope, LogIn, Bot,
 } from 'lucide-react';
 import React from 'react';
 import IntegrationLogo from './IntegrationLogo';
@@ -22,10 +22,15 @@ const PROVIDER_TO_INTEGRATION = {
 };
 
 const KIND_META = {
-    schedule:   { icon: Clock,         label: 'Schedule trigger' },
-    manual:     { icon: MousePointer2, label: 'Manual trigger' },
-    webhook:    { icon: Webhook,       label: 'Webhook trigger' },
-    app_event:  { icon: Zap,           label: 'App-event trigger' },
+    schedule:    { icon: Clock,         label: 'Schedule trigger' },
+    manual:      { icon: MousePointer2, label: 'Manual trigger' },
+    webhook:     { icon: Webhook,       label: 'Webhook trigger' },
+    app_event:   { icon: Zap,           label: 'App-event trigger' },
+    // Exposed to agents/direct chat as a function tool (trigger.kind === 'agent_call').
+    agent_call:  { icon: Bot,           label: 'Agent trigger' },
+    // Inline-flowlet entry point: the sub-flow's declared inputs (no real
+    // "trigger" — it runs when a call_layer step invokes it).
+    layer_input: { icon: LogIn,         label: 'Flowlet input' },
 };
 
 /**
@@ -89,6 +94,41 @@ export default function TriggerNode({ id, data }) {
                     ))}
                 </div>
             )}
+            {kind === 'agent_call' && (() => {
+                const toolName = step.toolName || `automation_${step.id}`;
+                const props = step.parametersSchema?.properties || {};
+                const names = Object.keys(props);
+                const required = Array.isArray(step.parametersSchema?.required) ? step.parametersSchema.required : [];
+                return (
+                    <div className="mt-0.5">
+                        <NodeChip title="Tool name"><span className="font-mono">{truncate(toolName, 22)}</span></NodeChip>
+                        {names.length > 0 && (
+                            <div className="mt-1 flex items-center gap-1 flex-wrap">
+                                {names.slice(0, 6).map((n) => (
+                                    <NodeChip key={n} title={required.includes(n) ? `${n} (required)` : n}>
+                                        {n}{required.includes(n) ? '*' : ''}
+                                    </NodeChip>
+                                ))}
+                                {names.length > 6 && <NodeChip>+{names.length - 6}</NodeChip>}
+                            </div>
+                        )}
+                    </div>
+                );
+            })()}
+            {kind === 'layer_input' && (
+                Array.isArray(step.params) && step.params.length > 0 ? (
+                    <div className="mt-1 flex items-center gap-1 flex-wrap">
+                        {step.params.slice(0, 6).map((p) => (
+                            <NodeChip key={p.name} title={p.required ? `${p.name} (required)` : p.name}>
+                                {p.name}{p.required ? '*' : ''}
+                            </NodeChip>
+                        ))}
+                        {step.params.length > 6 && <NodeChip>+{step.params.length - 6}</NodeChip>}
+                    </div>
+                ) : (
+                    <div className="mt-0.5 text-[var(--text-tertiary)] text-[10px]">no inputs</div>
+                )
+            )}
             {kind === 'app_event' && typeof onDiagnose === 'function' && (
                 <button
                     type="button"
@@ -113,6 +153,24 @@ export default function TriggerNode({ id, data }) {
             {kind === 'schedule' && cron && <div>cron: <span className="font-mono">{cron}</span> ({tz || 'UTC'})</div>}
             {kind === 'webhook' && <div>HTTP webhook entry point.</div>}
             {kind === 'manual' && <div>Runs only on user action.</div>}
+            {kind === 'agent_call' && (
+                <div className="mt-1">
+                    <div>Callable as a tool from direct chat or an agent.</div>
+                    <div className="mt-1 text-[var(--text-tertiary)]">tool: <span className="font-mono">{step.toolName || `automation_${step.id}`}</span></div>
+                </div>
+            )}
+            {kind === 'layer_input' && (
+                <div className="mt-1">
+                    <div>Entry point of this flowlet — runs when a “Call flowlet” step invokes it.</div>
+                    {Array.isArray(step.params) && step.params.length > 0 ? (
+                        <div className="mt-1 text-[var(--text-tertiary)]">
+                            Inputs: <span className="font-mono">{step.params.map((p) => p.name).join(', ')}</span>
+                        </div>
+                    ) : (
+                        <div className="mt-1 text-[var(--text-tertiary)]">No declared inputs.</div>
+                    )}
+                </div>
+            )}
             {kind === 'app_event' && step.appEvent?.provider === 'gmail' && step.appEvent?.event === 'mail.new' && (
                 <>
                     <div className="mt-1">Fires on every new email in your inbox.</div>

@@ -1,23 +1,25 @@
 import React from 'react';
-import { Wrench, Zap } from 'lucide-react';
+import { Wrench, Zap, Repeat } from 'lucide-react';
 import StepNodeBase, { NodeChip, renderInputsPreview } from './StepNodeBase';
 import IntegrationLogo from './IntegrationLogo';
 import { humanizeToolName } from '../displayHelpers';
 
 /**
- * Side-effect detection mirrors server/automation/sideEffectMap.js — we
- * keep a small client mirror because the catalog API doesn't always
- * include the boolean. Names are stable; this list only needs an update
- * when a new write tool ships and we want the ⚡ pill to flag it.
+ * Fallback side-effect heuristic for legacy steps that predate the catalog
+ * `sideEffect` flag (which is now plumbed onto the step — see step.sideEffect
+ * below, sourced from server/automation/sideEffectMap.js). Match verbs on
+ * TOKEN boundaries, not as substrings, so e.g. `gmail_read_attachment` (token
+ * "attachment", not "attach") is correctly read-only while `drive_create_folder`
+ * (token "create") still flags.
  */
-const KNOWN_SIDE_EFFECT_PREFIXES = [
-    '_send', '_compose', '_create', '_update', '_delete', '_post',
-    '_add', '_remove', '_move', '_share', '_set', '_reply', '_forward',
-    '_attach', '_write',
-];
-function looksLikeSideEffect(toolName) {
+const SIDE_EFFECT_VERBS = new Set([
+    'send', 'compose', 'create', 'update', 'delete', 'post',
+    'add', 'remove', 'move', 'share', 'set', 'reply', 'forward',
+    'attach', 'write',
+]);
+export function looksLikeSideEffect(toolName) {
     if (!toolName) return false;
-    return KNOWN_SIDE_EFFECT_PREFIXES.some(suffix => toolName.includes(suffix));
+    return String(toolName).split(/[_.]/).some(tok => SIDE_EFFECT_VERBS.has(tok));
 }
 
 export default function IntegrationActionNode({ id, data }) {
@@ -25,6 +27,7 @@ export default function IntegrationActionNode({ id, data }) {
     const tool = step.tool || 'unknown_tool';
     const sideEffect = step.sideEffect ?? looksLikeSideEffect(tool);
     const friendlyTool = humanizeToolName(tool);
+    const iterates = !!step.forEach?.overRef;
 
     const body = (
         <div>
@@ -35,16 +38,26 @@ export default function IntegrationActionNode({ id, data }) {
         </div>
     );
 
-    const badges = sideEffect ? (
-        <NodeChip tone="warn" title="This step writes/sends — runs are skipped in dry-run.">
-            <Zap size={10} />
-        </NodeChip>
+    const badges = (sideEffect || iterates) ? (
+        <>
+            {iterates && (
+                <NodeChip tone="accent" title={`Runs once per item in ${step.forEach.overRef}`}>
+                    <Repeat size={10} /> for each
+                </NodeChip>
+            )}
+            {sideEffect && (
+                <NodeChip tone="warn" title="This step writes/sends — runs are skipped in dry-run.">
+                    <Zap size={10} />
+                </NodeChip>
+            )}
+        </>
     ) : null;
 
     const hoverDetail = (
         <div>
             <div className="font-semibold mb-1">{step.label || friendlyTool}</div>
             <div className="text-[var(--text-secondary)]">tool: <span className="font-mono">{tool}</span></div>
+            {iterates && <div className="mt-0.5 text-[var(--text-secondary)]">↻ Runs once per item in <span className="font-mono">{step.forEach.overRef}</span></div>}
             {sideEffect && <div className="mt-0.5 text-amber-600 dark:text-amber-400">⚡ Side effect — synthesised in dry-run.</div>}
             {renderInputsPreview(step.inputs)}
             {runStep?.status && (

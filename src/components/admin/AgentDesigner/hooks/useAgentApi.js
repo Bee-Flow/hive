@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { API_BASE, authFetch } from '../../../../utils/helpers';
+import { API_BASE, authFetch, parseSaveError } from '../../../../utils/helpers';
 import { filterVisibleModels, fetchAllowedModelsByAgentType } from '../../../../utils/modelMeta.js';
 
 /**
@@ -26,6 +26,7 @@ export default function useAgentApi(state, { systemMode, securityMode, initialAg
         includeSourceReferences, knowledgeBaseIds, enabledIntegrations,
         regexGuardrailsEnabled, selectedCollections, regexScope, guardrailAction,
         isPublished, sharedGroups, saving, setSaving, showPublishMenu, setShowPublishMenu,
+        setPublishError,
         categoryId, setCategoryId, setAgentCategories,
         setDisableExternalTools,
     } = state;
@@ -364,6 +365,7 @@ export default function useAgentApi(state, { systemMode, securityMode, initialAg
         if (!selectedAgent) return;
         const groups = nextPublished ? (Array.isArray(nextGroups) ? nextGroups : []) : [];
         try {
+            setPublishError('');
             const res = await authFetch(securityMode ? `${API_BASE}/security-agents/${selectedAgent.id}/publish` : `${API_BASE}/agents/${selectedAgent.id}/publish`, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
@@ -376,14 +378,17 @@ export default function useAgentApi(state, { systemMode, securityMode, initialAg
                 setShowPublishMenu(false);
                 fetchAgents();
             } else {
-                const data = await res.json().catch(() => ({}));
-                const msg = data.error || `Failed to publish agent (${res.status})`;
+                // Inline error instead of alert(): alert() is silently
+                // suppressed inside sandboxed iframes (NC embed), and the old
+                // res.json() parsing dropped plain-text/HTML bodies (BFSF-220).
+                const info = await parseSaveError(res);
+                const msg = String(info.message || `Failed to publish agent (${res.status})`).slice(0, 500);
                 console.error('Failed to toggle publish:', msg);
-                alert(msg);
+                setPublishError(msg);
             }
         } catch (err) {
             console.error('Failed to toggle publish:', err);
-            alert('Failed to publish agent. Please try again.');
+            setPublishError('Failed to publish agent. Please check your connection and try again.');
         }
     };
     const togglePublish = (targetGroups = undefined) => {

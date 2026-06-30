@@ -37,6 +37,29 @@ export function customTierMeta(key, cfg) {
     };
 }
 
+// Canonical ordering of the built-in tiers. Flow=standard, Swarm, Writer, Pro
+// etc. only appear when the server includes them (beta gates) AND they're
+// configured with a modelId.
+const STANDARD_TIER_ORDER = ['auto', 'fast', 'standard', 'swarm', 'thinking', 'writer', 'pro'];
+
+/**
+ * The tier keys that should actually be shown to a user, given the server's
+ * `tiers` payload. Mirrors the chat's ModelTierSelector exactly so every tier
+ * picker (chat composer, AI-step settings, …) lists the SAME options:
+ *   - keep the canonical order, then custom tiers
+ *   - `auto` is always valid; custom tiers are pre-filtered server-side
+ *   - a standard tier only shows when it has a configured modelId
+ */
+export function configuredTierKeys(tiers = {}) {
+    const customKeys = Object.keys(tiers).filter(k => k.startsWith('custom:'));
+    return [...STANDARD_TIER_ORDER, ...customKeys].filter(key => {
+        const cfg = tiers[key] || {};
+        const hasMeta = !!TIER_META[key] || key.startsWith('custom:');
+        if (!hasMeta) return false;
+        return key === 'auto' || key.startsWith('custom:') || !!cfg.modelId;
+    });
+}
+
 // Resolve a tier key to its display label. Falls back to a Capitalised raw key
 // if the tier isn't in TIER_META and isn't a custom tier.
 export function tierLabel(tierKey, tiers = {}) {

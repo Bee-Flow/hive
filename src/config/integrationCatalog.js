@@ -27,6 +27,8 @@ export const INTEGRATION_CATALOG = [
     { id: 'fireflies', label: 'Fireflies', description: 'Meeting transcripts', category: 'Productivity' },
     { id: 'youtrack', label: 'YouTrack', description: 'Issue tracking', category: 'Developer' },
     { id: 'gamma', label: 'Gamma', description: 'Create presentations', category: 'Productivity' },
+    { id: 'afas-profit', label: 'AFAS Profit', description: 'Query AFAS Profit business data (read-only)', category: 'Productivity' },
+    { id: 'nmbrs', label: 'NMBRS', description: 'Read NMBRS payroll & HR data (read-only)', category: 'Productivity' },
     { id: 'n8n', label: 'n8n', description: 'Workflow automation', category: 'Automation' },
     { id: 'linkedin', label: 'LinkedIn', description: 'Post to LinkedIn', category: 'Social' },
     { id: 'github', label: 'GitHub', description: 'Repository management, view code', category: 'Developer' },

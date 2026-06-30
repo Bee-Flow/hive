@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { ArrowLeft, Plus, ArrowLeft as Back } from 'lucide-react';
 import IconButton from '../../components/shared/IconButton';
 import MeetingLibrary from './library/MeetingLibrary';
+import UpcomingMeetings from './library/UpcomingMeetings';
 import MeetingDetail from './detail/MeetingDetail';
 import DetailEmptyState from './detail/DetailEmptyState';
 import { useCapture } from './capture/CaptureContext';
@@ -22,6 +23,7 @@ function MeetingNotesInner({ user, onBack }) {
     const { openCapture } = useCapture();
     const { version, consumeLastResult, lastResultId } = useRecorder();
     const isMobile = useMediaQuery('(max-width: 767px)');
+    const [leftView, setLeftView] = useState('library'); // 'library' | 'upcoming'
 
     // When a capture finishes anywhere in the app, refresh the list and
     // auto-select the new transcription if one is pending. If the upload
@@ -115,15 +117,40 @@ function MeetingNotesInner({ user, onBack }) {
             <div className="flex-1 flex overflow-hidden">
                 {showLibrary && (
                     <div className={`${isMobile ? 'w-full' : 'w-[420px] xl:w-[460px] border-r'} flex flex-col overflow-hidden`} style={{ borderColor: 'var(--border-subtle)' }}>
-                        <MeetingLibrary
-                            meetings={items}
-                            loading={loading}
-                            currentUserId={user?.id}
-                            selectedId={selectedId}
-                            onSelect={setSelectedId}
-                            onCapture={() => openCapture()}
-                            defaultView={isMobile ? 'list' : 'grid'}
-                        />
+                        <div className="flex items-center gap-1 px-3 pt-3">
+                            {[['library', 'Library'], ['upcoming', 'Upcoming']].map(([id, label]) => {
+                                const active = leftView === id;
+                                return (
+                                    <button
+                                        key={id}
+                                        type="button"
+                                        onClick={() => setLeftView(id)}
+                                        className="px-3 py-1.5 rounded-lg text-[13px] font-medium transition-colors"
+                                        style={{
+                                            background: active ? 'color-mix(in srgb, #0082C9 12%, transparent)' : 'transparent',
+                                            color: active ? '#0082C9' : 'var(--text-muted)',
+                                        }}
+                                    >
+                                        {label}
+                                    </button>
+                                );
+                            })}
+                        </div>
+                        {leftView === 'library' ? (
+                            <MeetingLibrary
+                                meetings={items}
+                                loading={loading}
+                                currentUserId={user?.id}
+                                selectedId={selectedId}
+                                onSelect={setSelectedId}
+                                onCapture={() => openCapture()}
+                                defaultView={isMobile ? 'list' : 'grid'}
+                            />
+                        ) : (
+                            <UpcomingMeetings
+                                onOpenNote={(id) => { setLeftView('library'); setSelectedId(id); }}
+                            />
+                        )}
                     </div>
                 )}
                 {!isMobile && (

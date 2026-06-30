@@ -1,20 +1,32 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Plus, BookOpen } from 'lucide-react';
 import { API_BASE, authFetch } from '../../../../utils/helpers';
+import { useTranslation } from '../../../../hooks/useTranslation';
 import KBDetailPage from '../../../KBDetailPage';
 
 export default function KBsStudio({ user, initialKbId = null, onNavigate, hasPermission = () => true }) {
+    const { t } = useTranslation();
     const [kbs, setKbs] = useState([]);
+    const [categories, setCategories] = useState([]);
+    const [categoryFilter, setCategoryFilter] = useState('all');
     const [loading, setLoading] = useState(true);
     const [selectedKbId, setSelectedKbId] = useState(initialKbId || null);
 
     const fetchKBs = useCallback(async () => {
         setLoading(true);
         try {
-            const res = await authFetch(`${API_BASE}/api/kb`);
+            const [res, catRes] = await Promise.all([
+                authFetch(`${API_BASE}/api/kb`),
+                // A categories failure must never take the KB list down with it.
+                authFetch(`${API_BASE}/api/kb/categories`).catch(() => null),
+            ]);
             if (res.ok) {
                 const data = await res.json();
                 setKbs(Array.isArray(data) ? data : (data.kbs || []));
+            }
+            if (catRes && catRes.ok) {
+                const cats = await catRes.json();
+                setCategories(Array.isArray(cats) ? cats : []);
             }
         } catch (e) { /* ignore */ }
         finally { setLoading(false); }
@@ -25,6 +37,31 @@ export default function KBsStudio({ user, initialKbId = null, onNavigate, hasPer
     useEffect(() => {
         if (initialKbId) setSelectedKbId(initialKbId);
     }, [initialKbId]);
+
+    // Only show categories that contain at least one KB the user can see.
+    const usedCategoryIds = useMemo(() => {
+        const ids = new Set();
+        for (const kb of kbs) if (kb.category_id) ids.add(kb.category_id);
+        return ids;
+    }, [kbs]);
+
+    const visibleCategories = useMemo(
+        () => categories.filter(c => usedCategoryIds.has(c.id)),
+        [categories, usedCategoryIds]
+    );
+
+    const visibleKbs = useMemo(
+        () => (categoryFilter === 'all' ? kbs : kbs.filter(kb => kb.category_id === categoryFilter)),
+        [kbs, categoryFilter]
+    );
+
+    // If the selected category disappears (deleted, or its last KB recategorized),
+    // fall back to 'all' so the user isn't stuck on an empty filter.
+    useEffect(() => {
+        if (categoryFilter !== 'all' && !visibleCategories.find(c => c.id === categoryFilter)) {
+            setCategoryFilter('all');
+        }
+    }, [visibleCategories, categoryFilter]);
 
     const isCreating = selectedKbId === 'new';
     const isEditing = selectedKbId && selectedKbId !== 'new';
@@ -61,6 +98,7 @@ export default function KBsStudio({ user, initialKbId = null, onNavigate, hasPer
                     {hasPermission('manage_knowledge') && (
                         <button
                             onClick={startCreate}
+                            data-tour="knowledge-create"
                             title="New knowledge base"
                             className="p-1 rounded-lg hover:bg-[var(--bg-secondary)] text-[var(--text-tertiary)]"
                         >
@@ -68,11 +106,30 @@ export default function KBsStudio({ user, initialKbId = null, onNavigate, hasPer
                         </button>
                     )}
                 </div>
+                {visibleCategories.length > 0 && (
+                    <div className="px-2 pt-2">
+                        <select
+                            value={categoryFilter}
+                            onChange={e => setCategoryFilter(e.target.value)}
+                            className="w-full px-2 py-1.5 rounded-lg text-xs border border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-secondary)] outline-none"
+                        >
+                            <option value="all">{t('kb_studio.category_filter_all') || 'All categories'}</option>
+                            {visibleCategories.map(c => (
+                                <option key={c.id} value={c.id}>{`${c.icon || '📚'} ${c.name}`}</option>
+                            ))}
+                        </select>
+                    </div>
+                )}
                 <div className="flex-1 overflow-y-auto p-1.5">
                     {loading && <div className="text-xs text-[var(--text-tertiary)] p-3">…</div>}
                     {!loading && kbs.length === 0 && (
                         <div className="text-xs text-[var(--text-tertiary)] p-4 text-center">
                             No knowledge bases yet
+                        </div>
+                    )}
+                    {!loading && kbs.length > 0 && visibleKbs.length === 0 && (
+                        <div className="text-xs text-[var(--text-tertiary)] p-4 text-center">
+                            {t('kb_studio.category_filter_empty') || 'No knowledge bases in this category'}
                         </div>
                     )}
                     {/* "New KB" placeholder when in create mode */}
@@ -82,7 +139,7 @@ export default function KBsStudio({ user, initialKbId = null, onNavigate, hasPer
                             <span className="truncate flex-1 italic text-[var(--text-tertiary)]">New knowledge base</span>
                         </div>
                     )}
-                    {kbs.map((kb) => {
+                    {visibleKbs.map((kb) => {
                         const isSel = selectedKbId === kb.id;
                         const isImg = typeof kb.icon === 'string' && (kb.icon.startsWith('data:') || kb.icon.startsWith('http'));
                         return (

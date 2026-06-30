@@ -1,0 +1,155 @@
+/**
+ * editor.css — content styles for the from-scratch editor surface (.bf-content).
+ *
+ * Ported from the legacy `.notebook-editor .tiptap` rules but scoped to the new
+ * namespace so it coexists with TipTap during the feature-flag rollout. Uses the
+ * design-system CSS variables so all themes work; no purple is introduced (only
+ * the neutral --accent-primary and existing affordance blues).
+ */
+.bf-content {
+  outline: none;
+  font-size: 0.9rem;
+  line-height: 1.55;
+  color: var(--text-primary);
+  caret-color: var(--accent-primary);
+  word-wrap: break-word;
+}
+
+.bf-content > * + * { margin-top: 0.55em; }
+.bf-content p { margin: 0.3em 0; }
+.bf-content h1 { font-size: 1.7rem; font-weight: 700; margin: 0.7em 0 0.3em; line-height: 1.2; }
+.bf-content h2 { font-size: 1.35rem; font-weight: 700; margin: 0.6em 0 0.25em; line-height: 1.25; }
+.bf-content h3 { font-size: 1.12rem; font-weight: 600; margin: 0.5em 0 0.2em; }
+
+.bf-content a, .bf-content a.notebook-link {
+  color: #3b82f6;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(59, 130, 246, 0.35);
+  cursor: pointer;
+}
+.bf-content a:hover { border-bottom-color: #3b82f6; }
+
+.bf-content ul, .bf-content ol { padding-left: 1.4em; margin: 0.3em 0; }
+.bf-content ul { list-style: disc; }
+.bf-content ol { list-style: decimal; }
+.bf-content li { margin: 0.15em 0; }
+.bf-content li > p { margin: 0; }
+
+.bf-content ul[data-type="taskList"] { list-style: none; padding-left: 0.2em; }
+.bf-content ul[data-type="taskList"] > li { display: flex; align-items: flex-start; gap: 0.5em; }
+.bf-content ul[data-type="taskList"] > li > label { user-select: none; margin-top: 0.18em; }
+.bf-content ul[data-type="taskList"] > li > div { flex: 1; }
+.bf-content ul[data-type="taskList"] > li[data-checked="true"] > div { color: var(--text-muted); text-decoration: line-through; }
+
+.bf-content blockquote {
+  border-left: 3px solid var(--border-default);
+  padding-left: 1em;
+  margin: 0.5em 0;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+.bf-content code {
+  background: rgba(220, 38, 38, 0.08);
+  color: #dc2626;
+  padding: 0.1em 0.35em;
+  border-radius: 4px;
+  font-family: 'Fira Code', 'Roboto Mono', monospace;
+  font-size: 0.85em;
+}
+.bf-content pre.notebook-code-block {
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border-radius: 8px;
+  padding: 0.9em 1.1em;
+  overflow-x: auto;
+  margin: 0.6em 0;
+}
+.bf-content pre.notebook-code-block code { background: none; color: inherit; padding: 0; font-size: 0.85em; }
+
+.bf-content mark { background: rgba(250, 204, 21, 0.35); border-radius: 2px; padding: 0 0.1em; }
+.bf-content hr { border: none; border-top: 1px solid var(--border-default); margin: 1em 0; }
+
+.bf-content table { border-collapse: collapse; width: 100%; margin: 0.6em 0; table-layout: fixed; }
+.bf-content th, .bf-content td { border: 1px solid var(--border-default); padding: 0.4em 0.6em; vertical-align: top; }
+.bf-content th { background: var(--bg-secondary); font-weight: 600; text-align: left; }
+.bf-content tr:nth-child(even) td { background: rgba(127, 127, 127, 0.04); }
+.bf-content td.selectedCell, .bf-content th.selectedCell { background: rgba(59, 130, 246, 0.15); }
+
+/* placeholder on an empty first block (text set via --bf-placeholder on host) */
+.bf-content > p:first-child:has(> br[data-bf-filler]:only-child)::before,
+.bf-content > p:only-child:empty::before {
+  content: var(--bf-placeholder, '');
+  color: var(--text-tertiary);
+  pointer-events: none;
+  position: absolute;
+  font-style: italic;
+}
+
+/* resizable image */
+.bf-content .resizable-image-wrapper { display: block; margin: 0.5em 0; position: relative; }
+.bf-content .resizable-image-wrapper[data-alignment="center"] { text-align: center; }
+.bf-content .resizable-image-wrapper[data-alignment="center"] .resizable-image-container { margin: 0 auto; }
+.bf-content .resizable-image-wrapper[data-alignment="right"] { text-align: right; }
+.bf-content .resizable-image-wrapper[data-alignment="right"] .resizable-image-container { margin-left: auto; }
+.bf-content .resizable-image-wrapper[data-text-wrap="true"] { float: left; margin-right: 1em; max-width: 50%; }
+.bf-content .resizable-image-container { position: relative; display: inline-block; }
+.bf-content .resizable-image-wrapper.selected .resizable-image-container { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+.bf-content .resize-handle {
+  position: absolute; width: 10px; height: 10px; background: #3b82f6;
+  border: 2px solid white; border-radius: 50%; z-index: 5;
+}
+.bf-content .resize-handle.top-left { top: -5px; left: -5px; cursor: nwse-resize; }
+.bf-content .resize-handle.top-right { top: -5px; right: -5px; cursor: nesw-resize; }
+.bf-content .resize-handle.bottom-left { bottom: -5px; left: -5px; cursor: nesw-resize; }
+.bf-content .resize-handle.bottom-right { bottom: -5px; right: -5px; cursor: nwse-resize; }
+.bf-content .resize-handle.left-edge { top: 50%; left: -5px; transform: translateY(-50%); cursor: ew-resize; }
+.bf-content .resize-handle.right-edge { top: 50%; right: -5px; transform: translateY(-50%); cursor: ew-resize; }
+.bf-content .resize-width-indicator {
+  position: absolute; bottom: -22px; right: 0; background: #3b82f6; color: white;
+  font-size: 10px; padding: 1px 5px; border-radius: 4px;
+}
+
+/* atoms are not editable */
+.bf-content [data-bf-atom] { user-select: none; }
+.bf-content .notebook-mermaid-block { margin: 0.6em 0; }
+
+/* math */
+.bf-content .bf-math-block { display: block; text-align: center; margin: 0.6em 0; }
+.bf-content .bf-math-inline { padding: 0 0.1em; }
+.bf-content .bf-math-input {
+  font-family: 'Fira Code', monospace; font-size: 0.85em; border: 1px solid var(--accent-primary);
+  border-radius: 4px; padding: 0.1em 0.3em; background: var(--bg-secondary); color: var(--text-primary);
+}
+
+/* collapsed table — show only the first row; the gutter chevron expands it */
+.bf-content table.bf-collapsed tr:not(:first-child) { display: none; }
+.bf-content table.bf-collapsed { opacity: 0.85; }
+
+/* formula (spreadsheet) cells */
+.bf-content .bf-formula {
+  display: inline-block; min-width: 1ch; cursor: default; font-variant-numeric: tabular-nums;
+  border-bottom: 1px dashed var(--border-default);
+}
+.bf-content .bf-formula-error { color: #ef4444; border-bottom-color: #ef4444; }
+.bf-content .bf-formula-input {
+  font-family: 'Fira Code', monospace; font-size: 0.9em; border: 1px solid var(--accent-primary);
+  border-radius: 4px; padding: 0.05em 0.3em; background: var(--bg-secondary); color: var(--text-primary);
+  min-width: 120px;
+}
+
+/* drag handle (section-aware) — sits in the left gutter aligned to the hovered block */
+.bf-drag-handle {
+  position: absolute; left: 2px; z-index: 20; display: flex; align-items: center; justify-content: center;
+  width: 22px; height: 22px; border-radius: 5px; cursor: grab; color: var(--text-tertiary);
+}
+.bf-drag-handle:active { cursor: grabbing; }
+/* horizontal drop-indicator shown while dragging a block/section */
+.bf-drop-indicator {
+  position: absolute; left: 28px; right: 0; height: 2px; z-index: 19; pointer-events: none;
+  background: var(--accent-primary); border-radius: 2px;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+.bf-content .section-drag-highlight { background: rgba(59, 130, 246, 0.08); }
+
+[data-theme="light"] .bf-content pre.notebook-code-block { background: #1e1e2e; }

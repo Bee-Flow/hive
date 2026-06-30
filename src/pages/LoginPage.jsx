@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useTranslation } from '../hooks/useTranslation';
-import { AlertCircle, Globe } from 'lucide-react';
+import { AlertCircle, Globe, MailCheck, CheckCircle } from 'lucide-react';
 import { API_BASE, authFetch, setSessionToken } from '../utils/helpers';
 import { opaqueLogin } from '../lib/opaque';
 import InitSetupWizard from '../components/InitSetupWizard';
@@ -12,10 +12,15 @@ const isEmbedded = (() => {
 })();
 
 import LoginForm from './login/LoginForm';
-import SignupStepOrg from './login/SignupStepOrg';
-import SignupStepAuth from './login/SignupStepAuth';
-import SignupStepPrivacy from './login/SignupStepPrivacy';
-import SignupStepAccount from './login/SignupStepAccount';
+import SignupWizard from './login/SignupWizard';
+import MfaLoginStep from './login/MfaLoginStep';
+import ForgotPasswordStep from './login/ForgotPasswordStep';
+import ResetPasswordStep from './login/ResetPasswordStep';
+import { PII_CATEGORIES } from '../config/piiCategories';
+
+// Default Privacy-Shield selection for a new org: all PII categories on,
+// block on detection. The wizard's All/None lets the founder pare it down.
+const DEFAULT_PII_CATEGORIES = PII_CATEGORIES.map(c => c.id);
 
 const LoginPage = ({ onLogin }) => {
     const { t, locale, setLocale } = useTranslation();
@@ -40,6 +45,20 @@ const LoginPage = ({ onLogin }) => {
     const [orgLogo, setOrgLogo] = useState(null);
     const [confirmPassword, setConfirmPassword] = useState('');
     const [adminRecoveryKey, setAdminRecoveryKey] = useState(null);
+    // MFA: set when /auth/admin-login reports a second factor is required.
+    const [mfaRequired, setMfaRequired] = useState(false);
+    // Password reset: forgot-password email step + reset-with-token step.
+    const [forgotMode, setForgotMode] = useState(false);
+    const [forgotSent, setForgotSent] = useState(false);
+    const [resetToken, setResetToken] = useState(null);
+    const [resetDone, setResetDone] = useState(false);
+
+    // Email verification: "check your inbox" gate after signup / blocked login.
+    const [verifyEmailSent, setVerifyEmailSent] = useState(false);
+    const [verifyEmail, setVerifyEmail] = useState('');
+    const [resending, setResending] = useState(false);
+    const [resendDone, setResendDone] = useState(false);
+    const [verifiedBanner, setVerifiedBanner] = useState(false);
 
     // Invite token state
     const [inviteToken, setInviteToken] = useState(null);
@@ -53,13 +72,13 @@ const LoginPage = ({ onLogin }) => {
         }
         return false;
     });
-    const [signupStep, setSignupStep] = useState(1);
     const [signupOrgs, setSignupOrgs] = useState([]);
     const [signupData, setSignupData] = useState({
         username: '', password: '', confirmPassword: '', firstName: '', lastName: '', email: '',
         signupType: 'new', organizationId: '',
-        newOrgName: '', orgTagline: '', orgDescription: '', orgAddress: '', orgEmail: '', orgPhone: '', orgWebsite: '', orgKvk: '', orgVat: '', orgAllowSignup: true,
-        authMethod: '', privacyLevel: 'off', euModeEnabled: false
+        newOrgName: '', orgTagline: '', orgDescription: '', orgAddress: '', orgEmail: '', orgPhone: '', orgWebsite: '', orgKvk: '', orgVat: '', orgAllowSignup: false,
+        authMethod: '', shieldEnabled: true, piiCategories: DEFAULT_PII_CATEGORIES, piiAction: 'block', euModeEnabled: false,
+        consentAccepted: false,
     });
 
     useEffect(() => {
@@ -107,6 +126,31 @@ const LoginPage = ({ onLogin }) => {
         checkSetup();
     }, []);
 
+    // Detect a password-reset link (?reset=TOKEN). Capture the token and strip
+    // it from the address bar so it can't leak from a copied URL.
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const token = params.get('reset');
+        if (token) {
+            setResetToken(token);
+            window.history.replaceState({}, '', window.location.pathname);
+        }
+    }, []);
+
+    // Detect the email-verification redirect (?verified=1 on success, or
+    // ?error=verify_expired / verify_error). The verify endpoint 302s here
+    // after flipping the account to active; show a banner and clean the URL.
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('verified') === '1') {
+            setVerifiedBanner(true);
+            window.history.replaceState({}, '', window.location.pathname);
+        } else if ((params.get('error') || '').startsWith('verify_')) {
+            setError(t('login.verify_link_invalid', 'This verification link is invalid or has expired. Please log in to request a new one.'));
+            window.history.replaceState({}, '', window.location.pathname);
+        }
+    }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
     // Detect and validate invite token. Two paths:
     //   1. Legacy `?invite=TOKEN` query param (kept for backwards-compat).
     //   2. New flow: token lives in the server session after the user clicked
@@ -130,7 +174,6 @@ const LoginPage = ({ onLogin }) => {
                 organizationId: data.organizationId,
                 email: data.email || prev.email,
             }));
-            setSignupStep(4);
             setSignupMode(true);
         };
 
@@ -221,6 +264,15 @@ const LoginPage = ({ onLogin }) => {
                     } catch (opaqueErr) {
                         setError(opaqueErr.message || t('login.login_failed'));
                     }
+                } else if (res.ok && data.mfaRequired) {
+                    // Password verified — prompt for the second factor.
+                    setMfaRequired(true);
+                } else if (res.ok && data.emailVerificationRequired) {
+                    // Credentials OK but the email isn't confirmed yet — gate
+                    // them on verification and offer a resend.
+                    setVerifyEmail(username.includes('@') ? username : '');
+                    setResendDone(false);
+                    setVerifyEmailSent(true);
                 } else if (res.ok && data.success) {
                     onLogin(data.user, data.recoveryKey);
                 } else {
@@ -234,43 +286,81 @@ const LoginPage = ({ onLogin }) => {
         }
     };
 
-    const handleSignupNext = () => {
+    const handleMfaVerify = async (code) => {
         setError('');
-        if (signupStep === 1) {
-            if (signupData.signupType === 'new' && !signupData.newOrgName) {
-                setError('Organization name is required');
-                return;
+        setIsLoading(true);
+        try {
+            const res = await authFetch(`${API_BASE}/auth/mfa/verify-login`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ code })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                onLogin(data.user, data.recoveryKey);
+            } else {
+                setError(data.error || t('mfa.invalid_code', 'Invalid code. Please try again.'));
             }
-            if (signupData.signupType === 'existing' && !signupData.organizationId) {
-                setError('Please select an organization');
-                return;
-            }
-            // Consumer and existing org paths skip directly to account creation
-            if (signupData.signupType === 'existing') {
-                setSignupStep(4);
-                return;
-            }
-            if (signupData.signupType === 'consumer') {
-                // If only one login method is allowed, auto-select and skip auth step
-                if (consumerLoginMethods.length === 1) {
-                    setSignupData(p => ({ ...p, authMethod: consumerLoginMethods[0] }));
-                    setSignupStep(4);
-                } else {
-                    // Show auth method selection step
-                    setSignupStep(2);
-                }
-                return;
-            }
-            setSignupStep(2);
-        } else if (signupStep === 2) {
-            if (!signupData.authMethod) {
-                setError('Please select a sign-in method');
-                return;
-            }
-            setSignupStep(3);
-        } else if (signupStep === 3) {
-            setSignupStep(4);
+        } catch (err) {
+            setError(t('login.connection_error'));
+        } finally {
+            setIsLoading(false);
         }
+    };
+
+    const cancelMfa = () => {
+        setMfaRequired(false);
+        setError('');
+        setPassword('');
+    };
+
+    const handleForgotPassword = async (email) => {
+        setError('');
+        setIsLoading(true);
+        try {
+            // Always 200 from the server — show the same confirmation either way.
+            await authFetch(`${API_BASE}/auth/forgot-password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email })
+            });
+            setForgotSent(true);
+        } catch (err) {
+            // Network error only — still show the neutral confirmation.
+            setForgotSent(true);
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const handleResetPassword = async (newPassword) => {
+        setError('');
+        setIsLoading(true);
+        try {
+            const res = await authFetch(`${API_BASE}/auth/reset-password`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ token: resetToken, newPassword })
+            });
+            const data = await res.json();
+            if (res.ok && data.success) {
+                setResetDone(true);
+            } else {
+                setError(data.error || t('reset.failed', 'Failed to reset password.'));
+            }
+        } catch (err) {
+            setError(t('login.connection_error'));
+        } finally {
+            setIsLoading(false);
+        }
+    };
+
+    const exitPasswordReset = () => {
+        setForgotMode(false);
+        setForgotSent(false);
+        setResetToken(null);
+        setResetDone(false);
+        setError('');
     };
 
     const handleSignup = async (e) => {
@@ -289,6 +379,11 @@ const LoginPage = ({ onLogin }) => {
             setError('Username is required');
             return;
         }
+        // Clickwrap consent is Cloud-only; self-hosted signup skips the gate.
+        if (deploymentMode !== 'self-hosted' && !signupData.consentAccepted) {
+            setError(t('signup.consent_required_error', 'Please read and accept the legal terms to continue.'));
+            return;
+        }
 
         setIsLoading(true);
         try {
@@ -299,6 +394,9 @@ const LoginPage = ({ onLogin }) => {
                 firstName: signupData.firstName,
                 lastName: signupData.lastName,
                 email: signupData.email,
+                // The chosen interface language drives the language of this
+                // account's transactional emails (verification, welcome).
+                locale,
             };
 
             if (signupData.signupType === 'new') {
@@ -314,8 +412,12 @@ const LoginPage = ({ onLogin }) => {
                     vat: signupData.orgVat,
                     allowSignup: signupData.orgAllowSignup,
                     authMethod: signupData.authMethod,
-                    privacyLevel: signupData.privacyLevel,
-                    euModeEnabled: signupData.euModeEnabled
+                    privacyShield: {
+                        enabled: signupData.shieldEnabled !== false,
+                        piiDetectionCategories: signupData.piiCategories || [],
+                        piiDetectionAction: signupData.piiAction || 'block',
+                        euModeEnabled: signupData.euModeEnabled
+                    }
                 };
             } else if (signupData.signupType === 'existing') {
                 body.organizationId = signupData.organizationId;
@@ -327,13 +429,22 @@ const LoginPage = ({ onLogin }) => {
                 body.inviteToken = inviteToken;
             }
 
+            // Legal consent — the server re-derives the required documents and
+            // versions from the registry; we only assert the affirmative tick.
+            body.consent = { accepted: true };
+
             const res = await authFetch(`${API_BASE}/auth/signup`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(body)
             });
             const data = await res.json();
-            if (res.ok && data.success) {
+            if (res.ok && data.emailVerificationRequired) {
+                // Account created but blocked until the email is confirmed.
+                setVerifyEmail(signupData.email || '');
+                setResendDone(false);
+                setVerifyEmailSent(true);
+            } else if (res.ok && data.success) {
                 onLogin(data.user, data.recoveryKey);
             } else {
                 setError(data.error || t('login.signup_failed'));
@@ -343,6 +454,23 @@ const LoginPage = ({ onLogin }) => {
         } finally {
             setIsLoading(false);
         }
+    };
+
+    // Resend a verification link. The server always responds 200 (no account
+    // enumeration), so we just show a neutral confirmation.
+    const handleResendVerification = async (email) => {
+        const target = (email || verifyEmail || '').trim();
+        if (!target) return;
+        setResending(true);
+        try {
+            await authFetch(`${API_BASE}/auth/resend-verification`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: target }),
+            });
+        } catch (err) { /* still show the neutral confirmation */ }
+        setResendDone(true);
+        setResending(false);
     };
 
     // OAuth redirects must go directly to the backend server URL (not through
@@ -461,13 +589,13 @@ const LoginPage = ({ onLogin }) => {
 
     const resetSignup = () => {
         setSignupMode(false);
-        setSignupStep(1);
         setError('');
         setSignupData({
             username: '', password: '', confirmPassword: '', firstName: '', lastName: '', email: '',
             signupType: 'new', organizationId: '',
-            newOrgName: '', orgTagline: '', orgDescription: '', orgAddress: '', orgEmail: '', orgPhone: '', orgWebsite: '', orgKvk: '', orgVat: '', orgAllowSignup: true,
-            authMethod: '', privacyLevel: 'off', euModeEnabled: false
+            newOrgName: '', orgTagline: '', orgDescription: '', orgAddress: '', orgEmail: '', orgPhone: '', orgWebsite: '', orgKvk: '', orgVat: '', orgAllowSignup: false,
+            authMethod: '', shieldEnabled: true, piiCategories: DEFAULT_PII_CATEGORIES, piiAction: 'block', euModeEnabled: false,
+            consentAccepted: false,
         });
     };
 
@@ -475,20 +603,102 @@ const LoginPage = ({ onLogin }) => {
     const inputClassSimple = "w-full px-4 py-3 bg-[var(--bg-primary)] border border-[var(--border-default)] rounded-lg text-[var(--text-primary)] placeholder-[var(--text-tertiary)] focus:outline-none focus:ring-2 focus:ring-[var(--accent-primary)] focus:border-transparent transition-all text-sm";
     const labelClass = "block text-sm font-medium text-[var(--text-secondary)] mb-1.5";
 
-    // Determine step subtitle
+    // Determine subtitle (signup now lives in the full-page SignupWizard).
     const getSubtitle = () => {
         if (setupMode) return t('login.create_admin_password');
-        if (!signupMode) return t('login.sign_in_continue');
-        if (signupStep === 1) return t('login.setup_org');
-        if (signupData.signupType === 'consumer' && signupStep === 4) return t('login.setup_personal_account');
-        if (signupData.signupType === 'consumer' && signupStep === 2) return t('login.choose_signin_method') || 'Choose how to sign in';
-        if (signupStep === 2) return t('login.how_team_signin');
-        if (signupStep === 3) return t('login.protect_org');
-        return t('login.complete_account');
+        if (resetToken) return t('reset.title', 'Reset your password');
+        if (forgotMode) return t('reset.forgot_title', 'Forgot your password?');
+        if (mfaRequired) return t('mfa.title', 'Two-factor authentication');
+        return t('login.sign_in_continue');
     };
 
     // Setup mode now only shows password creation (LoginForm handles this).
     // All AI/service configuration is handled by the Docker install wizard.
+
+    // Signup is a dedicated full-page wizard (welcome → steps → auto-login),
+    // mirroring the Nextcloud-connector onboarding flow. Shown once auth
+    // settings have loaded so the wizard's flow gates have real values.
+    // Email-verification gate: shown after a signup that needs confirmation, or
+    // after a blocked login attempt for an unverified account. Takes priority
+    // over the signup wizard / login form.
+    if (verifyEmailSent) {
+        return (
+            <div className="min-h-screen flex items-center justify-center p-4 relative"
+                style={{ background: 'linear-gradient(160deg, var(--bg-primary) 0%, var(--bg-secondary) 50%, var(--bg-tertiary) 100%)' }}>
+                <div className="w-full max-w-md">
+                    <div className="rounded-2xl shadow-xl p-8 text-center" style={{ background: 'var(--bg-secondary)' }}>
+                        <div className="w-16 h-16 mx-auto mb-5 rounded-full flex items-center justify-center" style={{ background: 'var(--bg-primary)' }}>
+                            <MailCheck className="w-8 h-8" style={{ color: 'var(--accent-primary)' }} />
+                        </div>
+                        <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>
+                            {t('login.verify_title', 'Confirm your email address')}
+                        </h2>
+                        <p className="text-sm mb-1" style={{ color: 'var(--text-secondary)' }}>
+                            {verifyEmail
+                                ? t('login.verify_sent_to', 'We sent a confirmation link to')
+                                : t('login.verify_check_inbox', 'We sent you a confirmation link. Please check your inbox to activate your account.')}
+                        </p>
+                        {verifyEmail && <p className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>{verifyEmail}</p>}
+                        <p className="text-xs mb-6" style={{ color: 'var(--text-muted)' }}>
+                            {t('login.verify_then_login', 'Click the link in the email, then log in. You can\'t log in until your email is confirmed.')}
+                        </p>
+
+                        {resendDone ? (
+                            <div className="mb-4 p-3 rounded-lg flex items-center justify-center gap-2 text-sm" style={{ background: 'rgba(34,197,94,0.1)', color: '#22c55e' }}>
+                                <CheckCircle className="w-4 h-4" /> {t('login.verify_resent', 'If that account needs confirmation, a new link is on its way.')}
+                            </div>
+                        ) : (
+                            <div className="mb-4 space-y-2">
+                                {!verifyEmail && (
+                                    <input
+                                        type="email"
+                                        value={verifyEmail}
+                                        onChange={e => setVerifyEmail(e.target.value)}
+                                        placeholder="you@example.com"
+                                        className={inputClass}
+                                    />
+                                )}
+                                <button
+                                    onClick={() => handleResendVerification(verifyEmail)}
+                                    disabled={resending || !verifyEmail.trim()}
+                                    className="w-full py-2.5 rounded-lg text-sm font-medium text-white disabled:opacity-50 transition-opacity"
+                                    style={{ background: 'var(--accent-primary)' }}
+                                >
+                                    {resending ? t('login.verify_resending', 'Sending…') : t('login.verify_resend', 'Resend confirmation email')}
+                                </button>
+                            </div>
+                        )}
+
+                        <button
+                            onClick={() => { setVerifyEmailSent(false); setResendDone(false); setSignupMode(false); setError(''); }}
+                            className="text-sm font-medium"
+                            style={{ color: 'var(--accent-primary)' }}
+                        >
+                            {t('login.back_to_login', 'Back to login')}
+                        </button>
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    if (authSettingsLoaded && signupMode) {
+        return (
+            <SignupWizard
+                signupData={signupData} setSignupData={setSignupData}
+                signupOrgs={signupOrgs}
+                deploymentMode={deploymentMode} orgLogo={orgLogo}
+                consumerLoginMethods={consumerLoginMethods}
+                allowOrgSignups={allowOrgSignups} allowConsumerSignups={allowConsumerSignups}
+                inviteInfo={inviteInfo} inviteToken={inviteToken}
+                isLoading={isLoading} setIsLoading={setIsLoading}
+                error={error} setError={setError}
+                handleSignup={handleSignup} resetSignup={resetSignup}
+                availableLocales={availableLocales} locale={locale} setLocale={setLocale}
+                inputClass={inputClass} inputClassSimple={inputClassSimple} labelClass={labelClass}
+            />
+        );
+    }
 
     return (
         <div className="min-h-screen flex items-center justify-center p-4 relative"
@@ -534,7 +744,7 @@ const LoginPage = ({ onLogin }) => {
                     style={{ background: 'radial-gradient(circle, var(--accent-secondary), transparent 70%)', top: '15%', right: '30%', animation: 'pulse 7s ease-in-out infinite 2s' }} />
             </div>
 
-            <div className={`w-full ${signupMode ? 'max-w-xl' : 'max-w-md'} relative z-10 transition-all duration-300`}>
+            <div className="w-full max-w-md relative z-10 transition-all duration-300">
                 <div className="backdrop-blur-xl rounded-3xl p-8 shadow-2xl border relative overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)' }}>
                     {/* Top highlight line for glass effect */}
                     <div className="absolute top-0 left-8 right-8 h-px bg-gradient-to-r from-transparent via-[var(--border-default)] to-transparent" />
@@ -567,32 +777,16 @@ const LoginPage = ({ onLogin }) => {
                                 ? <img src={orgLogo} alt="Organization" className="max-w-[80%] max-h-[80%] object-contain" />
                                 : <img src={beeFlowLogo} alt="Bee Flow" className="w-full h-full object-cover" />}
                         </div>
-                        {signupMode && (
-                            <h1 className="text-2xl font-bold text-[var(--text-primary)]">
-                                {inviteInfo ? t('login.accept_invitation') : t('login.create_account')}
-                            </h1>
-                        )}
                         <p className="text-sm text-[var(--text-secondary)] mt-1">
-                            {inviteInfo ? `You've been invited to join ${inviteInfo.orgName}` : getSubtitle()}
+                            {getSubtitle()}
                         </p>
                     </div>
 
-                    {/* Step indicator */}
-                    {signupMode && (
-                        <div className="flex justify-center gap-2 mb-6">
-                            {signupData.signupType === 'new' ? (
-                                [1, 2, 3, 4].map(i => (
-                                    <div key={i} className={`w-8 h-1 rounded-full transition-all ${signupStep >= i ? 'bg-[var(--accent-primary)]' : 'bg-[var(--border-default)]'}`} />
-                                ))
-                            ) : signupData.signupType === 'consumer' && consumerLoginMethods.length > 1 ? (
-                                [1, 2, 4].map((step, idx) => (
-                                    <div key={step} className={`w-10 h-1 rounded-full transition-all ${signupStep >= step ? 'bg-[var(--accent-primary)]' : 'bg-[var(--border-default)]'}`} />
-                                ))
-                            ) : (
-                                [1, 4].map((step, idx) => (
-                                    <div key={step} className={`w-12 h-1 rounded-full transition-all ${signupStep >= step ? 'bg-[var(--accent-primary)]' : 'bg-[var(--border-default)]'}`} />
-                                ))
-                            )}
+                    {/* Email-verified success banner (after clicking the link) */}
+                    {verifiedBanner && (
+                        <div className="mb-6 p-4 bg-green-500/10 border border-green-500/30 rounded-lg flex items-center gap-3 text-green-600 text-sm">
+                            <CheckCircle className="w-5 h-5 shrink-0" />
+                            {t('login.verified_success', 'Your email is confirmed. You can now log in.')}
                         </div>
                     )}
 
@@ -609,41 +803,35 @@ const LoginPage = ({ onLogin }) => {
                         <div className="flex justify-center py-8">
                             <div className="w-6 h-6 rounded-full border-2 border-[var(--border-default)] border-t-[var(--accent-primary)] animate-spin" />
                         </div>
-                    ) : signupMode ? (
-                        signupStep === 1 ? (
-                            <SignupStepOrg
-                                signupData={signupData} setSignupData={setSignupData}
-                                signupOrgs={signupOrgs} handleSignupNext={handleSignupNext}
-                                resetSignup={resetSignup}
-                                inputClass={inputClass} inputClassSimple={inputClassSimple} labelClass={labelClass}
-                                deploymentMode={deploymentMode}
-                                allowOrgSignups={allowOrgSignups}
-                                allowConsumerSignups={allowConsumerSignups}
-                            />
-                        ) : signupStep === 2 ? (
-                            <SignupStepAuth
-                                signupData={signupData} setSignupData={setSignupData}
-                                handleSignupNext={handleSignupNext}
-                                setSignupStep={setSignupStep} setError={setError}
-                                allowedMethods={signupData.signupType === 'consumer' ? consumerLoginMethods : null}
-                            />
-                        ) : signupStep === 3 ? (
-                            <SignupStepPrivacy
-                                signupData={signupData} setSignupData={setSignupData}
-                                handleSignupNext={handleSignupNext}
-                                setSignupStep={setSignupStep} setError={setError}
-                            />
-                        ) : (
-                            <SignupStepAccount
-                                signupData={signupData} setSignupData={setSignupData}
-                                signupOrgs={signupOrgs} handleSignup={handleSignup}
-                                isLoading={isLoading} setIsLoading={setIsLoading}
-                                setSignupStep={setSignupStep} setError={setError}
-                                inputClass={inputClass} inputClassSimple={inputClassSimple} labelClass={labelClass}
-                            />
-                        )
+                    ) : resetToken ? (
+                        <ResetPasswordStep
+                            onSubmit={handleResetPassword}
+                            onDone={exitPasswordReset}
+                            isLoading={isLoading}
+                            done={resetDone}
+                            inputClass={inputClass}
+                            labelClass={labelClass}
+                        />
+                    ) : forgotMode ? (
+                        <ForgotPasswordStep
+                            onSubmit={handleForgotPassword}
+                            onBack={exitPasswordReset}
+                            isLoading={isLoading}
+                            sent={forgotSent}
+                            inputClass={inputClass}
+                            labelClass={labelClass}
+                        />
+                    ) : mfaRequired ? (
+                        <MfaLoginStep
+                            onVerify={handleMfaVerify}
+                            onCancel={cancelMfa}
+                            isLoading={isLoading}
+                            inputClass={inputClass}
+                            labelClass={labelClass}
+                        />
                     ) : (
                         <LoginForm
+                            onForgotPassword={() => { setForgotMode(true); setError(''); }}
                             username={username} setUsername={setUsername}
                             password={password} setPassword={setPassword}
                             confirmPassword={confirmPassword} setConfirmPassword={setConfirmPassword}

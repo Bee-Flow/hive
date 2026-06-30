@@ -130,7 +130,7 @@ export default function RunModal({ suite, defaultMode = 'suite', onClose, onStar
                         <div className="text-[10px] text-[var(--text-tertiary)] mt-1">
                             {mode === 'suite' && 'Runs the suite\'s Playwright code via the test runner.'}
                             {mode === 'explore' && 'Deterministic baseline sweep — no LLM, no live view.'}
-                            {mode === 'agent' && 'Claude drives the browser step-by-step against a real Chromium. Watch live below.'}
+                            {mode === 'agent' && 'The AI drives the browser step-by-step against a real Chromium. Watch live below.'}
                         </div>
                     </div>
 

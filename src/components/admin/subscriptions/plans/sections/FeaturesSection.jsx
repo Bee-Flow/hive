@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Puzzle, FlaskConical, Sparkles, Clock, BookOpen, Globe, Workflow, Brain, Zap } from 'lucide-react';
+import { Puzzle, FlaskConical, Sparkles, Clock, BookOpen, Globe, Workflow, Brain, Zap, Server } from 'lucide-react';
 import { INTEGRATION_CATALOG } from '../../../../../config/integrationCatalog';
 import { getIntegrationIcon } from '../../../../../config/integrationIcons';
 import { FeatureChipGrid } from '../../ui/FeatureChipGrid';
@@ -31,13 +31,16 @@ function pickBetaIcon(idOrName) {
 
 export function FeaturesSection({ form, update }) {
     const [betaRegistry, setBetaRegistry] = useState([]);
+    const [mcpRegistry, setMcpRegistry] = useState([]);
 
     useEffect(() => {
         let alive = true;
         (async () => {
             try {
                 const data = await apiJson('/api/subscriptions/registries');
-                if (alive) setBetaRegistry(Array.isArray(data.beta_features) ? data.beta_features : []);
+                if (!alive) return;
+                setBetaRegistry(Array.isArray(data.beta_features) ? data.beta_features : []);
+                setMcpRegistry(Array.isArray(data.mcp_servers) ? data.mcp_servers : []);
             } catch (e) {
                 console.warn('Failed to load registries:', e);
             }
@@ -45,11 +48,25 @@ export function FeaturesSection({ form, update }) {
         return () => { alive = false; };
     }, []);
 
+    // Catalog integrations + installed MCP servers in ONE list. MCP servers are
+    // integrations now (id `mcp:<id>`), but tagged isMcp so the grid forces them
+    // to be explicitly selected (never swept in by an unrestricted plan).
     const integrationOptions = useMemo(
-        () => INTEGRATION_CATALOG
-            .filter(i => !PLAN_HIDDEN_INTEGRATION_IDS.has(i.id))
-            .map(i => ({ id: i.id, label: i.label, description: i.description, category: i.category })),
-        []
+        () => [
+            ...INTEGRATION_CATALOG
+                .filter(i => !PLAN_HIDDEN_INTEGRATION_IDS.has(i.id))
+                .map(i => ({ id: i.id, label: i.label, description: i.description, category: i.category })),
+            ...mcpRegistry.map(s => ({
+                id: s.id,
+                label: s.name,
+                description: s.enabled === false
+                    ? `${s.description || ''} — currently disabled on the server.`.trim()
+                    : (s.description || ''),
+                category: 'MCP servers',
+                isMcp: true,
+            })),
+        ],
+        [mcpRegistry]
     );
     const betaOptions = useMemo(
         () => betaRegistry.map(b => ({
@@ -89,17 +106,18 @@ export function FeaturesSection({ form, update }) {
                     Included integrations
                 </h4>
                 <Banner tone="info" className="mb-3">
-                    These integrations are auto-enabled when the plan is assigned and capped at the org level — an
-                    org-admin cannot turn on anything outside this list.
+                    These integrations are capped at the org level — an org-admin cannot turn on anything outside this
+                    list. MCP servers are opt-in: they must be explicitly selected here (turn on "Restrict to selection")
+                    — they're never part of an unrestricted plan, so a newly installed server stays off until added.
                 </Banner>
                 <FeatureCardGrid
                     options={integrationOptions}
                     value={form.allowed_integrations}
                     onChange={v => update('allowed_integrations', v)}
-                    renderIcon={id => getIntegrationIcon(id)}
+                    renderIcon={(id, item) => item?.isMcp ? <Server className="w-4 h-4" /> : getIntegrationIcon(id)}
                     grouped
                     restrictLabel="Restrict integrations to selection"
-                    restrictDescription="Off: every integration in the catalog is included with this plan."
+                    restrictDescription="Off: every catalog integration is included (MCP servers still require explicit selection)."
                 />
             </div>
 

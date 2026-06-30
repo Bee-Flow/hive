@@ -1,5 +1,7 @@
 import { Braces } from 'lucide-react';
 import React, { useEffect, useRef, useState } from 'react';
+import RefChips from './RefChips';
+import { hasRefTokens } from './refTokens';
 import useVariablePicker from './useVariablePicker';
 import VariablePicker from './VariablePicker';
 import { useVariablePickerContext } from './VariablePickerContext';
@@ -37,11 +39,13 @@ export default function TemplateField({
     previewSample = null,
 }) {
     const [text, setText] = useState(value || '');
+    const [focused, setFocused] = useState(false);
     const inputRef = useRef(null);
     const picker = useVariablePicker();
     const pickerCtx = useVariablePickerContext();
     const effectivePreviewSample = previewSample ?? pickerCtx.previewSample;
     const pickerGroups = pickerCtx.groups;
+    const stepLabelById = pickerCtx.stepLabelById;
 
     useEffect(() => {
         // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -56,6 +60,7 @@ export default function TemplateField({
     const onTextChange = (e) => emit(e.target.value);
 
     const onFocus = () => {
+        setFocused(true);
         if (!onFocusField) return;
         onFocusField({
             id: label || placeholder || 'template',
@@ -67,6 +72,9 @@ export default function TemplateField({
             },
         });
     };
+    // Defer the focused flip so a VariableTree click (which blurs the
+    // textarea first) still lands its insert before the chip overlay returns.
+    const onBlurDelayed = () => { setTimeout(() => setFocused(false), 150); };
 
     const onDragOver = (e) => {
         if (e.dataTransfer?.types?.includes('application/x-binding-path')) {
@@ -84,6 +92,10 @@ export default function TemplateField({
     };
 
     const preview = renderPreview(text, effectivePreviewSample);
+
+    // While blurred, show `{{path}}` interpolations as name chips over an
+    // invisible (but mounted/focusable) textarea; focus reveals the raw text.
+    const showChips = !focused && hasRefTokens(text, 'fixed');
 
     const insertFromPicker = (path) => {
         const snippet = `{{${path}}}`;
@@ -112,17 +124,28 @@ export default function TemplateField({
                     <span>Insert</span>
                 </button>
             </div>
-            <textarea
-                ref={inputRef}
-                rows={rows}
-                value={text}
-                onChange={onTextChange}
-                onFocus={onFocus}
-                onDragOver={onDragOver}
-                onDrop={onDrop}
-                placeholder={placeholder}
-                className="w-full px-2 py-1.5 text-xs rounded border border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)]"
-            />
+            <div className="relative">
+                <textarea
+                    ref={inputRef}
+                    rows={rows}
+                    value={text}
+                    onChange={onTextChange}
+                    onFocus={onFocus}
+                    onBlur={onBlurDelayed}
+                    onDragOver={onDragOver}
+                    onDrop={onDrop}
+                    placeholder={placeholder}
+                    className={`w-full px-2 py-1.5 text-xs rounded border border-[var(--border-default)] bg-[var(--bg-primary)] text-[var(--text-primary)] focus:outline-none focus:ring-1 focus:ring-[var(--accent)] ${showChips ? 'opacity-0' : ''}`}
+                />
+                {showChips && (
+                    <RefChips
+                        text={text}
+                        mode="fixed"
+                        stepLabelById={stepLabelById}
+                        className="absolute inset-0 px-2 py-1.5 text-xs overflow-hidden pointer-events-none"
+                    />
+                )}
+            </div>
             {hint && <div className="text-[10px] text-[var(--text-tertiary)]">{hint}</div>}
             <VariablePicker
                 {...picker.pickerProps}
@@ -134,7 +157,7 @@ export default function TemplateField({
 
             {preview != null && (
                 <div className="text-[10px] text-[var(--text-tertiary)] space-y-0.5">
-                    <div className="uppercase tracking-wide">preview</div>
+                    <div className="uppercase tracking-wide">example</div>
                     <div className="font-mono text-[var(--text-secondary)] whitespace-pre-wrap break-words bg-[var(--bg-secondary)] rounded px-2 py-1">
                         {preview}
                     </div>

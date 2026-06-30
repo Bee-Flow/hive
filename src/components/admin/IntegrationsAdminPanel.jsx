@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useTranslation } from '../../hooks/useTranslation';
 import { API_BASE, authFetch } from '../../utils/helpers';
-import { Loader2, ToggleLeft, ToggleRight, Check, Settings, Plus, Trash2, RefreshCw, Plug, ChevronDown, ExternalLink, Mail, Send, Layers, Search as SearchIcon, Cloud, BookOpen, FolderKanban, Sparkles, FileDown, Maximize2, LayoutList } from 'lucide-react';
+import { Loader2, ToggleLeft, ToggleRight, Check, Settings, Plus, Trash2, RefreshCw, ChevronDown, ExternalLink, Mail, Send, Layers, Search as SearchIcon, Cloud, Server } from 'lucide-react';
+import FeatureKillSwitches from './FeatureKillSwitches';
 import McpMarketplace from './McpMarketplace';
 import AppEmoji from '../AppEmoji';
 import { INTEGRATION_CATALOG, orderCategories } from '../../config/integrationCatalog';
@@ -9,20 +10,21 @@ import { useLicenseContext } from '../LicenseContext';
 
 const SECTIONS = [
     { id: 'features', labelKey: 'admin.integ_features', icon: Layers, color: '#10b981' },
-    { id: 'integrations', labelKey: 'admin.integ_integrations', icon: Settings, color: '#6366f1' },
+    { id: 'integrations', labelKey: 'admin.integ_integrations', icon: Settings, color: '#3b82f6' },
+    { id: 'mcp', labelKey: 'admin.integ_mcp', icon: Server, color: '#f59e0b' },
     { id: 'email', labelKey: 'admin.integ_email', icon: Mail, color: '#ea4335' },
     { id: 'search', labelKey: 'admin.integ_search', icon: SearchIcon, color: '#10b981' },
-    { id: 'transcription', labelKey: 'admin.integ_transcription', icon: Cloud, color: '#8b5cf6' },
+    { id: 'transcription', labelKey: 'admin.integ_transcription', icon: Cloud, color: '#0ea5e9' },
     { id: 'services', labelKey: 'admin.integ_services', icon: ExternalLink, color: '#0A66C2' },
-    { id: 'mcp', labelKey: 'admin.integ_mcp', icon: Plug, color: '#f59e0b' },
 ];
 
 // Sidebar sections gated by an Enterprise licence feature — hidden on Community
-// (resolved tier is the real tier, so the operator's own UI hides them). The
-// MCP Server Marketplace is an Enterprise beta (`mcp_marketplace`); Meeting
-// Transcription config backs the Enterprise `meeting_notes` feature.
+// (resolved tier is the real tier, so the operator's own UI hides them).
+// Meeting Transcription config backs the Enterprise `meeting_notes` feature.
+// MCP install/config lives in the 'mcp' section below (a super-admin platform
+// action; install routes stay license-gated server-side via requireMcp, so the
+// section is shown to super-admins and the server enforces mcp_marketplace).
 const SECTION_FEATURE_GATE = {
-    mcp: 'mcp_marketplace',
     transcription: 'meeting_notes',
 };
 
@@ -58,7 +60,6 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [message, setMessage] = useState(null);
-    const [expandedOrg, setExpandedOrg] = useState(null);
     const [agentSearchUrl, setAgentSearchUrl] = useState('');
     const [hasAgentSearchUrl, setHasAgentSearchUrl] = useState(false);
     const [savingSearchUrl, setSavingSearchUrl] = useState(false);
@@ -108,41 +109,20 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
     const [hasWhisperxToken, setHasWhisperxToken] = useState(false);
     const [savingWhisperx, setSavingWhisperx] = useState(false);
 
-    // Service Email (Gmail SMTP)
-    const [serviceEmailAddress, setServiceEmailAddress] = useState('');
-    const [serviceEmailPassword, setServiceEmailPassword] = useState('');
+    // Service Email (Gmail API via OAuth)
+    const [serviceEmailAddress, setServiceEmailAddress] = useState(''); // connected account (read-only)
     const [serviceEmailDisplayName, setServiceEmailDisplayName] = useState('');
     const [hasServiceEmail, setHasServiceEmail] = useState(false);
     const [savingServiceEmail, setSavingServiceEmail] = useState(false);
+    const [connectingServiceEmail, setConnectingServiceEmail] = useState(false);
     const [testingServiceEmail, setTestingServiceEmail] = useState(false);
     const [testEmailRecipient, setTestEmailRecipient] = useState('');
     const [showTestEmail, setShowTestEmail] = useState(false);
 
-    // MCP Servers
+    // MCP servers — kept only to surface installed servers as integrations in
+    // the Global Defaults list below. Install/config + per-group MCP access now
+    // live in the Access & Permissions hub.
     const [mcpServers, setMcpServers] = useState([]);
-    const [mcpExpanded, setMcpExpanded] = useState(null);
-    const [mcpNewName, setMcpNewName] = useState('');
-    const [mcpNewCommand, setMcpNewCommand] = useState('');
-    const [mcpNewArgs, setMcpNewArgs] = useState('');
-    const [mcpNewCreds, setMcpNewCreds] = useState('');
-    const [mcpAdding, setMcpAdding] = useState(false);
-    const [mcpTesting, setMcpTesting] = useState(false);
-    const [mcpTestResult, setMcpTestResult] = useState(null);
-    const [mcpShowAdd, setMcpShowAdd] = useState(false);
-
-    // Feature flags
-    const [notebooksEnabled, setNotebooksEnabled] = useState(true);
-    const [savingNotebooks, setSavingNotebooks] = useState(false);
-    const [projectsEnabled, setProjectsEnabled] = useState(true);
-    const [savingProjects, setSavingProjects] = useState(false);
-    const [askAiEnabled, setAskAiEnabled] = useState(true);
-    const [savingAskAi, setSavingAskAi] = useState(false);
-    const [exportEnabled, setExportEnabled] = useState(true);
-    const [savingExport, setSavingExport] = useState(false);
-    const [openInNotebookEnabled, setOpenInNotebookEnabled] = useState(true);
-    const [savingOpenInNotebook, setSavingOpenInNotebook] = useState(false);
-    const [notebooksMenuEnabled, setNotebooksMenuEnabled] = useState(true);
-    const [savingNotebooksMenu, setSavingNotebooksMenu] = useState(false);
 
     useEffect(() => {
         load();
@@ -193,14 +173,8 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                 setHasWhisperxToken(!!configData.hasWhisperxToken);
                 // Service Email
                 setHasServiceEmail(!!configData.hasServiceEmail);
+                if (configData.serviceEmailAddress) setServiceEmailAddress(configData.serviceEmailAddress);
                 if (configData.serviceEmailDisplayName) setServiceEmailDisplayName(configData.serviceEmailDisplayName);
-                // Feature flags
-                if (configData.notebooksEnabled !== undefined) setNotebooksEnabled(configData.notebooksEnabled);
-                if (configData.projectsEnabled !== undefined) setProjectsEnabled(configData.projectsEnabled);
-                if (configData.askAiEnabled !== undefined) setAskAiEnabled(configData.askAiEnabled);
-                if (configData.exportEnabled !== undefined) setExportEnabled(configData.exportEnabled);
-                if (configData.openInNotebookEnabled !== undefined) setOpenInNotebookEnabled(configData.openInNotebookEnabled);
-                if (configData.notebooksMenuEnabled !== undefined) setNotebooksMenuEnabled(configData.notebooksMenuEnabled);
             }
         } catch (e) { console.error(e); }
         try {
@@ -238,20 +212,86 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
         setTimeout(() => setMessage(null), 3000);
     };
 
-    const saveOrgIntegrations = async (orgId, enabledIntegrations) => {
-        setSaving(true);
+    // ── Service Email (Gmail API via OAuth) ──────────────────────────────────
+    // Opens Google consent in a popup; the server callback posts a
+    // `service-email-oauth` message back when the account is connected.
+    const startServiceEmailConnect = async () => {
+        setConnectingServiceEmail(true);
         try {
-            await authFetch(`${API_BASE}/auth/organizations/${orgId}`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ enabledIntegrations }),
-            });
-            setOrganizations(prev => prev.map(o => o.id === orgId ? { ...o, enabledIntegrations } : o));
-            setMessage({ type: 'success', text: `Updated integrations for organization` });
+            const res = await authFetch(`${API_BASE}/ai/config/service-email/oauth/start`);
+            const data = await res.json();
+            if (!res.ok || !data.url) {
+                setMessage({ type: 'error', text: data.error || 'Could not start Google connect' });
+                setConnectingServiceEmail(false);
+                setTimeout(() => setMessage(null), 4000);
+                return;
+            }
+            const popup = window.open(data.url, 'service-email-oauth', 'width=520,height=660');
+            const onMsg = (ev) => {
+                if (!ev.data || ev.data.type !== 'service-email-oauth') return;
+                window.removeEventListener('message', onMsg);
+                clearInterval(timer);
+                setConnectingServiceEmail(false);
+                if (ev.data.ok) {
+                    setHasServiceEmail(true);
+                    if (ev.data.message) setServiceEmailAddress(ev.data.message);
+                    setMessage({ type: 'success', text: `Connected ${ev.data.message || 'Google account'}` });
+                    load();
+                } else {
+                    setMessage({ type: 'error', text: ev.data.message || 'Connection failed' });
+                }
+                setTimeout(() => setMessage(null), 4000);
+            };
+            window.addEventListener('message', onMsg);
+            // Fallback: clear the spinner if the popup is closed without a message.
+            const timer = setInterval(() => {
+                if (popup && popup.closed) {
+                    clearInterval(timer);
+                    window.removeEventListener('message', onMsg);
+                    setConnectingServiceEmail(false);
+                }
+            }, 800);
         } catch (e) {
-            setMessage({ type: 'error', text: 'Failed to save' });
+            setConnectingServiceEmail(false);
+            setMessage({ type: 'error', text: 'Could not start Google connect' });
+            setTimeout(() => setMessage(null), 4000);
         }
-        setSaving(false);
+    };
+
+    const disconnectServiceEmail = async () => {
+        setSavingServiceEmail(true);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/config/service-email/disconnect`, { method: 'POST' });
+            if (res.ok) {
+                setHasServiceEmail(false);
+                setServiceEmailAddress('');
+                setShowTestEmail(false);
+                setMessage({ type: 'success', text: 'Service email disconnected' });
+            } else {
+                setMessage({ type: 'error', text: 'Failed to disconnect' });
+            }
+        } catch (e) {
+            setMessage({ type: 'error', text: 'Failed to disconnect' });
+        }
+        setSavingServiceEmail(false);
+        setTimeout(() => setMessage(null), 3000);
+    };
+
+    const saveServiceEmailDisplayName = async () => {
+        setSavingServiceEmail(true);
+        try {
+            const res = await authFetch(`${API_BASE}/ai/config`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ serviceEmailDisplayName }),
+            });
+            setMessage(res.ok
+                ? { type: 'success', text: 'Display name saved' }
+                : { type: 'error', text: 'Failed to save display name' });
+        } catch (e) {
+            setMessage({ type: 'error', text: 'Failed to save display name' });
+        }
+        setSavingServiceEmail(false);
         setTimeout(() => setMessage(null), 3000);
     };
 
@@ -283,18 +323,6 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
 
     const enableAllDefaults = () => saveDefaults(null);
     const disableAllDefaults = () => saveDefaults([]);
-
-    const getOrgIntegrations = (org) => {
-        if (!org.enabledIntegrations) return null;
-        return typeof org.enabledIntegrations === 'string'
-            ? JSON.parse(org.enabledIntegrations)
-            : org.enabledIntegrations;
-    };
-
-    const isOrgIntegrationEnabled = (org, id) => {
-        const ints = getOrgIntegrations(org);
-        return !ints || ints.includes(id);
-    };
 
     const categories = orderCategories([...new Set(allIntegrations.map(i => i.category))]);
 
@@ -377,257 +405,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
             <div className="p-6">
             <div className="max-w-4xl mx-auto space-y-8">
 
-                {/* Feature Flags */}
-                <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
-                    <div className="px-6 py-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
-                        <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Feature Flags</h3>
-                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                            Enable or disable platform features globally. Changes take effect on next page load for all users.
-                        </p>
-                    </div>
-                    <div className="p-4">
-                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
-                            {/* Notebooks Toggle */}
-                            <div
-                                className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
-                                style={{
-                                    background: notebooksEnabled ? 'rgba(16, 185, 129, 0.06)' : 'var(--bg-primary)',
-                                    border: `1px solid ${notebooksEnabled ? 'rgba(16, 185, 129, 0.2)' : 'var(--border-subtle)'}`,
-                                }}
-                            >
-                                <BookOpen className="w-5 h-5 shrink-0" style={{ color: notebooksEnabled ? '#10b981' : 'var(--text-muted)' }} />
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-sm font-medium" style={{ color: notebooksEnabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>Notebooks</div>
-                                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>AI-powered collaborative notebooks</div>
-                                </div>
-                                <button
-                                    onClick={async () => {
-                                        const newVal = !notebooksEnabled;
-                                        setSavingNotebooks(true);
-                                        try {
-                                            const res = await authFetch(`${API_BASE}/ai/config`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ notebooksEnabled: newVal }),
-                                            });
-                                            if (res.ok) {
-                                                setNotebooksEnabled(newVal);
-                                                setMessage({ type: 'success', text: newVal ? 'Notebooks enabled' : 'Notebooks disabled' });
-                                            }
-                                        } catch (e) {
-                                            setMessage({ type: 'error', text: 'Failed to update notebooks setting' });
-                                        }
-                                        setSavingNotebooks(false);
-                                        setTimeout(() => setMessage(null), 3000);
-                                    }}
-                                    disabled={savingNotebooks}
-                                    className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${notebooksEnabled ? 'bg-green-500' : 'bg-gray-600'}`}
-                                >
-                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${notebooksEnabled ? 'left-6' : 'left-1'}`} />
-                                </button>
-                            </div>
-                            {/* Projects Toggle */}
-                            <div
-                                className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
-                                style={{
-                                    background: projectsEnabled ? 'rgba(16, 185, 129, 0.06)' : 'var(--bg-primary)',
-                                    border: `1px solid ${projectsEnabled ? 'rgba(16, 185, 129, 0.2)' : 'var(--border-subtle)'}`,
-                                }}
-                            >
-                                <FolderKanban className="w-5 h-5 shrink-0" style={{ color: projectsEnabled ? '#10b981' : 'var(--text-muted)' }} />
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-sm font-medium" style={{ color: projectsEnabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>Projects</div>
-                                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Organize chats into shared project folders</div>
-                                </div>
-                                <button
-                                    onClick={async () => {
-                                        const newVal = !projectsEnabled;
-                                        setSavingProjects(true);
-                                        try {
-                                            const res = await authFetch(`${API_BASE}/ai/config`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ projectsEnabled: newVal }),
-                                            });
-                                            if (res.ok) {
-                                                setProjectsEnabled(newVal);
-                                                setMessage({ type: 'success', text: newVal ? 'Projects enabled' : 'Projects disabled' });
-                                            }
-                                        } catch (e) {
-                                            setMessage({ type: 'error', text: 'Failed to update projects setting' });
-                                        }
-                                        setSavingProjects(false);
-                                        setTimeout(() => setMessage(null), 3000);
-                                    }}
-                                    disabled={savingProjects}
-                                    className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${projectsEnabled ? 'bg-green-500' : 'bg-gray-600'}`}
-                                >
-                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${projectsEnabled ? 'left-6' : 'left-1'}`} />
-                                </button>
-                            </div>
-
-                            {/* Ask AI Toggle */}
-                            <div
-                                className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
-                                style={{
-                                    background: askAiEnabled ? 'rgba(16, 185, 129, 0.06)' : 'var(--bg-primary)',
-                                    border: `1px solid ${askAiEnabled ? 'rgba(16, 185, 129, 0.2)' : 'var(--border-subtle)'}`,
-                                }}
-                            >
-                                <Sparkles className="w-5 h-5 shrink-0" style={{ color: askAiEnabled ? '#10b981' : 'var(--text-muted)' }} />
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-sm font-medium" style={{ color: askAiEnabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>Ask AI</div>
-                                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Enable AI assistance in notebooks</div>
-                                </div>
-                                <button
-                                    onClick={async () => {
-                                        const newVal = !askAiEnabled;
-                                        setSavingAskAi(true);
-                                        try {
-                                            const res = await authFetch(`${API_BASE}/ai/config`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ askAiEnabled: newVal }),
-                                            });
-                                            if (res.ok) {
-                                                setAskAiEnabled(newVal);
-                                                setMessage({ type: 'success', text: newVal ? 'Ask AI enabled' : 'Ask AI disabled' });
-                                            }
-                                        } catch (e) {
-                                            setMessage({ type: 'error', text: 'Failed to update Ask AI setting' });
-                                        }
-                                        setSavingAskAi(false);
-                                        setTimeout(() => setMessage(null), 3000);
-                                    }}
-                                    disabled={savingAskAi}
-                                    className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${askAiEnabled ? 'bg-green-500' : 'bg-gray-600'}`}
-                                >
-                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${askAiEnabled ? 'left-6' : 'left-1'}`} />
-                                </button>
-                            </div>
-
-                            {/* Export Toggle */}
-                            <div
-                                className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
-                                style={{
-                                    background: exportEnabled ? 'rgba(16, 185, 129, 0.06)' : 'var(--bg-primary)',
-                                    border: `1px solid ${exportEnabled ? 'rgba(16, 185, 129, 0.2)' : 'var(--border-subtle)'}`,
-                                }}
-                            >
-                                <FileDown className="w-5 h-5 shrink-0" style={{ color: exportEnabled ? '#10b981' : 'var(--text-muted)' }} />
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-sm font-medium" style={{ color: exportEnabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>Export</div>
-                                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Enable exporting notebooks to Word/PDF</div>
-                                </div>
-                                <button
-                                    onClick={async () => {
-                                        const newVal = !exportEnabled;
-                                        setSavingExport(true);
-                                        try {
-                                            const res = await authFetch(`${API_BASE}/ai/config`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ exportEnabled: newVal }),
-                                            });
-                                            if (res.ok) {
-                                                setExportEnabled(newVal);
-                                                setMessage({ type: 'success', text: newVal ? 'Export enabled' : 'Export disabled' });
-                                            }
-                                        } catch (e) {
-                                            setMessage({ type: 'error', text: 'Failed to update export setting' });
-                                        }
-                                        setSavingExport(false);
-                                        setTimeout(() => setMessage(null), 3000);
-                                    }}
-                                    disabled={savingExport}
-                                    className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${exportEnabled ? 'bg-green-500' : 'bg-gray-600'}`}
-                                >
-                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${exportEnabled ? 'left-6' : 'left-1'}`} />
-                                </button>
-                            </div>
-
-                            {/* Open in Notebook Toggle */}
-                            <div
-                                className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
-                                style={{
-                                    background: openInNotebookEnabled ? 'rgba(16, 185, 129, 0.06)' : 'var(--bg-primary)',
-                                    border: `1px solid ${openInNotebookEnabled ? 'rgba(16, 185, 129, 0.2)' : 'var(--border-subtle)'}`,
-                                }}
-                            >
-                                <Maximize2 className="w-5 h-5 shrink-0" style={{ color: openInNotebookEnabled ? '#10b981' : 'var(--text-muted)' }} />
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-sm font-medium" style={{ color: openInNotebookEnabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>Open in Notebook</div>
-                                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Allow opening chats as full notebooks</div>
-                                </div>
-                                <button
-                                    onClick={async () => {
-                                        const newVal = !openInNotebookEnabled;
-                                        setSavingOpenInNotebook(true);
-                                        try {
-                                            const res = await authFetch(`${API_BASE}/ai/config`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ openInNotebookEnabled: newVal }),
-                                            });
-                                            if (res.ok) {
-                                                setOpenInNotebookEnabled(newVal);
-                                                setMessage({ type: 'success', text: newVal ? 'Open in Notebook enabled' : 'Open in Notebook disabled' });
-                                            }
-                                        } catch (e) {
-                                            setMessage({ type: 'error', text: 'Failed to update open in notebook setting' });
-                                        }
-                                        setSavingOpenInNotebook(false);
-                                        setTimeout(() => setMessage(null), 3000);
-                                    }}
-                                    disabled={savingOpenInNotebook}
-                                    className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${openInNotebookEnabled ? 'bg-green-500' : 'bg-gray-600'}`}
-                                >
-                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${openInNotebookEnabled ? 'left-6' : 'left-1'}`} />
-                                </button>
-                            </div>
-
-                            {/* Notebooks Menu Toggle */}
-                            <div
-                                className="flex items-center gap-3 px-4 py-3 rounded-xl transition-all"
-                                style={{
-                                    background: notebooksMenuEnabled ? 'rgba(16, 185, 129, 0.06)' : 'var(--bg-primary)',
-                                    border: `1px solid ${notebooksMenuEnabled ? 'rgba(16, 185, 129, 0.2)' : 'var(--border-subtle)'}`,
-                                }}
-                            >
-                                <LayoutList className="w-5 h-5 shrink-0" style={{ color: notebooksMenuEnabled ? '#10b981' : 'var(--text-muted)' }} />
-                                <div className="flex-1 min-w-0">
-                                    <div className="text-sm font-medium" style={{ color: notebooksMenuEnabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>Notebooks Menu</div>
-                                    <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Show 'Notebooks' in the sidebar menu</div>
-                                </div>
-                                <button
-                                    onClick={async () => {
-                                        const newVal = !notebooksMenuEnabled;
-                                        setSavingNotebooksMenu(true);
-                                        try {
-                                            const res = await authFetch(`${API_BASE}/ai/config`, {
-                                                method: 'POST',
-                                                headers: { 'Content-Type': 'application/json' },
-                                                body: JSON.stringify({ notebooksMenuEnabled: newVal }),
-                                            });
-                                            if (res.ok) {
-                                                setNotebooksMenuEnabled(newVal);
-                                                setMessage({ type: 'success', text: newVal ? 'Notebooks menu enabled' : 'Notebooks menu disabled' });
-                                            }
-                                        } catch (e) {
-                                            setMessage({ type: 'error', text: 'Failed to update notebooks menu setting' });
-                                        }
-                                        setSavingNotebooksMenu(false);
-                                        setTimeout(() => setMessage(null), 3000);
-                                    }}
-                                    disabled={savingNotebooksMenu}
-                                    className={`relative w-11 h-6 rounded-full transition-colors flex-shrink-0 ${notebooksMenuEnabled ? 'bg-green-500' : 'bg-gray-600'}`}
-                                >
-                                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-transform ${notebooksMenuEnabled ? 'left-6' : 'left-1'}`} />
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
+                <FeatureKillSwitches />
 
             </div>
             </div>
@@ -684,121 +462,28 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                     </div>
                 </div>
 
-                {/* Per-Organization Overrides */}
-                <div className="rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
-                    <div className="px-6 py-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
-                        <h3 className="font-semibold" style={{ color: 'var(--text-primary)' }}>Organization Overrides</h3>
-                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                            Override integrations for specific organizations. "Using Defaults" means the org inherits the global defaults above.
-                        </p>
-                    </div>
-                    <div className="divide-y" style={{ borderColor: 'var(--border-subtle)' }}>
-                        {organizations.map(org => {
-                            const orgInts = getOrgIntegrations(org);
-                            const isExpanded = expandedOrg === org.id;
-                            const usingDefaults = orgInts === null;
-                            const enabledCount = usingDefaults
-                                ? (defaults === null ? allIntegrations.length : defaults.length)
-                                : orgInts.length;
-
-                            return (
-                                <div key={org.id}>
-                                    <button onClick={() => setExpandedOrg(isExpanded ? null : org.id)}
-                                        className="w-full px-6 py-3.5 flex items-center justify-between text-left hover:bg-[var(--bg-tertiary)] transition-colors">
-                                        <div className="flex items-center gap-3">
-                                            {org.logo ? (
-                                                <img src={org.logo.startsWith('/') ? `${API_BASE}${org.logo}` : org.logo} alt="" className="w-8 h-8 object-contain rounded-lg" />
-                                            ) : (
-                                                <div className="w-8 h-8 rounded-lg flex items-center justify-center text-sm font-bold" style={{ background: 'rgba(59, 130, 246, 0.15)', color: '#3b82f6' }}>
-                                                    {org.name?.[0]?.toUpperCase() || '?'}
-                                                </div>
-                                            )}
-                                            <div>
-                                                <div className="font-medium text-sm" style={{ color: 'var(--text-primary)' }}>{org.name}</div>
-                                                <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{org.id}</div>
-                                            </div>
-                                        </div>
-                                        <div className="flex items-center gap-3">
-                                            <span className={`text-xs px-2.5 py-1 rounded-full font-medium ${usingDefaults ? 'bg-blue-500/10 text-blue-500' : 'bg-amber-500/10 text-amber-500'}`}>
-                                                {usingDefaults ? 'Using Defaults' : `Custom (${enabledCount}/${allIntegrations.length})`}
-                                            </span>
-                                            <svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} style={{ color: 'var(--text-muted)' }} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                                                <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-                                            </svg>
-                                        </div>
-                                    </button>
-
-                                    {isExpanded && (
-                                        <div className="px-6 pb-4">
-                                            <div className="flex items-center gap-2 mb-3">
-                                                <button onClick={() => saveOrgIntegrations(org.id, null)}
-                                                    className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${usingDefaults ? 'ring-2 ring-[var(--accent-primary)]' : ''}`}
-                                                    style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }}>
-                                                    Use Defaults
-                                                </button>
-                                                <button onClick={() => {
-                                                    if (usingDefaults) {
-                                                        // Switch to custom — copy current effective integrations
-                                                        const effective = defaults === null ? allIntegrations.map(i => i.id) : [...defaults];
-                                                        saveOrgIntegrations(org.id, effective);
-                                                    }
-                                                }}
-                                                    className={`text-xs px-3 py-1.5 rounded-lg font-medium transition-all ${!usingDefaults ? 'ring-2 ring-[var(--accent-primary)]' : ''}`}
-                                                    style={{ background: 'var(--bg-tertiary)', color: 'var(--text-primary)' }}>
-                                                    Custom
-                                                </button>
-                                                {!usingDefaults && (
-                                                    <>
-                                                        <div className="flex-1" />
-                                                        <button onClick={() => saveOrgIntegrations(org.id, allIntegrations.map(i => i.id))}
-                                                            className="text-xs px-2.5 py-1 rounded-lg font-medium" style={{ color: '#10b981' }}>
-                                                            Enable All
-                                                        </button>
-                                                        <button onClick={() => saveOrgIntegrations(org.id, [])}
-                                                            className="text-xs px-2.5 py-1 rounded-lg font-medium" style={{ color: '#ef4444' }}>
-                                                            Disable All
-                                                        </button>
-                                                    </>
-                                                )}
-                                            </div>
-                                            {!usingDefaults && (
-                                                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                                                    {allIntegrations.map(integ => {
-                                                        const enabled = isOrgIntegrationEnabled(org, integ.id);
-                                                        return (
-                                                            <button key={integ.id} onClick={() => {
-                                                                const current = orgInts || [];
-                                                                const newInts = enabled
-                                                                    ? current.filter(x => x !== integ.id)
-                                                                    : [...current, integ.id];
-                                                                saveOrgIntegrations(org.id, newInts);
-                                                            }}
-                                                                className="flex items-center gap-2 px-3 py-2 rounded-lg text-left transition-all"
-                                                                style={{ background: enabled ? 'rgba(16, 185, 129, 0.06)' : 'var(--bg-primary)', border: `1px solid ${enabled ? 'rgba(16, 185, 129, 0.2)' : 'var(--border-subtle)'}` }}>
-                                                                {enabled
-                                                                    ? <ToggleRight className="w-4 h-4 shrink-0" style={{ color: '#10b981' }} />
-                                                                    : <ToggleLeft className="w-4 h-4 shrink-0" style={{ color: 'var(--text-muted)' }} />
-                                                                }
-                                                                {integ.icon && <span className="text-sm shrink-0">{integ.icon}</span>}
-                                                                <span className="text-sm" style={{ color: enabled ? 'var(--text-primary)' : 'var(--text-muted)' }}>{integ.label}</span>
-                                                            </button>
-                                                        );
-                                                    })}
-                                                </div>
-                                            )}
-                                        </div>
-                                    )}
-                                </div>
-                            );
-                        })}
-                        {organizations.length === 0 && (
-                            <div className="px-6 py-8 text-center text-sm" style={{ color: 'var(--text-muted)' }}>
-                                No organizations found. Create one in Security → Organizations.
-                            </div>
-                        )}
-                    </div>
+                {/* Per-organisation & per-group integration access moved to the
+                    unified Access & Permissions hub (Admin → Access). */}
+                <div className="rounded-2xl border p-4 flex items-start gap-3" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }}>
+                    <Settings className="w-4 h-4 mt-0.5 flex-shrink-0" style={{ color: '#3b82f6' }} />
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        Who may use each integration — per organisation, per group, or for all members — is now managed in
+                        <strong> Admin → Access &amp; Permissions</strong>. The defaults above only seed integrations for newly created organisations.
+                    </p>
                 </div>
 
+            </div>
+            </div>
+            )}
+
+            {/* MCP servers — install + manage. Installed servers become ordinary
+                integrations (id `mcp:<id>`); add them to a plan under
+                Subscriptions → plan → Included integrations, then grant per org/
+                group on Settings → Organisation → Integrations. */}
+            {active === 'mcp' && (
+            <div className="p-6">
+            <div className="max-w-4xl mx-auto">
+                <McpMarketplace setMessage={setMessage} />
             </div>
             </div>
             )}
@@ -817,81 +502,67 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                         <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                             Configure a Gmail service account to send emails to customers from the platform.
                         </p>
+                        <p className="text-xs mt-1.5 flex items-center gap-1.5" style={{ color: 'var(--text-muted)' }}>
+                            <Mail className="w-3.5 h-3.5 shrink-0" />
+                            <span>The layout &amp; text of the account <strong>verification</strong> and <strong>welcome</strong> emails are configured per language under <span style={{ color: 'var(--text-secondary)' }}>Admin → Languages → Email Templates</span>.</span>
+                        </p>
                     </div>
                     <div className="p-6 space-y-3">
-                        <div className="space-y-2">
-                            <input
-                                type="email"
-                                value={serviceEmailAddress}
-                                onChange={e => setServiceEmailAddress(e.target.value)}
-                                placeholder={hasServiceEmail ? 'Update Gmail address' : 'service@yourcompany.com'}
-                                className="w-full px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 transition-all"
-                                style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
-                            />
-                            <div className="flex gap-2">
-                                <input
-                                    type="password"
-                                    value={serviceEmailPassword}
-                                    onChange={e => setServiceEmailPassword(e.target.value)}
-                                    placeholder={hasServiceEmail ? '••••••••••••••••' : 'Gmail App Password'}
-                                    className="flex-1 px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 transition-all"
-                                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
-                                />
-                                <input
-                                    type="text"
-                                    value={serviceEmailDisplayName}
-                                    onChange={e => setServiceEmailDisplayName(e.target.value)}
-                                    placeholder="Display Name (e.g. BeeFlow)"
-                                    className="flex-1 px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 transition-all"
-                                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
-                                />
-                            </div>
-                        </div>
-                        <div className="flex items-center gap-2">
+                        {hasServiceEmail ? (
+                            <>
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Connected account:</span>
+                                    <span className="text-sm font-medium px-2 py-1 rounded-lg" style={{ background: 'var(--bg-primary)', color: 'var(--text-primary)', border: '1px solid var(--border-default)' }}>
+                                        {serviceEmailAddress || 'Google account'}
+                                    </span>
+                                    <button
+                                        onClick={disconnectServiceEmail}
+                                        disabled={savingServiceEmail}
+                                        className="text-xs px-2.5 py-1 rounded-lg font-medium transition-all disabled:opacity-50"
+                                        style={{ background: 'rgba(239, 68, 68, 0.1)', color: '#ef4444' }}
+                                    >
+                                        Disconnect
+                                    </button>
+                                </div>
+                                <div className="flex gap-2">
+                                    <input
+                                        type="text"
+                                        value={serviceEmailDisplayName}
+                                        onChange={e => setServiceEmailDisplayName(e.target.value)}
+                                        placeholder="Display Name (e.g. BeeFlow)"
+                                        className="flex-1 px-3 py-2 rounded-lg text-sm border outline-none focus:ring-2 transition-all"
+                                        style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)', '--tw-ring-color': 'var(--accent-primary)' }}
+                                    />
+                                    <button
+                                        onClick={saveServiceEmailDisplayName}
+                                        disabled={savingServiceEmail}
+                                        className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-1.5"
+                                        style={{ background: 'var(--accent-primary)', color: '#fff' }}
+                                    >
+                                        {savingServiceEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
+                                        Save
+                                    </button>
+                                    <button
+                                        onClick={() => setShowTestEmail(!showTestEmail)}
+                                        className="px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5"
+                                        style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}
+                                    >
+                                        <Send className="w-3.5 h-3.5" />
+                                        Send Test Email
+                                    </button>
+                                </div>
+                            </>
+                        ) : (
                             <button
-                                onClick={async () => {
-                                    if (!serviceEmailAddress.trim() && !serviceEmailPassword.trim()) return;
-                                    setSavingServiceEmail(true);
-                                    try {
-                                        const body = {};
-                                        if (serviceEmailAddress.trim()) body.serviceEmailAddress = serviceEmailAddress;
-                                        if (serviceEmailPassword.trim()) body.serviceEmailPassword = serviceEmailPassword;
-                                        if (serviceEmailDisplayName.trim()) body.serviceEmailDisplayName = serviceEmailDisplayName;
-                                        const res = await authFetch(`${API_BASE}/ai/config`, {
-                                            method: 'POST',
-                                            headers: { 'Content-Type': 'application/json' },
-                                            body: JSON.stringify(body),
-                                        });
-                                        if (res.ok) {
-                                            setHasServiceEmail(true);
-                                            setServiceEmailAddress('');
-                                            setServiceEmailPassword('');
-                                            setMessage({ type: 'success', text: 'Service email credentials saved' });
-                                        }
-                                    } catch (e) {
-                                        setMessage({ type: 'error', text: 'Failed to save service email credentials' });
-                                    }
-                                    setSavingServiceEmail(false);
-                                    setTimeout(() => setMessage(null), 3000);
-                                }}
-                                disabled={savingServiceEmail || (!serviceEmailAddress.trim() && !serviceEmailPassword.trim())}
-                                className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-1.5"
+                                onClick={startServiceEmailConnect}
+                                disabled={connectingServiceEmail}
+                                className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-2"
                                 style={{ background: 'var(--accent-primary)', color: '#fff' }}
                             >
-                                {savingServiceEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                                Save
+                                {connectingServiceEmail ? <Loader2 className="w-4 h-4 animate-spin" /> : <Mail className="w-4 h-4" />}
+                                Connect Google account
                             </button>
-                            {hasServiceEmail && (
-                                <button
-                                    onClick={() => setShowTestEmail(!showTestEmail)}
-                                    className="px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-1.5"
-                                    style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981' }}
-                                >
-                                    <Send className="w-3.5 h-3.5" />
-                                    Send Test Email
-                                </button>
-                            )}
-                        </div>
+                        )}
                         {/* Test Email inline form */}
                         {showTestEmail && hasServiceEmail && (
                             <div className="flex gap-2 pt-2 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
@@ -944,8 +615,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                             </div>
                         )}
                         <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                            Requires a Gmail account with <strong>2-Step Verification</strong> enabled. Generate an App Password from your{' '}
-                            <a href="https://myaccount.google.com/apppasswords" target="_blank" rel="noopener noreferrer" className="underline" style={{ color: 'var(--accent-primary)' }}>Google Account → App Passwords</a>.
+                            Connects a Google account via <strong>OAuth</strong> and sends through the <strong>Gmail API over HTTPS</strong> — no SMTP, no App Password, and unaffected by cloud SMTP-port blocks. The connected account is the sender; approve the “Send email on your behalf” permission when prompted.
                         </p>
                     </div>
                 </div>
@@ -1585,7 +1255,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                 {/* Header */}
                 <div>
                     <h2 className="text-lg font-bold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
-                        <Cloud className="w-5 h-5" style={{ color: '#8b5cf6' }} />
+                        <Cloud className="w-5 h-5" style={{ color: '#0ea5e9' }} />
                         Meeting Transcription
                     </h2>
                     <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>
@@ -1834,7 +1504,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                     <div className="px-6 py-4 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
                         <h3 className="font-semibold flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
                             🏠 WhisperX
-                            <span className="text-xs px-2 py-0.5 rounded-full font-normal" style={{ background: '#8b5cf618', color: '#8b5cf6' }}>Self-hosted</span>
+                            <span className="text-xs px-2 py-0.5 rounded-full font-normal" style={{ background: '#0ea5e918', color: '#0ea5e9' }}>Self-hosted</span>
                             {transcriptionProvider === 'whisperx' && <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/10 text-green-500">Active</span>}
                             {hasWhisperxUrl && <span className="text-xs px-2 py-0.5 rounded-full" style={{ background: 'var(--bg-primary)', color: 'var(--text-muted)', border: '1px solid var(--border-subtle)' }}>URL saved 🔒</span>}
                         </h3>
@@ -1946,7 +1616,7 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
                             {[
                                 { step: '1', title: 'Upload audio', desc: 'In Meeting Notes, attach an audio file (MP3, WAV, M4A, WEBM, OGG, FLAC) to a message and say "Transcribe this".' },
                                 { step: '2', title: 'Provider transcribes', desc: 'The active provider converts speech to text and returns timed segments with a generic speaker ID per segment (e.g. SPEAKER_00, Guest).' },
-                                { step: '3', title: 'Speaker names identified', desc: 'Claude analyses the transcript context and maps generic speaker IDs to real names if they are mentioned in the conversation.' },
+                                { step: '3', title: 'Speaker names identified', desc: 'The AI analyses the transcript context and maps generic speaker IDs to real names if they are mentioned in the conversation.' },
                                 { step: '4', title: 'Result returned', desc: 'A formatted transcript with timestamps and speaker names is returned in the chat and can be exported or summarised.' },
                             ].map(item => (
                                 <li key={item.step} className="flex gap-3">
@@ -1963,10 +1633,6 @@ export default function IntegrationsAdminPanel({ activeSection: activeProp = 'fe
 
             </div>
             </div>
-            )}
-
-            {active === 'mcp' && (
-                <McpMarketplace setMessage={setMessage} />
             )}
 
             </div>

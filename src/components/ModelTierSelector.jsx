@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { TIER_META, customTierMeta } from './tierMeta';
+import { TIER_META, customTierMeta, configuredTierKeys } from './tierMeta';
 import AppEmoji from './AppEmoji';
 
 // Map a tier key to its catalog id; custom tiers fall back to tier.custom.
@@ -15,13 +15,10 @@ const ModelTierSelector = ({ tiers = {}, value = 'fast', onChange, dropDirection
         return () => document.removeEventListener('mousedown', handler);
     }, []);
 
-    // Preserve ordering: auto, fast, standard (Flow), swarm, thinking, writer, pro,
-    // then custom tiers (filtered server-side by group + task-type permissions
-    // and beta-feature gates — Flow + Swarm only appear when their respective
-    // beta features are granted to the caller's org).
-    const standardKeys = ['auto', 'fast', 'standard', 'swarm', 'thinking', 'writer', 'pro'];
-    const customKeys = Object.keys(tiers).filter(k => k.startsWith('custom:'));
-    const tierKeys = [...standardKeys, ...customKeys];
+    // Ordered, configured-only tier keys (auto, fast, standard/Flow, swarm,
+    // thinking, writer, pro, then custom). Shared with the AI-step settings
+    // picker via configuredTierKeys so every tier list stays identical.
+    const tierKeys = configuredTierKeys(tiers);
 
     const currentMeta = TIER_META[value]
         || (value && value.startsWith('custom:') ? customTierMeta(value, tiers[value]) : null)

@@ -1,14 +1,121 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { User, Lock, Mail, Loader2, UserPlus, Building, ArrowLeft } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import { useTranslation } from '../../hooks/useTranslation';
+import { useDeploymentMode } from '../../hooks/useDeploymentMode';
+import LegalDocModal from '../../components/LegalDocModal';
 
 const SignupStepAccount = ({
     signupData, setSignupData, signupOrgs, handleSignup,
     isLoading, setIsLoading, setSignupStep, setError,
-    inputClass, inputClassSimple, labelClass
+    inputClass, inputClassSimple, labelClass, embedded = false
 }) => {
     const { t } = useTranslation();
+    // Legal & Consent (the clickwrap below) is a Bee Flow Cloud surface only.
+    // Self-hosted installs are governed by their licence agreement, not these
+    // SaaS terms, so the consent step is hidden and never blocks signup there.
+    const { isSelfHosted } = useDeploymentMode();
+    const consentRequired = !isSelfHosted;
+    const [viewDoc, setViewDoc] = useState(null); // { docId, title } — opens the in-app reader
+
+    // ── Review summary (wizard) ──────────────────────────────────────────
+    // Mirrors the "done"/review step of the Nextcloud onboarding wizard, but
+    // folded above the credential fields so a final success screen doesn't
+    // flash before auto-login navigates away.
+    const renderReview = () => {
+        const authLabel = { password: t('org.password_auth', 'Username & Password'), google: 'Google', microsoft: 'Microsoft' }[signupData.authMethod];
+        const shieldOn = signupData.shieldEnabled !== false;
+        const privacyLabel = shieldOn
+            ? t('signup.shield_on_summary', '{n} PII categories', { n: (signupData.piiCategories || []).length })
+            : t('signup.shield_off_summary', 'Off');
+        const typeLabel = signupData.signupType === 'consumer'
+            ? t('signup.personal_account', 'Personal account')
+            : signupData.signupType === 'existing'
+                ? t('signup.join_existing', 'Join an organisation')
+                : t('signup.org_account', 'Organisation account');
+        const orgName = signupData.signupType === 'new'
+            ? signupData.newOrgName
+            : signupData.signupType === 'existing'
+                ? (signupOrgs.find(o => o.id === signupData.organizationId)?.name || '')
+                : '';
+        const rows = [
+            [t('signup.review_account_type', 'Account type'), typeLabel],
+            ...(orgName ? [[t('signup.review_organisation', 'Organisation'), orgName]] : []),
+            ...(authLabel ? [[t('signup.review_signin', 'Sign-in method'), authLabel]] : []),
+            ...(signupData.signupType === 'new' ? [[t('signup.review_privacy', 'Privacy Shield'), privacyLabel]] : []),
+        ];
+        return (
+            <div className="rounded-xl border p-4 space-y-2 text-sm" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-tertiary)' }}>
+                <p className="text-xs font-semibold mb-1" style={{ color: 'var(--text-secondary)' }}>{t('signup.review_title', 'Review your details')}</p>
+                {rows.map(([k, v]) => (
+                    <div key={k} className="flex items-center justify-between gap-3">
+                        <span style={{ color: 'var(--text-muted)' }}>{k}</span>
+                        <span className="font-medium text-right truncate" style={{ color: 'var(--text-primary)' }}>{v}</span>
+                    </div>
+                ))}
+            </div>
+        );
+    };
+
+    // ── Legal consent checkbox (clickwrap) ───────────────────────────────
+    // Un-ticked by default; the primary action stays disabled until ticked.
+    // Org creators (signupType 'new') also accept the DPA; everyone else accepts
+    // Terms + Privacy + Acceptable Use. Document links open the in-app reader
+    // (LegalDocModal); the modal also offers an "Open full page" link to the
+    // stable, savable public page (Dutch BW 6:234).
+    const renderConsent = () => {
+        if (!consentRequired) return null;
+        const links = [
+            { key: 'signup.consent_tos', fb: 'Terms of Service', docId: 'terms' },
+            { key: 'signup.consent_privacy', fb: 'Privacy Policy', docId: 'privacy' },
+            ...(signupData.signupType === 'new'
+                ? [{ key: 'signup.consent_dpa', fb: 'Data Processing Agreement', docId: 'dpa' }]
+                : []),
+            { key: 'signup.consent_aup', fb: 'Acceptable Use Policy', docId: 'aup' },
+        ];
+        // The trigger buttons live inside the <label>, so preventDefault/stop
+        // keeps a doc click from toggling the consent checkbox. The modal is a
+        // sibling of the label (it portals to body) so its events don't bubble
+        // back into the label through React's tree.
+        const openDoc = (e, l) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setViewDoc({ docId: l.docId, title: t(l.key, l.fb) });
+        };
+        return (
+            <>
+                <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                    <input
+                        type="checkbox"
+                        checked={!!signupData.consentAccepted}
+                        onChange={e => setSignupData(p => ({ ...p, consentAccepted: e.target.checked }))}
+                        className="mt-0.5 w-4 h-4 shrink-0"
+                        style={{ accentColor: 'var(--accent-primary)' }}
+                    />
+                    <span className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                        {t('signup.consent_intro', "I have read and agree to Bee Flow's")}{' '}
+                        {links.map((l, i) => (
+                            <React.Fragment key={l.docId}>
+                                {i > 0 && (i === links.length - 1
+                                    ? <>{' '}{t('signup.consent_and', 'and')}{' '}</>
+                                    : ', ')}
+                                <button type="button" onClick={e => openDoc(e, l)}
+                                    className="underline" style={{ color: 'var(--accent-primary)' }}>
+                                    {t(l.key, l.fb)}
+                                </button>
+                            </React.Fragment>
+                        ))}.
+                    </span>
+                </label>
+                <LegalDocModal
+                    open={!!viewDoc}
+                    docId={viewDoc?.docId}
+                    title={viewDoc?.title}
+                    onClose={() => setViewDoc(null)}
+                />
+            </>
+        );
+    };
 
     // OAuth flow — redirect to provider (org or consumer)
     if (signupData.authMethod !== 'password' && (signupData.signupType === 'new' || signupData.signupType === 'consumer')) {
@@ -17,11 +124,15 @@ const SignupStepAccount = ({
         const isConsumerOAuth = signupData.signupType === 'consumer';
 
         const handleOAuthSignup = async () => {
+            if (consentRequired && !signupData.consentAccepted) {
+                setError(t('signup.consent_required_error', 'Please read and accept the legal terms to continue.'));
+                return;
+            }
             setIsLoading(true);
             setError('');
             try {
                 const pendingBody = isConsumerOAuth
-                    ? { signupType: 'consumer', authMethod: signupData.authMethod }
+                    ? { signupType: 'consumer', authMethod: signupData.authMethod, consent: { accepted: true, accountType: 'consumer' } }
                     : {
                         newOrgName: signupData.newOrgName,
                         orgDetails: {
@@ -35,9 +146,14 @@ const SignupStepAccount = ({
                             vat: signupData.orgVat,
                             allowSignup: signupData.orgAllowSignup,
                             authMethod: signupData.authMethod,
-                            privacyLevel: signupData.privacyLevel,
-                            euModeEnabled: signupData.euModeEnabled
-                        }
+                            privacyShield: {
+                                enabled: signupData.shieldEnabled !== false,
+                                piiDetectionCategories: signupData.piiCategories || [],
+                                piiDetectionAction: signupData.piiAction || 'block',
+                                euModeEnabled: signupData.euModeEnabled
+                            }
+                        },
+                        consent: { accepted: true, accountType: 'org_admin' }
                     };
 
                 const res = await authFetch(`${API_BASE}/auth/pending-signup`, {
@@ -60,26 +176,30 @@ const SignupStepAccount = ({
 
         return (
             <div className="space-y-4">
-                <div className="p-3 rounded-lg border flex items-center gap-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}>
-                    {isConsumerOAuth
-                        ? <User className="w-5 h-5 text-[var(--accent-primary)]" />
-                        : <Building className="w-5 h-5 text-[var(--accent-primary)]" />
-                    }
-                    <div>
-                        <span className="text-sm font-medium block" style={{ color: 'var(--text-primary)' }}>
-                            {isConsumerOAuth ? t('signup.personal_account') : signupData.newOrgName}
-                        </span>
-                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                            {isConsumerOAuth ? t('signup.personal_account_desc') : t('signup.new_org')}
-                        </span>
+                {embedded ? renderReview() : (
+                    <div className="p-3 rounded-lg border flex items-center gap-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}>
+                        {isConsumerOAuth
+                            ? <User className="w-5 h-5 text-[var(--accent-primary)]" />
+                            : <Building className="w-5 h-5 text-[var(--accent-primary)]" />
+                        }
+                        <div>
+                            <span className="text-sm font-medium block" style={{ color: 'var(--text-primary)' }}>
+                                {isConsumerOAuth ? t('signup.personal_account') : signupData.newOrgName}
+                            </span>
+                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                {isConsumerOAuth ? t('signup.personal_account_desc') : t('signup.new_org')}
+                            </span>
+                        </div>
                     </div>
-                </div>
+                )}
 
                 <p className="text-sm text-[var(--text-secondary)] text-center">
                     {t('signup.sign_in_with_provider', { provider: providerName })}
                 </p>
 
-                <button type="button" disabled={isLoading} onClick={handleOAuthSignup}
+                {renderConsent()}
+
+                <button type="button" disabled={isLoading || (consentRequired && !signupData.consentAccepted)} onClick={handleOAuthSignup}
                     className="w-full py-3.5 bg-white border-2 border-[var(--border-default)] hover:border-[var(--accent-primary)] text-[var(--text-primary)] rounded-xl font-medium transition-all flex items-center justify-center gap-3 text-base shadow-sm disabled:opacity-50">
                     {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : (
                         <>
@@ -103,10 +223,12 @@ const SignupStepAccount = ({
                     )}
                 </button>
 
-                <button type="button" onClick={() => { setSignupStep(isConsumerOAuth ? 2 : 3); setError(''); }}
-                    className="w-full py-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm">
-                    <ArrowLeft className="w-4 h-4" /> {t('signup.back')}
-                </button>
+                {!embedded && (
+                    <button type="button" onClick={() => { setSignupStep(isConsumerOAuth ? 2 : 3); setError(''); }}
+                        className="w-full py-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm">
+                        <ArrowLeft className="w-4 h-4" /> {t('signup.back')}
+                    </button>
+                )}
             </div>
         );
     }
@@ -138,26 +260,28 @@ const SignupStepAccount = ({
 
     return (
         <form onSubmit={handleSignup} className="space-y-4">
-            <div className="p-3 rounded-lg border flex items-center gap-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}>
-                {contextIcon}
-                <div>
-                    <span className="text-sm font-medium block" style={{ color: 'var(--text-primary)' }}>
-                        {contextTitle}
-                    </span>
-                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                        {contextSubtitle}
-                    </span>
+            {embedded ? renderReview() : (
+                <div className="p-3 rounded-lg border flex items-center gap-3" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}>
+                    {contextIcon}
+                    <div>
+                        <span className="text-sm font-medium block" style={{ color: 'var(--text-primary)' }}>
+                            {contextTitle}
+                        </span>
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                            {contextSubtitle}
+                        </span>
+                    </div>
                 </div>
-            </div>
+            )}
 
             <div className="grid grid-cols-2 gap-3">
                 <div>
                     <label className={labelClass}>{t('signup.first_name')}</label>
-                    <input type="text" value={signupData.firstName} onChange={e => setSignupData(p => ({ ...p, firstName: e.target.value }))} className={inputClassSimple} placeholder="John" />
+                    <input type="text" value={signupData.firstName} onChange={e => setSignupData(p => ({ ...p, firstName: e.target.value }))} className={inputClassSimple} placeholder="Jan" />
                 </div>
                 <div>
                     <label className={labelClass}>{t('signup.last_name')}</label>
-                    <input type="text" value={signupData.lastName} onChange={e => setSignupData(p => ({ ...p, lastName: e.target.value }))} className={inputClassSimple} placeholder="Doe" />
+                    <input type="text" value={signupData.lastName} onChange={e => setSignupData(p => ({ ...p, lastName: e.target.value }))} className={inputClassSimple} placeholder="Jansen" />
                 </div>
             </div>
 
@@ -165,7 +289,7 @@ const SignupStepAccount = ({
                 <label className={labelClass}>{t('signup.username')} *</label>
                 <div className="relative">
                     <User className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-tertiary)]" />
-                    <input type="text" value={signupData.username} onChange={e => setSignupData(p => ({ ...p, username: e.target.value }))} className={inputClass} placeholder="johndoe" required />
+                    <input type="text" value={signupData.username} onChange={e => setSignupData(p => ({ ...p, username: e.target.value }))} className={inputClass} placeholder="janjansen" required />
                 </div>
             </div>
 
@@ -173,7 +297,7 @@ const SignupStepAccount = ({
                 <label className={labelClass}>{t('signup.email')}</label>
                 <div className="relative">
                     <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-tertiary)]" />
-                    <input type="email" value={signupData.email} onChange={e => setSignupData(p => ({ ...p, email: e.target.value }))} className={inputClass} placeholder="john@company.com" />
+                    <input type="email" value={signupData.email} onChange={e => setSignupData(p => ({ ...p, email: e.target.value }))} className={inputClass} placeholder="jan@bedrijf.nl" />
                 </div>
             </div>
 
@@ -193,15 +317,19 @@ const SignupStepAccount = ({
                 </div>
             </div>
 
-            <button type="submit" disabled={isLoading}
+            {renderConsent()}
+
+            <button type="submit" disabled={isLoading || (consentRequired && !signupData.consentAccepted)}
                 className="w-full py-3 bg-green-600 hover:bg-green-700 text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2 disabled:opacity-50 text-base shadow-lg mt-2">
                 {isLoading ? <Loader2 className="w-5 h-5 animate-spin" /> : <><UserPlus className="w-5 h-5" /> {t('signup.create_account_btn')}</>}
             </button>
 
-            <button type="button" onClick={() => { setSignupStep(backStep); setError(''); }}
-                className="w-full py-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm">
-                <ArrowLeft className="w-4 h-4" /> {t('signup.back')}
-            </button>
+            {!embedded && (
+                <button type="button" onClick={() => { setSignupStep(backStep); setError(''); }}
+                    className="w-full py-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm">
+                    <ArrowLeft className="w-4 h-4" /> {t('signup.back')}
+                </button>
+            )}
         </form>
     );
 };

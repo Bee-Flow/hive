@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { Handle, Position } from '@xyflow/react';
-import { AlertCircle, AlertTriangle, Plus, Play, Pin, Loader2 } from 'lucide-react';
+import { AlertCircle, AlertTriangle, Plus, Play, Pin, Loader2, Repeat } from 'lucide-react';
 import { useNodeRuntime } from '../NodeRuntimeContext';
+import { StepIcon } from '../stepIcons';
 
 /**
  * Shared chrome for every step-type node. Per-type files supply
@@ -20,7 +21,10 @@ import { useNodeRuntime } from '../NodeRuntimeContext';
  * Hover popover uses inline CSS only — no external popover lib.
  */
 export default function StepNodeBase({
-    icon, typeLabel, body, badges = null, hoverDetail = null,
+    // `typeLabel` is accepted (every per-type node passes it) but intentionally
+    // not rendered — the card leads with the title/description, not the node
+    // type, for a cleaner, less technical read.
+    icon, typeLabel: _typeLabel, body, badges = null, hoverDetail = null,
     runStep, issues, dim = false,
     nodeId = null, onAddAfter = null,
 }) {
@@ -32,6 +36,9 @@ export default function StepNodeBase({
     const rt = useNodeRuntime();
     const pinned = nodeId ? rt.pinnedById?.has?.(nodeId) : false;
     const disabled = nodeId ? rt.disabledById?.has?.(nodeId) : false;
+    // A user-chosen symbol (Lucide icon name) overrides the default type icon.
+    const customIconName = nodeId ? rt.customIconById?.get?.(nodeId) : null;
+    const effectiveIcon = customIconName ? <StepIcon name={customIconName} size={15} fallback={icon} /> : icon;
     const onExecuteStep = rt.onExecuteStep;
     const executingThis = nodeId && rt.executingStepId === nodeId;
     const runInFlight = !!rt.runInFlight;
@@ -42,15 +49,17 @@ export default function StepNodeBase({
     const errCount = issues?.errors?.length || 0;
     const warnCount = issues?.warnings?.length || 0;
 
-    // Only render the left status bar when there's a real run status —
-    // the idle grey was visual noise on every node. Cyan flags a pinned
-    // node; amber-dashed is "disabled". They have lower priority than
-    // an active run status (the user wants to see the *live* state).
-    const barTone = status === 'success' ? 'bg-emerald-500'
-        : status === 'pinned' ? 'bg-cyan-500'
-        : status === 'error' ? 'bg-red-500'
-        : status === 'running' ? 'bg-[var(--accent)] animate-[pulse_1.2s_ease-in-out_infinite]'
-        : pinned ? 'bg-cyan-500'
+    // Status is shown by tinting the WHOLE node border (+ a soft same-tone
+    // ring) rather than a floating left bar — cleaner and more intentional.
+    // Only applied when there's a real run status; idle nodes keep the
+    // default neutral border. Cyan flags a pinned node; amber-dashed is
+    // "disabled". An active run status outranks the pinned tint so the user
+    // sees the *live* state. `running` gently pulses to read as in-flight.
+    const statusBorder = status === 'success' ? 'border-emerald-500 ring-1 ring-emerald-500/25'
+        : status === 'pinned' ? 'border-cyan-500 ring-1 ring-cyan-500/25'
+        : status === 'error' ? 'border-red-500 ring-1 ring-red-500/25'
+        : status === 'running' ? 'border-[var(--accent)] ring-1 ring-[var(--accent)]/30 animate-[pulse_1.2s_ease-in-out_infinite]'
+        : pinned ? 'border-cyan-500 ring-1 ring-cyan-500/25'
         : null;
 
     // n8n-style handles: 12px circles, invisible at rest, fade in on
@@ -65,7 +74,7 @@ export default function StepNodeBase({
 
     return (
         <div
-            className={`group relative w-[240px] rounded-lg border bg-[var(--bg-secondary)] shadow-sm hover:shadow-md transition-shadow duration-150 cursor-pointer ${dim || disabled ? 'opacity-60' : ''} ${disabled ? 'border-dashed border-amber-500/60' : 'border-[var(--border-default)]'}`}
+            className={`group relative w-[240px] rounded-lg border bg-[var(--bg-secondary)] shadow-sm hover:shadow-md transition-shadow duration-150 cursor-pointer ${dim || disabled ? 'opacity-60' : ''} ${disabled ? 'border-dashed border-amber-500/60' : (statusBorder || 'border-[var(--border-default)]')}`}
             onMouseEnter={() => setHover(true)}
             onMouseLeave={() => setHover(false)}
         >
@@ -106,37 +115,31 @@ export default function StepNodeBase({
                 </button>
             )}
 
-            {/* Left status bar — only shown when there's an active run status. */}
-            {barTone && (
-                <div className={`absolute left-0 top-0 bottom-0 w-1 rounded-l-lg ${barTone}`} />
-            )}
-
             <div className="pl-3 pr-2 py-2">
-                {/* Header row: icon + type label + right badges */}
-                <div className="flex items-center justify-between gap-2 mb-1">
-                    <div className="flex items-center gap-1.5 min-w-0">
-                        <span className="text-[var(--text-secondary)] flex-shrink-0">{icon}</span>
-                        <span className="text-[10px] uppercase tracking-wide font-semibold text-[var(--text-tertiary)] truncate">
-                            {typeLabel}
-                        </span>
+                {/* Single row: icon leads the title/description; pin / run
+                    progress / per-type badges sit top-right on the SAME row.
+                    The node TYPE label is intentionally omitted, and there is
+                    no separate header line, so the card stays compact. */}
+                <div className="flex items-start gap-2">
+                    <span className="text-[var(--text-secondary)] flex-shrink-0 mt-0.5">{effectiveIcon}</span>
+                    <div className="text-xs text-[var(--text-primary)] leading-snug min-w-0 flex-1">
+                        {body}
                     </div>
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                        {pinned && (
-                            <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded-full bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30" title="Output is pinned">
-                                <Pin size={9} />
-                            </span>
-                        )}
-                        {runIndex != null && runTotal != null && status === 'running' && (
-                            <span className="text-[10px] font-mono text-[var(--accent)] tabular-nums" title="Run progress">
-                                {runIndex}/{runTotal}
-                            </span>
-                        )}
-                        {badges}
-                    </div>
-                </div>
-                {/* Body slot */}
-                <div className="text-xs text-[var(--text-primary)] leading-snug">
-                    {body}
+                    {(pinned || (runIndex != null && runTotal != null && status === 'running') || badges) && (
+                        <div className="flex items-center gap-1 flex-shrink-0">
+                            {pinned && (
+                                <span className="inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded-full bg-cyan-500/15 text-cyan-700 dark:text-cyan-300 border border-cyan-500/30" title="Output is pinned">
+                                    <Pin size={9} />
+                                </span>
+                            )}
+                            {runIndex != null && runTotal != null && status === 'running' && (
+                                <span className="text-[10px] font-mono text-[var(--accent)] tabular-nums" title="Run progress">
+                                    {runIndex}/{runTotal}
+                                </span>
+                            )}
+                            {badges}
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -183,6 +186,20 @@ export function NodeChip({ children, tone = 'neutral', title }) {
         <span className={`inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-full border ${cls}`} title={title}>
             {children}
         </span>
+    );
+}
+
+/**
+ * The "for each" chip shown when a leaf step iterates over an upstream array
+ * via per-step `forEach` (no wrapping loop). Shared so every leaf node renders
+ * it identically — mirrors the inline chip in IntegrationActionNode.
+ */
+export function ForEachBadge({ step }) {
+    if (!step?.forEach?.overRef) return null;
+    return (
+        <NodeChip tone="accent" title={`Runs once per item in ${step.forEach.overRef}`}>
+            <Repeat size={10} /> for each
+        </NodeChip>
     );
 }
 

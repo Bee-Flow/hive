@@ -29,8 +29,54 @@ function escapeRegExp(s) { return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }
  * silently breaks the entire page with a SyntaxError around the truncation
  * point.
  */
-function defangScriptClose(jsContent) {
+export function defangScriptClose(jsContent) {
     return String(jsContent || '').replace(/<\/script/gi, '<\\/script');
+}
+
+/**
+ * The selection-relay script: posts the user's text selection up to the parent
+ * window via postMessage. Extracted so the react-mui preview pipeline
+ * (buildWebpagePreview.js) can reuse the exact same bridge.
+ */
+export function buildSelectionBridgeScript() {
+    return `<script>(function(){
+  function relay(){
+    try {
+      var sel = window.getSelection && window.getSelection();
+      var text = sel && sel.toString ? sel.toString() : '';
+      if (!text || !text.trim()) return;
+      var anchor = sel && sel.anchorNode;
+      var el = anchor && anchor.nodeType === 3 ? anchor.parentElement : (anchor || null);
+      var tagName = el && el.tagName ? el.tagName.toLowerCase() : null;
+      var className = el && el.className && typeof el.className === 'string' ? el.className.slice(0, 120) : null;
+      var id = el && el.id ? String(el.id).slice(0, 120) : null;
+      parent.postMessage({
+        __beeflowWebpageSelection: true,
+        text: text.slice(0, 4000),
+        tagName: tagName,
+        className: className,
+        elementId: id
+      }, '*');
+    } catch(_){}
+  }
+  document.addEventListener('mouseup', relay, true);
+  document.addEventListener('keyup', function(e){
+    if (e.shiftKey || e.ctrlKey || e.metaKey) relay();
+  }, true);
+})();<\/script>`;
+}
+
+/**
+ * Build the combined acts-as-author bridge head scripts (auth + DB + AI /
+ * automations / integrations), gated identically to the DB shim. Returns ''
+ * when any of (token, base, id) is missing. Shared by both the vanilla compose
+ * below and the react-mui preview pipeline.
+ */
+export function buildBridgeHeadScripts({ dbToken, dbApiBase, dbWebpageId }) {
+    if (!dbToken || !dbApiBase || !dbWebpageId) return '';
+    return buildBeeflowAuthScript({ dbToken })
+        + buildBeeflowDbScript({ dbApiBase, dbWebpageId })
+        + buildBeeflowBridgesScript({ dbToken, dbApiBase, dbWebpageId });
 }
 
 /**
@@ -294,6 +340,17 @@ function buildBeeflowBridgesScript({ dbToken, dbApiBase, dbWebpageId }) {
     list: function(){ return getJson("/integrations").then(function(r){ return r.integrations || []; }); },
     run: function(tool, args){ return postJson("/integrations/run", { tool: tool, args: args || {} }); }
   };
+
+  // Light-tier backend: call your own api/<route>.js handler. Resolves to the
+  // handler's JSON body; rejects (with .status) on a non-2xx response.
+  window.beeflowApp = {
+    call: function(route, body, opts){
+      var method = (opts && opts.method) || "POST";
+      var path = "/app/" + String(route || "").replace(/^\/+/, "");
+      if (method === "GET") return getJson(path);
+      return postJson(path, body);
+    }
+  };
 })();<\/script>`;
 }
 
@@ -359,31 +416,7 @@ export function composeWebpageDocument({ html, css, js }, options = {}) {
     const beeflowBridgesScript = (dbToken && dbApiBase && dbWebpageId)
         ? buildBeeflowBridgesScript({ dbToken, dbApiBase, dbWebpageId })
         : '';
-    const bridgeScript = selectionBridge ? `<script>(function(){
-  function relay(){
-    try {
-      var sel = window.getSelection && window.getSelection();
-      var text = sel && sel.toString ? sel.toString() : '';
-      if (!text || !text.trim()) return;
-      var anchor = sel && sel.anchorNode;
-      var el = anchor && anchor.nodeType === 3 ? anchor.parentElement : (anchor || null);
-      var tagName = el && el.tagName ? el.tagName.toLowerCase() : null;
-      var className = el && el.className && typeof el.className === 'string' ? el.className.slice(0, 120) : null;
-      var id = el && el.id ? String(el.id).slice(0, 120) : null;
-      parent.postMessage({
-        __beeflowWebpageSelection: true,
-        text: text.slice(0, 4000),
-        tagName: tagName,
-        className: className,
-        elementId: id
-      }, '*');
-    } catch(_){}
-  }
-  document.addEventListener('mouseup', relay, true);
-  document.addEventListener('keyup', function(e){
-    if (e.shiftKey || e.ctrlKey || e.metaKey) relay();
-  }, true);
-})();<\/script>` : '';
+    const bridgeScript = selectionBridge ? buildSelectionBridgeScript() : '';
 
     let working = safeHtml;
 

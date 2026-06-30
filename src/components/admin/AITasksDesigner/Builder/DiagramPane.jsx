@@ -4,17 +4,20 @@ import {
 } from '@xyflow/react';
 import React, { forwardRef, useMemo, useCallback, useRef, useState, useEffect, useImperativeHandle } from 'react';
 import '@xyflow/react/dist/style.css';
-import { Plus } from 'lucide-react';
 
 import { edgeTypes } from './flow/edges';
 import { buildLayout, seedPositions } from './flow/layout';
+import { applyAutoMapToStep } from './mapping/autoMapInputs';
 import { buildIssuesByStep } from './flow/matchValidationToStep';
 import { NodeRuntimeContext } from './flow/NodeRuntimeContext';
 
 import AggregateNode from './flow/nodes/AggregateNode';
 import AiStepNode from './flow/nodes/AiStepNode';
+import CallFlowletNode from './flow/nodes/CallFlowletNode';
+import CallStepNode from './flow/nodes/CallStepNode';
 import CodeNode from './flow/nodes/CodeNode';
 import ConditionNode from './flow/nodes/ConditionNode';
+import FlowletOutputNode from './flow/nodes/FlowletOutputNode';
 import DateTimeNode from './flow/nodes/DateTimeNode';
 import DedupeNode from './flow/nodes/DedupeNode';
 import FilterNode from './flow/nodes/FilterNode';
@@ -48,6 +51,11 @@ const NODE_TYPES = {
     dedupe:             DedupeNode,
     aggregate:          AggregateNode,
     summarize:          SummarizeNode,
+    // Flowlets (reusable sub-automations)
+    call_layer:         CallFlowletNode,
+    layer_output:       FlowletOutputNode,
+    // Steps (reusable standalone building blocks, kind='block')
+    call_block:         CallStepNode,
 };
 
 // Stable default edge options — direction arrowhead at the target end so
@@ -96,14 +104,23 @@ const DiagramPane = forwardRef(function DiagramPane({
     onRequestAddNode,   // ({ sourceId, position }) — called when user drags an edge end into empty pane
     onRequestOpenPalette, // () — called by the empty-state CTA on a fresh draft
     onRequestAddAfter,  // (nodeId) — called when user clicks the "+" hover button on a node
+    onRequestInsertOnEdge, // ({ sourceId, targetId, position }) — "+" on an edge: insert a step between two nodes
     onExecuteStep,      // (stepId) — n8n-style per-node ▶ button
     executingStepId = null,
     runInFlight = false,
+    catalog = null,           // tool catalog — needed for auto-mapping on connect
+    autoMapEnabled = true,    // auto-map inputs when an edge is drawn
+    onAutoMapped,             // (stepId, count) — fired after a successful auto-map
+    onOpenLayer,              // (layerKey) — drill into an inline flowlet's sub-canvas
+    layerSummaries = {},      // { layerKey: description } — shown on call_layer nodes
+    onStepAdded,              // (payload, sourceStep|null) — usage telemetry for the smart Add-step menu
 }, ref) {
     return (
         <ReactFlowProvider>
             <DiagramPaneInner
                 ref={ref}
+                onOpenLayer={onOpenLayer}
+                layerSummaries={layerSummaries}
                 definition={definition}
                 runSteps={runSteps}
                 onNodeClick={onNodeClick}
@@ -115,9 +132,14 @@ const DiagramPane = forwardRef(function DiagramPane({
                 onRequestAddNode={onRequestAddNode}
                 onRequestOpenPalette={onRequestOpenPalette}
                 onRequestAddAfter={onRequestAddAfter}
+                onRequestInsertOnEdge={onRequestInsertOnEdge}
                 onExecuteStep={onExecuteStep}
                 executingStepId={executingStepId}
                 runInFlight={runInFlight}
+                catalog={catalog}
+                autoMapEnabled={autoMapEnabled}
+                onAutoMapped={onAutoMapped}
+                onStepAdded={onStepAdded}
             />
         </ReactFlowProvider>
     );
@@ -128,12 +150,19 @@ export default DiagramPane;
 const DiagramPaneInner = forwardRef(function DiagramPaneInner({
     definition, runSteps, onNodeClick, onDefinitionChange,
     validation, readOnly, editable, structuralEditsBlocked,
-    onRequestAddNode, onRequestOpenPalette, onRequestAddAfter,
+    onRequestAddNode, onRequestOpenPalette, onRequestAddAfter, onRequestInsertOnEdge,
     onExecuteStep, executingStepId, runInFlight,
+    catalog = null, autoMapEnabled = true, onAutoMapped, onOpenLayer,
+    layerSummaries = {},
     onDiagnose = null,
+    onStepAdded,
 }, ref) {
     const rf = useReactFlow();
     const wrapperRef = useRef(null);
+
+    // Clicking a node opens its focused Node Detail View (NDV) — owned by the
+    // parent (BuilderShell). The canvas itself no longer renders any
+    // node-anchored panels.
 
     const runByStep = useMemo(() => {
         const m = new Map();
@@ -152,10 +181,14 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
     const runtimeContextValue = useMemo(() => {
         const pinnedById = new Set();
         const disabledById = new Set();
+        // Custom per-step symbol (a Lucide icon name set in the inspector).
+        // StepNodeBase reads this to override the default type icon.
+        const customIconById = new Map();
         const allSteps = [definition?.trigger, ...(definition?.steps || [])].filter(Boolean);
         for (const s of allSteps) {
             if (s.pinnedOutput !== undefined && s.pinnedOutput !== null) pinnedById.add(s.id);
             if (s.disabled) disabledById.add(s.id);
+            if (s.icon) customIconById.set(s.id, s.icon);
         }
         // Run ordinal — 1-based by finishedAt — so users can see "3/8" on
         // the currently running node. The node still showing 'running'
@@ -172,13 +205,16 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
         return {
             pinnedById,
             disabledById,
+            customIconById,
             onExecuteStep: editable ? onExecuteStep : null,
             executingStepId,
             runInFlight,
             runIndexById,
             runTotal,
+            onOpenLayer: onOpenLayer || null,
+            layerSummaries: layerSummaries || {},
         };
-    }, [definition, runSteps, onExecuteStep, executingStepId, runInFlight, editable]);
+    }, [definition, runSteps, onExecuteStep, executingStepId, runInFlight, editable, onOpenLayer, layerSummaries]);
 
     // Quick-add "+" callback only fires in editable mode — there's no
     // point rendering the button on a read-only canvas where structural
@@ -301,8 +337,16 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
         if (existing.some(e => e.from === source && e.to === target)) return; // dedupe
         if (createsCycle(definition, source, target)) return;
         const nextEdges = [...existing, { from: source, to: target }];
-        onDefinitionChange?.(seedPositions({ ...definition, edges: nextEdges }));
-    }, [definition, editable, structuralEditsBlocked, onDefinitionChange]);
+        // Compute against the def WITH the new edge so the target sees its
+        // new upstream source, then auto-map its still-empty inputs.
+        let nextDef = seedPositions({ ...definition, edges: nextEdges });
+        if (autoMapEnabled && catalog) {
+            const { definition: mapped, mappedKeys, forEachEnabled } = applyAutoMapToStep(nextDef, target, catalog);
+            nextDef = mapped;
+            if (mappedKeys.length || forEachEnabled) onAutoMapped?.(target, mappedKeys.length, forEachEnabled);
+        }
+        onDefinitionChange?.(nextDef);
+    }, [definition, editable, structuralEditsBlocked, onDefinitionChange, autoMapEnabled, catalog, onAutoMapped]);
 
     /**
      * When the user drags a connection handle but releases over the empty
@@ -337,6 +381,27 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
         onDefinitionChange?.(seedPositions({ ...definition, edges: nextEdges }));
     }, [definition, editable, structuralEditsBlocked, onDefinitionChange]);
 
+    // "×" button on an edge — remove just that connection.
+    const onEdgeDeleteClick = useCallback(({ source, target }) => {
+        if (!editable || structuralEditsBlocked || !source || !target) return;
+        const nextEdges = (definition.edges || []).filter(e => !(e.from === source && e.to === target));
+        onDefinitionChange?.(seedPositions({ ...definition, edges: nextEdges }));
+    }, [definition, editable, structuralEditsBlocked, onDefinitionChange]);
+
+    // "+" button on an edge — insert a step BETWEEN source and target. We
+    // hand the parent both ends + a midpoint position so it can open the
+    // palette; on pick it splices the new node in (source→new→target) and
+    // drops the original source→target edge.
+    const onEdgeInsertClick = useCallback(({ source, target }) => {
+        if (!editable || structuralEditsBlocked || !source || !target || !onRequestInsertOnEdge) return;
+        const a = rf.getNode?.(source);
+        const b = rf.getNode?.(target);
+        const position = (a?.position && b?.position)
+            ? { x: (a.position.x + b.position.x) / 2, y: (a.position.y + b.position.y) / 2 }
+            : null;
+        onRequestInsertOnEdge({ sourceId: source, targetId: target, position });
+    }, [editable, structuralEditsBlocked, onRequestInsertOnEdge, rf]);
+
     const onNodesDelete = useCallback((deleted) => {
         if (!editable || structuralEditsBlocked) return;
         if (!deleted || deleted.length === 0) return;
@@ -355,6 +420,17 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
         event.dataTransfer.dropEffect = 'move';
     }, [editable, structuralEditsBlocked]);
 
+    /**
+     * Double-click on a call_layer node drills into the flowlet's canvas.
+     * (zoomOnDoubleClick is disabled on the editable canvas below so the
+     * gesture doesn't also zoom.)
+     */
+    const onNodeDoubleClick = useCallback((_evt, node) => {
+        if (!onOpenLayer || !node?.id) return;
+        const step = (definition?.steps || []).find(s => s.id === node.id);
+        if (step?.type === 'call_layer' && step.layerKey) onOpenLayer(step.layerKey);
+    }, [definition, onOpenLayer]);
+
     const onDrop = useCallback((event) => {
         if (!editable || structuralEditsBlocked) return;
         event.preventDefault();
@@ -370,16 +446,29 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
             : { x: event.clientX - (bounds?.left || 0), y: event.clientY - (bounds?.top || 0) };
 
         onDefinitionChange?.(applyAddNode(definition, payload, point));
-    }, [editable, structuralEditsBlocked, definition, onDefinitionChange, rf]);
+        onStepAdded?.(payload, null); // drag-drop has no explicit source step
+    }, [editable, structuralEditsBlocked, definition, onDefinitionChange, onStepAdded, rf]);
 
     // Animate edges whose source has finished but whose target is still
     // running — gives the n8n-style "data is flowing" feedback during a
     // live run. Also flash success→success edges briefly so users see
     // each segment of the DAG light up in turn. Computed BEFORE the
     // early-return below so the hook order stays stable.
+    // Attach the edge-action callbacks + editable flag so each edge can
+    // render its hover "+"/"×" controls. Done in a first pass so it applies
+    // whether or not a run is in flight.
+    const allowEdgeEdits = editable && !structuralEditsBlocked;
+    const edgesWithControls = useMemo(() => {
+        if (!allowEdgeEdits) return edges;
+        return edges.map((e) => ({
+            ...e,
+            data: { ...(e.data || {}), editable: true, onInsert: onEdgeInsertClick, onDelete: onEdgeDeleteClick },
+        }));
+    }, [edges, allowEdgeEdits, onEdgeInsertClick, onEdgeDeleteClick]);
+
     const decoratedEdges = useMemo(() => {
-        if (!runInFlight && (runSteps || []).length === 0) return edges;
-        return edges.map((e) => {
+        if (!runInFlight && (runSteps || []).length === 0) return edgesWithControls;
+        return edgesWithControls.map((e) => {
             const src = runByStep.get(e.source);
             const tgt = runByStep.get(e.target);
             const srcDone = src?.status === 'success' || src?.status === 'pinned';
@@ -397,22 +486,16 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
             }
             return e;
         });
-    }, [edges, runByStep, runInFlight, runSteps]);
+    }, [edgesWithControls, runByStep, runInFlight, runSteps]);
 
     if (!definition || !definition.trigger) {
         return (
             <div className="w-full h-full flex flex-col items-center justify-center text-center px-6">
                 <div className="text-sm font-medium text-[var(--text-primary)] mb-1">Start with a trigger</div>
-                <div className="text-xs text-[var(--text-tertiary)] mb-4 max-w-xs">
-                    Every workflow begins with a trigger — pick how this automation should be kicked off.
+                <div className="text-xs text-[var(--text-tertiary)] max-w-xs">
+                    Every workflow begins with a trigger — pick how this automation
+                    should be kicked off from the bar above.
                 </div>
-                <button
-                    type="button"
-                    onClick={() => onRequestOpenPalette?.()}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium bg-[var(--accent)] text-white hover:opacity-90"
-                >
-                    <Plus size={14} /> Choose a trigger
-                </button>
             </div>
         );
     }
@@ -441,9 +524,12 @@ const DiagramPaneInner = forwardRef(function DiagramPaneInner({
                 panOnDrag={interactive}
                 zoomOnScroll={interactive}
                 zoomOnPinch={interactive}
-                zoomOnDoubleClick={interactive}
+                // Editable canvas reserves double-click for flowlet drill-in;
+                // zooming on the same gesture would fight the navigation.
+                zoomOnDoubleClick={interactive && !editable}
                 proOptions={{ hideAttribution: true }}
                 onNodeClick={interactive ? ((_evt, node) => onNodeClick?.(node.id)) : undefined}
+                onNodeDoubleClick={interactive ? onNodeDoubleClick : undefined}
                 nodesDraggable={allowDrag}
                 nodesConnectable={allowConnect}
                 elementsSelectable={interactive}
@@ -505,6 +591,10 @@ function newStepId(kind) {
  */
 export function buildStepFromPayload(payload, position) {
     if (!payload || !payload.kind) return null;
+    // 'create_layer' is a palette meta-action handled by BuildTab's
+    // handleAddNode (create flowlet + insert call_layer + drill in) — it is
+    // not a step. Dropping it on the canvas is a no-op.
+    if (payload.kind === 'create_layer') return null;
     if (payload.kind === 'trigger') {
         // Shape mirrors server-side emptyDefinition() in
         // server/automation/builderTools.js — the validator requires
@@ -532,6 +622,12 @@ export function buildStepFromPayload(payload, position) {
         baseStep.tool = payload.tool || '';
         baseStep.label = payload.label || payload.tool || 'Integration';
         baseStep.inputs = {};
+        // appId lets the inspector list sibling operations of the same app
+        // (the single-node operation switcher); sideEffect (from the catalog,
+        // authoritative over the node's name heuristic) drives the ⚡ badge
+        // and dry-run skipping. Both are optional for older drag payloads.
+        if (payload.appId) baseStep.appId = payload.appId;
+        if (payload.sideEffect != null) baseStep.sideEffect = payload.sideEffect;
     } else if (payload.kind === 'ai_step') {
         baseStep.prompt = 'Describe what the AI should do here.';
         baseStep.modelTier = 'auto';
@@ -594,6 +690,25 @@ export function buildStepFromPayload(payload, position) {
         baseStep.field = 'amount';
         baseStep.op = 'sum';
         baseStep.label = payload.label || 'Summarize';
+    } else if (payload.kind === 'call_layer') {
+        // Inline flowlets: the step only carries the flowlet key — input/output
+        // contracts derive live from definition.layers[layerKey] via
+        // getLayerContract (no denormalised copies, no version pinning).
+        baseStep.layerKey = payload.layerKey || '';
+        baseStep.label = payload.label || 'Flowlet';
+        baseStep.inputs = {};
+    } else if (payload.kind === 'call_block') {
+        // Reusable Steps: the step carries the external Step's id; its input /
+        // output contract derives live from the Steps catalog (no version pin).
+        baseStep.blockId = payload.blockId || '';
+        baseStep.label = payload.label || 'Step';
+        // Seed the node's symbol from the source Step so it reads the same on
+        // the canvas; the user can override it in the inspector.
+        if (payload.icon) baseStep.icon = payload.icon;
+        baseStep.inputs = {};
+    } else if (payload.kind === 'layer_output') {
+        baseStep.fields = {};
+        baseStep.label = payload.label || 'Return';
     }
     return baseStep;
 }

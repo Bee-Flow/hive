@@ -7,7 +7,7 @@ const EFFORT_OPTIONS = [
     { value: 'low', label: 'Low', desc: 'Quick reasoning' },
     { value: 'medium', label: 'Medium', desc: 'Default — balanced' },
     { value: 'high', label: 'High', desc: 'Deeper, slower' },
-    { value: 'xhigh', label: 'Extreme', desc: 'Claude Opus 4.7 only' },
+    { value: 'xhigh', label: 'Extreme', desc: 'Maximum reasoning depth' },
 ];
 
 const STORAGE_KEY = 'reasoningEffort';

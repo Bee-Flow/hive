@@ -1,7 +1,8 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import beeFlowLogo from '../assets/bee-flow-logo.svg';
+import { API_BASE } from '../utils/helpers';
 
 // Self-contained public legal page. Renders a markdown source string with a
 // minimal header/footer that doesn't depend on the CMS data shape — so these
@@ -19,12 +20,55 @@ const BRAND = {
     soft: '#FAFAFA',
 };
 
-export default function LegalPage({ title, source, lastUpdated }) {
+// Resolve the display locale: explicit ?locale → the visitor's stored choice
+// (shared with the app i18n picker) → browser language → English. Mirrors the
+// precedence used by RootPathGate in App.jsx.
+function resolveLocale() {
+    try {
+        const params = new URLSearchParams(window.location.search);
+        let stored = null;
+        try { stored = localStorage.getItem('beeflow_locale'); } catch { /* ignore */ }
+        return (params.get('locale') || stored || (navigator.language || 'en').split('-')[0] || 'en').toLowerCase();
+    } catch { return 'en'; }
+}
+
+export default function LegalPage({ docId, title, source, lastUpdated }) {
+    // doc = { markdown, title, lastUpdated, isTranslation, locale, version } once fetched.
+    const [doc, setDoc] = useState(null);
+    const [loaded, setLoaded] = useState(false);
+
+    // Fetch the localized document (English-authoritative). Falls back to the
+    // bundled English `source` prop if the API is unreachable, so the page —
+    // which must stay resolvable for Google's OAuth consent screen — never breaks.
+    useEffect(() => {
+        let cancelled = false;
+        if (!docId) { setLoaded(true); return; }
+        const locale = resolveLocale();
+        fetch(`${API_BASE}/api/languages/public/legal/${docId}/${encodeURIComponent(locale)}`)
+            .then(r => (r.ok ? r.json() : Promise.reject(new Error('legal fetch failed'))))
+            .then(data => { if (!cancelled) { setDoc(data); setLoaded(true); } })
+            .catch(() => { if (!cancelled) setLoaded(true); });
+        return () => { cancelled = true; };
+    }, [docId]);
+
+    const effectiveTitle = (doc && doc.title) || title;
+    const effectiveMarkdown = (doc && doc.markdown) || source || '';
+    const effectiveUpdated = (doc && doc.lastUpdated) || lastUpdated;
+    const isTranslation = !!(doc && doc.isTranslation);
+
+    const enHref = (() => {
+        try {
+            const u = new URL(window.location.href);
+            u.searchParams.set('locale', 'en');
+            return u.pathname + u.search;
+        } catch { return '?locale=en'; }
+    })();
+
     useEffect(() => {
         const prev = document.title;
-        document.title = `${title} — Bee Flow`;
+        document.title = `${effectiveTitle} — Bee Flow`;
         return () => { document.title = prev; };
-    }, [title]);
+    }, [effectiveTitle]);
 
     return (
         <div style={pageStyle}>
@@ -37,16 +81,30 @@ export default function LegalPage({ title, source, lastUpdated }) {
                         style={{ height: 28, width: 'auto' }}
                     />
                 </a>
-                <a href="/app" style={backLinkStyle}>Back to app →</a>
+                <div style={headerActions}>
+                    <button type="button" onClick={() => window.print()} style={printLinkStyle} className="legal-print-hide">
+                        Download / Print
+                    </button>
+                    <a href="/app" style={backLinkStyle}>Back to app →</a>
+                </div>
             </header>
             <main className="legal-content" style={mainStyle}>
-                <h1 style={titleStyle}>{title}</h1>
-                {lastUpdated ? (
-                    <p style={caption}>Last updated: {lastUpdated}</p>
+                <h1 style={titleStyle}>{effectiveTitle}</h1>
+                {effectiveUpdated ? (
+                    <p style={caption}>Last updated: {effectiveUpdated}</p>
                 ) : null}
-                <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {source}
-                </ReactMarkdown>
+                {isTranslation ? (
+                    <div style={translationBanner} className="legal-print-hide">
+                        This is a machine translation provided for your convenience. The{' '}
+                        <a href={enHref} style={{ color: BRAND.text, fontWeight: 600 }}>English version</a>{' '}
+                        is the authoritative, legally binding text.
+                    </div>
+                ) : null}
+                {(loaded || effectiveMarkdown) ? (
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                        {effectiveMarkdown}
+                    </ReactMarkdown>
+                ) : null}
             </main>
             <footer style={footerStyle}>
                 <div style={footerInner}>
@@ -56,6 +114,8 @@ export default function LegalPage({ title, source, lastUpdated }) {
                     <nav style={footerNav}>
                         <a href="/privacy" style={footerLinkStyle}>Privacy</a>
                         <a href="/terms" style={footerLinkStyle}>Terms</a>
+                        <a href="/legal/cookies" style={footerLinkStyle}>Cookies</a>
+                        <a href="/legal/imprint" style={footerLinkStyle}>Imprint</a>
                         <a href="/app" style={footerLinkStyle}>App</a>
                     </nav>
                 </div>
@@ -94,6 +154,34 @@ const backLinkStyle = {
     textDecoration: 'none',
     fontWeight: 600,
     fontSize: 14,
+};
+
+const headerActions = {
+    display: 'flex',
+    alignItems: 'center',
+    gap: 16,
+};
+
+const printLinkStyle = {
+    background: 'none',
+    border: 'none',
+    padding: 0,
+    cursor: 'pointer',
+    color: BRAND.muted,
+    fontWeight: 600,
+    fontSize: 14,
+    fontFamily: 'inherit',
+};
+
+const translationBanner = {
+    margin: '0 0 28px',
+    padding: '12px 16px',
+    border: `1px solid ${BRAND.border}`,
+    borderLeft: `4px solid ${BRAND.primary}`,
+    background: '#FFF8EC',
+    borderRadius: 4,
+    fontSize: 14,
+    color: BRAND.text,
 };
 
 const mainStyle = {
@@ -215,5 +303,8 @@ const cssRules = `
     .legal-content h1 { font-size: 28px !important; }
     .legal-content h2 { font-size: 20px; }
     .legal-content { font-size: 15px; }
+}
+@media print {
+    .legal-print-hide { display: none !important; }
 }
 `;

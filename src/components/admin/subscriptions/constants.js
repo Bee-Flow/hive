@@ -1,4 +1,5 @@
 import { Package, Building2, KeyRound, ShieldCheck, Tag, CreditCard, ScrollText } from 'lucide-react';
+import { FEATURE_CATALOG } from '../../../shared/featureCatalog';
 
 export const SECTIONS = [
     { id: 'plans',         label: 'Plans',  icon: Package,     accent: 'blue' },
@@ -10,16 +11,9 @@ export const SECTIONS = [
     { id: 'audit',         label: 'Audit',  icon: ScrollText,  accent: 'rose' },
 ];
 
-export const FEATURE_OPTIONS = [
-    { id: 'chat',           label: 'Chat' },
-    { id: 'agents',         label: 'Agents' },
-    { id: 'knowledge_base', label: 'Knowledge Base' },
-    { id: 'embed_chat',     label: 'Embed Chat' },
-    { id: 'direct_chat',    label: 'Direct Chat' },
-    { id: 'workspace',      label: 'Workspace' },
-    { id: 'notebooks',      label: 'Notebooks' },
-    { id: 'encryption',     label: 'Encryption (PIN)' },
-];
+// Re-exported from the shared, framework-free catalog so the admin plan
+// editor and the marketing pricing block share one id→label source.
+export const FEATURE_OPTIONS = FEATURE_CATALOG;
 
 export const LIMIT_FIELDS = [
     { key: 'max_cost_per_month',      label: 'Cost cap / month (€)',  type: 'currency' },

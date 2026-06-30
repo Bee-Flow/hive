@@ -1,110 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { API_BASE, authFetch } from '../../utils/helpers';
-import { Search, Plus, Check, ChevronDown, RefreshCw, Trash2, ToggleLeft, ToggleRight, Loader2, Plug, ExternalLink, Globe, Terminal, X, Wrench } from 'lucide-react';
+import { Search, Plus, Check, ChevronDown, RefreshCw, Trash2, ToggleLeft, ToggleRight, Loader2, Plug, ExternalLink, Globe, Terminal, X, Wrench, Sparkles, Compass, ShieldCheck } from 'lucide-react';
+import { MCP_REGISTRY, CATEGORIES } from '../../config/mcpCatalog';
+import { McpLogo, bestLogoUrl } from '../../utils/mcpLogos';
 
-// ─── Curated MCP Server Registry ──────────────────────────────────
-const MCP_REGISTRY = [
-    // ── Development ──────────────────────────────────────────────────
-    { id: 'github', name: 'GitHub', description: 'Repository management, issues, PRs, code search, and CI/CD.', icon: '🐙', category: 'development', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-github'], required_credentials: [{ key: 'GITHUB_PERSONAL_ACCESS_TOKEN', label: 'GitHub PAT' }] },
-    { id: 'gitlab', name: 'GitLab', description: 'Repository management, merge requests, issues, and pipelines.', icon: '🦊', category: 'development', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-gitlab'], required_credentials: [{ key: 'GITLAB_PERSONAL_ACCESS_TOKEN', label: 'GitLab PAT' }, { key: 'GITLAB_API_URL', label: 'GitLab API URL' }] },
-    { id: 'bitbucket', name: 'Bitbucket', description: 'Atlassian Bitbucket — repos, pull requests, and code review.', icon: '🪣', category: 'development', transport: 'stdio', command: 'npx', args: ['-y', '@aashari/mcp-server-atlassian-bitbucket'], required_credentials: [{ key: 'ATLASSIAN_SITE_NAME', label: 'Atlassian Site' }, { key: 'ATLASSIAN_USER_EMAIL', label: 'Atlassian Email' }, { key: 'ATLASSIAN_API_TOKEN', label: 'Atlassian API Token' }] },
-    { id: 'git', name: 'Git', description: 'Read, search, and manipulate local Git repositories.', icon: '📦', category: 'development', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-git'] },
-    { id: 'filesystem', name: 'Filesystem', description: 'Secure file operations with configurable access controls.', icon: '📁', category: 'development', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-filesystem', '/tmp'] },
-    { id: 'sentry', name: 'Sentry', description: 'Access error tracking, issues, and performance data.', icon: '🐛', category: 'development', transport: 'stdio', command: 'npx', args: ['-y', '@sentry/mcp-server'], required_credentials: [{ key: 'SENTRY_AUTH_TOKEN', label: 'Sentry Auth Token' }] },
-    { id: 'playwright', name: 'Playwright', description: 'Browser automation, testing, screenshots, and UI interaction.', icon: '🎭', category: 'development', transport: 'stdio', command: 'npx', args: ['-y', '@playwright/mcp'] },
-    { id: 'repomix', name: 'Repomix', description: 'Pack entire codebases into AI-friendly formats for analysis.', icon: '📋', category: 'development', transport: 'stdio', command: 'npx', args: ['-y', 'repomix', '--mcp'] },
-    { id: 'npm_search', name: 'NPM Search', description: 'Search and discover npm packages with detailed info.', icon: '📦', category: 'development', transport: 'stdio', command: 'npx', args: ['-y', 'npm-search-mcp-server'] },
-    { id: 'chrome_devtools', name: 'Chrome DevTools', description: 'Debug, audit performance, and inspect web pages via Chrome.', icon: '🔧', category: 'development', transport: 'stdio', command: 'npx', args: ['-y', 'chrome-devtools-mcp@latest'] },
-    { id: 'magic_ui', name: '21st Magic', description: 'Create crafted UI components inspired by top design engineers.', icon: '✨', category: 'development', transport: 'stdio', command: 'npx', args: ['-y', '@21st-dev/magic-mcp'], required_credentials: [{ key: 'TWENTYFIRST_API_KEY', label: '21st.dev API Key' }] },
+// Mirror the server-side id derivation (config.js: name → id) so we can match a
+// browse/registry card (no id yet) against installed servers by name.
+const slugify = (name) => String(name || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
 
-    // ── Communication ────────────────────────────────────────────────
-    { id: 'slack', name: 'Slack', description: 'Send messages, manage channels, and search conversations.', icon: '💬', category: 'communication', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-slack'], required_credentials: [{ key: 'SLACK_BOT_TOKEN', label: 'Slack Bot Token' }, { key: 'SLACK_TEAM_ID', label: 'Slack Team ID' }] },
-    { id: 'discord', name: 'Discord', description: '50+ tools for Discord server management, messages, and channels.', icon: '🎮', category: 'communication', transport: 'stdio', command: 'npx', args: ['-y', '@scarecr0w12/discord-mcp'], required_credentials: [{ key: 'DISCORD_BOT_TOKEN', label: 'Discord Bot Token' }] },
-    { id: 'telegram', name: 'Telegram', description: 'Read/send messages, manage groups, and interact via Telegram.', icon: '✈️', category: 'communication', transport: 'stdio', command: 'npx', args: ['-y', '@chaindead/telegram-mcp'], required_credentials: [{ key: 'TELEGRAM_API_ID', label: 'Telegram API ID' }, { key: 'TELEGRAM_API_HASH', label: 'Telegram API Hash' }] },
-    { id: 'email', name: 'Email (IMAP)', description: 'Read, search, send, and manage emails across multiple IMAP/SMTP accounts.', icon: '📧', category: 'communication', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-email'], required_credentials: [{ key: 'IMAP_HOST', label: 'IMAP Host' }, { key: 'EMAIL_USER', label: 'Email Address' }, { key: 'EMAIL_PASS', label: 'Email Password' }] },
-    { id: 'twilio', name: 'Twilio', description: 'Send SMS, make calls, and manage communication workflows.', icon: '📱', category: 'communication', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-twilio'], required_credentials: [{ key: 'TWILIO_ACCOUNT_SID', label: 'Account SID' }, { key: 'TWILIO_AUTH_TOKEN', label: 'Auth Token' }] },
-
-    // ── Productivity & Project Management ─────────────────────────────
-    { id: 'google_drive', name: 'Google Drive', description: 'Access, search, and manage Google Drive files and folders.', icon: '📂', category: 'productivity', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-gdrive'] },
-    { id: 'notion', name: 'Notion', description: 'Read, create, and search Notion pages and databases.', icon: '📝', category: 'productivity', transport: 'stdio', command: 'npx', args: ['-y', '@notionhq/mcp-server'], required_credentials: [{ key: 'NOTION_API_KEY', label: 'Notion Integration Token' }] },
-    { id: 'linear', name: 'Linear', description: 'Issue tracking, project management, and team workflows.', icon: '📐', category: 'productivity', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-linear'], required_credentials: [{ key: 'LINEAR_API_KEY', label: 'Linear API Key' }] },
-    { id: 'jira', name: 'Jira', description: 'Manage issues, search, handle comments, and workflow transitions.', icon: '🔵', category: 'productivity', transport: 'stdio', command: 'npx', args: ['-y', '@aashari/mcp-server-atlassian-jira'], required_credentials: [{ key: 'ATLASSIAN_SITE_NAME', label: 'Atlassian Site' }, { key: 'ATLASSIAN_USER_EMAIL', label: 'Atlassian Email' }, { key: 'ATLASSIAN_API_TOKEN', label: 'Atlassian API Token' }] },
-    { id: 'confluence', name: 'Confluence', description: 'Search, read, and manage Confluence pages and spaces.', icon: '📘', category: 'productivity', transport: 'stdio', command: 'npx', args: ['-y', '@aashari/mcp-server-atlassian-confluence'], required_credentials: [{ key: 'ATLASSIAN_SITE_NAME', label: 'Atlassian Site' }, { key: 'ATLASSIAN_USER_EMAIL', label: 'Atlassian Email' }, { key: 'ATLASSIAN_API_TOKEN', label: 'Atlassian API Token' }] },
-    { id: 'trello', name: 'Trello', description: 'Create/move cards, update boards, and track activity.', icon: '📋', category: 'productivity', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-trello'], required_credentials: [{ key: 'TRELLO_API_KEY', label: 'Trello API Key' }, { key: 'TRELLO_TOKEN', label: 'Trello Token' }] },
-    { id: 'todoist', name: 'Todoist', description: 'Task management, project organization, and productivity tracking.', icon: '✅', category: 'productivity', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-todoist'], required_credentials: [{ key: 'TODOIST_API_TOKEN', label: 'Todoist API Token' }] },
-    { id: 'asana', name: 'Asana', description: 'Manage tasks, projects, workspaces, and team assignments.', icon: '🎯', category: 'productivity', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-asana'], required_credentials: [{ key: 'ASANA_ACCESS_TOKEN', label: 'Asana Access Token' }] },
-    { id: 'google_calendar', name: 'Google Calendar', description: 'View, create, and manage calendar events and schedules.', icon: '📅', category: 'productivity', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-google-calendar'] },
-    { id: 'google_maps', name: 'Google Maps', description: 'Geocoding, directions, place search, and distance calculations.', icon: '🗺️', category: 'productivity', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-google-maps'], required_credentials: [{ key: 'GOOGLE_MAPS_API_KEY', label: 'Google Maps API Key' }] },
-    { id: 'google_workspace', name: 'Google Workspace', description: '23 tools for Drive, Sheets, Calendar, Docs, and Gmail.', icon: '🏢', category: 'productivity', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-google-workspace'] },
-    { id: 'airtable', name: 'Airtable', description: 'Access, query, and manage Airtable bases, tables, and records.', icon: '📊', category: 'productivity', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-airtable'], required_credentials: [{ key: 'AIRTABLE_API_KEY', label: 'Airtable API Key' }] },
-    { id: 'figma', name: 'Figma', description: 'Access design files, components, styles, and variables.', icon: '🎨', category: 'productivity', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-figma'], required_credentials: [{ key: 'FIGMA_ACCESS_TOKEN', label: 'Figma Access Token' }] },
-
-    // ── Data & Databases ─────────────────────────────────────────────
-    { id: 'postgres', name: 'PostgreSQL', description: 'Query PostgreSQL databases with read-only access.', icon: '🐘', category: 'data', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-postgres'], required_credentials: [{ key: 'POSTGRES_CONNECTION_STRING', label: 'PostgreSQL Connection String' }] },
-    { id: 'sqlite', name: 'SQLite', description: 'Read and query local SQLite databases.', icon: '🗄️', category: 'data', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-sqlite'] },
-    { id: 'redis_mcp', name: 'Redis', description: 'Interact with Redis key-value store, caching, and pub/sub.', icon: '🔴', category: 'data', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-redis'], required_credentials: [{ key: 'REDIS_URL', label: 'Redis URL' }] },
-    { id: 'mysql', name: 'MySQL', description: 'Query MySQL and MariaDB databases with read access.', icon: '🐬', category: 'data', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-mysql'], required_credentials: [{ key: 'MYSQL_HOST', label: 'MySQL Host' }, { key: 'MYSQL_USER', label: 'MySQL User' }, { key: 'MYSQL_PASSWORD', label: 'MySQL Password' }] },
-    { id: 'mongodb', name: 'MongoDB', description: 'Query and manage MongoDB collections and documents.', icon: '🍃', category: 'data', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-mongodb'], required_credentials: [{ key: 'MONGODB_URI', label: 'MongoDB Connection URI' }] },
-    { id: 'supabase', name: 'Supabase', description: 'SQL queries, database exploration, and Supabase management.', icon: '⚡', category: 'data', transport: 'stdio', command: 'npx', args: ['-y', '@supabase/mcp-server-supabase'], required_credentials: [{ key: 'SUPABASE_URL', label: 'Supabase URL' }, { key: 'SUPABASE_SERVICE_KEY', label: 'Service Key' }] },
-    { id: 'clickhouse', name: 'ClickHouse', description: 'Query and inspect ClickHouse analytical databases.', icon: '🔶', category: 'data', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-clickhouse'], required_credentials: [{ key: 'CLICKHOUSE_HOST', label: 'ClickHouse Host' }, { key: 'CLICKHOUSE_PASSWORD', label: 'ClickHouse Password' }] },
-    { id: 'neo4j', name: 'Neo4j', description: 'Query and visualize graph databases with Cypher.', icon: '🕸️', category: 'data', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-neo4j'], required_credentials: [{ key: 'NEO4J_URI', label: 'Neo4j URI' }, { key: 'NEO4J_USER', label: 'Neo4j User' }, { key: 'NEO4J_PASSWORD', label: 'Neo4j Password' }] },
-
-    // ── Search & Web ─────────────────────────────────────────────────
-    { id: 'brave_search', name: 'Brave Search', description: 'Web and local search using Brave Search API.', icon: '🦁', category: 'search', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-brave-search'], required_credentials: [{ key: 'BRAVE_API_KEY', label: 'Brave API Key' }] },
-    { id: 'fetch', name: 'Fetch', description: 'Fetch and convert web content for LLM consumption.', icon: '🌐', category: 'search', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-fetch'] },
-    { id: 'puppeteer', name: 'Puppeteer', description: 'Browser automation, screenshots, and web scraping.', icon: '🕷️', category: 'search', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-puppeteer'] },
-    { id: 'exa', name: 'Exa', description: 'Advanced AI-powered web search with up-to-date results.', icon: '🔎', category: 'search', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-exa'], required_credentials: [{ key: 'EXA_API_KEY', label: 'Exa API Key' }] },
-    { id: 'context7', name: 'Context7', description: 'Up-to-date code documentation for LLMs and AI editors.', icon: '📚', category: 'search', transport: 'stdio', command: 'npx', args: ['-y', '@upstash/context7-mcp'] },
-    { id: 'kagi', name: 'Kagi Search', description: 'Premium, ad-free web search via Kagi API.', icon: '🔮', category: 'search', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-kagi'], required_credentials: [{ key: 'KAGI_API_KEY', label: 'Kagi API Key' }] },
-    { id: 'arxiv', name: 'ArXiv', description: 'Search and read scientific research papers from ArXiv.', icon: '📄', category: 'search', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-arxiv'] },
-
-    // ── AI & Tools ───────────────────────────────────────────────────
-    { id: 'memory', name: 'Memory', description: 'Persistent knowledge graph memory for AI conversations.', icon: '🧠', category: 'ai', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-memory'] },
-    { id: 'sequential_thinking', name: 'Sequential Thinking', description: 'Dynamic problem-solving through structured thought sequences.', icon: '💭', category: 'ai', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-sequentialthinking'] },
-    { id: 'everart', name: 'EverArt', description: 'AI image generation using multiple models and styles.', icon: '🎨', category: 'ai', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-everart'], required_credentials: [{ key: 'EVERART_API_KEY', label: 'EverArt API Key' }] },
-    { id: 'huggingface', name: 'HuggingFace', description: 'Search models, datasets, and Spaces on HuggingFace Hub.', icon: '🤗', category: 'ai', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-huggingface'], required_credentials: [{ key: 'HF_TOKEN', label: 'HuggingFace Token' }] },
-    { id: 'langfuse', name: 'Langfuse', description: 'LLM observability — traces, sessions, prompts, and debugging.', icon: '📡', category: 'ai', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-langfuse'], required_credentials: [{ key: 'LANGFUSE_PUBLIC_KEY', label: 'Langfuse Public Key' }, { key: 'LANGFUSE_SECRET_KEY', label: 'Langfuse Secret Key' }] },
-    { id: 'everything', name: 'MCP Everything', description: 'Test server demonstrating all MCP protocol features.', icon: '🧪', category: 'ai', transport: 'stdio', command: 'npx', args: ['-y', '@modelcontextprotocol/server-everything'] },
-
-    // ── DevOps & Infrastructure ──────────────────────────────────────
-    { id: 'docker', name: 'Docker', description: 'Manage containers, images, networks, and volumes.', icon: '🐳', category: 'devops', transport: 'stdio', command: 'npx', args: ['-y', '@thelord/mcp-server-docker-npx'] },
-    { id: 'kubernetes', name: 'Kubernetes', description: 'Manage K8s clusters, pods, deployments, and services.', icon: '☸️', category: 'devops', transport: 'stdio', command: 'npx', args: ['-y', 'mcp-server-kubernetes'] },
-    { id: 'aws_kb', name: 'AWS KB Retrieval', description: 'Query AWS Knowledge Bases for RAG-style retrieval.', icon: '☁️', category: 'devops', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-aws-kb-retrieval'], required_credentials: [{ key: 'AWS_ACCESS_KEY_ID', label: 'AWS Access Key' }, { key: 'AWS_SECRET_ACCESS_KEY', label: 'AWS Secret Key' }] },
-    { id: 'cloudflare', name: 'Cloudflare', description: 'Manage Workers, KV, R2, and D1 via Cloudflare API.', icon: '⚡', category: 'devops', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-cloudflare'], required_credentials: [{ key: 'CLOUDFLARE_API_TOKEN', label: 'Cloudflare API Token' }] },
-    { id: 'vercel', name: 'Vercel', description: 'Manage deployments, domains, and environment variables.', icon: '▲', category: 'devops', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-vercel'], required_credentials: [{ key: 'VERCEL_TOKEN', label: 'Vercel Token' }] },
-    { id: 'github_actions', name: 'GitHub Actions', description: 'Trigger, monitor, and manage CI/CD workflows.', icon: '🔄', category: 'devops', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-github-actions'], required_credentials: [{ key: 'GITHUB_PERSONAL_ACCESS_TOKEN', label: 'GitHub PAT' }] },
-    { id: 'terraform', name: 'Terraform', description: 'Infrastructure as code — plan, apply, and manage resources.', icon: '🏗️', category: 'devops', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-terraform'] },
-
-    // ── Finance & Commerce ───────────────────────────────────────────
-    { id: 'stripe', name: 'Stripe', description: 'Official Stripe integration for payments, subscriptions, and invoices.', icon: '💳', category: 'finance', transport: 'stdio', command: 'npx', args: ['-y', '@stripe/mcp'], required_credentials: [{ key: 'STRIPE_SECRET_KEY', label: 'Stripe Secret Key' }] },
-    { id: 'shopify', name: 'Shopify', description: 'Manage products, orders, customers, and store data.', icon: '🛒', category: 'finance', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-shopify'], required_credentials: [{ key: 'SHOPIFY_ACCESS_TOKEN', label: 'Shopify Access Token' }, { key: 'SHOPIFY_STORE_URL', label: 'Store URL' }] },
-    { id: 'coinmarket', name: 'CoinMarketCap', description: 'Cryptocurrency listings, prices, and market data.', icon: '₿', category: 'finance', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-coinmarket'], required_credentials: [{ key: 'COINMARKETCAP_API_KEY', label: 'CoinMarketCap API Key' }] },
-
-    // ── Analytics & Monitoring ───────────────────────────────────────
-    { id: 'posthog', name: 'PostHog', description: 'Product analytics, user tracking, and A/B testing data.', icon: '🦔', category: 'analytics', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-posthog'], required_credentials: [{ key: 'POSTHOG_API_KEY', label: 'PostHog API Key' }, { key: 'POSTHOG_HOST', label: 'PostHog Host' }] },
-    { id: 'grafana', name: 'Grafana', description: 'Search dashboards, investigate incidents, and query data sources.', icon: '📊', category: 'analytics', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-grafana'], required_credentials: [{ key: 'GRAFANA_URL', label: 'Grafana URL' }, { key: 'GRAFANA_API_KEY', label: 'Grafana API Key' }] },
-    { id: 'datadog', name: 'Datadog', description: 'Monitor infrastructure, APM, logs, and metrics.', icon: '🐕', category: 'analytics', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-datadog'], required_credentials: [{ key: 'DD_API_KEY', label: 'Datadog API Key' }, { key: 'DD_APP_KEY', label: 'Datadog App Key' }] },
-
-    // ── Social Media ─────────────────────────────────────────────────
-    { id: 'twitter', name: 'Twitter / X', description: 'Post tweets, search, read timelines, and manage engagement.', icon: '🐦', category: 'social', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-twitter'], required_credentials: [{ key: 'TWITTER_API_KEY', label: 'Twitter API Key' }, { key: 'TWITTER_API_SECRET', label: 'Twitter API Secret' }] },
-    { id: 'bluesky', name: 'Bluesky', description: 'Post, search, and interact on the Bluesky social network.', icon: '🦋', category: 'social', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-bluesky'], required_credentials: [{ key: 'BLUESKY_HANDLE', label: 'Bluesky Handle' }, { key: 'BLUESKY_APP_PASSWORD', label: 'App Password' }] },
-    { id: 'youtube', name: 'YouTube', description: 'Search videos, fetch transcripts, and analyze channels.', icon: '▶️', category: 'social', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-youtube'], required_credentials: [{ key: 'YOUTUBE_API_KEY', label: 'YouTube API Key' }] },
-    { id: 'reddit', name: 'Reddit', description: 'Browse posts, search content, and analyze subreddit activity.', icon: '🤖', category: 'social', transport: 'stdio', command: 'npx', args: ['-y', '@anthropic/mcp-server-reddit'] },
-];
-
-const CATEGORIES = [
-    { id: 'all', label: 'All', icon: '🔮' },
-    { id: 'development', label: 'Development', icon: '💻' },
-    { id: 'communication', label: 'Communication', icon: '💬' },
-    { id: 'productivity', label: 'Productivity', icon: '📋' },
-    { id: 'data', label: 'Data', icon: '🗄️' },
-    { id: 'search', label: 'Search & Web', icon: '🔍' },
-    { id: 'ai', label: 'AI & Tools', icon: '🤖' },
-    { id: 'devops', label: 'DevOps', icon: '🚀' },
-    { id: 'finance', label: 'Finance', icon: '💳' },
-    { id: 'analytics', label: 'Analytics', icon: '📊' },
-    { id: 'social', label: 'Social', icon: '🌐' },
-];
+// Status → dot colour. 'pending_credentials' (server installed but awaiting the
+// per-user credentials needed to connect) is amber, not red — it isn't an error.
+const statusDotClass = (status) =>
+    status === 'ready' ? 'bg-green-500'
+        : status === 'pending_credentials' ? 'bg-amber-500'
+            : status === 'error' ? 'bg-red-500'
+                : 'bg-gray-500';
 
 export default function McpMarketplace({ setMessage }) {
     // ─── State ──────────────────────────────────────────────────────
@@ -116,6 +26,18 @@ export default function McpMarketplace({ setMessage }) {
     const [installing, setInstalling] = useState(null);
     const [showCustomAdd, setShowCustomAdd] = useState(false);
     const [showInstalled, setShowInstalled] = useState(false);
+
+    // Self-hosted (configurable_url) entries collect the operator's endpoint before install
+    const [configureServer, setConfigureServer] = useState(null);
+    const [configureUrl, setConfigureUrl] = useState('');
+
+    // Featured vs live "Browse all" (official open registry)
+    const [tab, setTab] = useState('featured'); // 'featured' | 'browse'
+    const [browseResults, setBrowseResults] = useState([]);
+    const [browseCursor, setBrowseCursor] = useState(null);
+    const [browseLoading, setBrowseLoading] = useState(false);
+    const [browseError, setBrowseError] = useState(null);
+    const [browseLoaded, setBrowseLoaded] = useState(false);
 
     // Custom server form state
     const [customName, setCustomName] = useState('');
@@ -148,7 +70,11 @@ export default function McpMarketplace({ setMessage }) {
     const installedIds = useMemo(() => new Set(installedServers.map(s => s.id)), [installedServers]);
     const activeCount = useMemo(() => installedServers.filter(s => s.enabled && s.status === 'ready').length, [installedServers]);
 
-    // ─── Filtered Registry ──────────────────────────────────────────
+    // A catalog/registry card counts as installed if its id OR its name-slug matches.
+    const isServerInstalled = (server) => installedIds.has(server.id) || installedIds.has(slugify(server.name));
+    const findInstalled = (server) => installedServers.find(s => s.id === server.id) || installedServers.find(s => s.id === slugify(server.name)) || null;
+
+    // ─── Filtered Featured Registry ─────────────────────────────────
     const filteredRegistry = useMemo(() => {
         let items = MCP_REGISTRY;
         if (activeCategory !== 'all') {
@@ -165,9 +91,46 @@ export default function McpMarketplace({ setMessage }) {
         return items;
     }, [activeCategory, searchQuery]);
 
-    // ─── Install a registry server ──────────────────────────────────
-    const handleInstall = async (server) => {
-        setInstalling(server.id);
+    // ─── Live registry browse (debounced) ───────────────────────────
+    const fetchBrowse = async ({ q, cursor, append }) => {
+        setBrowseLoading(true);
+        setBrowseError(null);
+        try {
+            const params = new URLSearchParams();
+            if (q) params.set('q', q);
+            if (cursor) params.set('cursor', cursor);
+            const res = await authFetch(`${API_BASE}/ai/mcp-registry/search?${params.toString()}`);
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.detail || err.error || 'Registry unavailable');
+            }
+            const data = await res.json();
+            setBrowseResults(prev => append ? [...prev, ...(data.servers || [])] : (data.servers || []));
+            setBrowseCursor(data.nextCursor || null);
+            setBrowseLoaded(true);
+        } catch (e) {
+            setBrowseError(e.message);
+            if (!append) setBrowseResults([]);
+        }
+        setBrowseLoading(false);
+    };
+
+    // Re-query the live registry on tab/search change (debounced 350ms).
+    useEffect(() => {
+        if (tab !== 'browse') return;
+        const handle = setTimeout(() => {
+            fetchBrowse({ q: searchQuery.trim(), cursor: null, append: false });
+        }, 350);
+        return () => clearTimeout(handle);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [tab, searchQuery]);
+
+    // ─── Install a server (featured or registry) ────────────────────
+    // Shared POST. `overrides.url` lets the configure step supply a per-instance
+    // endpoint for self-hosted (configurable_url) servers.
+    const doInstall = async (server, overrides = {}) => {
+        const key = server.id || slugify(server.name);
+        setInstalling(key);
         try {
             const res = await authFetch(`${API_BASE}/ai/mcp-servers`, {
                 method: 'POST',
@@ -178,11 +141,14 @@ export default function McpMarketplace({ setMessage }) {
                     args: server.args || [],
                     required_credentials: server.required_credentials || [],
                     transport: server.transport || 'stdio',
-                    url: server.url || null,
+                    url: overrides.url ?? (server.url || null),
                     category: server.category,
                     description: server.description,
-                    icon: server.icon,
-                    source: 'registry',
+                    // Persist the resolved official logo URL (GitHub org avatar / catalog
+                    // logo) so the Installed panel + entitlements UI show it too; fall back
+                    // to the emoji when no logo resolves.
+                    icon: bestLogoUrl(server) || server.icon,
+                    source: server.source || 'registry',
                 }),
             });
             if (res.ok) {
@@ -197,6 +163,33 @@ export default function McpMarketplace({ setMessage }) {
         }
         setInstalling(null);
         setTimeout(() => setMessage?.(null), 3000);
+    };
+
+    const handleInstall = async (server) => {
+        const key = server.id || slugify(server.name);
+        // Browse-tab cards have no id yet (the server derives it from name). If that
+        // slug already maps to an installed server, installing would overwrite it
+        // (createServer does ON CONFLICT DO UPDATE) — confirm first.
+        if (!server.id && installedIds.has(key)) {
+            if (!confirm(`A server named "${server.name}" is already installed. Overwrite its configuration?`)) return;
+        }
+        // Self-hosted servers ship only a template URL in the catalog — collect the
+        // operator's real endpoint before installing.
+        if (server.configurable_url) {
+            setConfigureServer(server);
+            setConfigureUrl(server.url || '');
+            return;
+        }
+        await doInstall(server);
+    };
+
+    // Confirm the per-instance endpoint for a configurable_url server, then install.
+    const handleConfirmConfigure = async () => {
+        if (!configureServer || !configureUrl.trim()) return;
+        const server = configureServer;
+        setConfigureServer(null);
+        await doInstall(server, { url: configureUrl.trim() });
+        setConfigureUrl('');
     };
 
     // ─── Uninstall ──────────────────────────────────────────────────
@@ -303,6 +296,110 @@ export default function McpMarketplace({ setMessage }) {
     const canTestCustom = customTransport === 'stdio' ? !!customCommand.trim() : !!customUrl.trim();
     const canAddCustom = !!customName.trim() && canTestCustom;
 
+    // ─── Card renderer (shared by Featured + Browse) ────────────────
+    const renderCard = (server) => {
+        const key = server.id || slugify(server.name);
+        const isInstalled = isServerInstalled(server);
+        const isInstalling = installing === key;
+        const installed = isInstalled ? findInstalled(server) : null;
+        const credCount = (server.required_credentials || []).length;
+        const viewOnly = !!server.viewOnly;
+
+        return (
+            <div
+                key={key}
+                className="group rounded-xl border p-4 transition-all hover:shadow-lg hover:border-[var(--accent-primary)] relative"
+                style={{
+                    background: 'var(--bg-secondary)',
+                    borderColor: isInstalled ? 'var(--accent-primary)' : 'var(--border-default)',
+                    opacity: isInstalled ? 0.85 : 1,
+                }}
+            >
+                {/* Installed badge */}
+                {isInstalled && (
+                    <div className="absolute top-3 right-3">
+                        <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-500/15 text-green-500 font-medium">
+                            <Check className="w-3 h-3" /> Installed
+                        </span>
+                    </div>
+                )}
+
+                {/* Icon + Name */}
+                <div className="flex items-start gap-3 mb-2">
+                    <McpLogo server={server} size={32} />
+                    <div className="min-w-0">
+                        <h4 className="text-sm font-semibold truncate flex items-center gap-1.5" style={{ color: 'var(--text-primary)' }}>
+                            {server.name}
+                            {server.verified && <ShieldCheck className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#10b981' }} title="Verified / first-party" />}
+                        </h4>
+                        <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>
+                            {server.transport === 'http' ? '🌐 HTTP' : '💻 Local'}
+                        </span>
+                    </div>
+                </div>
+
+                {/* Description */}
+                <p className="text-xs leading-relaxed mb-3" style={{ color: 'var(--text-secondary)' }}>
+                    {server.description}
+                </p>
+
+                {/* Credentials needed */}
+                {credCount > 0 && (
+                    <div className="text-xs mb-3 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
+                        🔑 {credCount} credential{credCount !== 1 ? 's' : ''} needed
+                    </div>
+                )}
+
+                {/* Install / Status buttons */}
+                <div className="flex items-center gap-2">
+                    {isInstalled ? (
+                        <>
+                            <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
+                                <div className={`w-2 h-2 rounded-full ${statusDotClass(installed?.status)}`} title={installed?.status === 'pending_credentials' ? 'Awaiting credentials' : installed?.status} />
+                                {installed?.tools_cache?.length || 0} tool{(installed?.tools_cache?.length || 0) !== 1 ? 's' : ''}
+                            </div>
+                            <div className="flex-1" />
+                            {installed && (
+                                <>
+                                    <button onClick={() => handleToggle(installed)} className="p-0.5" title={installed?.enabled ? 'Disable' : 'Enable'}>
+                                        {installed?.enabled
+                                            ? <ToggleRight className="w-5 h-5" style={{ color: '#10b981' }} />
+                                            : <ToggleLeft className="w-5 h-5" style={{ color: 'var(--text-muted)' }} />}
+                                    </button>
+                                    <button onClick={() => handleUninstall(installed.id, server.name)}
+                                        className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors" title="Remove">
+                                        <Trash2 className="w-3.5 h-3.5" style={{ color: '#ef4444' }} />
+                                    </button>
+                                </>
+                            )}
+                        </>
+                    ) : viewOnly ? (
+                        <a
+                            href={server.homepage || server.repository || '#'}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="w-full py-2 rounded-lg text-xs font-medium transition-all flex items-center justify-center gap-1.5 border"
+                            style={{ background: 'var(--bg-primary)', color: 'var(--text-secondary)', borderColor: 'var(--border-default)' }}
+                            title="No installable package published — open the source instead"
+                        >
+                            <ExternalLink className="w-3.5 h-3.5" /> View only
+                        </a>
+                    ) : (
+                        <button
+                            onClick={() => handleInstall(server)}
+                            disabled={isInstalling}
+                            className="w-full py-2 rounded-lg text-xs font-medium transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
+                            style={{ background: 'var(--accent-primary)', color: '#fff' }}
+                        >
+                            {isInstalling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
+                            {isInstalling ? 'Installing...' : 'Install'}
+                        </button>
+                    )}
+                </div>
+            </div>
+        );
+    };
+
     if (loading) {
         return (
             <div className="flex items-center justify-center py-20">
@@ -314,6 +411,54 @@ export default function McpMarketplace({ setMessage }) {
     // ─── Render ─────────────────────────────────────────────────────
     return (
         <div className="p-6">
+            {/* Configure per-instance endpoint (self-hosted http servers) */}
+            {configureServer && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={() => setConfigureServer(null)}>
+                    <div className="w-full max-w-md rounded-2xl border overflow-hidden" style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)' }} onClick={e => e.stopPropagation()}>
+                        <div className="px-5 py-3 border-b flex items-center justify-between" style={{ borderColor: 'var(--border-subtle)' }}>
+                            <h3 className="text-sm font-medium flex items-center gap-2" style={{ color: 'var(--text-primary)' }}>
+                                <McpLogo server={configureServer} size={20} /> Configure {configureServer.name}
+                            </h3>
+                            <button onClick={() => setConfigureServer(null)} className="p-1 rounded hover:bg-[var(--bg-tertiary)]">
+                                <X className="w-4 h-4" style={{ color: 'var(--text-muted)' }} />
+                            </button>
+                        </div>
+                        <div className="px-5 py-4 space-y-3">
+                            <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
+                                {configureServer.name} is self-hosted — enter your instance's MCP endpoint, replacing the host and organization with your own.
+                            </p>
+                            <div>
+                                <label className="block text-xs font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>MCP endpoint URL</label>
+                                <input
+                                    value={configureUrl}
+                                    onChange={e => setConfigureUrl(e.target.value)}
+                                    placeholder="https://<your-openobserve-host>/api/<org>/mcp"
+                                    className="w-full px-3 py-2 rounded-lg text-sm border outline-none font-mono"
+                                    style={{ background: 'var(--bg-primary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
+                                    autoFocus
+                                />
+                            </div>
+                            {(configureServer.required_credentials || []).length > 0 && (
+                                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                                    🔑 After installing, each user adds their credentials under Settings → Integrations: {configureServer.required_credentials.map(c => c.label || c.key).join(', ')}.
+                                </p>
+                            )}
+                            <div className="flex items-center justify-end gap-2 pt-1">
+                                <button onClick={() => setConfigureServer(null)}
+                                    className="px-3 py-2 rounded-lg text-sm border"
+                                    style={{ background: 'var(--bg-primary)', color: 'var(--text-secondary)', borderColor: 'var(--border-default)' }}>
+                                    Cancel
+                                </button>
+                                <button onClick={handleConfirmConfigure} disabled={!configureUrl.trim()}
+                                    className="px-4 py-2 rounded-lg text-sm font-medium transition-all disabled:opacity-50 flex items-center gap-1.5"
+                                    style={{ background: 'var(--accent-primary)', color: '#fff' }}>
+                                    <Plus className="w-4 h-4" /> Install
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
             <div className="max-w-5xl mx-auto space-y-6">
 
                 {/* Header */}
@@ -351,6 +496,29 @@ export default function McpMarketplace({ setMessage }) {
                             <Plus className="w-3.5 h-3.5" /> Custom Server
                         </button>
                     </div>
+                </div>
+
+                {/* Featured | Browse all tabs */}
+                <div className="flex gap-1.5">
+                    {[{ id: 'featured', label: 'Featured', Icon: Sparkles }, { id: 'browse', label: 'Browse all', Icon: Compass }].map(tb => (
+                        <button
+                            key={tb.id}
+                            onClick={() => setTab(tb.id)}
+                            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-medium transition-all border"
+                            style={{
+                                background: tab === tb.id ? 'var(--accent-primary)' : 'var(--bg-secondary)',
+                                color: tab === tb.id ? '#fff' : 'var(--text-secondary)',
+                                borderColor: tab === tb.id ? 'transparent' : 'var(--border-default)',
+                            }}
+                        >
+                            <tb.Icon className="w-3.5 h-3.5" /> {tb.label}
+                        </button>
+                    ))}
+                    {tab === 'browse' && (
+                        <span className="flex items-center text-xs ml-1" style={{ color: 'var(--text-muted)' }}>
+                            Live from the open MCP registry · verified servers only
+                        </span>
+                    )}
                 </div>
 
                 {/* Custom Server Form */}
@@ -456,9 +624,9 @@ export default function McpMarketplace({ setMessage }) {
                                 return (
                                     <div key={server.id}>
                                         <div className="flex items-center gap-3 px-5 py-3">
-                                            <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${server.status === 'ready' ? 'bg-green-500' : server.status === 'error' ? 'bg-red-500' : 'bg-gray-500'}`}
-                                                title={server.status === 'error' ? server.error : server.status} />
-                                            <span className="text-base flex-shrink-0">{server.icon || '🔌'}</span>
+                                            <div className={`w-2.5 h-2.5 rounded-full flex-shrink-0 ${statusDotClass(server.status)}`}
+                                                title={server.status === 'error' ? server.error : server.status === 'pending_credentials' ? 'Awaiting credentials' : server.status} />
+                                            <McpLogo server={server} size={20} />
                                             <button onClick={() => setExpandedServer(isExpanded ? null : server.id)} className="flex-1 text-left min-w-0">
                                                 <div className="text-sm font-medium truncate" style={{ color: 'var(--text-primary)' }}>{server.name}</div>
                                                 <div className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
@@ -488,6 +656,11 @@ export default function McpMarketplace({ setMessage }) {
                                                 {server.error && (
                                                     <div className="text-xs px-3 py-2 rounded-lg bg-red-500/10 text-red-400 mb-2">Error: {server.error}</div>
                                                 )}
+                                                {server.status === 'pending_credentials' && (
+                                                    <div className="text-xs px-3 py-2 rounded-lg mb-2" style={{ background: 'rgba(245,158,11,0.12)', color: '#f59e0b' }}>
+                                                        🔑 Awaiting credentials. This server needs credentials to connect, which each user adds under Settings → Integrations. Its tools are discovered automatically once configured.
+                                                    </div>
+                                                )}
                                                 {server.description && (
                                                     <p className="text-xs mb-2" style={{ color: 'var(--text-secondary)' }}>{server.description}</p>
                                                 )}
@@ -497,7 +670,9 @@ export default function McpMarketplace({ setMessage }) {
                                                     </div>
                                                 )}
                                                 {toolCount === 0 ? (
-                                                    <div className="text-xs py-2" style={{ color: 'var(--text-muted)' }}>No tools discovered. Try refreshing.</div>
+                                                    server.status !== 'pending_credentials' && (
+                                                        <div className="text-xs py-2" style={{ color: 'var(--text-muted)' }}>No tools discovered. Try refreshing.</div>
+                                                    )
                                                 ) : (
                                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
                                                         {(server.tools_cache || []).map((tool, idx) => (
@@ -524,122 +699,87 @@ export default function McpMarketplace({ setMessage }) {
                         <input
                             value={searchQuery}
                             onChange={e => setSearchQuery(e.target.value)}
-                            placeholder="Search MCP servers..."
+                            placeholder={tab === 'browse' ? 'Search thousands of MCP servers…' : 'Search MCP servers...'}
                             className="w-full pl-10 pr-4 py-2.5 rounded-xl text-sm border outline-none transition-all"
                             style={{ background: 'var(--bg-secondary)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}
                         />
                     </div>
-                    <div className="flex flex-wrap gap-1.5">
-                        {CATEGORIES.map(cat => (
-                            <button
-                                key={cat.id}
-                                onClick={() => setActiveCategory(cat.id)}
-                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border"
-                                style={{
-                                    background: activeCategory === cat.id ? 'var(--accent-primary)' : 'var(--bg-secondary)',
-                                    color: activeCategory === cat.id ? '#fff' : 'var(--text-secondary)',
-                                    borderColor: activeCategory === cat.id ? 'transparent' : 'var(--border-default)',
-                                }}
-                            >
-                                <span>{cat.icon}</span> {cat.label}
-                            </button>
-                        ))}
-                    </div>
+                    {tab === 'featured' && (
+                        <div className="flex flex-wrap gap-1.5">
+                            {CATEGORIES.map(cat => (
+                                <button
+                                    key={cat.id}
+                                    onClick={() => setActiveCategory(cat.id)}
+                                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all border"
+                                    style={{
+                                        background: activeCategory === cat.id ? 'var(--accent-primary)' : 'var(--bg-secondary)',
+                                        color: activeCategory === cat.id ? '#fff' : 'var(--text-secondary)',
+                                        borderColor: activeCategory === cat.id ? 'transparent' : 'var(--border-default)',
+                                    }}
+                                >
+                                    <span>{cat.icon}</span> {cat.label}
+                                </button>
+                            ))}
+                        </div>
+                    )}
                 </div>
 
-                {/* Server Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {filteredRegistry.map(server => {
-                        const isInstalled = installedIds.has(server.id);
-                        const isInstalling = installing === server.id;
-                        const installed = isInstalled ? installedServers.find(s => s.id === server.id) : null;
-                        const credCount = (server.required_credentials || []).length;
-
-                        return (
-                            <div
-                                key={server.id}
-                                className="group rounded-xl border p-4 transition-all hover:shadow-lg hover:border-[var(--accent-primary)] relative"
-                                style={{
-                                    background: 'var(--bg-secondary)',
-                                    borderColor: isInstalled ? 'var(--accent-primary)' : 'var(--border-default)',
-                                    opacity: isInstalled ? 0.85 : 1,
-                                }}
-                            >
-                                {/* Installed badge */}
-                                {isInstalled && (
-                                    <div className="absolute top-3 right-3">
-                                        <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-green-500/15 text-green-500 font-medium">
-                                            <Check className="w-3 h-3" /> Installed
-                                        </span>
-                                    </div>
-                                )}
-
-                                {/* Icon + Name */}
-                                <div className="flex items-start gap-3 mb-2">
-                                    <span className="text-2xl flex-shrink-0">{server.icon}</span>
-                                    <div className="min-w-0">
-                                        <h4 className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{server.name}</h4>
-                                        <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--bg-tertiary)', color: 'var(--text-muted)' }}>
-                                            {server.transport === 'http' ? '🌐 HTTP' : '💻 Local'}
-                                        </span>
-                                    </div>
-                                </div>
-
-                                {/* Description */}
-                                <p className="text-xs leading-relaxed mb-3" style={{ color: 'var(--text-secondary)' }}>
-                                    {server.description}
+                {/* ─── Featured grid ─── */}
+                {tab === 'featured' && (
+                    <>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {filteredRegistry.map(renderCard)}
+                        </div>
+                        {filteredRegistry.length === 0 && (
+                            <div className="text-center py-12">
+                                <div className="text-3xl mb-2">🔍</div>
+                                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                    No servers found{searchQuery.trim() ? ` for "${searchQuery}"` : ' in this category'}.
                                 </p>
-
-                                {/* Credentials needed */}
-                                {credCount > 0 && (
-                                    <div className="text-xs mb-3 flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
-                                        🔑 {credCount} credential{credCount !== 1 ? 's' : ''} needed
-                                    </div>
-                                )}
-
-                                {/* Install / Status buttons */}
-                                <div className="flex items-center gap-2">
-                                    {isInstalled ? (
-                                        <>
-                                            <div className="flex items-center gap-1.5 text-xs" style={{ color: 'var(--text-muted)' }}>
-                                                <div className={`w-2 h-2 rounded-full ${installed?.status === 'ready' ? 'bg-green-500' : installed?.status === 'error' ? 'bg-red-500' : 'bg-gray-500'}`} />
-                                                {installed?.tools_cache?.length || 0} tool{(installed?.tools_cache?.length || 0) !== 1 ? 's' : ''}
-                                            </div>
-                                            <div className="flex-1" />
-                                            <button onClick={() => handleToggle(installed)} className="p-0.5" title={installed?.enabled ? 'Disable' : 'Enable'}>
-                                                {installed?.enabled
-                                                    ? <ToggleRight className="w-5 h-5" style={{ color: '#10b981' }} />
-                                                    : <ToggleLeft className="w-5 h-5" style={{ color: 'var(--text-muted)' }} />}
-                                            </button>
-                                            <button onClick={() => handleUninstall(server.id, server.name)}
-                                                className="p-1.5 rounded-lg hover:bg-red-500/10 transition-colors" title="Remove">
-                                                <Trash2 className="w-3.5 h-3.5" style={{ color: '#ef4444' }} />
-                                            </button>
-                                        </>
-                                    ) : (
-                                        <button
-                                            onClick={() => handleInstall(server)}
-                                            disabled={isInstalling}
-                                            className="w-full py-2 rounded-lg text-xs font-medium transition-all disabled:opacity-50 flex items-center justify-center gap-1.5"
-                                            style={{ background: 'var(--accent-primary)', color: '#fff' }}
-                                        >
-                                            {isInstalling ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Plus className="w-3.5 h-3.5" />}
-                                            {isInstalling ? 'Installing...' : 'Install'}
-                                        </button>
-                                    )}
-                                </div>
                             </div>
-                        );
-                    })}
-                </div>
+                        )}
+                    </>
+                )}
 
-                {filteredRegistry.length === 0 && (
-                    <div className="text-center py-12">
-                        <div className="text-3xl mb-2">🔍</div>
-                        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                            No servers found{searchQuery.trim() ? ` for "${searchQuery}"` : ' in this category'}.
-                        </p>
-                    </div>
+                {/* ─── Browse (live registry) grid ─── */}
+                {tab === 'browse' && (
+                    <>
+                        {browseError && (
+                            <div className="text-xs px-3 py-2 rounded-lg bg-red-500/10 text-red-400">
+                                Could not reach the MCP registry: {browseError}
+                            </div>
+                        )}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {browseResults.map(renderCard)}
+                        </div>
+
+                        {browseLoading && (
+                            <div className="flex items-center justify-center py-8">
+                                <Loader2 className="w-5 h-5 animate-spin" style={{ color: 'var(--text-muted)' }} />
+                            </div>
+                        )}
+
+                        {!browseLoading && browseLoaded && browseResults.length === 0 && !browseError && (
+                            <div className="text-center py-12">
+                                <div className="text-3xl mb-2">🔍</div>
+                                <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                                    No registry servers found{searchQuery.trim() ? ` for "${searchQuery}"` : ''}.
+                                </p>
+                            </div>
+                        )}
+
+                        {!browseLoading && browseCursor && (
+                            <div className="flex justify-center">
+                                <button
+                                    onClick={() => fetchBrowse({ q: searchQuery.trim(), cursor: browseCursor, append: true })}
+                                    className="px-4 py-2 rounded-lg text-xs font-medium transition-all border"
+                                    style={{ background: 'var(--bg-secondary)', color: 'var(--text-primary)', borderColor: 'var(--border-default)' }}
+                                >
+                                    Load more
+                                </button>
+                            </div>
+                        )}
+                    </>
                 )}
             </div>
         </div>

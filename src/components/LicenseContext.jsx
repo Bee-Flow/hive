@@ -2,6 +2,7 @@ import React, { createContext, useCallback, useContext, useEffect, useMemo, useR
 import { Lock } from 'lucide-react';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { useTranslation } from '../hooks/useTranslation';
+import { useEntitlements } from './EntitlementsContext';
 
 /**
  * LicenseContext — app-wide tier/feature awareness.
@@ -183,14 +184,31 @@ export function LicenseProvider({ children }) {
         return () => { ac.abort(); };
     }, []);
 
-    useEffect(() => { reload(); }, [reload]);
+    // Fetch licence status on mount AND re-fetch whenever auth flips. This
+    // provider is mounted above the auth boundary, so its first fetch runs
+    // pre-login (anonymous → community/default snapshot). App dispatches
+    // `beeflow:auth-changed` on login/logout/bootstrap; without re-resolving
+    // here, the pre-login tier/features/limits would persist after login and
+    // every tier- or licence-gated surface would stay stale until a full page
+    // refresh. Mirrors EntitlementsContext, which delegates `hasFeature` here.
+    useEffect(() => {
+        reload();
+        const onAuthChanged = () => reload();
+        window.addEventListener('beeflow:auth-changed', onAuthChanged);
+        return () => window.removeEventListener('beeflow:auth-changed', onAuthChanged);
+    }, [reload]);
 
-    const features = state.features;
     const tier = state.tier;
-    const hasFeature = useCallback(
-        (name) => Array.isArray(features) && features.includes(name),
-        [features],
-    );
+    // Feature gating delegates to the unified entitlements snapshot — the SAME
+    // resolver the server's requireCapability enforces — so a page can never
+    // render while its API 403s. `ent.can` accepts capability ids AND legacy
+    // licence-feature names (see EntitlementsContext). The `state.features`
+    // array from /api/license/status is still fetched for licence-management
+    // display, but no longer drives gating. `hasTier` stays on the licence tier
+    // (a licence-management concern, not a per-capability grant).
+    const ent = useEntitlements();
+    const entCan = ent.can;
+    const hasFeature = useCallback((name) => entCan(name), [entCan]);
     const hasTier = useCallback(
         (required) => {
             const a = TIER_RANK[normalizeTier(tier)] ?? -1;
@@ -204,11 +222,17 @@ export function LicenseProvider({ children }) {
         ...state,
         hasFeature,
         hasTier,
+        // Surface entitlements load/degraded/error so feature gates can avoid a
+        // render-then-flip while the snapshot resolves, and fail OPEN on a
+        // transient resolver outage (the server gate stays authoritative).
+        entLoading: ent.loading,
+        entDegraded: ent.degraded,
+        entError: ent.error,
         reload,
         activate,
         deactivate,
         refresh,
-    }), [state, hasFeature, hasTier, reload, activate, deactivate, refresh]);
+    }), [state, hasFeature, hasTier, ent.loading, ent.degraded, ent.error, reload, activate, deactivate, refresh]);
 
     return <LicenseContext.Provider value={value}>{children}</LicenseContext.Provider>;
 }
@@ -229,9 +253,15 @@ export function RequireTier({ tier = 'enterprise', feature = null, children, fal
     const ctx = useLicenseContext();
     const { t } = useTranslation();
     const upgradeUrl = ctx.upgradeUrl || 'https://beeflow.nl/pricing';
-    if (ctx.loading) return null;
+    // Wait for the licence status and, for a feature gate, the entitlements
+    // snapshot before deciding — prevents a flash of the upgrade panel.
+    if (ctx.loading || (feature && ctx.entLoading)) return null;
 
-    const ok = feature ? ctx.hasFeature(feature) : ctx.hasTier(tier);
+    // Feature gates fail OPEN on a transient resolver outage (degraded / fetch
+    // error): render the page and let the server gate enforce, rather than show
+    // a false "upgrade" wall during a backend blip. Tier gates are unaffected.
+    const entUnavailable = !!(ctx.entDegraded || ctx.entError);
+    const ok = feature ? (entUnavailable || ctx.hasFeature(feature)) : ctx.hasTier(tier);
     if (ok) return <>{children}</>;
     if (fallback) return fallback;
 
@@ -274,7 +304,11 @@ export function RequireTier({ tier = 'enterprise', feature = null, children, fal
  */
 export function LockedIfBelow({ tier = 'enterprise', feature = null, children }) {
     const ctx = useLicenseContext();
-    const ok = feature ? ctx.hasFeature(feature) : ctx.hasTier(tier);
+    // Don't flash a lock while the snapshot is still loading, and don't show a
+    // false lock during a transient resolver outage — fail open (server gate
+    // remains authoritative).
+    const entUnavailable = !!(ctx.entLoading || ctx.entDegraded || ctx.entError);
+    const ok = feature ? (entUnavailable || ctx.hasFeature(feature)) : ctx.hasTier(tier);
     return children({ locked: !ok, requiredTier: tier, currentTier: ctx.tier, ctx });
 }
 

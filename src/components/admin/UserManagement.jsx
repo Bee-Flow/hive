@@ -307,6 +307,8 @@ const UserManagement = ({ activeSection: activeSectionProp = '', onNavigate, use
         { id: 'fireflies', label: 'Fireflies' },
         { id: 'youtrack', label: 'YouTrack' },
         { id: 'gamma', label: 'Gamma' },
+        { id: 'afas-profit', label: 'AFAS Profit' },
+        { id: 'nmbrs', label: 'NMBRS' },
         { id: 'n8n', label: 'n8n' },
     ];
     const [showAddOrg, setShowAddOrg] = useState(false);

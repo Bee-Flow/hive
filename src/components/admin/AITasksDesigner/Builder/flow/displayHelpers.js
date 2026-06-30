@@ -12,6 +12,8 @@ const PROPER_CASE = {
     gmail: 'Gmail',
     github: 'GitHub',
     youtrack: 'YouTrack',
+    afas: 'AFAS',
+    nmbrs: 'NMBRS',
     nextcloud: 'Nextcloud',
     google: 'Google',
     docs: 'Docs',
@@ -88,6 +90,13 @@ export function humanizeExpression(expr, stepLabelById = null) {
             (_, stepId, path) => {
                 const label = stepLabelById?.get?.(stepId) || stepId;
                 return path ? `‹${label}›.${path}` : `‹${label}›`;
+            },
+        )
+        .replace(
+            /\bloop\.([A-Za-z0-9_]+)(?:\.([A-Za-z0-9_.[\]]+))?/g,
+            (_, itemVar, path) => {
+                const head = itemVar ? `‹Loop item · ${itemVar}›` : '‹Loop item›';
+                return path ? `${head}.${path}` : head;
             },
         )
         .replace(

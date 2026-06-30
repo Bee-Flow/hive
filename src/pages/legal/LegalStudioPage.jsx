@@ -2,21 +2,23 @@ import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import {
     ArrowLeft, Plus, Trash2, Scale, Loader2, AlertCircle, CheckCircle2,
     Search, X, ChevronRight, ChevronDown, Pencil, Download, FileDown, FileType2,
-    PanelLeft, History, ListChecks, FolderOpen, Clock, PenTool
+    PanelLeft, History, ListChecks, FolderOpen, Clock, PenTool, ShieldCheck
 } from 'lucide-react';
 import { API_BASE, authFetch } from '../../utils/helpers';
 import useChatEngine from '../../hooks/useChatEngine';
-import NotebookEditor from '../notebooks/NotebookEditor';
+import RichTextEditor from '../../editor/react/RichTextEditor.jsx';
+import { shouldUseNewEditor } from '../../editor/react/useNewEditor.js';
 import NotebookChat from '../notebooks/NotebookChat';
 import NotebookSources from '../notebooks/NotebookSources';
 import NotebookVersions from '../notebooks/NotebookVersions';
+import NotebookWorkspace from '../notebooks/NotebookWorkspace';
 import CitationOverlay from '../notebooks/CitationOverlay';
 import SendForSigningModal from '../notebooks/SendForSigningModal';
 import { preprocessMermaidContent } from '../notebooks/MermaidExtension';
 import { embedImagesAsBase64 } from '../../utils/imageEmbedding';
 import LegalResearchPanel from './LegalResearchPanel';
 import TableOfAuthorities from './TableOfAuthorities';
-import LegalStudio from './LegalStudio';
+import LegalLeftTabs from './LegalLeftTabs';
 
 /* ── Helpers ──────────────────────────────────────────────────── */
 function timeAgo(dateStr) {
@@ -145,11 +147,8 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
     // New-matter form
     const [form, setForm] = useState({ name: '', clientName: '', wederpartij: '', rechtsgebied: '', zaaknummer: '', deadline: '' });
 
-    // Layout
+    // Layout — drawer open/width owned by NotebookWorkspace; only the left tab is local.
     const [leftTab, setLeftTab] = useState('sources'); // sources | research | authorities
-    const [leftOpen, setLeftOpen] = useState(true);
-    const [rightWidth, setRightWidth] = useState(340);
-    const rightDragRef = useRef(false);
     const [versionsOpen, setVersionsOpen] = useState(false);
 
     // Editor + chat
@@ -159,9 +158,6 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
     const [exporting, setExporting] = useState(null);
     const [verifying, setVerifying] = useState(false);
     const [verifyToast, setVerifyToast] = useState(null); // { tone, message }
-    const [generating, setGenerating] = useState(null); // generator type or null
-    const generationAbortRef = useRef(null);
-    useEffect(() => () => { generationAbortRef.current?.abort?.(); }, []);
     // SignRequest + Nextcloud export (reuse notebook export endpoints)
     const [signModalOpen, setSignModalOpen] = useState(false);
     const [signSending, setSignSending] = useState(false);
@@ -204,6 +200,20 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
             editorRef.current?.setContent?.(content);
         }, []),
         onNotebookSourceAdded: useCallback((source) => setSources(prev => [...prev, source]), []),
+        // Auto-recover a dropped chat stream: refetch the persisted dossier
+        // conversation so the saved AI reply replaces the "interrupted" notice
+        // without a manual refresh (mirrors the loader in selectMatter).
+        reloadConversation: useCallback(async () => {
+            if (!selected?.id) return null;
+            const conv = await nbApi(selected.id, '/conversation');
+            const hist = Array.isArray(conv?.messages) ? conv.messages : [];
+            return hist.map((msg, i) => ({
+                ...msg, // keep tokenisationInfo / pii badge / modelId so the privacy panel survives reload
+                id: msg.id || `nb-${selected.id}-${i}`,
+                role: msg.role,
+                content: typeof msg.content === 'string' ? msg.content : String(msg.content ?? ''),
+            }));
+        }, [selected?.id]),
     });
 
     /* ── Load model tiers + export integrations config ── */
@@ -213,13 +223,7 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
         authFetch(`${API_BASE}/auth/app-password-status`).then(r => r.ok ? r.json() : {}).then(d => setNextcloudConfigured(!!d.hasAppPassword)).catch(() => {});
     }, []);
 
-    /* ── Right-panel resize ── */
-    useEffect(() => {
-        const move = (e) => { if (!rightDragRef.current) return; const w = document.body.clientWidth - e.clientX; setRightWidth(Math.max(280, Math.min(w, 720))); };
-        const up = () => { if (rightDragRef.current) { rightDragRef.current = false; document.body.style.cursor = 'default'; document.body.style.userSelect = 'auto'; } };
-        document.addEventListener('mousemove', move); document.addEventListener('mouseup', up);
-        return () => { document.removeEventListener('mousemove', move); document.removeEventListener('mouseup', up); };
-    }, []);
+    /* Right-panel resize is handled inside NotebookWorkspace. */
 
     /* ── Fetch matters ── */
     const didAutoSelect = useRef(false);
@@ -246,7 +250,21 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
             setSources(data.sources || []);
             setCitations(data.citations || []);
             setDocumentContent(preprocessMermaidContent(data.matter?.documentContent || ''));
-            setChatMessages([]);
+            // Rehydrate the persistent, encrypted chat history for this dossier so
+            // the AI-drafting conversation survives a refresh / dossier switch
+            // (Dutch-law drafting record). Falls back to empty on error.
+            try {
+                const conv = await nbApi(m.id, '/conversation');
+                const hist = Array.isArray(conv?.messages) ? conv.messages : [];
+                setChatMessages(hist.map((msg, i) => ({
+                    ...msg, // keep tokenisationInfo / pii badge / modelId so the privacy panel survives reload
+                    id: msg.id || `nb-${m.id}-${i}`,
+                    role: msg.role,
+                    content: typeof msg.content === 'string' ? msg.content : String(msg.content ?? ''),
+                })));
+            } catch (_) {
+                setChatMessages([]);
+            }
             setLeftTab('sources');
             onMatterChange?.(m.id);
         } catch (e) { setError(e.message); }
@@ -403,6 +421,10 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
     const handleDeleteSource = async (sid) => { if (!selected) return; try { await nbApi(selected.id, `/sources/${sid}`, { method: 'DELETE' }); setSources(p => p.filter(s => s.id !== sid)); } catch (e) { setError(e.message); } };
     const handleRetrySource = async (sid) => { if (!selected) return; try { await nbApi(selected.id, `/sources/${sid}/retry`, { method: 'POST' }); setSources(p => p.map(s => s.id === sid ? { ...s, status: 'processing', error: null } : s)); } catch (e) { setError(e.message); } };
     const handleCancelSource = async (sid) => { if (!selected) return; try { await nbApi(selected.id, `/sources/${sid}/cancel`, { method: 'POST' }); setSources(p => p.map(s => s.id === sid ? { ...s, status: 'error', error: 'Geannuleerd' } : s)); } catch (e) { setError(e.message); } };
+    const handleRenameSource = async (sid, name) => { if (!selected || !name?.trim()) return; const clean = name.trim(); setSources(p => p.map(s => s.id === sid ? { ...s, name: clean } : s)); try { await nbApi(selected.id, `/sources/${sid}`, { method: 'PATCH', body: JSON.stringify({ name: clean }) }); } catch (e) { setError(e.message); refreshSources(); } };
+    const handleReorderSources = async (ordered) => { if (!selected || !Array.isArray(ordered)) return; setSources(ordered); try { await nbApi(selected.id, '/sources/reorder', { method: 'PATCH', body: JSON.stringify({ orderedIds: ordered.map(s => s.id) }) }); } catch (e) { setError(e.message); refreshSources(); } };
+    const handleBulkDelete = async (ids) => { if (!selected || !ids?.length) return; const set = new Set(ids); setSources(p => p.filter(s => !set.has(s.id))); try { await nbApi(selected.id, '/sources/bulk-delete', { method: 'POST', body: JSON.stringify({ ids }) }); } catch (e) { setError(e.message); refreshSources(); } };
+    const fetchSourceContent = async (sid) => { if (!selected) return { content: '' }; return nbApi(selected.id, `/sources/${sid}/content`); };
 
     /* ── Citations / bronnenlijst ── */
     const refreshCitations = useCallback(async () => { if (selected) { try { const d = await matterApi(`/${selected.id}/citations`); setCitations(d.citations || []); } catch {} } }, [selected]);
@@ -458,77 +480,20 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
         editorRef.current?.insertContent?.(html);
     }, [citations]);
 
-    /* ── Generate a legal document (SSE → editor) ── */
-    const handleGenerate = useCallback(async (type) => {
-        if (!selected || generating) return;
-        setGenerating(type);
-        setVerifyToast(null);
-        generationAbortRef.current?.abort?.();
-        const controller = new AbortController();
-        generationAbortRef.current = controller;
-        try {
-            const res = await authFetch(`${API_BASE}/api/notebooks/${selected.id}/generate/${type}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ modelTier: selectedTier, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone }),
-                signal: controller.signal,
-            });
-            if (!res.ok) { const e = await res.json().catch(() => ({})); throw new Error(e.error || `Genereren mislukt (${res.status})`); }
-            const reader = res.body.getReader();
-            const decoder = new TextDecoder();
-            let buffer = '', content = '', currentEvent = '', report = null, redacted = null;
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                buffer += decoder.decode(value, { stream: true });
-                const lines = buffer.split('\n');
-                buffer = lines.pop() || '';
-                for (const line of lines) {
-                    if (line.startsWith('event: ')) currentEvent = line.slice(7).trim();
-                    else if (line.startsWith('data: ')) {
-                        try {
-                            const data = JSON.parse(line.slice(6));
-                            if (currentEvent === 'content' && data.text) content += data.text;
-                            else if (currentEvent === 'citation_report') { report = data; redacted = data.redactedContent || null; }
-                            else if (currentEvent === 'error') throw new Error(data.error || 'Genereerfout');
-                        } catch (e) { if (e.message?.includes('Genereer')) throw e; }
-                    }
-                }
-            }
-            const finalContent = redacted || content;
-            if (finalContent && editorRef.current) {
-                const processed = preprocessMermaidContent(finalContent);
-                editorRef.current.setContent(processed);
-                const html = editorRef.current.getEditor?.()?.getHTML?.();
-                if (html) { setDocumentContent(html); handleDocSave(html); }
-            }
-            refreshCitations();
-            // Summarise the run + citation verification in a toast.
-            if (report) {
-                const parts = [`${report.verified.length}/${report.total} bronnen geverifieerd`];
-                if (report.notFound.length) parts.push(`${report.notFound.length} niet gevonden`);
-                if (report.unverified.length) parts.push(`${report.unverified.length} niet te verifiëren`);
-                if (redacted) parts.push('onbevestigde verwijzingen weggelaten (strikt)');
-                setVerifyToast({ tone: report.notFound.length ? 'warn' : 'success', message: `Document gegenereerd · ${parts.join(' · ')}` });
-            } else {
-                setVerifyToast({ tone: 'success', message: 'Document gegenereerd en in de editor geplaatst.' });
-            }
-            setTimeout(() => setVerifyToast(null), 8000);
-        } catch (e) {
-            if (e.name !== 'AbortError') setError(e.message);
-        } finally {
-            setGenerating(null);
-            if (generationAbortRef.current === controller) generationAbortRef.current = null;
-        }
-    }, [selected, generating, selectedTier, handleDocSave, refreshCitations]);
-
     const handleToggleStrict = useCallback(async () => {
         if (!selected) return;
-        const next = selected.settings?.legal?.citationMode === 'strict_formal' ? 'flag' : 'strict_formal';
+        const prevMode = selected.settings?.legal?.citationMode || 'flag';
+        const next = prevMode === 'strict_formal' ? 'flag' : 'strict_formal';
         // Optimistic local update so the toggle reflects immediately.
         setSelected(prev => ({ ...prev, settings: { ...(prev.settings || {}), legal: { ...(prev.settings?.legal || {}), citationMode: next } } }));
-        try { await matterApi(`/${selected.id}`, { method: 'PATCH', body: JSON.stringify({ citationMode: next }) }); }
-        catch (e) { setError(e.message); }
+        try {
+            await matterApi(`/${selected.id}`, { method: 'PATCH', body: JSON.stringify({ citationMode: next }) });
+        } catch (e) {
+            // Revert the optimistic toggle so the UI can never show a citation
+            // mode the server didn't actually persist (export filters on it).
+            setSelected(prev => ({ ...prev, settings: { ...(prev.settings || {}), legal: { ...(prev.settings?.legal || {}), citationMode: prevMode } } }));
+            setError(e.message);
+        }
     }, [selected]);
 
     /* ── Export ── */
@@ -607,42 +572,70 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
     if (selected) {
         const nearest = soonestDeadline(selected.settings?.legal?.deadlines);
         const dl = nearest?.info || null;
+        const legal = selected.settings?.legal || {};
+        const detailMeta = `${legal.clientName || 'Dossier'}${legal.wederpartij ? ` / ${legal.wederpartij}` : ''} · ${sources.length} stuk${sources.length !== 1 ? 'ken' : ''} · ${totalWords.toLocaleString('nl-NL')} woorden`;
+        const retrySave = () => { if (pendingContentRef.current != null) handleDocSave(pendingContentRef.current); };
+        const commandContext = {
+            editorRef,
+            onExport: handleExport,
+            hasExportContent: !!documentContent,
+            signRequestConfigured,
+            onSign: () => setSignModalOpen(true),
+            nextcloudConfigured,
+            onNextcloud: handleNextcloudExport,
+            onVersions: () => setVersionsOpen(true),
+        };
+        const leftTabs = [
+            {
+                key: 'sources', label: 'Stukken', icon: FolderOpen,
+                node: (
+                    <NotebookSources
+                        sources={sources}
+                        onFileUpload={(files) => handleFileUpload(Array.from(files))}
+                        onAddUrl={(url) => { if (url?.trim()) handleAddUrl(url); }}
+                        onAddText={(text, name) => { if (text?.trim()) handleAddText(text, name); }}
+                        onAddMeeting={handleAddMeeting}
+                        onDeleteSource={handleDeleteSource}
+                        onRetrySource={handleRetrySource}
+                        onCancelSource={handleCancelSource}
+                        onRenameSource={handleRenameSource}
+                        onReorderSources={handleReorderSources}
+                        onBulkDelete={handleBulkDelete}
+                        onPreviewSource={fetchSourceContent}
+                        dragOver={dragOver}
+                        setDragOver={setDragOver}
+                        totalWords={totalWords}
+                        readyCount={readySources.length}
+                        showMeetingNotes={showMeetingNotes}
+                    />
+                ),
+            },
+            { key: 'research', label: 'Bronnen', icon: Scale, node: <LegalResearchPanel matterId={selected.id} onCite={citeInDocument} onAddAuthority={addAuthority} onOpenFullText={openFullText} /> },
+            { key: 'authorities', label: 'Lijst', icon: ListChecks, node: <TableOfAuthorities citations={citations} onRemove={removeAuthority} onInsertList={insertAuthoritiesList} onVerify={handleVerifyCitations} verifying={verifying} /> },
+        ];
+
         return (
-            <div className="h-full flex flex-col" style={{ background: 'var(--bg-primary)' }}>
-                {/* Header */}
-                <div className="shrink-0 flex items-center gap-3 px-5 py-3 border-b" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
-                    <button onClick={() => { setSelected(null); setSources([]); setCitations([]); setChatMessages([]); setDocumentContent(''); }} className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)] shrink-0" title="Terug naar dossiers">
-                        <ArrowLeft className="w-4 h-4" style={{ color: 'var(--text-secondary)' }} />
-                    </button>
-                    <div className="w-10 h-10 rounded-xl border-[1.5px] flex items-center justify-center shrink-0" style={{ background: 'var(--bg-tertiary)', borderColor: 'var(--border-default)' }}>
-                        <Scale className="w-5 h-5" style={{ color: 'var(--brand-primary)' }} />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                        <h2 className="text-base font-bold truncate" style={{ color: 'var(--text-primary)' }} title={selected.name}>{selected.name}</h2>
-                        <p className="text-[11px] truncate mt-0.5" style={{ color: 'var(--text-tertiary)' }}>
-                            {selected.settings?.legal?.clientName ? `${selected.settings.legal.clientName}` : 'Dossier'}
-                            {selected.settings?.legal?.wederpartij ? ` / ${selected.settings.legal.wederpartij}` : ''}
-                            {' · '}{sources.length} stuk{sources.length !== 1 ? 'ken' : ''} · {totalWords.toLocaleString('nl-NL')} woorden
-                        </p>
-                    </div>
-                    {dl && (
-                        <span className="shrink-0 flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium" style={{ background: `${dl.color}1a`, color: dl.color }} title={`Deadline ${dl.date}`}>
-                            <Clock className="w-3 h-3" /> {dl.label}
-                        </span>
-                    )}
-                    <div className="shrink-0 flex items-center min-w-[64px] justify-end">
-                        {saveState === 'saving' && <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-tertiary)' }}><Loader2 className="w-3 h-3 animate-spin" />Opslaan…</span>}
-                        {saveState === 'error' && <button onClick={() => pendingContentRef.current && handleDocSave(pendingContentRef.current)} className="flex items-center gap-1 text-xs text-red-500 hover:underline"><AlertCircle className="w-3 h-3" />Opnieuw</button>}
-                        {saveState === 'idle' && lastSavedAt && (Date.now() - lastSavedAt < 4000) && <span className="flex items-center gap-1 text-xs" style={{ color: 'var(--text-tertiary)' }}><CheckCircle2 className="w-3 h-3" />Opgeslagen</span>}
-                    </div>
-                    <div className="flex items-center gap-0.5 shrink-0 pl-2 ml-1 border-l" style={{ borderColor: 'var(--border-subtle)' }}>
-                        <button onClick={() => setLeftOpen(o => !o)} className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)]" title="Linkerpaneel" style={{ background: leftOpen ? 'var(--bg-tertiary)' : 'transparent' }}>
-                            <PanelLeft className="w-4 h-4" style={{ color: leftOpen ? 'var(--accent-primary)' : 'var(--text-secondary)' }} />
-                        </button>
-                        <button onClick={() => setVersionsOpen(o => !o)} className="p-1.5 rounded-lg hover:bg-[var(--bg-tertiary)]" title="Versiegeschiedenis" style={{ background: versionsOpen ? 'var(--bg-tertiary)' : 'transparent' }}>
-                            <History className="w-4 h-4" style={{ color: versionsOpen ? 'var(--accent-primary)' : 'var(--text-secondary)' }} />
-                        </button>
-                        <div className="pl-1 ml-1 border-l flex items-center gap-0.5" style={{ borderColor: 'var(--border-subtle)' }}>
+            <>
+                <input type="file" ref={fileInputRef} className="hidden" accept=".pdf,.doc,.docx,.txt,.md" onChange={handleImportFile} />
+                <NotebookWorkspace
+                    variant="legal"
+                    icon={Scale}
+                    title={selected.name}
+                    meta={detailMeta}
+                    onBack={() => { setSelected(null); setSources([]); setCitations([]); setChatMessages([]); setDocumentContent(''); }}
+                    saveState={saveState}
+                    lastSavedAt={lastSavedAt}
+                    onRetrySave={retrySave}
+                    headerExtras={[
+                        { id: 'versions', icon: History, label: 'Versiegeschiedenis', active: versionsOpen, onClick: () => setVersionsOpen(o => !o) },
+                    ]}
+                    headerActions={
+                        <div className="flex items-center gap-0.5 shrink-0">
+                            {dl && (
+                                <span className="flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-medium mr-1" style={{ background: `${dl.color}1a`, color: dl.color }} title={`Deadline ${dl.date}`}>
+                                    <Clock className="w-3 h-3" /> {dl.label}
+                                </span>
+                            )}
                             <ExportMenu onExport={handleExport} exporting={exporting} disabled={!documentContent} />
                             {signRequestConfigured && (
                                 <button disabled={!documentContent || !!exporting} onClick={() => setSignModalOpen(true)}
@@ -657,98 +650,21 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
                                         : <svg viewBox="0 0 32 32" fill="none" className="w-4 h-4"><path d="M11.5 11.2c-2 0-3.7 1.4-4.2 3.3a3.5 3.5 0 1 0 0 3 4.4 4.4 0 0 0 7 1.7l1.5-1.4 1.6 1.4a4.4 4.4 0 0 0 7-1.7 3.5 3.5 0 1 0 0-3 4.4 4.4 0 0 0-7-1.7l-1.6 1.4-1.5-1.4a4.4 4.4 0 0 0-2.8-1.6zm0 2.2a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8zm9 0a2.4 2.4 0 1 1 0 4.8 2.4 2.4 0 0 1 0-4.8z" fill="#0082C9" /></svg>}
                                 </button>
                             )}
+                            {/* Strict citation mode toggle — withholds unconfirmed citations in processtukken */}
+                            <button onClick={handleToggleStrict}
+                                title={legal.citationMode === 'strict_formal'
+                                    ? 'Strikte bronvermelding AAN — onbevestigde verwijzingen worden in processtukken weggelaten'
+                                    : 'Strikte bronvermelding UIT — onbevestigde verwijzingen worden gemarkeerd maar behouden'}
+                                className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full text-xs font-medium border transition-colors ml-1"
+                                style={legal.citationMode === 'strict_formal'
+                                    ? { background: 'rgba(34,197,94,0.12)', borderColor: 'rgba(34,197,94,0.4)', color: '#15803d' }
+                                    : { background: 'var(--bg-secondary)', borderColor: 'var(--border-subtle)', color: 'var(--text-tertiary)' }}>
+                                <ShieldCheck className="w-3.5 h-3.5" /> Strikt
+                            </button>
                         </div>
-                    </div>
-                    <LegalStudio
-                        onGenerate={handleGenerate}
-                        generating={generating}
-                        disabled={readySources.length === 0}
-                        citationMode={selected.settings?.legal?.citationMode}
-                        onToggleStrict={handleToggleStrict}
-                    />
-                </div>
-
-                {error && (
-                    <div className="mx-4 mt-2 flex items-center gap-2 px-3 py-2 rounded-xl border bg-red-50 border-red-200 text-red-700 text-xs">
-                        <AlertCircle className="w-3.5 h-3.5 shrink-0" /><span className="flex-1">{error}</span>
-                        <button onClick={() => setError(null)} className="font-bold text-sm leading-none">&times;</button>
-                    </div>
-                )}
-                {verifyToast && (
-                    <div className="mx-4 mt-2 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs" style={verifyToastStyle(verifyToast.tone)}>
-                        {verifyToast.tone === 'warn' ? <AlertCircle className="w-3.5 h-3.5 shrink-0" /> : <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />}
-                        <span className="flex-1">{verifyToast.message}</span>
-                        <button onClick={() => setVerifyToast(null)} className="font-bold text-sm leading-none">&times;</button>
-                    </div>
-                )}
-                {dl && dl.days <= 3 && (
-                    <div className="mx-4 mt-2 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium"
-                        style={{ background: `${dl.color}14`, borderColor: `${dl.color}55`, color: dl.color }}>
-                        <Clock className="w-3.5 h-3.5 shrink-0" />
-                        <span className="flex-1">{nearest.label}: {dl.date} — {dl.label}{dl.days < 0 ? ' (verstreken)' : ''}</span>
-                    </div>
-                )}
-
-                {/* 3-panel */}
-                <div className="flex-1 flex overflow-hidden">
-                    {leftOpen && (
-                        <div className="w-[240px] xl:w-[300px] shrink-0 border-r flex flex-col overflow-hidden" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-secondary)' }}>
-                            {/* Left tab switcher */}
-                            <div className="shrink-0 flex items-center gap-0.5 p-1.5 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
-                                {[['sources', 'Stukken', FolderOpen], ['research', 'Bronnen', Scale], ['authorities', 'Lijst', ListChecks]].map(([key, label, Icon]) => (
-                                    <button key={key} onClick={() => setLeftTab(key)} className="flex-1 flex items-center justify-center gap-1 px-2 py-1.5 rounded-lg text-[11px] font-medium transition-colors"
-                                        style={leftTab === key ? { background: 'var(--bg-tertiary)', color: 'var(--accent-primary)' } : { color: 'var(--text-secondary)' }}>
-                                        <Icon className="w-3.5 h-3.5" /> {label}
-                                    </button>
-                                ))}
-                            </div>
-                            <div className="flex-1 overflow-hidden">
-                                {leftTab === 'sources' && (
-                                    <NotebookSources
-                                        sources={sources}
-                                        onFileUpload={(files) => handleFileUpload(Array.from(files))}
-                                        onAddUrl={(url) => { if (url?.trim()) handleAddUrl(url); }}
-                                        onAddText={(text, name) => { if (text?.trim()) handleAddText(text, name); }}
-                                        onAddMeeting={handleAddMeeting}
-                                        onDeleteSource={handleDeleteSource}
-                                        onRetrySource={handleRetrySource}
-                                        onCancelSource={handleCancelSource}
-                                        dragOver={dragOver}
-                                        setDragOver={setDragOver}
-                                        totalWords={totalWords}
-                                        readyCount={readySources.length}
-                                        showMeetingNotes={showMeetingNotes}
-                                    />
-                                )}
-                                {leftTab === 'research' && (
-                                    <LegalResearchPanel matterId={selected.id} onCite={citeInDocument} onAddAuthority={addAuthority} onOpenFullText={openFullText} />
-                                )}
-                                {leftTab === 'authorities' && (
-                                    <TableOfAuthorities citations={citations} onRemove={removeAuthority} onInsertList={insertAuthoritiesList} onVerify={handleVerifyCitations} verifying={verifying} />
-                                )}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Center editor */}
-                    <div className="flex-1 flex flex-col min-w-0" style={{ background: 'var(--bg-primary)' }}>
-                        <NotebookEditor
-                            ref={editorRef}
-                            onImportClick={() => fileInputRef.current?.click()}
-                            content={documentContent}
-                            onChange={setDocumentContent}
-                            onSave={handleDocSave}
-                            onAIAction={handleEditorAIAction}
-                            saving={saveState === 'saving'}
-                            notebookId={selected?.id}
-                            placeholder="Begin met schrijven, of genereer een stuk via de werkbalk of de AI-chat…"
-                        />
-                    </div>
-
-                    {/* Right: chat */}
-                    <div className="w-[4px] hover:bg-[var(--accent-primary)] cursor-col-resize transition-colors shrink-0 z-10 -ml-[2px]" style={{ borderLeft: '1px solid var(--border-subtle)' }}
-                        onMouseDown={(e) => { e.preventDefault(); rightDragRef.current = true; document.body.style.cursor = 'col-resize'; document.body.style.userSelect = 'none'; }} />
-                    <div className="shrink-0 flex flex-col overflow-hidden" style={{ width: rightWidth, background: 'var(--bg-primary)' }}>
+                    }
+                    leftDrawer={{ label: 'Stukken', icon: PanelLeft, node: <LegalLeftTabs tab={leftTab} onTab={setLeftTab} tabs={leftTabs} /> }}
+                    rightDrawer={{ label: 'AI-chat', node: (
                         <NotebookChat
                             messages={chatMessages}
                             isLoading={chatLoading}
@@ -762,18 +678,58 @@ export default function LegalStudioPage({ user, onBack, initialMatterId, onMatte
                             onInsertToDocument={handleInsertToDocument}
                             onCitationClick={(s) => setCitationSource(s)}
                         />
-                    </div>
-                </div>
-
-                <CitationOverlay source={citationSource} onClose={() => setCitationSource(null)} />
-                <SendForSigningModal open={signModalOpen} onClose={() => setSignModalOpen(false)} onSend={handleSendForSigning} sending={signSending} notebookTitle={selected?.name} />
-                {versionsOpen && selected && (
-                    <NotebookVersions notebookId={selected.id} currentContent={documentContent}
-                        onRestore={(content) => { editorRef.current?.setContent?.(content); setDocumentContent(content); handleDocSave(content); }}
-                        onClose={() => setVersionsOpen(false)} />
-                )}
-                <input type="file" ref={fileInputRef} className="hidden" accept=".pdf,.doc,.docx,.txt,.md" onChange={handleImportFile} />
-            </div>
+                    ) }}
+                    commandContext={commandContext}
+                    banners={
+                        <>
+                            {error && (
+                                <div className="mx-4 mt-2 flex items-center gap-2 px-3 py-2 rounded-xl border bg-red-50 border-red-200 text-red-700 text-xs">
+                                    <AlertCircle className="w-3.5 h-3.5 shrink-0" /><span className="flex-1">{error}</span>
+                                    <button onClick={() => setError(null)} className="font-bold text-sm leading-none">&times;</button>
+                                </div>
+                            )}
+                            {verifyToast && (
+                                <div className="mx-4 mt-2 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs" style={verifyToastStyle(verifyToast.tone)}>
+                                    {verifyToast.tone === 'warn' ? <AlertCircle className="w-3.5 h-3.5 shrink-0" /> : <CheckCircle2 className="w-3.5 h-3.5 shrink-0" />}
+                                    <span className="flex-1">{verifyToast.message}</span>
+                                    <button onClick={() => setVerifyToast(null)} className="font-bold text-sm leading-none">&times;</button>
+                                </div>
+                            )}
+                            {dl && dl.days <= 3 && (
+                                <div className="mx-4 mt-2 flex items-center gap-2 px-3 py-2 rounded-xl border text-xs font-medium"
+                                    style={{ background: `${dl.color}14`, borderColor: `${dl.color}55`, color: dl.color }}>
+                                    <Clock className="w-3.5 h-3.5 shrink-0" />
+                                    <span className="flex-1">{nearest.label}: {dl.date} — {dl.label}{dl.days < 0 ? ' (verstreken)' : ''}</span>
+                                </div>
+                            )}
+                        </>
+                    }
+                    overlays={
+                        <>
+                            <CitationOverlay source={citationSource} onClose={() => setCitationSource(null)} />
+                            <SendForSigningModal open={signModalOpen} onClose={() => setSignModalOpen(false)} onSend={handleSendForSigning} sending={signSending} notebookTitle={selected?.name} />
+                            {versionsOpen && selected && (
+                                <NotebookVersions notebookId={selected.id} currentContent={documentContent}
+                                    onRestore={(content) => { editorRef.current?.setContent?.(content); setDocumentContent(content); handleDocSave(content); }}
+                                    onClose={() => setVersionsOpen(false)} />
+                            )}
+                        </>
+                    }
+                >
+                    <RichTextEditor
+                        engine={shouldUseNewEditor(user, 'legal') ? 'bf' : 'tiptap'}
+                        ref={editorRef}
+                        onImportClick={() => fileInputRef.current?.click()}
+                        content={documentContent}
+                        onChange={setDocumentContent}
+                        onSave={handleDocSave}
+                        onAIAction={handleEditorAIAction}
+                        saving={saveState === 'saving'}
+                        notebookId={selected?.id}
+                        placeholder="Begin met schrijven, of genereer een stuk via de werkbalk of de AI-chat…"
+                    />
+                </NotebookWorkspace>
+            </>
         );
     }
 

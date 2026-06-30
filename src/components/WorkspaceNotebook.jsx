@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useCallback, useState } from 'react';
-import NotebookEditor from '../pages/notebooks/NotebookEditor';
+import RichTextEditor from '../editor/react/RichTextEditor.jsx';
+import { shouldUseNewEditor } from '../editor/react/useNewEditor.js';
 import { preprocessMermaidContent } from '../pages/notebooks/MermaidExtension';
 import { API_BASE, authFetch } from '../utils/helpers';
 import { useTranslation } from '../hooks/useTranslation';
@@ -431,7 +432,8 @@ export default function WorkspaceNotebook({
 
             {/* ── TipTap Editor ── */}
             <div className="flex-1 min-h-0 overflow-hidden">
-                <NotebookEditor
+                <RichTextEditor
+                    engine={shouldUseNewEditor(user, 'notebooks') ? 'bf' : 'tiptap'}
                     ref={editorRef}
                     content={initialContent}
                     onChange={handleEditorChange}

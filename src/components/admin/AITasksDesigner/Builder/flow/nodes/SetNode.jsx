@@ -1,6 +1,6 @@
 import React from 'react';
 import { Pencil } from 'lucide-react';
-import StepNodeBase from './StepNodeBase';
+import StepNodeBase, { ForEachBadge } from './StepNodeBase';
 
 export default function SetNode({ id, data }) {
     const { step, runStep, issues, onAddAfter } = data;
@@ -18,6 +18,7 @@ export default function SetNode({ id, data }) {
             icon={<Pencil size={14} />}
             typeLabel="Set"
             body={body}
+            badges={<ForEachBadge step={step} />}
             runStep={runStep}
             issues={issues}
             nodeId={id}

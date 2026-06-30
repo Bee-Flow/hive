@@ -10,7 +10,8 @@ export function initPlanForm(plan) {
         max_knowledge_sources:  plan?.max_knowledge_sources  ?? null,
         allowed_features:       plan?.allowed_features       || [],
         allowed_models:         plan?.allowed_models         || [],
-        // tri-state — undefined → null (unrestricted) so existing legacy plans keep their broad behavior
+        // tri-state — undefined → null (unrestricted) so existing legacy plans keep their broad behavior.
+        // MCP servers (mcp:<id>) live inside allowed_integrations now (opt-in; only count when explicit).
         allowed_integrations:   plan?.allowed_integrations === undefined ? null : plan.allowed_integrations,
         allowed_beta_features:  plan?.allowed_beta_features === undefined ? null : plan.allowed_beta_features,
         billing_model:          plan?.billing_model          || 'fixed',

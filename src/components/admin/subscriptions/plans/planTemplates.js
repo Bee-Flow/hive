@@ -50,7 +50,7 @@ const INT_MICROSOFT_365 = ['outlook', 'ms-calendar', 'onedrive', 'ms-contacts'];
 const INT_GOOGLE_PERSONAL = ['gmail', 'google-calendar', 'google-drive', 'google-docs', 'google-contacts'];
 const INT_MS_PERSONAL = ['outlook', 'ms-calendar', 'onedrive', 'ms-contacts'];
 const INT_AI = ['image-gen', 'music-gen', 'video-gen', 'elevenlabs', 'agent-search', 'transcription', 'kb-search'];
-const INT_THIRD_PARTY = ['fireflies', 'youtrack', 'gamma', 'n8n', 'linkedin', 'github', 'signrequest', 'webpages'];
+const INT_THIRD_PARTY = ['fireflies', 'youtrack', 'gamma', 'afas-profit', 'nmbrs', 'n8n', 'linkedin', 'github', 'signrequest', 'webpages'];
 
 // ── Core feature buckets ───────────────────────────────────────────────────
 const FEAT_FREE  = ['chat', 'direct_chat'];

@@ -1,8 +1,8 @@
 import React from 'react';
-import { Building, MapPin, Phone, FileText, ArrowLeft, ArrowRight, User, UserPlus, Users, Sparkles } from 'lucide-react';
+import { Building, MapPin, Phone, FileText, ArrowLeft, ArrowRight, User } from 'lucide-react';
 import { useTranslation } from '../../hooks/useTranslation';
 
-const SignupStepOrg = ({ signupData, setSignupData, signupOrgs, handleSignupNext, resetSignup, inputClass, inputClassSimple, labelClass, deploymentMode, allowOrgSignups = true, allowConsumerSignups = true }) => {
+const SignupStepOrg = ({ signupData, setSignupData, signupOrgs, handleSignupNext, resetSignup, inputClass, inputClassSimple, labelClass, deploymentMode, allowOrgSignups = true, allowConsumerSignups = true, embedded = false, onAdvance }) => {
     const { t } = useTranslation();
     const isCloud = deploymentMode === 'cloud';
 
@@ -13,8 +13,6 @@ const SignupStepOrg = ({ signupData, setSignupData, signupOrgs, handleSignupNext
             title: t('signup.org_account'),
             subtitle: t('signup.org_account_desc'),
             description: t('signup.org_account_features'),
-            gradient: 'linear-gradient(135deg, #3b82f6, #6366f1)',
-            accentColor: '#6366f1',
         }] : []),
         ...(isCloud && allowConsumerSignups ? [{
             id: 'consumer',
@@ -22,18 +20,9 @@ const SignupStepOrg = ({ signupData, setSignupData, signupOrgs, handleSignupNext
             title: t('signup.personal_account'),
             subtitle: t('signup.personal_account_desc'),
             description: t('signup.personal_account_features'),
-            gradient: 'linear-gradient(135deg, #a855f7, #ec4899)',
-            accentColor: '#a855f7',
         }] : []),
-        ...(allowOrgSignups && signupOrgs.length > 0 ? [{
-            id: 'existing',
-            icon: <UserPlus className="w-6 h-6" />,
-            title: t('signup.join_existing'),
-            subtitle: t('signup.join_existing_desc'),
-            description: t('signup.join_existing_features'),
-            gradient: 'linear-gradient(135deg, #10b981, #14b8a6)',
-            accentColor: '#10b981',
-        }] : []),
+        // Self-service "Join an existing organisation" is intentionally removed:
+        // users join an org via an email invitation, not by self-selecting it.
     ];
 
     // Auto-select if only one type is available
@@ -44,7 +33,7 @@ const SignupStepOrg = ({ signupData, setSignupData, signupOrgs, handleSignupNext
     }, [accountTypes.length]);
 
     return (
-        <form onSubmit={e => { e.preventDefault(); handleSignupNext(); }} className="space-y-4">
+        <form onSubmit={e => { e.preventDefault(); embedded ? onAdvance?.() : handleSignupNext(); }} className="space-y-4">
             {/* ── Account Type Cards ── */}
             <div className="space-y-3">
                 {accountTypes.map(type => {
@@ -52,31 +41,28 @@ const SignupStepOrg = ({ signupData, setSignupData, signupOrgs, handleSignupNext
                     return (
                         <button key={type.id} type="button"
                             onClick={() => setSignupData(p => ({ ...p, signupType: type.id }))}
-                            className="w-full text-left rounded-xl border-2 transition-all duration-200"
-                            style={{
-                                borderColor: isSelected ? type.accentColor : 'var(--border-subtle)',
-                                background: isSelected ? `${type.accentColor}08` : 'var(--bg-primary)',
-                                boxShadow: isSelected ? `0 0 0 1px ${type.accentColor}20, 0 4px 12px ${type.accentColor}10` : 'none',
-                            }}
+                            className={`w-full text-left rounded-xl border-2 transition-all duration-200 ${isSelected
+                                ? 'border-[var(--accent-primary)] bg-[var(--accent-primary)]/5'
+                                : 'border-[var(--border-subtle)] bg-[var(--bg-primary)] hover:border-[var(--accent-primary)]/40'}`}
                         >
                             <div className="p-4 flex items-start gap-3.5">
-                                <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0 text-white"
+                                <div className="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
                                     style={{
-                                        background: isSelected ? type.gradient : 'var(--bg-tertiary)',
+                                        background: isSelected ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
                                         color: isSelected ? '#fff' : 'var(--text-muted)',
                                         transition: 'all 0.2s ease',
                                     }}>
                                     {type.icon}
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex items-center gap-2 flex-wrap">
                                         <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
                                             {type.title}
                                         </span>
                                         <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-md"
                                             style={{
-                                                background: isSelected ? `${type.accentColor}15` : 'var(--bg-tertiary)',
-                                                color: isSelected ? type.accentColor : 'var(--text-muted)',
+                                                background: isSelected ? 'var(--accent-primary)' : 'var(--bg-tertiary)',
+                                                color: isSelected ? '#fff' : 'var(--text-muted)',
                                             }}>
                                             {type.subtitle}
                                         </span>
@@ -87,11 +73,9 @@ const SignupStepOrg = ({ signupData, setSignupData, signupOrgs, handleSignupNext
                                 </div>
                                 <div className="shrink-0 mt-1">
                                     <div className="w-5 h-5 rounded-full border-2 flex items-center justify-center transition-all"
-                                        style={{
-                                            borderColor: isSelected ? type.accentColor : 'var(--border-subtle)',
-                                        }}>
+                                        style={{ borderColor: isSelected ? 'var(--accent-primary)' : 'var(--border-subtle)' }}>
                                         {isSelected && (
-                                            <div className="w-2.5 h-2.5 rounded-full" style={{ background: type.accentColor }} />
+                                            <div className="w-2.5 h-2.5 rounded-full" style={{ background: 'var(--accent-primary)' }} />
                                         )}
                                     </div>
                                 </div>
@@ -108,12 +92,12 @@ const SignupStepOrg = ({ signupData, setSignupData, signupOrgs, handleSignupNext
                         <label className={labelClass}>{t('signup.company_name')} *</label>
                         <div className="relative">
                             <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-tertiary)]" />
-                            <input type="text" value={signupData.newOrgName} onChange={e => setSignupData(p => ({ ...p, newOrgName: e.target.value }))} className={inputClass} placeholder="Acme Corp" required />
+                            <input type="text" value={signupData.newOrgName} onChange={e => setSignupData(p => ({ ...p, newOrgName: e.target.value }))} className={inputClass} placeholder="Jansen B.V." required />
                         </div>
                     </div>
                     <div>
                         <label className={labelClass}>{t('signup.tagline')}</label>
-                        <input type="text" value={signupData.orgTagline} onChange={e => setSignupData(p => ({ ...p, orgTagline: e.target.value }))} className={inputClassSimple} placeholder="Intelligence in Action" />
+                        <input type="text" value={signupData.orgTagline} onChange={e => setSignupData(p => ({ ...p, orgTagline: e.target.value }))} className={inputClassSimple} placeholder="Slim werken met AI" />
                     </div>
                     <div>
                         <label className={labelClass}>{t('signup.description_label')}</label>
@@ -123,7 +107,7 @@ const SignupStepOrg = ({ signupData, setSignupData, signupOrgs, handleSignupNext
                         <label className={labelClass}>{t('signup.address')}</label>
                         <div className="relative">
                             <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-tertiary)]" />
-                            <input type="text" value={signupData.orgAddress} onChange={e => setSignupData(p => ({ ...p, orgAddress: e.target.value }))} className={inputClass} placeholder="123 Main Street, City" />
+                            <input type="text" value={signupData.orgAddress} onChange={e => setSignupData(p => ({ ...p, orgAddress: e.target.value }))} className={inputClass} placeholder="Keizersgracht 123, Amsterdam" />
                         </div>
                     </div>
                     <div>
@@ -149,42 +133,24 @@ const SignupStepOrg = ({ signupData, setSignupData, signupOrgs, handleSignupNext
                             </div>
                         </div>
                     </div>
-                    <div>
-                        <label className="flex items-center gap-3 cursor-pointer p-3 rounded-lg border" style={{ borderColor: 'var(--border-subtle)', background: 'var(--bg-primary)' }}>
-                            <input type="checkbox" checked={signupData.orgAllowSignup} onChange={e => setSignupData(p => ({ ...p, orgAllowSignup: e.target.checked }))} className="accent-[var(--accent-primary)] w-4 h-4" />
-                            <div>
-                                <span className="text-sm font-medium block" style={{ color: 'var(--text-primary)' }}>{t('signup.allow_team_join')}</span>
-                                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{t('signup.allow_team_join_desc')}</span>
-                            </div>
-                        </label>
-                    </div>
                 </div>
             )}
 
-            {signupData.signupType === 'existing' && (
-                <div className="animate-[fadeIn_0.2s_ease-out] pt-1">
-                    <label className={labelClass}>{t('signup.select_org')}</label>
-                    <div className="relative">
-                        <Building className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-[var(--text-tertiary)]" />
-                        <select value={signupData.organizationId} onChange={e => setSignupData(p => ({ ...p, organizationId: e.target.value }))} className={inputClass} style={{ paddingLeft: '2.5rem' }} required>
-                            <option value="" style={{ background: 'var(--bg-secondary)' }}>{t('signup.select_org_placeholder')}</option>
-                            {signupOrgs.map(org => (
-                                <option key={org.id} value={org.id} style={{ background: 'var(--bg-secondary)' }}>{org.name}</option>
-                            ))}
-                        </select>
-                    </div>
-                </div>
+            {/* Footer buttons — only when used standalone (legacy). The wizard
+                shell renders its own Back/Next, so they're hidden when embedded. */}
+            {!embedded && (
+                <>
+                    <button type="submit"
+                        className="w-full py-3 bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-base shadow-lg mt-2">
+                        {t('signup.continue')} <ArrowRight className="w-5 h-5" />
+                    </button>
+
+                    <button type="button" onClick={resetSignup}
+                        className="w-full py-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm">
+                        <ArrowLeft className="w-4 h-4" /> {t('signup.back_to_signin')}
+                    </button>
+                </>
             )}
-
-            <button type="submit"
-                className="w-full py-3 bg-[var(--accent-primary)] hover:bg-[var(--accent-primary-hover)] text-white rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-base shadow-lg mt-2">
-                {t('signup.continue')} <ArrowRight className="w-5 h-5" />
-            </button>
-
-            <button type="button" onClick={resetSignup}
-                className="w-full py-2.5 text-[var(--text-secondary)] hover:text-[var(--text-primary)] rounded-lg font-medium transition-all flex items-center justify-center gap-2 text-sm">
-                <ArrowLeft className="w-4 h-4" /> {t('signup.back_to_signin')}
-            </button>
         </form>
     );
 };

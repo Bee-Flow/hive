@@ -56,7 +56,17 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     const [orgWebSearchGuard, setOrgWebSearchGuard] = useState(false);
     const [orgDisableSearchOnUpload, setOrgDisableSearchOnUpload] = useState(false);
     const [orgMonitorIntegrations, setOrgMonitorIntegrations] = useState(false);
+    // DLP pre-flight: when enabled, the org's outbound prompts are scanned before
+    // they reach an external provider, and handled per `dlpMode`
+    // ('ask' → preview modal, 'auto_redact' → tokenise silently, 'block').
+    // The backend (dlpRunner.scan + decisionQueue + DlpPreviewModal) is fully
+    // wired; this control was previously hidden and force-saved to false.
+    const [orgDlpEnabled, setOrgDlpEnabled] = useState(false);
+    const [orgDlpMode, setOrgDlpMode] = useState('ask');
     const [webSearchGuardPiiCategories, setWebSearchGuardPiiCategories] = useState([]);
+    // Per-tool-class PII block policy: categories the org refuses to send into
+    // external tools (web search, Gmail, MCP…) vs internal/on-box tools.
+    const [toolPiiPolicy, setToolPiiPolicy] = useState({ external: { blockCategories: [] }, internal: { blockCategories: [] } });
     const [hasEuModelsConfigured, setHasEuModelsConfigured] = useState(false);
     const [hasWebSearchEnabled, setHasWebSearchEnabled] = useState(false);
     // Org-level PII settings
@@ -87,6 +97,34 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
     // full 20: the server filters unsupported categories silently, so
     // checking one the active detector doesn't emit is a no-op.
     const PII_CATEGORIES_LIST = useMemo(() => piiCategoriesLocalized(t), [t]);
+
+    // Toggle one PII category in a tool-class block list (external | internal).
+    const toggleToolPiiCat = (cls, id, checked) => setToolPiiPolicy(prev => ({
+        ...prev,
+        [cls]: {
+            blockCategories: checked
+                ? [...new Set([...(prev[cls]?.blockCategories || []), id])]
+                : (prev[cls]?.blockCategories || []).filter(x => x !== id),
+        },
+    }));
+    const setToolPiiCats = (cls, ids) => setToolPiiPolicy(prev => ({ ...prev, [cls]: { blockCategories: ids } }));
+
+    // Category multi-select grid for a tool-class, reused for external/internal.
+    const renderToolClassGrid = (cls) => (
+        <div className="grid grid-cols-2 gap-1.5">
+            {PII_CATEGORIES_LIST.map(cat => (
+                <label key={cat.id} className="flex items-center gap-2 text-xs text-[var(--text-secondary)] cursor-pointer hover:text-primary transition-colors py-1 px-2 rounded hover:bg-white/5">
+                    <input
+                        type="checkbox"
+                        checked={(toolPiiPolicy[cls]?.blockCategories || []).includes(cat.id)}
+                        onChange={e => toggleToolPiiCat(cls, cat.id, e.target.checked)}
+                        className="w-3.5 h-3.5 rounded border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0"
+                    />
+                    <span><AppEmoji id={guardrailCatalogIdFor(cat.id)} default={cat.icon} /> {cat.label}</span>
+                </label>
+            ))}
+        </div>
+    );
 
     // Navigation State — Org Privacy Shield is the entry point for both
     // the embedded (orgShieldOnly) and full admin views now that the
@@ -162,13 +200,35 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                 setOrgWebSearchGuard(data.webSearchGuardEnabled || false);
                 setOrgDisableSearchOnUpload(data.disableSearchOnUpload || false);
                 setOrgMonitorIntegrations(data.monitorIntegrations || false);
+                setOrgDlpEnabled(!!data.dlpEnabled);
+                setOrgDlpMode(['ask', 'auto_redact', 'block'].includes(data.dlpMode) ? data.dlpMode : 'ask');
                 setWebSearchGuardPiiCategories(data.webSearchGuardPiiCategories || []);
                 const validIds = new Set(PII_CATEGORIES_LIST.map(c => c.id));
+                const _tpp = data.toolPiiPolicy || {};
+                setToolPiiPolicy({
+                    external: { blockCategories: (_tpp.external?.blockCategories || []).filter(id => validIds.has(id)) },
+                    internal: { blockCategories: (_tpp.internal?.blockCategories || []).filter(id => validIds.has(id)) },
+                });
                 const loaded = (data.piiDetectionCategories || []).filter(id => validIds.has(id));
                 setOrgPiiCategories(loaded);
                 setOrgPiiConfidenceThreshold(data.piiDetectionConfidenceThreshold ?? 0.7);
                 setOrgPiiAction(data.piiDetectionAction || 'block');
                 setOrgShowRawPayload(!!data.showRawPayload);
+                // The server clamps fields the org's plan doesn't allow (e.g.
+                // forces piiDetectionAction → 'block' without `pii_tokenize`) and
+                // reports them in `clamped_fields`. Surface WHY the displayed
+                // value differs from what may have been picked — otherwise the
+                // setting looks like it "didn't save".
+                if (Array.isArray(data.clamped_fields) && data.clamped_fields.length > 0) {
+                    setOrgShieldMessage({
+                        type: 'error',
+                        text: data.clamped_fields.includes('piiDetectionAction')
+                            ? 'Tokenize requires the Enterprise plan — PII action is enforced as Block on this plan.'
+                            : 'Some settings are limited by your current plan.',
+                    });
+                } else {
+                    setOrgShieldMessage(null);
+                }
             }
         } catch (e) {
             console.error('Failed to fetch org shield', e);
@@ -204,17 +264,34 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                     disableSearchOnUpload: orgDisableSearchOnUpload,
                     monitorIntegrations: orgMonitorIntegrations,
                     webSearchGuardPiiCategories: webSearchGuardPiiCategories,
+                    toolPiiPolicy: toolPiiPolicy,
                     piiDetectionCategories: orgPiiCategories,
                     piiDetectionConfidenceThreshold: orgPiiConfidenceThreshold,
                     piiDetectionAction: orgPiiAction,
                     showRawPayload: orgShowRawPayload,
-                    // DLP (pre-flight) was removed from the UI; force-disabled.
-                    dlpEnabled: false,
+                    // DLP pre-flight scan (opt-in, per-org). Persisted from the
+                    // toggle below; activates dlpRunner.scan in the chat path.
+                    dlpEnabled: orgDlpEnabled,
+                    dlpMode: orgDlpMode,
                 })
             });
             if (res.ok) {
-                showToast('success', t('admin.guard_saved'));
-                setOrgShieldMessage(null);
+                const data = await res.json().catch(() => ({}));
+                // If the server clamped a field down to the org's plan limits, the
+                // stored value differs from what was submitted. Reflect the stored
+                // value in the form and tell the user why, instead of a bare
+                // "saved" that hides the override.
+                if (Array.isArray(data.clamped_fields) && data.clamped_fields.length > 0) {
+                    if (data.config?.piiDetectionAction) setOrgPiiAction(data.config.piiDetectionAction);
+                    const text = data.clamped_fields.includes('piiDetectionAction')
+                        ? 'Saved. Note: Tokenize requires the Enterprise plan — PII action was saved as Block.'
+                        : 'Saved. Note: some settings were adjusted to your plan limits.';
+                    showToast('success', t('admin.guard_saved'));
+                    setOrgShieldMessage({ type: 'error', text });
+                } else {
+                    showToast('success', t('admin.guard_saved'));
+                    setOrgShieldMessage(null);
+                }
             } else {
                 const data = await res.json().catch(() => ({}));
                 showToast('error', data.error || 'Failed to save.');
@@ -763,6 +840,15 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                                 <span>{t('admin.shield_pii_detect_more')}</span>
                                                                 <span>{t('admin.shield_pii_detect_less')}</span>
                                                             </div>
+                                                            {/* Per-category-floor disclosure — the slider is NOT a global floor.
+                                                                Several categories use fixed, individually tuned thresholds in the
+                                                                guard (server: guard-service/app/services/pii.py _PER_CATEGORY_THRESHOLD)
+                                                                that this slider does not lower; the rest use max(50%, slider).
+                                                                Stating it here avoids the "I raised it to 90% but names still
+                                                                detect / I lowered it to 20% but nothing new appears" confusion. */}
+                                                            <p className="text-[11px] text-muted mt-2 leading-relaxed">
+                                                                {t('admin.shield_pii_confidence_floor_note', 'Note: sensitive categories (names, organisations, addresses, dates of birth, and medical/ID numbers) use built-in, individually tuned thresholds that this slider does not lower. For the other categories the slider sets a minimum of 50%. Raising it filters out lower-confidence matches; it cannot re-enable a category below its tuned floor.')}
+                                                            </p>
                                                             {/* Guidance — too-high threshold is the #1 reason PII silently stops
                                                                 firing. The PII Guard returns 0.60–0.85 confidence on short
                                                                 prompts, so anything above ~0.85 will miss most fuzzy spans
@@ -937,49 +1023,60 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                     </label>
                                                 </div>
                                                 )}
-                                                {/* Web Search Guard PII Filter — shown when guard is ON (licence-gated) */}
-                                                {hasWebSearchEnabled && canUseWebSearchGuard && orgWebSearchGuard && (
-                                                <div className="ml-6 p-4 rounded-xl border bg-white/3 border-white/8">
-                                                    <div className="flex items-center justify-between mb-3">
-                                                        <span className="text-xs font-medium text-muted">🛡️ {t('admin.shield_web_pii_filter') || 'Web Search PII Filter'}</span>
-                                                        <div className="flex gap-2">
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => setWebSearchGuardPiiCategories(PII_CATEGORIES_LIST.map(c => c.id))}
-                                                                className="text-xs px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[var(--text-secondary)] transition-colors"
-                                                            >{t('admin.all') || 'All'}</button>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => setWebSearchGuardPiiCategories([])}
-                                                                className="text-xs px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[var(--text-secondary)] transition-colors"
-                                                            >{t('admin.none') || 'None'}</button>
+                                                {/* Block PII in tool calls — per-tool-class policy. Generalizes the
+                                                   legacy Web Search PII Filter. External = tools that leave the org
+                                                   (web search, Gmail, MCP, n8n…); Internal = on-box tools. A tool call
+                                                   whose args contain a blocked category is refused; blocked PII is also
+                                                   stripped from tool results before the model sees them. */}
+                                                <div className="p-4 rounded-xl border bg-white/3 border-white/8">
+                                                    <div className="mb-1">
+                                                        <span className="text-sm font-medium text-[var(--text-primary)] block">🛡️ {t('admin.shield_tool_block_title', 'Block PII in tool calls')}</span>
+                                                        <span className="text-xs text-muted">{t('admin.shield_tool_block_desc', 'Refuse a tool call and strip blocked PII from tool results when these categories are present.')}</span>
+                                                    </div>
+
+                                                    {/* External tools — licence-gated (web_search_guard) */}
+                                                    <div className="mt-4">
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <span className="text-xs font-medium text-muted">🌐 {t('admin.shield_tool_block_external', 'External tools (data leaves your org)')}</span>
+                                                            {canUseWebSearchGuard && (
+                                                            <div className="flex gap-2">
+                                                                <button type="button" onClick={() => setToolPiiCats('external', PII_CATEGORIES_LIST.map(c => c.id))} className="text-xs px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[var(--text-secondary)] transition-colors">{t('admin.all') || 'All'}</button>
+                                                                <button type="button" onClick={() => setToolPiiCats('external', [])} className="text-xs px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[var(--text-secondary)] transition-colors">{t('admin.none') || 'None'}</button>
+                                                            </div>
+                                                            )}
                                                         </div>
+                                                        {canUseWebSearchGuard ? (
+                                                            <>
+                                                                {renderToolClassGrid('external')}
+                                                                {toolPiiPolicy.external?.blockCategories?.length > 0 && (
+                                                                    <p className="text-xs text-emerald-400/80 mt-2">✓ {toolPiiPolicy.external.blockCategories.length}/{PII_CATEGORIES_LIST.length} {t('admin.categories_selected') || 'categories selected'}</p>
+                                                                )}
+                                                            </>
+                                                        ) : (
+                                                            <p className="text-[11px]" style={{ color: 'var(--text-secondary)' }}>
+                                                                🔒 {t('admin.shield_tool_block_locked', 'Tool-call PII blocking for external tools is an Enterprise feature.')}{' '}
+                                                                <a href={upgradeUrl || 'https://beeflow.nl/pricing'} target="_blank" rel="noreferrer" style={{ color: '#3b82f6' }}>
+                                                                    {t('license.upgrade_at_beeflow', 'Upgrade at beeflow.nl')}
+                                                                </a>
+                                                            </p>
+                                                        )}
                                                     </div>
-                                                    <p className="text-xs text-muted mb-3">{t('admin.shield_web_pii_desc') || 'Block search queries that contain selected PII types from being sent to external search engines.'}</p>
-                                                    <div className="grid grid-cols-2 gap-1.5">
-                                                        {PII_CATEGORIES_LIST.map(cat => (
-                                                            <label key={cat.id} className="flex items-center gap-2 text-xs text-[var(--text-secondary)] cursor-pointer hover:text-primary transition-colors py-1 px-2 rounded hover:bg-white/5">
-                                                                <input
-                                                                    type="checkbox"
-                                                                    checked={webSearchGuardPiiCategories.includes(cat.id)}
-                                                                    onChange={e => {
-                                                                        if (e.target.checked) {
-                                                                            setWebSearchGuardPiiCategories(prev => [...prev, cat.id]);
-                                                                        } else {
-                                                                            setWebSearchGuardPiiCategories(prev => prev.filter(id => id !== cat.id));
-                                                                        }
-                                                                    }}
-                                                                    className="w-3.5 h-3.5 rounded border-gray-600 bg-gray-700 text-[var(--accent-primary)] focus:ring-0"
-                                                                />
-                                                                <span><AppEmoji id={guardrailCatalogIdFor(cat.id)} default={cat.icon} /> {cat.label}</span>
-                                                            </label>
-                                                        ))}
+
+                                                    {/* Internal tools — available on every tier (data stays on-box) */}
+                                                    <div className="mt-4">
+                                                        <div className="flex items-center justify-between mb-2">
+                                                            <span className="text-xs font-medium text-muted">🏠 {t('admin.shield_tool_block_internal', 'Internal tools (stay on your server)')}</span>
+                                                            <div className="flex gap-2">
+                                                                <button type="button" onClick={() => setToolPiiCats('internal', PII_CATEGORIES_LIST.map(c => c.id))} className="text-xs px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[var(--text-secondary)] transition-colors">{t('admin.all') || 'All'}</button>
+                                                                <button type="button" onClick={() => setToolPiiCats('internal', [])} className="text-xs px-2 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[var(--text-secondary)] transition-colors">{t('admin.none') || 'None'}</button>
+                                                            </div>
+                                                        </div>
+                                                        {renderToolClassGrid('internal')}
+                                                        {toolPiiPolicy.internal?.blockCategories?.length > 0 && (
+                                                            <p className="text-xs text-emerald-400/80 mt-2">✓ {toolPiiPolicy.internal.blockCategories.length}/{PII_CATEGORIES_LIST.length} {t('admin.categories_selected') || 'categories selected'}</p>
+                                                        )}
                                                     </div>
-                                                    {webSearchGuardPiiCategories.length > 0 && (
-                                                        <p className="text-xs text-emerald-400/80 mt-2">✓ {webSearchGuardPiiCategories.length}/{PII_CATEGORIES_LIST.length} {t('admin.categories_selected') || 'categories selected'}</p>
-                                                    )}
                                                 </div>
-                                                )}
 
                                                 {/* Disable Web Search on File Upload — only shown when web search is enabled */}
                                                 {hasWebSearchEnabled && (
@@ -1005,6 +1102,33 @@ const GuardrailsPanel = ({ orgShieldOnly = false }) => {
                                                         <input type="checkbox" checked={orgMonitorIntegrations} onChange={e => setOrgMonitorIntegrations(e.target.checked)} className="sr-only peer" />
                                                         <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
                                                     </label>
+                                                </div>
+
+                                                {/* DLP pre-flight scan (opt-in). Activates dlpRunner.scan before a
+                                                    prompt reaches an external provider; mode picks how findings are
+                                                    handled. Off by default — turning it on is a deliberate org choice. */}
+                                                <div className="p-4 rounded-xl border bg-white/5 border-white/10">
+                                                    <div className="flex items-center justify-between">
+                                                        <div>
+                                                            <span className="text-sm font-medium text-[var(--text-primary)] block">🛡️ {t('admin.shield_dlp_preflight', 'DLP pre-flight scan')}</span>
+                                                            <span className="text-xs text-muted">{t('admin.shield_dlp_preflight_desc', 'Scan outbound prompts to external providers before they are sent, and handle PII per the mode below.')}</span>
+                                                        </div>
+                                                        <label className="relative inline-flex items-center cursor-pointer">
+                                                            <input type="checkbox" checked={orgDlpEnabled} onChange={e => setOrgDlpEnabled(e.target.checked)} className="sr-only peer" />
+                                                            <div className="w-11 h-6 bg-gray-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-500"></div>
+                                                        </label>
+                                                    </div>
+                                                    {orgDlpEnabled && (
+                                                        <div className="mt-3">
+                                                            <label className="text-xs font-medium text-muted block mb-1">{t('admin.shield_dlp_mode', 'When PII is detected')}</label>
+                                                            <select value={orgDlpMode} onChange={e => setOrgDlpMode(e.target.value)}
+                                                                className="w-full text-sm rounded-lg px-3 py-2 bg-[var(--bg-primary)] border border-white/10 text-[var(--text-primary)]">
+                                                                <option value="ask">{t('admin.shield_dlp_mode_ask', 'Ask — preview and let the user choose (redact / send / block)')}</option>
+                                                                <option value="auto_redact">{t('admin.shield_dlp_mode_redact', 'Auto-redact — tokenise findings silently and continue')}</option>
+                                                                <option value="block">{t('admin.shield_dlp_mode_block', 'Block — refuse the turn until the user removes the PII')}</option>
+                                                            </select>
+                                                        </div>
+                                                    )}
                                                 </div>
                                             </div>
                                         )}
